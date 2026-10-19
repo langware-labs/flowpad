@@ -16,12 +16,11 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from starlette.testclient import TestClient
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 from flow_sdk.server.app import app
-from starlette.testclient import TestClient
 from tests.test_settings import test_service_config
-
 
 pytestmark = [
     pytest.mark.skipif(
@@ -52,6 +51,26 @@ def no_startup_system_index(monkeypatch):
         return None
 
     monkeypatch.setattr(_app, "_start_system_content_index", _noop)
+
+
+@pytest.fixture(autouse=True)
+def no_startup_capability_discovery(monkeypatch):
+    """Keep unrelated real-worker capability probes off this test's lifespan.
+
+    Server startup schedules a full capability discovery sweep. Mirroring the
+    Chrome-authenticated capability actively launches a hidden Claude worker,
+    even though these tests exercise only fs-record progress events. Repeated
+    ``TestClient`` lifespans then cancel that detached probe during shutdown,
+    producing event-loop warnings and making the progress contract depend on
+    an external LLM process. Suppress only the startup sweep; explicit
+    capability discovery remains covered by its own tests.
+    """
+    import flow_sdk.core.capabilities.discovery as _discovery
+
+    async def _noop(_kinds=None) -> dict:
+        return {}
+
+    monkeypatch.setattr(_discovery, "run_discovery", _noop)
 
 
 @pytest.fixture(autouse=True)
@@ -242,9 +261,7 @@ def test_index_progress_report_events():
         # Per-row done <= total invariant. Grand-total may briefly exceed when
         # a row is mid-update, but each row individually is bounded.
         for row in attrs["rows"]:
-            assert row["done"] <= row["total"], (
-                f"Row done > total: {row}"
-            )
+            assert row["done"] <= row["total"], f"Row done > total: {row}"
 
     final = events[-1]
     assert final["text"] == "complete"
@@ -253,9 +270,7 @@ def test_index_progress_report_events():
     # when many records exist on disk. Each row's `done` must equal
     # min(limit_per_type, total).
     for row in final["rows"]:
-        assert row["done"] == min(20, row["total"]), (
-            f"Row done should equal min(limit_per_type=20, total): {row}"
-        )
+        assert row["done"] == min(20, row["total"]), f"Row done should equal min(limit_per_type=20, total): {row}"
 
 
 # do not increase timeout without approval
@@ -276,9 +291,7 @@ def test_progress_report_events_monotonic():
 
     done_values = [e["done"] for e in events]
     for i in range(1, len(done_values)):
-        assert done_values[i] >= done_values[i - 1], (
-            f"Grand-total done not monotonic: {done_values}"
-        )
+        assert done_values[i] >= done_values[i - 1], f"Grand-total done not monotonic: {done_values}"
 
 
 # do not increase timeout without approval

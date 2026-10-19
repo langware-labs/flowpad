@@ -4,7 +4,7 @@ export function ErrorAlertCard({ count, onClick }: { count: number; onClick: () 
   return (
     <button
       type="button"
-      className="bookmark-card w-full cursor-pointer border-destructive/30 bg-destructive/5 text-left transition-colors hover:bg-destructive/10"
+      className="bookmark-card w-full cursor-pointer border-destructive/30 bg-destructive/5 text-start transition-colors hover:bg-destructive/10"
       onClick={onClick}
     >
       <div className="bookmark-card-header">

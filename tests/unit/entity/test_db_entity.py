@@ -1,6 +1,6 @@
 import pytest
 
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core.entity.entity_model import Entity
 

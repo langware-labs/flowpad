@@ -38,7 +38,9 @@ export function useClassificationResult(task: Task | null): ClassificationInfo |
       try {
         const content = await fsManager.download(computeNodeTypeId, classificationPath);
         if (cancelled || !content) return;
-        const text = typeof content === 'string' ? content : new TextDecoder().decode(content as ArrayBuffer);
+        // `download` without `asBlob` resolves a string; the Blob arm is decoded
+        // through Blob.text() — TextDecoder cannot read a Blob, it needs a buffer.
+        const text = typeof content === 'string' ? content : await content.text();
         const parsed = JSON.parse(text);
         if (parsed.category && parsed.title && parsed.command) {
           setFileResult({

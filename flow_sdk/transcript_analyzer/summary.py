@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from textwrap import indent
 
 from .entry import EntryKind
+from .formats import TranscriptFormat
 from .transcript import AgentTranscriptFile
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,8 @@ def worker_summary_log(
     worker_type: str,
     *,
     max_chars: int = _DEFAULT_MAX_CHARS,
-    transcript_format: str | None = None,
+    transcript_format: TranscriptFormat | str | None = None,
+    number_entries: bool = False,
 ) -> str:
     """Return an extractive, search-indexable text rendering of a transcript.
 
@@ -66,6 +69,11 @@ def worker_summary_log(
     ``transcript_format`` disambiguates worker formats that don't self-detect
     (e.g. Copilot ``events.jsonl`` needs ``"copilot_events"``); codex rollouts
     self-detect, so it's optional there.
+
+    ``number_entries`` prefixes each rendered entry with ``[<i>]`` where ``i``
+    is its position in ``AgentTranscriptFile.entries`` — the same index the
+    ``session_analysis`` MCP tool takes to drill into one entry. Off by default
+    so the search-indexed text stays free of positional noise.
 
     Best-effort: any parse/IO failure returns ``""`` so a malformed or partial
     transcript can never break session indexing.
@@ -80,10 +88,12 @@ def worker_summary_log(
         # the final ``[:max_chars]``) is identical either way.
         parts: list[str] = []
         total = 0
-        for e in transcript.entries:
+        for i, e in enumerate(transcript.entries):
             if e.kind not in _SEARCHABLE_KINDS:
                 continue
             body = e.to_string()
+            if number_entries:
+                body = f"[{i}] {body}"
             parts.append(body)
             total += len(body) + 2  # +2 for the "\n\n" separator
             if total > max_chars:
@@ -106,3 +116,33 @@ def worker_summary_log(
             exc_info=True,
         )
         return ""
+
+
+def worker_continuation_prompt(
+    path: str | Path,
+    worker_type: str,
+    worker_name: str,
+    *,
+    transcript_format: TranscriptFormat | str | None = None,
+) -> str:
+    """Build a deterministic, extractive prompt for a cross-worker handoff.
+
+    The existing summary renderer owns filtering and its bounded transcript
+    prefix. An empty summary is not a valid continuation: callers must surface
+    that failure instead of sending a context-free provider-switch prompt.
+    """
+    summary = worker_summary_log(
+        path,
+        worker_type,
+        transcript_format=transcript_format,
+    )
+    if not summary:
+        raise ValueError("Transcript has no readable conversation to continue")
+    # The entry renderer uses ``==== kind id ====`` banners. Without a blank
+    # line + indentation, Markdown treats that next line as a Setext heading
+    # underline and renders the intro as an enormous H1 in chat.
+    rendered_summary = indent(summary, "    ")
+    return (
+        f"We are continuing the conversation from {worker_name}:\n\n"
+        f"{rendered_summary}"
+    )

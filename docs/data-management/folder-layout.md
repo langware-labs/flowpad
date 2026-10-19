@@ -38,34 +38,34 @@ set_default_records_root(path)    # test-only override
 
 ### Folder Naming Convention
 
-Each record occupies its own subdirectory (the "shadow" folder). The directory name follows the pattern:
+Each record occupies its own subdirectory (the "shadow" folder), named by the **bare id** under a `<type>/` parent:
 
 ```
-<type>-@<uid>
+<id>
 ```
 
-Examples: `task-@f822d496-f6f0-40b7-b18f-64669be1b766`, `agentic_process-@7d1ae3db-...`, `claude_error-@a3b7f91c2e1d`.
+Examples: `f822d496-f6f0-40b7-b18f-64669be1b766`, `7d1ae3db-...`, `a3b7f91c2e1d`.
 
-The separator is `-@` (defined as `_NAME_SEP` in `record_paths.py`, also in `fs_record.py`). `record_stem()` builds this name and `parse_record_stem()` splits it back apart (both in `record_paths.py`).
+The type-scoped shadow store carries no separator at all. `record_stem()` / `parse_record_stem()` (defined in `record_paths.py`, re-exported from `fs_record.py`) build the distinct **portable** token `<type>-<id>` (`_NAME_SEP = "-"`), used only in flat namespaces such as bundle arcs — never as a shadow-folder name. The retired `<type>-@<uid>` shape is still *parsed* for back-compat and never written.
 
 Records are organized by type under the records root:
 
 ```
 ~/.flow/instances/<name>/records/
   <type>/
-    <type>-@<uid>/
+    <id>/
       metadata.json                    # ALL persisted fields (flat): type, id, name + domain fields
-      <epoch>_<hexdigest>.hash         # index sentinel (zero-byte)
+      <epoch>_<contenthash>_<pathdigest>.hash   # index sentinel (zero-byte; legacy 2-part form still read)
 ```
 
-The shadow folder of an `FSRecord` (`flow_sdk/fs_store/fs_record.py`) lives at `<records_root>/<type>/<type>-@<id>/metadata.json`. The class header is explicit that `Record` (the old split-format class) was removed; `FSRecord` is the lean replacement.
+The shadow folder of an `FSRecord` (`flow_sdk/fs_store/fs_record.py`) lives at `<records_root>/<type>/<id>/metadata.json`. The class header is explicit that `Record` (the old split-format class) was removed; `FSRecord` is the lean replacement.
 
 ### Record Metadata File (Single Flat File)
 
 There is no `_data.json` / `state.json` split anymore, and no `data/` subfolder. Everything persisted to disk lives in one file:
 
 ```
-<type>-@<uid>/metadata.json     # identity + domain fields, flat (NOT wrapped in {"data": ...})
+<id>/metadata.json              # identity + domain fields, flat (NOT wrapped in {"data": ...})
 ```
 
 `metadata.json` holds `type`, `id`, `name`, and every non-system meta field as top-level keys. A real example:
@@ -77,7 +77,7 @@ There is no `_data.json` / `state.json` split anymore, and no `data/` subfolder.
   "name": "Analyze invite and share task email flows",
   "status": "to_do",
   "task_type": "Task",
-  "source_file": "/.../tasks/.../header.json",
+  "asset_ref": "/.../tasks/analyze-invite-and-share-task-email-flows",
   "scope": "project",
   "project_id": "56713622-...",
   "updated_date": "2026-06-01 19:16:35.866973+00:00"
@@ -96,18 +96,20 @@ Which meta fields are mirrored is driven by the registered `TypeInfo.meta_model`
 
 ### The `asset_ref` (user-facing source file)
 
-`FSRecord.asset_ref` is an `FSRef` to the primary user-facing content file, which lives **outside** the shadow folder — under the user's project scope or under `records_data/`. The path is resolved by `FSRecord.compute_asset_ref(scope_root, entity)`, which reads `TypeInfo.main_subdir` and `TypeInfo.main_layout`:
+`FSRecord.asset_ref` is an `FSRef` to the primary user-facing content file, which lives **outside** the shadow folder — under the user's project scope or under `records_data/`. The path is resolved by `FSRecord.compute_asset_ref(scope_root, entity, *, default_worker="claude")`, which derives the family subdir from the placement axis (`TypeInfo.asset_class` / `harness` / `family` → `placement.family_subdir(...)`) and the tail from `shape`:
 
 ```python
-base = Path(scope_root) / info.main_subdir
-target = base / safe if info.main_layout == "folder" else base / f"{safe}.md"
+subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
+if subdir is None:
+    return None
+target = destination_in(Path(scope_root) / subdir, info, name)
 ```
 
-Types with no `main_subdir` have no asset file. Examples of `main_subdir` / `main_layout` (see `flow_sdk/schema/type_info/*_info.py`): `skill` → `.claude/skills` / `folder`; `markdown` and `markdown_index` → `docs` / `file`. Only the `asset_ref` path is persisted (as `source_file` in `metadata.json`); the shadow-folder path is computed at runtime.
+`destination_in` (`flow_sdk/assets/creation.py`) owns the tail: the family folder itself for a singleton type, `<safe-name>/` for a `Folder` shape, else `<safe-name><ext>`. Types whose placement resolves to no subdir have no asset file. `TypeInfo.main_subdir` survives as a derived, read-only view of the same triple (claude default). Examples: `skill` → `.claude/skills` / `folder`; `markdown` → `docs` / `file`. Only the `asset_ref` path is persisted (as the `asset_ref` key in `metadata.json`); the shadow-folder path is computed at runtime.
 
 ### Index Sentinel (`.hash`)
 
-The single per-record `<epoch>_<hexdigest>.hash` zero-byte file in the shadow folder marks the last-indexed fingerprint. Its absence is what makes a record need re-indexing. There is no separate `state.json` cache.
+The single per-record `<epoch>_<contenthash>_<pathdigest>.hash` zero-byte file in the shadow folder marks the last-indexed fingerprint **and** the asset path it was indexed at. Its absence, a changed source hash, or a changed path is what makes a record need re-indexing (`FSRecord.index_required`). There is no separate `state.json` cache.
 
 See [record-model.md](record-model.md) for the full `FSRecord` / `TypeInfo` model.
 
@@ -207,7 +209,9 @@ These record types are owned by flow-cli and stored under `~/.flow/instances/<na
 | `TASK` | `"task"` | Task record |
 | `RULE` | `"rule"` | Rule record |
 | `SKILL` | `"skill"` | Skill record |
-| `AGENT` | `"agent"` | Agent entity |
+| `AGENT` | `"agent"` | The launchable agent (hub-level principal) |
+| `SUBAGENT` | `"subagent"` | Claude Code `.claude/agents/*.md` prompt asset |
+| `CLAUDE_MEMORY` | `"claude_memory"` | Claude Code memory file |
 | `LOG` | `"log"` | Log entry |
 | `AGENTIC_PROCESS` | `"agentic_process"` | Agentic execution process |
 | `ARTIFACT` | `"artifact"` | Artifact record |
@@ -228,13 +232,13 @@ These record types are owned by flow-cli and stored under `~/.flow/instances/<na
 
 > **Note — renames**: The old `SESSION = "session"` and `SHELL_SESSION = "shell_session"` constants no longer exist; sessions are now `CLAUDE_SESSION` / `CODEX_SESSION` and shells are `SHELL`. There is no `MEMO` type; note/document content is represented by `MARKDOWN`.
 
-> **Note — Codex types**: `EntityType` also defines `CODEX_SESSION = "codex_session"` and `CODEX_PROJECT = "codex_project"` for Codex CLI data, alongside the Claude equivalents.
+> **Note — other harnesses**: `EntityType` also defines `CODEX_SESSION = "codex_session"`, `CODEX_PROJECT = "codex_project"` (deprecated 2026-05-09 — codex projects are now stored as `PROJECT`) and `COPILOT_SESSION = "copilot_session"`, alongside the Claude equivalents. `CLAUDE_HOOK_SOURCE` and `CLAUDE_MCP_JSON_ENTRY` are intermediate/entry types used by the two-stage hook and MCP walkers.
 
 > **Note — skillit constants**: `SKILLIT_SESSION = "skillit_session"` and `SKILLIT_CONFIG = "skillit_config"` are members of the same `EntityType` enum (not a separate StrEnum). `SkillitRecordType` is just an alias of `EntityType`.
 
 ### Claude Code Records (read-only, mapped from Claude directories)
 
-These types represent data sourced from Claude Code's own files. The records are read-only (`_read_only = True`) and do not own their underlying data.
+These types represent data sourced from Claude Code's own files. The records are read-only — their `asset_ref` FSRefs carry `read_only`, and their identity is a `DerivedCarrier` (a pure function of the source, never written back) — and do not own their underlying data. Only the members returned by `indexable_types()` (`flow_sdk/fs_store/indexer/builtin.py` — derived from the registered walkers' declared outputs, intersected with the types that have a `from_disk_fn`) are actually walked by the indexer; the rest of the enum below (`CLAUDE_ROOT`, `ACCOUNT`, `HOOK`/`HOOK_ENTRY`, `HISTORY*`, `ACTIVE_SESSION*`, `CLAUDE_DEBUG_LOG`, the transcript-entry and settings sub-types) are enum members with no indexer function today.
 
 | Constant | String value | Source path |
 |----------|-------------|-------------|
@@ -274,7 +278,7 @@ These types represent individual lines parsed from session JSONL transcripts.
 
 ### `.claude.json` Settings Records
 
-These types are extracted from `~/.claude.json` by `ClaudeSettingsRecordList`.
+These types are enum members for `~/.claude.json` sub-documents. There is currently **no** server-side extractor for that file (`source_file_records._EXTRACTORS` has no `.claude.json` entry) and no indexer function; `flow_sdk/fs_store/operations/claude_settings.py` only holds write helpers (`clear_skill_usage`).
 
 | Constant | String value | JSON path in `.claude.json` |
 |----------|-------------|----------------------------|
@@ -290,7 +294,7 @@ These types are extracted from `~/.claude.json` by `ClaudeSettingsRecordList`.
 
 ### `settings.json` Records
 
-These types are extracted from `~/.claude/settings.json` (or project-level `.claude/settings.json`) by `ClaudeSettingsJsonRecordList`.
+These types are extracted from `~/.claude/settings.json` (or project-level `.claude/settings.json`) by `_extract_settings_json` in `flow_sdk/assets/types/source_file_records.py`.
 
 | Constant | String value | JSON path in `settings.json` |
 |----------|-------------|------------------------------|
@@ -325,35 +329,36 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
 - `from_disk_fn(FSRef, resolved_id) -> list[FSRecord]` — parse payload after identity has been resolved once
-- `capsules` / `identity_backend` — named capsule declarations plus canonical and legacy/native identity observation
+- `identity_carrier` — WHERE the id lives (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/assets/identity_carrier.py`)
 - `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
-- `asset_hash_fn(FSRef) -> float` — cheap freshness stat
-- `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
+- `asset_hash_fn(FSRef) -> int` — cheap freshness fingerprint, integer nanoseconds
+- `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `shape`
 
-These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `skill.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_info.py`. The table below maps types to the on-disk location their indexer reads.
+These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `claude_command.py`, `claude_plan.py`, `claude_memory.py`, `claude_rules.py`, `claude_hook.py`, `todo.py`, `skill.py`, `subagent.py`, `agent.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_type_info.py`; `flow_sdk/fs_store/indexer/builtin.py` wires them onto roots; `indexable_types()` there derives the walked set from those registrations (`FSIndexer.terminal_output_types()`), so there is no hand-maintained list to drift. The table below maps types to the on-disk location their indexer reads; rows marked *not walked* are enum members with no registered indexer function.
 
 | RecordType | Source |
 |-----------|--------|
-| `CLAUDE_ROOT` | `~/.claude/projects/` (directory listing) |
-| `CLAUDE_SESSION` | `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` |
-| `ACTIVE_SESSIONS` / `ACTIVE_SESSION` | Scans `~/.claude/projects/*/*.jsonl` for recent mtime |
-| `HISTORY` / `HISTORY_ENTRY` | `~/.claude/history.jsonl` (container + lines) |
-| `CLAUDE_DEBUG_LOG` | `~/.claude/debug/<uuid>.txt` |
-| `HOOK` / `HOOK_ENTRY` / `CLAUDE_HOOK` | `hooks.<event>[]` in `settings.json` (writable overlay under `<records_root>/claude_hook/`) |
+| `CLAUDE_ROOT` | `~/.claude/projects/` (directory listing) — *not walked* |
+| `CLAUDE_SESSION` | `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` (`claude_sessions.py`; a session is *active* when its mtime is within `_ACTIVE_MAX_AGE_SECONDS = 300`) |
+| `ACTIVE_SESSIONS` / `ACTIVE_SESSION` | *not walked* — activity is a field on `CLAUDE_SESSION` |
+| `HISTORY` / `HISTORY_ENTRY` | `~/.claude/history.jsonl` — *not walked* |
+| `CLAUDE_DEBUG_LOG` | `~/.claude/debug/<uuid>.txt` — *not walked* (read by `operations/claude_debug_log.py` on demand) |
+| `HOOK` / `HOOK_ENTRY` | *not walked* — superseded by `CLAUDE_HOOK` |
+| `CLAUDE_HOOK_SOURCE` → `CLAUDE_HOOK` | Two-stage walk in `builtin.py`: each settings file that declares hooks is a `CLAUDE_HOOK_SOURCE`, then one `CLAUDE_HOOK` per hook entry (with `json_path`) |
 | `COMMAND` | `~/.claude/commands/<name>.md` or `.claude/commands/<name>.md` |
 | `CLAUDE_MD` | `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` |
 | `PLAN` | `~/.claude/plans/<slug>.md` |
 | `TODO_FILE` / `TODO_ITEM` | `~/.claude/todos/<session-id>-agent-<session-id>.json` |
 | `PLUGIN` | `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` |
 | `MCP_SERVER` | Entries in `mcp.json` / `.mcp.json` / `.claude/mcp.json` |
-| `ACCOUNT` | `~/.claude.json` (deprecated) |
+| `ACCOUNT` | `~/.claude.json` (deprecated) — *not walked* |
 | `CLAUDE_ERROR` | Synced from `~/.claude/debug/*.txt` into `<records_root>/claude_error/` |
-| `CODEX_SESSION` / `CODEX_PROJECT` | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
-| `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<type>-@<uid>/` |
+| `CODEX_SESSION` (`CODEX_PROJECT` is a deprecated alias, no longer indexable) | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
+| `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<id>/` |
 
-FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, …) follow the standard `<records_root>/<type>/<type>-@<uid>/` shadow-folder pattern, with their user-facing asset (if any) at the `main_subdir`-derived `asset_ref`.
+FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, …) follow the standard `<records_root>/<type>/<id>/` shadow-folder pattern, with their user-facing asset (if any) at the `main_subdir`-derived `asset_ref`.
 
-> **Claude hook source files**: hook discovery scans multiple settings files, not just `~/.claude/settings.json` — user `settings.json` / `settings.local.json`, project `.claude/settings.json` / `.claude/settings.local.json`, plugin `hooks/hooks.json`, and legacy `~/.claude.json`. See `flow_sdk/fs_store/indexer/functions/claude_hook.py` and `flow_sdk/fs_store/operations/claude_hook.py`.
+> **Claude hook source files**: hook discovery scans multiple settings files, not just `~/.claude/settings.json` — user `settings.json` / `settings.local.json`, project `.claude/settings.json` / `.claude/settings.local.json`, plugin `hooks/hooks.json`, and legacy `~/.claude.json`. See `flow_sdk/fs_store/indexer/functions/claude_hook.py` and the two-stage registration in `flow_sdk/fs_store/indexer/builtin.py`. (`flow_sdk/fs_store/operations/claude_hook.py` is a stub whose functions still say "Real impl in Phase 4".)
 
 ---
 
@@ -363,7 +368,7 @@ FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, �
 
 A "source file" is a known Claude JSON config file that the system splits into multiple typed records. Each extracted record carries a `source_file` (the path to the file) and a `json_path` (an RFC 6901 JSON Pointer indicating its position within that file).
 
-The class-based `SourceFileRecordList` hierarchy and the `SourceFileRegistry` (`flow_sdk/fs_store/source_file_registry.py`) have been **dissolved**. Extraction is now done by pure functions `(data: dict, source_file: str) -> list[dict]` in `flow_sdk/fs_store/source_file_records.py`, keyed by filename in the `_EXTRACTORS` dict:
+The class-based `SourceFileRecordList` hierarchy and the `SourceFileRegistry` (`flow_sdk/fs_store/source_file_registry.py`) have been **dissolved**. Extraction is now done by pure functions `(data: dict, source_file: str) -> list[dict]` in `flow_sdk/assets/types/source_file_records.py`, keyed by filename in the `_EXTRACTORS` dict:
 
 ```python
 _EXTRACTORS = {
@@ -426,30 +431,30 @@ This prevents the API from opening arbitrary files on disk — only known Claude
 
 ```
 $HOME/
-  .claude.json                        # Global Claude settings (ClaudeSettingsRecordList)
+  .claude.json                        # Global Claude settings (no extractor / not indexed)
   .claude/
-    settings.json                     # User-level settings (ClaudeSettingsJsonRecordList)
-    settings.local.json               # Local user overrides (ClaudeSettingsJsonRecordList)
-    managed-settings.json             # IT-managed restrictions (ClaudeManagedSettingsRecordList)
-    mcp.json                          # User-level MCP servers (ClaudeMcpJsonRecordList)
-    history.jsonl                     # Global prompt history (ClaudeHistoryFsRecord)
+    settings.json                     # User-level settings (_extract_settings_json; hooks → claude_hook.py)
+    settings.local.json               # Local user overrides (_extract_settings_json)
+    managed-settings.json             # IT-managed restrictions (_extract_managed_settings)
+    mcp.json                          # User-level MCP servers (_extract_mcp_json; mcp_server.py)
+    history.jsonl                     # Global prompt history (not indexed)
     projects/
       <encoded-cwd>/                  # One dir per working directory
-        <session-uuid>.jsonl          # Session transcript (ClaudeSessionFsRecord)
+        <session-uuid>.jsonl          # Session transcript (claude_sessions.py)
     commands/
-      <name>.md                       # User slash command (ClaudeCommandFsRecord)
+      <name>.md                       # User slash command (claude_command.py)
     plans/
-      <slug>.md                       # Saved plan (ClaudePlanFsRecord)
+      <slug>.md                       # Saved plan (claude_plan.py)
     todos/
-      <sid>-agent-<sid>.json          # Todo list (ClaudeTodoFsRecord)
+      <sid>-agent-<sid>.json          # Todo list (todo.py)
     debug/
-      <session-uuid>.txt              # Debug log (ClaudeDebugLogFsRecord)
+      <session-uuid>.txt              # Debug log (operations/claude_debug_log.py, on demand)
     plugins/
       installed_plugins.json          # Plugin registry
       cache/
         <marketplace>/
           <plugin>/
-            <version-hash>/           # Plugin cache (ClaudePluginFsRecord)
+            <version-hash>/           # Plugin cache (plugin.py)
 
   .flow/
     global/                             # cross-instance shared state
@@ -470,21 +475,21 @@ $HOME/
                                         # (no type_info.json — TypeInfo is NOT persisted; see schema-registry.md)
         records/                         # owned record shadow folders
           task/
-            task-@<uid>/
+            <id>/
               metadata.json             # ALL persisted fields (flat)
               <epoch>_<hash>_<pathdigest>.hash  # index sentinel (zero-byte; legacy 2-part form still reconciles)
           skill/
-            skill-@<uid>/
+            <id>/
               metadata.json
               <epoch>_<hash>_<pathdigest>.hash
           claude_error/
-            claude_error-@<fingerprint>/
+            <fingerprint>/
               metadata.json
           claude_hook/
-            claude_hook-@<content-hash>/
+            <content-hash>/
               metadata.json             # writable hook overlay
           agentic_process/
-            agentic_process-@<uid>/
+            <id>/
               metadata.json
           # ... other types follow the same metadata.json + .hash pattern ...
         records_data/                    # user-facing asset content (asset_ref targets)
@@ -498,14 +503,18 @@ Project-level Claude configuration (placed in the working directory, not the hom
 
 ```
 <project-root>/
-  .mcp.json                           # Project-level MCP servers (ClaudeMcpJsonRecordList)
-  CLAUDE.md                           # Project instructions (ClaudeMdFsRecord)
-  CLAUDE.local.md                     # Local project instructions (ClaudeMdFsRecord)
+  .mcp.json                           # Project-level MCP servers (_extract_mcp_json; mcp_server.py)
+  CLAUDE.md                           # Project instructions (claude_md.py)
+  CLAUDE.local.md                     # Local project instructions (claude_md.py)
   .claude/
-    settings.json                     # Project settings (ClaudeSettingsJsonRecordList)
-    settings.local.json               # Project local settings (ClaudeSettingsJsonRecordList)
-    mcp.json                          # Project MCP servers (ClaudeMcpJsonRecordList)
-    CLAUDE.md                         # Project instructions in .claude/ (ClaudeMdFsRecord)
+    settings.json                     # Project settings (_extract_settings_json; hooks → claude_hook.py)
+    settings.local.json               # Project local settings (_extract_settings_json)
+    mcp.json                          # Project MCP servers (_extract_mcp_json; mcp_server.py)
+    CLAUDE.md                         # Project instructions in .claude/ (claude_md.py)
+    agents/
+      <name>.md                       # SubAgent prompt asset (subagent.py)
+    skills/
+      <name>/SKILL.md                 # Skill folder asset (skill.py)
     commands/
-      <name>.md                       # Project slash command (ClaudeCommandFsRecord)
+      <name>.md                       # Project slash command (claude_command.py)
 ```

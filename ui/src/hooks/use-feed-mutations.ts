@@ -10,14 +10,20 @@ interface UseFeedMutationsOptions {
  * renderer for the entity referenced by FeedEntry.data.
  */
 export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
-  const dismiss = useCallback(
-    async (entry: FeedEntry) => {
-      entry.feed_status = 'dismissed';
-      await entry.save([]);
+  const dismissAll = useCallback(
+    async (entries: readonly FeedEntry[]) => {
+      await Promise.all(
+        entries.map((entry) => {
+          entry.feed_status = 'dismissed';
+          return entry.save([]);
+        }),
+      );
       await refetch();
     },
     [refetch],
   );
 
-  return { dismiss };
+  const dismiss = useCallback((entry: FeedEntry) => dismissAll([entry]), [dismissAll]);
+
+  return { dismiss, dismissAll };
 }

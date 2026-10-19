@@ -1,0 +1,134 @@
+"""`flow show snippet` and `flow snippet run`, through the real Typer app.
+
+Only the HTTP transport of `flow show` is captured; file handling, marker
+validation and running are real. python3 only — the other toolchains are the
+same `run_snippet` (tests/unit/test_snippet.py).
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from flow_sdk.cli.commands import show_cmd
+from flow_sdk.cli.flow_cli import app
+
+runner = CliRunner()
+_PROC = "--process=3f2a1b4c-0000-4000-8000-0000000000aa"
+CODE = "# %% flowpad:hidden\nimport json\n# %% flowpad:snippet\nprint(json.dumps([1]))\n"
+
+
+@pytest.fixture
+def sent_body(monkeypatch):
+    captured: dict = {}
+
+    def _fake_post(url, body, timeout=None, on_error=None):
+        captured.update(body)
+        return {"exit_code": 0, "delivered": True, "value": {"kind": "vfs", "path": body.get("path")}}
+
+    monkeypatch.setattr(show_cmd, "_discover_port", lambda: 9999)
+    monkeypatch.setattr(show_cmd, "_post_graph_json", _fake_post)
+    return captured
+
+
+
+def test_stdin_code_lands_in_the_os_temp_dir_and_is_shown(sent_body, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["show", "snippet", "--name", "t-cli-stdin", _PROC], input=CODE)
+    assert result.exit_code == 0, result.output
+    sent = Path(sent_body["path"])
+    try:
+        assert sent.parent.resolve() == (Path(tempfile.gettempdir()) / "flowpad-snippets").resolve()
+        assert sent.name == "t-cli-stdin.py"
+        assert sent.read_text() == CODE
+        assert not any(tmp_path.iterdir()), "nothing may be written into the caller's folder"
+        assert json.loads(result.stdout)["value"]["path"] == str(sent)
+    finally:
+        sent.unlink(missing_ok=True)
+
+
+def test_lang_sets_the_extension(sent_body):
+    result = runner.invoke(app, ["show", "snippet", "--lang", "rs", "--name", "t-cli-rs", _PROC], input="// %% flowpad:snippet\nfn main() {}\n")
+    assert result.exit_code == 0, result.output
+    sent = Path(sent_body["path"])
+    try:
+        assert sent.suffix == ".rs"
+    finally:
+        sent.unlink(missing_ok=True)
+
+
+def test_an_existing_file_is_shown_where_it_is(sent_body, tmp_path, monkeypatch):
+    (tmp_path / "mine.py").write_text(CODE)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["show", "snippet", "mine.py", _PROC])
+    assert result.exit_code == 0, result.output
+    assert Path(sent_body["path"]) == tmp_path / "mine.py"
+
+
+@pytest.mark.parametrize(
+    ("args", "stdin", "code", "error"),
+    [
+        (["show", "snippet"], "", 2, "EMPTY_SNIPPET"),
+        (["show", "snippet"], "print(1)\n", 2, "NOT_A_SNIPPET"),
+        (["show", "snippet", "/definitely/not/here.py"], None, 4, "NOT_FOUND"),
+    ],
+)
+def test_refusals_show_nothing(sent_body, args, stdin, code, error):
+    result = runner.invoke(app, [*args, _PROC], input=stdin)
+    assert result.exit_code == code, result.output
+    assert error in result.output
+    assert sent_body == {}, "a refused snippet must not be shown"
+
+
+def _run(tmp_path: Path, body: str, *extra: str):
+    path = tmp_path / "r.py"
+    path.write_text(f"# %% flowpad:snippet\n{body}\n")
+    result = runner.invoke(app, ["snippet", "run", str(path), *extra])
+    return result, json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def test_run_exits_the_answers_exit_code_and_prints_the_snippets_own(tmp_path):
+    """Like every `flow` command that runs something: the ANSWER's exit code.
+    The snippet's own `returncode` is in the JSON — exiting it raw broke on a
+    stopped run, whose -9 a shell reads as 247, and it made a snippet that
+    exited 7 indistinguishable from a REFUSED one."""
+    result, data = _run(tmp_path, "print('hi')")
+    assert (result.exit_code, data["stdout"]) == (0, "hi\n")
+    result, data = _run(tmp_path, "raise SystemExit(7)")
+    assert result.exit_code == 1 and data["returncode"] == 7
+    result, data = _run(tmp_path, "1/0")
+    assert result.exit_code == 1 and "ZeroDivisionError" in data["stderr"]
+    result, data = _run(tmp_path, "import time\nprint('a', flush=True)\ntime.sleep(60)", "--timeout", "0.3")
+    assert result.exit_code == 1 and data["timed_out"] and data["stdout"] == "a\n"
+
+
+def test_a_missing_snippet_exits_not_found(tmp_path):
+    result = runner.invoke(app, ["snippet", "run", str(tmp_path / "missing.py")])
+    assert result.exit_code == 4, "NOT_FOUND — not 2, which means the request itself was bad"
+    assert "not found" in json.loads(result.stdout)["stderr"]
+
+
+def test_show_answers_what_the_viewer_will_mark(sent_body, tmp_path, monkeypatch):
+    """An agent hears about a broken import from the show itself, not from the user after a Run."""
+    (tmp_path / "broken.py").write_text("# %% flowpad:snippet\nimport not_a_module_anywhere\n")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["show", "snippet", "broken.py", _PROC])
+    assert result.exit_code == 0, result.output
+    (d,) = json.loads(result.stdout)["diagnostics"]
+    assert (d["line"], d["kind"]) == (2, "import")
+
+
+def test_check_exits_1_with_problems_0_clean_4_missing(tmp_path):
+    clean = tmp_path / "clean.py"
+    clean.write_text("# %% flowpad:hidden\nimport asyncio\n# %% flowpad:snippet\nawait asyncio.sleep(0)\n")
+    result = runner.invoke(app, ["snippet", "check", str(clean)])
+    assert (result.exit_code, json.loads(result.stdout)) == (0, {"ok": True, "diagnostics": []})
+    broken = tmp_path / "broken.py"
+    broken.write_text("# %% flowpad:snippet\nprint(NOTES)\n")
+    result = runner.invoke(app, ["snippet", "check", str(broken)])
+    assert result.exit_code == 1 and json.loads(result.stdout)["diagnostics"][0]["message"] == "name 'NOTES' is not defined"
+    assert runner.invoke(app, ["snippet", "check", str(tmp_path / "missing.py")]).exit_code == 4

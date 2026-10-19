@@ -16,8 +16,8 @@ from typing import Any
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import ActionType, TriggerAction
-from flow_sdk.builtin.trigger import TriggerType
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
 
 _log = logging.getLogger(__name__)
@@ -45,9 +45,11 @@ def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:
     return [
         dict(
             uname="builtin_claude_transcript_watcher",
-            name="Claude transcript watcher",
-            description="Watches ~/.claude/projects/ for JSONL file changes; "
-                        "routes deltas to the per-session TranscriptStreamer.",
+            name="Claude Code chats",
+            # Dev: watches ~/.claude/projects/ for JSONL changes and routes each
+            # delta to the per-session TranscriptStreamer.
+            description="Shows your Claude Code chats in Flowpad as they happen. "
+                        "Everything stays on this computer.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.claude_projects_dir),
             recursive=True,
@@ -59,9 +61,11 @@ def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:
         ),
         dict(
             uname="builtin_codex_transcript_watcher",
-            name="Codex transcript watcher",
-            description="Watches ~/.codex/sessions/ for JSONL file changes; "
-                        "routes deltas to the per-session TranscriptStreamer.",
+            name="Codex chats",
+            # Dev: watches ~/.codex/sessions/ for JSONL changes and routes each
+            # delta to the per-session TranscriptStreamer.
+            description="Shows your Codex chats in Flowpad as they happen. "
+                        "Everything stays on this computer.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.codex_sessions_dir),
             recursive=True,

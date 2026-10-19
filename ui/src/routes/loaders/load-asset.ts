@@ -13,29 +13,12 @@
  * resting URL. Best-effort: a miss/parse-failure is non-fatal (the view renders
  * its own missing/error state); never throws into the parent dock loader.
  */
-import { ContextEntitiesEnum, Project, TypeId, VFSPath, apiClient, dataContext, dataManager } from '@sdk';
+import { ContextEntitiesEnum, EventBus, Project, TypeId, VFSPath, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod, isBrowseListPointer, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
-
-interface WikiResolveResult {
-  type: string;
-  id: string;
-  asset_ref?: string;
-}
-
-/** Resolve a wiki name within a space to an entity ref. Mirrors WikiResolveView. */
-async function wikiResolve(name: string, space: string): Promise<WikiResolveResult | null> {
-  try {
-    const body = (await apiClient.get<WikiResolveResult | null>('/wiki/resolve', {
-      params: { name, space },
-      transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
-    })) as WikiResolveResult | null;
-    if (!body || typeof body !== 'object' || !('type' in body) || !('id' in body)) return null;
-    return body;
-  } catch {
-    return null;
-  }
-}
+import { resolveWikiWord } from '@src/components/wiki/resolve-wiki';
+import type { WikiAuthority } from '@src/components/wiki/resolve-wiki';
+import { getWikiResolveResult, setWikiResolveResult } from './wiki-resolve-store';
 
 // The fields the loader derives context from. `project_id` is a backend
 // projection, not a typed field on the base entity, so resolved entities are
@@ -60,11 +43,14 @@ function mountContains(mount: string, path: string): boolean {
  * entity's stamped `project_id` names a different (e.g. nested or umbrella)
  * project. The switch is for crossing into a genuinely different project, not
  * for re-deriving ownership of a file the user is already working on.
+ *
+ * `keepProject`: the URL names a project — the user's decision, final. The
+ * entity opens as a guest of that project and never switches it.
  */
-async function setEntityContext(entity: ContextEntity | null): Promise<void> {
+async function setEntityContext(entity: ContextEntity | null, keepProject = false): Promise<void> {
   if (!entity) return;
   await dataContext.setActiveEntityTypeId(entity.typeId);
-  if (!entity.project_id || entity.project_id === dataContext.project?.id) return;
+  if (keepProject || !entity.project_id || entity.project_id === dataContext.project?.id) return;
   const currentMount = dataContext.project?.fs_storage_mount_path;
   if (currentMount && entity.asset_ref && mountContains(currentMount, entity.asset_ref)) return;
   await dataContext.setContextEntityTypeId(
@@ -73,15 +59,34 @@ async function setEntityContext(entity: ContextEntity | null): Promise<void> {
   );
 }
 
+/** Machine paths `/assets/entity` answered with nothing, this session. */
+const pathMisses = new Set<string>();
+// A miss holds until an asset entity is created. Every create is announced on the app bus
+// whether or not this page keeps the row, so the announcement is what ends the memo.
+EventBus.on('app.entity.created', (event) => {
+  if ((event.data?.entity as { asset_ref?: unknown } | null | undefined)?.asset_ref) pathMisses.clear();
+});
+/** Machine paths `/assets/entity` answered with an entity — the URL's own spelling of the path, which
+ *  need not match the entity's `asset_ref` (a symlinked dir: `/var/…` in the URL, `/private/var/…` stored). */
+const pathHits = new Map<string, TypeId>();
+
 /** Warm the cache by typeid, then push the resolved entity into context. */
-async function ensureInContext(typeId: TypeId): Promise<void> {
+async function ensureInContext(typeId: TypeId, keepProject = false): Promise<void> {
   const entity = await dataManager.getByTypeId(typeId).catch(() => null);
   // Fall back to a typeId-only context set if the fetch missed, so active state
   // is still derived from the URL even when the entity isn't cacheable.
-  await setEntityContext((entity as ContextEntity | null) ?? { typeId });
+  await setEntityContext((entity as ContextEntity | null) ?? { typeId }, keepProject);
 }
 
-export async function loadAssetRoute(pointer: string | undefined): Promise<void> {
+export async function loadAssetRoute(
+  pointer: string | undefined,
+  options: {
+    allowLocalWikiAlias?: boolean;
+    wikiAuthority?: WikiAuthority;
+    /** The URL names a project: the asset never switches it (see `setEntityContext`). */
+    keepProject?: boolean;
+  } = {},
+): Promise<void> {
   if (!pointer) return; // assets list / no editor open — nothing to resolve.
 
   // `list/<typeName>`, `folder/<...>`, and `project-home` are browser views,
@@ -102,8 +107,18 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
 
   try {
     if (ptr.mode === AssetMode.WIKI) {
-      const hit = await wikiResolve(ptr.wikiName, ptr.space);
-      if (hit) await ensureInContext(new TypeId(hit.type, hit.id));
+      const authority = options.wikiAuthority ?? 'local';
+      // Reuse what this session already resolved (dock-loading I4). The one event
+      // that changes the answer — creating the missing page — clears the result in
+      // the view that creates it, so the next visit resolves afresh.
+      const result =
+        getWikiResolveResult(ptr.space, ptr.wikiName, authority) ??
+        (await resolveWikiWord(ptr.space, ptr.wikiName, {
+          allowLocalAlias: options.allowLocalWikiAlias,
+          authority,
+        }));
+      setWikiResolveResult(ptr.space, ptr.wikiName, result, authority);
+      if (result.kind === 'resolved') await ensureInContext(result.target_typeid, options.keepProject);
       return;
     }
 
@@ -111,7 +126,7 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
     if (ptr.editor && isFileOnlyEditor(ptr.editor)) return; // file-only (code/html/media…), no backing entity.
 
     if (ptr.method === AssetRoutingMethod.TYPEID) {
-      await ensureInContext(new TypeId(ptr.value));
+      await ensureInContext(new TypeId(ptr.value), options.keepProject);
       return;
     }
 
@@ -123,12 +138,25 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
     // `machinePath` (not `absVfsPath`) is the form `asset_ref` is stored in.
     // On a miss (not-yet-indexed) the view still self-resolves via
     // `AssetEditorRouter` → `EntityResolutionGate` → `useEntityByPath` (lazy
-    // discover). `getEntityByPath` already caches the hit, so this is the only
-    // network round-trip.
+    // discover).
     const machine = VFSPath.parse(ptr.value).machinePath;
     if (machine) {
-      const e = await dataManager.getEntityByPath(machine).catch(() => null);
-      await setEntityContext(e as ContextEntity | null);
+      // Cache-first (dock-loading I4): a revisit must not wait on a lookup it
+      // already made. A remembered miss (a file nothing indexed) stays a miss
+      // until an asset entity is created, so the negative memo
+      // heals itself; the view resolves a miss on its own either way.
+      const known = pathHits.get(machine);
+      const cached =
+        (known ? (dataManager.getByTypeIdFromCache(known) as unknown as ContextEntity | null) : null) ??
+        (dataManager.findInCache((e) => (e as ContextEntity).asset_ref === machine) as ContextEntity | null);
+      if (cached) {
+        await setEntityContext(cached, options.keepProject);
+      } else if (!pathMisses.has(machine)) {
+        const e = (await dataManager.getEntityByPath(machine).catch(() => null)) as ContextEntity | null;
+        if (e) pathHits.set(machine, e.typeId);
+        else pathMisses.add(machine);
+        await setEntityContext(e, options.keepProject);
+      }
     }
   } catch (e) {
     console.warn('[load-asset] resolve failed (view will handle):', pointer, e);

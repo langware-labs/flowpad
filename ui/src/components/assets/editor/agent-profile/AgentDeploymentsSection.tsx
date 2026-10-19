@@ -1,0 +1,248 @@
+import { Agent, ComputeProviderType, Deployment, QueryRequest } from '@sdk';
+import { useEntitiesQuery } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { useCallback, useMemo, useState } from 'react';
+import { Cloud, ExternalLink, Loader2, MessageSquare, PauseCircle, Trash2 } from 'lucide-react';
+
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
+import { Button } from '@src/components/ui/button';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+
+import { AgentDeployChecklist } from './AgentDeployChecklist';
+import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
+import { DeploymentHealth } from './deployment/DeploymentHealth';
+
+interface AgentDeploymentsSectionProps {
+  agent: Agent;
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  current: 'bg-green-500',
+  stale: 'bg-amber-400',
+  partial: 'bg-orange-500',
+  error: 'bg-red-500',
+};
+
+/**
+ * Every machine this agent is placed on.
+ *
+ * A list of real `Deployment` rows, not the response of the last click. This
+ * used to hold the deploy result in `useState` and forget it on reload, because
+ * the hub had no row to hold — it stamped a single `node_typeid` pointer, so a
+ * second deploy overwrote the first and leaked the box. Now the hub creates a
+ * Deployment, the local backend adopts it at the SAME id, and the ordinary
+ * entity query below is the whole story.
+ *
+ * Deploying twice is therefore safe: the backend converges on the existing
+ * placement rather than booting another sandbox.
+ */
+export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps) {
+  const { t } = useLingui();
+  const [deploying, setDeploying] = useState(false);
+  const [pausing, setPausing] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [chatDeploymentId, setChatDeploymentId] = useState<string | null>(null);
+  // Tri-state, from the checklist. `null` = still checking, and deliberately does
+  // NOT disable Deploy: a slow or unanswerable probe must never take away a
+  // button that works today. Only a prerequisite we positively know is unmet
+  // does, and the backend's own error stays the backstop either way.
+  const [ready, setReady] = useState<boolean | null>(null);
+
+  const request = useMemo(
+    () =>
+      new QueryRequest({
+        type: Deployment.type,
+        scope: [],
+        // `query`, NOT `match` — QueryRequest has no `match` key, so passing one
+        // is silently dropped and the list becomes every deployment on the
+        // machine. `QueryFilter.parse` wraps this bare dict into `match` itself.
+        query: { parent_type_id: agent.typeId.toString() },
+        name: 'agentDeployments',
+      }),
+    [agent.typeId],
+  );
+  const { data: deployments = [], refetch } = useEntitiesQuery<Deployment>(request);
+
+  const deploy = useCallback(async () => {
+    setDeploying(true);
+    try {
+      const data = await agent.deploy(undefined, ComputeProviderType.E2B);
+      if (data.agent_definition_error) {
+        // The machine is live but is not yet the agent — a genuinely partial
+        // outcome, so say so rather than showing an unqualified success.
+        notify.warning({
+          title: t`Deployed without its definition`,
+          message: data.agent_definition_error,
+        });
+      } else if (data.reused) {
+        notify.info({ title: t`${agent.name} is already deployed` });
+      } else {
+        notify.success({ title: t`${agent.name} is deployed` });
+      }
+      await refetch();
+    } catch (e) {
+      notify.error({
+        title: t`Could not deploy`,
+        // `errorMessage`, not `e.message`: an AxiosError IS an Error whose
+        // message is the useless status line, carrying the server's actual
+        // explanation at `response.data`. That is the whole reason the helper
+        // checks the envelope first.
+        message: errorMessage(e, t`Deploy failed.`),
+        // The ONE case `forceToast` is documented for: this alert is the only
+        // feedback that Deploy did anything. Alerts toast in Dev mode only, so
+        // outside Dev the button reported nothing at all.
+        forceToast: true,
+      });
+    } finally {
+      setDeploying(false);
+    }
+  }, [agent, refetch, t]);
+
+  const pause = useCallback(
+    async (deployment: Deployment) => {
+      setPausing(deployment.id);
+      try {
+        await deployment.pause();
+        await refetch();
+      } catch (e) {
+        notify.error({
+          title: t`Could not pause`,
+          message: errorMessage(e, t`Pause failed.`),
+          // Same shape as deploy: pressing Pause and seeing nothing reads as a
+          // broken button.
+          forceToast: true,
+        });
+      } finally {
+        setPausing(null);
+      }
+    },
+    [refetch, t],
+  );
+
+  const remove = useCallback(
+    (deployment: Deployment) => {
+      showDeleteAssetModal({
+        name: deployment.name,
+        description:
+          'This permanently destroys the deployment machine and removes its placement record. This cannot be undone.',
+        onConfirm: async () => {
+          setDeleting(deployment.id);
+          try {
+            await deployment.delete();
+            setChatDeploymentId((current) => (current === deployment.id ? null : current));
+            await refetch();
+            notify.success({ title: t`Deployment deleted`, message: deployment.name });
+          } finally {
+            setDeleting(null);
+          }
+        },
+      });
+    },
+    [refetch, t],
+  );
+
+  return (
+    <section>
+      <p className="mb-3 text-xs text-muted-foreground">
+        <Trans>Publish this agent to the cloud and give it a machine that logs in as itself.</Trans>
+      </p>
+      <AgentDeployChecklist agent={agent} onReadinessChange={setReady} />
+      <div className="flex flex-col gap-2">
+        {deployments.map((deployment) => {
+          const url = deployment.origin?.url || deployment.target.location;
+          const chatOpen = chatDeploymentId === deployment.id;
+          return (
+            <div key={deployment.id} className="overflow-hidden rounded-md border text-sm">
+              <div className="flex items-center gap-2 p-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    STATUS_COLOR[deployment.status.sync_state] ?? 'bg-muted-foreground'
+                  }`}
+                />
+                <span className="min-w-0 flex-1 truncate">{deployment.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {deployment.status.provider_state ?? deployment.target.provider}
+                </span>
+                {/* Every tier: the backend opens the session wherever the placement is —
+                    locally for a local row, through the hub for a remote one — and hands
+                    back a same-id process, so the panel needs no idea which it got. The
+                    button used to be hub-only because the local backend dropped
+                    `deployment_id`; that was the defect, not a policy. */}
+                <Button
+                  size="sm"
+                  variant={chatOpen ? 'secondary' : 'ghost'}
+                  onClick={() => setChatDeploymentId(chatOpen ? null : deployment.id)}
+                  title={t`Chat with this deployed agent`}
+                  aria-expanded={chatOpen}
+                  data-testid={`deployment-chat-${deployment.id}`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </Button>
+                {url && (
+                  <Button size="sm" variant="ghost" asChild>
+                    <a href={url} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                )}
+                {deployment.target.provider !== 'local' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={pausing === deployment.id}
+                    onClick={() => void pause(deployment)}
+                    title={t`Pause this machine`}
+                  >
+                    {pausing === deployment.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <PauseCircle className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={deleting === deployment.id}
+                  onClick={() => remove(deployment)}
+                  title={t`Delete this deployment`}
+                >
+                  {deleting === deployment.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+              <DeploymentHealth deployment={deployment} />
+              {chatOpen && <DeployedAgentChatPanel agent={agent} deployment={deployment} />}
+            </div>
+          );
+        })}
+
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            disabled={!agent.enabled || deploying || ready === false}
+            title={ready === false ? t`Finish the setup above before deploying` : undefined}
+            onClick={() => void deploy()}
+          >
+            {deploying ? (
+              <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Cloud className="me-1.5 h-3.5 w-3.5" />
+            )}
+            <Trans>Deploy</Trans>
+          </Button>
+          {deploying && (
+            <span className="text-xs text-muted-foreground">
+              {/* Create + boot + health on a real sandbox — tens of seconds. */}
+              <Trans>Starting a machine — this takes a minute.</Trans>
+            </span>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -1,7 +1,7 @@
 """Middleware for setting up request context in minihub."""
 
 import logging
-from contextvars import copy_context
+import time
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -9,10 +9,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from flow_sdk.request_context.execution_context import (
     ExecutionContext,
-    get_execution_context,
     set_execution_context,
 )
-
 
 # Per-process cache for the @local user. The local user is created once at
 # server startup (get_or_create_local_user) and never mutated by app code,
@@ -26,8 +24,10 @@ async def _get_local_user_cached():
     if _LOCAL_USER_CACHE is not None:
         return _LOCAL_USER_CACHE
     from flow_sdk.builtin.user import User
+
     try:
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
         user = await get_or_create_local_user()
     except Exception:
         user = await User.get_one({"uname": "local"})
@@ -48,8 +48,8 @@ class RequestTransactionMiddleware:
 
     async def _setup_local_auth(self, req_info) -> Response | None:
         """Set up auth for local minihub - allow all requests for the @local user."""
-        from flow_sdk.request_context.auth_info import AuthResult
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.request_context.auth_info import AuthResult
         from flow_sdk.responses.response import ApiFailResponse
 
         # Get or set the local user from the per-process cache (see
@@ -70,6 +70,10 @@ class RequestTransactionMiddleware:
                         f"[Middleware] No entity_model registered for type={req_info.target_entity_typeid.type!r} "
                         f"(target id={req_info.target_entity_typeid.id})"
                     )
+                elif entity_model._hub_only:
+                    # No local row exists by design; the router forwards the whole
+                    # request to the hub (``_hub_reflect.hub_only_type``).
+                    pass
                 else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
                     if target_entity is None:
@@ -81,22 +85,29 @@ class RequestTransactionMiddleware:
                         from flow_sdk.server.routes.graph import (  # noqa: PLC0415
                             _try_self_heal_missing_entity,
                         )
-                        target_entity = await _try_self_heal_missing_entity(
-                            req_info.request, req_info
-                        )
+
+                        target_entity = await _try_self_heal_missing_entity(req_info.request, req_info)
                     if target_entity is None:
-                        # TODO - this is a patch, remove it
-                        # ``open`` deep-link actions can land on entities the
-                        # local DB hasn't synced yet — a fresh invitee clicking
-                        # the email link is the typical case. The handler
-                        # (e.g. ``handle_open_flow_message``) fetches from the
-                        # hub itself, so let it through with target_entity=None.
-                        if req_info.action == "open":
+                        # A small set of actions owns missing-target recovery
+                        # (for example, wiki/reindex can index a supplied body
+                        # before its entity row exists). This is declarative
+                        # action metadata rather than an expanding middleware
+                        # list. Keep the legacy `open` allowance until its
+                        # per-type handlers are all annotated.
+                        from flow_sdk.actions import action  # noqa: PLC0415
+
+                        registered_action = action.get_by_name(
+                            req_info.action or "",
+                            req_info.target_entity_typeid.type,
+                        )
+                        allow_missing_target = bool(registered_action and registered_action.allow_missing_target)
+                        if req_info.action == "open" or allow_missing_target:
                             logging.debug(
-                                "[Middleware] open action on missing local entity "
+                                "[Middleware] missing-target-capable action "
+                                f"{req_info.action!r} on "
                                 f"{req_info.target_entity_typeid.type}/"
                                 f"{req_info.target_entity_typeid.id} — letting handler "
-                                "fetch from hub"
+                                "own recovery"
                             )
                         else:
                             message = (
@@ -128,6 +139,7 @@ class RequestTransactionMiddleware:
 
         # Set up minimal policies (required even for su mode)
         from flow_sdk.core.policy import PolicyResolver
+
         req_info.policies = PolicyResolver()
         return None
 
@@ -135,6 +147,25 @@ class RequestTransactionMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+
+        if scope.get("path") == "/api/v1/graph/bootstrap":
+            started = time.perf_counter()
+            original_send = send
+
+            async def timed_send(message: Message):
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    elapsed = (time.perf_counter() - started) * 1000
+                    headers.append((b"server-timing", f"bootstrap_headers;dur={elapsed:.2f}".encode()))
+                    message = {**message, "headers": headers}
+                await original_send(message)
+                if message["type"] == "http.response.body" and not message.get("more_body", False):
+                    logging.info("[bootstrap] complete response %.2f ms", (time.perf_counter() - started) * 1000)
+                    from flow_sdk.server.routes.bootstrap import first_bootstrap_served
+
+                    first_bootstrap_served.set()
+
+            send = timed_send
 
         # Create a proper Request object for parsing
         request = Request(scope, receive, send)
@@ -171,9 +202,12 @@ class RequestTransactionMiddleware:
 
         # Log the request info that was set up
         from flow_sdk.request_context import get_current_request_info
+
         req_info = get_current_request_info()
         if req_info:
-            logging.debug(f"[Middleware] RequestInfo: action={req_info.action}, resource={req_info.resource_type}, target={req_info.target_entity_typeid}")
+            logging.debug(
+                f"[Middleware] RequestInfo: action={req_info.action}, resource={req_info.resource_type}, target={req_info.target_entity_typeid}"
+            )
 
             # For local minihub, set up auth to allow all requests
             early_response = await self._setup_local_auth(req_info)

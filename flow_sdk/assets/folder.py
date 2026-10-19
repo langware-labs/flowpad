@@ -1,0 +1,361 @@
+"""Registry-driven enumeration and placement within explicitly supplied folders."""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+from pathlib import Path
+
+from pydantic import field_validator
+
+from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
+from flow_sdk.assets.identity_carrier import Absent
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.materialize import remove_path
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
+from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult, is_in_doc_dir
+from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.data_spec.spec import DataSpec
+
+log = logging.getLogger(__name__)
+
+
+class AssetScanError(ValueError):
+    def __init__(self, issues: list[AssetScanIssue]):
+        self.issues = issues
+        super().__init__("; ".join(f"{i.path}: {i.message}" for i in issues))
+
+
+def remove_asset_files(type_name: str, asset_ref: str | None) -> None:
+    """Delete a removed asset's own files; left behind, the Assets menu keeps counting them and the
+    next index brings the asset back. Only for a type that owns its main document, and only a
+    writable one: a folder holding that document, or the single file a file type is — never a
+    shipped asset, never anything else."""
+    from flow_sdk.assets.layout import File  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+
+    info = SchemaRegistry.get(type_name)
+    path = Path(asset_ref) if asset_ref else None
+    if path is None or info is None or not info.owns_main_ref:
+        return
+    if isinstance(info.shape, File):
+        owned = path.is_file() and path.suffix.lower() in info.shape.exts
+    else:
+        main = getattr(info.shape, "main", None)
+        owned = bool(main) and (path / main).is_file()
+    if not owned or is_protected_path(path) or _is_shipped(path):
+        return
+    remove_path(path)
+
+
+def _is_shipped(path: Path) -> bool:
+    """Inside the SDK's own system project — the "system" scope, asked of the filesystem: this package
+    stays below the entity layer (``tests/unit/assets/test_package_boundary.py``)."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
+    try:
+        root, target = flowpad_assistant_project_root().resolve(), path.resolve()
+    except Exception:  # noqa: BLE001 -- an unreadable path is not a shipped one; the scope classifier says the same
+        return False
+    return target == root or root in target.parents
+
+
+def _broken_link(path: Path) -> Path | None:
+    # Walk up only until something resolves: an existing path has no dangling
+    # link above it. Asked for every candidate mount of every folder asset, and
+    # most candidates do not exist, so a full ancestor lstat chain per call was
+    # most of a home-folder scan.
+    while True:
+        if path.exists():
+            return None
+        if path.is_symlink():
+            return path
+        if path.parent == path:
+            return None
+        path = path.parent
+
+
+def _remove_husk(folder: Path) -> bool:
+    """Delete an asset folder whose main document is gone and whose only
+    content is our own ``.flow`` metadata. Nothing a person wrote is in it, so
+    reporting it on every scan only repeats an error nobody can act on; the
+    first scan that meets it removes it. A folder holding anything else is
+    left alone and reported, and a symlinked folder is never followed."""
+    if folder.is_symlink():
+        return False
+    try:
+        if [entry.name for entry in folder.iterdir()] != [".flow"]:
+            return False
+        shutil.rmtree(folder)
+    except OSError as error:
+        log.warning("asset scan: could not remove husk %s: %s", folder, error)
+        return False
+    log.info("asset scan: removed husk %s (identity without a main document)", folder)
+    return True
+
+
+def _is_project_root(directory: Path) -> bool:
+    """A folder with its own ``agentic-assets/`` is another project's root.
+
+    Projects do not nest, so a recursive walk stops there instead of claiming
+    that project's assets for the one being scanned — a checkout of Flowpad
+    itself holds the shipped system project's source under
+    ``flow_sdk/system_projects/``, whose compute ops are not the checkout's.
+    The scanned root itself is never a child, so its own assets are kept.
+    """
+    return (directory / AGENTIC_ASSETS_DIR).is_dir()
+
+
+class AssetFolder(DataSpec):
+    path: Path
+    project_id: str | None = None
+    recursive: bool = False
+    # The types the caller will keep; empty means every type. A declared mount
+    # is only walked for these, so a picker that wants skills never parses the
+    # thousand tasks, prompts and docs a home folder holds.
+    types: list[str] = []
+
+    @field_validator("path")
+    @classmethod
+    def normalize_path(cls, value: Path) -> Path:
+        lexical = Path(os.path.abspath(value.expanduser()))
+        return lexical if _broken_link(lexical) is not None else entry_path(lexical)
+
+    def _mounts(self, root: Path | None = None) -> dict[Path, tuple[bool, frozenset[str]]]:
+        """Accept a scope folder, a provider container, or a family folder."""
+        root = self.path if root is None else root
+        mounts: dict[Path, tuple[bool, frozenset[str]]] = {root: (self.recursive, frozenset())}
+        for name in SchemaRegistry.get_all_types():
+            info = SchemaRegistry.get(name)
+            if info is None or info.shape is None or info.keyed_by_ref:
+                continue
+            if self.types and str(info.type_name) not in self.types:
+                continue
+            recursive = self.recursive or any(w.recursive for w in info.walk)
+            for mount in info.scan_mounts:
+                parts = Path(mount).parts
+                # Find how much of the declared mount is already in the root.
+                consumed = 0
+                for count in range(len(parts), 0, -1):
+                    if mount_matches(root.parts, parts[:count]):
+                        consumed = count
+                        break
+                tail = Path(*parts[consumed:])
+                # Retain the literal prefix even when a broken link makes a
+                # wildcard match impossible; it still requires a diagnostic.
+                prefix = root
+                for part in tail.parts:
+                    if any(char in part for char in "*?["):
+                        break
+                    prefix /= part
+                candidates = root.glob(str(tail)) if any(char in str(tail) for char in "*?[") else (root / tail,)
+                if _broken_link(prefix) is not None:
+                    candidates = (prefix,)
+                for candidate in candidates:
+                    previous_recursive, previous_types = mounts.get(candidate, (False, frozenset()))
+                    mounts[candidate] = (previous_recursive or recursive, previous_types | {str(info.type_name)})
+        return mounts
+
+    def scan(self) -> AssetScanResult:
+        """List distinct occurrences; malformed candidates are explicit errors.
+
+        Optional missing roots are empty. Ordinary unclaimed files are ignored;
+        a malformed file which a registered type claims is never silently lost.
+        """
+        found: dict[Path, Asset] = {}
+        issues: list[AssetScanIssue] = []
+        collected: dict[Path, Asset | None] = {}
+        failed: set[Path] = set()
+        scanned: set[tuple[Path, bool, frozenset[str]]] = set()
+        expanded_roots: set[Path] = set()
+        # Same skip policy as every other tree walker (the indexer, the
+        # markdown walk): the hardcoded vendor/build denylist plus the scanned
+        # root's `.gitignore` stack. A recursive PROJECT_DIR scan of a checkout
+        # otherwise descends `ui/node_modules` and classifies tens of thousands
+        # of entries — `get-assets` on a live worker took minutes for it.
+        ignore_stack = load_gitignore_stack(self.path)
+
+        def issue(path: Path, message: str) -> None:
+            if path not in failed:
+                issues.append(AssetScanIssue(path=path, message=message))
+                failed.add(path)
+
+        def collect(candidate: Path, allowed: frozenset[str] = frozenset()) -> Asset | None:
+            candidate = entry_path(candidate)
+            if candidate in collected:
+                asset = collected[candidate]
+            else:
+                try:
+                    asset = Asset.from_path(candidate, project_id=self.project_id)
+                except NotAnAsset:
+                    asset = None
+                    # A remaining carrier in a declared folder is evidence of
+                    # an incomplete asset, unlike an ordinary empty directory.
+                    if candidate.is_dir():
+                        for name in SchemaRegistry.get_all_types():
+                            info = SchemaRegistry.get(name)
+                            if info is None or not isinstance(info.shape, Folder) or not info.shape.main:
+                                continue
+                            body = candidate / info.shape.main
+                            if body.exists() or name not in SchemaRegistry.main_file_owners(body):
+                                continue
+                            carrier = info.carrier.locate(info.layout_of(candidate))
+                            if carrier == body:
+                                continue
+                            try:
+                                has_identity = not isinstance(info.carrier.read(carrier), Absent)
+                            except (OSError, ValueError) as error:
+                                issue(candidate, str(error))
+                                break
+                            if has_identity:
+                                if _remove_husk(candidate):
+                                    break
+                                issue(candidate, f"Missing asset main document: {info.shape.main}")
+                                break
+                except (OSError, ValueError) as error:
+                    issue(candidate, str(error))
+                    asset = None
+                collected[candidate] = asset
+            if asset is not None and (not allowed or asset.typeid.type in allowed) and not _loose_markdown(asset):
+                found.setdefault(asset.path, asset)
+            return asset
+
+        def _loose_markdown(asset: Asset) -> bool:
+            # A directory scan lists markdown only from a docs/doc folder — the
+            # same rule the indexer applies; a root README is not a document.
+            return (
+                str(asset.typeid.type) == "markdown"
+                and self.path.is_dir()
+                and not is_in_doc_dir(asset.path.parent, self.path)
+            )
+
+        def walk(directory: Path, recursive: bool, ancestors: frozenset[Path], allowed: frozenset[str] = frozenset()) -> None:
+            resolved = directory.resolve()
+            if resolved in ancestors:
+                return
+            chain = ancestors | {resolved}
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError as error:
+                issue(directory, str(error))
+                return
+            # The root's own file is already seeded; nested ones stack for
+            # the subtree only, last match wins, and unwind on the way out.
+            pushed = 0 if directory == self.path else push_gitignore(ignore_stack, directory)
+            try:
+                for child in entries:
+                    if child.name.startswith("."):
+                        continue
+                    if is_ignored(child, child.is_dir(), ignore_stack, self.path):
+                        continue
+                    asset = collect(child, allowed)
+                    if asset is not None and isinstance(asset.info.shape, Folder):
+                        scan_mounts(asset.path, chain)
+                    elif recursive and child.is_dir() and child not in failed and not _is_project_root(child):
+                        walk(child, recursive, chain, allowed)
+            finally:
+                del ignore_stack[len(ignore_stack) - pushed:]
+
+        def scan_mounts(root: Path, ancestors: frozenset[Path]) -> None:
+            if root in expanded_roots:
+                return
+            expanded_roots.add(root)
+            for mount, (recursive, types) in self._mounts(root).items():
+                key = (mount, recursive, types)
+                if key in scanned:
+                    continue
+                scanned.add(key)
+                if not mount.exists():
+                    broken = _broken_link(mount)
+                    if broken is not None:
+                        issue(broken, "Broken asset folder link")
+                    continue
+                asset = collect(mount)
+                if mount in failed or not mount.is_dir():
+                    continue
+                if asset is not None and isinstance(asset.info.shape, Folder):
+                    # A declared mount can be inside another asset (e.g. a
+                    # skill's *.js workflow mount). Only its declared types
+                    # are independent assets; its README remains support.
+                    child_types = types - {str(asset.typeid.type)}
+                    if child_types:
+                        # Caller recursion must not widen a provider's own
+                        # direct-child declaration into its support folders.
+                        child_recursive = any(any(w.recursive for w in SchemaRegistry.get(name).walk) for name in child_types)
+                        walk(mount, child_recursive, ancestors, child_types)
+                    scan_mounts(asset.path, ancestors)
+                    continue
+                walk(mount, recursive, ancestors)
+
+        if not self.path.exists():
+            broken = _broken_link(self.path)
+            if broken is not None:
+                return AssetScanResult(issues=[AssetScanIssue(path=broken, message="Broken asset folder link")])
+            return AssetScanResult()
+        if not self.path.is_dir():
+            collect(self.path)
+        else:
+            scan_mounts(self.path, frozenset())
+        return AssetScanResult(
+            candidates=[AssetCandidate(asset.path, str(asset.typeid.type), asset.layout, asset=asset)
+                        for path in sorted(found) for asset in [found[path]]],
+            issues=issues,
+        )
+
+    def assets(self) -> list[Asset]:
+        result = self.scan()
+        if result.issues:
+            raise AssetScanError(result.issues)
+        return result.assets
+
+    def destination_for(self, asset: Asset) -> Path:
+        """Place by the folder's declared layout; no user/project lookup."""
+        info = asset.info
+        matches = []
+        for mount in info.scan_mounts:
+            parts = Path(mount).parts
+            for count in range(len(parts), 0, -1):
+                if mount_matches(self.path.parts, parts[:count]):
+                    matches.append(self.path.joinpath(*parts[count:]))
+                    break
+        unique = set(matches)
+        if len(unique) == 1:
+            folder = unique.pop()
+        elif len(unique) > 1:
+            raise ValueError(f"Ambiguous destination folder for {asset.typeid.type}: {self.path}")
+        else:
+            # A scope root with more than one harness destination needs its
+            # caller to choose a provider folder explicitly.
+            mounts = info.scan_mounts
+            if len(mounts) != 1 or "*" in mounts[0]:
+                raise ValueError(f"Choose a family/provider destination for {asset.typeid.type}")
+            folder = self.path / mounts[0]
+        if any(char in str(folder) for char in "*?["):
+            raise ValueError(f"Choose a concrete destination folder for {asset.typeid.type}")
+        return folder if info.singleton else folder / asset.path.name
+
+
+def collect_asset_scan(folders: list[AssetFolder]) -> AssetScanResult:
+    """Aggregate occurrences and diagnostics without losing caller attribution."""
+    found: dict[Path, AssetCandidate] = {}
+    issues: dict[tuple[Path, str, str | None], AssetScanIssue] = {}
+    for folder in folders:
+        result = folder.scan()
+        for candidate in result.candidates:
+            previous = found.get(candidate.path)
+            if previous is None or (
+                candidate.asset is not None and candidate.asset.project_id is not None
+                and (previous.asset is None or previous.asset.project_id is None)
+            ):
+                found[candidate.path] = candidate
+        for issue in result.issues:
+            issues.setdefault((issue.path, issue.message, issue.type_name), issue)
+    return AssetScanResult([found[path] for path in sorted(found)], list(issues.values()))
+
+
+def collect_assets(folders: list[AssetFolder]) -> list[Asset]:
+    result = collect_asset_scan(folders)
+    if result.issues:
+        raise AssetScanError(result.issues)
+    return result.assets

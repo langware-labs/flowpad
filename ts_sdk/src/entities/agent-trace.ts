@@ -2,6 +2,7 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FSRef } from '../fs/FSRef';
 import { DockPointerData } from '../models/DockPointer';
+import { mainFileForType } from '../models/asset-editor';
 
 /**
  * AgentTrace entity — the analyzed timeline of one agentic execution,
@@ -42,21 +43,22 @@ export class AgentTrace extends APIEntity<AgentTrace> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent_trace') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent_trace') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent_trace') ?? this.dockPointer;
-  }
 
   /** FsRef for trace.json. Resolves compute node from dataContext. */
   get doc(): FSRef | null {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
-    return new FSRef(this.asset_ref, typeId);
+    // `asset_ref` is the folder; a row from before the unification may still
+    // name the inner file, so append only when it is not already there.
+    const base = this.asset_ref.replace(/\\/g, '/').replace(/\/+$/, '');
+    const main = mainFileForType(AgentTrace.type, 'trace.json') as string;
+    return new FSRef(base.endsWith(`/${main}`) ? base : `${base}/${main}`, typeId);
   }
 }

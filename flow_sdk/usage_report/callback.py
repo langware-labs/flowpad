@@ -1,6 +1,6 @@
-"""The daily-analysis flow's ``publish`` FlowFunction.
+"""The daily-analysis flow's ``publish`` GraphWorkflowFunction.
 
-The pipeline is the seeded daily-analysis AgenticFlow — trigger → analyze
+The pipeline is the seeded daily-analysis GraphWorkflow — trigger → analyze
 (subprocess function, see ``flow_sdk/usage_report/flow_node.py``) → THIS
 inline function, which posts the already-persisted report to the Home Feed.
 The report id arrives in the ``report_ready`` event payload and rides through
@@ -11,12 +11,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flow_sdk.flow_manager import flow_functions
+from flow_sdk.graph_workflow_manager import graph_workflow_functions
 
 _log = logging.getLogger(__name__)
 
 
-@flow_functions.register(
+@graph_workflow_functions.register(
     "flow_publish_usage_report",
     meaning="post an already-persisted UsageReport to the Home Feed",
 )

@@ -1,14 +1,11 @@
 """Type metadata for PROJECT."""
+
 import uuid
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    claude_project_identity_key,
-    existing_project_record_id,
-    extract_claude_project,
-)
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.assets.layout import File
+from flow_sdk.dependencies.roots import project_roots
+from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -20,8 +17,10 @@ class ProjectMeta(BaseMeta):
     DB-only denormalizations (``persist=FALSE`` on the entity), computed at
     adopt time, not mirrored to disk.
     """
+
     fs_storage_mount_path: Optional[str] = None
     last_mode: Optional[str] = None
+    locale: Optional[str] = None
     session_code: Optional[str] = None
     host_member_id: Optional[str] = None
     artifacts: Optional[list] = None
@@ -40,14 +39,16 @@ class ProjectMeta(BaseMeta):
     private_context_entity_data: Optional[dict] = None
 
 
-PROJECT = TypeMetadata(
-    type=EntityType.PROJECT,
+PROJECT = TypeInfo(
+    type_name=EntityType.PROJECT,
+    dependency_roots_fn=project_roots,
+    shape=File(ext=".md"),
     icon="Briefcase",
     indexed_by_default=True,
     api_visible=True,
-    from_disk_fn=extract_claude_project,
-    identity_backend=derived_identity(existing_project_record_id),
-    id_stable_key_fn=claude_project_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,
     meta_model=ProjectMeta,
+    # An invite message carries the project as a git reference (``Project``
+    # owns the hooks).
+    receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
 )

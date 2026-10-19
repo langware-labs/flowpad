@@ -1,53 +1,42 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import {
-  type BranchSummary,
+  createPrivateRepo,
   type GitOrigin,
-  getBranches,
-  getInvitations,
-  getRepos,
   type GitProvider,
-  type RepoInvitation,
-  type RepoSummary,
   respondInvitation,
 } from '@sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-// 5 minutes — repo lists rarely change within a session; user can manually
-// refetch via the picker's refresh button.
-const REPO_STALE_MS = 5 * 60 * 1000;
+export function useGitRepos(provider: GitProvider, enabled = true) {
+  return useLazyAsset(LazyAsset.GitRepos, { provider }, { enabled });
+}
 
-export function useGitRepos(provider: GitProvider, enabled: boolean = true) {
-  return useQuery<RepoSummary[]>({
-    queryKey: ['git-repos', provider],
-    queryFn: () => getRepos(provider),
-    staleTime: REPO_STALE_MS,
-    enabled,
+export function useGitOrgs(provider: GitProvider, enabled = true) {
+  return useLazyAsset(LazyAsset.GitOrgs, { provider }, { enabled });
+}
+
+/** One org's repos — only for an owner the full list does not already hold (`''` = off). */
+export function useGitOrgRepos(provider: GitProvider, owner: string) {
+  return useLazyAsset(LazyAsset.GitOrgRepos, { provider, owner }, { enabled: !!owner });
+}
+
+export function useCreateGitRepo(provider: GitProvider) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => createPrivateRepo(provider, name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.GitRepos, { provider }) });
+    },
   });
 }
 
-export function useGitBranches(
-  repo: { git_origin: GitOrigin } | null,
-) {
-  return useQuery<BranchSummary[]>({
-    queryKey: [
-      'git-branches',
-      repo?.git_origin.provider,
-      repo?.git_origin.owner,
-      repo?.git_origin.name,
-      repo?.git_origin.branch,
-    ],
-    queryFn: () => getBranches(repo!),
-    staleTime: REPO_STALE_MS,
-    enabled: !!repo,
-  });
+export function useGitBranches(repo: { git_origin: GitOrigin } | null) {
+  return useLazyAsset(LazyAsset.GitBranches, repo ?? undefined, { enabled: !!repo });
 }
 
-export function useGitInvitations(provider: GitProvider, enabled: boolean = true) {
-  return useQuery<RepoInvitation[]>({
-    queryKey: ['git-invitations', provider],
-    queryFn: () => getInvitations(provider),
-    staleTime: REPO_STALE_MS,
-    enabled,
-  });
+export function useGitInvitations(provider: GitProvider, enabled = true) {
+  return useLazyAsset(LazyAsset.GitInvitations, { provider }, { enabled });
 }
 
 /**
@@ -60,8 +49,8 @@ export function useRespondInvitation(provider: GitProvider) {
     mutationFn: ({ id, action }: { id: number; action: 'accept' | 'decline' }) =>
       respondInvitation(provider, id, action),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['git-invitations', provider] });
-      void queryClient.invalidateQueries({ queryKey: ['git-repos', provider] });
+      void queryClient.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.GitInvitations, { provider }) });
+      void queryClient.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.GitRepos, { provider }) });
     },
   });
 }

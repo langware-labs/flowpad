@@ -6,51 +6,48 @@ side-effects should import this module instead.
 """
 # Walker modules — register TypeInfo + folder walkers.
 # Entity modules — trigger Entity.__init_subclass__ → SchemaRegistry merge of entity_cls.
-import flow_sdk.builtin.agent  # noqa: F401
+import flow_sdk.assets.types.skill  # noqa: F401
+import flow_sdk.assets.types.subagent  # noqa: F401
+import flow_sdk.builtin.asset_setup  # noqa: F401
 import flow_sdk.builtin.claude_memory_entities  # noqa: F401
 import flow_sdk.builtin.claude_session  # noqa: F401
 import flow_sdk.builtin.codex_session  # noqa: F401
 import flow_sdk.builtin.command  # noqa: F401
+import flow_sdk.builtin.compute_op  # noqa: F401
+import flow_sdk.builtin.consumer_position  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
+import flow_sdk.builtin.data_source  # noqa: F401
+import flow_sdk.builtin.data_schema  # noqa: F401
 import flow_sdk.builtin.dataset  # noqa: F401
 import flow_sdk.builtin.deck  # noqa: F401
 import flow_sdk.builtin.deck_template  # noqa: F401
-import flow_sdk.builtin.spreadsheet  # noqa: F401
 import flow_sdk.builtin.dynamic_workflow  # noqa: F401
+import flow_sdk.builtin.graph_workflow  # noqa: F401
+import flow_sdk.builtin.graph_workflow_run  # noqa: F401
 import flow_sdk.builtin.markdown_index  # noqa: F401
+import flow_sdk.builtin.message_thread  # noqa: F401
 import flow_sdk.builtin.project  # noqa: F401
 import flow_sdk.builtin.skill  # noqa: F401
+import flow_sdk.builtin.source_change  # noqa: F401
+import flow_sdk.builtin.source_item  # noqa: F401
+import flow_sdk.builtin.spreadsheet  # noqa: F401
+import flow_sdk.builtin.store_session  # noqa: F401
+import flow_sdk.builtin.subagent  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
-import flow_sdk.builtin.whiteboard  # noqa: F401
-import flow_sdk.builtin.agentic_flow  # noqa: F401
-import flow_sdk.builtin.agentic_flow_run  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.agent  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.claude_command  # noqa: F401
+import flow_sdk.builtin.trigger  # noqa: F401  — a trigger.json asset; unbound, /graph/trigger/* 422s in a fresh process
+import flow_sdk.builtin.chart  # noqa: F401
+import flow_sdk.builtin.icon_pack  # noqa: F401
+import flow_sdk.builtin.wizard  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_md  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_memory  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.claude_plan  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_projects  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.claude_rules  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.codex_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.copilot_sessions  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.dataset  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.deck  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.deck_template  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.secret_origin  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.spreadsheet  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.dynamic_workflows  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.markdown  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.markdown_index  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.mcp_server  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.plugin  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.skill  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.spec  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.task  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.todo  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.whiteboard  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.agentic_flow  # noqa: F401
 
 # Operations modules — register types that have no walker but are CRUD-able.
 import flow_sdk.fs_store.operations.claude_debug_log  # noqa: F401

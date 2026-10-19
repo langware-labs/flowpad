@@ -1,0 +1,1 @@
+Install the GitHub Copilot CLI with GitHub's install script (the same commands the Copilot CLI capability uses). It lands in `$PREFIX/bin` — `~/.local/bin` for a non-root user — and needs no Node.js. On Windows, WinGet installs it and puts it on PATH.

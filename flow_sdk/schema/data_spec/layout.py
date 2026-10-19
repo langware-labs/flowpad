@@ -1,0 +1,932 @@
+"""``DatasetLayout`` — the ONE thing that knows how rows sit on disk.
+
+``RowSpec`` is a value; it never learns whether it came from a CSV row or a
+folder of files. A layout does: ``read(folder, spec)`` turns the disk into
+typed rows and ``write(folder, rows)`` turns rows back into the disk. Two
+layouts, one on-disk grammar each — and the grammar is UNCHANGED from the
+walker this replaces (its 74 tests are the spec).
+
+Lives in ``data_spec``, not beside the indexer walker: the ``Dataset`` entity
+and the graph-workflow capture seam both call it, and neither may import the
+indexer package (that is the cycle ``_kinds.py`` guards against).
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import re
+import shutil
+import uuid
+from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, ClassVar, Optional, Sequence, Union, get_args, get_origin
+
+from pydantic import ValidationError
+
+from flow_sdk.schema.data_spec.dataset_spec import (
+    DataLayoutEnum,
+    RowKind,
+    RowSpec,
+    FileRef,
+    FolderSpec,
+    TextSpec,
+)
+from flow_sdk.schema.data_spec.io.names import ORDINAL
+from flow_sdk.schema.data_spec.spec import DataSpec
+
+CSV_FILE = "data.csv"
+ROWS_DIR = "rows"
+ROW_META = "row.json"
+
+# IO_FOLDER per-row grammar.
+INPUT, OUTPUT, GROUND_TRUTH, CONTEXT = "input", "output", "ground_truth", "context"
+#: The gold label ``annotate`` writes inside ``ground_truth/`` -- shape-agnostic, so read by name.
+ANNOTATION_FILE = "label.json"
+SLOT_BASES = (INPUT, OUTPUT, GROUND_TRUTH, CONTEXT)
+EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
+TEXT_EXTS = {".txt", ".md"}            # a file naming one of these is text, not binary
+
+_Doc = tuple[dict[str, Any], dict[str, Any]]  # a two-section doc: (metadata, data)
+
+#: A row KEY is its row folder's name. One a caller chooses is lower-case letters, digits,
+#: ``_`` and ``-`` -- never a leading dot (the layout's own scratch dirs are dotted).
+ROW_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def check_key(key: Any) -> str:
+    """``key`` when it can name a row folder, else ``ValueError``."""
+    if not isinstance(key, str) or len(key) > 120 or not ROW_KEY.match(key):
+        raise ValueError(f"{key!r} cannot be a row key: use a-z, 0-9, _ and -, starting with a letter or digit")
+    return key
+
+
+# ── shared helpers ────────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=4096)
+def derived_row_id(dataset_id: str, key: str) -> str:
+    """Deterministic per-row id of ``f"{dataset_id}:{key}"``.
+
+    A uuid5 — kept EXACTLY (three tests hard-code the formula; changing it is a
+    data migration). The row index for CSV, the row folder name for IO_FOLDER.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+    return mint_uuid(f"{dataset_id}:{key}", namespace=uuid.NAMESPACE_DNS)
+
+
+#: Where a row keeps its own id: ``row.json`` ``metadata.id`` -- a v4 minted when a new row is first
+#: written (a row from before keeps its legacy v5, stored on its next write), so it survives a rename,
+#: a re-clone (the dataset's own id is not in git) and a re-index. A row kept OUT of git (gitignored
+#: rows) gets its id on each machine: a dataset in git must not link to it.
+ROW_ID = "id"
+
+
+def stored_row_id(metadata: dict[str, Any]) -> Optional[str]:
+    """The id a row stores, when it is a valid entity id."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+    held = metadata.get(ROW_ID)
+    return held if is_valid_entity_id(held) else None
+
+
+def row_id(ex_dir: Path, dataset_id: str, metadata: Optional[dict[str, Any]] = None) -> str:
+    """A row's id: the one it stores, else (a row written before ids were stored) the legacy id
+    derived from the dataset id and its folder name -- adopted, i.e. stored, on its next write."""
+    held = stored_row_id(metadata if metadata is not None else _load_row_meta(Path(ex_dir))[0])
+    return held or derived_row_id(dataset_id, Path(ex_dir).name)
+
+
+def _row_files(root: Path):
+    """Every file under ``root``, in one order, as ``(relative posix path, Path)``. Hidden files and
+    folders (``.DS_Store``) are not the row: a file browser dropping one never makes a save look
+    like a conflict."""
+    import os  # noqa: PLC0415
+
+    for here, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for name in sorted(f for f in files if not f.startswith(".")):
+            path = Path(here) / name
+            yield path.relative_to(root).as_posix(), path
+
+
+def row_version(ex_dir: Path) -> str:
+    """A row's version: a digest of every file in its folder. Read off the bytes, so a row that no
+    longer fits its schema has one too (it can be repaired or deleted with a version check), and any
+    write -- by Flowpad or anyone -- moves it."""
+    import hashlib  # noqa: PLC0415
+
+    digest = hashlib.sha256()
+    for rel, path in _row_files(Path(ex_dir)):
+        digest.update(rel.encode() + b"\0")
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            pass
+    return digest.hexdigest()[:16]
+
+
+def rows_version(folder) -> str:
+    """The rows of a dataset folder as a whole, as one version: a digest of every row file's path,
+    size and mtime -- a stat walk, no bytes read, so any write by anyone moves it. ``""`` with no
+    rows yet. The same files ``row_version`` hashes, one level up."""
+    import hashlib  # noqa: PLC0415
+
+    root = Path(folder) / ROWS_DIR
+    if not root.is_dir():
+        return ""
+    digest = hashlib.sha256()
+    for rel, path in _row_files(root):
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        digest.update(f"{rel}\0{st.st_size}\0{st.st_mtime_ns}\0".encode())
+    return digest.hexdigest()[:16]
+
+
+def coerce_dataset_enum(value: Any, enum_cls: type, default: Any) -> Any:
+    """Map a raw value onto ``enum_cls``, defaulting on absence or invalid value."""
+    try:
+        return enum_cls(str(value)) if value else default
+    except ValueError:
+        return default
+
+
+def load_json_dict(path: Path) -> dict[str, Any]:
+    """Read a JSON object from ``path``; ``{}`` when absent, malformed, or non-dict."""
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def load_doc(path: Path) -> _Doc:
+    """Read a two-section dataset JSON → ``(metadata, data)``; each ``{}`` when
+    absent or non-dict. A flat doc yields ``({}, {})`` — the structure is mandatory."""
+    obj = load_json_dict(path)
+    meta, data = obj.get("metadata"), obj.get("data")
+    return (meta if isinstance(meta, dict) else {}, data if isinstance(data, dict) else {})
+
+
+def write_doc(path: Path, metadata: dict[str, Any], data: dict[str, Any]) -> None:
+    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str, ensure_ascii=False) + "\n")
+
+
+def _write(path: Path, text: str) -> None:
+    """One text write for the whole layout, through the asset writer's seam.
+
+    These files were the only ones in the tree written with a bare
+    ``write_text``: not atomic, and unconditional — so re-saving an unchanged
+    dataset rewrote every row and moved its mtime, which the indexer reads as a
+    change. ``_atomic_write_text`` already skips a write whose bytes match.
+    """
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(path, text)
+
+
+def _write_bytes(path: Path, payload: bytes) -> None:
+    """The binary half of ``_write`` — same no-churn rule, no text codec."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.read_bytes() == payload:
+            return
+    except OSError:
+        pass
+    path.write_bytes(payload)
+
+
+def is_binary(node: Any) -> bool:
+    """A folder is binary by definition; a file is binary unless its extension
+    says text; a literal is text."""
+    if isinstance(node, FolderSpec):
+        return True
+    if isinstance(node, FileRef):
+        return Path(node.path).suffix.lower() not in TEXT_EXTS
+    return False
+
+
+# ── base ──────────────────────────────────────────────────────────────────────
+
+class DatasetLayout:
+    name: ClassVar[str] = ""
+
+    # Per-row writes exist only where a row is a directory of its own;
+    # a CSV is rewritten whole, so the base refuses and only FolderLayout answers.
+    def append(self, folder, ex: RowSpec, *, dataset_id: str, contents: Optional[dict[str, Any]] = None) -> str:
+        raise NotImplementedError("append is io_folder only — a CSV dataset is rewritten whole")
+
+    def append_many(self, folder, rows: "Sequence[tuple]", *, dataset_id: str) -> list[str]:
+        raise NotImplementedError("append is io_folder only — a CSV dataset is rewritten whole")
+
+    def annotate(self, folder, row_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
+                 main: str = ANNOTATION_FILE) -> Path:
+        raise NotImplementedError("annotate is io_folder only — a CSV dataset is rewritten whole")
+
+    def set_data(self, folder, row_id_: str, data: dict[str, Any], *, dataset_id: str) -> Path:
+        raise NotImplementedError("set_data is io_folder only — a CSV dataset is rewritten whole")
+
+    def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
+        """Per-row scalars (id, source item, kind, gold present) without
+        reading the payloads. Only a per-row layout can answer."""
+        raise NotImplementedError("index is io_folder only — a CSV dataset has no per-row dirs")
+
+    def count_annotated(self, folder, rows: Sequence[Any]) -> int:
+        """How many of the parsed ``rows`` carry gold. THE definition of
+        ``num_annotated``, for every layout — the indexer's extractor and the
+        entity's post-label recount both read it. A row is annotated when its
+        gold slot is present, and ``FolderLayout.read_row`` emits that slot
+        on exactly the scan result ``has_ground_truth`` reports, so the
+        per-row ``index`` flag and this count are one rule without a second
+        pass over the directories."""
+        return sum(1 for ex in rows if getattr(ex, "ground_truth", None) is not None)
+
+    def read(self, folder: Path, spec: type, *, dataset_id: str,
+             field_spec: Optional[dict[str, str]] = None, delimiter: str = ",") -> list[Any]:
+        raise NotImplementedError
+
+    def write(self, folder: Path, rows: Sequence[RowSpec], *, dataset_id: str,
+              field_spec: Optional[dict[str, str]] = None, delimiter: str = ",",
+              source: Optional[Path] = None) -> None:
+        raise NotImplementedError
+
+
+def dataset_layout_for(name: Union[str, DataLayoutEnum]) -> DatasetLayout:
+    layout = coerce_dataset_enum(name, DataLayoutEnum, DataLayoutEnum.CSV)
+    return FolderLayout() if layout == DataLayoutEnum.IO_FOLDER else CsvLayout()
+
+
+# ── CSV ───────────────────────────────────────────────────────────────────────
+
+def _cols(field_spec: Optional[dict[str, str]]) -> tuple[str, str, str]:
+    """``(input, expected, kind)`` column names, mapped through ``field_spec``."""
+    fs = field_spec or {}
+    return fs.get("input", "input"), fs.get("expected", "expected"), fs.get("kind", "kind")
+
+
+class CsvLayout(DatasetLayout):
+    """``data.csv`` — one row per row; cells are ``TextSpec`` literals.
+
+    ``field_spec`` maps a canonical name to the actual column, e.g.
+    ``{"input": "question", "expected": "answer"}``. Leftover columns land in
+    ``metadata``.
+    """
+
+    name = DataLayoutEnum.CSV.value
+
+    def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
+        csv_path = Path(folder) / CSV_FILE
+        if not csv_path.is_file():
+            return []
+        input_col, expected_col, kind_col = _cols(field_spec)
+        consumed = {input_col, expected_col, kind_col}
+        rows = []
+        with csv_path.open(newline="", encoding="utf-8") as fh:
+            for i, raw in enumerate(csv.DictReader(fh, delimiter=delimiter or ",")):
+                row: dict[str, Any] = {
+                    "id": derived_row_id(dataset_id, str(i)),
+                    "kind": coerce_dataset_enum(raw.get(kind_col), RowKind, RowKind.TRAIN),
+                    "input": TextSpec(text=raw.get(input_col) or ""),
+                    "metadata": {k: v for k, v in raw.items() if k not in consumed},
+                }
+                if raw.get(expected_col) is not None:
+                    row["ground_truth"] = TextSpec(text=raw.get(expected_col))
+                rows.append(spec.model_validate(row))
+        return rows
+
+    def write(self, folder, rows, *, dataset_id, field_spec=None, delimiter=",", source=None):
+        input_col, expected_col, kind_col = _cols(field_spec)
+        extra = sorted({k for ex in rows for k in ex.metadata})
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        with (folder / CSV_FILE).open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=[kind_col, input_col, expected_col, *extra], delimiter=delimiter or ",")
+            w.writeheader()
+            for ex in rows:
+                gt = ex.ground_truth
+                w.writerow({
+                    kind_col: ex.kind.value,
+                    input_col: _cell(ex.input),
+                    expected_col: _cell(gt) if gt is not None else "",
+                    **{k: ex.metadata.get(k, "") for k in extra},
+                })
+
+
+def _cell(node: Any) -> str:
+    if isinstance(node, TextSpec):
+        return node.text
+    raise ValueError(f"csv layout holds text slots only; got {type(node).__name__}")
+
+
+# ── IO_FOLDER ─────────────────────────────────────────────────────────────────
+
+_NO_MATCH = object()
+
+
+def _match_base(stem: str, base: str) -> Any:
+    """``base`` → bare (``None``); ``f"{base}-{N}"`` (N digits) → ``int(N)``; else ``_NO_MATCH``."""
+    if stem == base:
+        return None
+    prefix = f"{base}-"
+    if stem.startswith(prefix):
+        tail = stem[len(prefix):]
+        if tail.isdigit():
+            return int(tail)
+    return _NO_MATCH
+
+
+def _classify(name: str, is_dir: bool, base: str) -> Any:
+    """``("data"|"sidecar", index)`` if ``name`` belongs to ``base``, else ``_NO_MATCH``.
+    ``«base»[-N].json`` files are sidecars; folders and non-json files are data."""
+    stem = name.split(".", 1)[0]
+    index = _match_base(stem, base)
+    if index is _NO_MATCH:
+        return _NO_MATCH
+    is_json = (not is_dir) and name.lower().endswith(".json")
+    return ("sidecar" if is_json else "data", index)
+
+
+def occurrence_key(node: Any, base: str) -> str:
+    """The on-disk occurrence key (``output`` / ``output-2``) of a slot value.
+
+    Derived from the artifact's own path — the filename IS the key — with the
+    legacy ``expected*`` alias folded onto ``ground_truth`` exactly as the reader
+    emits it. A ``TextSpec`` (a CSV cell) has no path and no occurrences.
+    """
+    path = getattr(node, "path", None)
+    if not path:
+        return base
+    stem = Path(path).name.split(".", 1)[0]
+    if stem.startswith(EXPECTED_LEGACY):
+        return GROUND_TRUTH + stem[len(EXPECTED_LEGACY):]
+    return stem
+
+
+def is_sidecar_name(name: str) -> bool:
+    """Is ``name`` a ``«base»[-N].json`` sidecar filename for any slot base?"""
+    for base in (*SLOT_BASES, EXPECTED_LEGACY):
+        verdict = _classify(name, False, base)
+        if verdict is not _NO_MATCH and verdict[0] == "sidecar":
+            return True
+    return False
+
+
+def _resolve_ambiguity(a: Path, b: Path) -> Path:
+    """Two entries claim one slot+index. File beats folder; ties → lexicographic."""
+    a_file, b_file = a.is_file(), b.is_file()
+    if a_file and not b_file:
+        return a
+    if b_file and not a_file:
+        return b
+    return min(a, b, key=lambda p: p.name)
+
+
+def _build_node(ex_dir: Path, target: Path) -> Union[FileRef, FolderSpec]:
+    """A file is a ``FileRef`` (its row-relative POSIX path); a folder is a
+    ``FolderSpec`` of its members, recursively. Bytes are never read."""
+    rel = target.relative_to(ex_dir).as_posix()
+    if target.is_dir():
+        return FolderSpec(path=rel, files={
+            child.name: _build_node(ex_dir, child)
+            for child in sorted(target.iterdir(), key=lambda p: p.name)
+        })
+    return FileRef(path=rel)
+
+
+def _load_row_meta(ex_dir: Path) -> _Doc:
+    """A row folder's ``row.json``: its metadata and data sections."""
+    return load_doc(ex_dir / ROW_META)
+
+
+def _row_dirs(folder) -> list[Path]:
+    """The row directories of a dataset folder, in name order. The ONE
+    enumeration — `read`, `index` and `row_dir` all walk through here."""
+    rows_dir = Path(folder) / ROWS_DIR
+    if not rows_dir.is_dir():
+        return []
+    return sorted((p for p in rows_dir.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                  key=lambda p: p.name)
+
+
+def _main_document(shape: type) -> str:
+    from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415 — cycle-safe
+
+    return names.main_document(shape)
+
+
+def _typed_slots(spec: type) -> dict[str, type]:
+    """Slots whose declared shape is an ordinary ``DataSpec``, not an artifact.
+
+    An artifact slot (``FileRef``/``FolderSpec``/``TextSpec``) is bytes on disk
+    and is classified by scanning. Anything else is a VALUE with a shape, and
+    the generic walker owns both ends of it.
+    """
+    from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415 — cycle-safe
+
+    def _single(annotation: Any) -> Any:
+        """The shape of ONE occurrence. ``output`` is declared
+        ``Optional[Union[O, list[O]]]`` — N occurrences on disk arrive as a
+        list — so the bare arm is the one that names the shape."""
+        core = unwrap(annotation)
+        for arm in get_args(core) or ():
+            if arm is type(None) or get_origin(arm) is list:
+                continue
+            return unwrap(arm)
+        return core
+
+    out: dict[str, type] = {}
+    for base in SLOT_BASES:
+        field = spec.model_fields.get(base)
+        if field is None:
+            continue
+        shape = _single(field.annotation)
+        if (isinstance(shape, type) and issubclass(shape, DataSpec)
+                and not issubclass(shape, (FileRef, FolderSpec, TextSpec))):
+            out[base] = shape
+    return out
+
+
+def _declared_artifact(spec: type) -> dict[str, type]:
+    """Slots declared as a specific ARTIFACT leaf.
+
+    The scan classifies bytes: a file under ``input/`` becomes a ``FolderSpec``
+    holding one ``FileRef``, because on disk that is what it is. When the spec
+    says the slot IS a ``FileRef``, that promotion makes ``write`` → ``read``
+    stop being identity — you put a ``FileRef`` in and got a folder back, and a
+    declared ``RowSpec[FileRef, ...]`` then failed to validate at all.
+
+    Only the spec knows which was meant, and only here does it get asked.
+    """
+    from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415 — cycle-safe
+
+    out: dict[str, type] = {}
+    for base in SLOT_BASES:
+        field = spec.model_fields.get(base)
+        if field is None:
+            continue
+        core = unwrap(field.annotation)
+        # EXACTLY a FileRef, never the ``Artifact`` union. Python flattens
+        # nested unions, so ``Optional[Union[Artifact, list[Artifact]]]`` has
+        # ``FileRef`` as its first arm too — and an ``Artifact`` slot means
+        # "whichever of the three is there", so the scan's answer is the right
+        # one and must not be second-guessed.
+        arms = [a for a in (get_args(core) or (core,))
+                if a is not type(None) and get_origin(a) is not list]
+        if len(arms) == 1 and isinstance(arms[0], type) and issubclass(arms[0], FileRef):
+            out[base] = arms[0]
+    return out
+
+
+def _in_slot(exc: Any, slot: str, title: str) -> Any:
+    """``exc`` -- a ``ValidationError`` from loading ONE slot -- with the slot on every location
+    (``ground_truth.route``, not ``route``), so a report names where the bad value is."""
+    details = [
+        {"type": e["type"], "loc": (slot, *e["loc"]), "input": e.get("input"), **({"ctx": e["ctx"]} if e.get("ctx") else {})}
+        for e in exc.errors(include_url=False)
+    ]
+    return ValidationError.from_exception_data(title, details)
+
+
+def _typed_occurrence(shape: type, slot_dir: Path, main: str) -> Any:
+    """One typed slot occurrence, or None when this folder does not hold one.
+
+    The walker's own main document (``decision.json`` for ``navigator.decision``) is read by the
+    walker. A gold label written by ``annotate`` is ``label.json`` -- the one name ``annotate``
+    can write without knowing the shape -- and is the shape's JSON, returned as-is for the row's
+    own validation to check.
+    Without that second arm an annotated row could never be read back typed.
+    """
+    from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
+
+    if (slot_dir / main).is_file():
+        return _load(shape, slot_dir)
+    label = slot_dir / ANNOTATION_FILE
+    if label.is_file():
+        # The raw JSON: the row's own validation checks it, so an error names its slot
+        # (``ground_truth.route``), not just the field inside it.
+        return load_json_dict(label)
+    return None
+
+
+class _ReadShape:
+    """What reading rows of ``spec`` needs from it -- pure functions of the shape, so computed
+    once per read, never once per row."""
+
+    __slots__ = ("typed", "mains", "artifact")
+
+    def __init__(self, typed: dict, mains: dict, artifact: dict) -> None:
+        self.typed, self.mains, self.artifact = typed, mains, artifact
+
+    @classmethod
+    def of(cls, spec: type) -> "_ReadShape":
+        typed = _typed_slots(spec)
+        return cls(typed, {base: _main_document(shape) for base, shape in typed.items()}, _declared_artifact(spec))
+
+
+class FolderLayout(DatasetLayout):
+    """``rows/<name>/`` — slots are files or folders; sidecars annotate them."""
+
+    name = DataLayoutEnum.IO_FOLDER.value
+
+    def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
+        shape = _ReadShape.of(spec)
+        rows = []
+        for ex_dir in _row_dirs(folder):
+            row = self.read_typed(ex_dir, spec, dataset_id=dataset_id, shape=shape)
+            if row is not None:
+                rows.append(row)
+        return rows
+
+    def read_typed(self, ex_dir: Path, spec: type, *, dataset_id: str, shape: "Optional[_ReadShape]" = None) -> Any:
+        """ONE row as ``spec``; None when the folder holds no input data. A row that does not
+        fit the spec raises its ``ValidationError``, so a caller can say which row and why."""
+        shape = shape or _ReadShape.of(spec)
+        typed, mains, artifact = shape.typed, shape.mains, shape.artifact
+        row = self.read_row(ex_dir)
+        if row is None:
+            return None  # no input DATA in any form → not a row
+        # A slot whose declared shape is an ordinary ``DataSpec`` was
+        # written by the generic walker, so it is read by the same one.
+        # ``read_row`` classifies bytes on disk and cannot know the
+        # declared type; this is the one place that does.
+        for base, shape in typed.items():
+            # A2: read what was WRITTEN. The write side decides per value,
+            # so a slot holding an artifact went down the artifact path even
+            # though its declared shape is a plain ``DataSpec``. Keying the
+            # read on the walker's own main document makes the two agree by
+            # looking, instead of by two rules that can drift.
+            #
+            # Every occurrence, not only the bare folder: N values are written as
+            # ``«slot»-1/``, ``«slot»-2/`` (a list of acceptable gold answers), and
+            # reading just ``«slot»/`` left those as raw folders that failed the
+            # typed validation below.
+            held = row.get(base)
+            try:
+                if isinstance(held, list):
+                    loaded = [_typed_occurrence(shape, ex_dir / f"{base}-{n}", mains[base])
+                              for n in range(1, len(held) + 1)]
+                    if all(v is not None for v in loaded):
+                        row[base] = loaded
+                elif (value := _typed_occurrence(shape, ex_dir / base, mains[base])) is not None:
+                    row[base] = value
+            except ValidationError as exc:
+                raise _in_slot(exc, base, spec.__name__) from exc
+        # A slot the spec declares as a ``FileRef`` comes back as one, not
+        # as the folder the scan saw it sitting in. The scan classifies
+        # BYTES and is right about them; only the spec knows which was
+        # meant, and without asking it `write` → `read` was not identity.
+        for base in artifact:
+            held = row.get(base)
+            if isinstance(held, FolderSpec) and len(held.files) == 1:
+                (only,) = held.files.values()
+                if isinstance(only, FileRef):
+                    row[base] = only
+        row["id"] = row_id(ex_dir, dataset_id)
+        row["key"] = ex_dir.name
+        row["version"] = row_version(ex_dir)
+        return spec.model_validate(row)
+
+    @staticmethod
+    def _scan(ex_dir: Path) -> tuple[dict[str, dict[Optional[int], Path]], list[Path]]:
+        """One ``iterdir`` pass over a row directory: data bucketed by
+        ``(base, index)`` (each entry belongs to at most one base), sidecars
+        collected. The ONE classification — ``read_row`` builds the row
+        from it and ``has_ground_truth`` answers from it, so "annotated" can
+        never mean one thing to the reader and another to the index."""
+        bases = (*SLOT_BASES, EXPECTED_LEGACY)
+        data: dict[str, dict[Optional[int], Path]] = {b: {} for b in bases}
+        sidecars: list[Path] = []
+        for entry in ex_dir.iterdir():
+            is_dir = entry.is_dir()
+            for base in bases:
+                verdict = _classify(entry.name, is_dir, base)
+                if verdict is _NO_MATCH:
+                    continue
+                role, index = verdict
+                if role == "sidecar":
+                    sidecars.append(entry)
+                else:
+                    prev = data[base].get(index)
+                    data[base][index] = entry if prev is None else _resolve_ambiguity(prev, entry)
+                break
+        return data, sidecars
+
+    def has_ground_truth(self, ex_dir: Path) -> bool:
+        """Does this row carry gold DATA in any form the reader accepts —
+        ``ground_truth/``, ``ground_truth.txt``, ``ground_truth-N``, or the
+        legacy ``expected*`` alias? Exactly when ``read_row`` would emit a
+        ``ground_truth`` slot — the same ``_scan`` classification, so the
+        index's per-row flag and the counted rows can never disagree. The
+        cheap form of the question, so ``index`` never reads the payloads."""
+        data, _ = self._scan(ex_dir)
+        return bool(data[GROUND_TRUTH] or data[EXPECTED_LEGACY])
+
+    def read_row(self, ex_dir: Path) -> Optional[dict[str, Any]]:
+        """One row directory as a row dict — ``None`` when it has no input data."""
+        data, sidecars = self._scan(ex_dir)
+        if not data[INPUT]:
+            return None
+
+        # `expected*` is an ALIAS for ground_truth, honoured only when no native
+        # gold DATA exists — a rename at emit time, so a native `ground_truth.json`
+        # sidecar is never dropped.
+        alias = EXPECTED_LEGACY if (data[EXPECTED_LEGACY] and not data[GROUND_TRUTH]) else None
+
+        ex_meta, ex_data = _load_row_meta(ex_dir)
+        row: dict[str, Any] = {
+            "kind": coerce_dataset_enum(ex_meta.get("kind"), RowKind, RowKind.TRAIN),
+            # The row's id is the row's (``row_id``), not part of the metadata it carries.
+            "metadata": {k: v for k, v in ex_meta.items() if k != ROW_ID},
+            "data": ex_data,
+        }
+        for base in (*SLOT_BASES, *([EXPECTED_LEGACY] if alias else [])):
+            if not data[base]:
+                continue
+            emit_as = GROUND_TRUTH if base == alias else base
+            # Canonical order: bare occurrence first, then numbered ascending.
+            ordered = [_build_node(ex_dir, data[base][i])
+                       for i in sorted(data[base], key=lambda k: (k is not None, k or 0))]
+            # A sole BARE occurrence is the value itself; any numbering makes a list.
+            row[emit_as] = ordered[0] if list(data[base]) == [None] else ordered
+        # Sidecars ride in metadata under their FULL filename — never colliding
+        # with row.json keys (those carry no dot), and legal as orphans.
+        for path in sorted(sidecars, key=lambda p: p.name):
+            m, d = load_doc(path)
+            row["metadata"][path.name] = {"metadata": m, "data": d}
+        return row
+
+    def resolve(self, row_dir: Path, ref: Union[FileRef, FolderSpec]) -> Path:
+        """The only place a ``FileRef`` becomes an absolute path."""
+        return Path(row_dir) / ref.path
+
+    def write(self, folder, rows, *, dataset_id, field_spec=None, delimiter=",", source=None):
+        folder = Path(folder)
+        (folder / ROWS_DIR).mkdir(parents=True, exist_ok=True)
+        for i, ex in enumerate(rows, 1):
+            name = ORDINAL.format(i)
+            self.write_row(folder / ROWS_DIR / name, ex,
+                               source=(Path(source) / ROWS_DIR / name) if source else None)
+
+    # ── one row at a time ────────────────────────────────────────────────
+
+    def append(self, folder, ex: RowSpec, *, dataset_id: str,
+               contents: Optional[dict[str, Any]] = None) -> str:
+        """Add ONE row without rewriting the others. Returns its id (the
+        pinned ``row_id`` formula over the dir name, so a later ``read``
+        agrees)."""
+        (ids,) = self.append_many(folder, [(ex, contents)], dataset_id=dataset_id)
+        return ids
+
+    def append_many(self, folder, rows: Sequence[tuple], *, dataset_id: str,
+                    keys: Optional[Sequence[Optional[str]]] = None) -> list[str]:
+        """Append a batch: ONE directory scan for the whole batch, then a dir
+        per row (``rows`` is ``(row, contents)`` pairs). A row with a
+        ``keys`` entry lands in ``rows/<key>/`` (refused when taken, before
+        anything is written); the others are numbered after the highest
+        existing ``NNNN``, never the count, so a gap is preserved."""
+        rows_dir = Path(folder) / ROWS_DIR
+        rows_dir.mkdir(parents=True, exist_ok=True)
+        keys = list(keys) if keys is not None else [None] * len(rows)
+        if len(keys) != len(rows):
+            raise ValueError("keys: one entry per row")
+        existing = {p.name for p in rows_dir.iterdir() if p.is_dir()}
+        chosen = [check_key(k) for k in keys if k is not None]
+        clash = sorted({k for k in chosen if k in existing or chosen.count(k) > 1})
+        if clash:
+            raise ValueError(f"row keys already taken: {clash}")
+        taken = [int(name) for name in existing if name.isdigit()]
+        nxt = (max(taken) + 1) if taken else 1
+        ids = []
+        for (ex, contents), key in zip(rows, keys):
+            if key is None:
+                key, nxt = f"{nxt:04d}", nxt + 1
+            ids.append(self.write_row(rows_dir / key, ex, contents=contents))
+        return ids
+
+    def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
+        """The rows as scalars — id, source item, kind, gold present — reading
+        only ``row.json`` and one directory listing per dir (never the
+        payloads). ``annotated`` is ``has_ground_truth``: the same rule the
+        reader applies, so ``Dataset.num_annotated`` agrees whether it was
+        counted here after a label or by the indexer over the parsed rows."""
+        out = []
+        for ex_dir in _row_dirs(folder):
+            meta, _ = _load_row_meta(ex_dir)
+            out.append({
+                "row_id": row_id(ex_dir, dataset_id, meta),
+                "key": ex_dir.name,
+                "item_id": (meta.get("source") or {}).get("item_id"),
+                "kind": str(coerce_dataset_enum(meta.get("kind"), RowKind, RowKind.TRAIN).value),
+                "annotated": self.has_ground_truth(ex_dir),
+            })
+        return out
+
+    def row_dir(self, folder, row_id_: str, *, dataset_id: str) -> Optional[Path]:
+        """The directory behind a row id OR key, or None. A key is the directory itself; an id
+        is a scan of the rows' stored ids (``row_id``), never a lookup table."""
+        if isinstance(row_id_, str) and ROW_KEY.match(row_id_):
+            direct = Path(folder) / ROWS_DIR / row_id_
+            if direct.is_dir():
+                return direct
+        return next((p for p in _row_dirs(folder) if row_id(p, dataset_id) == row_id_), None)
+
+    def put_row(self, folder, key: str, ex: RowSpec, *, dataset_id: str,
+                    contents: Optional[dict[str, Any]] = None) -> str:
+        """Write ``ex`` as the row ``key`` -- a new one, or a REPLACEMENT of the one there, which
+        keeps the replaced row's id. Built in a scratch dir beside it and swapped in, so a reader
+        sees the old row or the new one, never half of each. Returns the id."""
+        rows_dir = Path(folder) / ROWS_DIR
+        rows_dir.mkdir(parents=True, exist_ok=True)
+        target = rows_dir / check_key(key)
+        if target.is_dir() and not stored_row_id(ex.metadata):
+            ex = ex.model_copy(update={"metadata": {**ex.metadata, ROW_ID: row_id(target, dataset_id)}})
+        return self._swap_in(target, lambda scratch: self.write_row(scratch, ex, contents=contents))
+
+    @staticmethod
+    def _swap_in(target: Path, build: Any) -> str:
+        """The atomic replace every row write goes through: ``build(scratch)`` writes the row
+        into a scratch dir beside ``target`` and answers its id; the scratch then takes ``target``'s
+        place, so a reader sees the old row or the new one, never half of each."""
+        stamp = uuid.uuid4().hex[:8]
+        scratch, old = target.parent / f".{target.name}.new-{stamp}", target.parent / f".{target.name}.old-{stamp}"
+        try:
+            rid = build(scratch)
+            if target.exists():
+                target.rename(old)
+            scratch.rename(target)
+        finally:
+            for leftover in (scratch, old):
+                if leftover.exists():
+                    shutil.rmtree(leftover)
+        return rid
+
+    def put_problem_row(self, folder, key: str, input: dict[str, Any], *, dataset_id: str,   # noqa: A002 -- the slot's name
+                            main_document: str, kind: str = "train") -> str:
+        """Write a row whose ``input`` does NOT fit the row kind -- as stored, unchecked -- so the
+        dataset reports it as a problem (``rows_and_problems``) with its input intact, rather than
+        losing it. What a mirror does with a record the outside system holds in a shape the schema
+        does not: the inverse of ``io.reader.read_fields``, every field inline in the slot's main
+        document. Same scratch-and-swap as ``put_row``; a replaced row keeps its id and kind.
+        Returns the id."""
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+        rows_dir = Path(folder) / ROWS_DIR
+        rows_dir.mkdir(parents=True, exist_ok=True)
+        target = rows_dir / check_key(key)
+        meta = _load_row_meta(target)[0] if target.is_dir() else {}
+        rid = row_id(target, dataset_id, meta) if target.is_dir() else mint_uuid()
+
+        def build(scratch: Path) -> str:
+            (scratch / "input").mkdir(parents=True)
+            _write(scratch / "input" / main_document, json.dumps(input, indent=2, default=str, ensure_ascii=False) + "\n")
+            self.write_row_meta(scratch, {**meta, ROW_ID: rid, "kind": meta.get("kind") or kind}, {})
+            return rid
+
+        return self._swap_in(target, build)
+
+    def delete_row(self, folder, row_id_: str, *, dataset_id: str) -> str:
+        """Remove one row (its whole directory). Returns its key; ``LookupError`` when absent."""
+        ex_dir = self.row_dir(folder, row_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no row {row_id_} in {folder}")
+        shutil.rmtree(ex_dir)
+        return ex_dir.name
+
+    def rename_row(self, folder, row_id_: str, new_key: str, *, dataset_id: str) -> str:
+        """Give one row a new key (its directory is moved). Its id does NOT change -- a row
+        written before ids were stored has its legacy id stored first -- so every reference to it
+        (``<kind>.id.<uuid>``) still resolves. Returns the id."""
+        ex_dir = self.row_dir(folder, row_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no row {row_id_} in {folder}")
+        target = ex_dir.parent / check_key(new_key)
+        if target.exists():
+            raise ValueError(f"row key already taken: {new_key!r}")
+        metadata, data = _load_row_meta(ex_dir)
+        rid = row_id(ex_dir, dataset_id, metadata)
+        if not stored_row_id(metadata):
+            self.write_row_meta(ex_dir, {**metadata, ROW_ID: rid}, data)
+        ex_dir.rename(target)
+        return rid
+
+    def annotate(self, folder, row_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
+                 main: str = ANNOTATION_FILE) -> Path:
+        """Write the gold answer of one row — ``ground_truth/label.json`` —
+        and record who did it in ``row.json`` (``metadata.annotations``).
+        A folder slot, so the layout reads it back as data (a bare ``.json`` at
+        slot level is a sidecar by the classification rule above)."""
+        ex_dir = self.row_dir(folder, row_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no row {row_id_} in {folder}")
+        # The gold is REPLACED, never added to: a typed reader prefers the slot's main document,
+        # so a label written beside an older gold was silently lost on the next read.
+        for old in [ex_dir / GROUND_TRUTH, *ex_dir.glob(f"{GROUND_TRUTH}-*")]:
+            if old.is_dir():
+                shutil.rmtree(old)
+        # ``main`` is the shape's own main document (``decision.json``) when the caller knows the
+        # shape, so the slot reads back exactly as the walker writes it; ``label.json`` otherwise.
+        values = ground_truth if isinstance(ground_truth, list) and main != ANNOTATION_FILE else [ground_truth]
+        for n, value in enumerate(values, 1):
+            slot = GROUND_TRUTH if len(values) == 1 else f"{GROUND_TRUTH}-{n}"
+            node = FolderSpec(path=slot, files={main: FileRef(path=f"{slot}/{main}")})
+            self._write_node(ex_dir, None, node, {f"{slot}/{main}": value}, None)
+        metadata, data = _load_row_meta(ex_dir)
+        annotations = list(metadata.get("annotations") or [])
+        annotations.append({"by": by, "at": datetime.now(timezone.utc).isoformat()})
+        metadata["annotations"] = annotations
+        self.write_row_meta(ex_dir, metadata, data)
+        return ex_dir
+
+    def set_data(self, folder, row_id_: str, data: dict[str, Any], *, dataset_id: str) -> Path:
+        """Replace one row's free ``data`` (its ``row.json`` data section); metadata is kept."""
+        ex_dir = self.row_dir(folder, row_id_, dataset_id=dataset_id)
+        if ex_dir is None:
+            raise LookupError(f"no row {row_id_} in {folder}")
+        metadata, _ = _load_row_meta(ex_dir)
+        self.write_row_meta(ex_dir, metadata, data)
+        return ex_dir
+
+    def write_row(self, ex_dir: Path, ex: RowSpec, *, contents: Optional[dict[str, Any]] = None,
+                      source: Optional[Path] = None, stamp: bool = True) -> str:
+        """The primitive: one row into one directory. ``contents`` supplies
+        file bytes/JSON by relative path; else ``source`` is copied; else empty.
+        Returns the row's id, stored in ``row.json`` when stamping: the one the row
+        carries (``metadata.id``, else a valid ``ex.id`` read back from disk), else a new v4."""
+        ex_dir = Path(ex_dir)
+        ex_dir.mkdir(parents=True, exist_ok=True)
+        contents = contents or {}
+        for base in SLOT_BASES:
+            value = getattr(ex, base, None)
+            if value is None:
+                continue
+            nodes = value if isinstance(value, list) else [value]
+            for n, node in enumerate(nodes, 1):
+                slot = base if not isinstance(value, list) else f"{base}-{n}"
+                self._write_node(ex_dir, slot, node, contents, source)
+        meta = dict(ex.metadata)
+        for key in list(meta):
+            if is_sidecar_name(key):
+                sc = meta.pop(key)
+                if isinstance(sc, dict):
+                    write_doc(ex_dir / key, sc.get("metadata") or {}, sc.get("data") or {})
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
+
+        # A row rewritten in place keeps the id its folder already stores: storing the same
+        # rows twice must not mint new ids (every save would churn every row.json).
+        rid = (stored_row_id(meta) or (ex.id if is_valid_entity_id(ex.id) else None)
+               or stored_row_id(_load_row_meta(ex_dir)[0]) or mint_uuid())
+        if stamp:
+            self.write_row_meta(ex_dir, {**meta, ROW_ID: rid, "kind": ex.kind.value}, ex.data)
+        return rid
+
+    def write_row_meta(self, ex_dir: Path, metadata: dict[str, Any], data: Optional[dict[str, Any]] = None) -> None:
+        """``row.json`` — the ONE writer."""
+        write_doc(Path(ex_dir) / ROW_META, metadata, data or {})
+
+    def _write_node(self, ex_dir: Path, slot: Optional[str], node: Any, contents: dict, source: Optional[Path]) -> None:
+        """``slot`` names a TEXT cell's file only; artifacts carry their own path."""
+        if isinstance(node, TextSpec):
+            if slot is None:
+                raise ValueError("a text cell cannot be a folder member — it has no path")
+            _write(ex_dir / f"{slot}.txt", node.text)
+            return
+        if isinstance(node, FolderSpec):
+            (ex_dir / node.path).mkdir(parents=True, exist_ok=True)
+            for member in node.files.values():
+                self._write_node(ex_dir, None, member, contents, source)   # members carry their own paths
+            return
+        if isinstance(node, FileRef):
+            target = ex_dir / node.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if node.path in contents:
+                payload = contents[node.path]
+                if isinstance(payload, (bytes, bytearray)):
+                    _write_bytes(target, bytes(payload))
+                elif isinstance(payload, str):
+                    _write(target, payload)
+                else:
+                    _write(target, json.dumps(payload, indent=2, default=str, ensure_ascii=False) + "\n")
+            elif source is not None and (source / node.path).is_file():
+                shutil.copyfile(source / node.path, target)
+            elif not target.exists():
+                target.touch()
+            return
+        if isinstance(node, DataSpec) and slot is not None:
+            # ANY other shape is written by the one generic walker
+            # (``data_spec/io``), into a folder named for its slot. Before
+            # this, a typed slot could not be persisted at all — the layout
+            # knew three leaf types and raised for everything else, so
+            # ``RowSpec[Question, Answer, …]`` was declarable and
+            # unwritable. One walker now serves both.
+            from flow_sdk.schema.data_spec.io.writer import write as write_spec  # noqa: PLC0415 — cycle-safe
+
+            # ``_nested``: a slot is part of a row, not an entity of its
+            # own, so it mints no identity. The row directory is the thing
+            # with a name; its slots are its fields.
+            write_spec(node, ex_dir / slot, _nested=True)
+            return
+        raise ValueError(f"cannot write a {type(node).__name__} slot")

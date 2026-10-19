@@ -90,7 +90,7 @@
       border-radius: 0.5rem;
       cursor: pointer;
       transition: all 0.2s ease;
-      z-index: 10;
+      z-index: 110; /* above .error-overlay (100): the logs must stay reachable from the error panel */
     }
 
     .show-logs-btn:hover {
@@ -109,6 +109,7 @@
       border-top: 1px solid hsl(0 0% 14.9%);
       overflow: hidden;
       animation: slide-up 0.3s ease-out;
+      z-index: 105; /* above .error-overlay, below the Show Logs button */
     }
 
     .logs-panel.visible {
@@ -221,8 +222,10 @@
       z-index: 100;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 32px;
+      /* NOT justify-content:center — in a scrolling flex column it puts the top of tall content
+         out of reach. The card's margin:auto below centres it when there is room. */
+      justify-content: flex-start;
+      padding: 32px 32px 72px; /* bottom room for the fixed Show Logs button */
       overflow-y: auto;
     }
 
@@ -234,6 +237,7 @@
       width: 100%;
       max-width: 620px;
       text-align: left;
+      margin: auto;
     }
 
     .error-card h2 {
@@ -247,8 +251,114 @@
       font-size: 0.9rem;
       line-height: 1.5;
       color: hsl(0 0% 63.9%);
-      margin-bottom: 28px;
+      margin-bottom: 20px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 40vh;
+      overflow-y: auto;
+      user-select: text;
     }
+
+    .error-logpath {
+      font-size: 0.75rem;
+      color: hsl(0 0% 50%);
+      margin-bottom: 20px;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    .error-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .error-share-note {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: hsl(0 0% 50%);
+      margin-bottom: 24px;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    .error-share-note.ok { color: hsl(140 40% 60%); }
+    .error-share-note.fail { color: hsl(0 70% 65%); }
+
+    /* "Send Report" popup (FLOWPAD-2251): the optional-email ask. Closing it in ANY
+       way — send, ×, Esc — uploads the logs; the email is the only variable. */
+    .share-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: hsl(0 0% 0% / 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 108; /* above .error-overlay (100), below the logs viewer (110) */
+    }
+
+    /* `display: flex` above beats the hidden attribute's UA `display: none` — restate it,
+       or the popup is visible from page load. */
+    .share-modal-overlay[hidden] { display: none; }
+
+    .share-modal {
+      position: relative;
+      width: min(420px, calc(100vw - 48px));
+      padding: 20px;
+      background: hsl(0 0% 7%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.75rem;
+    }
+
+    .share-modal h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: hsl(0 0% 90%);
+      margin-bottom: 8px;
+    }
+
+    .share-modal-text {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: hsl(0 0% 55%);
+      margin-bottom: 14px;
+    }
+
+    .share-modal-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .share-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 1.1rem;
+      line-height: 1;
+      color: hsl(0 0% 50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .share-modal-close:hover { color: hsl(0 0% 85%); }
+
+    .share-email {
+      flex: 1 1 220px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      color: hsl(0 0% 85%);
+      background: hsl(0 0% 8%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.5rem;
+      outline: none;
+    }
+
+    .share-email:focus { border-color: hsl(0 0% 30%); }
+    .share-email::placeholder { color: hsl(0 0% 40%); }
 
     .error-step {
       margin-bottom: 24px;
@@ -326,6 +436,27 @@
       margin-top: 12px;
       display: flex;
       justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .retry-btn {
+      padding: 8px 18px;
+      font-size: 0.8rem;
+      color: hsl(0 0% 3.9%);
+      background: hsl(0 0% 98%);
+      border: 1px solid hsl(0 0% 98%);
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .retry-btn:hover {
+      background: hsl(0 0% 85%);
+      border-color: hsl(0 0% 85%);
+    }
+
+    .retry-btn[hidden] {
+      display: none;
     }
 
     .quit-btn {
@@ -365,11 +496,41 @@
     <pre class="logs-content" id="logs-content"></pre>
   </div>
 
-  <!-- Startup-timeout recovery panel: replaces the native OS error popup. -->
+  <!-- "Send Report" popup. The upload is already decided when it opens: send, the ×
+       and Esc all close it INTO the upload — the email field is the only choice in it. -->
+  <div class="share-modal-overlay" id="share-modal" hidden>
+    <div class="share-modal">
+      <button class="share-modal-close" id="share-close" title="Close and upload">&times;</button>
+      <h3>Share logs with the Flowpad team</h3>
+      <p class="share-modal-text">
+        You can add your email address to help us associate this upload with you, although we can’t
+        guarantee a response. The logs will be uploaded automatically when you close this window,
+        whether or not you provide an email address.
+      </p>
+      <div class="share-modal-row">
+        <input class="share-email" id="share-email" type="email" placeholder="Your email (optional)" autocomplete="email" spellcheck="false" />
+        <button class="quit-btn" id="share-send">Send logs</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Startup error panel: replaces the native OS error popup. Retry is shown
+       only for a failed install/start (retryable), not for a backend timeout. -->
   <div class="error-overlay" id="error-overlay">
     <div class="error-card">
       <h2>Flowpad couldn’t start</h2>
       <p class="error-detail" id="error-detail"></p>
+      <p class="error-logpath" id="error-logpath" hidden></p>
+      <div class="error-tools">
+        <button class="quit-btn" id="copy-details">Copy error details</button>
+        <button class="quit-btn" id="open-logs">Open logs folder</button>
+        <button class="quit-btn" id="share-logs">Send Report</button>
+        <button class="quit-btn" id="export-logs" hidden>Export logs</button>
+      </div>
+      <p class="error-share-note" id="share-status">
+        “Send Report” zips your latest logs (passwords and tokens are masked) and uploads them to the
+        Flowpad team.
+      </p>
 
       <div class="error-step">
         <div class="error-step-label"><span class="step-num">1</span>Upgrade Flowpad. Paste this in your terminal, then reopen the app:</div>
@@ -393,8 +554,17 @@
         </div>
       </div>
 
+      <!-- Recovery note (FLOWPAD-2231): why retrying an unchanged runtime will not help. -->
+      <p class="error-share-note" id="recovery-note" hidden></p>
       <div class="error-actions">
         <button class="quit-btn" id="quit-btn">Quit</button>
+        <!-- The desktop update as a way out: shown only when a newer release exists and was not yet tried
+             for this failure (update-recovery.js). It never claims to fix a blocked Python runtime. -->
+        <button class="retry-btn" id="update-btn" hidden>Update FlowPad</button>
+        <button class="retry-btn" id="retry-btn" hidden>Retry</button>
+        <!-- Windows application control blocked the engine's Python: one explicit click starts the
+             runtime repair (runtime-repair.js); nothing is downloaded or installed before it. -->
+        <button class="retry-btn" id="repair-btn" hidden>Repair FlowPad</button>
       </div>
     </div>
   </div>

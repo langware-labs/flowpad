@@ -1,9 +1,9 @@
 """``Deck`` — a folder-backed generated presentation.
 
-A deck is a folder under ``<project>/assets/decks/<slug>/`` produced by the
+A deck is a folder under ``<project>/agentic-assets/deck/<slug>/`` produced by the
 `decker` skill from a ``deck_template``:
 
-    assets/decks/<slug>/
+    agentic-assets/deck/<slug>/
       deck.json      # build record: {title, template, slides[]}
       <name>.html    # self-contained Reveal deck (inlined CSS/JS + base64 media)
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 
@@ -36,4 +36,4 @@ class Deck(Entity):
 
     # Absolute path of the deck folder on disk, stamped by the indexer /
     # ``Entity.from_fs_ref``. A plain string, mirrors DECK_TEMPLATE.
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)

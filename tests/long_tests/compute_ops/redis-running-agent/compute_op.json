@@ -1,0 +1,16 @@
+{
+  "type": "compute_op",
+  "name": "redis-running-agent",
+  "label": "redis (agent)",
+  "description": "A local redis answers PING.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "provisioner",
+    "prompt": "Reach this goal on this machine."
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "redis-cli ping"
+    }
+  }
+}

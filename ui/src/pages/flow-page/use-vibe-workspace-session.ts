@@ -1,9 +1,12 @@
-import { Tab } from '@sdk';
-import { useMemo } from 'react';
+import { AgenticProcess, parentOfTab, tabForDockKey, Tab, TypeId, type ShowTarget } from '@sdk';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useAllTabs } from '@src/tabs/all-tabs-store';
-import { ViewType } from '@src/types/ViewType';
+import { useAllTabs } from '@src/tabs/use-tab-manager';
+import { sessionIdForDock } from '@src/contexts/view-mode-context';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
+import { releaseLaunchWatch } from '@src/components/agents/launch-watch';
 
 /**
  * Resolved vibe-workspace session for the current URL.
@@ -41,8 +44,7 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
 
   return useMemo(() => {
     if (!currentDock) return null;
-    const tabByHash = (hash: string | null | undefined) =>
-      hash ? (allTabs.find((t) => t.dockPointer?.tabHash === hash) ?? null) : null;
+    const tabByHash = (hash: string | null | undefined) => tabForDockKey(allTabs, hash);
 
     // One session shape from "a process dock + its tab" — null if the dock isn't
     // a process dock. Both entry cases build through here so the 4 fields never
@@ -64,17 +66,101 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // Case 1 — the process URL itself: a SHELL dock with an agentic_process
     // pointer (the single URL family; legacy /dock/display forms redirect here
     // in the main loader's canonicalProcessDockPath).
-    if (currentDock.viewType === ViewType.SHELL) {
+    //
+    // The pointer check is load-bearing: a PLAIN shell dock (a terminal) is
+    // also viewType SHELL, but it is workspace CONTENT, not the anchor — it
+    // must fall through to the child lookup so a terminal opened inside the
+    // workspace keeps rendering in its display pane instead of taking over the
+    // whole surface.
+    if (sessionIdForDock(currentDock)) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 
     // Case 2 — a child URL: the current tab's parent is a live process dock.
-    const currentTab = tabByHash(currentDock.tabHash);
-    const parent = currentTab?.parent_tab_id
-      ? allTabs.find((t) => t.id === currentTab.parent_tab_id && t.visible !== false)
-      : undefined;
+    const parent = parentOfTab(allTabs, tabByHash(currentDock.tabHash));
     if (parent?.dockPointer) return build(parent, new DockPointer(parent.dockPointer), false);
+
+    // Case 3 — the URL names the host (`?host=agentic_process-<id>`). Answers
+    // when the tab table cannot: the child row is gone (closed — `list_all`
+    // lands before the URL moves) or not minted yet (cold open). Without it the
+    // surface drops to null for that window and flow-page paints the standard
+    // chrome. `build` rejects a non-process host.
+    const host = currentDock.hostProcessId;
+    if (host) {
+      const hostDock = DockPointer.forShell(host);
+      return build(tabByHash(hostDock.tabHash), hostDock, false);
+    }
 
     return null;
   }, [currentDock, allTabs]);
+}
+
+/**
+ * Own the process/session side effects shared by both workspace presentations.
+ * The process is resolved by the parent session id, never from the child route's
+ * active entity.
+ */
+export function useVibeWorkspaceSessionHost(
+  session: VibeWorkspaceSession | null,
+  active = true,
+): AgenticProcess | null {
+  const processTypeId = useMemo(
+    () => (session?.processId ? new TypeId(AgenticProcess.type, session.processId) : null),
+    [session?.processId],
+  );
+  const { data: process } = useEntity<AgenticProcess>(processTypeId, {
+    watch: true,
+    enabled: !!processTypeId,
+  });
+
+  // `processTab` is null in TWO situations that need OPPOSITE answers:
+  //   • never had one — a cold open; the row hasn't landed yet. Mint it.
+  //   • had one, now gone — ANOTHER WINDOW CLOSED THIS SESSION. Minting here
+  //     is what made a closed tab pop back: `setupTabAndAdopt` →
+  //     `materializeTab` finds no existing tab, falls through to `ensureDock`
+  //     → `new_tab` → `ensure_tab`, which sets `visible=True` again ~400 ms
+  //     after the close, so the tab could never be closed while a vibe window
+  //     watched it (RCA 2026-09-01).
+  // A session that is gone is not damage to repair.
+  const hadTab = useRef(false);
+  const sessionId = session?.processId ?? null;
+  useEffect(() => {
+    hadTab.current = false;
+  }, [sessionId]);
+  // The workspace is the session view: leaving it gives the launch-time watch lease back
+  // (the `useEntity({ watch: true })` above is the view's own watch and balances itself).
+  useEffect(() => () => releaseLaunchWatch(sessionId), [sessionId]);
+
+  useEffect(() => {
+    if (!active || !session) return;
+    if (session.processTab) {
+      hadTab.current = true;
+      return;
+    }
+    if (hadTab.current) return; // closed elsewhere — never rebuild it
+    void setupTabAndAdopt(session.processDock);
+  }, [active, session, session?.processTab, session?.processDock]);
+
+  return process ?? null;
+}
+
+/**
+ * A workspace's `flow show` state, scoped to its SESSION. One workspace component
+ * serves every Vibe tab — switching tabs re-renders it with another session — so
+ * this state resets when the session changes:
+ *  - `latestShown`: the newest show's payload (see `DisplayChrome.latestShown`);
+ *    left over, tab A's last show is appended to tab B's history popover.
+ *  - `hasPushedDisplayRef`: the FIRST show after arriving pushes, every later one
+ *    replaces (so Back returns to the workspace and a chatty agent does not bury
+ *    the user's history); left over, B's first show replaces the URL the user
+ *    arrived on.
+ */
+export function useSessionShowState(processId: string | null) {
+  const [latestShown, setLatestShown] = useState<ShowTarget | null>(null);
+  const hasPushedDisplayRef = useRef(false);
+  useEffect(() => {
+    hasPushedDisplayRef.current = false;
+    setLatestShown(null);
+  }, [processId]);
+  return { latestShown, setLatestShown, hasPushedDisplayRef };
 }

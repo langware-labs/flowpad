@@ -1,6 +1,6 @@
-"""ClaudeCliOptions — builds Claude Code CLI shell command strings.
+"""ClaudeAgentOptions — builds Claude Code CLI shell command strings.
 
-Extends WorkerCLIOptions with all Claude-specific switches:
+Extends AgentOptions with all Claude-specific switches:
 session/resume, fork, model, debug, permissions, chrome, worktree, agents.
 
 Auto-injects CLAUDE_PROJECT_DIR from workdir.
@@ -8,15 +8,19 @@ Auto-injects CLAUDE_PROJECT_DIR from workdir.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
+    quote_shell_arg,
+    serialize_json_cli_value,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
 from flow_sdk.config import PLATFORM_WIN32
 
 
-class ClaudeCliOptions(WorkerCLIOptions):
+class ClaudeAgentOptions(AgentOptions):
     """Builds a ``claude`` CLI shell command string for PTY injection.
 
     All fields map 1-to-1 to CLI flags. The command object is constructed
@@ -26,7 +30,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
     Example::
 
-        cmd = ClaudeCliOptions(session_id="abc-123", resume=True, workdir="/proj")
+        cmd = ClaudeAgentOptions(session_id="abc-123", resume=True, workdir="/proj")
         cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope_json)
         shell_str = cmd.to_shell_string()
         # → cd '/proj' && CLAUDE_PROJECT_DIR='/proj' FLOWPAD_EXECUTION_SCOPE='...'
@@ -34,7 +38,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
     Fork example::
 
-        cmd = ClaudeCliOptions(
+        cmd = ClaudeAgentOptions(
             session_id="new-uuid",      # new worker_session_id
             resume=True,
             fork_session_id="src-uuid", # the session being forked from
@@ -47,8 +51,12 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
     EXECUTABLE = "claude"
     PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
-    SYSTEM_PROMPT_FLAG = "--append-system-prompt"
     SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
+
+    def configure_fork(self, source_session_id: str) -> None:
+        self.resume = True
+        self.fork_session_id = source_session_id
+        self.session_id = mint_uuid()
 
     def __init__(
         self,
@@ -57,6 +65,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         fork_session_id: str | None = None,
         model: str | None = None,
         debug: bool = False,
+        debug_file: str | None = None,
         permission_mode: str = "bypassPermissions",
         chrome: bool = False,
         worktree: bool = False,
@@ -68,6 +77,9 @@ class ClaudeCliOptions(WorkerCLIOptions):
         output_format: str | None = None,
         verbose: bool = False,
         effort: str | None = None,
+        plugin_dirs: list[str] | None = None,
+        settings_json: dict | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -75,6 +87,13 @@ class ClaudeCliOptions(WorkerCLIOptions):
         self.fork_session_id = fork_session_id
         self.model = model
         self.debug = debug
+        # ``--debug-file`` redirects the debug stream to a path WE own. Two
+        # reasons that matters: the CLI's own ``~/.claude/debug/`` is pruned by
+        # its ``.last-cleanup`` housekeeping (the log for the incident you want
+        # is routinely gone by the time you look), and a redirected debug
+        # stream leaves stderr empty — measured 0 bytes — so turning debug on
+        # does not flood ``_drain_stderr``'s WARNING logging.
+        self.debug_file = debug_file
         self.permission_mode = permission_mode
         self.chrome = chrome
         self.worktree = worktree
@@ -90,13 +109,27 @@ class ClaudeCliOptions(WorkerCLIOptions):
         # the headless-orchestration path where the parent only needs to
         # dispatch to sub-agents and write a brief wrap-up.
         self.effort = effort
+        # Prepared process-local plugins. Launch-only: deliberately excluded
+        # from to_json()/from_json() and restart persistence.
+        self.plugin_dirs: list[str] = list(plugin_dirs or [])
+        # ``--settings <json>`` — an ADDITIONAL settings layer for this process
+        # only; the on-disk user/project settings (and the hooks
+        # ``claude_settings_sync`` writes there) still apply. Currently carries
+        # ``{"language": …}`` so the CLI builds its own ``# Language`` system-prompt
+        # section. Launch-only, like ``plugin_dirs``: excluded from
+        # to_json()/from_json() so it cannot churn the restart hash.
+        self.settings_json = settings_json
+        # ``--disallowedTools`` — tool patterns this worker may never run (``Bash(git checkout:*)``),
+        # from its agent's ``disallowed_tools``. A deny rule holds even under bypassPermissions,
+        # which is the point: an instruction can be ignored, a denied tool cannot be called.
+        self.disallowed_tools: list[str] = list(disallowed_tools or [])
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
             self.env_vars.setdefault("CLAUDE_PROJECT_DIR", workdir)
 
     # ------------------------------------------------------------------
-    # WorkerCLIOptions contract
+    # AgentOptions contract
     # ------------------------------------------------------------------
 
     def _resolve_binary(self) -> list[str]:
@@ -125,6 +158,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
             flags.append("--chrome")
         if self.debug:
             flags.append("--debug")
+        if self.debug_file:
+            flags.extend(["--debug-file", self.debug_file])
         if self.worktree:
             flags.append("--worktree")
         if self.verbose:
@@ -144,14 +179,26 @@ class ClaudeCliOptions(WorkerCLIOptions):
         if self.effort:
             flags.extend(["--effort", self.effort])
         if self.agents_json:
-            flags.extend(["--agents", json.dumps(self.agents_json)])
+            flags.extend(["--agents", serialize_json_cli_value(self.agents_json)])
+        if self.settings_json:
+            flags.extend(["--settings", serialize_json_cli_value(self.settings_json)])
+        if self.disallowed_tools:
+            flags.extend(["--disallowedTools", ",".join(self.disallowed_tools)])
+        if self.mcp_config_json:
+            # Takes a JSON STRING as well as a file path, so nothing is written
+            # to disk for a process's attached servers. ``--strict`` always rides
+            # with it: without it the process gets this set PLUS ~/.claude.json,
+            # and "which servers does this process have" has no answer.
+            flags.extend(["--mcp-config", self.mcp_config_json, "--strict-mcp-config"])
+        for directory in self.plugin_dirs:
+            flags.extend(["--plugin-dir", directory])
         if self.print_mode:
             flags.append("-p")
         for d in self.add_dirs:
             flags.extend(["--add-dir", d])
         return flags
 
-    def to_shell_string(self, instruction: str | None = None) -> str:
+    def _render_shell_string(self, platform: str, instruction: str | None) -> str:
         """Shell form of the claude command. The shell ordering differs from argv
         (and between OSes) — a pre-existing claude quirk we reproduce exactly:
 
@@ -161,9 +208,6 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
         Both derive from ``_emit_flags`` (the single argv source) — no second
         flag list."""
-        import shlex
-        import sys
-
         p_flag: list[str] = []
         add_dir: list[str] = []
         rest: list[str] = []
@@ -171,7 +215,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         i = 0
         while i < len(flags):
             if flags[i] == "--add-dir" and i + 1 < len(flags):
-                add_dir.extend(flags[i:i + 2])
+                add_dir.extend(flags[i : i + 2])
                 i += 2
             elif flags[i] == "-p":
                 p_flag.append("-p")
@@ -184,61 +228,56 @@ class ClaudeCliOptions(WorkerCLIOptions):
         # is exactly this string, and the interactive CLI accepts the flag.
         if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
             rest.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
-        if self.system_prompt_append and self.SYSTEM_PROMPT_FLAG:
-            rest.extend([self.SYSTEM_PROMPT_FLAG, self.system_prompt_append])
 
-        def q(xs: list[str]) -> list[str]:
-            return [shlex.quote(x) for x in xs]
+        def quote_all(values: list[str]) -> list[str]:
+            return [quote_shell_arg(value, platform) for value in values]
 
-        if sys.platform == "win32":
-            return self._build_win32(["claude", *q(rest), *q(add_dir), *p_flag], instruction)
-        cmd = self._build_posix(["claude", *q(rest), *p_flag], instruction)
+        if platform == "win32":
+            return self._build_win32(quote_all(["claude", *rest, *add_dir, *p_flag]), instruction)
+        cmd = self._build_posix(quote_all(["claude", *rest, *p_flag]), instruction)
         if add_dir:
-            cmd += " " + " ".join(q(add_dir))
+            cmd += " " + " ".join(quote_all(add_dir))
         return cmd
 
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
 
-    def to_json(self) -> dict[str, Any]:
-        d = super().to_json()
-        d.update({
-            "worker_type": "claude",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "fork_session_id": self.fork_session_id,
-            "model": self.model,
-            "debug": self.debug,
-            "permission_mode": self.permission_mode,
-            "chrome": self.chrome,
-            "worktree": self.worktree,
-            "agents_json": self.agents_json,
-            "print_mode": self.print_mode,
-            "add_dirs": self.add_dirs,
-            "output_format": self.output_format,
-            "verbose": self.verbose,
-            "effort": self.effort,
-        })
-        return d
+    # ── Serialisation ───────────────────────────────────────────────────────
+    # The base AgentOptions.to_json / from_json do the work; this is the whole
+    # declaration of this vendor's wire shape. Key names and value types are
+    # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":
-        return cls(
-            session_id=data.get("session_id"),
-            resume=bool(data.get("resume", False)),
-            fork_session_id=data.get("fork_session_id"),
-            model=data.get("model"),
-            debug=bool(data.get("debug", False)),
-            permission_mode=data.get("permission_mode", "bypassPermissions"),
-            chrome=bool(data.get("chrome", False)),
-            worktree=bool(data.get("worktree", False)),
-            agents_json=data.get("agents_json"),
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-            print_mode=bool(data.get("print_mode", False)),
-            add_dirs=list(data.get("add_dirs") or []),
-            output_format=data.get("output_format"),
-            verbose=bool(data.get("verbose", False)),
-            effort=data.get("effort"),
-        )
+    WORKER_TYPE = "claude"
+    SERIALIZED_FIELDS = (
+        "session_id",
+        "resume",
+        "fork_session_id",
+        "model",
+        "debug",
+        "debug_file",
+        "permission_mode",
+        "chrome",
+        "worktree",
+        "agents_json",
+        "print_mode",
+        "add_dirs",
+        "output_format",
+        "verbose",
+        "effort",
+    )
+    SPARSE_FIELDS = ("disallowed_tools",)
+    _COERCE = {
+        "resume": bool,
+        "debug": bool,
+        "chrome": bool,
+        "worktree": bool,
+        "print_mode": bool,
+        "verbose": bool,
+        "add_dirs": lambda v: list(v or []),
+        "disallowed_tools": lambda v: list(v or []),
+    }
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = ClaudeAgentOptions

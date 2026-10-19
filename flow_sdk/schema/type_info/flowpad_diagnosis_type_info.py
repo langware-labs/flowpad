@@ -5,11 +5,13 @@ cause found after debugging, and the fix that resolved it. App-created (not
 walked from arbitrary user files), so no ``from_disk_fn`` — it is persisted
 via ``FSRecord.save``/``sync_to_db`` into ``metadata.json`` + the DB.
 """
+
 from typing import Optional
 
 from pydantic import Field
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -54,6 +56,30 @@ class FlowpadDiagnosisMetadata(BaseMeta):
             "``symptoms``. Empty when the user asked for a full sweep."
         ),
     )
+    reported_by: Optional[str] = Field(
+        default=None,
+        description=(
+            "Who hit the issue — ``Name <email>`` as resolved on the machine that "
+            "recorded the diagnosis. Captured at record time so it survives a "
+            "forward to a helper on another machine."
+        ),
+    )
+    occurred_at: Optional[str] = Field(
+        default=None,
+        description=(
+            "ISO timestamp of when the diagnosis was recorded, on the reporting "
+            "machine. Distinct from the inherited ``created_date`` (storage-level, "
+            "re-stamped by a receiver at install time) — this one travels verbatim."
+        ),
+    )
+    os: Optional[str] = Field(
+        default=None,
+        description=("``platform.platform()`` of the machine the issue happened on, captured at record time."),
+    )
+    app_version: Optional[str] = Field(
+        default=None,
+        description="Flowpad version running on the machine the issue happened on.",
+    )
     origin_project_id: Optional[str] = Field(
         default=None,
         description=(
@@ -72,12 +98,17 @@ class FlowpadDiagnosisMetadata(BaseMeta):
             "a helper on another machine can see which project it happened on."
         ),
     )
+    diagnosis: Optional[DiagnosisSpec] = Field(
+        default=None,
+        description="The full diagnosis value (DiagnosisSpec): findings, machine, log tails.",
+    )
 
 
-FLOWPAD_DIAGNOSIS = TypeMetadata(
-    type=EntityType.FLOWPAD_DIAGNOSIS,
+FLOWPAD_DIAGNOSIS = TypeInfo(
+    type_name=EntityType.FLOWPAD_DIAGNOSIS,
     icon="Stethoscope",
-    browseable_by=ViewMode.DEV,
+    browseable_by=ViewMode.ADVANCED,
+    dev_only=True,
     creatable=True,
     api_visible=True,
     index_fields=["title", "symptoms"],

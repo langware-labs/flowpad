@@ -1,4 +1,4 @@
-"""Tests for SchemaRegistry — TypeInfo, registration, persistence, logging."""
+"""Tests for SchemaRegistry — TypeInfo, in-memory registration, logging."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
-from flow_sdk.fs_store.schema_registry import (
-    SchemaRegistry,
-    TypeInfo,
+from flow_sdk.fs_store.indexer import index_log
+from flow_sdk.fs_store.indexer.index_log import (
     _append_jsonl,
     _read_last_entry,
     _sanitize_type_name,
 )
+from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.fs_store.type_id import TypeId
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ def test_type_info_from_dict_uses_defaults():
 
 def test_register_and_get(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         info = TypeInfo(type_name="test_type")
         SchemaRegistry.register(info)
         result = SchemaRegistry.get("test_type")
@@ -133,7 +133,7 @@ def test_register_and_get(tmp_path):
 
 def test_register_idempotent_merges_locations(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="t", locations=["record"]))
         SchemaRegistry.register(TypeInfo(type_name="t", locations=["index"]))
         info = SchemaRegistry.get("t")
@@ -144,7 +144,7 @@ def test_register_idempotent_merges_locations(tmp_path):
 
 def test_register_parent_type_builds_subtypes(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="parent"))
         SchemaRegistry.register(TypeInfo(type_name="child", parent_type="parent"))
         subtypes = SchemaRegistry.get_subtypes("parent")
@@ -155,7 +155,7 @@ def test_register_parent_type_builds_subtypes(tmp_path):
 
 def test_get_all_types(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="a"))
         SchemaRegistry.register(TypeInfo(type_name="b"))
         all_types = SchemaRegistry.get_all_types()
@@ -170,7 +170,7 @@ def test_get_returns_none_for_unknown():
 
 def test_indexed_by_default_accumulates(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="x", indexed_by_default=True))
         SchemaRegistry.register(TypeInfo(type_name="y", indexed_by_default=True))
         result = SchemaRegistry.get_default_index_types()
@@ -191,43 +191,32 @@ def test_get_default_index_types_fallback_when_empty():
 
 
 # ---------------------------------------------------------------------------
-# SchemaRegistry — persistence
+# SchemaRegistry — registration leaves schema storage untouched
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason="SchemaRegistry.register() no longer writes type_info.json to disk. "
-    "Module docstring still references it but implementation only stores in cls._types."
-)
-def test_persist_writes_type_info_json(tmp_path):
+def test_registration_does_not_create_schema_directory(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        SchemaRegistry.register(TypeInfo(type_name="persist_me", locations=["record"]))
-    json_file = tmp_path / "types" / "persist_me" / "type_info.json"
-    assert json_file.exists()
-    data = json.loads(json_file.read_text())
-    assert data["type_name"] == "persist_me"
-    _fresh_registry()
-
-
-@pytest.mark.skip(
-    reason="SchemaRegistry.register() no longer writes type_info.json to disk."
-)
-def test_persist_skips_if_hash_unchanged(tmp_path):
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        info = TypeInfo(type_name="stable")
+    schema_dir = tmp_path / "schema"
+    info = TypeInfo(type_name="memory_only", locations=["record"])
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: schema_dir):
         SchemaRegistry.register(info)
-        json_file = tmp_path / "types" / "stable" / "type_info.json"
-        mtime1 = json_file.stat().st_mtime
+        assert SchemaRegistry.get(info.type_name) is info
+    assert not schema_dir.exists()
+    _fresh_registry()
 
-        # Re-register same info — hash unchanged, file should NOT be rewritten
-        import time
 
-        time.sleep(0.01)
-        SchemaRegistry.register(info)
-        mtime2 = json_file.stat().st_mtime
-    assert mtime1 == mtime2
+def test_reregistration_preserves_legacy_type_info_json(tmp_path):
+    _fresh_registry()
+    legacy_file = tmp_path / "types" / "stable" / "type_info.json"
+    legacy_file.parent.mkdir(parents=True)
+    legacy_bytes = b'{"type_name":"stable","index_fields":["legacy"]}\n'
+    legacy_file.write_bytes(legacy_bytes)
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        SchemaRegistry.register(TypeInfo(type_name="stable", index_fields=["before"]))
+        SchemaRegistry.register(TypeInfo(type_name="stable", index_fields=["after"]))
+        assert SchemaRegistry.get("stable").index_fields == ["after"]
+    assert legacy_file.read_bytes() == legacy_bytes
     _fresh_registry()
 
 
@@ -237,8 +226,8 @@ def test_persist_skips_if_hash_unchanged(tmp_path):
 
 
 def test_append_scan_global_log(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_scan(
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_scan(
             trigger="test",
             duration_ms=10.0,
             total_records=5,
@@ -254,8 +243,8 @@ def test_append_scan_global_log(tmp_path):
 
 
 def test_append_scan_per_type_log(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_scan(
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_scan(
             trigger="test",
             duration_ms=5.0,
             total_records=2,
@@ -273,8 +262,8 @@ def test_append_scan_per_type_log(tmp_path):
 def test_append_index_global_and_per_type(tmp_path):
     """append_index now writes per-type only — 'global' timestamp is derived
     by get_index_status as max(per_type[i].last_indexed_at) (see docstring)."""
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_index(
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_index(
             trigger="test",
             duration_ms=20.0,
             total_indexed=3,
@@ -288,38 +277,50 @@ def test_append_index_global_and_per_type(tmp_path):
 
 
 def test_get_last_scan_at_none_when_missing(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        result = SchemaRegistry.get_last_scan_at("nonexistent_type")
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        result = index_log.get_last_scan_at("nonexistent_type")
     assert result is None
 
 
 def test_get_last_index_at_returns_timestamp(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_index(
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_index(
             trigger="t",
             duration_ms=1.0,
             total_indexed=1,
             types=[],
             type_name="skill",
         )
-        result = SchemaRegistry.get_last_index_at("skill")
+        result = index_log.get_last_index_at("skill")
     assert result == ts
 
 
-@pytest.mark.skip(
-    reason="get_last_global_index_at was removed; the global timestamp is now "
-    "derived in get_index_status as max(per_type[i].last_indexed_at)."
-)
-def test_get_last_global_index_at_none_when_no_log(tmp_path):
-    pass
+@pytest.mark.asyncio
+async def test_get_index_status_ignores_legacy_global_history(tmp_path):
+    _append_jsonl(tmp_path / "index_log.jsonl", {"created_at": "2026-09-01T12:00:00+00:00"})
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        status = await index_log.get_index_status(types=["skill", "bookmark"])
+    assert status.last_indexed_at is None
+    assert status.never_indexed is True
+    assert all(item.last_indexed_at is None for item in status.per_type)
 
 
-@pytest.mark.skip(
-    reason="get_last_global_index_at was removed; the global timestamp is now "
-    "derived in get_index_status as max(per_type[i].last_indexed_at)."
-)
-def test_get_last_global_index_at_returns_last(tmp_path):
-    pass
+@pytest.mark.asyncio
+async def test_get_index_status_uses_latest_requested_type_timestamp(tmp_path):
+    newer = "2026-09-01T12:00:00+00:00"
+    older = "2026-08-01T12:00:00+00:00"
+    _append_jsonl(tmp_path / "types" / "skill" / "index_log.jsonl", {"created_at": newer})
+    _append_jsonl(tmp_path / "types" / "bookmark" / "index_log.jsonl", {"created_at": older})
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        for requested_types in (["skill", "bookmark", "spec"], ["spec", "bookmark", "skill"]):
+            status = await index_log.get_index_status(types=requested_types)
+            assert status.last_indexed_at == newer
+            assert status.never_indexed is False
+            assert {item.type_name: item.last_indexed_at for item in status.per_type} == {
+                "skill": newer,
+                "bookmark": older,
+                "spec": None,
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -329,8 +330,8 @@ def test_get_last_global_index_at_returns_last(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_index_status_never_indexed(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        status = await SchemaRegistry.get_index_status()
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        status = await index_log.get_index_status()
     assert status.never_indexed is True
     assert status.last_indexed_at is None
     assert status.stale is False
@@ -344,8 +345,8 @@ async def test_get_index_status_stale_when_changes_pending(tmp_path):
 
     proj = SimpleNamespace(indexed_at="2020-01-01T00:00:00+00:00", index_required=True)
     scope = SimpleNamespace(projects=["11111111-2222-4333-8444-555555555555"])
-    with patch.object(SchemaRegistry, "_project_record_for_status", return_value=proj):
-        status = await SchemaRegistry.get_index_status(scope=scope)
+    with patch("flow_sdk.fs_store.indexer.index_log._project_record_for_status", return_value=proj):
+        status = await index_log.get_index_status(scope=scope)
     assert status.stale is True
     assert status.never_indexed is False
 
@@ -354,10 +355,10 @@ async def test_get_index_status_stale_when_changes_pending(tmp_path):
 async def test_get_index_status_not_stale_when_recent(tmp_path):
     now = datetime.now(timezone.utc).isoformat()
     with (
-        patch.object(SchemaRegistry, "get_last_index_at", return_value=now),
-        patch.object(SchemaRegistry, "get_last_scan_at", return_value=now),
+        patch("flow_sdk.fs_store.indexer.index_log.get_last_index_at", return_value=now),
+        patch("flow_sdk.fs_store.indexer.index_log.get_last_scan_at", return_value=now),
     ):
-        status = await SchemaRegistry.get_index_status()
+        status = await index_log.get_index_status()
     assert status.stale is False
     assert not any(t.stale for t in status.per_type)
 
@@ -374,7 +375,7 @@ async def test_get_index_status_not_stale_when_recent(tmp_path):
 
 def test_type_info_extends_returns_parent(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="base_type"))
         SchemaRegistry.register(TypeInfo(type_name="derived_type", parent_type="base_type"))
         child_info = SchemaRegistry.get("derived_type")
@@ -386,7 +387,7 @@ def test_type_info_extends_returns_parent(tmp_path):
 
 def test_type_info_subtypes_returns_children(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="root"))
         SchemaRegistry.register(TypeInfo(type_name="child1", parent_type="root"))
         SchemaRegistry.register(TypeInfo(type_name="child2", parent_type="root"))
@@ -440,7 +441,7 @@ def test_type_info_type_id():
 
 def test_schema_registry_get_accepts_typeid(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+    with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="skill_x", locations=["record"]))
         tid = TypeId("skill_x-@local")
         info = SchemaRegistry.get(tid)

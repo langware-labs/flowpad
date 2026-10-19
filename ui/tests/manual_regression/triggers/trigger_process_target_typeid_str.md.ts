@@ -3,12 +3,12 @@
  * Source: trigger_process_target_typeid_str.md
  *
  * Schedule-trigger fire sets target_typeid_str="trigger-<id>" on the spawned
- * process; the filtered list returns it; the TriggerInvocationsPanel renders a
+ * process; the filtered list returns it; the automation's Runs tab renders a
  * "Scheduled" row. Steps 1-4 (API) are the binding pass criteria; step 5 (UI)
  * is soft. Schedule triggers MUST be created with project_id.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { dismissSetupModal, gotoTriggers } from './helpers';
+import { dismissSetupModal, gotoAutomation } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
 
 const API = apiBase();
@@ -58,11 +58,15 @@ test('trigger fire attaches process via target_typeid_str + panel shows invocati
     // 2. No pre-existing rows for this fresh trigger.
     expect((await processesForTrigger(rq, tid)).length).toBe(0);
 
-    // 3. Fire the trigger.
+    // 3. Fire the trigger — *Run once now*. It answers `automation.run_once`
+    //    (RunOnceStarted: the run began, its `trigger.fired` envelope id) at once
+    //    and the work continues in the background. A test run spends nothing a
+    //    real fire spends, so there is no counter to read (automations/run_once.py).
     const fired = await (await rq.post(`${API}/api/v1/graph/trigger/${tid}/test`)).json();
-    const fireStatus = fired.status === 'SUCCESS' ? fired.data?.status : fired.status;
-    expect(fireStatus).toBe('fired');
-    expect(fired.data?.counter ?? 0).toBeGreaterThan(0);
+    expect(fired.status, JSON.stringify(fired).slice(0, 300)).toBe('SUCCESS');
+    expect(fired.data?.trigger_id).toBe(tid);
+    expect(fired.data?.event_id, 'the run has a trigger.fired envelope to follow into Runs').toBeTruthy();
+    expect(fired.data?.error ?? null).toBeNull();
 
     // 4. The spawned process carries the serialized key (poll — spawn is async).
     await expect(async () => {
@@ -71,15 +75,9 @@ test('trigger fire attaches process via target_typeid_str + panel shows invocati
       expect(rows.some((p) => p.target_typeid_str === `trigger-${tid}`)).toBe(true);
     }).toPass({ timeout: 15_000 });
 
-    // 5. UI (soft): TriggerInvocationsPanel shows a "Scheduled" invocation row.
-    await gotoTriggers(page);
-    const triggerItem = page.getByText('qa-target-typeid-str').first();
-    if (await triggerItem.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await triggerItem.click();
-      await expect(page.getByText('Invocations').first()).toBeVisible({ timeout: 10_000 });
-      // Scheduled label may take a moment to load from TriggerLogRecord.
-      await page.getByText('Scheduled').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-    }
+    // 5. UI (soft): the automation's Runs tab shows a "Scheduled" run.
+    await gotoAutomation(page, tid);
+    await page.getByText('Scheduled').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
   } finally {
     // 6. Cleanup.
     await rq.delete(`${API}/api/v1/graph/trigger/${tid}`);

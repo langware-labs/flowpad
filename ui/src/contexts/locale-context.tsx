@@ -1,8 +1,17 @@
 import { i18n } from '@lingui/core';
 import { useSyncExternalStore } from 'react';
-import { instancePreferences, InstancePreferencesEvent, PrefKey } from '@sdk';
+import {
+  ContextEventType,
+  dataContext,
+  dataManager,
+  instancePreferences,
+  InstancePreferencesEvent,
+  isHubOnly,
+  PrefKey,
+  type Project,
+} from '@sdk';
 import type { SupportedLocale } from '@sdk/models';
-import { usePreference } from '@src/hooks/use-preference';
+import { usePreferenceValue } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 
 /**
@@ -28,9 +37,12 @@ import { defineGlobal } from '@sdk/utils';
  *        - exactly 1 → that language
  *        - 2+        → the best system match; the footer chip lets them switch.
  *
- * The footer picker is shown whenever the BACKEND ships 2+ locales. The OS
- * intersection above only picks the first-run DEFAULT — it never decides whether
- * the picker is offered (see `LanguageSelector`).
+ * The footer's QUICK switch is offered only when the user and the app share 2+
+ * languages (`useQuickLocaleSwitch`). "The user's languages" is the union of
+ * `navigator.languages` and the backend's `user_languages` — the OS display
+ * languages plus KEYBOARD LAYOUTS, which the browser cannot see: a Hebrew
+ * keyboard on an English OS is a Hebrew reader. Every supported language stays
+ * reachable from Settings → Language whatever the overlap.
  *
  * Catalogs are loaded lazily per locale (dynamic `*.po` import → `i18n.load` →
  * `i18n.activate`) so only the active locale's messages are fetched.
@@ -63,6 +75,9 @@ const FALLBACK_LOCALES: LocaleInfo[] = [
 // it reactively via `useSupportedLocales` (useSyncExternalStore).
 let _supported: LocaleInfo[] = FALLBACK_LOCALES;
 const _supportedListeners = new Set<() => void>();
+// OS display + keyboard languages reported by the backend (bootstrap
+// `user_languages`). Written alongside `_supported`, so it shares its listeners.
+let _osLanguages: readonly string[] = [];
 
 /** Current supported locales (backend-derived, or the en-US fallback pre-bootstrap). */
 export function getSupportedLocales(): LocaleInfo[] {
@@ -78,11 +93,7 @@ declare global {
 
 function localeInfo(code: string): LocaleInfo {
   const supported = getSupportedLocales();
-  return (
-    supported.find((l) => l.code === code) ??
-    supported.find((l) => l.code === DEFAULT_LOCALE) ??
-    supported[0]
-  );
+  return supported.find((l) => l.code === code) ?? supported.find((l) => l.code === DEFAULT_LOCALE) ?? supported[0];
 }
 
 function isSupported(code: string | null | undefined): code is string {
@@ -102,7 +113,7 @@ function matchLanguageTag(raw: string | null | undefined): string | null {
 
 /** Navigator (OS-preference) language tags, in order. */
 function navigatorLanguages(): readonly string[] {
-  return typeof navigator !== 'undefined' ? navigator.languages ?? [navigator.language] : [];
+  return typeof navigator !== 'undefined' ? (navigator.languages ?? [navigator.language]) : [];
 }
 
 /**
@@ -115,6 +126,22 @@ export function systemIntersection(): LocaleInfo[] {
   const seen = new Set<string>();
   const out: LocaleInfo[] = [];
   for (const raw of navigatorLanguages()) {
+    const code = matchLanguageTag(raw);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(localeInfo(code));
+  }
+  return out;
+}
+
+/**
+ * Supported locales the USER uses: `navigator.languages` ∪ the backend's OS
+ * display + keyboard languages, matched to supported codes and de-duped.
+ */
+export function userLocaleOverlap(): LocaleInfo[] {
+  const seen = new Set<string>();
+  const out: LocaleInfo[] = [];
+  for (const raw of [...navigatorLanguages(), ..._osLanguages]) {
     const code = matchLanguageTag(raw);
     if (!code || seen.has(code)) continue;
     seen.add(code);
@@ -193,12 +220,146 @@ function pushRecent(code: string): void {
   }
 }
 
+/**
+ * Write the project's SHARED language — the `locale` on the row, which travels
+ * to the hub and is what every member opens the project in. Only
+ * `setProjectLocale` (the project home's Language card) gets here; the footer
+ * never does, so an accidental footer switch can't change the language for
+ * everyone.
+ */
+function stampProjectLocale(project: Project | null | undefined, code: string): void {
+  if (!project || project.locale === code) return;
+  // Hub: same hazard as view mode — the hub's project schema has no `locale`, so
+  // `toJSON` would emit a full-row PUT missing it AND missing `name`, wiping the
+  // name off every project the hub loads. Don't write projects from here on the hub.
+  if (isHubOnly()) return;
+  project.locale = code;
+  void project.save().catch((err) => {
+    console.warn('[locale] failed to record locale on project', err);
+  });
+}
+
+/**
+ * This device's own language per project (footer picks), keyed by project id.
+ * Wins over the project's shared `locale` in `applyProjectLocale`.
+ */
+function personalProjectLocales(): Record<string, string> {
+  const value = instancePreferences.get(PrefKey.PROJECT_LOCALES);
+  return value && typeof value === 'object' ? (value as Record<string, string>) : {};
+}
+
+function setPersonalProjectLocale(projectId: string | null | undefined, code: string | null): void {
+  if (!projectId) return;
+  const current = personalProjectLocales();
+  if ((current[projectId] ?? null) === code) return;
+  const next = { ...current };
+  if (code) next[projectId] = code;
+  else delete next[projectId];
+  instancePreferences.set(PrefKey.PROJECT_LOCALES, next);
+}
+
+/**
+ * Make a locale the active one — preference, recents, catalog, `<html>` attrs.
+ * Deliberately does NOT touch the current project: this is "show the app in this
+ * language", not "the user chose this language for this project".
+ */
+async function activateLocale(code: string): Promise<void> {
+  instancePreferences.set(PrefKey.LOCALE, code); // mirrors to localStorage (boot key)
+  pushRecent(code);
+  await loadAndActivate(code);
+  applyLocaleAttributes(code);
+}
+
+/**
+ * The user's own language switch (footer chip, Settings, `window.setLocale`).
+ * Local only: inside a project it is remembered as THIS device's language for
+ * that project, and the project's shared `locale` is left alone.
+ */
 export async function setLocale(code: string): Promise<void> {
   const next = isSupported(code) ? code : DEFAULT_LOCALE;
-  instancePreferences.set(PrefKey.LOCALE, next); // mirrors to localStorage (boot key)
-  pushRecent(next);
-  await loadAndActivate(next);
-  applyLocaleAttributes(next);
+  setPersonalProjectLocale(dataContext.project?.id, next);
+  await activateLocale(next);
+}
+
+/**
+ * Change the project's language for EVERYONE — the project home's Language card,
+ * the only writer of the shared `locale`. Drops this device's own override for
+ * the project, so the user now reads it the way they just set it for all.
+ */
+export async function setProjectLocale(project: Project, code: string): Promise<void> {
+  const next = isSupported(code) ? code : DEFAULT_LOCALE;
+  stampProjectLocale(project, next);
+  setPersonalProjectLocale(project.id, null);
+  await activateLocale(next);
+}
+
+/**
+ * The language a project CREATED here is born with: whatever the app is showing
+ * right now.
+ *
+ * `applyProjectLocale` below treats an unset `locale` as "no answer" and opens
+ * in English rather than inheriting the last project's language — that rule is
+ * about ENTERING a project someone else's answer may be missing from. A project
+ * you just made in a Hebrew app is not an unanswered project: making it in
+ * Hebrew *is* the answer, and English is a wrong one. Changing it later is the
+ * footer chip / Language card, exactly as for any other project.
+ *
+ * LOCAL creation only. A project that arrives from the hub — shared or remote —
+ * carries its own answer on the row and that one wins: `stampNewProjectLocale`
+ * never overwrites a set locale, and both helpers stand down on the hub itself
+ * (its project schema has no `locale`; see `stampProjectLocale`).
+ */
+export function newProjectLocale(): string | null {
+  return isHubOnly() ? null : getLocale();
+}
+
+/**
+ * `newProjectLocale` for the creation path that does NOT own the constructor:
+ * a git clone, where the backend mints the row and hands it back. Same rule,
+ * applied after the fact — and awaited, because the caller navigates into the
+ * project next and `applyProjectLocale` must read the seeded value rather than
+ * the empty one it would race.
+ */
+export async function stampNewProjectLocale(project: Project): Promise<void> {
+  const code = newProjectLocale();
+  if (!code || project.locale) return;
+  project.locale = code;
+  await project.save().catch((err) => {
+    console.warn('[locale] failed to seed locale on new project', err);
+  });
+}
+
+/**
+ * Apply a project's remembered language. Driven by the context subscription
+ * below — NOT wired to any one route — so every way of entering a project gets
+ * it (see `onCurrentProjectChanged`).
+ *
+ * A stored supported `locale` switches the app exactly as the footer picker
+ * would. NO stored locale means English: an unset (or unrecognized) project
+ * opens in `DEFAULT_LOCALE` rather than inheriting whatever language happened
+ * to be active — a project's language is a property of the project, so an
+ * unanswered one must not silently take the colour of the last project you were
+ * in. Unset is left unset on the row, not stamped: `en-US` here is the meaning
+ * of "no answer", not an answer the user gave. It becomes a real stored value
+ * the moment someone picks one on the Language card (`setProjectLocale`). A
+ * footer pick is this device's own override, and is checked first.
+ *
+ * The switch is fire-and-forget so no caller waits on it (the URL-first rule
+ * keeps loaders fast); `<html lang/dir>` and the Lingui catalog land a tick
+ * later, as they do for a footer switch.
+ */
+export function applyProjectLocale(project: Project): void {
+  // Hub: not the surface a project is WORKED in — and the hub's bootstrap ships
+  // no `supported_locales`, so every real code reads as unsupported there and
+  // this would resolve to en-US and yank a Hebrew reader into English on a page
+  // that has no per-project language to offer instead. Leave their choice alone.
+  if (isHubOnly()) return;
+  const personal = personalProjectLocales()[project.id];
+  const target = isSupported(personal) ? personal : isSupported(project.locale) ? project.locale : DEFAULT_LOCALE;
+  if (target === getLocale()) return;
+  void activateLocale(target).catch((err) => {
+    console.warn('[locale] failed to apply project locale', err);
+  });
 }
 
 /** Resolve, (optionally) persist the first-run pick, set `<html>` attrs, activate. */
@@ -231,10 +392,29 @@ export async function initLocale(): Promise<void> {
  * auto-pick). Call once after bootstrap, from the root loader, before the app
  * tree mounts.
  */
-export async function applySupportedLocales(list: LocaleInfo[] | null | undefined): Promise<void> {
+export async function applySupportedLocales(
+  list: LocaleInfo[] | null | undefined,
+  osLanguages?: readonly string[] | null,
+): Promise<void> {
   _supported = list && list.length > 0 ? list : FALLBACK_LOCALES;
+  _osLanguages = osLanguages ?? [];
   _supportedListeners.forEach((fn) => fn());
   await resolveAndApply(true);
+  // From here on a project's language can actually be resolved, so start
+  // following the current project (see `ensureProjectLocaleSync`) — and
+  // RECONCILE THE ONE THAT IS ALREADY CURRENT.
+  //
+  // The catch-up is the load-bearing half, not defensiveness. `loadRoot` is
+  // `initSdk()` then this, and `initSdk` adopts `bootstrapInfo.default_project`
+  // — so on a provisioned box the project is current BEFORE anything here is
+  // listening, and the event a subscription waits for is already in the past.
+  // A real sandbox proved it: the box carried `locale='he'`, ran the build with
+  // the subscription in it, and still opened in English.
+  //
+  // After `resolveAndApply` deliberately: that re-resolves the app's own stored
+  // choice, and the project must have the final say over the surface it owns.
+  ensureProjectLocaleSync();
+  await onCurrentProjectChanged(true);
 }
 
 // React to prefMan-driven locale changes (a backend value reconciled in on load, or a
@@ -246,21 +426,118 @@ async function onPrefLocaleChanged(): Promise<void> {
     applyLocaleAttributes(code);
   }
 }
-instancePreferences.on(InstancePreferencesEvent.PREFERENCES_CHANGED, () => void onPrefLocaleChanged());
-instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, () => void onPrefLocaleChanged());
+/**
+ * The language follows the CURRENT PROJECT, however it became current.
+ *
+ * Deliberately hung off the context change rather than a route loader. Becoming
+ * "in" a project is not one code path: a loader does it, but so do the project
+ * picker, quick-create, the task/conversation/asset loaders adopting an entity's
+ * owner, the boot-time restore, and — the one that made this non-negotiable —
+ * `initSdk` adopting `bootstrapInfo.default_project`, which is how a provisioned
+ * SANDBOX adopts the project it was built for. Wired to `loadProject` alone, a
+ * box opened its Hebrew project reading English, and each of the other writers
+ * was the same bug waiting for someone to walk into it.
+ *
+ * `setContextEntityTypeId` is the single choke point all of them funnel through
+ * and it already early-returns on an unchanged TypeId, so this fires exactly
+ * once per real switch. The id guard here covers the rest of CONTEXT_CHANGED,
+ * which is emitted for every context key, not just the project.
+ *
+ * Leaving a project (id → null) deliberately does NOT change the language:
+ * there is no project asking for one, and yanking the user's language on the
+ * way out would be a change nobody requested.
+ */
+let _localeProjectId: string | null = null;
+
+/**
+ * @param reconcile true = apply the CURRENT project's language even though the
+ *   id has not changed. The id guard exists to ignore the rest of
+ *   CONTEXT_CHANGED (it fires for every context key), but "already current" is
+ *   exactly the boot case — so the catch-up must not be filtered out by it.
+ *   `applyProjectLocale` no-ops when the language already matches, so forcing
+ *   costs nothing.
+ */
+async function onCurrentProjectChanged(reconcile = false): Promise<void> {
+  const typeId = dataContext.projectTypeId;
+  const id = typeId?.id ?? null;
+  if (!reconcile && id === _localeProjectId) return;
+  _localeProjectId = id;
+  if (!id || !typeId) return;
+  // Usually already cached (whoever set the context had the entity in hand);
+  // fetch only when it isn't, and let a failure pass — a language is not worth
+  // failing a navigation over.
+  const project =
+    dataContext.project?.id === id
+      ? dataContext.project
+      : await dataManager.getByTypeId<Project>(typeId).catch(() => null);
+  if (project) applyProjectLocale(project);
+}
+
+let _projectLocaleSyncInstalled = false;
+
+/**
+ * Installed from `applySupportedLocales`, not at module import.
+ *
+ * Two reasons, and the first is the real one: before the backend's locale list
+ * is in, `isSupported('he')` is false and every project would resolve to en-US —
+ * the subscription has nothing correct to do until then. The second is that this
+ * module is pulled in transitively by `i18n-init`, so subscribing at import time
+ * made every unit test that mocks `@sdk` with a partial `dataContext` fail on
+ * `dataContext.on is not a function`.
+ */
+function ensureProjectLocaleSync(): void {
+  if (_projectLocaleSyncInstalled) return;
+  _projectLocaleSyncInstalled = true;
+  dataContext.on(ContextEventType.CONTEXT_CHANGED, () => void onCurrentProjectChanged());
+  // Same reason, same seam: these two used to subscribe at module import, so any
+  // unit test whose partial `@sdk` mock omits `instancePreferences` died on
+  // import of a module that merely pulls this one in transitively — and because
+  // the mock leaks per worker, WHICH file blew up moved with the schedule.
+  // Installed here instead, then reconciled once for a preference that loaded
+  // before the subscription existed.
+  instancePreferences.on(InstancePreferencesEvent.PREFERENCES_CHANGED, () => void onPrefLocaleChanged());
+  instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, () => void onPrefLocaleChanged());
+  void onPrefLocaleChanged();
+}
 
 defineGlobal('setLocale', setLocale);
 defineGlobal('getLocale', getLocale);
 
-/** Reactive accessor for the active locale code. */
+/**
+ * Reactive accessor for the active locale code.
+ *
+ * Reads BOTH stores, and must: the preference holds the code, but whether that
+ * code counts is decided by the backend-derived supported list — and that list
+ * lands with bootstrap, one root-loader tick AFTER this tree first renders.
+ * Until it does, a stored `he` reads as unsupported and this answers `en-US`.
+ * Subscribing to the list (not merely reading it) is what re-renders when the
+ * real one arrives; without it the React-side answer freezes at that
+ * pre-bootstrap `en-US` for the whole session, because the preference never
+ * changes afterwards and so never notifies. That froze `<DirectionProvider>` at
+ * `ltr` while `<html dir>` — written imperatively — correctly went `rtl`, and
+ * every Radix primitive that stamps its own `dir` (Tabs.Root) then pinned its
+ * whole subtree left-to-right against the document.
+ */
 export function useLocale(): string {
-  const [value] = usePreference<string>(PrefKey.LOCALE);
-  return isSupported(value) ? value : DEFAULT_LOCALE;
+  const supported = useSupportedLocales();
+  // The value only: `usePreference` re-renders on ANY preference change, and this hook is
+  // read by every MarkdownView in a chat (a view-mode flip re-parsed all 600 of a long one).
+  const value = usePreferenceValue<string>(PrefKey.LOCALE);
+  return supported.some((l) => l.code === value) ? value : DEFAULT_LOCALE;
 }
 
 /** Reactive accessor for the full active LocaleInfo. */
 export function useLocaleInfo(): LocaleInfo {
   return localeInfo(useLocale());
+}
+
+/**
+ * Whether the footer offers its quick language switch: the user and the app
+ * share 2+ languages (see `userLocaleOverlap`). Re-evaluates when bootstrap lands.
+ */
+export function useQuickLocaleSwitch(): boolean {
+  useSupportedLocales();
+  return userLocaleOverlap().length >= 2;
 }
 
 /** Reactive accessor for the backend-derived supported locales. */
@@ -274,4 +551,3 @@ export function useSupportedLocales(): LocaleInfo[] {
     getSupportedLocales,
   );
 }
-

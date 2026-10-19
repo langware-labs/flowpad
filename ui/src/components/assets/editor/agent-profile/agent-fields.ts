@@ -1,0 +1,33 @@
+import type { Agent } from '@sdk';
+
+export type AgentDocumentPatch = Partial<
+  Pick<
+    Agent,
+    | 'name'
+    | 'title'
+    | 'description'
+    | 'avatar'
+    | 'color'
+    | 'worker_type'
+    | 'model'
+    | 'permission_mode'
+    | 'effort'
+    | 'machine_size'
+    | 'max_turns'
+    | 'tools'
+    | 'disallowed_tools'
+    | 'mcp_servers'
+    | 'subagents'
+    | 'additional_dirs'
+    | 'load_flowpad_assistant'
+    | 'chief_of_staff'
+    | 'cli_options'
+    | 'enabled'
+    | 'intro'
+    | 'auto_launch'
+    | 'auto_launch_prompt'
+    | 'auto_open'
+    | 'phone'
+    | 'system_prompt'
+  >
+>;

@@ -11,7 +11,7 @@ Verifies that:
 import uuid
 
 import pytest
-import pytest_asyncio
+
 from flow_sdk.responses.response import ApiResponse
 
 

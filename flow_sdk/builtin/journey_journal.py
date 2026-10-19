@@ -47,7 +47,7 @@ class JourneyJournal(Entity):
     user_id: str = APIField(default="")
     status: str = APIField(default=JourneyStatus.NEW.value,
                            description="new | launched | complete | restarted")
-    run_id: str = APIField(default="", description="Live AgenticFlowRun advancing this journal.")
+    run_id: str = APIField(default="", description="Live GraphWorkflowRun advancing this journal.")
     cursor: str = APIField(default="", description="Current guided_step node id ('' when complete).")
     total_steps: int = APIField(default=0)
     steps_left: int = APIField(default=0, description="Badge count = total_steps - completed.")

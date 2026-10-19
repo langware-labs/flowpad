@@ -153,6 +153,57 @@ class TestUpdateNullCreatedBy:
         assert reloaded[0].session_id == "soc2-updated"
 
 
+class TestCompareAndSetDataField:
+    @pytest.mark.asyncio
+    async def test_updates_only_the_expected_existing_value(self, driver):
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        process = AgenticProcess(session_id="cas-active")
+        await driver.save(process)
+
+        updated, changed = await driver.compare_and_set_data_field(
+            str(process.id),
+            process.type,
+            "name",
+            None,
+            "First title",
+        )
+        assert changed is True
+        assert updated is not None
+        assert updated.name == "First title"
+
+        _, stale_changed = await driver.compare_and_set_data_field(
+            str(process.id),
+            process.type,
+            "name",
+            None,
+            "Late stale title",
+        )
+        assert stale_changed is False
+        persisted = await driver.get_by_id(str(process.id), process.type)
+        assert persisted is not None
+        assert persisted.name == "First title"
+
+    @pytest.mark.asyncio
+    async def test_never_recreates_a_deleted_row(self, driver):
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        process = AgenticProcess(session_id="cas-deleted")
+        await driver.save(process)
+        await driver.delete(process.typeid)
+
+        updated, changed = await driver.compare_and_set_data_field(
+            str(process.id),
+            process.type,
+            "name",
+            None,
+            "Late title",
+        )
+        assert updated is None
+        assert changed is False
+        assert await driver.get_by_id(str(process.id), process.type) is None
+
+
 class TestGetAllJsonFieldFilter:
     def test_unknown_kwarg_raises(self):
         """QueryFilter(unknown_field=X) must raise, not silently drop the filter."""
@@ -182,3 +233,94 @@ class TestGetAllJsonFieldFilter:
 
         assert len(results) == 1
         assert results[0].session_id == "session-A"
+
+
+class TestGetAllSkipsUnreadableRows:
+    """A list survives a row it cannot build; a single-row read still says it is broken.
+
+    A `source_item` whose payload named a `spec_kind` this process could not reach used to
+    abort the whole hydration loop, so `GET /api/v1/graph/source_item` answered 500 and the
+    screen was empty — several hundred good rows lost to one bad one.
+    """
+
+    async def _insert_broken(self, driver, entity_id):
+        """A body the model cannot validate: `data` must be a dict, not a list."""
+        async with driver.session_factory() as session:
+            await session.execute(text(
+                "INSERT INTO entities (id, type, namespace, data, record_data_ref) "
+                "VALUES (:id, 'note', '', :data, NULL)"
+            ), {"id": entity_id, "data": '{"created_date": []}'})
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_the_good_rows_still_come_back(self, driver, caplog):
+        await _insert_entity(driver, "ok1", "note")
+        await self._insert_broken(driver, "bad")
+        await _insert_entity(driver, "ok2", "note")
+
+        rows = await driver.get_all(QueryFilter(type="note"))
+
+        assert sorted(r.id for r in rows) == ["ok1", "ok2"]
+        assert "bad" in caplog.text and "skipped 1 unreadable row" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_list_of_only_broken_rows_is_empty_not_an_error(self, driver):
+        await self._insert_broken(driver, "bad")
+        assert await driver.get_all(QueryFilter(type="note")) == []
+
+    @pytest.mark.asyncio
+    async def test_a_systematic_failure_warns_once_not_once_per_row(self, driver, caplog):
+        """These failures are a property of a TYPE — a payload class this process cannot
+        reach poisons every row of it — so per-row logging would emit thousands of
+        identical multi-line pydantic errors. The count is the diagnostic."""
+        for i in range(25):
+            await self._insert_broken(driver, f"bad{i}")
+
+        assert await driver.get_all(QueryFilter(type="note")) == []
+
+        warnings = [r for r in caplog.records if "unreadable" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "skipped 25 unreadable row(s)" in warnings[0].getMessage()
+
+
+class TestProjectScopeMatchesProjectId:
+    """A project's scope covers rows stamped with its ``project_id``.
+
+    Indexed assets (charts, docs, …) carry ``project_id`` but no role edge, so
+    ``GET /api/v1/graph/project/<id>/chart`` used to answer ``[]``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_project_source_lists_rows_with_its_project_id(self, driver):
+        import uuid
+
+        from flow_sdk.fs_store.type_id import TypeId
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        project_id, other_id = str(uuid.uuid4()), str(uuid.uuid4())
+        mine = AgenticProcess(session_id="mine", project_id=project_id)
+        theirs = AgenticProcess(session_id="theirs", project_id=other_id)
+        await driver.save(mine)
+        await driver.save(theirs)
+
+        rows = await driver.get_all(
+            QueryFilter(type=AgenticProcess.get_type()),
+            source_entity=TypeId(type="project", id=project_id),
+        )
+        assert [r.session_id for r in rows] == ["mine"]
+
+    @pytest.mark.asyncio
+    async def test_non_project_source_ignores_project_id(self, driver):
+        import uuid
+
+        from flow_sdk.fs_store.type_id import TypeId
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        shared_id = str(uuid.uuid4())
+        await driver.save(AgenticProcess(session_id="x", project_id=shared_id))
+
+        rows = await driver.get_all(
+            QueryFilter(type=AgenticProcess.get_type()),
+            source_entity=TypeId(type="group", id=shared_id),
+        )
+        assert rows == []

@@ -1,0 +1,67 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import type { ConversationMessage } from '@sdk/entities/conversation';
+import { taskTitleFromText, type Task } from '@sdk/entities/task';
+import { MemoryRouter } from 'react-router';
+import { MessageBubble } from '@src/components/conversation/MessageBubble';
+
+/**
+ * "Task it" — one click makes a conversation message a task. The bubble's ⋮ menu creates it while
+ * the message has none; once it has one, a chip under the body opens it (one message, one task); the title is the
+ * message's first line.
+ */
+describe('Task it', () => {
+  const message: ConversationMessage = {
+    role: 'sender',
+    content: 'Please render HTML in machine output',
+    sender_id: 'user-1',
+    timestamp: '2026-10-02T10:00:00.000Z',
+  };
+
+  it('creates when the message has no task', () => {
+    const onTaskIt = vi.fn();
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt }} /></MemoryRouter>);
+    // Making a task is an item of the bubble's ⋮ menu.
+    expect(screen.queryByTestId('message-task-it')).toBeNull();
+    fireEvent.keyDown(screen.getByTestId('message-actions-menu'), { key: 'Enter' });
+    const control = screen.getByTestId('message-task-it');
+    expect(control.textContent).toBe('Task it');
+    fireEvent.click(control);
+    expect(onTaskIt).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads "Open task" once the message is a task', () => {
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, task: { title: 'Render HTML' } as Task }} /></MemoryRouter>);
+    const chip = screen.getByTestId('message-task-it');
+    expect(chip.getAttribute('aria-label')).toBe('Open task');
+    expect(chip.textContent).toBe('Render HTML');
+  });
+
+  it("shows an opened task's status and owner beside it", () => {
+    const task = { title: 'Render HTML', status: 'in_progress', assignee: 'ron@x.com' } as Task;
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, task }} /></MemoryRouter>);
+    expect(screen.getByTestId('task-status-chip').textContent).toBe('In progress');
+    expect(screen.getByTestId('task-owner-chip').textContent).toBe('ron@x.com');
+  });
+
+  it('a message not yet a task has no status or owner chip', () => {
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {} }} /></MemoryRouter>);
+    expect(screen.queryByTestId('task-status-chip')).toBeNull();
+    expect(screen.queryByTestId('task-owner-chip')).toBeNull();
+  });
+
+  it('offers nothing without a handler', () => {
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" /></MemoryRouter>);
+    expect(screen.queryByTestId('message-task-it')).toBeNull();
+  });
+
+  it('titles the task from the first non-empty line', () => {
+    expect(taskTitleFromText('\n  Fix the login\nmore detail')).toBe('Fix the login');
+    expect(taskTitleFromText('')).toBe('');
+    const long = 'word '.repeat(40).trim();
+    const title = taskTitleFromText(long);
+    expect(title.length).toBeLessThanOrEqual(80);
+    expect(title.endsWith('…')).toBe(true);
+    expect(title).not.toMatch(/ …$/);
+  });
+});

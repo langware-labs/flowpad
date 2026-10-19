@@ -103,3 +103,23 @@ def test_codex_ordinary_shell_is_not_a_skill_call(tmp_path):
     ])
     t = AgentTranscriptFile("codex", path)
     assert list(t.filter(kind=EntryKind.SKILL_CALL)) == []
+
+
+def test_codex_code_mode_exec_skill_md_read_becomes_skill_call(tmp_path):
+    # codex 0.154 rollouts carry shell calls as a code-mode ``exec`` custom tool
+    # whose input is a script wrapping ``tools.exec_command`` — no function_call.
+    path = _write(tmp_path, "codex3.jsonl", [
+        {"type": "session_meta", "timestamp": "2026-09-23T04:46:18Z", "payload": {"id": "x3"}},
+        {"type": "response_item", "timestamp": "2026-09-23T04:46:21Z", "payload": {
+            "type": "custom_tool_call", "id": "ctc_1", "status": "completed",
+            "call_id": "call_1", "name": "exec",
+            "input": "const r = await tools.exec_command({cmd:\"sed -n '1,240p' "
+                     "/home/u/.codex/skills/my-skill/SKILL.md\",workdir:\"/w\"}); text(r.output);\n",
+        }},
+    ])
+    t = AgentTranscriptFile("codex", path)
+    calls = list(t.filter(kind=EntryKind.SKILL_CALL))
+    assert len(calls) == 1
+    assert calls[0].skill_name == "my-skill"
+    assert calls[0].invocation_kind is SkillInvocationKind.FILE_LOAD
+    assert [e for e in t.filter(kind=EntryKind.TOOL_USE) if getattr(e, "tool_name", "") == "exec"]

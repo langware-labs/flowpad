@@ -19,24 +19,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from flow_sdk.assets.types.mcp_server import extract_mcp_server
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions.mcp_server import (
-    extract_mcp_server,
-    mcp_server_id,
-    mcp_servers_in_file_fn,
-    mcp_source_files_fn,
-)
+from flow_sdk.fs_store.indexer.functions.mcp_server import mcp_servers_in_file_fn, mcp_source_files_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
+from tests.fixtures.identity import resolve_id
 
 PROJ_ALPHA = "/Users/alice/proj-alpha"
 PROJ_BETA = "/Users/alice/proj-beta"
 
 
 def _extract(ref: FSRef):
-    return extract_mcp_server(ref, SchemaRegistry.get("mcp_server").mint_id(ref))
+    return extract_mcp_server(ref, resolve_id(SchemaRegistry.get("mcp_server"), ref))
 
 
 def _make_home(tmp_path: Path) -> Path:
@@ -205,7 +201,9 @@ def test_extract_claude_user_server(tmp_path: Path) -> None:
     # FTS feeds on description — searchable by command/package.
     assert "npx" in d["description"] and "@mcp/github" in d["description"]
     # The legacy natural key remains stable, but TypeInfo exposes its UUIDv5.
-    assert d["id"] == mcp_server_id(ref)
+    assert d["id"] == resolve_id(SchemaRegistry.get("mcp_server"), 
+        ref
+    )
 
 
 def test_extract_claude_local_servers_distinct_ids_and_project_path(tmp_path: Path) -> None:
@@ -255,13 +253,13 @@ def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
     the probe's shadow home and the DB row address the same record — and it must
     be a filesystem-safe UUID (no ``:`` that would crash the Windows write).
     """
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
     from flow_sdk.core.entity.entity_model import Entity
-    from flow_sdk.fs_store.identifier import is_valid_entity_id
 
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
         (rec,) = _extract(ref)
-        gen = mcp_server_id(ref)
+        gen = resolve_id(SchemaRegistry.get("mcp_server"), ref)
         assert is_valid_entity_id(gen)
         assert not any(ch in gen for ch in ":/\\")
         assert gen == Entity.allocate_id(rec.to_dict())
@@ -279,8 +277,8 @@ def test_extract_vanished_entry_returns_empty(tmp_path: Path) -> None:
 
 
 def test_resolve_source_maps_each_system(tmp_path: Path) -> None:
+    from flow_sdk.assets.types.mcp_server import _resolve_source
     from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
-    from flow_sdk.fs_store.indexer.functions.mcp_server import _resolve_source
 
     cases = [
         (tmp_path / ".vscode" / "mcp.json", "servers", WorkerType.VSCODE),
@@ -397,7 +395,7 @@ def test_cloud_connector_vanished_returns_empty(tmp_path: Path) -> None:
 def test_source_file_extractor_emits_claude_mcp_json_entry(tmp_path: Path) -> None:
     """source_file_records previously referenced a non-existent enum member and
     raised AttributeError on any .mcp.json containing servers."""
-    from flow_sdk.fs_store.source_file_records import extract_from_data
+    from flow_sdk.assets.types.source_file_records import extract_from_data
 
     data = {"mcpServers": {"github": {"command": "npx", "args": []}}}
     rows = extract_from_data(data, tmp_path / ".mcp.json")

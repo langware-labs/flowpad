@@ -39,7 +39,12 @@ export function useDiagnosisReport(diagnosisId: string | null | undefined): {
       notify.success({ title: t`Report sent to the Flowpad team` });
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : t`Failed to send report`);
+      // Mirror the success toast on failure. The inline `error` text alone is easy
+      // to miss, which made a failed send look identical to no send at all — the
+      // button simply reverted and the user re-clicked, with nothing sent.
+      const message = e instanceof Error ? e.message : t`Failed to send report`;
+      setError(message);
+      notify.error({ title: t`Could not send report to the Flowpad team`, message });
       return false;
     } finally {
       setBusy(false);

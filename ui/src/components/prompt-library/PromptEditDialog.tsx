@@ -65,11 +65,19 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
     setSaving(true);
     try {
       if (prompt) {
-        prompt.name = name.trim();
-        prompt.text = text.trim();
+        const nextName = name.trim();
+        const nextText = text.trim();
+        const changed =
+          prompt.name !== nextName ||
+          prompt.text !== nextText ||
+          prompt.icon !== icon ||
+          prompt.color !== color;
+        prompt.name = nextName;
+        prompt.text = nextText;
         prompt.icon = icon;
         prompt.color = color;
         await prompt.save();
+        if (changed) prompt.markEdit();
       } else {
         await Prompt.create({
           name: name.trim(),

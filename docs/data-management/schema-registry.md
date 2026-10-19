@@ -6,15 +6,26 @@ id: ab331b9d-eea6-58a5-b44e-bbd65be5f867
 
 The `SchemaRegistry` is the single source of truth for all type metadata across the Record and Entity layers. It replaces the two separate, unconnected registries that previously existed (`fs_store/factory/type_registry.py` and `schema/entity_factory.py`).
 
-Per-type metadata is **authored declaratively** in `flow_sdk/schema/type_info/<type>_info.py` modules (one `TypeMetadata` instance each) and **registered** into `SchemaRegistry` as `TypeInfo` by `register_all()`. Entity classes additionally self-register their `entity_cls` via `Entity.__init_subclass__`. See [Registration](#registration).
+Per-type metadata is **authored declaratively** in `flow_sdk/schema/type_info/<type>_info.py` modules (one `TypeInfo` instance each — the very object the registry serves) and **registered** into `SchemaRegistry` by `register_all()`. Entity classes additionally self-register their `entity_cls` via `Entity.__init_subclass__`. See [Registration](#registration).
 
 **Key source files:**
 - `flow_sdk/fs_store/schema_registry.py` — `SchemaRegistry` + `TypeInfo`
-- `flow_sdk/schema/type_info/__init__.py` — `TypeMetadata` + `register_all()`
+- `flow_sdk/schema/type_info/__init__.py` — `register_all()`
 - `flow_sdk/schema/type_info/<type>_info.py` — per-type metadata authoring
 - `flow_sdk/schema/types.py` — `EntityType`, the single canonical type-name enum
 
 ---
+> The layer below this one is [`DataSpec`](data-spec.md) — schemas (runtime ones
+> compiled to Pydantic), and `TypeInfo.asset_spec`, the schema whose types ARE a type's layout. Kinds bind
+> here too: `SchemaRegistry.register_kind(kind, cls)` / `kind_type(kind)` / `kind_for(cls)` share
+> the type-name namespace, so an entity type name is a kind — resolving to that
+> type's `asset_spec`, bound automatically by `register()`. A `DataSpec`
+> subclass with a `spec_kind` of its OWN registers itself on definition, and a
+> kind names exactly one schema: rebinding raises rather than overwriting.
+> A kind names a schema — a `DataSpec` subclass (`fs_ref` → `FSRef` is the one SDK
+> exception) — never an Entity class; a type with no asset document names no schema.
+> `TypeInfo` supplies the schema for entity-backed kinds; it is not a competing type system.
+
 
 ## TypeInfo
 
@@ -29,29 +40,59 @@ class TypeInfo:
     index_fields: list[str] = ...
     defaults: dict[str, Any] = ...
     indexed_by_default: bool = False
-    browseable: bool = False
+    browseable_by: ViewMode | None = None   # minimum view mode; None ⇒ never browseable
     creatable: bool = False
     api_visible: bool = False
     icon: str | None = None
     parent_type: str | None = None    # string only, resolved lazily
     locations: list[str] = ...        # "index" (and/or "record")
+    display_name: str | None = None   # presentational; deliberately NOT hashed
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
-    entity_cls: type | None = ...     # the Entity subclass (db_base_record)
-    post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn: Any
-    capsules: tuple[CapsuleSpec, ...]
-    identity_backend: IdentityBackend | None
-    id_stable_key_fn: Any
-    id_namespace: UUID
-    metadata: Any                     # the TypeMetadata instance it was built from
-    meta_model: Any                   # per-type pydantic FS↔DB schema model
-    main_subdir: str | None = None    # scope-relative asset subdir
-    main_layout: str = "file"         # "file" | "folder"
+    entity_cls: type | None            # the Entity subclass (db_base_record)
+    asset_spec: type | None            # the DataSpec that IS the type's layout
+    post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn / derive_fields_fn: Any
+    identity_carrier: IdentityCarrier | None   # Frontmatter | Sidecar | JsonRoot | Derived
+    identity_key_fn / id_stable_key_fn: Any   # v5 key (preferred / escape hatch)
+    id_namespace: UUID = NAMESPACE_URL
+    owns_main_ref / parent_share_on_default / shared_child / db_only: bool
+    cloud_file_transport: "embedded" | "git"
+    shape: File | Folder               # THE on-disk shape (flow_sdk/assets/layout.py)
+    editor: str | None                 # asset editor key ("markdown", "skill", …)
+    declared: bool                     # True for a schema/type_info declaration
+    meta_model: Any                    # per-type pydantic FS↔DB schema model
+
+    # --- Serialization slots (HOW/WHERE; runtime-only) ---
+    default_origin_kind: str | None = None      # filled: "db" for db_only types, else "local"
+    name_from_path: bool = False
+    manifest_layout: str | None = None          # "sections" | "flat"
+    rows_layout_field: str | None = None
+    hub_main_file: str | None = None
+    natural_key / digest_fields: tuple[str, ...] | None
+    digest_field: str = "content_digest"
+    fts_content: tuple[str, ...] = ()
+
+    # --- Placement axis (replaces the fused ``.claude/…`` subdir) ---
+    asset_class: AssetClass | None     # "internal" | "harness" | "shared" | "repo" | "docs" | …
+    harness: HarnessType | None
+    family: str | None                 # bare leaf subdir ("skills", "docs")
+    # main_subdir is a DERIVED read-only property (claude-default family subdir)
+
+    # --- Sharing / reception seams (runtime-only) ---
+    assignee_owned_fields / pack_exclude: tuple
+    setup_skill: str | None; reception_verb: str = "Open"
+    receive_policy: str | None; receive_row_overrides: dict | None
 ```
 
-There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `capsules`, `identity_backend`, etc.) attached to the `TypeInfo`, not on a subclass.
+`main_subdir` is not a stored field: it is a property derived from the placement axis (`asset_class` / `harness` / `family`). The on-disk shape is read from `shape` and nothing else — the frontend reads `shape.kind` / `shape.main`, the backend reads `info.shape`. Serialization-slot fields are tagged `metadata={"serialization": True}` (`_SERIALIZATION_SLOTS`) and merge by "declared non-default value wins".
 
-`TypeInfo.extract_id(ref)` is the pure public extraction seam. Its identity backend observes the canonical named capsule and then ordered read-only legacy/native candidates; TypeInfo applies the UUID v4/v5 adoption policy. `TypeInfo.mint_id(ref, proposed_id=None)` re-observes before minting and persists portable identity through the backend's atomic `store_if_absent`. Deterministic types supply `id_stable_key_fn`/`id_namespace`. Parsers receive the resolved value and do not mint.
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `identity_carrier`, etc.) attached to the `TypeInfo`, not on a subclass.
+
+Identity has three seams on `TypeInfo`: `read_id(ref)` is the pure read (never writes); `mint(layout, *, write, ref=None, found=None)` answers a `Found` id, raises `ForeignId` on a `Foreign` one, and otherwise mints (v5 when the type has a stable key, else v4) and — with `write` — stamps it through the carrier; `stamp_id(ref, entity_id)` is the create-flow seam. The walk settles an id through `reconcile(info, layout, owner_row, live_ids, *, write)` (`flow_sdk/fs_store/indexer/reconcile.py`); the single-path interactive entry is `resolve_asset` (`flow_sdk/fs_store/resolve.py`), which runs the same `reconcile` with the owner looked up through `Entity.get_by_asset_ref` and `write` decided by the caller. The type's `identity_carrier` (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/assets/identity_carrier.py`) says where the id lives and only locates, reads and stamps; TypeInfo applies the UUID v4/v5 adoption policy.
+
+Resolution order is **carrier → owning row → mint**, by carrier LIVENESS: the carrier wins unless a row owns this path (`owner_row`) AND the carrier is provably dead (`live_ids` is the oracle; `None` means "cannot prove dead", so only the index walk — which holds the complete per-type id set — may conclude a carrier is a fossil). There are no `derive`/`overwrite` flags: `write` is the one gate, passed explicitly by every caller (`write=False` for a read-only root or a git-tracked source), and the carrier refuses (`NotWritable`) a path that is not its own format.
+
+A carrier id that is not a valid v4/v5 (a hand-written v7, or a retired form such as an `asset_id:` key or a `.flow/id` line — see `flow_sdk/migrations/migration_2026_09_identity_live_forms.py`) reads as `Foreign`: the bytes are kept, a `foreign_id` scan issue is logged and the asset indexes under a stable path-derived v5; only an ABSENT carrier is stamped. Deterministic types supply `identity_key_fn` (key text `f"{type}:{key}"`) or the `id_stable_key_fn` escape hatch, plus `id_namespace`; `TypeInfo.stable_key_for(ref)` is the one place that shape is resolved. Per-type `*_peek_entity_id` helpers (e.g. `subagent_peek_entity_id`) wrap `read_id` for request handlers that must never write. Parsers receive the resolved value and do not mint.
 
 ### Dynamic properties
 
@@ -68,55 +109,73 @@ There is **no `record_cls` field** — `FSRecord` is now the single concrete rec
 
 A type's `TypeInfo` is assembled from up to two sources that merge into one entry:
 
+Filesystem contracts are resolved before a merged registration becomes visible to
+entity-binding callbacks. Conflicting spec or filesystem declarations are rejected
+before changing the live type. Late spec binding refreshes cached body metadata and
+binds the default entity-document fingerprint to the registry's resolved `TypeInfo`.
+
 ### 1. Declarative metadata (`flow_sdk/schema/type_info/<type>_info.py`)
 
-Each `<type>_info.py` module declares one (or more) `TypeMetadata` instance at module scope. Example (`skill_type_info.py`):
+Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. For spec-backed assets, the on-disk shape is derived from the spec’s `main_file` or standalone-file metadata (`file_ext`, `file_names`, `file_extensions`). Custom-parser types without a spec still declare `shape=File(...)` or `shape=Folder(...)` directly. Explicit `manifest_layout` belongs to the spec as well. The runtime projection remains on `TypeInfo`, and the identity carrier is another: `identity_carrier=Frontmatter()` for a markdown main document, `Sidecar()` for a JSON-main folder, `JsonRoot()` for a report, `Derived()` when the id is a function of the source. Example (`skill_type_info.py`):
 
 ```python
-SKILL = TypeMetadata(
-    type=EntityType.SKILL,
-    icon="Sparkles",
-    browseable=True,
+SKILL = TypeInfo(
+    type_name=EntityType.SKILL,
+    process_projection=project_process_asset,
+    icon="FileBadge",
+    display_name="Skills",
+    browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
+    cloud_file_transport="git",
     index_fields=["description"],
-    main_subdir=".claude/skills",
-    main_layout="folder",
-    from_disk_fn=extract_skill,
-    capsules=(CapsuleSpec("identity"),),
-    identity_backend=capsule_identity(skill_id_from_folder),
+    asset_class="shared",
+    family="skills",
+    walk=(
+        Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
+        Walk(roots=("folder",), anywhere=True),
+    ),
+    editor="skill",
+    hub_main_file="SKILL.md",
+    fts_content=("name", "description", "body"),
+    identity_carrier=frontmatter_identity(),
     asset_hash_fn=skill_asset_hash,
+    asset_spec=SkillSpec,                 # from_disk_fn defaults to spec_extractor
+    derive_fields_fn=derive_skill,
+    setup_skill=EntityType.SKILL.value,
+    reception_verb="Run",
 )
 ```
 
-`register_all()` (in `flow_sdk/schema/type_info/__init__.py`) walks every sibling `*_info` module via `pkgutil`, finds module-scope `TypeMetadata` instances, and calls `.register()` on each — which converts the `TypeMetadata` to a `TypeInfo` (`to_type_info()`, `locations=["index"]`) and hands it to `SchemaRegistry.register()`.
+`register_all()` (in `flow_sdk/schema/type_info/__init__.py`) walks every sibling `*_info` module via `pkgutil` (skipping `_`-prefixed helpers such as `_report.py`), finds module-scope `TypeInfo` instances (`declared_type_infos`, deduped by identity so an alias is one type), stamps `locations=["index"]` (when empty) and `declared=True` on each, and hands it to `SchemaRegistry.register()`. Each module is registered independently: a module that fails to import or register is **logged and skipped** (that one type is missing; the registry stays usable) rather than wedging startup — the guard against a stale `*_type_info.py` referencing a removed `EntityType` member. After the loop, `SchemaRegistry.check_asset_specs()` runs once every entity class is complete and **raises** on a spec/row mismatch.
 
-`register_all()` is wired into startup by importing `flow_sdk.fs_store.indexer.registrations` (which calls it at module load — `registrations.py:49`); `flow_sdk/server/app.py` imports that module so the declarative metadata (icons, `from_disk_fn`, etc.) lands before the first bootstrap.
+`register_all()` is wired into startup by importing `flow_sdk.fs_store.indexer.registrations` (which calls it at module load — `registrations.py:68`, after the entity and walker imports so `entity_cls` merges in); `flow_sdk/server/app.py` imports that module so the declarative metadata (icons, `from_disk_fn`, etc.) lands before the first bootstrap. `build_default_indexer()` imports it too, so building the indexer is a second chokepoint that guarantees a complete registry.
 
-`TypeMetadata` is the *declarative authoring* shape; `TypeInfo` is the *runtime registry record* it produces. A type may subclass `TypeMetadata` to add type-specific extras; the instance is attached to `TypeInfo.metadata` so base classes can read those extras, while the flat `TypeInfo` fields remain the single serialized surface.
+There is no separate authoring mirror: the module-level `TypeInfo` IS the registry record (`SKILL is SchemaRegistry.get("skill")`), so a re-run of `register_all()` is a self-merge no-op.
 
 ### 2. Entity subclasses (`flow_sdk/db/drivers/db_base_record.py`)
 
-When an `Entity` (`DBBaseRecord`) subclass is defined, `__init_subclass__` (`db_base_record.py:58`) fires and — unless the class is `_abstract` — resolves the type name via `cls.get_type()` and calls `SchemaRegistry.register(TypeInfo(type_name=..., locations=["index"], entity_cls=cls, browseable/creatable/indexed_by_default/api_visible/icon from the class `_*` ClassVars))`.
+When an `Entity` (`DBBaseRecord`) subclass is defined, `__init_subclass__` (`db_base_record.py:103`) fires and — unless the class is `_abstract` — resolves the type name via `cls.get_type()` and calls `SchemaRegistry.register(TypeInfo(type_name=..., locations=["index"], entity_cls=cls, browseable_by/creatable/indexed_by_default/api_visible/icon from the class `_*` ClassVars))`.
 
 This is the **only** remaining `__init_subclass__` auto-registration. There is no `Record`/`_record_type` `__init_subclass__` registration — `flow_sdk/fs_store/record.py` does not exist; `FSRecord` (`flow_sdk/fs_store/fs_record.py`) is the lone record class and carries no per-type config.
 
 ### Merge semantics
 
-`register()` is idempotent and **merges on re-register** (`schema_registry.py:357`). The declarative `TypeMetadata` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
-- unions `locations`,
-- fills `entity_cls`, `metadata`, `meta_model`, and the per-type runtime refs (`post_sync_fn`, `from_disk_fn`, `capsules`, `identity_backend`, stable-key/namespace policy, `asset_hash_fn`, `default_body_fn`) on first non-None,
-- OR-merges the boolean flags (`browseable`, `creatable`, `indexed_by_default`, `api_visible`),
-- overwrites `icon`, `main_subdir`, `main_layout`, `index_fields` when the new value is set.
+`register()` is idempotent and **merges on re-register** (`schema_registry.py:924`). The declarative `TypeInfo` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
+- unions `locations`, merges `defaults` (new keys win),
+- **overwrites with the incoming value when it is set** for the runtime refs (`post_sync_fn`, `from_disk_fn`, `identity_carrier`, `id_stable_key_fn`, `asset_hash_fn`, `default_body_fn`, `meta_model`), the placement axis (`asset_class`, `harness`, `family`) and a non-default `shape`, every serialization slot (`_SERIALIZATION_SLOTS` — a declared non-default value wins), `icon`, `display_name`, `index_fields`, and the reception seams,
+- merges `capsules` by name and **raises `ValueError`** when two registrations declare the same capsule name differently; likewise raises on two *different* `identity_carrier`s for one type,
+- OR-merges the boolean flags (`creatable`, `indexed_by_default`, `api_visible`, `owns_main_ref`, `parent_share_on_default`, `shared_child`, `db_only`); `browseable_by` keeps the **more permissive** (lower-ranked) non-null view mode; `cloud_file_transport` latches to `"git"`,
+- fills `entity_cls` on first non-None and raises on a different class (see [Duplicate entity registration](#duplicate-entity-registration)).
 
-Registration order does not matter — whichever side imports first creates the entry, the other enriches it.
+After the merge, if the final entry has an `asset_spec`, no `from_disk_fn`, and is not `db_only`, `from_disk_fn` is filled with the generic `spec_extractor(type_name)` — the spec IS the parser — and the serializer's `field_kinds` cache is cleared because a new asset type can turn a field into a sub-asset. Registration order does not matter — whichever side imports first creates the entry, the other enriches it.
 
 ---
 
 ## Persistence
 
-The `TypeInfo` registry is **rebuilt in-memory on every startup** from `register_all()` + Entity `__init_subclass__`; it is **not** persisted to disk. `TypeInfo` exposes `to_dict()` / `from_dict()` and a `schema_hash` property, but there is no code that writes a per-type `type_info.json`, and there is no `load_persisted()` method. (The module docstring at `schema_registry.py:6` still mentions a `type_info.json` file — that is stale.)
+The `TypeInfo` registry is **rebuilt in-memory on every startup** from `register_all()` + Entity `__init_subclass__`; it is **not** persisted to disk. `TypeInfo` exposes `to_dict()` / `from_dict()` and a `schema_hash` property, but there is no code that writes a per-type `type_info.json`, and there is no `load_persisted()` method.
 
 What *is* written under `~/.flow/schema/` is the scan/index **run-history JSONL** logs (see below), not type metadata.
 
@@ -137,26 +196,40 @@ The actual scan/index **walk** is owned by the indexer package — `FSIndexer` (
 | `get_subtypes(type_name)` | Direct children as `list[TypeInfo]`. |
 | `get_entity_cls` / `is_entity_type` / `is_implemented` / `is_public_entity` | Entity-class lookups / predicates. |
 | `get_all_entity_types` / `get_all_entity_classes` / `get_public_entity_types` | Bulk entity-type/class listings. |
-| `is_api_visible` / `get_icon` / `is_browseable` / `is_creatable` / `is_indexed_by_default` | Presentation read-through getters. |
+| `is_api_visible` / `get_icon` / `get_display_name` / `browseable_by` / `is_browseable_in(type, mode)` / `is_creatable` / `is_indexed_by_default` | Presentation read-through getters (`is_browseable` is gone — visibility is a view-mode question). |
+| `get_all_types()` / `get_repo_types()` / `repo_family_to_info()` / `repo_family_to_type()` / `harness_scoped_families()` / `get_shared_child_types()` | Registry-wide listings driven by the placement axis and sharing flags — `get_repo_types()` is what `build_default_indexer()` feeds `repo_assets_fn`. |
+| `register_kind(kind, shape)` / `kind_for(shape)` / `kind_type(kind)` | The `DataSpec` kind namespace. `register()` binds each type's `asset_spec` under the type name, so an entity type name is a kind naming that type's DOCUMENT SCHEMA; a type with no asset document names nothing and `resolve_kind` raises. `register_kind` refuses to rebind a kind to a second schema. |
+| `check_asset_specs()` | Post-registration pass: raises when a type's `asset_spec` disagrees with its entity row. |
 | `get_default_index_types()` | Return `indexed_by_default=True` types. Falls back to `_BUILTIN_DEFAULT_TYPES` if the registry list is empty. |
+
+### Index-run log (`flow_sdk/fs_store/indexer/index_log.py`)
+
+Scan/index bookkeeping is **not** a registry concern; it lives in `index_log` as plain functions and dataclasses (the registry is consulted lazily for its type lists):
+
+| Function | Description |
+|----------|-------------|
 | `append_scan(...)` / `append_index(...)` | Write a scan/index entry to the run-history JSONL logs (global + per-type). |
 | `get_last_scan_at` / `get_last_index_at` | Read the latest timestamp from a type's run-history JSONL. |
-| `clear_index(types)` | Clear FTS index, entities, per-type index logs, and record errors. Aliased as `clear()`. |
-| `get_index_status(types, scope)` | Return `IndexStatus` freshness snapshot (DB-free for freshness). Aliased as `get_status()`. |
-| `get_errors(type_name)` | Return `RecordError` list (via `FSRecord.discover(RECORD_ERROR)`), optionally filtered by type. |
+| `clear_index(types)` | Clear FTS index, entities, per-type index logs, and record errors. |
+| `get_index_status(types, scope)` | Return `IndexStatus` freshness snapshot (DB-free for freshness). |
+| `get_asset_stats(scope)` | Live per-type asset counts for a `ScopeFilter` (`AssetStats`; counts only). |
+| `project_never_indexed(project_id)` | Whether a project record has never had its index sentinel stamped. |
+| `append_scan_issue(issue)` / `read_scan_issues(type_name)` | Persist / read `ScanIssue` entries (`path`, `kind`, `detail`, `type_name`, `at`) through the same per-type JSONL channel (`scan_issues.jsonl`). Kinds: `unclassified_in_family_dir`, `shape_mismatch`, `foreign_id`, `malformed_carrier`. |
+| `get_errors(type_name)` | `RecordError` list (via `FSRecord.discover(RECORD_ERROR)`), optionally filtered by type, followed by the `ScanIssue`s logged for that type. |
 
 ### Log files
 
 All operations are logged to JSONL files:
 
 ```
-~/.flow/schema/
+~/.flow/instances/<name>/schema/     # InstanceSettings.schema_dir (per instance)
   scan_log.jsonl              # global scan log (all types)
   index_log.jsonl             # global index log (written only by clear; see note)
   types/
     skill/
       scan_log.jsonl          # per-type scan log
       index_log.jsonl         # per-type index log
+      scan_issues.jsonl       # per-type scan issues
     agent/
       ...
 ```
@@ -169,14 +242,12 @@ Each log file is capped at `_MAX_LOG_ENTRIES` = 100 entries (oldest trimmed on a
 
 | Type | Fields |
 |------|--------|
-| `ScanResult` | `type_name`, `count`, `total_bytes`, `scan_ms`, `last_scan_at`, `records`, `avg_bytes`, `min_bytes`, `max_bytes` |
-| `IndexResult` | `type_name`, `indexed`, `skipped`, `duration_ms`, `last_index_at`, `errors`, `fresh` |
-| `IndexRequest` | `types`, `actions`, `start_time`, `end_time`, `trigger`, `limit_per_type` |
 | `ClearResult` | `fts_cleared`, `entities_cleared`, `types_cleared` |
 | `IndexStatus` | `never_indexed`, `last_indexed_at`, `stale`, `default_types`, `per_type`, `total_orphans` |
 | `TypeIndexStatus` | `type_name`, `last_indexed_at`, `entity_count`, `stale`, `orphan_count` |
+| `AssetStats` | `per_type` (`{type: count}`), `total` |
 
-(`IndexRequest` is still a defined dataclass, but `SchemaRegistry` no longer has an `incremental(request)` method that consumes it.)
+`ScanResult` and `IndexRequest` no longer exist. The indexer's own run result is `IndexResult` / `PerTypeIndexResult` in `flow_sdk/fs_store/indexer/index_function.py` (`per_type`, `total_indexed`, `total_errors`, `duration_ms`, orphan / same-path-dupe / duplicate-occurrence totals), not an `index_log` type.
 
 ---
 
@@ -202,6 +273,7 @@ The single canonical type-name enum is `EntityType` (`flow_sdk/schema/types.py`)
 | `get_all_entity_classes()` | `list[type]` | All registered entity classes |
 | `get_public_entity_types()` | `list[str]` | Entity type names where `api_visible` is True |
 | `get_all_record_types()` | `list[str]` | **Note:** currently returns type names with a registered entity class (same predicate as `get_all_entity_types`) — there is no separate `record_cls` concept. There is no `get_record_cls()`. |
+| `get_all_types()` | `list[str]` | Every registered type name, entity-backed or not (waypoints, CRUD-only types included) |
 
 ### Duplicate entity registration
 
@@ -218,6 +290,7 @@ The ComputeNode (`FsRecordsActionsMixin` in `flow_sdk/builtin/faas/fs_records_ac
 | `GET /fs-records/scan` | `_handle_fs_records_scan` | Aggregate or per-type scan stats |
 | `POST /fs-records/index` | `_handle_fs_records_index` | Index all or one type, with optional `?rebuild=true` |
 | `GET /fs-records/index-status` | `_handle_fs_records_index_status` | Freshness info |
+| `GET /fs-records/asset-stats` | `_handle_fs_records_asset_stats` | Live per-type counts for a scope (`get_asset_stats`) |
 | `DELETE /fs-records/index` | `_handle_fs_records_index_clear` | Clear FTS + entity DB |
 
 ---
@@ -236,7 +309,7 @@ info = SchemaRegistry.get("skill")
 print(info.locations)           # ["index"]
 print(info.schema_hash)         # "a3f1c2d4..."
 print(info.indexed_by_default)  # True
-print(info.from_disk_fn)        # <function extract_skill ...>
+print(info.from_disk_fn)        # <function extract_skill ...> (the generic spec_extractor)
 
 # Find subtypes
 children = SchemaRegistry.get_subtypes("transcript_entry")  # list[TypeInfo]
@@ -246,6 +319,17 @@ from flow_sdk.fs_store.indexer import get_shared_indexer
 nodes = await get_shared_indexer().scan(...)
 
 # Get freshness status
-status = await SchemaRegistry.get_index_status()
+from flow_sdk.fs_store.indexer import index_log
+status = await index_log.get_index_status()
 print(status.never_indexed)  # True if never indexed
 ```
+
+## Path → layout
+
+`TypeInfo.layout_of(path, *, verify=False) -> Layout(kind, root, body, ref)` is the one
+classifier: a folder type names its folder (`FOLDER`) or the inner main file (`MAIN_FILE`,
+root = parent); a file type names the file (`FILE`); `NONE` otherwise. Names compare
+case-insensitively; `verify=True` also requires the bytes to exist (the indexer's gate).
+`storage_root_for`, `body_path_for` and `carrier_path_for` are one-line
+projections of it; `asset_ref` is the root for every shape. Never re-derive "is this the main
+file" at a call site.

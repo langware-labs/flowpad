@@ -40,7 +40,7 @@ import { ClaudeSession, ComputeNode, GRAPH_API_PREFIX, Project, Tab, apiClient, 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { setupTab } from '@src/tabs/tab-content-lifecycle';
 import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 const CLAUDE_HOME = process.env.FLOWPAD_CLAUDE_HOME || '';

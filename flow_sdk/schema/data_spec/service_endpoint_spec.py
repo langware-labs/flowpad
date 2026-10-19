@@ -1,0 +1,369 @@
+"""The shapes of a ``ServiceEndpoint``: what it speaks, and how it is served.
+
+``protocol`` — what the service SPEAKS to its callers. Each shipped protocol is a
+DataSpec whose ``spec_kind`` IS the protocol kind, so the kind names a shape as
+every kind must. The first segment splits browser apps (``web.*``) from machine
+callers (``api.*``), because routing and auth hang on it — see :func:`surface_of`.
+An external protocol (``--acme--.…``) has no shape here and is carried opaquely
+(:class:`ExternalProtocol`): the hub accepts any well-formed kind, and a row it
+pushes must land.
+
+``backend`` — how THIS machine produces the bytes: files from a folder
+(:class:`StaticBackend`) or a process on a port (:class:`ProxyBackend`). A dev
+server starting changes only this.
+
+The wire form matches the hub's mirror (``flowpad/hub/builtin/service_endpoint.py``)
+byte for byte: ``{"spec_kind": ..., **fields}`` and ``{"type": ..., ...}``.
+"""
+
+from __future__ import annotations
+
+from typing import Annotated, Any, ClassVar, Literal, Optional, Union
+
+from pydantic import BeforeValidator, ConfigDict, Field, PlainSerializer
+
+from flow_sdk.schema.data_spec.health_spec import HealthCheck
+from flow_sdk.schema.data_spec.spec import DataSpec, spec_tag
+from flow_sdk.tags.grammar import NAMESPACE_SEGMENT_PATTERN, normalize_tag
+
+PROTOCOL_WEB_APP = "web.app"
+PROTOCOL_API_REST = "api.rest"
+PROTOCOL_API_CHAT_OPENAI = "api.chat.openai"
+PROTOCOL_API_MCP = "api.mcp"
+PROTOCOL_WORKSPACE = "flowpad.workspace"
+
+#: Browser-facing families: an origin of their own, cookie auth, displayable. The
+#: box's FlowPad UI is one, which is why ``flowpad.workspace`` is listed by name.
+_WEB_FAMILIES = frozenset({"web"})
+_WEB_KINDS = frozenset({PROTOCOL_WORKSPACE})
+
+
+def surface_of(kind: str) -> Literal["web", "api"]:
+    """``web`` for a browser-facing protocol, else ``api``.
+
+    Decided by the first segment after an optional namespace marker. An unknown
+    family is ``api``: only ``web`` is ever given an origin of its own, so
+    defaulting the other way would hand an unknown service the power to set
+    cookies and run script on a domain. Mirrors the hub's ``surface_of``.
+    """
+    kind = normalize_tag(kind)
+    if kind in _WEB_KINDS:
+        return "web"
+    segments = kind.split(".")
+    if NAMESPACE_SEGMENT_PATTERN.fullmatch(segments[0]):
+        segments = segments[1:]
+    return "web" if segments and segments[0] in _WEB_FAMILIES else "api"
+
+
+# ── what an endpoint is for ─────────────────────────────────────────────────
+
+#: A ``ServiceEndpoint``'s subkind — what it is FOR, a closed set (``docs/ontology.md``: a subkind is a
+#: variant within one type; the endpoint's kind, ``service_endpoint.<subkind>``, is derived). What it
+#: SPEAKS is the protocol's own kind, open and namespaced — MCP is a protocol (``api.mcp``), never a subkind.
+#:
+#: * ``system``  — the machine itself: its FlowPad app (``flowpad.workspace``) and the hub's shell/fs MCP.
+#: * ``admin``   — the project's operator-facing web app: ONE proxy per placement, hub identity at the gate.
+#: * ``app``     — the project's end-user web app: ONE proxy per placement, the visitor gate.
+#: * ``agent``   — talks to an agent: its ``chat`` (``api.chat.openai``), an MCP-UI surface.
+#: * ``service`` — anything else the deployment exposes (a REST API, a database port).
+EndpointSubkind = Literal["system", "admin", "app", "agent", "service"]
+ENDPOINT_SUBKINDS: tuple[str, ...] = ("system", "admin", "app", "agent", "service")
+#: The two audiences a project's web apps are served to. A placement has AT MOST ONE endpoint of each —
+#: its proxy for that audience — and every web app of the project is a ROUTE of one of them.
+WEB_AUDIENCES: tuple[str, ...] = ("admin", "app")
+WebAudience = Literal["admin", "app"]
+
+
+def default_subkind(protocol_kind: str) -> str:
+    """What an endpoint speaking *protocol_kind* is for, when its writer does not say."""
+    try:
+        kind = normalize_tag(protocol_kind) if protocol_kind else ""
+    except ValueError:
+        return "service"  # an ill-formed kind is refused by the protocol's own validation, not here
+    if kind == PROTOCOL_WORKSPACE:
+        return "system"
+    if kind == PROTOCOL_API_CHAT_OPENAI:
+        return "agent"
+    if kind and surface_of(kind) == "web":
+        return "app"
+    return "service"
+
+
+# ── protocols ───────────────────────────────────────────────────────────────
+
+
+class ProtocolSpec(DataSpec):
+    """Base of every protocol shape. Unregistered itself — only a leaf names a kind."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @property
+    def kind(self) -> str:
+        return self.spec_kind
+
+
+class WebAppProtocol(ProtocolSpec):
+    """A browser app: documents, assets, and whatever it fetches from itself."""
+
+    spec_kind: ClassVar[str] = PROTOCOL_WEB_APP
+
+    #: The document a browser opens first.
+    entry: str = "index.html"
+
+
+class RestProtocol(ProtocolSpec):
+    """A JSON/HTTP API for machine callers."""
+
+    spec_kind: ClassVar[str] = PROTOCOL_API_REST
+
+    #: Where its OpenAPI document is served, relative to the endpoint, if anywhere.
+    openapi: Optional[str] = None
+
+
+class ChatOpenAIProtocol(ProtocolSpec):
+    """The OpenAI chat-completions wire protocol — ``{base_path}/chat/completions``."""
+
+    spec_kind: ClassVar[str] = PROTOCOL_API_CHAT_OPENAI
+
+    base_path: str = "/v1"
+    #: Model names the service answers to; empty means "ask it" (``/models``).
+    models: list[str] = []
+
+
+class McpProtocol(ProtocolSpec):
+    """MCP over streamable HTTP."""
+
+    spec_kind: ClassVar[str] = PROTOCOL_API_MCP
+
+    path: str = "/mcp"
+
+
+class WorkspaceProtocol(ProtocolSpec):
+    """The machine's own FlowPad app — what a person opens to work on the box."""
+
+    spec_kind: ClassVar[str] = PROTOCOL_WORKSPACE
+
+
+class ExternalProtocol(DataSpec):
+    """A protocol this SDK ships no shape for — carried, never interpreted.
+
+    Only a NAMESPACED kind (``--ns--.…``) lands here: an unmarked kind is ours by
+    definition, and ours must name a shape. ``fields`` are the protocol's own and
+    are dumped back verbatim, so a row round-trips through this tier unchanged.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    external_kind: str
+    fields: dict[str, Any] = {}
+
+    @property
+    def kind(self) -> str:
+        return self.external_kind
+
+
+Protocol = Union[ProtocolSpec, ExternalProtocol]
+
+
+def _protocol_in(value: Any) -> Any:
+    """``{"spec_kind": ..., **fields}`` → the protocol's own shape."""
+    if isinstance(value, (ProtocolSpec, ExternalProtocol)):
+        return value
+    if not isinstance(value, dict) or "spec_kind" not in value:
+        raise ValueError("a protocol is {'spec_kind': <kind>, ...}")
+    fields = dict(value)
+    kind = normalize_tag(fields.pop("spec_kind"))
+    shape = _registered_protocol(kind)
+    if shape is not None:
+        return shape.model_validate(fields)
+    if NAMESPACE_SEGMENT_PATTERN.fullmatch(kind.split(".")[0]):
+        return ExternalProtocol(external_kind=kind, fields=fields)
+    raise ValueError(f"{kind!r} is not a protocol this SDK ships, and an unshipped one must be --namespaced--")
+
+
+def _protocol_out(value: Any) -> dict:
+    if isinstance(value, ExternalProtocol):
+        return {"spec_kind": value.external_kind, **value.fields}
+    # The REGISTERED name — ``_protocol_in`` refuses a kind it cannot resolve, so a
+    # protocol declared by an authored asset would be written under a name its own
+    # reader then rejects.
+    return {"spec_kind": spec_tag(value), **value.model_dump(mode="json")}
+
+
+def _registered_protocol(kind: str) -> Optional[type[ProtocolSpec]]:
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415 — registry import
+
+    shape = SchemaRegistry.kind_type(kind)
+    if isinstance(shape, type) and issubclass(shape, ProtocolSpec):
+        return shape
+    return None
+
+
+#: A protocol field: validates from and dumps to the Tagged wire form.
+TaggedProtocol = Annotated[Protocol, BeforeValidator(_protocol_in), PlainSerializer(_protocol_out, return_type=dict)]
+
+
+# ── backends ────────────────────────────────────────────────────────────────
+
+
+class StaticBackend(DataSpec):
+    """Files served from a folder on the machine — a built ``dist/``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["static"] = "static"
+    root: str
+
+
+class ProxyBackend(DataSpec):
+    """A process on the machine, reached over loopback on ``port``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["proxy"] = "proxy"
+    port: int = Field(ge=1, le=65535)
+    start_cmd: Optional[str] = None
+    health: str = "/"
+
+
+class ChannelBackend(DataSpec):
+    """A message channel: each request is a message on ``data_source_id`` and its reply is the answer.
+
+    No port and no folder: the app takes the request, pushes it into the channel, and answers
+    with the reply the channel records — whoever answers the channel (an agent deployment's
+    loop) is not the endpoint's business. A deployed agent's ``chat`` endpoint is one.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["channel"] = "channel"
+    data_source_id: str
+
+
+#: What one route of a :class:`RoutedBackend` serves from: files, or a process.
+RouteBackend = Annotated[Union[StaticBackend, ProxyBackend], Field(discriminator="type")]
+
+#: A mount: one path segment under an audience proxy; ``""`` is that audience's root app.
+MOUNT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._~-]*$|^$"
+
+
+class RouteSpec(DataSpec):
+    """One app behind an audience proxy: how its bytes are produced, and which app it is."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    backend: RouteBackend
+    #: The webapp DEFINITION (a ``micro_app`` asset) this route serves, when it serves one.
+    webapp_id: Optional[str] = None
+    #: The Artifact this route serves, when it serves one.
+    artifact_id: Optional[str] = None
+
+
+class RoutedBackend(DataSpec):
+    """One proxy, many apps: the first path segment picks the app (``routes`` key), ``""`` is the root app.
+
+    The backend of a placement's ``admin`` and ``app`` endpoints. ``/<mount>/…`` is served by
+    ``routes[<mount>]`` with the mount stripped; a path whose first segment names no mount is the
+    root app's. A route added or removed changes only this — never the endpoint's id or its address.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["routed"] = "routed"
+    routes: dict[Annotated[str, Field(pattern=MOUNT_PATTERN)], RouteSpec] = {}
+
+    def resolve(self, sub_path: str) -> tuple[Optional[str], str]:
+        """``(mount, rest)`` for a path under the proxy — the named mount, else the root app, else None."""
+        head, _, rest = str(sub_path or "").lstrip("/").partition("/")
+        if head and head in self.routes:
+            return head, rest
+        return ("", str(sub_path or "").lstrip("/")) if "" in self.routes else (None, "")
+
+
+Backend = Annotated[
+    Union[StaticBackend, ProxyBackend, ChannelBackend, RoutedBackend], Field(discriminator="type")
+]
+
+
+# ── an app as it is served ──────────────────────────────────────────────────
+
+
+class ServedRouteSpec(DataSpec):
+    """One app as it is served on a placement, as a caller reads it: which proxy, which mount, what serves it.
+
+    The answer shape of everything that reports "where is this app served" (``webapp-artifacts``,
+    ``register-webapp-artifact``): a route of a placement's audience proxy, flattened. ``id`` is
+    the PROXY's — the address is ``(id, route)``. A ``proxy`` backend has an address of its own
+    (``direct-url?route=``); ``static`` is reached through the proxy.
+    """
+
+    spec_kind: ClassVar[str] = "endpoint.served_route"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str
+    #: The app's mount on that proxy; ``""`` is the audience's root app.
+    route: str
+    name: str
+    subkind: EndpointSubkind
+    parent_type_id: Optional[str] = None
+    project_id: Optional[str] = None
+    protocol: TaggedProtocol
+    backend: RouteBackend
+    webapp_id: Optional[str] = None
+    artifact_id: Optional[str] = None
+
+
+# ── what a deployment declares it exposes ───────────────────────────────────
+
+
+class EndpointDeclaration(DataSpec):
+    """One service a deployment DECLARES it exposes — ``Deployment.exposes``.
+
+    The declaration is the deployment's own: what it serves, what for, what it speaks and how to tell it
+    is alive. ``backend`` is the one part that may be unknown when the deployment is declared (a port is
+    picked when the service starts, a channel is made when the loop is launched); the endpoint row fills
+    it in. A declared endpoint with no row serving it is a failing service in the node's health report.
+    """
+
+    spec_kind: ClassVar[str] = "endpoint.declaration"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    subkind: EndpointSubkind
+    protocol: TaggedProtocol
+    backend: Optional[Backend] = None
+    #: How to tell it is alive; ``None`` = the backend's default (``health_spec``).
+    check: Optional[HealthCheck] = None
+
+
+__all__ = [
+    "EndpointDeclaration",
+    "ENDPOINT_SUBKINDS",
+    "EndpointSubkind",
+    "default_subkind",
+    "Backend",
+    "ChannelBackend",
+    "ChatOpenAIProtocol",
+    "ExternalProtocol",
+    "McpProtocol",
+    "PROTOCOL_API_CHAT_OPENAI",
+    "PROTOCOL_API_MCP",
+    "PROTOCOL_API_REST",
+    "PROTOCOL_WEB_APP",
+    "PROTOCOL_WORKSPACE",
+    "Protocol",
+    "ProtocolSpec",
+    "ProxyBackend",
+    "RestProtocol",
+    "RouteBackend",
+    "RouteSpec",
+    "RoutedBackend",
+    "ServedRouteSpec",
+    "WEB_AUDIENCES",
+    "WebAudience",
+    "StaticBackend",
+    "TaggedProtocol",
+    "WebAppProtocol",
+    "WorkspaceProtocol",
+    "surface_of",
+]

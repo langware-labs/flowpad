@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions.skill import skill_id_from_name
+from flow_sdk.assets.types.skill import skill_id_from_name
 from flow_sdk.transcript_analyzer.synthesizers.agent_trace import project_findings_by_skill
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval

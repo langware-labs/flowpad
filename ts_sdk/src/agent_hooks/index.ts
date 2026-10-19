@@ -1,5 +1,5 @@
 /**
- * Agent hooks module.
+ * SubAgent hooks module.
  * Provides services for managing Claude Code hooks.
  */
 

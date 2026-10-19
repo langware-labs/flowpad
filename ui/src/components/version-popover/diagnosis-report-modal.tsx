@@ -23,18 +23,10 @@ interface DiagnosisReportModalProps {
  * arrow promotes the popup into the full URL tab (`/dock/diagnosis/<id>`), closing
  * the overlay — the same content, now a first-class entity view.
  */
-export function DiagnosisReportModal({
-  open,
-  diagnosisId,
-  conversationId,
-  onClose,
-}: DiagnosisReportModalProps) {
+export function DiagnosisReportModal({ open, diagnosisId, conversationId, onClose }: DiagnosisReportModalProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const typeId = useMemo(
-    () => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null),
-    [diagnosisId],
-  );
+  const typeId = useMemo(() => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null), [diagnosisId]);
   const { data: diag } = useEntity<FlowpadDiagnosis>(typeId, { enabled: open && !!typeId });
 
   const handleExpand = () => {
@@ -47,7 +39,7 @@ export function DiagnosisReportModal({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader className="min-w-0">
-          <DialogTitle className="flex items-center gap-2 pr-6">
+          <DialogTitle className="flex items-center gap-2 pe-6">
             <Stethoscope className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{diag?.title || t`Diagnosis`}</span>
             <button
@@ -65,12 +57,8 @@ export function DiagnosisReportModal({
 
         <div className="min-w-0 space-y-3">
           {diagnosisId && (
-            <div className="max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1">
-              <DiagnosisDetails
-                diagnosisId={diagnosisId}
-                conversationId={conversationId}
-                onActionDone={onClose}
-              />
+            <div className="max-h-[55vh] overflow-y-auto overflow-x-hidden pe-1">
+              <DiagnosisDetails diagnosisId={diagnosisId} conversationId={conversationId} onActionDone={onClose} />
             </div>
           )}
 

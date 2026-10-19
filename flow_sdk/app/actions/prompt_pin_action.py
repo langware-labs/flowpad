@@ -31,11 +31,11 @@ from fastapi import HTTPException
 from flow_sdk.actions import action
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.prompt import Prompt
+from flow_sdk.builtin.prompt_helpers import find_or_create_prompt, normalize_prompt_text
 from flow_sdk.core.entity.cross_link import (
     cross_link_entities,
     uncross_link_entities,
 )
-from flow_sdk.builtin.prompt_helpers import find_or_create_prompt, normalize_prompt_text
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
@@ -146,7 +146,9 @@ async def unpin_prompt() -> ApiResponse:
     asset_ref = getattr(prompt, "asset_ref", None)
     if asset_ref:
         try:
-            Path(asset_ref).unlink(missing_ok=True)
+            from flow_sdk.assets.materialize import remove_path
+
+            remove_path(Path(asset_ref))
         except OSError:
             logger.warning("unpin-prompt: failed to remove %s", asset_ref)
     await prompt.destroy()

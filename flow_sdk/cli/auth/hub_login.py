@@ -8,12 +8,16 @@ partitioning is automatic (each instance has its own sodot + Fernet key)
 each other's token.
 """
 
+import logging
+
 from flow_sdk.cli.auth.credentials import (
     UserHubCredentials,
     clear_credentials,
     load_credentials,
     save_credentials,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def set_api_key(api_key: str) -> None:
@@ -25,6 +29,39 @@ def get_api_key() -> str | None:
     """Retrieve the API key from the system keyring."""
     creds = load_credentials()
     return creds.api_key if creds else None
+
+
+def resolve_hub_api_key(*, require_live: bool = False) -> str | None:
+    """The key a hub request would carry, or ``None`` when logged out.
+
+    Same precedence as ``cloud_client.client_hooks._on_request``: the
+    ``cloud_api_key`` instance setting (CI/headless) wins over the file-based
+    login. This is the value a worker bound to the hub's LLMEndpoint spawns with.
+
+    ``require_live`` is for callers that must decide *now* whether this machine
+    can act on the hub (``flow connect``): an expired file login, or a secret
+    store this process cannot open (locked keychain, foreign key), answers
+    ``None`` — "logged out" — instead of handing back a key that will 401 or
+    raising out of a command that has a perfectly good fallback.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+
+    configured = get_instance_settings().cloud_api_key
+    if configured:
+        return configured
+    if not require_live:
+        return get_api_key()
+
+    from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
+
+    try:
+        creds = load_credentials()
+    except Exception as e:  # noqa: BLE001 — an unreadable store is a logged-out machine
+        logger.warning("hub login unreadable (%s); treating this machine as logged out", type(e).__name__)
+        return None
+    if creds is None or not creds.api_key or creds.is_expired(EXPIRY_LEEWAY_SECONDS):
+        return None
+    return creds.api_key
 
 
 def delete_api_key() -> None:
@@ -45,6 +82,7 @@ def is_logged_in() -> bool:
         bool: True if a non-empty user record exists, False otherwise
     """
     from flow_sdk.cli.app_config import get_user
+
     return bool(get_user())
 
 
@@ -59,6 +97,7 @@ def hub_auth_available() -> bool:
     per request.
     """
     from flow_sdk.instance_settings import get_instance_settings
+
     if get_instance_settings().cloud_api_key:
         return True
     return is_logged_in()
@@ -77,7 +116,7 @@ async def validate_api_key_async(api_key: str) -> dict:
     Raises:
         Exception: If API key is invalid or validation fails
     """
-    from flow_sdk.cloud_client import FlowpadClient, ApiConfig
+    from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 
     config = ApiConfig.from_env()
     async with FlowpadClient(config, api_key=api_key) as client:
@@ -112,6 +151,7 @@ def validate_api_key(api_key: str) -> dict:
             # We're in an async context, can't use asyncio.run() or run_until_complete()
             # Create a new thread to run the async code
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(asyncio.run, validate_api_key_async(api_key))
                 user_data = future.result()

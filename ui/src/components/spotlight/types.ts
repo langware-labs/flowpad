@@ -1,9 +1,21 @@
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
+import type { MessageDescriptor } from '@lingui/core';
 
 export interface SpotlightRow {
   key: string;
   recordType: string;
+  /**
+   * For a worker-session row: which CLI vendor produced it.
+   *
+   * `recordType` cannot answer this for every vendor — opencode has no session
+   * entity type at all (its sessions live in SQLite), so there is no
+   * `opencode_session` in the registry to resolve an icon from. Rows used to
+   * fall through to `claude_session`, which made an OpenCode result wear
+   * Claude's mark and announce Claude to screen readers. When this is set the
+   * row's glyph comes from `PROVIDER_META` instead.
+   */
+  vendorWorkerType?: string;
   title: string;
   subtitle?: string;
   timestamp?: string | null;
@@ -24,8 +36,9 @@ export interface SpotlightInitialInfo {
 
 export interface SpotlightProfile {
   id: string;
-  label?: string;
-  placeholder?: string;
+  /** Lazy lingui descriptors — render with `i18n._(...)`. */
+  label?: MessageDescriptor;
+  placeholder?: MessageDescriptor;
   defaultEntityType?: string;
   allowedEntityTypes?: string[];
   /** When true, the FTS row click resolves the worker via AgenticProcess.getByWorkerId

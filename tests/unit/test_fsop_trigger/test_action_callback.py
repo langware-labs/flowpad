@@ -8,13 +8,8 @@ import pytest
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import (
-    ActionType,
-    CallbackActionHandler,
-    TriggerAction,
-    get_action_handler,
-)
-
+from flow_sdk.builtin.hook_models import CallbackActionHandler, get_action_handler
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)

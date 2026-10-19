@@ -1,35 +1,34 @@
-import { FSItem } from '../entities/fs_item';
+import { FSEntry } from '../fs/FSEntry';
 
 /**
  * FileUpload - Represents an ongoing file upload with progress tracking
  */
 export class FileUpload {
-  private _fsItem: FSItem;
+  private _fsItem: FSEntry;
   private _progress: number = 0;
   private _completed: boolean = false;
   private _error: Error | null = null;
-  private _completionPromise: Promise<FSItem>;
-  private _completionResolve!: (value: FSItem) => void;
+  private _completionPromise: Promise<FSEntry>;
+  private _completionResolve!: (value: FSEntry) => void;
   private _completionReject!: (error: Error) => void;
-  private _unsubscribe: (() => void) | null = null;
   private _progressCallbacks: Set<(progress: number) => void> = new Set();
-  private _completeCallbacks: Set<(fsItem: FSItem) => void> = new Set();
+  private _completeCallbacks: Set<(fsItem: FSEntry) => void> = new Set();
   private _errorCallbacks: Set<(error: Error) => void> = new Set();
 
-  constructor(fsItem: FSItem) {
+  constructor(fsItem: FSEntry) {
     this._fsItem = fsItem;
 
     // Create completion promise
-    this._completionPromise = new Promise<FSItem>((resolve, reject) => {
+    this._completionPromise = new Promise<FSEntry>((resolve, reject) => {
       this._completionResolve = resolve;
       this._completionReject = reject;
     });
   }
 
   /**
-   * Get the FSItem being uploaded
+   * Get the FSEntry being uploaded
    */
-  get fsItem(): FSItem {
+  get fsItem(): FSEntry {
     return this._fsItem;
   }
 
@@ -76,7 +75,7 @@ export class FileUpload {
    * @param callback - Called when upload completes successfully
    * @returns Unsubscribe function
    */
-  onComplete(callback: (fsItem: FSItem) => void): () => void {
+  onComplete(callback: (fsItem: FSEntry) => void): () => void {
     this._completeCallbacks.add(callback);
     // If already completed, call immediately
     if (this._completed && !this._error) {
@@ -101,10 +100,10 @@ export class FileUpload {
 
   /**
    * Wait for upload to complete
-   * @returns Promise that resolves with FSItem when upload completes
+   * @returns Promise that resolves with FSEntry when upload completes
    * @throws Error if upload fails
    */
-  async waitForCompletion(): Promise<FSItem> {
+  async waitForCompletion(): Promise<FSEntry> {
     const fsItem = await this._completionPromise;
     await new Promise((resolve) => setTimeout(resolve, 100));
     return fsItem;
@@ -124,7 +123,6 @@ export class FileUpload {
       this._completed = true;
       this._completeCallbacks.forEach((callback) => callback(this._fsItem));
       this._completionResolve(this._fsItem);
-      this._cleanup();
     }
   }
 
@@ -138,24 +136,6 @@ export class FileUpload {
     this._completed = true;
     this._errorCallbacks.forEach((callback) => callback(error));
     this._completionReject(error);
-    this._cleanup();
-  }
-
-  /**
-   * Internal: Set unsubscribe function for progress tracking
-   */
-  _setUnsubscribe(unsubscribe: () => void): void {
-    this._unsubscribe = unsubscribe;
-  }
-
-  /**
-   * Internal: Cleanup subscriptions
-   */
-  private _cleanup(): void {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
   }
 
   /**

@@ -119,3 +119,38 @@ def test_legacy_input_output_rates_matches_published_sonnet_4():
     in_rate, out_rate = legacy_input_output_rates("claude-sonnet-4-6")
     assert in_rate == pytest.approx(3.00)
     assert out_rate == pytest.approx(15.00)
+
+
+def test_usage_entry_to_dict_carries_cost_usd():
+    """Clients read the cost the backend priced instead of mirroring the tables."""
+    from flow_sdk.transcript_analyzer.entries.usage import CodexUsageEntry, UsageEntry
+
+    base = {"session_id": "s", "timestamp": "2026-08-30T00:00:00Z"}
+    out = UsageEntry(
+        id="a", count=1_000, io="output", model="claude-sonnet-4-5", worker="claude", **base
+    )
+    assert out.to_dict()["cost_usd"] == pytest.approx(0.015)
+
+    cache_read = UsageEntry(
+        id="b",
+        count=1_000,
+        io="input",
+        cache="read",
+        model="claude-sonnet-4-5",
+        worker="claude",
+        **base,
+    )
+    assert cache_read.to_dict()["cost_usd"] == pytest.approx(0.0003)
+
+    # The cumulative carrier is count=0 by construction, so it prices to zero
+    # and never double-counts the per-dim siblings from the same turn.
+    cumulative = CodexUsageEntry(
+        id="c",
+        count=0,
+        io="input",
+        model="gpt-5.4",
+        worker="codex",
+        total_input_tokens=999,
+        **base,
+    )
+    assert cumulative.to_dict()["cost_usd"] == 0.0

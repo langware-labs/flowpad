@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-7c234c43-b48e-5e33-99b2-84e907274387",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "docs",
+  "folder_rel_path": "tabs",
+  "folder_name": "tabs",
+  "inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.",
+  "files": [
+    {
+      "name": "display.md",
+      "rel_path": "display.md",
+      "title": "Vibe Display surface",
+      "summary": "Vibe Display pane as an address: flow show navigates, one replaceable active-display tab, display stack as history, app docks, and show outside Vibe.",
+      "content_hash": "d9e829aba1472d3f9c214f0978b5a9634bce15bdefaf1156a066b56b1953643c",
+      "size_bytes": 22502
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-13T10:49:35Z",
+  "latest_process_ref": ""
+}

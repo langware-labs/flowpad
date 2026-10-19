@@ -4,7 +4,10 @@ toggle) calls. Mirrors the vitest ``agentic-process-switch-mode.test.ts``.
 
 Transport switch over ONE logical session; routing stays ``headless == !visible``:
   - ``cli``         → headless (kill PTY, visible=False, pty_mode=False)
-  - ``interactive`` → PTY (the canonical ``_perform_open`` path, visible=True)
+  - ``interactive`` → PTY (the canonical ``start_pty`` path, visible=True)
+
+Both directions arrive here, and only here: ``→terminal`` used to call the
+unguarded ``open`` instead (FLOWPAD-2130).
 
 Request-body is supplied via the same ``get_current_request_info`` mock the
 existing fork-action tests use — the HTTP transport boundary, not the logic.
@@ -23,6 +26,10 @@ from flow_sdk.fs_store.record_paths import (
     set_default_records_root,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from tests.utils.harness_installed import funding_not_under_test  # noqa: F401 — a fixture
+
+# Spawn mechanics, not funding: CI has no vendor CLI signed in (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("funding_not_under_test")
 
 
 @pytest.fixture(autouse=True)
@@ -40,9 +47,11 @@ def _proc(**kwargs) -> AgenticProcess:
     return AgenticProcess(id=str(uuid.uuid4()), **kwargs)
 
 
-def _req(mode: str) -> MagicMock:
+def _req(mode: str, **body) -> MagicMock:
     req = MagicMock()
-    req.get_post_data = AsyncMock(return_value={"mode": mode})
+    req.get_post_data = AsyncMock(return_value={"mode": mode, **body})
+    # Explicit: a bare MagicMock would be assigned onto the entity field.
+    req.request_connection_id = None
     return req
 
 
@@ -64,19 +73,51 @@ async def test_switch_mode_cli_flips_to_headless():
 
 @pytest.mark.asyncio
 async def test_switch_mode_interactive_routes_to_open():
-    """mode=interactive dispatches to the canonical PTY open path with visible=True."""
+    """mode=interactive dispatches to the canonical PTY open path with visible=True.
+    ``terminal_theme`` rides along because this is now the only route the UI takes
+    to a PTY — the launch must match ``open``'s, palette included.
+    """
     proc = _proc(visible=False, pty_mode=False)
     sentinel = ApiSuccessResponse(data={"opened": True})
 
-    with patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock) as mock_open, patch(
-        "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
-        return_value=_req("interactive"),
+    with (
+        patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock) as mock_open,
+        patch(
+            "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+            return_value=_req("interactive", theme="dark"),
+        ),
     ):
         mock_open.return_value = sentinel
         resp = await proc.switch_mode()
 
-    mock_open.assert_called_once_with(instruction=None, visible=True, retry=True)
+    mock_open.assert_called_once_with(instruction=None, visible=True, retry=True, terminal_theme="dark")
     assert resp is sentinel
+
+
+@pytest.mark.asyncio
+async def test_switch_mode_rejects_a_body_the_union_does_not_allow():
+    """The tagged union is the contract: a theme that is not a palette, a field
+    the other arm owns, and a dropped field are all refusals now — not silent
+    coercion (the old handler mapped an unknown theme to None)."""
+    proc = _proc(visible=False, pty_mode=False)
+
+    for body, needle in (
+        ({"mode": "interactive", "theme": "solarized"}, "theme"),
+        ({"mode": "cli", "theme": "dark"}, "theme"),
+        ({"mode": "interactive", "cols": 200}, "cols"),
+    ):
+        with (
+            patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock) as mock_open,
+            patch(
+                "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+                return_value=_req(body.pop("mode"), **body),
+            ),
+        ):
+            resp = await proc.switch_mode()
+
+        assert isinstance(resp, ApiFailResponse), body
+        assert needle in resp.message, (needle, resp.message)
+        mock_open.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -91,22 +132,23 @@ async def test_failed_open_restores_headless_transport_and_latches_failure():
         session_id=str(uuid.uuid4()),
     )
 
-    with patch.object(
-        AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False
-    ), patch.object(
-        AgenticProcess, "shell", new_callable=AsyncMock, return_value=None
-    ), patch.object(
-        AgenticProcess, "get_project", new_callable=AsyncMock
-    ), patch.object(
-        AgenticProcess,
-        "prepare_system_instruction_assets",
-        new_callable=AsyncMock,
-        return_value=[],
-    ), patch.object(
-        AgenticProcess,
-        "_finalized_restart_cli_options",
-        side_effect=RuntimeError("C15 spawn failed"),
-    ), patch.object(AgenticProcess, "save", new_callable=AsyncMock):
+    with (
+        patch.object(AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False),
+        patch.object(AgenticProcess, "shell", new_callable=AsyncMock, return_value=None),
+        patch.object(AgenticProcess, "get_project", new_callable=AsyncMock),
+        patch.object(
+            AgenticProcess,
+            "prepare_system_instruction_assets",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch.object(
+            AgenticProcess,
+            "_finalized_restart_cli_options",
+            side_effect=RuntimeError("C15 spawn failed"),
+        ),
+        patch.object(AgenticProcess, "save", new_callable=AsyncMock),
+    ):
         result = await proc._perform_open(None, True, retry=True)
 
     assert isinstance(result, ApiFailResponse)
@@ -141,23 +183,24 @@ async def test_failed_launch_after_shell_bind_stops_partial_shell_and_rolls_back
     )
     launch_shell.stop = AsyncMock()
 
-    with patch.object(
-        AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False
-    ), patch.object(
-        AgenticProcess, "shell", new_callable=AsyncMock, return_value=None
-    ), patch.object(
-        AgenticProcess, "get_project", new_callable=AsyncMock
-    ), patch.object(
-        AgenticProcess,
-        "prepare_system_instruction_assets",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch.object(
-        AgenticProcess,
-        "_get_or_create_shell",
-        new_callable=AsyncMock,
-        return_value=launch_shell,
-    ), patch.object(AgenticProcess, "save", new_callable=AsyncMock):
+    with (
+        patch.object(AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False),
+        patch.object(AgenticProcess, "shell", new_callable=AsyncMock, return_value=None),
+        patch.object(AgenticProcess, "get_project", new_callable=AsyncMock),
+        patch.object(
+            AgenticProcess,
+            "prepare_system_instruction_assets",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch.object(
+            AgenticProcess,
+            "_get_or_create_shell",
+            new_callable=AsyncMock,
+            return_value=launch_shell,
+        ),
+        patch.object(AgenticProcess, "save", new_callable=AsyncMock),
+    ):
         result = await proc._perform_open(None, True, retry=True)
 
     assert isinstance(result, ApiFailResponse)
@@ -187,3 +230,78 @@ async def test_switch_mode_unknown_rejected():
 
     assert isinstance(resp, ApiFailResponse)
     assert "unknown mode" in resp.message
+
+
+def _background_transcript(path, *, finished: bool):
+    """A PTY transcript where the agent launched a background shell; ``finished``
+    appends the task-notification Claude Code writes when that shell ends."""
+    import json
+
+    lines = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_bg1",
+                        "name": "Bash",
+                        "input": {"command": "sleep 30", "run_in_background": True},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_bg1",
+                        "content": "Command running in background with ID: b1",
+                    }
+                ]
+            },
+        },
+    ]
+    if finished:
+        lines.append(
+            {
+                "type": "user",
+                "message": {
+                    "content": "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>toolu_bg1</tool-use-id>\n<status>completed</status>\n</task-notification>"
+                },
+            }
+        )
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
+    return path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("finished", [False, True])
+async def test_switch_to_cli_waits_for_background_tasks(tmp_path, finished):
+    """Leaving the PTY would kill a still-running background shell with it, so
+    mode=cli 409s until its task-notification lands — then it switches."""
+    from unittest.mock import PropertyMock
+
+    from flow_sdk.builtin.agentic_process.agentic_process import BACKGROUND_TASKS_RUNNING
+
+    transcript = _background_transcript(tmp_path / "session.jsonl", finished=finished)
+    proc = _proc(visible=True, pty_mode=True)  # no shell_id → nothing to kill
+
+    with (
+        patch.object(AgenticProcess, "transcript_path", new_callable=PropertyMock, return_value=transcript),
+        patch(
+            "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+            return_value=_req("cli"),
+        ),
+    ):
+        resp = await proc.switch_mode()
+
+    if finished:
+        assert isinstance(resp, ApiSuccessResponse)
+        assert resp.data["pty_mode"] is False
+    else:
+        assert isinstance(resp, ApiFailResponse)
+        assert resp.status_code == 409
+        assert resp.message == BACKGROUND_TASKS_RUNNING

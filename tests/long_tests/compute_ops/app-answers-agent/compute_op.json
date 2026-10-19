@@ -1,0 +1,16 @@
+{
+  "type": "compute_op",
+  "name": "app-answers-agent",
+  "label": "the demo health endpoint (agent)",
+  "description": "Something serves 200 at http://localhost:8099/health.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "provisioner",
+    "prompt": "Reach this goal on this machine."
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "curl -sf http://localhost:8099/health"
+    }
+  }
+}

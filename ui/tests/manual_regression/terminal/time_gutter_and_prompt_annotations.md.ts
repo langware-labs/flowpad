@@ -13,27 +13,27 @@
  * annotation markers) — that needs Claude to actively think+respond for minutes
  * with non-deterministic output, so they are skipped per the live-claude rule.
  *
- * Column visibility & trace filters: ProcessToolbar "Columns & Trace" dropdown
- * (aria-label="Columns & Trace"), checkboxes: "Trace events", "Time gutter",
+ * Column visibility & trace filters: the ProcessToolbar debug menu
+ * (aria-label="Debug"), "Gutters" section, checkboxes: "Trace events", "Time gutter",
  * "Annotations", "Prompt annotations", time fields "Time", "Index (seq)",
  * "Line", "Abs line", "Row time range", "Anchor time range".
  * Column header bar (18px strip) hide/show buttons:
  *   "Hide Trace — …" / "Show Trace", "Hide Annotations — …" / "Show Annotations".
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, startClaudeSession } from './helpers';
+import { RIBBON_TABS, dismissSetupModal, startClaudeSession } from './helpers';
 
 let cachedAgenticUrl: string | null = null;
 
 async function gotoAgenticProcess(page: Page) {
   const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-  const ribbon = activePanel.locator('.border-t .ml-auto');
+  const ribbon = activePanel.locator(RIBBON_TABS);
 
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
     if (await ribbon.isVisible({ timeout: 10_000 }).catch(() => false)) return;
-  }
+}
 
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
@@ -44,7 +44,7 @@ async function gotoAgenticProcess(page: Page) {
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await startClaudeSession(page);
     await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
-  }
+}
   // Ribbon visible = process toolbar/InteractiveTerminal mounted (banner level).
   await expect(ribbon).toBeVisible({ timeout: 60_000 });
   cachedAgenticUrl = page.url();
@@ -61,20 +61,23 @@ async function ensurePtyContent(page: Page) {
   const start = activePanel.getByRole('button', { name: /Start Claude/ });
   if (await start.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await start.click().catch(() => {});
-  }
+}
   await expect(async () => {
     const txt = (await activePanel.locator('.xterm-rows').first().textContent()) ?? '';
     expect(txt.trim().length).toBeGreaterThan(0);
-  }).toPass({ timeout: 60_000 });
+}).toPass({ timeout: 60_000 });
 }
 
 function colDropdown(page: Page) {
-  return page.locator('button[aria-label="Columns & Trace"]');
+  return page.locator('button[aria-label="Debug"]');
 }
 
 async function openColDropdown(page: Page) {
   await colDropdown(page).click();
   await expect(page.getByText('Time gutter', { exact: false }).first()).toBeVisible({ timeout: 5_000 });
+  // The per-field toggles (Time, Index, Abs line, …) live in a submenu.
+  await page.getByRole('menuitem', { name: 'Time Gutter Fields' }).click();
+  await expect(page.getByRole('menuitemcheckbox', { name: /^Time$/ })).toBeVisible({ timeout: 5_000 });
 }
 
 async function toggleCheckbox(page: Page, name: RegExp | string) {
@@ -111,7 +114,7 @@ const LIVE_CLAUDE_SKIP =
 test.describe('Time gutter & prompt annotations', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
-  });
+});
 
   test('test 1: Time gutter field columns are aligned with fixed widths', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
@@ -143,29 +146,29 @@ test.describe('Time gutter & prompt annotations', () => {
     await expect
       .poll(async () => (await gutter.boundingBox())!.width, { timeout: 10_000 })
       .toBeGreaterThan(widthTwoFields);
-  });
+});
 
   test('test 2: PTY segment border markers appear in time gutter', async () => {
     // Sky-blue PTY segment borders DID appear at ~8.6s on a WARM session, but a
     // cold start after the mandatory DB clear leaves the PTY empty (pending_user
     // gate) so no segments form within budget. See LIVE_CLAUDE_SKIP.
     test.skip(true, LIVE_CLAUDE_SKIP);
-  });
+});
 
   test('test 3: PTY segment border tooltip shows start/end anchor', async () => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-  });
+});
 
   test('test 4: Prompt annotations appear in annotation gutter after replay', async () => {
     // The prompt annotation (kind==='prompt') never positioned in 160s — the
     // worker stays at worker_status=pending_user (interactive permission gate),
     // so the prompt/response cycle never completes. See LIVE_CLAUDE_SKIP.
     test.skip(true, LIVE_CLAUDE_SKIP);
-  });
+});
 
   test('test 5: Prompt annotations do not appear before replay is complete', async () => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-  });
+});
 
   test('test 6: Column header bar — hide and restore trace column', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
@@ -185,7 +188,7 @@ test.describe('Time gutter & prompt annotations', () => {
     // Click to restore.
     await page.locator('button[aria-label="Show Trace"]').first().click();
     await expect(traceGutter).toBeVisible({ timeout: 10_000 });
-  });
+});
 
   test('test 7: Column header bar — hide and restore annotations column', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP + ' (also needs a real worker session_id for the annotation gutter.)');
@@ -208,7 +211,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
     await page.locator('button[aria-label="Show Annotations"]').first().click();
     await expect(annGutter).toBeVisible({ timeout: 10_000 });
-  });
+});
 
   test('test 8: Column visibility persists across page refresh', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
@@ -235,9 +238,9 @@ test.describe('Time gutter & prompt annotations', () => {
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect(page.locator('[data-testid="trace-gutter"]').first()).toBeVisible({ timeout: 15_000 });
-  });
+});
 
-  test('test 9: BugPlay dropdown — Trace and Annotations column toggles (entry-point parity)', async ({ page }) => {
+  test('test 9: debug menu — Trace and Annotations column toggles (entry-point parity)', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
     test.setTimeout(60_000);
     await gotoAgenticProcess(page);
@@ -274,7 +277,7 @@ test.describe('Time gutter & prompt annotations', () => {
     await toggleCheckbox(page, /^Annotations/);
     await page.keyboard.press('Escape');
     await expect(annGutter).toBeVisible({ timeout: 10_000 });
-  });
+});
 
   test('test 10: Time-gutter row/anchor time-range fields render extra columns', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
@@ -314,5 +317,5 @@ test.describe('Time gutter & prompt annotations', () => {
     await toggleCheckbox(page, /Anchor time range/);
     await page.keyboard.press('Escape');
     await expect.poll(async () => (await gutter.boundingBox())!.width, { timeout: 10_000 }).toBe(baseWidth);
-  });
+});
 });

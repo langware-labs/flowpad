@@ -1,4 +1,5 @@
 import { Conversation, dataManager, MessageAttachment, Project, TypeId } from '@sdk';
+import { useOpenGitShare } from './use-open-git-share';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Download, FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
@@ -7,6 +8,7 @@ import { Button } from '@src/components/ui/button';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
 import { canonicalPath, useEnsureProject } from '@src/components/project-selector/use-ensure-project';
 import { useAllProjects } from '@src/hooks/use-all-projects';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openDisplayTarget } from '@src/navigation/open-display-target';
@@ -77,20 +79,24 @@ function ScopeButton({
 export function AssetInstallActions({
   attachment,
   conversationProjectId,
+  initialError,
 }: {
   attachment: MessageAttachment;
   /** The conversation's mapped project — the picker's preselected default and
    *  the default install+run target. */
   conversationProjectId?: string | null;
+  /** A failure from opening this attachment before the dialog opened. */
+  initialError?: string | null;
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   // Transient failure reason for a Git Download/Setup — shown inline; the
   // Download button stays clickable so the receiver can retry (each attachment
   // retries independently; a pull failure never indexes stale content).
-  const [gitError, setGitError] = useState<string | null>(null);
+  const [gitError, setGitError] = useState<string | null>(initialError ?? null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen });
+  const { scopeId: workspace } = useActiveWorkspace();
+  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen, workspace });
   const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
   const ensureProject = useEnsureProject();
   const { project: currentProject } = useProject();
@@ -148,26 +154,10 @@ export function AssetInstallActions({
   // is repo-determined). Setup never runs here; it's a separate action below.
   const isGit = attachment.transfer_mode === 'git';
   const downloaded = attachment.effectiveScope != null;
+  const { run: openGitShare, busy: gitBusy } = useOpenGitShare(attachment, conversationProjectId);
   const doGitDownload = useCallback(async () => {
-    setBusy(true);
-    setGitError(null);
-    try {
-      // No install-scope selection for git: placement is repo-determined
-      // (_resolve_git_checkout reuses/clones the checkout; the reindex derives
-      // the owning project from the checkout path). 'user' scope carries no
-      // project-mount dependency.
-      const show = await attachment.install('user');
-      notify.success({ title: t`Downloaded`, message: attachment.name ?? attachment.asset_type ?? '' });
-      openDisplayTarget(show, navigation);
-    } catch (err) {
-      console.error('[asset-review] git download failed', err);
-      const reason = err instanceof Error ? err.message : t`Download failed`;
-      setGitError(reason);
-      notify.error({ title: t`Download failed`, message: reason });
-    } finally {
-      setBusy(false);
-    }
-  }, [attachment, navigation, t]);
+    setGitError(await openGitShare());
+  }, [openGitShare]);
 
   const doGitSetup = useCallback(async () => {
     setBusy(true);
@@ -236,7 +226,7 @@ export function AssetInstallActions({
   // + indexes; Setup (when the type has a setup skill) is a separate optional
   // action offered only after a successful Download.
   if (isGit) {
-    const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+    const spinner = busy || gitBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
     return (
       <div className="flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -244,7 +234,7 @@ export function AssetInstallActions({
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy}
+              disabled={busy || gitBusy}
               onClick={() => void doGitDownload()}
               data-testid="asset-git-download"
             >
@@ -256,7 +246,7 @@ export function AssetInstallActions({
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy}
+              disabled={busy || gitBusy}
               onClick={() => void doGitSetup()}
               data-testid="asset-git-setup"
             >

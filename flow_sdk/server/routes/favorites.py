@@ -16,6 +16,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.responses.response import ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +90,10 @@ async def _summarize(ref: FavoriteRef) -> FavoriteSummary:
     )
 
 
-@router.post("/api/v1/favorites/summary", response_model=SummaryResponse)
-async def favorites_summary(req: SummaryRequest) -> SummaryResponse:
+@router.post("/api/v1/favorites/summary", response_model=ApiSuccessResponse[SummaryResponse])
+async def favorites_summary(req: SummaryRequest) -> ApiSuccessResponse[SummaryResponse]:
+    """Standard ``{status, data}`` envelope; ``data`` is a :class:`SummaryResponse`."""
     if not req.refs:
-        return SummaryResponse(summaries=[])
+        return ApiSuccessResponse(data=SummaryResponse(summaries=[]))
     summaries = await asyncio.gather(*(_summarize(ref) for ref in req.refs))
-    return SummaryResponse(summaries=list(summaries))
+    return ApiSuccessResponse(data=SummaryResponse(summaries=list(summaries)))

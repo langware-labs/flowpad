@@ -1,3 +1,6 @@
+import { RESOURCE_META } from './resource-meta';
+import { msg } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
 import type { ClaudeSessionStatus } from '@sdk/resource_management/fs_records/claude/claude-session';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { Badge } from '@src/components/ui/badge';
@@ -23,6 +26,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import './ProjectResourceList.css';
+import type { MessageDescriptor } from '@lingui/core';
 
 export type ProjectResourceType =
   | 'skill'
@@ -30,9 +34,8 @@ export type ProjectResourceType =
   | 'plugin'
   | 'hook'
   | 'command'
-  | 'agent'
+  | 'subagent'
   | 'claude_session'
-  | 'collaboration_room'
   | 'todo'
   | 'claude_md';
 
@@ -73,24 +76,8 @@ export interface ProjectResourceListProps {
   onSessionResume?: (resource: ProjectResourceListItem) => void;
 }
 
-interface ResourceTypeMeta {
-  label: string;
-  icon: LucideIcon;
-}
 
-const RESOURCE_TYPE_META: Record<ProjectResourceType, ResourceTypeMeta> = {
-  skill: { label: 'Skill', icon: Sparkles },
-  mcp_server: { label: 'MCP', icon: Plug },
-  plugin: { label: 'Plugin', icon: Settings },
-  hook: { label: 'Hook', icon: Terminal },
-  command: { label: 'Command', icon: Command },
-  agent: { label: 'Agent', icon: Bot },
-  session: { label: 'Session', icon: FolderOpen },
-  todo: { label: 'Todo', icon: CheckSquare },
-  claude_md: { label: 'CLAUDE.md', icon: FileText },
-};
-
-const ALL_RESOURCE_TYPES = Object.keys(RESOURCE_TYPE_META) as ProjectResourceType[];
+const ALL_RESOURCE_TYPES = Object.keys(RESOURCE_META) as ProjectResourceType[];
 const NON_SESSION_TYPES = ALL_RESOURCE_TYPES.filter((type) => type !== 'claude_session');
 
 const DEFAULT_FILTERS = new Set<ProjectResourceType>(NON_SESSION_TYPES);
@@ -209,7 +196,9 @@ export function ProjectResourceList({
                 <FolderOpen className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent><Trans>Open or create project</Trans></TooltipContent>
+            <TooltipContent>
+              <Trans>Open or create project</Trans>
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -239,17 +228,19 @@ export function ProjectResourceList({
             <label className="project-resource-filter-option">
               <input type="checkbox" checked={showSessions} onChange={toggleSessions} />
               <FolderOpen className="h-3 w-3" />
-              <span><Trans>Show Sessions</Trans></span>
+              <span>
+                <Trans>Show Sessions</Trans>
+              </span>
             </label>
             <div className="project-resource-filter-separator" />
             {availableResourceTypes.map((type) => {
-              const meta = RESOURCE_TYPE_META[type];
+              const meta = RESOURCE_META[type];
               const TypeIcon = meta.icon;
               return (
                 <label key={type} className="project-resource-filter-option">
                   <input type="checkbox" checked={activeFilters.has(type)} onChange={() => toggleFilter(type)} />
                   <TypeIcon className="h-3 w-3" />
-                  <span>{meta.label}</span>
+                  <span>{i18n._(meta.shortLabel ?? meta.label)}</span>
                 </label>
               );
             })}
@@ -261,27 +252,35 @@ export function ProjectResourceList({
         {isLoading ? (
           <div className="project-resource-list-loading">
             <FusionSpinner size="xs" />
-            <span><Trans>Loading resources...</Trans></span>
+            <span>
+              <Trans>Loading resources...</Trans>
+            </span>
           </div>
         ) : !selectedProjectId ? (
           <div className="project-resource-list-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span><Trans>Select a project to view resources</Trans></span>
+            <span>
+              <Trans>Select a project to view resources</Trans>
+            </span>
           </div>
         ) : totalItems === 0 ? (
           <div className="project-resource-list-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span><Trans>No resources found in this project</Trans></span>
+            <span>
+              <Trans>No resources found in this project</Trans>
+            </span>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="project-resource-list-empty">
-            <span><Trans>No resources match those filters</Trans></span>
+            <span>
+              <Trans>No resources match those filters</Trans>
+            </span>
           </div>
         ) : (
           <ul className="project-resource-list-items">
             <TooltipProvider delayDuration={250}>
               {filteredItems.map((resource) => {
-                const meta = RESOURCE_TYPE_META[resource.type];
+                const meta = RESOURCE_META[resource.type];
                 const TypeIcon = meta.icon;
                 const tooltipText = resource.path || resource.subtitle || resource.name;
                 return (
@@ -298,7 +297,7 @@ export function ProjectResourceList({
                             <span className="project-resource-name">{resource.name}</span>
                             <Badge variant="outline" className="project-resource-chip">
                               <TypeIcon className="h-2.5 w-2.5" />
-                              <span>{meta.label}</span>
+                              <span>{i18n._(meta.shortLabel ?? meta.label)}</span>
                             </Badge>
                             {onSessionResume && resource.type === 'claude_session' && (
                               <button

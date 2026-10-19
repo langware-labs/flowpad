@@ -44,7 +44,7 @@ side-effect · ❌ none.
 | `execute-plan` / `update-plan` | ✅ test_execute_plan_prompt, test_plan_auto_approve | ✅ test_agentic_process_plan_actions | ❌ | ❌ |
 | `transcript` (plan/prompts/full) | ◐ test_codex_transcript_resolution | ✅ test_agentic_process_actions (prompts/full/plan; unknown subpath fails) | ❌ | ❌ |
 | `get-plan` | ◐ | ✅ test_agentic_process_actions (alias, no session) | ✅L plan_detection | ❌ |
-| `load-embedded-agent` | ❌ | ❌ | ✅L load_embedded_agent | ❌ |
+| `load-embedded-subagent` | ❌ | ❌ | ✅L load_embedded_subagent | ❌ |
 | `load-embedded-skill` | ✅ test_agentic_process_skill_loading | ❌ | ✅L system_skills | ❌ |
 | `attach-`/`detach-`/`list-embedded-assets` | ❌ | ✅ test_agentic_process_actions (`list`); attach/detach ❌ | ✅L embedded_assets (attach+detach) | ❌ |
 | `get-assets` | ✅ test_agentic_process_get_assets | ❌ | ✅ project_context_dir | ❌ |
@@ -52,8 +52,7 @@ side-effect · ❌ none.
 | `restart-info` | ✅ test_agentic_process_restart_info | ✅ test_agentic_process_actions (no baseline) | ❌ | ◐ CommandStatusViewer |
 | `cmd-line` | ✅ test_serialize_no_transcript_parse | ✅ test_agentic_process_actions (returns key) | ❌ | ❌ |
 | `status` | ✅ test_agentic_process_status | ✅ test_agentic_process_status_api | ◐ | ✅ WorkerStatusChip, process-status-line |
-| `get-host` | ❌ | ✅ test_agentic_process_actions (resolves local port; rejects out-of-range) | ❌ | ❌ |
-| `set-graph-context` | ❌ | ✅L test_context_process | ❌ | ❌ |
+| `set-display-context` / `display-context` | ✅ test_display_context, test_display_context_hook_install | ✅ test_display_context | ✅ mcp-app-preview-page-sdk, html-preview-served-url | ✅ e2e page-sdk-bridge |
 | `add-dir` / `remove-dir` | ✅ via get_assets + restart_snapshot | ✅ test_agentic_process_actions (add then remove) | ❌ | ❌ |
 | `open` | ◐ lifecycle/latched_start_failure | ✅ test_pty_process_e2e | ✅ chat_ui_vs_pty_content, pty_test | ✅ new-agentic-tab-loader-regression |
 | `os-status` | ❌ | ✅ test_agentic_process_actions (ready_false, no shell) | ✅ agentic_survives_restart | ❌ |
@@ -67,8 +66,8 @@ TS methods: `appendUserMessage` and `getOutputs` now covered by
 null-on-404/workflow-run short-circuit). Still uncovered: `wait` /
 `waitForComplete` / `waitForIdle` (only `waitForReady`, long-only).
 
-**Long-ONLY actions** (no fast-suite coverage on ANY front): `load-embedded-agent`,
-`attach-`/`detach-embedded-asset`, `set-graph-context`. (Previously also
+**Long-ONLY actions** (no fast-suite coverage on ANY front): `load-embedded-subagent`,
+`attach-`/`detach-embedded-asset`. (Previously also
 switch-mode/fork/set-visible/input/submit/execute/prompt/get-plan — all now have
 fast api coverage via `test_agentic_process_actions.py` /
 `test_agentic_process_execute.py` / `test_agentic_process_mid_turn_guard.py`.)
@@ -98,8 +97,9 @@ fast api coverage via `test_agentic_process_actions.py` /
 | Surface item | U | A | V | R |
 |---|---|---|---|---|
 | PtyRegistry attach/detach/park/resume | ✅ test_pty_session_manager | ✅ test_pty_reconnect_regression, test_pty_close_context | ❌ | ❌ |
-| Reaper (`cleanup_expired_sessions`) | ✅ unit-only (dead code in prod) | ❌ | ❌ | ❌ |
-| Reaper loop (`start/stop_cleanup_task`) | ❌ (deferred — wiring intentionally unbuilt) | ❌ | ❌ | ❌ |
+| Reaper (`cleanup_expired_sessions`) | ✅ unit-only (orphan close has no prod caller) | ❌ | ❌ | ❌ |
+| Parked-id reaper (`reap_parked_connections`) | ✅ test_pty_session_manager | ❌ | ❌ | ❌ |
+| Reaper loop (`start/stop_cleanup_task`) + startup wiring | ✅ test_pty_session_manager, test_pty_parked_reaper_wiring | ❌ | ❌ | ❌ |
 | Restart/singleton reset | ✅ test_pty_session_survives_restart | ✅ test_pty_recovery_on_demand | ✅ pty_survives_restart | ❌ |
 | PtyStreamFile core + truncation + v0/salvage | ✅ test_pty_stream_file | ✅ test_pty_stream_truncation (real PTY past cap → replays tail) | ◐ trunc fixtures | ❌ |
 | seq epochs across respawn | ✅ test_pty_stream_seq_epochs | ◐ | ✅ pty-replay-production | ❌ |
@@ -123,10 +123,9 @@ fast api coverage via `test_agentic_process_actions.py` /
 | **Desktop** (9 actions) | ❌ | ✅ test_compute_node_actions (machine-status, system-profile, json-file round-trip, pick-folder, open-terminal, open-external, generate-amd-plan) | ❌ | ❌ |
 | FsRecords | ◐ | ✅ fs_records suites | ✅ | ◐ revisions UI |
 | **Analytics** (cost-overview, claude-context) | ❌ | ✅ test_compute_node_actions (cost-overview shape, claude-context envelope) | ❌ | ❌ |
-| core (tabs, get-cwd, git-ops, worker-history, get-host…) | ✅ tabs/order/worker_history | ✅ get_cwd, git_ops, create_project_from_git; test_compute_node_actions (get-host redirect + range guard, worker-history limit/project-scoped) | ✅ tab_* suites | ✅ tab tests, useClaudeHistory |
+| core (tabs, get-cwd, git-ops, worker-history…) | ✅ tabs/order/worker_history | ✅ get_cwd, git_ops, create_project_from_git; test_compute_node_actions (worker-history limit/project-scoped) | ✅ tab_* suites | ✅ tab tests, useClaudeHistory |
 
-Formerly called out and now covered: **`get-host`** (both AgenticProcess and
-ComputeNode variants), **worker-history HTTP action**, **findSession null-on-404**,
+Formerly called out and now covered: **worker-history HTTP action**, **findSession null-on-404**,
 and the **`test_compute_streaming.py` / `test_compute_node_env.py` placeholders**
 (both now carry real streaming / env-propagation assertions, not `*_placeholder`
 stubs). `test_compute_node_env.py` covers env visible-to-child, non-persistence,
@@ -142,10 +141,10 @@ set-env persist/remove/update/special-chars.
 | `load_history` / parsers (U) | ✅ + drift guards (ai-title) | ✅ static fixtures + naming-event-is-meta (test_codex_parser) | ✅ static fixtures + session-title-is-meta (test_copilot_parser) |
 | **`has_resumable_session`** | ✅ test_cli_driver_contract (jsonl present/absent/no-session-id) | ✅ test_cli_driver_contract (rollout present/absent/no-session-id) | ✅ test_cli_driver_contract (session-file / process-local tee / absent / no-session-id) |
 | plan mode | ✅ all four fronts | ✅ test_cli_driver_contract (does-not-support) | ✅ test_cli_driver_contract (does-not-support) |
-| `compose_prompt` (embedded agents) | ✅ test_cli_driver_contract (passthrough) | — (shared) | — (shared) |
+| `compose_prompt` (embedded sub-agents) | ✅ test_cli_driver_contract (passthrough) | — (shared) | — (shared) |
 | System instruction assets | ✅ test_system_instruction_assets + test_cli_options_system_prompt | ✅ same | ✅ same |
 
-Shared: `WorkerCLIOptions` round-trips ✅, system-instruction sink ✅, `build_env`
+Shared: `AgentOptions` round-trips ✅, system-instruction sink ✅, `build_env`
 pin ✅, restart-snapshot golden ✅ (+L restart_required); `restart_required`
 flip-on-config-change / clear-on-revert now unit-pinned
 (test_agentic_process_restart_snapshot). Also pinned in test_cli_driver_contract:
@@ -185,16 +184,16 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 
 ### Still uncovered / deferred
 
-1. **Reaper loop wiring** (`start/stop_cleanup_task`) — **deliberately deferred**;
-   the reaper is dead code in prod (the `_PTY_CAP=70` FIFO eviction, now tested, is
-   the live PTY-leak backstop). Not a regression risk until the loop is wired.
+1. **Orphan-TTL close** (`cleanup_expired_sessions` with a TTL) — unit-tested but
+   has no prod caller; the loop started at boot is parked-id only (the
+   `_PTY_CAP=70` FIFO eviction, now tested, is the live PTY-leak backstop).
 2. **codex `turn.failed` / parser error path** — the codex parser emits an
    `UnknownEntry` for the error/`turn.failed` event shape (reported by B-series,
    **not fixed**). Only the naming-event-is-meta case is pinned.
 3. **Long-only CLI matrix beyond claude** — codex/copilot real-CLI is now
    `test_cli_driver_binary_smoke.py` but stays DEEP_TESTING + binary-gated; a
    missing binary still leaves zero signal.
-4. **`load-embedded-agent`, `attach-`/`detach-embedded-asset`, `set-graph-context`** —
+4. **`load-embedded-subagent`, `attach-`/`detach-embedded-asset`** —
    fast suites still blind (long-only).
 
 ### Now covered (was zero-coverage, high-risk)
@@ -204,8 +203,8 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 - **`has_resumable_session`** — `test_cli_driver_contract` on all three drivers.
 - **Provider input/resize retry → bare-shell respawn** — `test_provider_dead_pty_no_bare_respawn`
   (the de-agenting hazard: raises, never bare-respawns; spawn_args recovery intact).
-- **`get-host`** (AgenticProcess + ComputeNode) — `test_agentic_process_actions` /
-  `test_compute_node_actions`.
+- **Dev servers as endpoints** (`show` by port registers one; `probe`, `direct-url`) —
+  `test_agentic_process_actions` / `test_app_display_target` / `test_service_endpoint_proxy`.
 - **Mid-turn 409 guards** — `test_agentic_process_mid_turn_guard` (switch-mode +
   restart while a prompt is in flight) and `cancel-prompt` (`test_agentic_process_execute`).
 - **`set-visible`** — `test_agentic_process_actions` + `agentic_process_fe_contract`
@@ -217,7 +216,7 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 
 ### Long-test-only coverage (fast suites still blind)
 
-`load-embedded-agent`, embedded asset attach/detach, `set-graph-context`,
+`load-embedded-subagent`, embedded asset attach/detach,
 chat⇄terminal switching under load. `execute`/`prompt`/queue-drain now have fast
 api coverage in addition to the long suites.
 
@@ -238,7 +237,7 @@ New files this cycle — pytest: `test_agentic_process_actions.py`,
 `agentic-status`/`worker-mode` vitest suites.
 
 **Remaining known gaps** (intentionally not closed this cycle):
-- Reaper loop wiring deferred (dead code; `_PTY_CAP` is the live backstop).
+- Orphan-TTL close has no prod caller (the boot loop is parked-id only; `_PTY_CAP` is the live backstop).
 - Codex parser error / `turn.failed` gap (`UnknownEntry`) — reported, not fixed.
 - A handful of vitest **live-worker** items were deferred to the pytest/long tier
   (documented in the `agentic_process_fe_contract.test.ts` file header).

@@ -1,4 +1,4 @@
-import { FSItem, TypeId } from '@sdk';
+import { FSEntry, TypeId } from '@sdk';
 import { FilterDefinition, FilterName } from './filters';
 
 export interface FileItem {
@@ -8,7 +8,7 @@ export interface FileItem {
   size: number;
   modifiedAt: Date;
   path: string;
-  fsItem?: FSItem;
+  fsItem?: FSEntry;
 }
 
 export interface FilterConfig {
@@ -46,9 +46,11 @@ export interface SimpleFileManagerProps {
    *  (e.g. the Explorer navigator's `refreshNode`). */
   onFsMutated?: (parentRelPath: string) => void;
   /** Row-highlight predicate (absolute node path + is-dir). Rows matching it
-   *  render in the highlight color — used by the git-backed context-folder
+   *  render in the highlight color — used by the git-backed dependency
    *  browser to mark files not yet pushed to the remote. */
   isPathHighlighted?: (path: string, isDir: boolean) => boolean;
+  /** Name of an entry in `initialPath` to select (and scroll to) once it lists. */
+  initialSelectedName?: string;
 }
 
 export type SortField = 'name' | 'size' | 'modifiedAt' | 'type';

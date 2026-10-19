@@ -84,10 +84,15 @@ export async function openInstance(browser: Browser, inst: InstanceConfig): Prom
   return { ctx, page };
 }
 
-/** Navigate to home-landing and wait for the "Start conversation" button. */
+/**
+ * Navigate to the STANDARD home landing and wait for the conversations strip.
+ * A fresh instance defaults to vibe mode, whose home has no conversations
+ * strip; the strip's footer "New" button is the only way to start a
+ * conversation from the UI now (it replaced the old "Start conversation" CTA).
+ */
 export async function gotoHome(page: Page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Start conversation' }).waitFor({ state: 'visible' });
+  await page.goto('/?viewMode=standard');
+  await page.getByTestId('new-conversation-footer-button').waitFor({ state: 'visible' });
 }
 
 /**
@@ -96,7 +101,7 @@ export async function gotoHome(page: Page) {
  * parsed from the URL after Create succeeds.
  *
  * The flow exercised is exactly the pure-UI path the human would walk:
- *   1. click "Start conversation"
+ *   1. click the conversations strip's "New" footer button
  *   2. type bob's email into the participants input, press Enter to add
  *   3. type the initial message
  *   4. click "Create"
@@ -106,9 +111,12 @@ export async function startConversationViaUi(
   alicePage: Page,
   bobEmail: string,
   initialMessage: string,
+  opts: { onHome?: boolean } = {},
 ): Promise<string> {
-  await gotoHome(alicePage);
-  await alicePage.getByRole('button', { name: 'Start conversation' }).click();
+  // ``onHome``: the caller already loaded the home landing on this page, so
+  // don't reload the whole dev bundle a second time.
+  if (!opts.onHome) await gotoHome(alicePage);
+  await alicePage.getByTestId('new-conversation-footer-button').click();
 
   const dialog = alicePage.getByTestId('new-conversation-dialog');
   await dialog.waitFor({ state: 'visible' });
@@ -146,15 +154,26 @@ export async function sendReplyViaUi(page: Page, text: string): Promise<{ sentAt
 }
 
 /**
- * Poll the DOM until a bubble whose body text equals `expected` appears.
+ * Wait until a visible bubble whose body text equals `expected` is in the DOM.
  * Returns the time of arrival (Date.now()). Fails fast — bubbles that don't
  * land within `timeoutMs` raise instead of stalling the test.
+ *
+ * Checked every animation frame IN the page, not with ``locator.waitFor``:
+ * Playwright's locator polling backs off to 500 ms steps, so a bubble that
+ * rendered at +600 ms read as +815…1100 ms — the stopwatch, not the app, was
+ * eating the realtime SLO (DOM MutationObserver vs waitFor, QC 2026-10-01).
  */
 export async function waitForBubbleText(page: Page, expected: string, timeoutMs = 2_000): Promise<number> {
-  const bubble = page
-    .locator('[data-testid^="message-bubble-"]')
-    .filter({ has: page.locator(`.text-sm:not(.font-semibold):text-is("${expected}")`) });
-  await bubble.first().waitFor({ state: 'visible', timeout: timeoutMs });
+  await page.waitForFunction(
+    (text) =>
+      Array.from(document.querySelectorAll('[data-testid^="message-bubble-"]')).some((bubble) =>
+        Array.from(bubble.querySelectorAll('.text-sm:not(.font-semibold)')).some(
+          (el) => el.textContent?.trim() === text && (el as HTMLElement).getClientRects().length > 0,
+        ),
+      ),
+    expected,
+    { polling: 'raf', timeout: timeoutMs },
+  );
   return Date.now();
 }
 
@@ -178,8 +197,33 @@ export async function waitForReceipt(
   return Date.now();
 }
 
-/** Navigate a page to /dock/conversation/<id> and wait until the composer is mounted. */
+/**
+ * Navigate a page to /dock/conversation/<id> and wait until the composer is
+ * mounted AND the feed has rendered its first bubble. The composer appears
+ * while the dev build's boot burst is still in flight; the feed rendering a
+ * message proves the conversation's messages loaded, which is what every
+ * later step reads. (Network-idle is not a usable signal here: the page keeps
+ * watch requests alive.)
+ */
 export async function gotoConversation(page: Page, convId: string) {
   await page.goto(`/dock/conversation/${convId}`);
+  await waitForConversationReady(page);
+}
+
+/** The conversation view is usable: composer mounted, feed rendered a bubble. */
+export async function waitForConversationReady(page: Page) {
   await page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
+  await page.locator('[data-testid^="message-bubble-"]').first().waitFor({ state: 'visible' });
+}
+
+/**
+ * Open a conversation the way a person does from the home strip: click its
+ * row (``navigation.openDock`` → URL → loader). The app is already booted, so
+ * this is a warm in-app navigation — unlike ``gotoConversation``, which
+ * reloads the whole dev bundle (~1900 modules) in the page.
+ */
+export async function openConversationFromStrip(page: Page, convId: string) {
+  await page.locator(`[data-testid="conversation-row"][data-conversation-id="${convId}"]`).click();
+  await page.waitForURL(new RegExp(`/dock/conversation/${convId}`));
+  await waitForConversationReady(page);
 }

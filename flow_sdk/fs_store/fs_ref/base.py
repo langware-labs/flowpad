@@ -6,21 +6,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.layout import Layout
     from flow_sdk.fs_store.record_types import RecordType
 
 
 def _read_existing_frontmatter(path: Path) -> dict:
-    """Read and parse existing YAML frontmatter from a .md file. Returns {} on error."""
-    try:
-        from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+    """Compatibility accessor; document parsing belongs to the asset library."""
+    from flow_sdk.assets.document import read_document
 
-        text = path.read_text(encoding="utf-8")
-        fm = _extract_frontmatter(text)
-        if fm:
-            return _yaml_load(fm)
-    except Exception:
-        pass
-    return {}
+    try:
+        return read_document(path).fields
+    except (OSError, UnicodeError):
+        return {}
 
 
 class FSRef:
@@ -40,6 +37,7 @@ class FSRef:
         type_id: str = "compute_node-@local",
         project_id: str | None = None,
         json_path: str | None = None,
+        layout: "Layout | None" = None,
     ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
@@ -53,6 +51,20 @@ class FSRef:
         # whole file (e.g. one hook inside settings.json). Enables recursive
         # walkers that descend into file content. None for regular file/dir refs.
         self._json_path: str | None = json_path
+        # The layout a WALKER already verified, so the id seam
+        # (``TypeInfo.layout_for``) need not stat this path again. Never part
+        # of identity: two refs are the same ref when their paths are.
+        self._layout: "Layout | None" = layout
+        # What the diskio stage-1 scan found IN this folder, by type name — set by the
+        # project folder walker on FOLDER refs it built from one fused scan, so the
+        # per-type walkers read it instead of scanning the folder again. None for
+        # every other ref. Walk-time only: never serialized, never part of identity.
+        self.stage1_scan: dict[str, list] | None = None
+
+    @property
+    def layout(self) -> "Layout | None":
+        """The walker-verified layout, when this ref came from a walk."""
+        return self._layout
 
     @property
     def json_path(self) -> str | None:
@@ -125,21 +137,17 @@ class FSRef:
     def write(self, content: str) -> None:
         if self.read_only:
             raise IOError(f"FSRef at {self.path!r} is read-only")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(content, encoding="utf-8")
+        from flow_sdk.assets.frontmatter import _atomic_write_text
+
+        _atomic_write_text(self._path, content)
 
     def write_md(self, body: str, frontmatter: dict) -> None:
         """Write markdown file preserving (or injecting) frontmatter fields."""
         if self.read_only:
             raise IOError(f"FSRef at {self.path!r} is read-only")
-        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
+        from flow_sdk.assets.document import write_document
 
-        if self._path.exists():
-            existing_fm = _read_existing_frontmatter(self._path)
-            existing_fm.update(frontmatter)
-            frontmatter = existing_fm
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(_render_frontmatter(frontmatter) + "\n" + body, encoding="utf-8")
+        write_document(self._path, body=body, fields=frontmatter)
 
     def delete(self) -> None:
         if self._path.is_dir():

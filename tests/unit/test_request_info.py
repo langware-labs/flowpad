@@ -89,3 +89,90 @@ async def test_parse_utm_params_custom_utm():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# -- Body parsing: one shared parser for every action route ---------------------
+# A JSON body sent as `curl -d '{...}'` (form-labelled) is relabelled application/json by
+# JsonBodyRelabelMiddleware before it reaches this parser; see
+# tests/unit/test_json_body_relabel_middleware.py. Here: JSON, forms and multipart as labelled.
+
+
+def _post_request(body: bytes, content_type: str | None) -> Request:
+    headers = [(b"content-type", content_type.encode())] if content_type is not None else []
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/graph/rag-toggle-root",
+        "query_string": b"",
+        "headers": headers,
+    }
+    return Request(scope, receive)
+
+
+async def _post_data(body: bytes, content_type: str | None):
+    request_info = RequestInfo()
+    request_info.request = _post_request(body, content_type)
+    return await request_info.get_post_data()
+
+
+@pytest.mark.parametrize(
+    ("body", "content_type", "expected"),
+    [
+        (b'{"path":"/Users/me/notes"}', "application/json", {"path": "/Users/me/notes"}),
+        (b'{"path":"/Users/me/notes"}', None, {"path": "/Users/me/notes"}),
+        (b"[1, 2]", "application/json", [1, 2]),
+    ],
+    ids=["json-header", "no-header", "json-array"],
+)
+async def test_json_body_parses(body, content_type, expected):
+    assert await _post_data(body, content_type) == expected
+
+
+async def test_real_form_still_parses_as_form():
+    data = await _post_data(b"path=%2Ftmp%2Fx&tag=a&tag=b", "application/x-www-form-urlencoded")
+    assert data == {"path": "/tmp/x", "tag": ["a", "b"]}
+
+
+async def test_multipart_unchanged():
+    boundary = "XbOuNdArY"
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="path"\r\n\r\n'
+        "/tmp/x\r\n"
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="files"; filename="a.txt"\r\n'
+        "Content-Type: text/plain\r\n\r\n"
+        "hello\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+    data = await _post_data(body, f"multipart/form-data; boundary={boundary}")
+    from starlette.datastructures import UploadFile
+
+    assert data["path"] == "/tmp/x"
+    assert isinstance(data["files"], UploadFile)
+    assert await data["files"].read() == b"hello"
+
+
+@pytest.mark.parametrize(
+    ("body", "content_type"),
+    [
+        (b"", "application/json"),
+        (b"", None),
+        (b"", "application/x-www-form-urlencoded"),
+        (b'{"path": ', "application/json"),
+        # Not JSON under a form label → the form parser; a blank-valued bare key is dropped.
+        (b'{"path": ', "application/x-www-form-urlencoded"),
+    ],
+    ids=["empty-json", "empty-no-header", "empty-form", "invalid-json", "invalid-json-form-header"],
+)
+async def test_empty_or_unparseable_body_is_empty(body, content_type):
+    assert await _post_data(body, content_type) == {}

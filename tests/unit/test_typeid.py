@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from flow_sdk.api.identifier import IdentifierType
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.api.api_types.identifier import IdentifierType
+from flow_sdk.fs_store.type_id import TypeId
 
 
 async def test_str_unknown():

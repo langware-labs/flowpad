@@ -59,10 +59,6 @@ async def test_compute_node_setup_calls_create_node():
             "flow_sdk.builtin.faas.compute_node.ComputeNode.startup",
             new_callable=AsyncMock,
         ) as mock_startup,
-        patch(
-            "flow_sdk.builtin.faas.compute_node.ComputeNode.setup_lm_proxy_access",
-            new_callable=AsyncMock,
-        ),
     ):
 
         # Create a ComputeNode with minimal config

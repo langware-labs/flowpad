@@ -19,6 +19,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from flow_sdk.assets.layout import File
+
 router = APIRouter()
 
 
@@ -40,7 +42,7 @@ _CREATION_HINTS: dict[str, dict] = {
         "manifest_fields": {
             "task_id": "uuid v4 (you generate it; this becomes the entity id)",
             "name": "human-readable title",
-            "status": "to_do | in_progress | done (default: to_do)",
+            "status": "to_do | in_progress | done (default: to_do). A task handed to a subagent is not made here — use `flow task create`; its status (submitted · working · input_required · done · failed · canceled) is the task ledger's to write",
             "task_type": "Task | analysis | skill_creation (default: Task)",
             "description": "free-text description (optional)",
             "objective": "free-text objective (optional)",
@@ -87,7 +89,7 @@ def _derive_creation_hint(info) -> dict | None:
     """Build a creation recipe straight from the type's registered schema.
 
     Generic for any ``creatable`` type whose primary asset is a single file
-    (``main_layout == "file"``): the agent writes one markdown file with YAML
+    (a ``File`` shape): the agent writes one markdown file with YAML
     frontmatter at ``<project_cwd>/<main_subdir>/<safe-title>.md`` and indexes
     it. Every coordinate — the subfolder, the uid field, the frontmatter
     fields — is sourced from ``TypeInfo`` so nothing is hardcoded per type and
@@ -95,7 +97,7 @@ def _derive_creation_hint(info) -> dict | None:
     otherwise-irregular types are left to the ``_CREATION_HINTS`` override
     table. Returns None when no generic recipe applies.
     """
-    if not info.creatable or not info.main_subdir or info.main_layout != "file":
+    if not info.creatable or not info.main_subdir or not isinstance(info.shape, File):
         return None
     uid = info.uid_field
     fields: dict[str, str] = {
@@ -145,6 +147,57 @@ async def list_schema():
         d["has_entity_cls"] = info.entity_cls is not None
         types.append(d)
     return {"ok": True, "types": types}
+
+
+# MUST stay above `/schema/{type_name}` — FastAPI matches in registration order,
+# so the parameterized route would otherwise swallow "views" as a type name.
+@router.get("/api/v1/agent/schema/views")
+async def list_schema_views():
+    """Return every ADDRESSABLE dock view — what `flow show view` can open.
+
+    This is the view half of the agent's addressing vocabulary; `/schema` above
+    is the entity half. Non-addressable views (the retired aliases, and the
+    folded-away `skills`/`session`/`atlas`) are omitted: they still DECODE for
+    history, but offering them as a destination would be a lie.
+
+    `label` and `aliases` are the half that makes this usable: without a screen's
+    name, a row of bare slug gives an agent nothing to match a request against.
+    `page` says which SPA surface renders it. See `docs/display-capabilities.md`.
+
+    Output shape:
+        {
+          ok: true,
+          views: [ { view_type, label, aliases, page, pointer: none|optional|required,
+                     folds_pointer, scope_keyed, folds_sub_pointer, can_be_tab,
+                     pointer_form, provides, opens, subplaces } ]
+        }
+    """
+    from flow_sdk.core import dock_address as da  # noqa: PLC0415
+
+    views = [
+        {
+            "view_type": view.value,
+            "label": meta.label,
+            "aliases": list(meta.aliases),
+            "page": list(meta.pages),
+            "pointer": meta.pointer.value,
+            "folds_pointer": meta.folds_pointer,
+            "scope_keyed": meta.scope_keyed,
+            "folds_sub_pointer": meta.folds_sub_pointer,
+            # Pointer-bearing views are asked with a placeholder so the answer
+            # reflects the addressable form, not the bare-viewType form.
+            "can_be_tab": da.can_be_tab(view, "x"),
+            # The map's half (``navigation.place``): what the pointer is, what the screen
+            # puts in context, which entity ids it opens, and its named tabs.
+            "pointer_form": meta.pointer_form,
+            "provides": list(meta.provides),
+            "opens": list(meta.opens),
+            "subplaces": [{"pointer": p, "label": label} for p, label in meta.subplaces],
+        }
+        for view, meta in da.VIEW_META.items()
+        if meta.addressable
+    ]
+    return {"ok": True, "views": views}
 
 
 @router.get("/api/v1/agent/schema/{type_name}")

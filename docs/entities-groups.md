@@ -39,9 +39,9 @@ contain zero folder logic of their own.
   `deepAssign` notes in `prompt_queue.md`).
 - **Nesting is the same mechanism**: `Group` is an entity, so its parent is its
   own inherited `group_id`. There is no separate `parent_group_id`.
-- **Roots are virtual.** A tree is identified by `namespace` (a string on Group
+- **Roots are virtual.** A tree is identified by `group_namespace` (a string on Group
   only, e.g. `prompt-library`). Top level of a tree = groups with
-  `{namespace, group_id: null}` plus member entities of the consumer-chosen
+  `{group_namespace, group_id: null}` plus member entities of the consumer-chosen
   leaf types with `group_id: null`. Members never carry a namespace — the
   consumer decides which types appear as leaves.
 - **Scope**: groups and members are ordinary entities — `project_id` ancestry,
@@ -55,11 +55,12 @@ Takes the existing `GROUP = "group"` type value (byte-stable).
 
 ```python
 class Group(Entity):
-    type: str = "group"
-    name: str
-    namespace: str                 # tree identity; immutable after create
-    icon: str | None = None       # optional
-    color: str | None = None      # optional
+    type: str = APIField(default="group")
+    name: str = APIField("")
+    group_namespace: str = APIField("")  # tree identity; immutable after create
+                                          # (bare `namespace` is a reserved base-entity column)
+    icon: Optional[str] = APIField(None)   # optional
+    color: Optional[str] = APIField(None)  # optional
     # parent pointer: inherited Entity.group_id
 ```
 
@@ -80,7 +81,7 @@ Indexed in the entity/search index so children queries are one cheap lookup.
    every set; entity-id policy v4/v5 applies on adopt).
 2. **No cycles**: re-parenting a group under its own descendant is rejected
    (backend walk-up check, bounded by max depth 64).
-3. `namespace` is immutable after creation; a group cannot be moved across
+3. `group_namespace` is immutable after creation; a group cannot be moved across
    trees.
 4. Deleting a group **moves its children up** (they inherit the deleted
    group's `group_id`). Cascade delete is deferred; v1 has no destructive
@@ -94,7 +95,7 @@ Indexed in the entity/search index so children queries are one cheap lookup.
 
 | Action | On | Body | Behavior |
 |---|---|---|---|
-| entity create | `group` | `{name, namespace, group_id?, icon?, color?}` | standard create |
+| entity create | `group` | `{name, group_namespace, group_id?, icon?, color?}` | standard create |
 | entity save | `group` | `{name?/icon?/color?}` | rename / appearance |
 | `POST group/<id>/move` | group | `{group_id \| null}` | re-parent, cycle-checked |
 | `POST group/<id>/delete-group` | group | `{}` | move children up, delete |

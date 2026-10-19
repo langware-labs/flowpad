@@ -42,7 +42,8 @@ vi.mock('@src/hooks/use-adopt-analyze-process', () => ({ useAdoptAnalyzeProcess:
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: {} }),
 }));
-vi.mock('@sdk', () => ({
+vi.mock('@sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sdk')>()),
   ActionInfo: class {},
   Task: class {},
   TaskKind: { STANDARD: 'standard', GROUP: 'group' },

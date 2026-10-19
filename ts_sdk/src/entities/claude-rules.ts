@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 
 export interface IClaudeRules extends IEntity {
@@ -9,6 +9,12 @@ export interface IClaudeRules extends IEntity {
   parent_path?: string;
   vault_root?: string;
 }
+
+// `implements IClaudeRules` only checks the class; it contributes no members, so every
+// field declared solely on IClaudeRules read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ClaudeRules extends EntityMerge<IClaudeRules> {}
 
 /** Rules markdown file under `.claude/rules/*.md`. */
 @registerEntity
@@ -32,6 +38,6 @@ export class ClaudeRules extends APIEntity<ClaudeRules> implements IClaudeRules 
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('claude_rules') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 }

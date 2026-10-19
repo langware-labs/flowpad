@@ -1,4 +1,5 @@
 import { type Page } from '@playwright/test';
+import { apiOrigin } from '../_shared/api';
 
 /**
  * Dismiss the DesktopSetupModal if it appears.
@@ -11,30 +12,26 @@ export async function dismissSetupModal(page: Page) {
 }
 
 /**
- * Navigate to the Triggers view and wait for the trigger list to appear.
+ * Open one automation's Runs tab (or the Automations list when no id is given).
  */
-export async function gotoTriggers(page: Page) {
-  await page.goto('/dock/triggers');
+export async function gotoAutomation(page: Page, triggerId?: string) {
+  await page.goto(triggerId ? `/dock/automations?trigger=${triggerId}&tab=runs` : '/dock/automations');
 
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
 
-  // Wait for the trigger list container
-  await page.locator('text=Triggers').first().waitFor({ state: 'visible', timeout: 30_000 });
-  // Wait for the left panel to settle
-  await page.waitForTimeout(1_000);
+  await page
+    .getByTestId(triggerId ? 'automation-page' : 'automations-list')
+    .waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 /**
  * Delete all schedule triggers created during tests by calling the API directly.
  */
 export async function cleanupScheduleTriggers(page: Page, triggerIds: string[]) {
+  void page;
+  const api = apiOrigin();
   for (const id of triggerIds) {
-    await page.evaluate(async (triggerId) => {
-      // Relative URL: same-origin in-page fetch, proxied by Vite to the app's backend.
-      await fetch(`/api/v1/graph/trigger/${triggerId}`, {
-        method: 'DELETE',
-      });
-    }, id);
+    await fetch(`${api}/api/v1/graph/trigger/${id}`, { method: 'DELETE' });
   }
 }

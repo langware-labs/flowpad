@@ -26,7 +26,6 @@ import { ClaudeAttributionFsRecord } from './attribution';
  * backend which writes back to the source JSON file.
  */
 export class ClaudeSettingsJsonRecordList extends SourceFileRecordList {
-  static override _listType = 'claude_settings_json';
 
   /** Root settings record (model, env, hooks, etc.). */
   get root(): ClaudeSettingsJsonFsRecord | undefined {

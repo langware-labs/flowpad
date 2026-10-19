@@ -1,0 +1,371 @@
+/**
+ * The per-turn "files touched" trace.
+ *
+ * THE assertions here are the things that are easy to get wrong and invisible
+ * when wrong:
+ *
+ *  1. A turn is bounded by HUMAN user messages. Framework injections (skills,
+ *     the Flowpad prompt envelope) are USER_MESSAGE-shaped `is-meta` frames;
+ *     splitting on those shatters one turn into several and scatters its files.
+ *  2. The chip row is anchored on the RENDERED row index, not the group index.
+ *     Standard mode hides dense groups by default, so the group that carries
+ *     the write usually isn't on screen at all — that is precisely the case the
+ *     feature exists for, and a group-indexed plan drops every file in it.
+ *  3. Create outranks edit for the same path in one turn. `Write` then `Edit`
+ *     is the commonest shape there is; chipping it twice — once per group —
+ *     would make every scaffolding turn read as churn.
+ */
+import { describe, expect, it } from 'vitest';
+
+import { FlowData } from '@sdk/flow_processing/flow-data';
+import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
+import { filesInGroup, isTurnStart, partitionByKind, planTurnFiles } from '@src/components/floating-chat/turnFiles';
+import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
+
+let seq = 0;
+
+function toolFrame(entry: Record<string, unknown>): FlowData {
+  const fd = new FlowData(FlowElementTypes.TOOL_CALL, JSON.stringify({ tool_call_id: `tu-${seq++}`, args: {} }), {
+    i: String(seq),
+    t: '2026-08-01T10:00:00Z',
+    'data-type': 'object',
+    subtype: String(entry.kind),
+  });
+  fd.processEntry = { transcript_entry: entry };
+  return fd;
+}
+
+const wrote = (path: string, extra: Record<string, unknown> = {}) =>
+  toolFrame({ kind: 'file_write', path, ...extra });
+const edited = (path: string, extra: Record<string, unknown> = {}) =>
+  toolFrame({ kind: 'file_edit', path, ...extra });
+
+/**
+ * A LIVE frame: no `process_entry` at all.
+ *
+ * This is the real wire shape, not a hypothetical. `processEntry` is populated
+ * only by `FlowData.fromJSON` (the history path); a live turn streams as XML,
+ * which carries attributes and the flow value but not a nested dict. Reading
+ * the kind/path solely off the transcript entry is why the chips once appeared
+ * only after a page reload.
+ */
+function liveFrame(kind: 'file_write' | 'file_edit', path: string, toolUseId = `tu-${seq++}`): FlowData {
+  const args = kind === 'file_write' ? { file_path: path, content: 'x' } : { file_path: path, edits: [] };
+  return new FlowData(
+    FlowElementTypes.TOOL_CALL,
+    JSON.stringify({ tool_name: kind === 'file_write' ? 'Write' : 'Edit', tool_call_id: toolUseId, input: args, args }),
+    {
+      i: String(seq++),
+      t: '2026-08-01T10:00:00Z',
+      'data-type': 'object',
+      subtype: kind,
+      'tool-name': kind === 'file_write' ? 'Write' : 'Edit',
+      'tool-use-id': toolUseId,
+      'observation-kind': 'live',
+    },
+  );
+}
+
+function liveResult(toolUseId: string, outcome: 'success' | 'error'): FlowData {
+  return new FlowData(FlowElementTypes.TOOL_RESULT, JSON.stringify({ tool_call_id: toolUseId, content: 'done' }), {
+    i: String(seq++),
+    t: '2026-08-01T10:00:00Z',
+    'data-type': 'object',
+    subtype: 'tool_result',
+    'tool-use-id': toolUseId,
+    outcome,
+  });
+}
+
+function dense(...events: FlowData[]): TurnGroup {
+  return { kind: 'dense', index: seq++, events };
+}
+
+function userMessage(content: string, isMeta = false): TurnGroup {
+  const fd = new FlowData(FlowElementTypes.USER_MESSAGE, content, {
+    i: String(seq++),
+    t: '2026-08-01T10:00:00Z',
+    'data-type': 'string',
+    ...(isMeta ? { 'is-meta': 'true' } : {}),
+  });
+  return { kind: 'message', index: seq, flowData: fd };
+}
+
+function assistantMessage(content: string): TurnGroup {
+  const fd = new FlowData(FlowElementTypes.CHAT, content, {
+    i: String(seq++),
+    t: '2026-08-01T10:00:00Z',
+    'data-type': 'string',
+    role: 'assistant',
+  });
+  return { kind: 'message', index: seq, flowData: fd };
+}
+
+/** Every group rendered — the "Show tool calls ON" arrangement. */
+const allVisible = (groups: readonly TurnGroup[]) => groups.map(() => true);
+/** Dense groups hidden — the Standard-mode DEFAULT arrangement. */
+const messagesOnly = (groups: readonly TurnGroup[]) => groups.map((g) => g.kind !== 'dense');
+
+const paths = (files: readonly { path: string }[] | undefined) => (files ?? []).map((f) => f.path);
+const marks = (files: readonly { path: string; kind: string }[] | undefined) =>
+  (files ?? []).map((f) => `${f.kind}:${f.path}`);
+
+describe('filesInGroup', () => {
+  it('reports a written file as a creation, with its basename', () => {
+    expect(filesInGroup(dense(wrote('/repo/src/new.tsx')))).toEqual([
+      { path: '/repo/src/new.tsx', name: 'new.tsx', kind: 'file_write' },
+    ]);
+  });
+
+  it('reports an edited file as an edit', () => {
+    expect(filesInGroup(dense(edited('/repo/src/a.ts')))).toEqual([
+      { path: '/repo/src/a.ts', name: 'a.ts', kind: 'file_edit' },
+    ]);
+  });
+
+  it('splits a Windows path on backslashes', () => {
+    // Claude passes `tool_input.file_path` through verbatim, so on Windows the
+    // chip label is derived from `C:\…` — a POSIX-only basename would render
+    // the entire absolute path as the label.
+    expect(filesInGroup(dense(wrote('C:\\Users\\a\\b\\new.tsx')))[0].name).toBe('new.tsx');
+    expect(filesInGroup(dense(edited('C:\\Users\\a\\b\\old.tsx')))[0].name).toBe('old.tsx');
+  });
+
+  it('ignores frames that touch no file', () => {
+    const files = filesInGroup(
+      dense(
+        toolFrame({ kind: 'file_read', path: '/repo/src/a.ts' }),
+        toolFrame({ kind: 'shell_command', command: 'npm run build' }),
+        toolFrame({ kind: 'flow_command', verb: 'artifact', subverb: 'file', target: '/repo/out.html' }),
+        toolFrame({ kind: 'search', query: 'foo' }),
+      ),
+    );
+
+    expect(files).toEqual([]);
+  });
+
+  it('drops a failed write or edit — neither changed anything', () => {
+    expect(filesInGroup(dense(wrote('/repo/x.ts', { is_error: true })))).toEqual([]);
+    expect(filesInGroup(dense(edited('/repo/x.ts', { is_error: true })))).toEqual([]);
+  });
+
+  it('drops a write the backend flagged as not new', () => {
+    expect(filesInGroup(dense(wrote('/repo/x.ts', { is_new: false })))).toEqual([]);
+  });
+
+  it('dedupes a path touched twice, keeping first-seen order', () => {
+    expect(paths(filesInGroup(dense(wrote('/a.ts'), wrote('/b.ts'), wrote('/a.ts'))))).toEqual(['/a.ts', '/b.ts']);
+  });
+
+  it('lets a creation outrank an edit of the same path, in either order', () => {
+    expect(marks(filesInGroup(dense(wrote('/a.ts'), edited('/a.ts'))))).toEqual(['file_write:/a.ts']);
+    expect(marks(filesInGroup(dense(edited('/a.ts'), wrote('/a.ts'))))).toEqual(['file_write:/a.ts']);
+  });
+
+  it('never sees a frame the grouper retracted', () => {
+    // Suppression is the grouper's job (`retract` splices a refined row out of
+    // `group.events`), so tracing the GROUP inherits it. A trace over the raw
+    // item stream would resurrect operations the chat deliberately un-rendered.
+    expect(paths(filesInGroup(dense(wrote('/kept.ts'))))).toEqual(['/kept.ts']);
+  });
+
+  it('returns nothing for a message group', () => {
+    expect(filesInGroup(userMessage('hello'))).toEqual([]);
+  });
+});
+
+describe('filesInGroup — the LIVE frame shape (no process_entry)', () => {
+  it('reads a live write off the subtype attribute and the tool input', () => {
+    // The regression this exists for: chips appeared only after a reload,
+    // because a live frame carries no `process_entry` to read the kind from.
+    expect(filesInGroup(dense(liveFrame('file_write', '/repo/live.ts')))).toEqual([
+      { path: '/repo/live.ts', name: 'live.ts', kind: 'file_write' },
+    ]);
+  });
+
+  it('reads a live edit the same way', () => {
+    expect(marks(filesInGroup(dense(liveFrame('file_edit', '/repo/live.ts'))))).toEqual(['file_edit:/repo/live.ts']);
+  });
+
+  it('still ignores a live frame that touched no file', () => {
+    const bash = new FlowData(
+      FlowElementTypes.TOOL_CALL,
+      JSON.stringify({ tool_name: 'Bash', tool_call_id: 'tu-b', input: { command: 'rm -rf /repo' } }),
+      { i: '1', t: 'x', 'data-type': 'object', subtype: 'shell_command', 'tool-name': 'Bash' },
+    );
+
+    // A command line must never be mistaken for a path.
+    expect(filesInGroup(dense(bash))).toEqual([]);
+  });
+
+  it('drops a live write whose result reported failure', () => {
+    // `is_error` is folded in only on replay, so live the paired result is the
+    // only signal. Without it a failed write would chip mid-turn and then
+    // vanish on reload — the chips disagreeing with themselves.
+    const group = dense(liveFrame('file_write', '/repo/bad.ts', 'tu-x'), liveResult('tu-x', 'error'));
+
+    expect(filesInGroup(group)).toEqual([]);
+  });
+
+  it('keeps a live write whose result succeeded', () => {
+    const group = dense(liveFrame('file_write', '/repo/good.ts', 'tu-y'), liveResult('tu-y', 'success'));
+
+    expect(paths(filesInGroup(group))).toEqual(['/repo/good.ts']);
+  });
+
+  it('mixes live and replayed frames in one group', () => {
+    const group = dense(liveFrame('file_write', '/repo/live.ts'), wrote('/repo/replayed.ts'));
+
+    expect(paths(filesInGroup(group))).toEqual(['/repo/live.ts', '/repo/replayed.ts']);
+  });
+});
+
+describe('isTurnStart', () => {
+  it('is true for a human user message', () => {
+    expect(isTurnStart(userMessage('build me a page'))).toBe(true);
+  });
+
+  it('is false for a framework injection', () => {
+    expect(isTurnStart(userMessage('Base directory for this skill: …', true))).toBe(false);
+  });
+
+  it('is false for an assistant message and for a dense group', () => {
+    expect(isTurnStart(assistantMessage('done'))).toBe(false);
+    expect(isTurnStart(dense(wrote('/a.ts')))).toBe(false);
+  });
+});
+
+describe('planTurnFiles', () => {
+  it('anchors a turn on its last rendered row', () => {
+    const groups = [userMessage('go'), dense(wrote('/a.ts')), assistantMessage('done')];
+
+    const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true });
+
+    // rows: 0 = user, 1 = dense, 2 = assistant
+    expect(paths(byRow.get(2))).toEqual(['/a.ts']);
+    expect(byRow.get(1)).toBeUndefined();
+  });
+
+  it('still lands the row when the touching group is hidden', () => {
+    // The whole point: "Show tool calls" is OFF by default in Standard, so the
+    // dense group carrying the write is not a rendered row.
+    const groups = [userMessage('go'), dense(edited('/a.ts')), assistantMessage('done')];
+
+    const { byRow } = planTurnFiles(groups, messagesOnly(groups), { lastTurnEnded: true });
+
+    // rows: 0 = user, 1 = assistant (the dense group renders nothing)
+    expect(marks(byRow.get(1))).toEqual(['file_edit:/a.ts']);
+  });
+
+  it('keeps each turn\u2019s files on its own turn', () => {
+    const groups = [
+      userMessage('first'),
+      dense(wrote('/one.ts')),
+      assistantMessage('done'),
+      userMessage('second'),
+      dense(edited('/one.ts'), wrote('/two.ts')),
+      assistantMessage('done again'),
+    ];
+
+    const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true });
+
+    // The same file created in turn 1 and edited in turn 2 reports honestly in
+    // both — dedupe is per turn, because each turn describes what IT did.
+    expect(marks(byRow.get(2))).toEqual(['file_write:/one.ts']);
+    expect(marks(byRow.get(5))).toEqual(['file_edit:/one.ts', 'file_write:/two.ts']);
+  });
+
+  it('lets a creation outrank an edit across groups of one turn', () => {
+    const groups = [
+      userMessage('go'),
+      dense(edited('/a.ts')),
+      dense(wrote('/a.ts')),
+      assistantMessage('done'),
+    ];
+
+    const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true });
+
+    expect(marks(byRow.get(3))).toEqual(['file_write:/a.ts']);
+  });
+
+  it('does not split a turn on a framework injection', () => {
+    // A skill load mid-turn is an `is-meta` USER_MESSAGE. Treating it as a turn
+    // start would file the post-skill writes under a turn of their own.
+    const groups = [
+      userMessage('go'),
+      dense(wrote('/before.ts')),
+      userMessage('Base directory for this skill: …', true),
+      dense(edited('/after.ts')),
+      assistantMessage('done'),
+    ];
+
+    const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true });
+
+    expect(byRow.size).toBe(1);
+    expect(marks(byRow.get(4))).toEqual(['file_write:/before.ts', 'file_edit:/after.ts']);
+  });
+
+  it('treats the start of the stream as a turn start', () => {
+    // An embedded / system-prompted session opens with a hidden prompt envelope
+    // and may never carry a non-meta user message. Without this those files
+    // belong to no turn and vanish.
+    const groups = [userMessage('# You are the \u2026', true), dense(wrote('/a.ts')), assistantMessage('done')];
+    const visible = [false, false, true];
+
+    const { byRow } = planTurnFiles(groups, visible, { lastTurnEnded: true });
+
+    // row 0 is the assistant message — the only thing rendered.
+    expect(paths(byRow.get(0))).toEqual(['/a.ts']);
+  });
+
+  it('falls back to a leading row when the turn rendered nothing at all', () => {
+    const groups = [dense(wrote('/a.ts')), userMessage('now do this'), assistantMessage('ok')];
+    const visible = [false, true, true];
+
+    const { byRow } = planTurnFiles(groups, visible, { lastTurnEnded: true });
+
+    expect(paths(byRow.get(-1))).toEqual(['/a.ts']);
+  });
+
+  it('withholds the trailing turn while it is still running', () => {
+    const groups = [userMessage('go'), dense(wrote('/a.ts'))];
+
+    expect(planTurnFiles(groups, allVisible(groups), { lastTurnEnded: false }).byRow.size).toBe(0);
+    expect(planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true }).byRow.size).toBe(1);
+  });
+
+  it('still reports an earlier turn while the current one runs', () => {
+    // "Ended" for a past turn is structural — a later user message exists — so
+    // it does not wait on the live-activity signal.
+    const groups = [
+      userMessage('first'),
+      dense(wrote('/one.ts')),
+      assistantMessage('done'),
+      userMessage('second'),
+      dense(wrote('/two.ts')),
+    ];
+
+    const { byRow } = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: false });
+
+    expect(paths(byRow.get(2))).toEqual(['/one.ts']);
+    expect(byRow.size).toBe(1);
+  });
+
+  it('plans nothing for a turn that touched nothing', () => {
+    const groups = [userMessage('hi'), assistantMessage('hello')];
+
+    expect(planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true }).byRow.size).toBe(0);
+  });
+});
+
+describe('partitionByKind', () => {
+  it('splits the row into creations and edits, each in encounter order', () => {
+    const groups = [userMessage('go'), dense(edited('/a.ts'), wrote('/b.ts'), edited('/c.ts'), wrote('/d.ts'))];
+
+    const files = planTurnFiles(groups, allVisible(groups), { lastTurnEnded: true }).byRow.get(1)!;
+    const { created, edited: edits } = partitionByKind(files);
+
+    expect(paths(created)).toEqual(['/b.ts', '/d.ts']);
+    expect(paths(edits)).toEqual(['/a.ts', '/c.ts']);
+  });
+});

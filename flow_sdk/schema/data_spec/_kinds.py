@@ -1,0 +1,143 @@
+"""Kind resolution — the ONLY module here that consults ``SchemaRegistry``.
+
+``spec.py`` must stay importable from ``flow_sdk/builtin/*`` with no cycle, so
+the registry import is deferred into the function.
+
+Resolution order for a kind:
+  1. a reserved PRIMITIVE  -> its Python type
+  2. a registered kind     -> its class
+  3. anything else         -> ``Any`` — anonymous: legal, opaque, never minted
+
+A kind carries WHOSE it is, and that decides who is asked to load it on a miss:
+bare is ours, ``--ns--.`` is that namespace's owner. The registered name and the
+name written into a value are the same string — see ``_with_kind`` in ``spec.py``.
+
+A kind that references itself while being parsed resolves to ``Any`` (it is
+not registered yet). Compilation is eager, so that is the whole story — no
+cycle detection is needed, and none is done.
+"""
+
+from __future__ import annotations
+
+from datetime import date as _date
+from typing import Any
+
+#: ``date`` is a calendar day, ISO ``YYYY-MM-DD`` on disk -- checked, not a string with its format in prose.
+PRIMITIVES: dict[str, type] = {"string": str, "int": int, "float": float, "bool": bool, "date": _date}
+PRIMITIVE_NAMES: dict[type, str] = {py: name for name, py in PRIMITIVES.items()}
+
+
+def resolve_kind(kind: str) -> Any:
+    prim = PRIMITIVES.get(kind)
+    if prim is not None:
+        return prim
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy: avoid import cycle
+    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
+
+    # ``<kind>.id.<uuid>`` names one value of ``<kind>``: its schema is the kind's.
+    kind = kind_of(kind)
+
+    shape = SchemaRegistry.kind_type(kind)
+    if shape is not None:
+        return shape
+    # A REGISTERED type that names no shape is an authoring mistake, not an
+    # anonymous kind: the author meant a real thing and it has no document form.
+    # An unregistered name stays anonymous (``Any``) — forward references during
+    # eager compilation depend on it.
+    if SchemaRegistry.get(kind) is not None:
+        raise ValueError(f"{kind!r} is an entity type with no document shape (no asset_spec); a kind names a DataSpec")
+    return Any
+
+
+def register_builtin_kinds() -> None:
+    """Bind the kinds the SDK itself vouches for. ``fs_ref`` is the shape of a
+    capability's folder value (an FSRef dict). Importing ``dataset_spec``
+    registers ``file_ref`` / ``folder`` / ``text`` for a process that never
+    touched a dataset."""
+    from flow_sdk.fs_store.fs_ref import FSRef  # lazy
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy
+
+    SchemaRegistry.register_kind("fs_ref", FSRef)
+    from flow_sdk.schema.data_spec.io import native  # noqa: PLC0415 — the file carriers
+
+    native.register()  # ``Text`` renders as ``string``; ``binary`` is its own form
+    import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
+    import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
+    import flow_sdk.schema.data_spec.api_endpoint_spec  # noqa: F401  — registers ``api_endpoint.offer``
+    import flow_sdk.schema.data_spec.asset_setup_spec  # noqa: F401  — registers ``asset.setup`` / ``setup.skip`` / ``setup.node`` / ``setup.tree``
+    import flow_sdk.schema.data_spec.automation_spec  # noqa: F401  — registers ``automation.*``
+    import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
+    import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
+    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.decision`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask`` / ``compute_op.ask.item``
+    import flow_sdk.schema.data_spec.confirm_spec  # noqa: F401  — registers ``confirm``
+    import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
+    import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
+    import flow_sdk.schema.data_spec.decision_spec  # noqa: F401  — registers ``decision.spec`` / ``decision.result`` and their questions / answers
+    import flow_sdk.schema.data_spec.deployment_secrets_spec  # noqa: F401  — registers ``deployment.secrets``
+    import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event`` / ``deployment.thread(s)`` / ``deployment.process`` / ``deployment.code``
+    import flow_sdk.schema.data_spec.diagnose_spec  # noqa: F401  — registers ``diagnose`` / ``diagnosis`` / ``flow.context``
+    import flow_sdk.schema.data_spec.diagnosis_request_spec  # noqa: F401  — registers ``diagnosis.funding`` / ``diagnosis.attachment`` / ``diagnosis.request.open`` / ``diagnosis.request.edit`` / ``diagnosis.run``
+    import flow_sdk.schema.data_spec.diskio_spec  # noqa: F401  — registers ``diskio.*``, the disk-I/O kernel's values
+    import flow_sdk.schema.data_spec.dock_pointer_spec  # noqa: F401  — registers ``dock.pointer``
+    import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.row`` / ``eval.run``
+    import flow_sdk.schema.data_spec.flow_json_spec  # noqa: F401  — registers ``flow.json`` / ``flow.dependency*``
+    import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
+    import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
+    import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``
+    import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
+    import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
+    import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
+    import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
+    import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
+    import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
+    import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
+    import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
+    import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
+    import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
+    import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
+    import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
+    import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
+    import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``
+    import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
+    import flow_sdk.schema.data_spec.requirement_spec  # noqa: F401  — registers ``agent.requirement`` / ``agent.readiness`` / ``agent.readiness.item``
+    import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
+    import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` / ``.decision`` answers
+    import flow_sdk.schema.data_spec.runtime_info_spec  # noqa: F401 — registers ``runtime.info``
+    import flow_sdk.schema.data_spec.schema_tree_spec  # noqa: F401  — registers ``schema.tree`` and its ``.node`` / ``.field`` / ``.use`` / ``.dataset``
+    import flow_sdk.schema.data_spec.server_failure_spec  # noqa: F401  — registers ``server.failure_record`` / ``server.runtime_fingerprint``
+    import flow_sdk.schema.data_spec.service_endpoint_spec  # noqa: F401  — registers ``web.app`` / ``api.rest`` / ``api.chat.openai`` / ``api.mcp`` / ``flowpad.workspace``
+    import flow_sdk.schema.data_spec.session_spec  # noqa: F401  — registers ``session.start``
+    import flow_sdk.schema.data_spec.setup_stage_spec  # noqa: F401  — registers ``setup.stage`` / ``setup.stage_state``
+    import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
+    import flow_sdk.schema.data_spec.status_spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
+    import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
+    import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
+    import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
+    import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.plan`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
+    import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
+    import flow_sdk.sources.setup_steps  # noqa: F401  — registers ``source.setup_update`` / ``source.setup_shown``
+    import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
+
+    # An asset defines its own payload kinds (``ingest.message.whatsapp``) in code the registry
+    # loads lazily; a row read before any source ran still restores its payload. Imported only on
+    # a miss, so registering the loaders drags nothing in.
+    #
+    # WHOSE the kind is decides who is asked — bare is ours, ``--ns--.`` is theirs. The key used
+    # to be the dot prefix ``"ingest."``, which is a claim about what a kind is ABOUT; a loader
+    # answers for what it OWNS. That mismatch is why an authored asset's kind could not be
+    # reached from a read at all: the only loader under that prefix scans the shipped tree.
+    SchemaRegistry.set_kind_loader(_load_value_kinds)
+
+
+def _load_value_kinds(ns: "str | None") -> None:
+    """The asset folders that may define this kind. ``None`` is ours."""
+    from flow_sdk.ingest import driver_registry  # noqa: PLC0415
+
+    if ns is None:
+        # Kinds a FOLDER defines first: a driver's code may name them, never the other way round.
+        from flow_sdk.schema.data_spec import declared  # noqa: PLC0415
+
+        declared.ensure_shipped()
+        driver_registry.load_driver_value_kinds()
+    else:
+        driver_registry.load_namespace_value_kinds(ns)

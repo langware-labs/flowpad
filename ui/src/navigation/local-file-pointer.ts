@@ -1,7 +1,9 @@
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { AssetDocPointer } from './AssetDocPointer';
-import { AssetEditor, editorForPath } from './asset-doc-types';
+import { AssetEditor, editorForPath, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { DockPointer } from './DockPointer';
+import { isAbsoluteMachinePath } from '@sdk';
+import { normalizeAssetVfsPath } from './asset-doc-pointer-grammar';
 
 /**
  * THE pointer-level chokepoint for every generic "open this file" surface —
@@ -12,10 +14,11 @@ import { DockPointer } from './DockPointer';
  * editor (an "Open in Editor" affordance, code hook sources) use
  * `DockPointer.forFile` directly.
  *
- * NOTE: markdown keeps the wider `isMarkdownDocumentPath` predicate (mdx,
- * md.out, …) — the SDK map only knows md/markdown. Built via
- * `AssetDocPointer.forVfs`, NOT `DockPointer.forAssetEditor` (that takes a
- * record type and falls back to MARKDOWN for unknown types).
+ * NOTE: markdown keeps the wider `isMarkdownDocumentPath` predicate — the
+ * registry's `markdown` shape (`shape.ext` + `also`) plus the display-only
+ * spellings (mdx, md.out, …); `editorForPath` reads the same registry set
+ * without the extras. Built via `AssetDocPointer.forVfs`, NOT
+ * `DockPointer.forAssetEditor` (that takes a record type).
  */
 export function dockPointerForFile(
   path: string,
@@ -30,5 +33,8 @@ export function dockPointerForFile(
     const assetOptions = options?.line ? { initialLine: String(options.line) } : undefined;
     return AssetDocPointer.forVfs(editor, path, undefined, assetOptions).toDockPointer();
   }
-  return DockPointer.forFile(path, options);
+  // CodeEditor consumes a VFS address. A raw absolute path would otherwise be
+  // treated as project-relative, duplicating the project root during download.
+  const address = isAbsoluteMachinePath(path) ? normalizeAssetVfsPath(path, LOCAL_COMPUTE_NODE).absVfsPath : path;
+  return DockPointer.forFile(address, options);
 }

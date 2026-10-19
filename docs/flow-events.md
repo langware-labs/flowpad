@@ -1,3 +1,7 @@
+---
+id: 668e2408-1e99-4fd8-91dd-414aab27cc11
+---
+
 # FlowEvents — the unified event bus (delivery worklog)
 
 > **This document is the delivery ledger.** The language rationale and the full
@@ -45,12 +49,12 @@ engine is legacy, scheduled for phase 8/10.
 
 ## Phase 0 — Claim the name  ✅
 
-Rename the run-local envelope (`flow_manager/envelope.py`) `FlowEvent` →
+Rename the run-local envelope (`graph_workflow_manager/envelope.py`) `FlowEvent` →
 `RunEvent`; define the standard `FlowEvent` in `flow_sdk/tags/envelope.py`;
 rename TS `TagEvent` → `FlowEvent` (+ `TagCtx` → `FlowEventCtx`). Pure
 vocabulary — zero behavior, zero wire change.
 
-**Acceptance:** grep gates — no `FlowEvent` under `flow_sdk/flow_manager/`,
+**Acceptance:** grep gates — no `FlowEvent` under `flow_sdk/graph_workflow_manager/`,
 no `TagEvent` in ts_sdk/ui; all existing tests green.
 
 ### Log
@@ -66,7 +70,7 @@ behind a bounded observation poke, default `origin='local_server'`), `on(pattern
 `deliver(event)` (relay entry — no re-mint), handler isolation for sync AND
 async handlers. The `tag_msg` WS frame (`api/messages.py TagMessage`) with
 backend→app forwarding for a declared allowlist
-(`tags/ws_forward.py FORWARDED_TAG_PATTERNS`, starts `["flow.*"]`);
+(`tags/ws_forward.py FORWARDED_TAG_PATTERNS`, starts `["graph_workflow.*"]`);
 TS receiving bridge (`ts_sdk/src/tags/ws-bridge.ts`) feeds arriving frames
 into the app bus via `EventBus.deliver` — same envelope, same id, origin
 preserved. Contract tests pin matching semantics + the envelope JSON across
@@ -83,7 +87,7 @@ and `origin: "local_server"`.
 
 ### Log
 - 2026-07-19 — shipped. Python bus (`tags/bus.py`) + `TagMessage` frame +
-  `ws_forward` (allowlist `["flow.*"]`) armed at startup; TS `deliver()` +
+  `ws_forward` (allowlist `["graph_workflow.*"]`) armed at startup; TS `deliver()` +
   `ws-bridge` wired via `UiTagEmitter`. Contract fixture
   `tests/fixtures/flow_event_contract.json` parsed by BOTH suites (py 16,
   ts 17 tests). Live drill on flow-5: backend-minted id `bcff6c26…` observed
@@ -92,10 +96,10 @@ and `origin: "local_server"`.
 
 ## Phase 2 — Flow-boundary emitter  ✅
 
-`FlowManager` dual-publishes `flow.started / flow.waiting / flow.done /
-flow.failed` (target = the flow entity, run/node detail in `data`) beside the
-legacy `FlowRunEventMessage`/`FlowNodeStatusMessage`; terminal run outputs emit
-`flow.output` instead of existing only as files. **Acceptance:**
+`GraphWorkflowManager` dual-publishes `graph_workflow.started / graph_workflow.waiting /
+graph_workflow.done / graph_workflow.failed` (target = the flow entity, run/node detail in `data`) beside the
+legacy `GraphWorkflowRunEventMessage`/`GraphWorkflowNodeStatusMessage`; terminal run outputs emit
+`graph_workflow.output` instead of existing only as files. **Acceptance:**
 `useJourneyManager` subscribes to the tags and deletes its post-advance REST
 `refresh()` — the standing journal-WS-watch-gap symptom closes.
 
@@ -103,55 +107,55 @@ legacy `FlowRunEventMessage`/`FlowNodeStatusMessage`; terminal run outputs emit
 
 *Emissions — explicit calls at the four lifecycle boundaries (NOT inside the
 WS mirror helpers; boundary semantics ≠ status mirroring), via one helper
-`_emit_flow_tag(run, subtag, data)` in `flow_manager/manager.py` that fills
-`target = f"agentic_flow:{run.flow.flow_id}"` and
-`ctx.scope = [f"agentic_flow_run:{run.id}", f"agentic_flow:{run.flow.flow_id}"]`
+`_emit_flow_tag(run, subtag, data)` in `graph_workflow_manager/manager.py` that fills
+`target = f"graph_workflow:{run.flow.flow_id}"` and
+`ctx.scope = [f"graph_workflow_run:{run.id}", f"graph_workflow:{run.flow.flow_id}"]`
 (innermost-first). `ctx.actor` stays None until phase 7 threads attribution.*
 
 | site | tag | data |
 |---|---|---|
-| `_start_run` | `flow.started` | `{run_id}` |
-| `_enter_guided_step` | `flow.waiting` | `{run_id, node_id, seq, status_line, present, await}` |
-| guided release in `inject` (suspended branch) | `flow.step.done` | `{run_id, node_id, event}` |
-| `_record_run_event(direction="output")` | `flow.output` | `{run_id, event, payload}` |
-| `_finalize` | `flow.done` (complete) / `flow.failed` (tripped) | `{run_id, status, events, executions, error}` |
+| `_start_run` | `graph_workflow.started` | `{run_id}` |
+| `_enter_guided_step` | `graph_workflow.waiting` | `{run_id, node_id, seq, status_line, present, await}` |
+| guided release in `inject` (suspended branch) | `graph_workflow.step.done` | `{run_id, node_id, event}` |
+| `_record_run_event(direction="output")` | `graph_workflow.output` | `{run_id, event, payload}` |
+| `_finalize` | `graph_workflow.done` (complete) / `graph_workflow.failed` (tripped) | `{run_id, status, events, executions, error}` |
 
-*Run-internal node statuses stay on the legacy `FlowNodeStatusMessage` — they
+*Run-internal node statuses stay on the legacy `GraphWorkflowNodeStatusMessage` — they
 are engine mirroring, not boundaries; they migrate in phase 8 if at all.
 Import the bus lazily inside the helper (manager must not import-cycle);
 emission is best-effort try/except like the broadcasts. `ws_forward`'s
-`flow.*` allowlist already covers every row above — zero forwarding changes.*
+`graph_workflow.*` allowlist already covers every row above — zero forwarding changes.*
 
 *Consumer — `ui/src/journey/useJourneyManager.ts`: replace the post-advance
 `.then(() => refresh())` chain with ONE standing bus subscription
-`EventBus.on('flow.step.done', h, {target: 'agentic_flow:' + journeyId})`
+`EventBus.on('graph_workflow.step.done', h, {target: 'graph_workflow:' + journeyId})`
 whose handler calls `refresh()` — law 5 kept honest: the event says *check
 now*, the journal fetch stays the proof. Because the event reaches EVERY tab
 via `tag_msg` (not just watch-holders), the journal-WS-watch gap closes for
 cross-tab journey progress too — the bug the workaround note in that file
 documents.*
 
-*Tests — extend `tests/unit/test_flow_manager.py` with a bus-capture fixture
-(`event_bus.on('flow.*', collect)` + clear in teardown): a run emits
+*Tests — extend `tests/unit/test_graph_workflow_manager.py` with a bus-capture fixture
+(`event_bus.on('graph_workflow.*', collect)` + clear in teardown): a run emits
 started→output→done with correct target/scope ordering; a guided park emits
-`flow.waiting` and its release emits `flow.step.done`; a tripped run emits
-`flow.failed`. UI: extend the journey vitest (or add one) faking a
-`flow.step.done` deliver → `refresh` called once; advance no longer chains
+`graph_workflow.waiting` and its release emits `graph_workflow.step.done`; a tripped run emits
+`graph_workflow.failed`. UI: extend the journey vitest (or add one) faking a
+`graph_workflow.step.done` deliver → `refresh` called once; advance no longer chains
 refresh.*
 
 *Live drill — flow-5: walk one step of the getting-started journey; observe
-`[tags] delivered flow.step.done …` in the console and the tray advancing
+`[tags] delivered graph_workflow.step.done …` in the console and the tray advancing
 WITHOUT the REST refresh chain; second browser tab advances in sync (the gap
 closure made visible).*
 
 ### Log
 - 2026-07-22 — shipped as planned. `_emit_flow_tag` + five boundary sites in
-  `flow_manager/manager.py`; `useJourneyManager` post-advance `.then(refresh)`
-  chain replaced by ONE `flow.step.done` subscription (target-filtered to the
+  `graph_workflow_manager/manager.py`; `useJourneyManager` post-advance `.then(refresh)`
+  chain replaced by ONE `graph_workflow.step.done` subscription (target-filtered to the
   journey). 3 bus-capture tests added (44/44 with the tag suites). Live
   drill: clicked step 1 of getting-started → tray advanced event-driven;
   step 2 advanced via REST from OUTSIDE the browser and the tab still updated
-  (console: `[tags] delivered flow.step.done` + the next `flow.waiting`) —
+  (console: `[tags] delivered graph_workflow.step.done` + the next `graph_workflow.waiting`) —
   the journal-WS-watch gap is closed, cross-tab included. No deviations.
 
 ## Phase 3 — Entity emitter  ✅
@@ -277,7 +281,7 @@ adapters land in phase 6 with the other emitters.
   SERIALIZED (per-trigger asyncio.Lock) — concurrent fires lost counter
   updates; (b) handlers do NOT yet receive the envelope kwarg (fixed
   signature) — it rides the trigger-log entry instead, until a handler needs
-  it. **Bonus find:** the live drill exposed a latent FlowManager race — a
+  it. **Bonus find:** the live drill exposed a latent GraphWorkflowManager race — a
   fresh run could be finalize-swept during `_start_run`'s awaits, before its
   entry event routed (journal showed run_end BEFORE the entry event). Fixed
   at the invariant: runs are BORN RESERVED (`_Run.pending = 1`, released by
@@ -295,7 +299,7 @@ can't double-start a run. Removes the one-Trigger-entity-per-source indirection.
 
 **Detail (planned 2026-07-22):**
 
-*Document (`flow_doc.py`)*: `FlowDoc.subscriptions: list[FlowSubscriptionDef]`
+*Document (`graph_workflow_doc.py`)*: `GraphWorkflowDoc.subscriptions: list[GraphWorkflowSubscriptionDef]`
 — `{id, pattern, target?, scope?, event?, node?}`. On a matching FlowEvent the
 flow gets a FRESH run whose entry event is `event` (default: the bus tag
 string), `data = {tag, target, data}` (the envelope's payload nested — a
@@ -309,14 +313,14 @@ edge-routed from `$external`. `validate_graph`: non-empty/non-`*` pattern
 arming paths: a BOOT SWEEP (`arm_all_flow_subscriptions()`, called beside
 `start_tag_triggers`) because flows load lazily, and a bus-dogfooding
 re-arm — the manager itself subscribes `entity.updated` target
-`agentic_flow:*` and reloads/re-arms that flow (graph edits arm without a
+`graph_workflow:*` and reloads/re-arms that flow (graph edits arm without a
 restart).
 
 *Safety*:
 - **Event-id dedup at entry**: bounded per-manager LRU of seen envelope ids
   (cap 1024) — at-least-once delivery can't double-start a run.
 - **Self-loop brake**: an event whose `ctx.scope` contains this flow's own
-  target (`agentic_flow:<id>` — every `flow.*` boundary emission carries it)
+  target (`graph_workflow:<id>` — every `graph_workflow.*` boundary emission carries it)
   never enters the same flow — a flow subscribing to its own boundary events
   would otherwise spawn runs forever. Cross-flow chaining stays legal.
 - Run budgets (hops/processes/deadline) apply as-is; a per-subscription rate
@@ -324,7 +328,7 @@ restart).
 
 *Tests*: subscription entry (pattern+target → run with mapped event/data);
 direct-`node` delivery; dedup (same envelope delivered twice → one run);
-self-loop brake (flow.done of flow A never re-enters A; B chaining off A
+self-loop brake (graph_workflow.done of workflow A never re-enters A; B chaining off A
 works); re-arm on doc change; validation.
 
 *Live drill (flow-5)*: palette-drill drops its Trigger-entity indirection —
@@ -341,7 +345,7 @@ support later).
   self-brake), so the deferred rate cap landed NOW —
   `config.max_entries_per_minute` (default 30) per flow, one warning per
   window, with a ping-pong regression test. Everything else as planned:
-  FlowSubscriptionDef (+ validation reusing validate_tag_trigger), arming
+  GraphWorkflowSubscriptionDef (+ validation reusing validate_tag_trigger), arming
   on doc load + boot sweep + entity.updated re-arm (bus dogfooding),
   envelope-id LRU dedup, self-loop brake via ctx.scope. Live drill:
   palette-drill dropped its Trigger indirection for
@@ -385,7 +389,7 @@ adapter file per the naming rule (`<family>_on_tag.py`).
 ## Phase 7 — Journals speak FlowEvent  ✅
 
 RunJournal event rows embed the full standard envelope (id, actor, scope);
-trigger-log + JourneyJournal likewise; `example.json.source` aligns with `ctx`
+trigger-log + JourneyJournal likewise; `row.json.source` aligns with `ctx`
 (gains actor + event id) — training-data provenance and the event system share
 one vocabulary.
 
@@ -400,7 +404,7 @@ traceable:
   `envelope: FlowEvent | None`.
 - Journal `event` rows carry `event_id` (+ `actor` when present); run
   input/output records inherit both via model_dump.
-- `_Run.actor` = the entry event's actor; `example.json.source` gains
+- `_Run.actor` = the entry event's actor; `row.json.source` gains
   `actor` + `event_id` — training examples finally answer "who caused this"
   and link to the exact envelope.
 - Trigger-log already embeds the envelope (phase 4). JourneyJournal advance
@@ -410,19 +414,19 @@ traceable:
 - 2026-07-22 — shipped as planned: RunEvent.id (minted) + .actor; inject
   gains `envelope=` and PRESERVES the bus envelope's id/actor at the flow
   door (relay law); journal event rows carry event_id (+ actor); _Run.actor
-  stamps example.json.source with actor + event_id. Test: subscription entry
+  stamps row.json.source with actor + event_id. Test: subscription entry
   from an actor-carrying envelope → journal row AND execution example both
   hold the verbatim envelope id + user:u-42. Live drill on flow-5 confirms
   entry rows carry event_id. 66 tests green across the suites.
 
-## Phase 8 — Strangle the WS dialect  ⏸ PARKED (2026-07-22, user decision)  ⚠ the only wire-changing phase
+## Phase 8 — Strangle the WS dialect  ▶ UNPARKED (2026-07-31)  ⚠ the only wire-changing phase
 
-> Parked indefinitely — phases 0-7 are self-contained without it; dual-publish
-> means the legacy dialect keeps working untouched. **Standing rule while
-> parked: NEW push-style events go on the bus (a tag + allowlist entry),
-> never as a new WSMessageType** — the legacy dialect is frozen, not growing.
-> Tier D (per-connection subscriptions) still rides with phase 9 whenever
-> that lands.
+> Unparked to make the flow canvas bus-driven, which is the precondition for a
+> single consolidated event surface. **Tiers A and B are DONE**; Tier C is
+> mechanical and outstanding; **Tier D remains parked** and still rides with
+> phase 9 — nothing in this pass needs it. The standing rule is unchanged: NEW
+> push-style events go on the bus (a tag + allowlist entry), never as a new
+> WSMessageType.
 
 Migrate the legacy WS dialect one class at a time: dual-publish the tag
 twin → move that class's frontend consumers from `cm.on('on_<type>_msg')` to
@@ -440,12 +444,12 @@ anywhere (Echo, Compute*, CommandStatus, ClientReady, PtyOutputMessage as a
 CLASS — audit each, then delete).
 
 *Tier B — the flow pair (flagship migration):* `flow_run_event_msg` +
-`flow_node_status_msg`. Consumers today are DISJOINT from the bus (AgenticFlows
+`flow_node_status_msg`. Consumers today are DISJOINT from the bus (GraphWorkflows
 store + proc-watch ride the legacy pair; only journeys ride tags). Needs:
-emit `flow.node.status` + full run-event twins (REVISES the phase-2 position —
+emit `graph_workflow.node.status` + full run-event twins (REVISES the phase-2 position —
 "run-internal stays off the bus" was about routing, but the WS mirror already
 ships every node status to the app, so tag form adds no traffic), move
-`agentic-flows/store.ts` + `proc-watch.ts` to `useOnTag`/EventBus, delete
+`graph-workflows/store.ts` + `proc-watch.ts` to `useOnTag`/EventBus, delete
 the two classes AND the agenticFlows EventEmitter re-emit layer (the last
 journey-era machinery).
 
@@ -482,6 +486,210 @@ after 8a target: 2 — the whales).
 
 ### Log
 
+**2026-07-31 — Tier A ✅.** Deleted 8 zero-constructor classes and their enum
+members from BOTH `api/messages.py` and the then-stale `api/api_types/messages.py` (2026-08-29: the fork is gone — `api_types/messages.py` is the single definition site, `api/messages.py` re-exports + app-only frames)
+(29→21 and 20→12): Echo, Hangup, Stream, Transcript, ComputeExe, ComputeCtrl,
+CommandStatus, ClientReady, plus the orphaned `ExeMessageSubType` /
+`CtlMessageSubType`. **Correction to the plan's Tier A list: `EntityMessage` and
+`ComputeMessage` are NOT deletable** — they are the base classes of
+`DataOpMessage` (the entity invalidation channel) and `ResponseMessage` (the
+WS-REST RPC). Only their wire semantics are dead. TS left alone: its
+`ControlMessage` is `{state: boolean}`, a different shape from the backend's
+`{subtype, content}`, and `FlowSync/store.ts` subscribes to it — dead on arrival,
+but not free to remove.
+
+**2026-07-31 — Tier B ✅.** `graph_workflow.run.event` + `graph_workflow.node.status`
+replace `flow_run_event_msg` / `flow_node_status_msg`. Both classes, both enum
+members, the TS interfaces, the two dispatch cases, the two CM handlers and the
+`GraphWorkflowsClient` EventEmitter/`bootstrap()` re-emit layer are gone; the two
+payload shapes are now plain types on the service.
+
+Implementation note: the twins are emitted **inside `_broadcast_run_event` /
+`_broadcast_node_status`**, not at the 12 call sites — every site already
+funnelled through those two helpers, so nothing can be missed. They reuse
+`_emit_flow_tag`, inheriting `target` and `ctx.scope` (which is what keeps the
+subscription self-loop brake working). Both helpers stay `async` and keep their
+names because every call site awaits them, but the delivery underneath is now a
+synchronous bus emit that no slow WS client can stall.
+
+Four things had to ride the twin or something breaks silently, all pinned by
+`test_the_bus_twin_carries_everything_the_ws_dialect_did` (falsified: dropping
+the counters fails it): `queued`/`active` (read off `_node_rt` at emit time,
+stored nowhere else), `detail.process_id` (the only thing `proc-watch` attaches
+to), the run-internal `kind: event` beats (the edge-pulse input, which the
+boundary tags never carried), and `target` (how a client filters to one flow).
+
+Consumers adapt the envelope at the subscription boundary in
+`GraphWorkflowsView.tsx` rather than rewriting `store.ts` / `proc-watch.ts`:
+`target` supplies `flow_id`, `data` supplies the rest. Two fixes fell out — the
+TS `phase` union gained the `waiting` value the backend has always emitted
+(`manager.py:739`), and the header "connected" dot now follows the real socket
+instead of a one-shot bootstrap promise that could only ever resolve true.
+`test_run_boundaries_emit_flow_tags` had its ORDERING assertion scoped to
+boundary tags; its per-event `target`/`scope`/`run_id` invariants deliberately
+still cover the twins.
+
+Verified: 4556 backend unit tests pass; `ui` unit project 3083 pass (the one
+failure, `cloud-manager-hub-identity`, reproduces on unmodified code).
+
+## Phase 8c — Triggers become EMITTERS (phase 4's deferred half)  ✅
+
+Phase 4 shipped `event → trigger`; the reverse was deferred to phase 6 ("their
+`fs.*`/`time.*`/`hook.*` emission adapters land in phase 6") and phase 6 closed
+without it. So a fire produced only a JSONL row, no surface could show a rule's
+cause beside its effect, and the Triggers and Signals screens shared zero rows
+of data. This closes that, and the two screens merge into one **Events** screen.
+
+**Emitted** (`flow_sdk/builtin/trigger_on_tag.py`, the standard `<family>_on_tag`
+shape): `trigger.fired`, `trigger.suppressed` (`reason_code` ∈ storm |
+confirm_failed | disabled | self_loop), `trigger.failed` (`stage` ∈ action |
+flow_activation), and `hook.<snake_event>` once per inbound webhook.
+
+**Three corrections to the phase-4/7 plan, each load-bearing:**
+
+1. **`hook.<EventName>` is unsubscribable.** `grammar.TAG_PATTERN` is
+   lowercase-only, so `hook.PostToolUse` would emit fine (the bus is permissive)
+   but no TAG trigger or flow subscription could ever name it —
+   `validate_bus_pattern` rejects the pattern at save. Snake-cased via
+   `hook_event_tag()`; pinned by a test.
+2. **No `fs.*` / `time.*`.** An FSOp trigger IS the watcher and a schedule
+   trigger IS the job — no file watch or timer exists here without a rule
+   attached, so a source event beside the fire is the same fact twice (and gives
+   a user with rules on both `fs.*` and `trigger.*` two runs from one save). The
+   "no rule matched" case those families exist to expose is structurally empty
+   for fs/time. `hook.*` IS emitted because one webhook fans across N triggers
+   and matching none is the common case.
+3. **Phase 7's "trigger-log already embeds the envelope" was never true.**
+   `append_entry` copies a FIXED key set and silently dropped `event=`. The row
+   now carries `event_id` plus a lean `cause_*` trio — not `model_dump()`, whose
+   `graph_workflow.*` payloads carry stdout tails.
+
+**Self-loop brake (a latent bug, not a new guard).** `trigger.*` is a pattern a
+user could already save. The moment `trigger.fired` existed, a rule on it fed
+itself, bounded only by the storm cap — containment, not correctness. TAG fires
+now drop when their causing envelope already carries the trigger's own target in
+`ctx.scope`, mirroring `manager.py`'s flow-subscription brake, and propagate the
+causing scope forward so A→B→A dies too. Falsification test: remove the brake
+and the counter climbs past 1.
+
+**New bus primitive** — `make_event` + `publish` beside `emit`. `emit`'s
+zero-subscriber fast path returns None, so a log row's `event_id` would exist
+only when somebody happened to be listening; the join between a row and an
+envelope has to hold always. `emit`/`deliver` are unchanged.
+
+**Forwarding: nothing new joins the allowlist.** By ws_forward's own admission
+test, FSOp fires ride a user-tunable `debounce_ms` and hook fires are per tool
+use, so `trigger.*` fails AS A FAMILY, and a family is admitted whole. The app
+reads fires over REST (`trigger/runs`, folded by `flow_sdk/automations/runs.py`) until **per-connection
+tag subscriptions** (phase 8b/9) make `target: trigger:<id>` a bounded lane —
+the same blocker `entity.*` and `data_op_msg` already wait on. Pinned by
+`test_trigger_family_is_not_forwarded_because_fsop_and_hook_are_per_item`, whose
+deletion is the only way to add the pattern.
+
+**Still outstanding:** the fire paths still emit at their own call sites rather
+than through one `record_trigger_outcome` seam — each kind calls
+`activate_flows_for_trigger` / `run_trigger_actions` itself, and only TAG writes a
+start row plus a `tag_fire_done` row (schedule and FSOp write one row after the
+work). A matched HOOK fire now writes a row (2026-10-05, docs/automations.md).
+
+### Log
+- 2026-08-05 — shipped. Adapter + bus primitive + log-key alignment + the
+  self-loop brake; emissions at all four fire paths. UI: Triggers + Signals
+  merged into `/dock/events` (`triggers`/`signals`/`cron` kept as aliases).
+- 2026-10-05 — the Events screen became Automations (`/dock/automations`, its
+  Runs and its Event bus); `events`/`triggers`/`cron`/`signals` are retired and
+  forward to it. See docs/automations.md.
+  Live drill on dev-1: `trigger.fired` observed in `/debug/observed_tags`, a
+  50-file batch yields exactly one envelope, log rows carry `event_id`, and
+  "Run now" on a schedule rule lands a row in the feed within one poll.
+
+## `app.ready` — the backend lifecycle signal  ✅ (2026-09-08)
+
+The first backend-emitted tag under the `app` family, which until now meant
+"frontend-emitted". Emitted once per boot from the tail of `_on_server_startup`
+(`flow_sdk/server/app.py`), and forwarded (`FORWARDED_TAG_PATTERNS`) so a client
+that is already up hears it directly.
+
+**The emit order is the contract, and it is load-bearing:**
+
+```
+await first_bootstrap_served.wait()      # "ready" = someone asked for their world
+await gather(_system_content_index_task) # the shipped assets are now indexed
+await reconcile_wizard_triggers()        # ...and their triggers are armed
+publish_tag(make_tag_event("app.ready", …))
+```
+
+Steps 2 and 3 are what make the event mean anything. A Wizard shipped in a system
+project is discovered ONLY by the detached system-content index, and the bus has
+no durability (law 4): an unarmed subscriber at emit time does not receive the
+event late, it never receives it at all — and nothing anywhere would say why.
+Never reorder these four lines.
+
+**Once-per-machine lives on the TRIGGER, not on the event.** `Trigger.fire_once`
+suppresses a fire when `counter >= 1`, so the emitter needs no gate and an
+ordinary lifecycle event can fire on every boot. That is also why a wizard's
+declared subscription is a real `Trigger` row rather than the in-memory
+`subscriptions:` arming a GraphWorkflow uses: an in-memory subscription has
+nowhere to keep a counter across a restart.
+
+**Delivery is best-effort; the durable record is elsewhere.** `ws_forward._recent`
+is a bounded 200-entry debug ring for the Signals feed's first paint, not a
+delivery mechanism — a client connecting after the emit gets nothing live. What a
+late reader (or the container test) reads instead is the fired trigger's
+`counter` / `last_triggered` and the trigger-log JSONL row, whose
+`cause_event_id` joins back to this envelope's id.
+
+### `app.tab.ready` — a UI is there to be talked to  ✅ (2026-09-23)
+
+`app.ready` says the BACKEND is up. It fires when the first bootstrap is served,
+which no tab has to be present for and none is known to — so a wizard that ASKS
+the person something cannot start on it: the question has nowhere to go.
+`app.tab.ready` is emitted per TAB, from the WebSocket frame handler
+(`flow_sdk/server/routes/websocket.py`), on the first `browser_context` frame of
+each connection.
+
+* **`browser_context`, not `presence`.** `presence` goes out the instant the
+  socket opens. `browser_context` carries the current URL and is re-sent on every
+  navigation, so its first frame means a route has loaded, not that the app began
+  mounting.
+* **Per tab, so per load.** A reload drops the socket and opens another; a new
+  window is one more; an app restart brings a new backend and a new tab. Each
+  emits it. A subscriber that must run on every load subscribes here without
+  `fire_once`; one that wants it only the first time ever says so with a
+  `fire_once` trigger — the `llm-setup` wizard does: the first tab after install
+  runs it, because its chooser and its questions need someone looking.
+* **It waits for the same thing `app.ready` waits for.** The emit awaits
+  `bootstrap.system_content_ready`, set right after `reconcile_wizard_triggers()`
+  in `_app_ready_signal`. Emitted earlier, an unarmed trigger would never hear it
+  (law 4), and a tab that left while waiting is not announced at all.
+* **The frontend still cannot emit to the backend bus** (the app→backend
+  direction above stays deferred): the backend derives this from a frame the UI
+  already sends. No frontend change.
+
+### Wizard triggers — derived, reconciled, pruned
+
+A `Wizard` asset declares its own subscriptions in `wizard.json`
+(`triggers: [{on, fire_once, target}]`). `reconcile_wizard_triggers()`
+(`flow_sdk/server/builtin_triggers.py`) turns them into TAG trigger rows.
+
+This is deliberately NOT an indexer hook: nothing in this tree creates a
+control-plane entity as a side effect of indexing an asset, and `Trigger(...)` is
+constructed in exactly two places, both seed paths. The reconcile is a third seed
+path — structurally `set_service_triggers()` with a computed spec list.
+
+Two consequences worth knowing:
+
+* `_register_post_save` now arms TAG triggers (it handled SCHEDULE and FSOP
+  only). Required, not incidental: wizard triggers are seeded AFTER the
+  `start_tag_triggers()` boot sweep, so without it they wait for the next
+  restart — silently.
+* The orphan **prune is a first** in this tree; nothing else deletes a derived
+  entity when its asset stops declaring it. It is scoped to the `wizard_` uname
+  prefix, and that prefix is the whole safety argument: unames are minted from
+  the asset slug, so a user-authored trigger can never land in the namespace.
+
+---
+
 ## Phase 9 — Recorder + policy hardening  ☐
 
 `EventBus.on("*", sink)` recorder interface; the four jsonl sinks (RunJournal,
@@ -500,8 +708,23 @@ subscribers all the way down.
 
 ### Log
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 668e2408-1e99-4fd8-91dd-414aab27cc11
-flowpad:endcapsule identity -->
+## `dataset.rows.changed` — rows of a dataset were written  ✅ (2026-10-10)
+
+| site | tag | target | data |
+|---|---|---|---|
+| every row write of `Dataset` (`append`, `put`, `put_many`, `sync`, `delete_rows`, `rename_row`, `annotate`, `set_data`) | `dataset.rows.changed` | `dataset:<id>` | `{op: put \| delete \| rename \| sync, keys (at most 100), count, version}` — keys, never values; `version` is the rows as a whole after the write |
+
+The event's `ctx.scope` is `["kind:<row kind>"]`, so a rule checked into a project names its rows by
+kind — `"tag": {"on": "dataset.rows.changed", "scope": ["kind:--acme--.crm.task"]}` — the same file on
+every clone, where the dataset's id (the target) is one machine's.
+
+One event per CALL (a sync of two thousand rows is one), forwarded to the app
+(`FORWARDED_TAG_PATTERNS`); TypeScript listens with `dataset.onRowsChanged(handler)`. A writer that
+is not the server (a sync script) has no bus the app can hear, so it tells the instance
+(`Dataset.announce` → the `rows-changed` action, which only emits). Laws 4 and 5 apply as written:
+nothing is stored and nothing is replayed — a listener re-reads the rows it shows. What the bus does
+not replay, the listener recovers by comparison: `version` (`layout.rows_version`, a stat digest of
+the row files, so any write by anyone moves it) rides on every event and on `GET rows`, and
+`onRowsChanged` asks `GET rows-version` when its socket reconnects — one small read — and calls the
+handler once with `{op: sync, keys: [], count: 0, version}` only when the version is one it neither
+heard nor its dataset instance read. The event is enough: no timer, no re-read on focus.

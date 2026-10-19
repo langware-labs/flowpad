@@ -1,9 +1,10 @@
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from flow_sdk.config import default_service_config
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.tags.envelope import parse_target
+from flow_sdk.config import default_service_config
 
 
 class ServiceUrls:
@@ -201,6 +202,19 @@ class ServiceUrls:
 urls_service = ServiceUrls(default_service_config.service_urls_config if hasattr(default_service_config, 'service_urls_config') else None)
 
 
+# Local type → the spelling the hub still uses. `subagent` was renamed locally
+# ahead of the hub (whose `BuiltinEntityType.AGENT` is still `"agent"`), and
+# sharing a subagent is a live feature, so the wire keeps the old noun until the
+# hub renames. Delete this map — and the `hub_wire_type` calls — in the same
+# change that renames the hub's type.
+_HUB_WIRE_TYPE: dict[str, str] = {"subagent": "agent"}
+
+
+def hub_wire_type(local_type: str) -> str:
+    """The type name to put on the wire for a hub request."""
+    return _HUB_WIRE_TYPE.get(local_type, local_type)
+
+
 def build_hub_url(
     target,
     *,
@@ -221,8 +235,9 @@ def build_hub_url(
     segments: list[str] = []
     if scope:
         for s in scope:
-            t = getattr(s, "type", None) or (s.split("-", 1)[0] if isinstance(s, str) and "-" in s else None)
-            i = getattr(s, "id", None) or (s.split("-", 1)[1] if isinstance(s, str) and "-" in s else None)
+            parsed_t, parsed_i = parse_target(s) if isinstance(s, str) else (None, None)
+            t = getattr(s, "type", None) or parsed_t
+            i = getattr(s, "id", None) or parsed_i
             if t and i:
                 segments.append(f"@{t}-{i}")
             else:
@@ -234,7 +249,7 @@ def build_hub_url(
     if not isinstance(etype, str) or not etype:
         raise ValueError(f"build_hub_url: target must have a 'type' string (got {target!r})")
 
-    segments.append(etype)
+    segments.append(hub_wire_type(etype))
     if eid:
         segments.append(eid)
     if action:

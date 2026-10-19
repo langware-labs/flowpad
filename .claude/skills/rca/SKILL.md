@@ -171,7 +171,22 @@ the root cause. Declare **RCA rejection** and:
 
 1. **Undo your code changes** (the fix, and any source seams/exports added only to enable the
    test). Leave the tree as you found it.
-2. **Restart RCA mode from scratch**, carrying the rejection as evidence: the proven-toggled
-   switch was real but *not the cause of this symptom*, so the true cause is upstream of — or
-   parallel to — what you toggled. Re-reproduce and trace again from there. Do not re-propose the
-   rejected switch.
+2. **STOP and tell the user the RCA failed. Do NOT start another RCA, and do NOT attempt a
+   second fix, until they answer.** One rejected fix is a signal that the model of the bug is
+   wrong; silently re-running the loop burns the user's time on a second guess dressed up as
+   progress, and they lose the chance to redirect before it happens. Report, in this order:
+
+   * **RCA REJECTED** — say it plainly, in those words.
+   * **What was proven** — the switch you toggled, and the measurements that made it look causal.
+   * **What that fix did NOT change** — the original symptom, with the numbers/output showing it
+     still reproduces.
+   * **Why the model was wrong** — the assumption the rejection kills (e.g. "the DB holds
+     asset_ref for these types" — it does not).
+   * **Tree state** — confirm what was reverted and what, if anything, remains.
+   * **Options for where to look next**, with the cheapest discriminating measurement for each.
+
+   Then wait for the user's next step. Their answer sets the direction; do not pick one yourself.
+3. **Only when the user says to continue**, restart RCA mode from scratch, carrying the rejection
+   as evidence: the proven-toggled switch was real but *not the cause of this symptom*, so the
+   true cause is upstream of — or parallel to — what you toggled. Re-reproduce and trace again
+   from there. Do not re-propose the rejected switch.

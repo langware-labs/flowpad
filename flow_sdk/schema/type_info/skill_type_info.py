@@ -1,51 +1,50 @@
 """Type metadata for SKILL."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
-from flow_sdk.fs_store.indexer.functions.skill import (
-    extract_skill,
-    skill_asset_hash,
-    skill_id_from_folder,
+from flow_sdk.assets.identity import (
+    frontmatter_identity,
 )
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.assets.layout import Walk
+from flow_sdk.assets.process_projection import _skill as project_process_asset
+from flow_sdk.assets.types.skill import (
+    derive_skill,
+    skill_asset_hash,
+)
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.data_spec.skill_spec import SkillSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-
-def _skill_default_body(entity) -> str:
-    """SKILL.md written to the skill's main_ref on create.
-
-    Skill's asset_ref is the folder (.claude/skills/<name>/) — the indexer emits
-    the folder and the frontend resolves <folder>/SKILL.md itself. ``main_file``
-    names that inner doc so ``upsert_main_ref`` materializes it on create;
-    without it, create leaves a dangling folder pointer the editor reports as
-    "file not found".
-    """
-    name = (getattr(entity, "name", None) or "Untitled Skill").strip()
-    desc = (getattr(entity, "description", None) or "").strip()
-    return render_entity_frontmatter(entity, {"name": name, "description": desc}) + f"\n\n# {name}\n\n{desc}\n"
-
-
-SKILL = TypeMetadata(
-    type=EntityType.SKILL,
+SKILL = TypeInfo(
+    type_name=EntityType.SKILL,
+    process_projection=project_process_asset,
     icon="FileBadge",
-    displayName="Skills",
+    display_name="Skills",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
+    cloud_file_transport="git",
     index_fields=["description"],
     asset_class="shared",
     family="skills",
-    main_layout="folder",
-    main_file="SKILL.md",
-    from_disk_fn=extract_skill,
-    capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(folder_capsule_id, skill_id_from_folder),
+    # Two walks: ``<prefix>/skills/<name>/`` under every harness dot-dir at
+    # the scope roots, and the folder-wide "a SKILL.md folder anywhere in a
+    # project" walk over the FOLDER scaffold (gitignore-pruned, so an ignored
+    # skill folder is never seen). The latter skips the harness mounts the
+    # former owns, so a skill is emitted once.
+    walk=(
+        Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
+        Walk(roots=("folder",), anywhere=True),
+    ),
+    editor="skill",
+    hub_main_file="SKILL.md",
+    fts_content=("name", "description", "body"),
+    identity_carrier=frontmatter_identity(),
     asset_hash_fn=skill_asset_hash,
-    default_body_fn=_skill_default_body,
-    # On receive, a skill is set up by running ITSELF in a Vibe session — the
-    # SELF sentinel (setup_skill == type) tells ``Entity.setup_on_receive`` to
-    # seed "Use the <this skill's name> skill …". Replaces the FE
-    # useRunReceivedSkill/TESTABLE_TYPES special-case.
+    asset_spec=SkillSpec,
+    derive_fields_fn=derive_skill,
+    # On receive, a skill is set up by running ITSELF in a Vibe session
+    # (setup_skill == type tells ``Entity.setup_on_receive`` to seed "Use the
+    # <this skill's name> skill …").
     setup_skill=EntityType.SKILL.value,
     reception_verb="Run",
 )

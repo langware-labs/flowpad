@@ -65,34 +65,50 @@ async function pollUntil<T>(fn: () => Promise<T | null>, timeoutMs: number): Pro
 export interface Rig {
   rq: APIRequestContext;
   convId: string;
-  bobToken: string;
 }
 
 /** Create a conversation on alice, share to bob, bob accepts, and gate on bob's
  *  per-conversation sync returning 200 (his local row materialized). */
 export async function setupSharedConversation(rq: APIRequestContext): Promise<Rig> {
-  const bobLogin = await json(rq, `${HUB}/api/v1/login`, { method: 'POST', data: { email: BOB_EMAIL, password: BOB_PW } });
+  // Keep Bob's hub cookie out of the context used for Alice's desktop backend.
+  // The hub accepts JWT cookies as well as bearer headers, so one shared cookie
+  // jar can silently make a later Alice request run as Bob.
+  const bobHubRq = await pwRequest.newContext();
+  const bobLogin = await json(bobHubRq, `${HUB}/api/v1/login`, {
+    method: 'POST',
+    data: { email: BOB_EMAIL, password: BOB_PW },
+  });
   const bobToken: string = bobLogin.body?.data?.token;
-  if (!bobToken) throw new Error('bob hub login failed — is dev-6@local.test seeded on the hub?');
+  if (!bobToken) {
+    await bobHubRq.dispose();
+    throw new Error('bob hub login failed — is dev-6@local.test seeded on the hub?');
+  }
 
   const conv = await json(rq, `${ALICE_API}/api/v1/graph/conversation`, { method: 'POST', data: { title: `e2etest-collab-${Date.now()}` } });
   const convId: string = conv.body?.data?.id;
   if (!convId) throw new Error('alice conversation create failed');
   await json(rq, `${ALICE_API}/api/v1/graph/conversation/${convId}/share`, { method: 'POST', data: { ...conv.body.data, recipients: [BOB_EMAIL] } });
 
-  // bob finds the pending invitation (hub-direct) and accepts via his backend.
+  // Bob accepts a pending invitation when the hub requires consent. The normal
+  // local hub policy auto-accepts at invite time, in which case the pending feed
+  // is deliberately empty and Bob already has access.
   // Match the EMBEDDED conversation id precisely — same rule as
   // ui/tests/hub/_matrix.ts pickPendingInvitation. A loose substring match would
   // pick the wrong invitation when stale/concurrent ones share the recipient.
-  const invitation = await pollUntil(async () => {
-    const pending = await json(rq, `${HUB}/api/v1/graph/invitation/pending`, { headers: { Authorization: `Bearer ${bobToken}` } });
-    return (pending.body?.data ?? []).find(
-      (inv: { id: string; accepted?: boolean; conversation?: { id?: string }; conversation_id?: string; target_url_path?: string }) =>
-        !inv.accepted && ((inv.conversation?.id ?? inv.conversation_id) === convId || (inv.target_url_path || '').includes(convId)),
-    ) ?? null;
-  }, 15_000);
-  if (!invitation) throw new Error('bob never received the conversation invitation');
-  await json(rq, `${BOB_API}/api/v1/graph/invitation-accept`, { method: 'POST', data: { invitation_id: invitation.id } });
+  const pending = await json(bobHubRq, `${HUB}/api/v1/graph/invitation/pending`, {
+    headers: { Authorization: `Bearer ${bobToken}` },
+  });
+  const invitation = (pending.body?.data ?? []).find(
+    (inv: { id: string; accepted?: boolean; conversation?: { id?: string }; conversation_id?: string; target_url_path?: string }) =>
+      !inv.accepted && ((inv.conversation?.id ?? inv.conversation_id) === convId || (inv.target_url_path || '').includes(convId)),
+  );
+  await bobHubRq.dispose();
+  if (invitation) {
+    await json(rq, `${BOB_API}/api/v1/graph/invitation-accept`, {
+      method: 'POST',
+      data: { invitation_id: invitation.id },
+    });
+  }
 
   // Gate on bob's per-conversation sync returning 200 (local row exists).
   const synced = await pollUntil(async () => {
@@ -100,7 +116,7 @@ export async function setupSharedConversation(rq: APIRequestContext): Promise<Ri
     return s.status === 200 ? true : null;
   }, 25_000);
   if (!synced) throw new Error('bob local conversation row never materialized (sync 200)');
-  return { rq, convId, bobToken };
+  return { rq, convId };
 }
 
 /** Create a comment under the conversation via an instance backend (auto-shares). */

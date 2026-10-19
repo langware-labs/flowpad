@@ -1,10 +1,13 @@
+import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { WorldViewProjection } from '@sdk';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useCurrentDeployments } from '@src/hooks/flow-hooks';
 import { DockPointer, useDockNavigation } from '@src/navigation';
-import { Cloud } from 'lucide-react';
+import { Cloud, Loader2 } from 'lucide-react';
 import React from 'react';
+import { Button } from '@src/components/ui/button';
+import { notify } from '@src/notifications';
 
 const STATUS_COLOR = {
   current: 'bg-green-500',
@@ -15,8 +18,50 @@ const STATUS_COLOR = {
 
 /** Read-only placement summary; full hierarchy and properties live in WorldView. */
 export const WebappDeploymentsTab: React.FC = () => {
-  const { data: deployments = [], isLoading } = useCurrentDeployments();
+  const { data: allDeployments = [], isLoading, project } = useCurrentDeployments();
   const { navigation } = useDockNavigation();
+  const [deploying, setDeploying] = React.useState(false);
+
+  /**
+   * Put this app on a machine of its own in the cloud.
+   *
+   * Deploying the PROJECT, because the project is what has the repository the
+   * sandbox materializes — and it is what a local web placement already parents
+   * to, so both tiers agree on what a web deployment hangs off.
+   */
+  const deploy = React.useCallback(async () => {
+    if (!project) return;
+    setDeploying(true);
+    try {
+      const result = await project.deploy();
+      notify.success({
+        title: result.reused ? 'Already deployed' : 'Deployed to the cloud',
+        message: result.host_url ?? undefined,
+      });
+    } catch (e) {
+      notify.error({
+        title: t`Could not deploy`,
+        message: e instanceof Error ? e.message : 'Deploy failed.',
+      });
+    } finally {
+      setDeploying(false);
+    }
+  }, [project]);
+
+  const deployButton = (
+    <Button size="sm" disabled={!project || deploying} onClick={() => void deploy()}>
+      {deploying ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Cloud className="me-1.5 h-3.5 w-3.5" />}
+      <Trans>Deploy to cloud</Trans>
+    </Button>
+  );
+
+  // WEB placements only: a project's own placements. Every placement is ONE entity, so without
+  // this the web-app viewer would also list an agent's sandbox and a cloud desktop. What a
+  // placement places is its parent.
+  const deployments = React.useMemo(
+    () => allDeployments.filter((d) => d.elementType === 'project'),
+    [allDeployments],
+  );
 
   if (isLoading) {
     return (
@@ -31,9 +76,10 @@ export const WebappDeploymentsTab: React.FC = () => {
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div className="text-center">
           <Cloud className="mx-auto mb-2 h-8 w-8 opacity-50" />
-          <p>
+          <p className="mb-3">
             <Trans>No deployments observed yet</Trans>
           </p>
+          {deployButton}
         </div>
       </div>
     );
@@ -41,12 +87,13 @@ export const WebappDeploymentsTab: React.FC = () => {
 
   return (
     <ScrollArea className="h-full">
+      <div className="flex justify-end px-3 pt-3">{deployButton}</div>
       <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
         {deployments.map((deployment) => (
           <button
             type="button"
             key={deployment.id}
-            className="rounded-md border p-3 text-left transition-colors hover:bg-muted"
+            className="rounded-md border p-3 text-start transition-colors hover:bg-muted"
             onClick={() =>
               navigation.openDock(
                 DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, {
@@ -61,7 +108,7 @@ export const WebappDeploymentsTab: React.FC = () => {
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{deployment.displayName}</span>
               <span className="text-xs text-muted-foreground">{deployment.status.sync_state}</span>
             </div>
-            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{deployment.kind}</p>
+            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{deployment.target.provider}</p>
             <p className="mt-1 truncate text-xs text-muted-foreground">{deployment.target.scope}</p>
           </button>
         ))}

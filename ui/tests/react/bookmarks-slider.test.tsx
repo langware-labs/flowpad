@@ -1,10 +1,10 @@
-import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Bookmark } from '@sdk';
 import { allScope, filterScope, projectScope, userScope } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
-import { LeftSlider } from '@src/components/ui/left-slider';
+import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 
 // ── Part 2: scope predicate over favorites ───────────────────────────────────
 describe('bookmarkInScope', () => {
@@ -44,15 +44,15 @@ describe('bookmarkInScope', () => {
   });
 });
 
-// ── Part 1: LeftSlider primitive ─────────────────────────────────────────────
-describe('LeftSlider', () => {
+// ── Part 1: AnchoredMenu primitive ─────────────────────────────────────────────
+describe('AnchoredMenu', () => {
   afterEach(cleanup);
 
   it('renders title, headerRight, and children when open', () => {
     render(
-      <LeftSlider open onOpenChange={() => {}} title="My Slider" headerRight={<div data-testid="hdr" />}>
+      <AnchoredMenu open onOpenChange={() => {}} title="My Slider" headerRight={<div data-testid="hdr" />}>
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     expect(screen.getByText('My Slider')).toBeInTheDocument();
     expect(screen.getByTestId('hdr')).toBeInTheDocument();
@@ -61,9 +61,9 @@ describe('LeftSlider', () => {
 
   it('renders nothing when closed', () => {
     render(
-      <LeftSlider open={false} onOpenChange={() => {}} title="My Slider">
+      <AnchoredMenu open={false} onOpenChange={() => {}} title="My Slider">
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     expect(screen.queryByTestId('body')).not.toBeInTheDocument();
   });
@@ -71,9 +71,9 @@ describe('LeftSlider', () => {
   it('closes on Escape', () => {
     const onOpenChange = vi.fn();
     render(
-      <LeftSlider open onOpenChange={onOpenChange} title="My Slider">
+      <AnchoredMenu open onOpenChange={onOpenChange} title="My Slider">
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -82,9 +82,9 @@ describe('LeftSlider', () => {
   it('closes on the header close button', () => {
     const onOpenChange = vi.fn();
     render(
-      <LeftSlider open onOpenChange={onOpenChange} title="My Slider">
+      <AnchoredMenu open onOpenChange={onOpenChange} title="My Slider">
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     fireEvent.click(screen.getByLabelText('Close'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -95,6 +95,7 @@ describe('LeftSlider', () => {
 const h = vi.hoisted(() => ({ openDock: vi.fn(), dock: 'DOCK' }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => ({ toString: () => h.dock }),
   useDockNavigation: () => ({
     navigation: { openDock: h.openDock },
     currentDock: { toString: () => h.dock },
@@ -107,13 +108,19 @@ vi.mock('@src/hooks/use-default-scope-filter', () => ({
   useDefaultScopeFilter: () => [{ mode: 'all' }, vi.fn(), 'p1'],
 }));
 vi.mock('@src/components/browseable-tree/adapters/useFavoritesRoots', () => ({
-  useFavoritesRoots: () => ({ roots: [], onDropToBackground: vi.fn(), onReorderRoot: vi.fn() }),
-  useFavoritesTreeRoots: () => [],
+  useFavoritesRoots: () => ({
+    roots: [],
+    favorites: [],
+    folders: [],
+    onDropToBackground: vi.fn(),
+    onReorderRoot: vi.fn(),
+  }),
+  useFavoritesProjectRoots: () => ({
+    roots: [],
+    currentBucketId: 'favproject:p1',
+    addParentFor: () => null,
+  }),
 }));
-vi.mock('@src/components/scope-filter/ScopeFilterIconBar', async () => {
-  const { createElement } = await import('react');
-  return { ScopeFilterIconBar: () => createElement('div', { 'data-testid': 'scope-bar' }) };
-});
 // The slider is a MENU: it renders the tree, never the icon grid (that stays
 // the Edit dialog's surface). Stub the tree and assert on it.
 vi.mock('@src/components/browseable-tree/BrowseableTree', async () => {
@@ -141,9 +148,12 @@ describe('BookmarksSlider', () => {
   });
   afterEach(cleanup);
 
-  it('renders the tree menu with hover-expand, scope filter in the slider header', () => {
+  it('renders the tree menu with hover-expand, and NO scope filter in the header', () => {
     render(<BookmarksSlider open onOpenChange={() => {}} hoverProps={noHover} />);
-    expect(screen.getByTestId('scope-bar')).toBeInTheDocument();
+    // The scope selector is gone: the tree groups by project instead, so the
+    // header carries only the title and the close button.
+    expect(screen.queryByTestId('scope-bar')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/scope/i)).not.toBeInTheDocument();
     const tree = screen.getByTestId('tree-row');
     expect(tree).toBeInTheDocument();
     // Hover-expand is opt-in per surface; the menu is the one that opts in.

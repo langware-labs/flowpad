@@ -11,9 +11,8 @@ import pytest
 import pytest_asyncio
 
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.fs_store.record_paths import set_default_records_root
-
 from flow_sdk.fs_store.fs_record import FSRecord as Record
+from flow_sdk.fs_store.record_paths import set_default_records_root
 from flow_sdk.responses.response import ApiResponse
 
 
@@ -65,7 +64,6 @@ async def test_vfs_record_fields_not_accepted(bootstrapped_client):
 @pytest.mark.asyncio
 async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_client):
     """PUT /graph/{type}/{id} writes entity fields back to the disk record when type has a Record class."""
-    import json
     import uuid
 
     from flow_sdk.builtin.workspace import Workspace
@@ -79,7 +77,8 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
         try:
             # Use a UUID4 id so the graph router recognises it as a valid entity id
             record_id = str(uuid.uuid4())
-            rec = Record(id=record_id, type="workspace", name="Original Name", status="new")
+            # Its own name: a workspace's folder comes from its name, and a root is one workspace's.
+            rec = Record(id=record_id, type="workspace", name="Synced Original", status="new")
             rec.save()
 
             rec_path = get_default_records_root() / "workspace" / str(record_id) / "metadata.json"
@@ -91,7 +90,7 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
             # Verify entity was created
             entity = await Workspace.get_one({"id": record_id})
             assert entity is not None
-            assert entity.name == "Original Name"
+            assert entity.name == "Synced Original"
             # record_data_ref has been removed
             assert not hasattr(entity, "record_data_ref")
 

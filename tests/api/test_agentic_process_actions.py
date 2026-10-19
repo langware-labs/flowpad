@@ -14,7 +14,7 @@ Covered here:
   * ``input`` / ``submit`` — headless staged-queue vs nothing-staged error.
   * ``fork`` — child gets a fresh id, ``fork_session_id`` baked, workdir inherited.
   * ``self-restart`` — ``{scheduled:true}`` + a ``worker.restarted`` entity event.
-  * dark reads — ``get-host`` / ``input-dir`` / ``os-status`` /
+  * dark reads — ``input-dir`` / ``os-status`` /
     ``list-embedded-assets`` / ``transcript`` (plan|prompts|full) / ``get-plan`` /
     ``get-history`` / ``restart-info`` / ``cmd-line`` / ``add-dir`` / ``remove-dir``.
 """
@@ -46,7 +46,7 @@ from tests.api.conftest import (
 from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
 
 # do not increase timeout without approval
-pytestmark = pytest.mark.timeout(30)
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("usable_claude_source")]
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +90,139 @@ async def test_set_visible_does_not_touch_pty_mode_true(bootstrapped_client, use
 
 
 @pytest.mark.asyncio
+async def test_show_view_resolves_a_screen_and_persists_it(bootstrapped_client, user):
+    """`flow show view` — the SCREEN form, the one that needs no entity.
+
+    The address survives onto `last_shown` as the frontend's own dock fields, so
+    the client builds its DockPointer without re-parsing a URL.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": "assets/list/skill"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data["value"]
+    assert shown["kind"] == "dock"
+    assert shown["view_type"] == "assets"
+    assert shown["pointer"] == "list/skill"
+    assert shown["page"] == "desk"
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+@pytest.mark.asyncio
+async def test_show_url_opens_a_web_page_in_the_display(bootstrapped_client, user):
+    """`flow show url` — an agent opens a docs page in a tab beside the chat.
+
+    The display already renders a `url` target (a web-app tab keyed by the URL);
+    the show action just never accepted one, so an agent that wanted to open a
+    page had to hand-encode a `web-app/url/<base64>` dock address.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"url": "https://metallb.io/installation/"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data["value"]
+    assert shown == {"kind": "url", "url": "https://metallb.io/installation/"}
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["ftp://example.com/x", "/etc/passwd", "https://"])
+async def test_show_url_refuses_what_is_not_a_web_page(bootstrapped_client, user, url):
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    resp = await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"url": url})
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrapped_client, user):
+    """`flow show app` — the form that had no caller until now.
+
+    The resolver has always accepted `artifact_id`, but only artifact REGISTRATION
+    ever passed it, so an agent that built an app in one turn could re-show it in a
+    later turn only by its port. That is exactly the stale-port-as-identity failure
+    `_app_payload` derives the runtime to avoid: the port belongs to whichever dev
+    server happens to be up, the ARTIFACT is the app.
+
+    With no endpoint serving it the app is `unbuilt` — a real answer, and the
+    one that proves the runtime is derived rather than supplied.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    created = await bootstrapped_client.post(
+        "/api/v1/graph/artifact", json={"name": "vibe app", "kind": "application.web"}
+    )
+    assert created.status_code == 200, created.text
+    artifact_id = ApiResponse(**created.json()).data["id"]
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"artifact_id": artifact_id})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data["value"]
+    assert shown["kind"] == "app"
+    assert shown["artifact_id"] == artifact_id
+    assert shown["typeid"] == f"artifact-{artifact_id}"
+    assert shown["runtime"] == "unbuilt"
+    # No port is invented for an app that has no dev server.
+    assert "port" not in shown
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+@pytest.mark.asyncio
+async def test_show_app_rejects_a_bad_artifact_id(bootstrapped_client, user):
+    """400 for a malformed id, 404 for a well-formed one naming nothing — the same
+    split every other show form uses, so the CLI's exit codes stay meaningful."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    bad = await bootstrapped_client.post(f"{base}/show", json={"artifact_id": "not-an-id"})
+    assert bad.status_code == 400, bad.text
+
+    missing = await bootstrapped_client.post(
+        f"{base}/show", json={"artifact_id": "6ba7b810-9dad-41d1-80b4-00c04fd430c8"}
+    )
+    assert missing.status_code == 200, missing.text
+    assert ApiResponse(**missing.json()).data["exit_code"] == 4
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert "last_shown" not in (row.get("context_data") or {})
+
+
+async def test_show_view_carries_query_options(bootstrapped_client, user):
+    """Options ride the address, so `search?q=…` reaches the screen intact."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": "search?q=dock-address"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data["value"]
+    assert shown["view_type"] == "search"
+    assert shown["options"] == {"q": "dock-address"}
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["nonsense", "skills", "helpdesk"],
+    ids=["unknown-view", "not-addressable", "pointer-required"],
+)
+async def test_show_view_rejects_a_bad_address_with_400(bootstrapped_client, user, address):
+    """Validation happens before anything is emitted — nothing lands on the stack."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": address})
+    assert resp.status_code == 400, resp.text
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert "last_shown" not in (row.get("context_data") or {})
+
+
 async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, user):
     """A transcript/status save from an older AP object must not wipe display focus."""
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
@@ -100,8 +233,8 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
 
     resp = await bootstrapped_client.post(f"{base}/show", json={"port": 3000})
     assert resp.status_code == 200, resp.text
-    shown = ApiResponse(**resp.json()).data
-    assert shown["kind"] == "webapp"
+    shown = ApiResponse(**resp.json()).data["value"]
+    assert shown["kind"] == "app"
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == shown
@@ -117,13 +250,13 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
 @pytest.mark.asyncio
 async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user):
     """Each `flow show` APPENDS to ``context_data.display_stack`` (newest last,
-    stamped ``shown_at``); ``last_shown`` mirrors the newest TARGET; a consecutive
-    identical target refreshes the timestamp instead of duplicating."""
+    stamped ``shown_at``); ``last_shown`` mirrors the newest TARGET; re-showing a
+    target moves it to the end with a fresh timestamp instead of duplicating."""
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
-    r1 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 3000})).json()).data
-    r2 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 4000})).json()).data
+    r1 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 3000})).json()).data["value"]
+    r2 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 4000})).json()).data["value"]
 
     row = await get_agentic_process(bootstrapped_client, pid)
     stack = row["context_data"]["display_stack"]
@@ -135,6 +268,13 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     # last_shown is the newest TARGET (no shown_at leak).
     assert row["context_data"]["last_shown"] == r2
     assert "shown_at" not in row["context_data"]["last_shown"]
+    # The backend decided where it is presented (``tab.show_placement``): this
+    # process has no open tab, so there is nothing to pin into or sit beside.
+    assert row["context_data"]["show_placement"] == {
+        "tab_id": None,
+        "host": False,
+        "project_id": row.get("project_id"),
+    }
 
     # Re-show the SAME target → dedup: still 2 entries, timestamp refreshed.
     prev = stack[1]["shown_at"]
@@ -143,6 +283,12 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     stack2 = row["context_data"]["display_stack"]
     assert len(stack2) == 2, "consecutive identical target must not duplicate"
     assert stack2[1]["shown_at"] >= prev
+
+    # Re-show an EARLIER target → it moves to the end; still one entry per target.
+    await bootstrapped_client.post(f"{base}/show", json={"port": 3000})
+    row = await get_agentic_process(bootstrapped_client, pid)
+    stack3 = row["context_data"]["display_stack"]
+    assert [{k: e[k] for k in r1} for e in stack3] == [r2, r1], "a repeat moves to the end, never duplicates"
 
 
 @pytest.mark.asyncio
@@ -180,62 +326,20 @@ async def test_trailing_show_survives_stale_turn_save(bootstrapped_client, user)
 
 
 @pytest.mark.asyncio
-async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, user):
-    """Every `flow show` files its target into `Auto / <type> / item` (nested,
-    idempotent). Two types → two subfolders under one Auto root; re-showing the
-    same target does not duplicate the leaf."""
-    from flow_sdk.builtin.bookmark import Bookmark, BookmarkType
-    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+async def test_show_files_no_bookmark(bootstrapped_client, user):
+    """A `flow show` is not a bookmark. Shows used to auto-file into an
+    `Auto / <type> / item` favorites tree; that feature is gone (bookmarks are
+    only what the user starred), so a show must leave the bookmark table alone."""
+    from flow_sdk.builtin.bookmark import Bookmark
 
-    owner = await get_or_create_local_user()
-
-    async def _favs():
-        folders = await Bookmark.get_all(
-            {"bookmark_type": BookmarkType.FAVORITE_FOLDER.value}, source_entity=owner
-        )
-        leaves = await Bookmark.get_all(
-            {"bookmark_type": BookmarkType.FAVORITE.value}, source_entity=owner
-        )
-        return folders, leaves
-
+    before = {b.id for b in await Bookmark.get_all({})}
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
-
-    # A resolved skill entity show (payload shape from resolve_display_target).
-    ap = await AgenticProcess.get_by_id(pid)
-    await ap.on_show({
-        "kind": "entity", "typeid": "skill-s1", "type": "skill", "id": "s1",
-        "path": "/ws/proj/.claude/skills/traffic-dash/SKILL.md",
-    })
-    folders, leaves = await _favs()
-    root = next(f for f in folders if (f.data or {}).get("auto_root"))
-    assert root.title == "Auto"
-    skills = next(f for f in folders if (f.data or {}).get("auto_type") == "skill")
-    assert skills.title == "Skills" and skills.parent_id == str(root.id)
-    leaf = next(b for b in leaves if (b.data or {}).get("entity_id") == "s1")
-    assert leaf.source == "auto" and leaf.parent_id == str(skills.id)
-    assert leaf.title == "traffic-dash"  # folder-main file → parent folder name
-
-    # A markdown show → a SECOND subfolder under the SAME Auto root.
-    ap2 = await AgenticProcess.get_by_id(pid)
-    await ap2.on_show({
+    await (await AgenticProcess.get_by_id(pid)).on_show({
         "kind": "entity", "typeid": "markdown-m1", "type": "markdown", "id": "m1",
         "path": "/ws/proj/docs/release-notes.md",
     })
-    folders, leaves = await _favs()
-    roots = [f for f in folders if (f.data or {}).get("auto_root")]
-    assert len(roots) == 1, "one Auto root, not one per type"
-    docs = next(f for f in folders if (f.data or {}).get("auto_type") == "markdown")
-    assert docs.title == "Documents" and docs.parent_id == str(root.id)
-
-    # Re-show the skill → idempotent (no duplicate leaf, no duplicate subfolder).
-    ap3 = await AgenticProcess.get_by_id(pid)
-    await ap3.on_show({
-        "kind": "entity", "typeid": "skill-s1", "type": "skill", "id": "s1",
-        "path": "/ws/proj/.claude/skills/traffic-dash/SKILL.md",
-    })
-    folders, leaves = await _favs()
-    assert len([f for f in folders if (f.data or {}).get("auto_type") == "skill"]) == 1
-    assert len([b for b in leaves if (b.data or {}).get("entity_id") == "s1"]) == 1
+    after = {b.id for b in await Bookmark.get_all({})}
+    assert after == before, f"flow show minted bookmark rows: {after - before}"
 
 
 @pytest.mark.asyncio
@@ -259,6 +363,10 @@ async def test_on_show_unions_concurrent_appends(bootstrapped_client, user):
 async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapped_client, user, tmp_path):
     project = Project(name="app-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()
+    from flow_sdk.core import app_ports
+
+    # Free ports, not literals: a registration is checked against what really listens on its port.
+    first_port, second_port = app_ports.free_port(), app_ports.free_port()
     app_dir = tmp_path / "frontend"
     app_dir.mkdir()
     pid = await create_agentic_process(
@@ -275,7 +383,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         json={
             "name": "Frontend",
             "path": str(app_dir),
-            "port": "3300",
+            "port": str(first_port),
             "start_cmd": "npm run dev",
             "health": "/",
             "show": True,
@@ -290,12 +398,38 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "kind": "local",
         "base": str(tmp_path),
         "rel_path": "frontend",
-        "project_id": "",
     }
-    assert deployment["kind"] == "local.runtime.web"
+    assert "kind" not in deployment, "what a placement places is its parent; no kind is stored"
     assert deployment["artifact_id"] == artifact["id"]
-    assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
-    assert data["shown"] == {"kind": "webapp", "port": 3300}
+    # The port is a fact about what the placement EXPOSES, not a label on it.
+    assert deployment["provider_labels"] == {}
+    [dev] = data["endpoints"]
+    assert dev["backend"] == {"type": "proxy", "port": first_port, "start_cmd": "npm run dev", "health": "/"}
+    assert dev["artifact_id"] == artifact["id"]
+    assert dev["parent_type_id"] == f"deployment-{deployment['id']}"
+    assert dev["protocol"]["spec_kind"] == "web.app"
+    assert dev["subkind"] == "app", "a web app's endpoint is for people to use"
+    # A web app is something the run PRODUCED, so it carries the same provenance
+    # edge `register-artifact` stamps. Without it the app is invisible to
+    # `artifacts` (a match on `generated_by`), and "everything this run
+    # produced" silently omitted every app the run built.
+    assert artifact["generated_by"] == f"agentic_process-{pid}"
+    produced = await bootstrapped_client.get(f"{base}/artifacts")
+    assert [row["id"] for row in produced.json()["data"]["artifacts"]] == [artifact["id"]]
+    # The pin is the APP, not the port: a port is one of two ways to reach it
+    # and changes between runs, while the artifact id stays true. Runtime is
+    # derived from the companions — dev here, since there is no build output.
+    assert data["shown"] == {
+        "kind": "app",
+        "artifact_id": artifact["id"],
+        "typeid": f"artifact-{artifact['id']}",
+        "name": "Frontend",
+        "runtime": "dev",
+        "endpoint_id": dev["id"],
+        "route": dev["route"],
+    }
+    assert dev["backend"]["type"] == "proxy", "a dev server is loaded at its own origin"
+    # No dist/ in this app yet, so nothing to serve statically.
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == data["shown"]
@@ -303,28 +437,25 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     listed = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     listed_data = ApiResponse(**listed.json()).data
     assert [item["id"] for item in listed_data["artifacts"]] == [artifact["id"]]
-    assert listed_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
+    assert [e["id"] for e in listed_data["artifacts"][0]["endpoints"]] == [dev["id"]]
 
-    # Kind filters honor exact-or-descendant ontology semantics.
+    # Kind filters honor exact-or-descendant ontology semantics (the artifact's kind — a placement has none).
     artifact_entity = await Artifact.get_by_id(artifact["id"])
-    deployment_entity = await Deployment.get_by_id(deployment["id"])
-    assert artifact_entity is not None and deployment_entity is not None
+    assert artifact_entity is not None
     artifact_entity.kind = "application.web.react"
-    deployment_entity.kind = "local.runtime.web.vite"
     await artifact_entity.save(notify=False)
-    await deployment_entity.save(notify=False)
     descendant_list = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     descendant_data = ApiResponse(**descendant_list.json()).data
     assert [item["id"] for item in descendant_data["artifacts"]] == [artifact["id"]]
-    assert descendant_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
+    assert [e["id"] for e in descendant_data["artifacts"][0]["endpoints"]] == [dev["id"]]
 
     update = await bootstrapped_client.post(
         f"{base}/register-webapp-artifact",
         json={
             "name": "Frontend",
             "path": str(app_dir),
-            "port": "3301",
-            "start_cmd": "npm run dev -- --port 3301",
+            "port": str(second_port),
+            "start_cmd": f"npm run dev -- --port {second_port}",
             "show": False,
         },
     )
@@ -332,7 +463,174 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     updated = updated_data["artifact"]
     assert updated["id"] == artifact["id"]
     assert updated_data["deployment"]["id"] == deployment["id"]
-    assert updated_data["deployment"]["provider_labels"]["flowpad.runtime.port"] == "3301"
+    # The same endpoint row moves to the new port — updated, never forked.
+    [moved] = updated_data["endpoints"]
+    assert moved["id"] == dev["id"]
+    assert moved["backend"]["port"] == second_port
+    # Backfill, never reassign — converging on an existing row leaves the run
+    # that actually built the app as its producer.
+    assert updated["generated_by"] == artifact["generated_by"]
+
+
+@pytest.mark.asyncio
+async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint(bootstrapped_client, user, tmp_path):
+    """Built output is a `static` endpoint of the project's placement, beside the dev server.
+
+    Artifact (source) → Deployment (placement) → ServiceEndpoints (what it answers
+    on) — one app, and re-registering updates the same rows rather than forking.
+    """
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+
+    project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "todo"
+    (app_dir / "dist").mkdir(parents=True)
+    (app_dir / "dist" / "index.html").write_text("<html><body>todo</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(app_dir), "port": "3400", "show": True},
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+    artifact = data["artifact"]
+    by_type = {e["backend"]["type"]: e for e in data["endpoints"]}
+
+    # dist/ was discovered without being named in the request.
+    assert by_type["static"]["backend"]["root"] == str(app_dir / "dist")
+    assert by_type["proxy"]["backend"]["port"] == 3400
+    assert {e["artifact_id"] for e in data["endpoints"]} == {artifact["id"]}
+
+    # Both runtimes exist; a live port wins for display, and served is still offered.
+    assert data["shown"]["runtime"] == "dev"
+
+    # The static endpoint actually serves the build.
+    static = by_type["static"]
+    assert static["id"] == by_type["proxy"]["id"], "the build and the dev server are two routes of ONE proxy"
+    page = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{static['id']}/service/{static['route']}/")
+    assert page.status_code == 200 and "todo" in page.text
+
+    # Re-registering updates the same rows rather than forking them.
+    again = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(app_dir), "port": "3401", "dist": "dist", "show": False},
+    )
+    address = lambda e: (e["id"], e["route"])  # noqa: E731
+    again_at = {e["backend"]["type"]: address(e) for e in ApiResponse(**again.json()).data["endpoints"]}
+    assert again_at == {t: address(e) for t, e in by_type.items()}
+    assert again_at["static"][1] == "Todo" and again_at["proxy"][1] != "Todo", "each runtime its own mount"
+    proxy = await ServiceEndpoint.get_by_id(static["id"])
+    assert len(proxy.backend.routes) == 2 and proxy.backend.routes[again_at["proxy"][1]].backend.port == 3401
+
+    # An app named the same as another must still save: name is a label, not an identity.
+    other_dir = tmp_path / "todo-two"
+    (other_dir / "dist").mkdir(parents=True)
+    (other_dir / "dist" / "index.html").write_text("<html><body>two</body></html>")
+    twin = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(other_dir), "port": "3402", "show": False},
+    )
+    assert twin.status_code == 200, twin.text
+    twin_at = {address(e) for e in ApiResponse(**twin.json()).data["endpoints"]}
+    assert len(twin_at) == 2 and not (twin_at & set(again_at.values())), "the twin mounts beside it, never on it"
+
+
+@pytest.mark.asyncio
+async def test_registering_without_a_port_yields_a_served_app(bootstrapped_client, user, tmp_path):
+    """An app Flowpad serves itself has no dev server, so it has no `proxy` endpoint.
+
+    This is the shape that lets a generated app use the SDK: served from our own
+    origin, it is handed the API origin and the session cookies. Minting a dev
+    endpoint for a port nobody is listening on would make the display derive
+    `dev` and point at nothing.
+    """
+
+    project = Project(name="served-only-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "task-manager"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("<html><body>tasks</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "Task Manager", "path": str(app_dir), "show": True},
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+
+    assert data["artifact"]["kind"] == "application.web"
+    [served] = data["endpoints"]
+    assert served["backend"] == {"type": "static", "root": str(app_dir)}
+
+    # The display resolves to the served runtime, with no port to point at.
+    assert data["shown"]["kind"] == "app"
+    assert data["shown"]["runtime"] == "served"
+    assert "port" not in data["shown"]
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_port_is_still_rejected(bootstrapped_client, user, tmp_path):
+    """Omitting the port is now legal; sending a bad one is still an error —
+    otherwise a typo would silently downgrade an app to served-only."""
+    project = Project(name="bad-port-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client, visible=False, pty_mode=False, workdir=str(tmp_path), project_id=project.id
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "App", "path": str(app_dir), "port": "not-a-port", "show": False},
+    )
+    assert resp.status_code == 400
+    assert ApiResponse(**resp.json()).status == ApiResponseStatus.FAIL.value
+
+
+@pytest.mark.asyncio
+async def test_static_app_folder_is_its_own_build_output(bootstrapped_client, user, tmp_path):
+    """A static app has no build step: the registered folder IS the deliverable.
+
+    `flow app open` discovers static apps by finding index.html and registers
+    that directory, so requiring a nested dist/ would deny a delivery companion
+    to exactly the apps that need no work to serve.
+    """
+    project = Project(name="static-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "static-todo"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("<html><body>static todo</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "Static Todo", "path": str(app_dir), "port": "8123", "show": False},
+    )
+    assert resp.status_code == 200, resp.text
+    served = [e for e in ApiResponse(**resp.json()).data["endpoints"] if e["backend"]["type"] == "static"]
+    assert [e["backend"]["root"] for e in served] == [str(app_dir)]
 
 
 @pytest.mark.asyncio
@@ -704,28 +1002,49 @@ async def test_wizard_close_entity_event_action_returns_typed_result(bootstrappe
 
 
 @pytest.mark.asyncio
-async def test_get_host_resolves_local_port(bootstrapped_client, user):
+async def test_showing_a_port_registers_its_dev_endpoint_once(bootstrapped_client, user):
+    """`flow show webapp --port N` — the port becomes an endpoint the display can hold."""
     pid = await create_agentic_process(bootstrapped_client)
-    # POST with a real JSON bool for ``redirect`` (a "false" query string coerces
-    # truthy and would yield a RedirectResponse instead of the JSON envelope).
-    resp = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{pid}/get-host",
-        json={"port": 5173, "redirect": False},
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    first = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data["value"]
+    again = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data["value"]
+
+    assert first["kind"] == "app" and first["runtime"] == "dev"
+    assert first["typeid"] == f"service_endpoint-{first['endpoint_id']}"
+    assert again["endpoint_id"] == first["endpoint_id"], "the same server is the same endpoint"
+    assert (first["route"], again["route"]) == ("port-5173", "port-5173")
+    direct = await bootstrapped_client.get(
+        f"/api/v1/graph/service_endpoint/{first['endpoint_id']}/direct-url", params={"route": first["route"]}
     )
-    assert resp.status_code == 200, resp.text
-    data = ApiResponse(**resp.json()).data
-    assert data["port"] == 5173
-    assert isinstance(data["url"], str) and data["url"]
+    assert ApiResponse(**direct.json()).data["url"] == "http://localhost:5173"
 
 
 @pytest.mark.asyncio
-async def test_get_host_rejects_out_of_range_port(bootstrapped_client, user):
+async def test_a_dev_endpoint_is_probed_where_it_runs(bootstrapped_client, user):
+    """Nothing listens on the port: the probe says so, where the browser only sees `onload`."""
     pid = await create_agentic_process(bootstrapped_client)
-    resp = await bootstrapped_client.get(
-        f"/api/v1/graph/agentic_process/{pid}/get-host?port=80&redirect=false"
+    answer = ApiResponse(
+        **(await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"port": 1})).json()
+    ).data
+    # `flow show` now SAYS so: shown, but nothing answers there yet (exit 1).
+    assert answer["exit_code"] == 1 and answer["verdict"] == "not_running", answer
+    shown = answer["value"]
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe", params={"route": shown["route"]}
     )
-    res = ApiResponse(**resp.json())
-    assert res.status == ApiResponseStatus.FAIL.value
+
+    assert resp.status_code == 200, resp.text
+    probe = ApiResponse(**resp.json()).data
+    assert probe["port"] == 1 and probe["reachable"] is False
+
+
+@pytest.mark.asyncio
+async def test_showing_a_bad_port_is_rejected(bootstrapped_client, user):
+    pid = await create_agentic_process(bootstrapped_client)
+    resp = await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"port": 70000})
+    assert resp.status_code == 400, resp.text
 
 
 @pytest.mark.asyncio
@@ -737,6 +1056,7 @@ async def test_input_dir_returns_abs_path_and_compute_node(bootstrapped_client, 
     assert resp.status_code == 200, resp.text
     data = ApiResponse(**resp.json()).data
     assert Path(data["abs_path"]).is_dir()
+    assert Path(data["abs_path"]).parts[-2:] == ("execution", "input"), "ONE input folder: the run's execution/input"
     assert data["compute_node_id"].startswith("compute_node-")
 
 
@@ -857,3 +1177,43 @@ async def test_add_dir_then_remove_dir(bootstrapped_client, user, tmp_path):
     rr = await bootstrapped_client.post(f"{base}/remove-dir", json={"path": extra})
     assert rr.status_code == 200, rr.text
     assert extra not in ((await get_agentic_process(bootstrapped_client, pid))["additional_dirs"] or [])
+
+
+@pytest.mark.asyncio
+async def test_show_view_refuses_an_agent_address_the_ui_cannot_open(bootstrapped_client, user):
+    """`agent/<id>` validated, then the UI's only agent route read it as a malformed
+    stream-inbox URL. The shape is enforced here, and the error names the right verb."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/show", json={"view": "agent/6ba7b810-9dad-41d1-80b4-00c04fd430c8"}
+    )
+    assert resp.status_code == 400, resp.text
+    assert "flow show entity agent-" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_registering_an_app_on_a_port_another_program_holds_is_refused(bootstrapped_client, user, tmp_path):
+    """The port in the body is the caller's claim. Another program listening on it is not the app at
+    that path, and a route written for it would show that program as the app."""
+    import socket
+
+    project = Project(name="held-port-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "frontend"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client, visible=False, pty_mode=False, workdir=str(tmp_path), project_id=project.id,
+    )
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    port = held.getsockname()[1]
+    try:
+        resp = await bootstrapped_client.post(
+            f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+            json={"name": "Frontend", "path": str(app_dir), "port": str(port), "start_cmd": "npm run dev"},
+        )
+    finally:
+        held.close()
+    assert resp.status_code == 400
+    assert f"port {port} is held by another program" in resp.json()["message"]

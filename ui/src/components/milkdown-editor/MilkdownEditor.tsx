@@ -16,6 +16,7 @@ import {
 import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
@@ -51,6 +52,7 @@ import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from
 // any dependency on the renderers built on top of it.
 import './plugins/fence-render/renderers/mermaid';
 import './plugins/fence-render/renderers/interface';
+import './plugins/fence-render/renderers/breadcrumb';
 import {
   bidiPlugins,
   setDirCommand, unsetDirCommand,
@@ -153,6 +155,14 @@ function caretBlockIndex(view: EditorView): number | null {
   return $from.index(0);
 }
 
+/** Keyboard gestures that can mutate a ProseMirror document without `beforeinput`. */
+function isEditingKey(event: KeyboardEvent): boolean {
+  if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) return true;
+  if (['Backspace', 'Delete', 'Enter', 'Tab'].includes(event.key)) return true;
+  if (!event.ctrlKey && !event.metaKey) return false;
+  return ['b', 'i', 'v', 'x', 'y', 'z'].includes(event.key.toLowerCase());
+}
+
 /**
  * Modes the Milkdown WYSIWYG renderer understands.
  * Raw-markdown ('markdown') is rendered by a separate Monaco pane in wrappers,
@@ -163,6 +173,8 @@ export type MilkdownEditorMode = 'view' | 'review' | 'editor';
 interface MilkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
+  /** Fires for trusted editor input or an explicit editing command, never content sync. */
+  onUserEdit?: () => void;
   /** Defaults to 'editor'. 'view' and 'review' disable editing and hide the toolbar. */
   editorMode?: MilkdownEditorMode;
   plugins?: MilkdownPlugin[];
@@ -180,6 +192,12 @@ interface MilkdownEditorProps {
    * gating — hidden in view/review modes.
    */
   toolbarRight?: React.ReactNode;
+  /**
+   * Optional host for the edit toolbar. `undefined` keeps the toolbar above the
+   * document; an element portals it into that host; `null` opts into external
+   * placement while the host ref is mounting (so no extra toolbar flashes).
+   */
+  toolbarPortalTarget?: HTMLElement | null;
   /**
    * Fires when the caret moves to a different top-level block. The `bodyLine`
    * is 1-indexed against the `content` prop (body markdown). Approximate when
@@ -514,18 +532,21 @@ export function FormatButton({ title, icon, active, disabled, testId, onMouseDow
 function TextFormatButtons({
   activeState,
   onRequestLink,
+  onEditIntent,
 }: {
   activeState: ActiveState;
   onRequestLink: () => void;
+  onEditIntent: () => void;
 }) {
   const { t } = useLingui();
   const [loading, get] = useInstance();
   const act = useCallback(
     (fn: (ctx: Ctx) => void) => {
       if (loading) return;
+      onEditIntent();
       get().action(fn);
     },
-    [loading, get],
+    [loading, get, onEditIntent],
   );
   const { bold, italic, inlineCode, link, canAddLink } = activeState;
   const linkEnabled = link || canAddLink;
@@ -565,11 +586,15 @@ function TextFormatButtons({
 function MilkdownToolbar({
   activeState,
   onRequestLink,
+  onEditIntent,
   rightSlot,
+  embedded = false,
 }: {
   activeState: ActiveState;
   onRequestLink: () => void;
+  onEditIntent: () => void;
   rightSlot?: React.ReactNode;
+  embedded?: boolean;
 }) {
   const { t } = useLingui();
   const [loading, get] = useInstance();
@@ -577,9 +602,10 @@ function MilkdownToolbar({
   const act = useCallback(
     (fn: (ctx: Ctx) => void) => {
       if (loading) return;
+      onEditIntent();
       get().action(fn);
     },
-    [loading, get],
+    [loading, get, onEditIntent],
   );
 
   const headingBtn = (title: string, icon: React.ReactNode, fn: (ctx: Ctx) => void, active = false) => (
@@ -610,8 +636,18 @@ function MilkdownToolbar({
   const alignDisabled = codeBlock;
 
   return (
-    <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
-      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
+    <div
+      className={`flex flex-shrink-0 items-center gap-0.5 ${
+        embedded ? 'rounded-md border bg-muted/20 px-1 py-0.5' : 'border-b bg-muted/20 px-2 py-1'
+      }`}
+      data-testid="milkdown-toolbar"
+      data-embedded={embedded ? 'true' : 'false'}
+    >
+      <TextFormatButtons
+        activeState={activeState}
+        onRequestLink={onRequestLink}
+        onEditIntent={onEditIntent}
+      />
       <div className="mx-1.5 h-4 w-px bg-border" />
       {headingBtn(t`Normal text`, <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
       {headingBtn(t`Heading 1`, <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
@@ -735,10 +771,12 @@ function SelectionToolbar({
   rect,
   activeState,
   onRequestLink,
+  onEditIntent,
 }: {
   rect: SelectionRect | null;
   activeState: ActiveState;
   onRequestLink: () => void;
+  onEditIntent: () => void;
 }) {
   const { t } = useLingui();
   if (!rect) return null;
@@ -763,14 +801,18 @@ function SelectionToolbar({
       className="flex items-center gap-0.5 rounded-md border border-border bg-popover p-1 shadow-md"
       onMouseDown={(e) => e.preventDefault()}
     >
-      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
+      <TextFormatButtons
+        activeState={activeState}
+        onRequestLink={onRequestLink}
+        onEditIntent={onEditIntent}
+      />
     </div>
   );
 }
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
@@ -1011,13 +1053,25 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     const editor = get?.();
     if (!editor) return;
     const onUser = () => { userInteractedRef.current = true; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      onUser();
+      if (event.isTrusted && !isReadOnlyRef.current && isEditingKey(event)) onUserEdit?.();
+    };
+    const onTrustedEditIntent = (event: Event) => {
+      if (!event.isTrusted || isReadOnlyRef.current) return;
+      onUserEdit?.();
+    };
     let dom: HTMLElement | null = null;
     try {
       editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
         dom = view.dom;
         view.dom.addEventListener('mousedown', onUser);
-        view.dom.addEventListener('keydown', onUser);
+        view.dom.addEventListener('keydown', onKeyDown);
+        view.dom.addEventListener('beforeinput', onTrustedEditIntent, true);
+        view.dom.addEventListener('paste', onTrustedEditIntent, true);
+        view.dom.addEventListener('cut', onTrustedEditIntent, true);
+        view.dom.addEventListener('drop', onTrustedEditIntent, true);
       });
     } catch {
       // view not ready yet
@@ -1025,9 +1079,13 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     return () => {
       if (!dom) return;
       dom.removeEventListener('mousedown', onUser);
-      dom.removeEventListener('keydown', onUser);
+      dom.removeEventListener('keydown', onKeyDown);
+      dom.removeEventListener('beforeinput', onTrustedEditIntent, true);
+      dom.removeEventListener('paste', onTrustedEditIntent, true);
+      dom.removeEventListener('cut', onTrustedEditIntent, true);
+      dom.removeEventListener('drop', onTrustedEditIntent, true);
     };
-  }, [get]);
+  }, [get, onUserEdit]);
 
   // Toggle editable on mode change. setProps forces ProseMirror to re-read the
   // editable closure (which is backed by isReadOnlyRef) and update contenteditable.
@@ -1073,7 +1131,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   );
 }
 
-export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1081,6 +1139,7 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const internalEditorRef = useRef<Editor | null>(null);
   const editorRef = externalEditorRef ?? internalEditorRef;
+  const markEditIntent = useCallback(() => onUserEdit?.(), [onUserEdit]);
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
 
@@ -1193,13 +1252,14 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
         if (pos == null) return;
         const range = findLinkRangeAtPos(view.state, linkType, pos);
         if (!range) return;
+        markEditIntent();
         view.dispatch(view.state.tr.removeMark(range.from, range.to, linkType));
       });
     } catch {
       // ignore
     }
     setLinkPopup(null);
-  }, [linkPopup]);
+  }, [linkPopup, markEditIntent]);
 
   const handleApply = useCallback((href: string) => {
     const current = linkPopup;
@@ -1214,13 +1274,14 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
         const tr = view.state.tr;
         tr.removeMark(range.from, range.to, linkType);
         if (href) tr.addMark(range.from, range.to, linkType.create({ href }));
+        markEditIntent();
         view.dispatch(tr);
       });
     } catch {
       // ignore
     }
     setLinkPopup(null);
-  }, [linkPopup]);
+  }, [linkPopup, markEditIntent]);
 
   // Toolbar "Link" clicked — open in 'edit' (if cursor in a link) or 'new' (if selection non-empty).
   const handleRequestLink = useCallback(() => {
@@ -1266,30 +1327,38 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
     if (next) setLinkPopup(next);
   }, []);
 
+  const formattingToolbar = (
+    <MilkdownToolbar
+      activeState={activeState}
+      onRequestLink={handleRequestLink}
+      onEditIntent={markEditIntent}
+      rightSlot={toolbarRight}
+      embedded={toolbarPortalTarget !== undefined}
+    />
+  );
+
   return (
     <MilkdownProvider>
       <div className="flex h-full flex-col overflow-hidden">
-        {!isReadOnly && (
-          <MilkdownToolbar
-            activeState={activeState}
-            onRequestLink={handleRequestLink}
-            rightSlot={toolbarRight}
-          />
-        )}
+        {!isReadOnly && toolbarPortalTarget === undefined && formattingToolbar}
         <div
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
+          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
         </div>
       </div>
+      {!isReadOnly && toolbarPortalTarget
+        ? createPortal(formattingToolbar, toolbarPortalTarget)
+        : null}
       {!isReadOnly && !linkPopup && (
         <SelectionToolbar
           rect={selectionRect}
           activeState={activeState}
           onRequestLink={handleRequestLink}
+          onEditIntent={markEditIntent}
         />
       )}
       {linkPopup && (

@@ -1,40 +1,35 @@
 import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
-import type { LucideIcon } from 'lucide-react';
-import { lucideByName } from '@src/lib/lucide-by-name';
-import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
-import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
+import { isFolderShape, type TypeShape } from '@sdk/FlowSync/schema';
 
 /**
  * Resolve a descriptor's typeid string to the cached entity's `displayName`.
- * Falls back to the raw typeid when the entity isn't in cache or the typeid
- * isn't well-formed.
+ *
+ * `fallbackName` is the descriptor's own `name` — sent by the backend only for
+ * an on-disk asset with no entity row yet. Such a row can never resolve from
+ * cache, so without it the picker would render a raw `skill-<uuid>`. It is
+ * preferred over the typeid but never over a real cached entity, so an indexed
+ * asset keeps showing its live `displayName` (which a rename updates).
  */
-export function displayLabelForTypeid(typeid: string): string {
-  // Name-form pseudo-typeids (entity-less inline personas, `agent-<name>`)
+export function displayLabelForTypeid(typeid: string, fallbackName?: string | null): string {
+  const fallback = fallbackName?.trim() || typeid;
+  // Name-form pseudo-typeids (entity-less inline personas, `subagent-<name>`)
   // aren't cache-resolvable — show the bare name, not the raw pair.
-  if (!isTypeId(typeid)) return parseTypeid(typeid).id || typeid;
+  if (!isTypeId(typeid)) return parseTypeid(typeid).id || fallback;
   try {
     const entity = dataManager.getByTypeIdFromCache(new TypeId(typeid));
-    return entity?.displayName ?? typeid;
+    return entity?.displayName ?? fallback;
   } catch {
-    return typeid;
+    return fallback;
   }
 }
 
 /**
- * Build a typeName → LucideIcon resolver from an AssetTypeInfo[] (typically
- * the result of `useAssetTypes`). Prefers the API-provided icon name; falls
- * back to the chat EntityChip icon registry when the API hasn't loaded yet.
+ * The backend labels this filesystem occurrence. A cached entity may describe
+ * another copy with the same TypeId, so consult it only when no occurrence label
+ * was supplied.
  */
-export function makeIconForType(
-  assetTypes: AssetTypeInfo[],
-): (typeName: string) => LucideIcon {
-  return (typeName: string): LucideIcon => {
-    const ti = assetTypes.find((t) => t.type_name === typeName);
-    const fromApi = ti?.icon ? lucideByName(ti.icon) : null;
-    if (fromApi) return fromApi;
-    return ICON_BY_TYPE[typeName] ?? lucideByName(null);
-  };
+export function displayLabelForDescriptor(d: { typeid: string; name?: string | null; invocation_name?: string | null }): string {
+  return d.invocation_name?.trim() || d.name?.trim() || displayLabelForTypeid(d.typeid);
 }
 
 export function parseTypeid(typeid: string): { type: string; id: string } {
@@ -47,7 +42,7 @@ export function parseTypeid(typeid: string): { type: string; id: string } {
  * Whether a descriptor's typeid points at a real backing entity that can be
  * opened in an editor/viewer. Entity ids are always UUID v4/v5 (policy), so
  * gate on that rather than the looser isTypeId grammar: an entity-less inline
- * persona carries a name-form pseudo-typeid (e.g. `agent-team.lead`) that
+ * persona carries a name-form pseudo-typeid (e.g. `subagent-team.lead`) that
  * parses as well-formed but has nothing to open. Single source of truth for
  * the "click to open" affordance shared by the asset picker and manager rows.
  */
@@ -63,18 +58,33 @@ export function basename(path: string): string {
 
 /**
  * Canonicalize a filesystem/VFS path for comparison and basename extraction:
- * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by the
- * asset-manager popover (its `dirname`/`descriptorKey`) and `improvableMainFile`
- * so the normalization can't drift between the two.
+ * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by
+ * `dirname`/`descriptorKey` below and `improvableMainFile` so the normalization
+ * can't drift between them.
  */
 export function normalizePath(path: string | null | undefined): string {
   return (path ?? '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
 }
 
+/** The directory containing `path`, normalized. `.` when there is no separator. */
+export function dirname(path: string): string {
+  const n = normalizePath(path);
+  const idx = n.lastIndexOf('/');
+  return idx >= 0 ? n.slice(0, idx) || '/' : '.';
+}
+
+/**
+ * Stable identity for a descriptor's *asset* (not its row): typeid + normalized
+ * path. The improve flow keys its busy state on this, so the host that launches
+ * an improvement and the row that renders the spinner agree on one key.
+ */
+export function descriptorKey(descriptor: { typeid: string; posix_path?: string | null }): string {
+  return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
+}
+
 /** The subset of a type's TypeInfo that decides its improvable main file. */
 export interface ImprovableTypeInfo {
-  folder_backed?: boolean;
-  main_file?: string | null;
+  shape?: TypeShape | null;
 }
 
 /**
@@ -83,7 +93,7 @@ export interface ImprovableTypeInfo {
  * shown-then-errored ("no main file metadata"). Single source of truth shared by
  * the row's `canImprove` gate and `resolveImproveTarget`, so the affordance is
  * offered iff improvement can actually run:
- *   - folder-backed type → its TypeInfo `main_file` (empty ⇒ not improvable)
+ *   - folder-shaped type → its TypeInfo `shape.main` (empty ⇒ not improvable)
  *   - flat type          → the path basename
  */
 export function improvableMainFile(
@@ -94,6 +104,7 @@ export function improvableMainFile(
   if (!assetPath) return null;
   const { type } = parseTypeid(descriptor.typeid);
   const ti = typeInfoByName.get(type);
-  const file = ti?.folder_backed ? ti.main_file ?? '' : basename(assetPath);
+  const shape = ti?.shape;
+  const file = isFolderShape(shape) ? (shape.main ?? '') : basename(assetPath);
   return file || null;
 }

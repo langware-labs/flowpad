@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,6 +33,84 @@ def _scoped_entry(
 
 async def _noop_processes():
     return []
+
+
+async def _no_projects():
+    return {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_blocking_collectors_share_one_resource_owned_lane():
+    """Different provider/request jobs cannot fan out over the default executor."""
+    thread_ids = await asyncio.gather(
+        *(wh._run_worker_history_blocking(threading.get_ident) for _ in range(8))
+    )
+
+    assert wh._WORKER_HISTORY_MAX_WORKERS == 1
+    assert len(set(thread_ids)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_get_worker_history_shares_identical_in_flight_scan(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def _claude(_limit, _idx, _pids=None, _cwd_map=None):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return [_entry(WorkerType.CLAUDE, "shared", "2026-05-06T12:00:00")]
+
+    monkeypatch.setattr(wh, "WORKER_HISTORY_PROVIDERS", {WorkerType.CLAUDE: _claude})
+    monkeypatch.setattr(wh, "_cwd_to_project_id", _no_projects)
+    monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None, cwd_map=None: [])
+
+    first = asyncio.create_task(wh.get_worker_history(limit=10, project_ids={"project-a"}))
+    await started.wait()
+    second = asyncio.create_task(wh.get_worker_history(limit=10, project_ids={"project-a"}))
+    await asyncio.sleep(0)
+    assert calls == 1
+
+    release.set()
+    assert await first == await second
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_get_worker_history_waiter_cancellation_does_not_cancel_scan(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def _claude(_limit, _idx, _pids=None, _cwd_map=None):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return [_entry(WorkerType.CLAUDE, "survivor", "2026-05-06T12:00:00")]
+
+    monkeypatch.setattr(wh, "WORKER_HISTORY_PROVIDERS", {WorkerType.CLAUDE: _claude})
+    monkeypatch.setattr(wh, "_cwd_to_project_id", _no_projects)
+    monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None, cwd_map=None: [])
+
+    disconnected = asyncio.create_task(wh.get_worker_history(limit=10))
+    await started.wait()
+    survivor = asyncio.create_task(wh.get_worker_history(limit=10))
+    disconnected.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await disconnected
+
+    release.set()
+    result = await survivor
+    assert [entry.worker_id for entry in result] == ["survivor"]
+    assert calls == 1
 
 
 @pytest.mark.asyncio
@@ -195,7 +275,8 @@ def test_collect_claude_skips_scratch_encoded_dirs(monkeypatch, tmp_path):
     scratch_jsonl = scratch_dir / "scratch-session.jsonl"
     scratch_jsonl.write_text('{"sessionId":"scratch-session","cwd":"/private/var/folders/t7/foo"}\n')
     # Make the scratch file *newer* so without the filter it would dominate.
-    import os as _os, time as _time
+    import os as _os
+    import time as _time
     now = _time.time()
     _os.utime(real_jsonl, (now - 60, now - 60))
     _os.utime(scratch_jsonl, (now, now))

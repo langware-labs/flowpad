@@ -7,7 +7,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DisplayEntry } from '@sdk';
-import { DisplayHistoryButton } from '@src/pages/flow-page/display-history-button';
+import { DisplayHistoryList, DisplayHistoryButton } from '@src/pages/flow-page/display-history-button';
 
 const OLD: DisplayEntry = { kind: 'vfs', path: '/proj/old.md', shown_at: '2020-01-01T00:00:00Z' };
 const NEW: DisplayEntry = { kind: 'entity', type: 'markdown', typeid: 'markdown-x', shown_at: '2020-01-02T00:00:00Z' };
@@ -33,5 +33,14 @@ describe('DisplayHistoryButton', () => {
 
     await userEvent.click(rows[0]);
     expect(onOpen).toHaveBeenCalledWith(NEW);
+  });
+
+  it('shows a file once across resolution kinds, with its full path and copy action', () => {
+    const newest: DisplayEntry = { ...OLD, kind: 'entity', typeid: 'markdown-x' };
+    const onOpen = vi.fn();
+    render(<DisplayHistoryList stack={[OLD, newest]} onOpen={onOpen} />);
+    expect(screen.getAllByTestId('display-history-row')).toHaveLength(1);
+    expect(screen.getByText('/proj/old.md')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Copy path: / })).toBeTruthy();
   });
 });

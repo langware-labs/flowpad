@@ -21,7 +21,7 @@ def test_local_fields_is_base_union_per_type():
     t = _task(title="X")
     lf = t._local_fields()
     # base
-    assert {"scope", "project_id", "asset_ref", "git_origin", "members"} <= lf
+    assert {"scope", "project_id", "asset_ref", "origin", "members"} <= lf
     # per-type additions declared on task's TypeInfo
     assert {"my_process_id", "project_root", "project_name"} <= lf
 
@@ -40,9 +40,9 @@ def test_sender_local_fields_stripped():
     t = _task(title="Ship")
     t.project_id = "proj-local"
     t.scope = "project"
-    t.git_origin = {"provider": "github"}
+    t.origin = {"provider": "github"}
     c = t.to_common_json()
-    for f in ("project_id", "scope", "asset_ref", "git_origin", "remote",
+    for f in ("project_id", "scope", "asset_ref", "origin", "remote",
               "system", "created_by", "updated_by", "members", "tags",
               "fetched_at", "message_count", "expand"):
         assert f not in c, f"{f} leaked into to_common_json()"

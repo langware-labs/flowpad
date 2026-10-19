@@ -4,16 +4,15 @@ These functions operate on a **global** ordered list of tab ids (ascending
 ``tab_order``). They are intentionally side-effect-free so they can be unit
 tested against the shared front/back parity matrix
 (``ui/tests/fixtures/tab-order-matrix.json``) — the frontend port lives in
-``ui/src/tabs/tab-order.ts`` and MUST stay byte-for-byte equivalent.
+``ts_sdk/src/tabs/tab-order.ts`` and MUST stay byte-for-byte equivalent.
 
 Order grammar (docs/tab-management.md):
 - A drag yields a drop-gap described by two anchors ``after_id`` / ``before_id``;
   either may be ``None`` (drop at the very start/end).
 - ``new_tab`` reuses the same insertion: a tab opened from within a tab lands
   immediately after its opener; with no opener it appends.
-- A project view is the global order filtered to ``{project == pid OR project is
-  None}`` — projectless tabs (settings/search/diff) are inline, never a separate
-  section.
+- A project view is the global order filtered to ``project == pid``. Projectless
+  tabs belong only to the separate Global scope (``project_id is None``).
 
 ``tab_order`` itself is just the contiguous index into the global list; the only
 rows that need writing after a mutation are the ones whose index changed

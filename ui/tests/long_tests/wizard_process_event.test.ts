@@ -147,10 +147,14 @@ describe('wizard process lifecycle over the real SDK transport', () => {
       errorStr: null,
     });
 
-    await expect(awaited).resolves.toEqual({
+    // A backend close also carries the run's answer (WizardResult) — the same
+    // value, as the one answer every wizard run gives.
+    const result = await awaited;
+    expect(result).toMatchObject({
       status: 'done',
       data: { localPath: '/tmp/app' },
       errorStr: null,
     });
+    expect(result.answer).toMatchObject({ ran: true, value: { localPath: '/tmp/app' } });
   }, 30_000);
 });

@@ -1,10 +1,4 @@
-import {
-  AgenticProcess,
-  FlowData,
-  FlowDataSource,
-  FlowElementTypes,
-  dataManager,
-} from '@sdk';
+import { AgenticProcess, FlowData, FlowDataSource, FlowElementTypes, dataManager } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROCESS_ID = '00000000-0000-4000-8000-0000000000d1';
@@ -15,8 +9,7 @@ interface ProcessHistoryInternals {
 
 /** Typed view over the opaque `processEntry` payload for assertions. */
 function transcriptEntryOf(item: FlowData): { id?: string; kind?: string } | undefined {
-  return (item.processEntry as { transcript_entry?: { id?: string; kind?: string } } | null)
-    ?.transcript_entry;
+  return (item.processEntry as { transcript_entry?: { id?: string; kind?: string } } | null)?.transcript_entry;
 }
 
 function processEntry(id: string, kind: string) {
@@ -67,6 +60,68 @@ describe('AgenticProcess canonical history replay', () => {
     callActionSpy.mockRestore();
   });
 
+  it('retires the optimistic echo when history replays the same user message', async () => {
+    // The bug: `appendUserMessage` stamps the echo when the user hits SUBMIT and
+    // gives it no transcript id; the persisted row carries the id and the
+    // backend's RECORD time. Neither reconcile tier can match them, so the
+    // non-forced replay appended a second copy and the pane showed "hi" twice.
+    const history = [
+      historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'hi', '2026-07-10T06:00:12.275Z', {
+        role: 'user',
+        subtype: 'user_message',
+      }),
+      historyItem('chat-1', FlowElementTypes.CHAT, 'Hey!', '2026-07-10T06:00:14.142Z', {
+        role: 'assistant',
+        subtype: 'assistant_message',
+      }),
+    ];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-echo',
+      use_worker_history: true,
+    } as never);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+    // Submit-time echo: same text, earlier clock, no transcript id.
+    process.appendUserMessage('hi');
+    expect(process.getOutputs()).toHaveLength(1);
+
+    await process.loadHistory();
+
+    const userRows = process.getOutputs().filter((item) => item.elementType === FlowElementTypes.USER_MESSAGE);
+    expect(userRows).toHaveLength(1);
+    // The survivor is the persisted row, not the placeholder.
+    expect(transcriptEntryOf(userRows[0])?.id).toBe('user-1');
+  });
+
+  it('keeps an echo the replay does not carry — a message sent while the fetch was in flight', async () => {
+    // The retract pairs each echo with a history row by content. An echo minted
+    // AFTER the request went out has no counterpart in the payload, so it must
+    // survive: retiring every echo whenever history mentions any user message
+    // would erase the message the user just typed until the next reload.
+    const history = [
+      historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'first', '2026-07-10T06:00:10.000Z', {
+        role: 'user',
+        subtype: 'user_message',
+      }),
+    ];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-inflight',
+      use_worker_history: true,
+    } as never);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+    process.appendUserMessage('first'); // persisted — retired by the replay
+    process.appendUserMessage('second'); // typed mid-flight — nothing to pair with
+
+    await process.loadHistory();
+
+    const userRows = process.getOutputs().filter((item) => item.elementType === FlowElementTypes.USER_MESSAGE);
+    expect(userRows.map((item) => item.content)).toEqual(['first', 'second']);
+    expect(transcriptEntryOf(userRows[0])?.id).toBe('user-1');
+  });
+
   it('force reload preserves complete repeated turns, adjacent chats, objects, and typed identity', async () => {
     const history = [
       historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'same prompt', '2026-07-10T06:00:00.100Z', {
@@ -106,12 +161,15 @@ describe('AgenticProcess canonical history replay', () => {
       use_worker_history: true,
     } as never);
     const process = new AgenticProcess({ id: PROCESS_ID });
-    process.appendUserMessage('stale optimistic row');
+    process.appendUserMessage('undelivered prompt');
 
     await process.loadHistory({ force: true });
 
     const outputs = process.getOutputs();
-    expect(outputs).toHaveLength(history.length);
+    // The echo survives: history carries no row for it, so it is a message still
+    // in flight, not a stale duplicate — same rule the non-forced path applies.
+    expect(outputs).toHaveLength(history.length + 1);
+    expect(outputs.at(-1)?.content).toBe('undelivered prompt');
     expect(outputs.filter((item) => item.content === 'same prompt')).toHaveLength(3);
     expect(outputs.filter((item) => item.elementType === FlowElementTypes.CHAT).map((item) => item.content)).toEqual([
       'commentary',
@@ -125,7 +183,11 @@ describe('AgenticProcess canonical history replay', () => {
     });
     expect(transcriptEntryOf(tool)).toMatchObject({ id: 'tool-1', kind: 'tool_use' });
     expect(tool.timestamp).toBe('2026-07-10T06:00:00.600Z');
-    expect(outputs.every((item) => item.source === FlowDataSource.History)).toBe(true);
+    // Every TRANSCRIPT row is tagged History; the carried-over echo is a live
+    // placeholder by definition — it has no transcript row to be tagged from.
+    expect(
+      outputs.filter((item) => !item.isOptimisticEcho).every((item) => item.source === FlowDataSource.History),
+    ).toBe(true);
   });
 
   it('non-force replay reconciles live overlap one-for-one without erasing repeated content', async () => {
@@ -160,11 +222,7 @@ describe('AgenticProcess canonical history replay', () => {
 
     const outputs = process.getOutputs();
     expect(outputs).toHaveLength(3);
-    expect(outputs.map((item) => transcriptEntryOf(item)?.id)).toEqual([
-      'user-1',
-      'user-2',
-      'user-3',
-    ]);
+    expect(outputs.map((item) => transcriptEntryOf(item)?.id)).toEqual(['user-1', 'user-2', 'user-3']);
     expect(outputs.filter((item) => item.content === 'same prompt')).toHaveLength(3);
     expect(outputs.filter((item) => item.source === FlowDataSource.Stream)).toHaveLength(1);
     expect(outputs.filter((item) => item.source === FlowDataSource.History)).toHaveLength(2);

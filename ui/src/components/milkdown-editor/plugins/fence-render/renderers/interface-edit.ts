@@ -22,12 +22,15 @@ export type InterfaceEdit =
   | { kind: 'returns'; value: string }
   | { kind: 'param-name'; param: string; value: string }
   | { kind: 'param-type'; param: string; value: string }
+  | { kind: 'param-description'; param: string; value: string }
   | { kind: 'param-optional'; param: string; optional: boolean }
   | { kind: 'property-name'; property: string; value: string }
   | { kind: 'property-type'; property: string; value: string }
+  | { kind: 'property-description'; property: string; value: string }
   | { kind: 'property-optional'; property: string; optional: boolean }
   | { kind: 'method-name'; method: string; value: string }
   | { kind: 'method-signature'; method: string; value: string }
+  | { kind: 'method-description'; method: string; value: string }
   | { kind: 'error'; index: number; value: string };
 
 type MemberCollection = 'params' | 'properties' | 'methods';
@@ -76,6 +79,18 @@ function currentValue(
 }
 
 /**
+ * Description controls only exist for object-form members that already carry
+ * the key. Adding/removing structure remains the Code pane's job.
+ */
+function descriptionPath(doc: Document, collection: MemberCollection, name: string): (string | number)[] | null {
+  const pair = memberPair(doc, collection, name);
+  if (!pair || !isMap(pair.value) || !isScalar(pair.value.get('description', true))) {
+    return null;
+  }
+  return [collection, name, 'description'];
+}
+
+/**
  * Apply one edit and return the new YAML source.
  *
  * Unknown targets (a param that no longer exists, an out-of-range error index)
@@ -118,6 +133,13 @@ export function applyInterfaceEdit(source: string, edit: InterfaceEdit): string 
       break;
     }
 
+    case 'param-description': {
+      const path = descriptionPath(doc, 'params', edit.param);
+      if (!path) return source;
+      doc.setIn(path, edit.value);
+      break;
+    }
+
     case 'param-optional': {
       const path = valuePath(doc, 'params', edit.param, 'type');
       if (!path) return source;
@@ -142,6 +164,13 @@ export function applyInterfaceEdit(source: string, edit: InterfaceEdit): string 
       break;
     }
 
+    case 'property-description': {
+      const path = descriptionPath(doc, 'properties', edit.property);
+      if (!path) return source;
+      doc.setIn(path, edit.value);
+      break;
+    }
+
     case 'property-optional': {
       const path = valuePath(doc, 'properties', edit.property, 'type');
       if (!path) return source;
@@ -159,6 +188,13 @@ export function applyInterfaceEdit(source: string, edit: InterfaceEdit): string 
 
     case 'method-signature': {
       const path = valuePath(doc, 'methods', edit.method, 'signature');
+      if (!path) return source;
+      doc.setIn(path, edit.value);
+      break;
+    }
+
+    case 'method-description': {
+      const path = descriptionPath(doc, 'methods', edit.method);
       if (!path) return source;
       doc.setIn(path, edit.value);
       break;

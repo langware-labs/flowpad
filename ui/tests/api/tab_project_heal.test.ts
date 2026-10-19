@@ -7,7 +7,7 @@
  * Invariant: a content tab's `project_id` == its target entity's `project_id`.
  *
  * There are now TWO server-side mechanisms that keep this invariant even when the
- * tab is materialized before its target exists (see `_backfill_tab_projects` in
+ * tab is materialized before its target exists (see `_resolve_tab_projects` in
  * flow_sdk/builtin/tab.py, run on every `list`/`list_all`):
  *
  *   1. URL-authority backfill (`_project_from_pointer`): a PROJECT-SCOPED dock
@@ -28,10 +28,11 @@
  */
 import { Markdown, Project, Tab, dataManager } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
 import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { setupTab } from '@src/tabs/tab-content-lifecycle';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
@@ -42,13 +43,6 @@ const noopAdapter = {
   cleanupTab: async () => {},
 };
 
-/** Run the real UI load path and return the resulting tab's project_id. */
-async function loadTabProjectId(dock: DockPointer): Promise<string | null> {
-  const { tab } = await setupTab(dock, { adapter: noopAdapter });
-  expect(tab).toBeTruthy();
-  return tab!.project_id ?? null;
-}
-
 describe('a content tab keeps its project_id == its target entity project', () => {
   const signupInfo = getTestSignupInfo();
 
@@ -57,7 +51,7 @@ describe('a content tab keeps its project_id == its target entity project', () =
   });
 
   it('a project-scoped URL adopts its declared project immediately, before the target exists', async () => {
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const p1 = trackForCleanup(await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]));
 
     // The URL names an EXISTING project (p1) but targets a markdown that does not
     // exist yet. URL-authority backfill stamps p1 on the first load — the tab is
@@ -68,16 +62,20 @@ describe('a content tab keeps its project_id == its target entity project', () =
       `${p1.id}/editor/markdown/typeid/markdown-${mdId}`,
     );
 
-    // First load: target unresolvable, but the URL declares p1 → tab adopts p1.
-    expect(await loadTabProjectId(dock)).toBe(p1.id);
+    // Cold load: target unresolvable, but the URL declares p1 → tab adopts p1.
+    const result = await setupTab(dock, { adapter: noopAdapter });
+    expect(result.error).toBeUndefined();
+    expect(result.tab).toMatchObject({
+      project_id: p1.id,
+      target_type: 'markdown',
+      target_id: mdId,
+    });
+    expect(result.tab?.pointer).toContain(p1.id);
 
-    // Create the target owned by p1; the tab still resolves p1 — now confirmed by
-    // the target itself, agreeing with the URL. Invariant holds on both loads.
-    const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
-    expect(md.project_id).toBe(p1.id);
-    await dataManager.clearCache(); // force a fresh target fetch on reload
-
-    expect(await loadTabProjectId(dock)).toBe(p1.id);
+    const persisted = (await Tab.listAll()).filter((tab) => tab.dockPointer?.tabHash === dock.tabHash);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0].id).toBe(result.tab!.id);
+    expect(persisted[0].project_id).toBe(p1.id);
   }, 15000);
 
   it('a URL naming a non-existent project persists no tab, even before the target exists', async () => {
@@ -103,7 +101,7 @@ describe('a content tab keeps its project_id == its target entity project', () =
 
     // The target coming into existence later must NOT resurrect the dead URL:
     // reloading the same dock still persists nothing.
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const p1 = trackForCleanup(await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]));
     const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
     expect(md.project_id).toBe(p1.id);
     await dataManager.clearCache(); // force a fresh target fetch on reload
@@ -123,7 +121,7 @@ describe('a content tab keeps its project_id == its target entity project', () =
     // found", every time. Contract under test: a load against a non-existent
     // project must CLEAN UP — no persisted tab may keep addressing the dead
     // project, and the project-entry resolver must never return its URL.
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const p1 = trackForCleanup(await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]));
     const mdId = uuidv4();
     const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
     expect(md.project_id).toBe(p1.id);

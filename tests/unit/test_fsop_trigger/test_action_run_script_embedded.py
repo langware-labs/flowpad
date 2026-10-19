@@ -12,14 +12,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import (
-    ActionType,
-    RunScriptActionHandler,
-    TriggerAction,
-)
-from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
+from flow_sdk.builtin.change_event import ChangeEvent
+from flow_sdk.builtin.hook_models import RunScriptActionHandler
+from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -172,7 +171,8 @@ async def test_no_external_no_embedded_warns_no_crash(records_data_root, caplog)
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT)
     result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
-    assert result is None  # nothing to run
+    # An answer, not None: there is nothing by that name to run.
+    assert result.exit_code is ExitCode.NOT_FOUND and result.ran is False
 
 
 async def test_embedded_missing_file_no_crash(records_data_root, caplog):
@@ -181,4 +181,4 @@ async def test_embedded_missing_file_no_crash(records_data_root, caplog):
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_filename="nonexistent.sh")
     result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
-    assert result is None
+    assert result.exit_code is ExitCode.NOT_FOUND and "nonexistent.sh" in result.detail

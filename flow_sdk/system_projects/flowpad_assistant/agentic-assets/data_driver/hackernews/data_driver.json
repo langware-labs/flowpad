@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "name": "hackernews",
+  "title": "Hacker News",
+  "icon_name": "HackerNews",
+  "description": "The public firehose, filtered. No credentials.",
+  "kind": "datasource.api.hackernews",
+  "config": {
+    "types": {
+      "type": "csv",
+      "label": "Item types",
+      "placeholder": "story",
+      "hint": "Comma separated: story, comment, job, poll. Defaults to story."
+    },
+    "min_score": {
+      "type": "number",
+      "label": "Minimum score",
+      "placeholder": "0"
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
+    }
+  }
+}

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.actions.fs.asset_versioning import autoversion_commit_local
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 
 SKILL_MD_V1 = """---
 id: 9fe9bee3-ce84-58c1-b047-90629fa5dfd3

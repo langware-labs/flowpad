@@ -2,12 +2,14 @@ import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { APIEntity, TypeId, dataManager } from '@sdk';
+import { DataSource, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { SessionWorker } from '@src/hooks/use-transcript';
 
 /**
  * Minimal shape we need to render an entity as a clickable label. Covers the
@@ -57,6 +59,9 @@ interface EntityChipProps {
    * navigation. Distinct from `muted`, which is inert.
    */
   staged?: boolean;
+  /** The loaded entity row. Transcripts open by file location, so their
+   *  pointer needs fields (`asset_ref`, `received`) a bare TypeId lacks. */
+  row?: object | null;
 }
 
 /**
@@ -82,19 +87,16 @@ export function iconForEntity(type: string): LucideIcon {
  * ``ICON_BY_TYPE.task`` both resolve a LucideIcon, or undefined when the type
  * has no backend icon (so existing ``?? ExternalLink`` fallbacks still work).
  */
-export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy(
-  {} as Record<string, LucideIcon>,
-  {
-    get(_t, prop): LucideIcon | undefined {
-      // The trap also fires for symbol keys + introspection props like
-      // `toString` (React-refresh / Object spread). Only resolve real
-      // string type-names; everything else is "no icon".
-      if (typeof prop !== 'string') return undefined;
-      const name = dataManager?.iconForType?.(prop);
-      return name ? lucideByName(name) : undefined;
-    },
+export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy({} as Record<string, LucideIcon>, {
+  get(_t, prop): LucideIcon | undefined {
+    // The trap also fires for symbol keys + introspection props like
+    // `toString` (React-refresh / Object spread). Only resolve real
+    // string type-names; everything else is "no icon".
+    if (typeof prop !== 'string') return undefined;
+    const name = dataManager?.iconForType?.(prop);
+    return name ? lucideByName(name) : undefined;
   },
-);
+});
 
 /**
  * Per-entity-type styling. Stable across the app so a "project" chip always
@@ -102,20 +104,25 @@ export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy(
  * types here as they appear (the fallback is muted/neutral).
  */
 const STYLE_BY_TYPE: Record<string, string> = {
-  project:
-    'border border-sky-500/40 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
-  task:
-    'border border-violet-500/40 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
+  project: 'border border-sky-500/40 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
+  task: 'border border-violet-500/40 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
   conversation:
     'border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
-  spec:
-    'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
+  spec: 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
 };
-const DEFAULT_STYLE =
-  'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
+const DEFAULT_STYLE = 'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
+
+/** The chip's pill shape — shared with action chips that sit beside entity chips (a message's
+ *  Forward / Task it), so the row reads as one. */
+export const CHIP_LAYOUT =
+  'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors';
+
+/** A chip's colors for an entity type (neutral when the type has none). */
+export function chipStyleFor(type?: string): string {
+  return (type && STYLE_BY_TYPE[type]) || DEFAULT_STYLE;
+}
 /** Greyed, non-interactive style for a context ref whose entity 404'd. */
-const MUTED_STYLE =
-  'border border-dashed border-border bg-transparent text-muted-foreground line-through';
+const MUTED_STYLE = 'border border-dashed border-border bg-transparent text-muted-foreground line-through';
 /** Staged (downloaded, not installed): dashed + clickable — AttachmentChip's
  *  "not yet local, click to act" idiom. */
 const STAGED_STYLE =
@@ -148,14 +155,22 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
  * entity has no id (decorative use, e.g. an "Approve & Execute" prompt
  * chip) the chip looks the same but only fires `onClick`.
  */
-export function EntityChip({ entity, inside, onClick, projectId, title, size = 'chip', muted = false, staged = false }: EntityChipProps) {
+export function EntityChip({
+  entity,
+  inside,
+  onClick,
+  projectId,
+  title,
+  size = 'chip',
+  muted = false,
+  staged = false,
+  row,
+}: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
   const label = entity.name ?? (resolved?.id || '(unnamed)');
-  const typeWord = resolved
-    ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ')
-    : '';
+  const typeWord = resolved ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ') : '';
   const typeStyle = muted
     ? MUTED_STYLE
     : staged
@@ -177,15 +192,13 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
       // A staged chip never dock-navigates: its entity has no local row yet.
       if (staged) return;
       if (!resolved || !resolved.id) return;
-      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
+      const pointer = buildDockPointer({ ...row, ...resolved }, inside);
       if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
     };
-  }, [muted, staged, onClick, resolved, inside, navigation, projectId]);
+  }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
 
   const baseLayout =
-    size === 'chip'
-      ? 'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors'
-      : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
+    size === 'chip' ? CHIP_LAYOUT : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
 
   return (
     <button
@@ -195,7 +208,8 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
       disabled={muted}
       aria-disabled={muted}
       data-testid={`entity-chip-${entity.type}-${entity.id}`}
-      className={`${baseLayout} ${typeStyle}${muted ? ' cursor-default opacity-60' : ''}`}
+      data-state={muted ? 'unavailable' : staged ? 'staged' : 'installed'}
+      className={`${baseLayout} ${typeStyle}${muted ? 'cursor-default opacity-60' : ''}`}
     >
       <Icon className="h-3 w-3" />
       <span className="truncate">{label}</span>
@@ -218,25 +232,53 @@ export function buildDockPointer(
 ): DockPointer | null {
   switch (resolved.type) {
     case 'project':
-      return DockPointer.forProject(resolved.id, inside?.type === 'conversation' ? { conversationId: inside.id } : undefined);
+      // From a conversation, a project chip lands like the asset review popup's
+      // Open (ProjectInstallAction): the bare project asking for its home page.
+      // A `/conversation/<cid>` sub-path would stop the home-page redirect.
+      return inside?.type === 'conversation'
+        ? withHomePage(DockPointer.forProject(resolved.id))
+        : DockPointer.forProject(resolved.id);
     case 'task':
-      return DockPointer.forTasks(resolved.id, inside?.type === 'conversation' ? { conversationId: inside.id } : undefined);
+      return DockPointer.forTasks(
+        resolved.id,
+        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
+      );
     case 'spec':
       return DockPointer.forSpec(resolved.id);
     case 'flowpad_diagnosis':
       // Entity type is `flowpad_diagnosis` but the view type is `diagnosis`, so the
       // generic fallback can't resolve it — map explicitly to the diagnosis viewer.
       return DockPointer.forDiagnosis(resolved.id);
+    case DataSource.type:
+      return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
     case 'claude_session':
     case 'codex_session':
-    case 'copilot_session': {
-      const worker = resolved.type.replace(/_session$/, '') as 'claude' | 'codex' | 'copilot';
-      return DockPointer.forLensTranscript(worker, resolved.id);
+    case 'copilot_session':
+    case 'opencode_session':
+    case 'deepagents_session': {
+      const worker = workerFromSessionType(resolved.type) as SessionWorker;
+      // Transcripts are the ONLY type addressed by location rather than by
+      // TypeId (they have no asset-editor entry — they open through the lens,
+      // which takes a worker + a file). So unlike every other case here, a bare
+      // {type, id} is NOT enough to build a working pointer, and the caller must
+      // pass the resolved entity.
+      const session = resolved as { asset_ref?: string | null; received?: boolean };
+      const ref = session.asset_ref?.trim();
+      if (ref) return DockPointer.forLensTranscript(worker, ref);
+      // No path in hand. The session-id form is answered by
+      // ``resolve_session_jsonl``, which searches THIS machine's CLI dir — right
+      // for a locally-run session, and guaranteed to 404 for a received one
+      // ("NOT_FOUND: ~/.claude/projects/ ... cannot resolve session <id>"). So
+      // only take it on an entity that explicitly says it ran here. `undefined`
+      // means the caller handed us a stub and we simply don't know — returning
+      // null lets them fall back instead of opening a broken tab.
+      if (session.received === false) return DockPointer.forLensTranscript(worker, resolved.id);
+      return null;
     }
     default: {
-      // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
+      // Asset-editor types (markdown family, agent, skill, workflow, chart)
       // open by their TypeId — no asset_ref needed; the loader resolves the
       // entity. This is why the chip never has to defer on an unresolved path.
       const editor = editorForType(resolved.type);
@@ -283,8 +325,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
   // Generic context chips can point at any entity type; the SDK hook's recursive
   // entity generic has no concrete type here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, notFound } = useEntity<APIEntity<any>>(typeId);
+  const { data, notFound } = useEntity<AnyEntity>(typeId);
   // ``notFound`` is a terminal 404 — the target has no local row (e.g. a
   // dangling/unmaterialized context reference). Render a muted, non-navigable
   // chip; the SDK's negative cache keeps us from re-fetching every render.
@@ -293,6 +334,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   return (
     <EntityChip
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+      row={data}
       inside={inside}
       onClick={onClick}
       projectId={projectId}

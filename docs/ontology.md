@@ -1,0 +1,274 @@
+---
+id: 34e4f26a-5e06-47fa-8c37-5250bfd397f7
+version: 3
+---
+# Ontology — type, subkind, kind
+
+Three words, three jobs. They are the join keys between the entity layer and the
+shape layer. This document is the ground truth they are aligned to.
+
+## The three words
+
+| word          | vocabulary                                                    | selects                                      | example                |
+| ------------- | ------------------------------------------------------------- | -------------------------------------------- | ---------------------- |
+| **`type`**    | closed — the one registry (`EntityType`)                      | a class, system-wide: a row, a URL, a folder | `task`                 |
+| **`subkind`** | closed, per type — an enum                                    | a variant *within* that type                 | `group`                |
+| **`kind`**    | **open** — dot-path, one grammar (`flow_sdk/tags/grammar.py`) | a SCHEMA (by name), across types            | `ingest.message.slack` |
+
+A *type* is a join key. A *subkind* is a discriminator. A *kind* is an ontology
+entry — the only one of the three that is open, prefix-matchable
+(`tag_is_within`, glob subscriptions) and extensible without an SDK release.
+
+## A kind names a SHAPE, never a row
+
+This is the rule the rest follows from, and it was not true before.
+
+A type name used to resolve through a fallback to the **Entity class**
+(`kind_type` → `_types[kind].entity_cls`). So the same authoring form meant two
+different things:
+
+```python
+parse("compute_op")  -> ComputeOpSpec   # a document SHAPE — that spec declared a spec_kind
+parse("task")        -> Task            # a database ROW model
+```
+
+A row model is not a schema. A field holding one cannot validate a value against
+it — it would demand ids and DB columns the value has never heard of. So the
+fallback is gone and an asset type resolves to its **`asset_spec`**, its document
+schema, derived from the type name and never declared twice.
+
+Almost every kind names a `DataSpec`. The one exception is `fs_ref`, bound
+explicitly by `register_builtin_kinds()` to `FSRef` — a plain value class
+pydantic can still validate, and the shape a capability's discovered value takes.
+It is an SDK-registered exception, not a door: nothing else binds a kind to a
+non-`DataSpec`, and the half of the rule that matters — never an Entity row —
+holds without exception.
+
+A registered type with **no** asset document names no shape: `resolve_kind`
+raises rather than answering `Any`, because the author meant a real thing.
+A name nobody has registered stays anonymous (`Any`) — eager compilation's
+forward references depend on that.
+
+## Composition
+
+1. **An entity's** **`kind`** **is derived:** **`<type>.<subkind>`.** Never authored, never stored.
+2. **An entity's** **`kind`** **is its own. The kind of what it carries belongs to what
+   it carries** — a payload's kind lives on the payload (`Tagged[Payload]`), not
+   denormalised onto the row.
+3. **A shape's kind is its ontology key.** `spec_kind` *is* a kind; the prefix is
+   historical and goes once rules 1–2 free the word on entity rows.
+4. **An** **`asset_spec`'s kind is its type name**, derived. An explicit declaration
+   registers an *alias* — `ingest.source_item`, `mcp.server`, `project.manifest`
+   keep working, and both spellings resolve.
+5. **Only a class's OWN** **`spec_kind`** **registers.** An inherited one is not a new
+   kind: `FileDataPage` inherits `source.page` from `DataPage` and used to
+   rebind it, so the name resolved to the narrower subclass.
+6. **A kind names exactly one shape.** Rebinding raises; it used to be silent,
+   and whichever class the process imported second won.
+
+## Namespaces
+
+A kind belongs to whoever minted it. The marker is the grammar's existing
+first-segment form, already in both twins (`tags/grammar.py:33`,
+`ts_sdk/src/tags/grammar.ts:26`):
+
+```
+--acme--.ingest.message.whatsapp      an external definition
+ingest.message.whatsapp               ours
+```
+
+**`--flow--`** **is never written.** The flow ontology is the default and it is
+silent: an unmarked kind is ours, everywhere. The literal never appears in a kind
+string, a document or a fixture.
+
+Anyone may mint a namespace. No allocation, no registry, no approval — we
+validate the *shape* of the marker, never the claim. Two externals colliding on
+`--acme--` is contained in their own subtree and can never reach ours.
+
+## Who declares, and how it is found
+
+**A project declares it once; its assets inherit.** An asset carries its own only
+when it must differ.
+
+* **`Project.ns`** — the authoring surface: one field covering every asset in the
+  project.
+
+* **The asset document's** **`ns`** — what the resolver actually reads, and what lets
+  an asset that travels alone (hub one-click install, a shared skill) keep its
+  namespace outside the project that authored it.
+
+The split is forced, not stylistic: a Project row lives in the database, and
+kinds register at class-definition time, where there is no database and may not
+yet be a running server. The row is where a human declares; the file is where the
+resolver looks.
+
+### Resolution — the loader declares
+
+`flow_sdk/schema/data_spec/_namespace.py` holds only `loading()` / `current()` /
+`qualified()`: stdlib, no I/O. A kind is minted when a class body runs, i.e.
+during an import, and the loader that started that import has already read the
+asset's manifest — so it knows the namespace before any class exists and says so
+for the duration:
+
+```python
+with loading(ns):                    # flow_sdk/ingest/driver_registry.py
+    cls = driver_class(load_module(folder, digest=digest))
+```
+
+Resolving, refusing and declaring are one seam (`_importing`), because they must
+always fire together and must fire *before* the import: a driver that has not
+named its ontology is refused while its classes are still undefined.
+
+The namespace itself is the driver's own `ns`, else its project's, resolved by
+the layer that owns manifests (`flow_sdk/assets/project_manifest.namespace_for`)
+— so a project declares once and every asset under it inherits.
+
+An earlier version DISCOVERED the namespace instead, by walking up from the
+class's own file. It is worth remembering why it was deleted: it put filesystem
+work in a layer that states it does none, re-spelled the assets directory, the
+project root and the manifest's fields that three other modules already own, and
+— because it scanned each directory it passed — climbed out of the project and
+parsed whatever JSON sat in the user's home, credential files included, on every
+import. A namespace that is *declared* cannot have that failure mode; a namespace
+that is *discovered* always can.
+
+Resolving to `flow` emits **no prefix** — that is what "the default is silent"
+means mechanically. What we ship is ours by definition, so shipped assets declare
+nothing and are never asked.
+
+### Writing a kind — the tag written IS the key registered
+
+A registry nothing can read back is not a registry. The name a value carries on the
+wire (`Tagged`'s `spec_kind`, `spec.py`) is the name the class is REGISTERED under —
+`DataSpec.__spec_tag__`, stamped at registration — never the bare `spec_kind` the
+author declared. Ours is bare, so every shipped row is byte-identical either way;
+an external's carries its marker, which is the only way a later read can find the
+class again.
+
+This was not always true, and the asymmetry was invisible for exactly the reason it
+was dangerous: registration qualified and the dump did not, so the bug could only
+appear for an authored asset — and every asset we ship is ours. A project-authored
+driver minted `ingest.feed.item.usgs_earthquake` under its namespace, wrote its 252
+values under the bare name, and every read of them failed *in the process that had
+just written them*. The source parked on `transient_error`; the rows were deleted by
+hand. Keep the two sides together when either moves.
+
+A namespace is **frozen at first publish**: changing it re-keys every kind the
+asset ever minted. That is now a mechanism rather than a rule to remember —
+`ensure_namespace` returns a manifest that already names one untouched, so a rename,
+a re-seed or a second call cannot re-key a project that has minted anything.
+
+**A project is seeded when it is indexed.** `ensure_project_namespace` writes
+`agentic-assets/project_manifest/project_manifest.json` with `ns` taken from the folder
+name, folded to what a marker can hold (`[a-z0-9_]` — `ai-course` becomes `ai_course`),
+and every asset under the project inherits it. A name that folds to nothing stays ours.
+A **system project is never seeded**: what we ship is ours by definition, and stamping a
+namespace on it would push every kind its shipped drivers mint under a marker while the
+bare names already written stopped resolving.
+
+## An external must name its ontology
+
+`load_driver` refuses a driver outside the shipped tree that declares no `ns` —
+**before** importing `source.py`, because the import is what mints the kinds.
+Unnamed, an authored `whatsapp` declaring `ingest.message.whatsapp` would collide
+with the shipped one and one of them would lose in silence.
+
+## Coverage — every path a kind is minted
+
+| # | path                                                                                    | namespace                                                    |
+| - | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 1 | `DataSpec.__pydantic_init_subclass__` (`spec.py`) — any spec class, on import           | whatever the loader declared; nothing ⇒ ours                 |
+| 2 | `register_builtin_kinds()` (`_kinds.py`) — explicit SDK kinds (`fs_ref`)                | always ours                                                  |
+| 3 | an asset loaded from a folder — `load_driver`, and the lazy loaders keyed by NAMESPACE (`_kinds.py`) | declared by `_importing`; an external naming none is refused |
+| 4 | an `asset_spec` registered under its type name (rule 4)                                 | the type's own project                                       |
+| 5 | a `data_schema` FOLDER (`agentic-assets/data_schema/<full.kind>/data_schema.json`) — built from its document, not imported (`flow_sdk/schema/data_spec/declared.py`) | declared by the loader's `loading(ns)`: ours if shipped, else the document's `ns`, else its project's; an external naming none is refused |
+
+Paths 1 and 3 are one mechanism: loading an asset imports its module, and the
+class declaration is what registers. Scoping the declaration to that import
+is what makes it safe — a name cannot be claimed before the loader has had its say.
+
+### Who is asked, on a miss
+
+A kind that misses is loaded by its OWNER, and the kind says who that is: bare is
+ours, `--ns--.` is theirs (`SchemaRegistry.kind_type` → `set_kind_loader`).
+
+* **ours** — one loader, covering everything the SDK vouches for including the shipped
+  driver folders, built once per process.
+* **an external's** — `load_namespace_value_kinds(ns)` imports the data drivers of the
+  project that owns `ns`, found through the `namespace → project root` map
+  (`fs_store/operations/namespace_roots.py`). An unknown namespace loads NOTHING: no
+  search of other projects, because finding a kind under the wrong owner is the exact
+  collision the namespace exists to prevent.
+
+The key used to be a dot PREFIX (`add_kind_loader("ingest.", …)`), which is a claim
+about what a kind is *about*; a loader answers for what it *owns*. Under the prefix
+rule the only registered loader scanned the shipped tree, so an authored asset's kind
+was unreachable from a read at all — it resolved only in a process that had already
+synced that source, which made the failure look restart-shaped and intermittent.
+
+The map is read SYNCHRONOUSLY (`kind_type` runs inside a pydantic validator and cannot
+await), and filled by the paths that can: the manifest's post-sync hook, project
+creation, and the boot sweep. It is a cache of a fact on disk — an empty map means
+"nobody has told us yet", never "no such namespace", so a miss is never memoized.
+
+A folder with no MODULE still mints a kind when it is a `data_schema` folder (path 5):
+`declared.py` builds the schema class from `data_schema.json` inside `loading(ns)`, so it
+registers through the same class hook as path 1 — one mechanism, handed a class two
+ways. The miss loaders load these first (ours: the shipped tree; an external's: its
+project root, within the namespace's one claim), since a driver's code may name them.
+A rebuilt kind replaces its registered class while classes built earlier keep pointing
+at the old one; that old class still answers its kind, because `io/names.kind_of` reads
+the tag stamped on the class (`__spec_tag__`) before the registry's inverse map. An
+unchanged folder is not rebuilt at all — a cost saving, not a correctness rule. A kind is
+owned by the folder that defines it only while that folder still does: once it moves, is
+renamed or names another kind, the next folder to define the kind takes it, in the same process.
+Dependencies build first, and a name still resolving to `Any` is an error, never a
+field that accepts anything. A ComputeOp's `input` and `output` refer to this
+same authoring grammar, including lists; `output_spec_kind` remains the legacy
+named-output form. Its Python variant imports `call.py` only after approval,
+inside the owning project's namespace. That import may define private helper
+schemas, but public contract kinds must be independently loadable SDK or
+data-schema definitions. A kind lookup or metadata listing never imports
+`call.py` to discover a schema. A block's entity ID names the definition;
+neither its ID nor its name is a new schema kind.
+
+## Not yet done
+
+* A legacy row written before the write side was fixed carries a BARE tag for an
+  authored kind, and nothing can resolve it. Such rows are skipped with a warning on a
+  list read (`sqlite_driver.get_all`) and never migrated — a cross-namespace search for
+  a bare name is the collision the namespace exists to prevent.
+
+* A driver folder added to a project AFTER that namespace's first miss in a process
+  resolves only once the map is dropped (a re-index) or the source actually runs, which
+  registers it through the async `resolve` path anyway.
+
+* The seed is a folder NAME, so two checkouts called `ai-course` seed one namespace.
+  That is allowed — a namespace is an unvalidated claim and collisions are contained in
+  their own subtree — but it is a seed, not an identity.
+
+* `ns` is declared on `DataDriverSpec` and `DataSchemaDocSpec` only. `AssetDocumentSpec` is
+  `extra="ignore"`, so an `ns` key in any other asset document is read by the
+  resolver but dropped by the model; declaring it there means mirroring the field
+  onto 14 entity classes (`check_asset_spec` enforces it).
+
+* ComputeOp has `subkind` variants (`cli | prompt | agent | decision | navigate | ask | python`):
+  each subkind's structure is its own schema under the kind
+  `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
+  (see [FlowCall](snippets/call-returns.md)); `compute_op.rung` is a kind of its own
+  (one rung of a ladder), not a subkind. `compute_op.python` executes the block's
+  `call.py:call`; this does not introduce a `FlowCallBlock` entity or a second
+  schema registry. See [typed blocks](snippets/flowcall-blocks.md).
+
+* Project has a `subkind` (`standard | controller | addon`, `ProjectSubkind` in
+  `flow_sdk/schema/data_spec/project_manifest_spec.py`), declared in the project's
+  `project_manifest.json` so a clone knows it before anything opens — `standard` is the
+  silent default. `controller` is a project used to do work on ANOTHER project: a launch
+  opens the other one (the target) and this one's home page acts in it, never attached;
+  `addon` is attached BY a host as a `flow.json` dependency (a help desk portal). Its kind
+  `project.<subkind>` is derived, never stored.
+
+* Rules 1–2 (`subkind`, derived `kind`, payload-kind) are otherwise unimplemented. The
+  blockers: `Conversation.kind` is a two-repo change gating hub authorization,
+  `FlowMessage.kind` is on the wire, and `SourceItem.kind` is first in
+  `DIGESTED_FIELDS` so changing its value re-digests the corpus.

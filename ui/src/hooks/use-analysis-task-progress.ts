@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { AgenticProcess, ProcessStatus, isProcessActive, type Task } from '@sdk';
+import { AgenticProcess, ProcessStatus, isProcessActive, releaseWhenWatched, type Task } from '@sdk';
 import { useProcessState } from './use-process-state';
 import { useProcessProgressInfo } from './use-process-progress-info';
-import { hasStatusAnalysis, isActionTask, TaskType } from '@src/components/task-bar/task-utils';
+import { hasStatusAnalysis, isActionTask, statusFamily, TaskType } from '@src/components/task-bar/task-utils';
 
 interface AnalysisTaskProgress {
   isRunning: boolean;
@@ -42,14 +42,17 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
     }
 
     let cancelled = false;
-    let unwatchFn: (() => Promise<void>) | null = null;
+    // The promise is held, not the resolved release: an unmount before the `/watch` POST
+    // returns still gives the count back.
+    let watching: Promise<() => Promise<void>> | null = null;
     const attach = async () => {
       try {
         const p = await AgenticProcess.getByIdWithHistory(processId);
         if (!cancelled && p) {
           setProcess(p);
           // Subscribe to WebSocket updates so state changes (e.g. complete) are received
-          unwatchFn = await p.watch();
+          watching = p.watch();
+          await watching;
         }
       } catch (error) {
         console.error('[useAnalysisTaskProgress] Failed to attach to process:', error);
@@ -59,15 +62,15 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
 
     return () => {
       cancelled = true;
-      if (unwatchFn) void unwatchFn();
+      releaseWhenWatched(watching);
     };
   }, [processId]);
 
   const processState = useProcessState(process);
   const taskStatus = task?.status;
 
-  const taskIsDone = taskStatus === 'done';
-  const taskIsRunning = taskStatus === 'in_progress';
+  const taskIsDone = statusFamily(taskStatus) === 'done';
+  const taskIsRunning = statusFamily(taskStatus) === 'in_progress';
 
   const processRunning = isProcessActive(processState.status);
   const processComplete = processState.status === ProcessStatus.STOPPED;

@@ -52,7 +52,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_line,
     final_end_frame,
@@ -61,6 +61,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
 )
 from flow_sdk.builtin.agentic_process.turn_abort import abort_status_frame
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    error_frame,
+    status_frame,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -120,7 +124,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         except WorkerSpawnError as e:
             # Surface the message on the chat stream, then propagate so the
             # turn runner latches status=FAILED + start_failure.
-            yield _error(str(e))
+            yield error_frame(str(e))
             raise
 
         logger.info("CodexCLIStreamWorker: launching %s", " ".join(argv))
@@ -151,8 +155,12 @@ class CodexCLIStreamWorker(AgenticWorker):
             if tee_fh:
                 tee_fh.close()
             message = f"spawn failed: {e}"
-            yield _error(message)
+            yield error_frame(message)
             raise WorkerSpawnError("codex", message) from e
+
+        # A cancel that landed while the spawn was pending found no process to signal.
+        if self._cancel_requested:
+            await self._terminate_process()
 
         # Pipe the prompt (with any system-prompt addition already prepended by
         # the options' stdin sink) in, and close stdin so codex starts processing.
@@ -212,7 +220,7 @@ class CodexCLIStreamWorker(AgenticWorker):
             if self._cancel_requested:
                 yield abort_status_frame()
             elif self._proc and self._proc.returncode not in (0, None):
-                yield _status(
+                yield status_frame(
                     "exit-error",
                     f"codex exited with code {self._proc.returncode}",
                 )
@@ -261,7 +269,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         harness capability discovered) or its executable can't be resolved on
         the spawn PATH.
         """
-        opts = CodexCliOptions(
+        opts = CodexAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
@@ -279,9 +287,10 @@ class CodexCLIStreamWorker(AgenticWorker):
         opts.add_dirs = list(context.add_dirs or [])
         opts.developer_instructions = context.developer_instructions
         opts.extra_config_overrides = list(context.extra_config_overrides or [])
+        opts.bypass_hook_trust = context.bypass_hook_trust
         # Asset-backed system instructions ride developer_instructions; the
-        # legacy system_prompt_append path remains unused for new launches.
-        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
+        # standing text never rides the prompt body (see ``system_prompt``).
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt)
 
         # Inherit os.environ so codex can find creds, ~/.codex; overlay the
         # caller-provided env_vars (they win, except the discovered capability
@@ -318,27 +327,6 @@ class CodexCLIStreamWorker(AgenticWorker):
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────
-
-
-def _error(message: str) -> FlowData:
-    return FlowData(
-        flow_value=message,
-        attributes={
-            "element-type": FlowElementType.ERROR,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
-def _status(subtype: str, value: str = "") -> FlowData:
-    return FlowData(
-        flow_value=value,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.TEXT,
-            "subtype": subtype,
-        },
-    )
 
 
 def _maybe_extract_thread_id(raw_line: str) -> str | None:

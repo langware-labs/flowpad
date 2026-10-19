@@ -1,65 +1,1639 @@
-"""Agent entity — graph/HTTP surface for FSRecord(type='agent').
+"""Agent — the launchable agent: identity + launch bundle.
 
-On-disk parsing lives in ``fs_store/indexer/functions/agent.py`` and is wired
-to the indexer via ``TypeInfo`` callable slots, not classmethods here.
+An Agent answers *who*; a ``Deployment`` answers *where and how*; an
+``AgenticProcess`` records *what happened on one run*::
+
+    Agent.deploy()       -> Deployment        (kind ``runtime.agent``)
+    Deployment.launch()  -> PromptResult      (executor: the AgenticProcess)
+
+Folder layout (``AssetClass.REPO``, like Spec/Task/Deck)::
+
+    <scope>/agentic-assets/agent/<name>/agent.json
+
+The entity OWNS that file (``owns_main_ref``): ``system_prompt`` is the
+authoring surface and the body is re-rendered on every save, so disk stays the
+source of truth (``docs/CLAUDE.md`` §1) while the hub copy still carries the
+prompt as a real field.
+
+NOT the same thing as a ``SubAgent``: that is the provider-owned
+``.claude/agents/<name>.md`` prompt asset Claude Code reads directly. An Agent
+may *reference* SubAgents through ``subagents`` — they render to that path
+verbatim and are never absorbed here.
 """
-from __future__ import annotations
+import functools
+import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-from typing import ClassVar, TYPE_CHECKING
+from pydantic import PrivateAttr
 
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.core import action
-from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.flowpad_types.enums import AgentKind
+from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.auth import LoginRequired
+from flow_sdk.builtin.agent_auto_open import (
+    AutoOpenPlan,
+    AutoOpenTab,
+    open_auto_tabs,
+    plan_auto_open,
+    project_ids,
+    rebase_auto_open,
+    start_auto_open,
+)
+from flow_sdk.builtin.agent_mailbox import AgentMailbox
+from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
+from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.core import Entity, action
+from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
+from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
+from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
+from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
+from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
-if TYPE_CHECKING:
-    from flow_sdk.responses.response import ApiResponse
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.assets.scanning import AssetCandidate
+    from flow_sdk.blocks import MessageBlock
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.mcp import Mcp
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
+    from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
+
+logger = logging.getLogger(__name__)
+
+#: ``token_allocation`` not given: leave the deployment's as it is.
+_UNSET = object()
+
+#: The two vocabularies for "which CLI": an agent.json declares the DRIVER
+#: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
+#: persisted value (``.worker_type``). Both directions read the one table; a
+#: blank ``worker_type:`` means "unset" and follows ``get_driver``'s default.
+
+def _vendor(worker: str | None) -> Vendor:
+    return vendor_for(worker) if (worker or "").strip() else default_vendor()
+
+
+def driver_key(worker: str | None) -> str:
+    """The ``cli_drivers.factory`` key for either vocabulary."""
+    return _vendor(worker).key
+
+
+def worker_type_value(worker: str | None) -> str:
+    """The ``AgenticProcess.worker_type`` enum value for either vocabulary."""
+    return _vendor(worker).worker_type
+
+
+#: One lock per project so concurrent auto-launch calls (two tabs, a reload
+#: storm) select-and-mark exactly once. Weak-valued (``stream_inbox/_locks``):
+#: it lives only while an auto-launch holds or awaits it.
+_AUTO_LAUNCH_LOCKS = new_registry()
+
+
+def _launches_on_open(candidate: "AssetCandidate") -> bool:
+    """Whether an agent folder on disk sets ``auto_launch`` — read through ``AgentSpec``,
+    as the index reads it, so this picks exactly what ``auto_launch_for`` will match."""
+    from flow_sdk.assets.entity_document import read_entity_document  # noqa: PLC0415
+
+    try:
+        fields = read_entity_document(candidate.layout.body).fields
+        spec = AgentSpec.model_validate({k: v for k, v in fields.items() if k in AgentSpec.model_fields})
+    except (OSError, ValueError):
+        return False
+    return spec.auto_launch is True
+
+#: Key in the project's device state (``flow_sdk.project_device_state``) holding
+#: the agent ids whose auto-launch already fired, or was cancelled, here.
+_AUTO_LAUNCHED_KEY = "agent_auto_launched"
+
+
+@dataclass
+class AutoLaunchOutcome:
+    """What ``Agent.auto_launch_for`` did: the session it opened, and who lost."""
+
+    agent: "Agent"
+    process: "AgenticProcess"
+    cancelled: list["Agent"]
+    prompt_queued: bool
+
+    def to_payload(self) -> dict:
+        return {
+            "agent_id": self.agent.id,
+            "agent_title": self.agent.display_name,
+            "process_id": self.process.id,
+            "process_typeid": str(self.process.typeid),
+            "prompt_queued": self.prompt_queued,
+            "cancelled": [{"agent_id": agent.id, "title": agent.display_name} for agent in self.cancelled],
+        }
+
+    @staticmethod
+    def none_payload() -> dict:
+        """The same shape when nothing launched — one definition for both routes and tests."""
+        return {"agent_id": None, "process_id": None, "process_typeid": None, "prompt_queued": False, "cancelled": []}
+
+
+def _mailbox_failures(verb: str):
+    """Translate a mailbox failure into the action envelope, once.
+
+    Five actions were each carrying the identical three-arm ladder, so a change
+    to the 503 fallback or the 401 message had five edit sites and a sixth action
+    would have copied it again. ``functools.wraps`` preserves the ``(self)``-only
+    signature the routability test pins.
+    """
+
+    def decorate(fn):
+        @functools.wraps(fn)
+        async def wrapper(self):
+            try:
+                return await fn(self)
+            except LoginRequired as exc:
+                return ApiFailResponse(message=str(exc), status_code=401)
+            except AgentMailboxError as exc:
+                return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 503)
+            except Exception as exc:  # noqa: BLE001 — the UI gets a stable action failure
+                return ApiFailResponse(message=f"could not {verb}: {exc}")
+
+        return wrapper
+
+    return decorate
 
 
 class Agent(Entity):
-    """Filesystem-backed agent entity. Source: ``<scope>/.claude/agents/<name>.md``."""
+    """``agentic-assets/agent/<name>/`` — the ROW. Its shape on disk is
+    ``AgentSpec`` (``TypeInfo.asset_spec``); that ``agent.json`` is the main file
+    and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
 
-    type: str = APIField(default=BuiltinEntityType.AGENT.value)
-    name: str | None = APIField(default=None)
-    description: str | None = APIField(default=None)
-    asset_ref: str = APIField(default="")
-    # How the agent is used. HARNESS (default) = a normal sub-agent; VIBE = a
-    # vibe persona layered on top of the standard vibe agent (embedded after it
-    # on vibe process start). Sourced from the `.claude/agents/*.md` frontmatter
-    # `kind:` key (see AGENTS_SPEC_FIELDS).
-    kind: AgentKind = APIField(default=AgentKind.HARNESS)
+    # A remote agent's hub row owns its deployments, machines, mailbox and stored secrets.
+    owns_hub_delete: ClassVar[bool] = True
 
-    @action.post(action_name="set-kind")
-    async def set_kind_action(self, kind: str = "") -> "ApiResponse":
-        """Set this agent's ``kind`` frontmatter (mark/unmark as a vibe agent),
-        preserving every OTHER frontmatter field, then reindex so queries and
-        the entity reflect it. The full-frontmatter re-render is why this is a
-        backend action, not a client-side FrontMatterFsRef.save (which drops
-        non-name/description fields).
+    type: str = APIField(default=EntityType.AGENT.value)
+    _mailbox: AgentMailbox | None = PrivateAttr(default=None)
+    # A removed field passed by a caller was silently dropped (email_allowed_senders).
+    _strict_init: ClassVar[bool] = True
+
+    # ── identity / presentation ───────────────────────────────────────────
+    # `name` / `title` / `uname` come from Entity. `name` is the addressable
+    # slug: get_agent_local_deployment("asset-cleanup") resolves on it.
+    description: str = APIField(default="", description="One-line purpose, shown on the agent card.")
+    avatar: Optional[str] = APIField(default=None, description="Emoji or image ref — presentation only.")
+    color: Optional[str] = APIField(
+        default=None, description="Avatar background hex — presentation only. Unset = derived from the name."
+    )
+    system_prompt: str = APIField(
+        default="",
+        description="Who this agent is. Delivered through context_data.instructions — the INSTRUCTIONS "
+        "system-prompt layer (system_prompt.compose_layers) — so it reaches every vendor and never "
+        "enters cli_config, leaving the restart hash untouched.",
+    )
+
+    # ── launch bundle (projected into AgentOptions at launch) ─────────────
+    worker_type: Optional[str] = APIField(default=None, description="claude | codex | copilot.")
+    model: Optional[str] = APIField(default=None, description="Tier (sm/md/lg) or a concrete model id.")
+    permission_mode: Optional[str] = APIField(default=None)
+    effort: Optional[str] = APIField(default=None)
+    # Read by the HUB's deploy path, not by a launch: publish mirrors it onto the
+    # hub Agent's `machine_size`, which sizes the box `deploy` creates. A local
+    # launch has no box to size, so it is never projected into AgentOptions.
+    machine_size: Optional[str] = APIField(default=None, description="Cloud box size: sm | md | lg.")
+    # ── DECLARED ONLY, not yet enforced ───────────────────────────────────
+    # These round-trip through agent.json and are visible on the agent's card,
+    # but `to_agent_options` cannot project them: no AgentOptions subclass has
+    # a field to carry them, so nothing reaches the worker. Do not present them
+    # in a UI as if they gated anything until that lands.
+    max_turns: Optional[int] = APIField(default=None)
+    tools: Optional[list[str]] = APIField(default=None)
+    skills: list[TypeId] = APIField(default_factory=list)
+    # ENFORCED on Claude: tool patterns the worker can never run (``--disallowedTools``), even
+    # with permissions bypassed. Vendors without a deny list ignore it.
+    disallowed_tools: Optional[list[str]] = APIField(default=None)
+    # DECLARATION, not the attachment. An agent's servers are ASSETS in its own
+    # folder (``agentic-assets/mcp/<name>/``), reached via ``mcp_assets()`` —
+    # that structural 1:1 is still what a launch reads, and it is what makes a
+    # RECEIVED agent carry its servers instead of dangling TypeIds. This list is
+    # the AUTHORED intent that produces it: ids the editor writes into agent.json,
+    # materialized into the folder by ``attach_declared_mcp_servers`` at process
+    # creation. Two layers on purpose — the list can name an asset that lives
+    # anywhere (the project's own ``agentic-assets/mcp/``), while the folder
+    # holds the self-contained copy that travels.
+    mcp_servers: list[TypeId] = APIField(
+        default_factory=list,
+        description="Mcp assets this agent declares, as TypeIds. Attached to the agent's own "
+        "folder at process creation; mcp_assets() remains what a launch resolves.",
+    )
+    subagents: list[str] = APIField(
+        default_factory=list,
+        description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
+        "shipped agent.json is authored before the SubAgent it references has ever been indexed. "
+        "With chief_of_staff on these are its STAFF: registered natively (--agents) on a harness "
+        "that spawns subagents, and offered as task owners (subagent:<name>) on every harness.",
+    )
+    additional_dirs: list[str] = APIField(default_factory=list)
+    load_flowpad_assistant: bool = APIField(default=False)
+    chief_of_staff: bool = APIField(
+        default=False,
+        description="Chief of Staff mode: answer fast, run quick jobs on native subagents, delegate long "
+        "ones as tasks to its staff (subagents) and follow up. Everything the mode does hangs off this "
+        "one flag — off, the agent is exactly as it was (flow_sdk/tasks/cos.py).",
+    )
+    cli_options: dict = APIField(
+        default_factory=dict,
+        description="Vendor-specific launch keys the schema does not enumerate (e.g. Claude's "
+        "`chrome: true`). Merged into the options bundle under the named fields, so a "
+        "capability an agent needs stays visible on its card instead of living at a call site.",
+    )
+
+    # ── I/O contract ──────────────────────────────────────────────────────
+    # What this agent consumes and produces — `input + template → output`.
+    # Authored as shapes in agent.json (the authoring FORM, held as data). DECLARATION ONLY: they
+    # never enter `to_agent_options`, whose to_json() is md5'd into
+    # `last_started_hash` — a new key there flips `restart_required` on every
+    # running process (the same reason `system_prompt` stays out).
+    input: Optional[ShapeForm] = APIField(default=None, description="The shape this agent consumes.")
+    output: Optional[ShapeForm] = APIField(default=None, description="The shape this agent produces.")
+
+    # ── email ─────────────────────────────────────────────────────────────
+    #
+    # An Agent HOLDS a mailbox; it is not one. Everything about the mailbox —
+    # its policy, its lifecycle, the source that polls it, and the local cache
+    # the gate reads — lives on ``AgentMailbox`` (``flow_sdk/builtin/agent_mailbox.py``)
+    # and the ``cloud_email`` ``DataSource`` it owns. Nothing about mail is a
+    # field here: an Agent holds a mailbox, it is not one.
+    #
+    # ── lifecycle ─────────────────────────────────────────────────────────
+    enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+
+    # ── presentation + project auto-launch ────────────────────────────────
+    # DECLARATION ONLY, like `input`/`output`: none of these enter
+    # `to_agent_options`, so setting them never flips `restart_required`.
+    intro: str = APIField(
+        default="",
+        description="Welcome text shown as the agent's first message in Vibe/Standard chat so a new "
+        "session is not empty. Presentation only: it never enters the transcript or the model.",
+    )
+    auto_launch: bool = APIField(
+        default=False,
+        description="Launch this agent once, the first time the project it lives in is opened. "
+        "Once per project, ever — a failed attempt is not retried. When several agents in a "
+        "project set this, the oldest (first indexed, then alphabetical by folder) launches and "
+        "the others are cancelled with a warning.",
+    )
+    auto_launch_prompt: str = APIField(
+        default="",
+        description="The agent's auto prompt: the first turn of every new session opened as it "
+        "(Use, home page, auto-launch), delivered through the process prompt queue. Independent "
+        "of ``auto_launch``. Empty = open sessions with no first turn.",
+    )
+    auto_open: Optional[list[AutoOpenEntry]] = APIField(
+        default=None,
+        description="What every new session as this agent opens with (Use, home page, auto-launch): "
+        "a place (``Tab.pointer`` JSON; a file named inside the agent's project as "
+        "``vfs/project-<id>/<path>``), a ``navigate`` op in the agent's project that repairs it when it "
+        "cannot be used yet (``{\"op\": name}``), or a wizard (``{\"wizard\": name}``). The first place "
+        "is the session's active display, the rest open beside it.",
+    )
+
+    # ── places ────────────────────────────────────────────────────────────
+    # Where this agent runs is a Deployment; how it runs THERE may differ from
+    # the definition. Both choices live in agent.json, keyed by Deployment id, so
+    # they travel with the agent — see ``flow_sdk/builtin/agent_places.py``.
+    places: Optional[list[AgentPlaceSpec]] = APIField(
+        default=None,
+        description="Per-place launch overrides (model, permissions, effort, worker, MCP servers), keyed by Deployment id.",
+    )
+    email_place: Optional[str] = APIField(
+        default=None,
+        description="Deployment id of the one place that answers this agent's email. Empty = every polling machine.",
+    )
+
+    # ── contact ───────────────────────────────────────────────────────────
+    # DECLARATION ONLY: never enters `to_agent_options`.
+    phone: Optional[PhoneNumberSpec] = APIField(
+        default=None,
+        description="The agent's own phone number — country code and national number — the one its "
+        "WhatsApp channel answers on.",
+    )
+
+    # ── requirements ──────────────────────────────────────────────────────
+    # What the agent needs wherever it runs (``builtin/readiness.py``): a snapshot written when the
+    # agent is published, so it travels with it; readiness always derives it afresh. Authored entries
+    # are kept. Names only, never a value.
+    requirements: Optional[list[RequirementSpec]] = APIField(
+        default=None,
+        description="What this agent needs to run anywhere: credentials, permissions, variables. Names only.",
+    )
+
+    _api_visible: ClassVar[bool] = True
+
+    def place_for(self, deployment_id: str | None) -> "AgentPlaceSpec | None":
+        """This agent's overrides for one place, or None when it has none."""
+        if not deployment_id:
+            return None
+        return next((p for p in self.places or [] if p.deployment_id == deployment_id), None)
+
+    def enabled_on(self, deployment_id: str | None) -> bool:
+        """Whether this agent runs on one place: the place's own switch, else the definition's."""
+        place = self.place_for(deployment_id)
+        if place is not None and place.enabled is not None:
+            return place.enabled
+        return bool(self.enabled)
+
+    # ── MCP servers ───────────────────────────────────────────────────────
+
+    async def mcp_assets(self) -> list["Mcp"]:
+        """The MCP assets owned by this agent — its folder IS the list.
+
+        Nested repo assets are parented by the indexer (``repo_assets_fn``
+        descends into a folder asset and stamps ``parent_type_id``), so this is
+        a scoped lookup rather than a walk.
         """
-        from pathlib import Path  # noqa: PLC0415
+        from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
 
-        from flow_sdk.fs_store.operations.agent import (  # noqa: PLC0415
-            extract_agent_from_path,
-            render_agent_markdown,
+        return await Mcp.get_all({"match": {"parent_type_id": str(self.typeid)}})
+
+    async def resolved_mcp_specs(self) -> list["McpSpec"]:
+        """This agent's servers as launch payloads, deduped by name."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (  # noqa: PLC0415
+            dedupe_by_name,
         )
-        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        return dedupe_by_name(asset.to_spec() for asset in await self.mcp_assets())
+
+    async def save(self, owner=None, notify: bool = True):
+        from flow_sdk.core.entity.entity_model import in_remote_reflection, store_suppressed
+
+        if not self.auto_launch or store_suppressed() or in_remote_reflection():
+            return await super().save(owner=owner, notify=notify)
+        from pathlib import Path
+        from flow_sdk.assets.document import DocumentPatch
+        from flow_sdk.builtin.agent_authoring import agent_document_edit
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        # Resolve a new asset's placement before taking the project guard. The
+        # guard precedes super().save's entity lock, including peer reindexing.
+        await self._prepare_for_storage()
+        info = SchemaRegistry.get(self.get_type())
+        document = str(Path(self.asset_ref) / info.shape.main)
+        async with agent_document_edit(document, DocumentPatch(set_fields={"auto_launch": True}),
+                                       project_id=self.project_id):
+            return await super().save(owner=owner, notify=notify)
+
+    async def add_mcp(self, spec: "McpSpec") -> bool:
+        """Attach an MCP server to this agent; return whether it changed.
+
+        Writes an ASSET, not a list entry — that is what makes the server
+        indexed, visible in the asset list with a scope, and carried along when
+        the agent is shared. Saving the row is the whole mechanism: placement
+        materializes ``agentic-assets/mcp/<name>/mcp.json`` NESTED under this
+        agent's folder (because ``parent_type_id`` names it) and mints the v4
+        into the folder's identity capsule. Hand-writing the file instead would
+        need a root-scoped reindex to get parented — ``reindex_paths`` is
+        resolution-only and would leave the asset orphaned.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver  # noqa: PLC0415
+        from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+
+        # Rendering is the validation: refuse a spec this agent's harness cannot
+        # express (a dotted name under codex) at author time, not at spawn.
+        get_driver(driver_key(self.worker_type)).prepare_process_mcp([spec])
+
+        existing = {asset.name: asset for asset in await self.mcp_assets()}
+        current = existing.get(spec.name)
+        patch = spec.model_dump()
+        # Compare the AUTHORED fields, not ``to_spec()``: that is the LAUNCH
+        # payload, and for a bundled server it carries a resolved absolute path
+        # in ``args`` that no incoming spec has — so the round-trip could never
+        # be equal and every add re-saved.
+        if current is not None and all(getattr(current, key, None) == value for key, value in patch.items()):
+            return False
+
+        # Mechanical: ``Mcp``'s field names ARE ``McpSpec``'s (enforced at
+        # registration by ``SchemaRegistry.check_asset_spec``), so a field added
+        # to the spec cannot silently stop being persisted here.
+        row = current or Mcp(parent_type_id=str(self.typeid))
+        for field, value in patch.items():
+            setattr(row, field, value)
+        await row.save(notify=False)
+        return True
+
+    async def remove_mcp(self, name: str) -> bool:
+        """Detach one MCP server by name; return whether it changed."""
+        for asset in await self.mcp_assets():
+            if asset.name == name:
+                await asset.delete()
+                return True
+        return False
+
+    async def attach_declared_mcp_servers(self) -> int:
+        """Materialize the declared ``mcp_servers`` ids as attached assets.
+
+        The bridge between the two layers: ``mcp_servers`` is the AUTHORED
+        intent (ids the editor writes into ``agent.json``, pointing at Mcp assets
+        that typically live in the project, not under this agent), while
+        ``mcp_assets()`` is the structural attachment a launch actually reads.
+        This walks the first and produces the second. Returns how many
+        attachments changed.
+
+        Called from ``Deployment.create_process`` so the copy onto the process
+        sees them. Idempotent — ``add_mcp`` answers False when the row already
+        matches, so re-launching an unchanged agent writes nothing.
+
+        A declared id that no longer resolves is SKIPPED with a warning rather
+        than raised: a dangling reference must not make an agent unlaunchable,
+        and the list is authored by a UI that can outlive the asset it named.
+
+        ``entrypoint`` is deliberately CLEARED on the way through. ``to_spec()``
+        has already resolved a bundled server's entrypoint into an absolute path
+        in ``args``, so the attached copy is a plain command that runs the
+        ORIGINAL asset's code. Carrying the entrypoint across instead would
+        break it twice over: the nested row would append its own folder's path a
+        second time, and ``save`` would scaffold a fresh hello-world
+        ``server.py`` beside it — so the agent would launch a template, not the
+        server the user wrote.
+        """
+        from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
+
+        changed = 0
+        for declared in self.mcp_servers or []:
+            # Coerced here, not trusted: the field validates on CONSTRUCTION
+            # (a row read back from disk holds TypeIds), but ``Agent`` does not
+            # set ``validate_assignment``, so an in-memory ``agent.mcp_servers =
+            # [...]`` leaves plain strings behind. Both shapes reach this loop.
+            try:
+                ref = declared if isinstance(declared, TypeId) else TypeId(str(declared))
+            except ValueError:
+                logger.warning("agent %s declares an unparseable MCP id %r — skipped", self.name, declared)
+                continue
+            row = await Mcp.get_by_id(ref.id) if ref.id else None
+            if row is None:
+                logger.warning("agent %s declares MCP %s, which does not resolve — skipped", self.name, ref)
+                continue
+            spec = row.to_spec().model_copy(update={"entrypoint": ""})
+            if await self.add_mcp(spec):
+                changed += 1
+        return changed
+
+    # ── running this agent ────────────────────────────────────────────────
+    # The Python surface. ``run_action`` / ``use_action`` are thin HTTP wrappers
+    # over these; before, the only Python path from an agent to a process was
+    # ``await (await agent.local_deployment()).create_process(...)``.
+    #
+    # ``deployment`` defaults to the LOCAL placement. It is a parameter rather
+    # than always-resolved so a caller that already holds the deployment (the
+    # HTTP actions, which put its id in their response) resolves it once.
+
+    async def create_process(
+        self, prompt: str = "", *, deployment: "Deployment | None" = None, **options
+    ) -> "AgenticProcess":
+        """This agent as a process. NOT saved, NOT started.
+
+        The primitive — every field the agent declares (worker, model,
+        permissions, system prompt, dirs, MCP servers) comes from the Agent;
+        only per-run concerns are passed through.
+        """
+        target = deployment or await self.local_deployment()
+        return await target.create_process(prompt, **options)
+
+    async def launch(
+        self,
+        prompt: str,
+        *,
+        deployment: "Deployment | None" = None,
+        wait: bool = False,
+        input: Any = None,
+        output_spec: Any = None,
+        **options,
+    ) -> "PromptResult":
+        """``create_process`` + save + run the first turn — a ``PromptResult``
+        whose ``executor`` names the process. Never raises for an outcome.
+
+        ``input`` / ``output_spec``: typed folder I/O, as ``AgenticProcess.run`` — a DataSpec saved for
+        the run to read, and the DataSpec it must write back (``value``, with ``wait=True``). Omitted,
+        the agent's declared ``input`` / ``output`` apply.
+
+        Goes through ``dispatch_agent_run`` rather than ``Deployment.launch``
+        directly: that function owns the run lifecycle events and the refusal to
+        silently run a remotely-placed agent here. Routing them through this verb
+        means a Python caller gets both, not just the HTTP one.
+        """
+        from flow_sdk.builtin.agent_run import dispatch_agent_run  # noqa: PLC0415
+
+        target = deployment or await self.local_deployment()
+        return await dispatch_agent_run(target, prompt, wait=wait, input=input, output_spec=output_spec, **options)
+
+    async def fresh(self) -> "Agent":
+        """This agent as its folder defines it NOW — re-parsed when the files changed since the
+        last index, else ``self``.
+
+        The folder IS the definition and people edit it by hand (or through agent-builder), while
+        a row is only re-read on an HTTP GET. The paths that load an agent from its ROW in order to
+        launch it — the ``use`` / ``run`` actions and auto-launch — call this first; otherwise a
+        new chat started the old worker and the old prompt. A caller holding its own Agent object
+        launches that object as given: the primitives never swap it for the disk.
+        """
+        if await self.check_and_refresh_record():
+            return await Agent.get_by_id(self.id) or self
+        return self
+
+    async def use(
+        self,
+        project_id: str | None = None,
+        *,
+        deployment: "Deployment | None" = None,
+        owner=None,
+        auto_prompt: bool = False,
+        launch_surface: str | None = None,
+    ) -> "AgenticProcess":
+        """Open a session AS this agent — saved, visible, no turn started.
+
+        ``owner`` is the human opening it, recorded on the process row; a
+        remote ``deployment`` opens through the hub (``Deployment.use``).
+
+        ``auto_prompt=True`` queues (never sends) the agent's auto prompt as the
+        first turn, on a local deployment only; the caller starts it once the
+        session is set up (the UI's ``prepareAgentSession``, or ``process.submit()``).
+
+        ``launch_surface`` is the opener's surface (``"app"`` from the Flowpad app),
+        recorded in ``context_data`` for the ``COMMON_UI`` system-prompt layer.
+        """
+        target = deployment or await self.local_deployment()
+        process = await target.use(project_id=project_id, owner=owner, launch_surface=launch_surface)
+        prompt = self.auto_prompt_text
+        if auto_prompt and prompt and target.is_local:
+            # Straight into the queue: the ``enqueue`` action would also start a
+            # drain, running turn 1 before the caller embeds its layers.
+            process.queue.enqueue(prompt, source="auto_prompt")
+        if target.is_local:
+            try:
+                plan = await self.auto_open_plan()
+                await open_auto_tabs(process, await self.auto_open_tabs(plan.places))
+                # Behind the landing: an op that repairs a dead server takes minutes.
+                start_auto_open(process, plan)
+            except Exception:  # noqa: BLE001 -- a tab that cannot open never fails the session
+                logger.warning("auto_open for agent %s failed", self.id, exc_info=True)
+        return process
+
+    async def auto_open_plan(self) -> AutoOpenPlan:
+        """``auto_open`` resolved: an op or a wizard is looked up in this agent's own
+        project and its direct context folders — never another project's."""
+        if not self.auto_open:
+            return AutoOpenPlan()
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_by_id(self.project_id) if getattr(self, "project_id", None) else None
+        roots = project.direct_context_roots() if project is not None else []
+        return await plan_auto_open(self.auto_open, roots=roots, project=project)
+
+    async def auto_open_tabs(self, places: "list | None" = None) -> "list[AutoOpenTab]":
+        """The places to show, rebased onto this machine (``auto_open``'s own when not
+        given). A declared file counts only in a project this agent lives in
+        (``assets_under_roots``, the auto-launch scoping)."""
+        if places is None:
+            places = (await self.auto_open_plan()).places
+        if not places:
+            return []
+        from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
+
+        roots: dict[str, str] = {}
+        for project_id in project_ids(places):
+            project = await Project.get_by_id(project_id)
+            if project and project.fs_storage_mount_path and assets_under_roots([self], project.direct_context_roots()):
+                roots[project_id] = project.fs_storage_mount_path
+        return rebase_auto_open(places, roots=roots)
+
+    @staticmethod
+    async def reset_auto_launch(project_id: str, agent_id: str) -> None:
+        """Clear ``agent_id``'s once-only mark in ``project_id``, so the next open
+        auto-launches it again. Other agents' marks are kept."""
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        async with keyed_loop_lock(_AUTO_LAUNCH_LOCKS, str(project_id)):
+            remaining = [i for i in Agent.auto_launched_ids(project_id) if i != str(agent_id)]
+            update_project_device_state(project_id, **{_AUTO_LAUNCHED_KEY: remaining})
+
+    @staticmethod
+    def auto_launched_ids(project_id: str) -> list[str]:
+        """The project's once-only marks, sorted — what a later open will skip."""
+        from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
+
+        return sorted(str(item) for item in read_project_device_state(project_id).get(_AUTO_LAUNCHED_KEY) or [])
+
+    @staticmethod
+    async def auto_launch_for(project_id: str, *, launch_surface: str | None = None) -> "AutoLaunchOutcome | None":
+        """The one agent to auto-launch when ``project_id`` is opened, launched — or None.
+
+        Candidates: agents rooted in the project or one of its direct context
+        folders (``assets_under_roots``, the same scoping journeys use), enabled,
+        ``auto_launch`` on, and not yet marked. Every candidate — winner and
+        cancelled — is marked ONCE per project (see the ``auto_launch`` field),
+        under a per-project lock. The winner is opened with ``use(auto_prompt=True)``,
+        so its auto prompt is queued exactly as on any other session; the caller
+        starts it (``prepareAgentSession`` drains after the vibe embed).
+
+        The mark is written only once the session actually opened, and the lock
+        is held across that open. Marking first was cheaper but wrote off the
+        one chance the project had: a ``use()`` that raised — no worker binary,
+        no LLM funding, a transient failure — burned the mark anyway, and the
+        agent then never auto-launched again on that machine, with no way back
+        but ``reset_auto_launch``. Holding the lock keeps the double-open this
+        ordering would otherwise allow when two windows open the project at once.
+        """
+        from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return None
+        roots = project.direct_context_roots()
+        await project.index_missing_assets("auto_launch", {"agent"}, _launches_on_open)
+
+        def age_key(agent: "Agent") -> tuple[str, str, str]:
+            created = agent.created_date.isoformat() if agent.created_date else ""
+            return (created, agent.asset_ref or "", agent.id)
+
+        async with keyed_loop_lock(_AUTO_LAUNCH_LOCKS, str(project_id)):
+            done = set(Agent.auto_launched_ids(project_id))
+            flagged = await Agent.get_all({"match": {"auto_launch": True, "enabled": True}})
+            candidates = assets_under_roots([agent for agent in flagged if agent.id not in done], roots)
+            if not candidates:
+                return None
+            candidates.sort(key=age_key)
+            winner, cancelled = candidates[0], candidates[1:]
+
+            launched = await winner.fresh()
+            process = await launched.use(project_id=project_id, auto_prompt=True, launch_surface=launch_surface)
+            update_project_device_state(
+                project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
+            )
+
+        # The queueing itself is done by ``use`` above.
+        prompt_queued = bool(launched.auto_prompt_text)
+        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=prompt_queued)
+
+    def process_messages(self):
+        """Scope message processing so each thread reuses one AgenticProcess."""
+        from flow_sdk.blocks import _process_messages  # noqa: PLC0415
+
+        return _process_messages(self)
+
+    async def process_message(self, message) -> "PromptResult":
+        """Answer one inbound message through this Agent's launch bundle.
+
+        Inside :meth:`process_messages`, repeated thread keys reuse their
+        process. Outside a scope this is a self-closing one-shot turn.
+        """
+        from flow_sdk.blocks import _process_message  # noqa: PLC0415
+
+        return await _process_message(self, message)
+
+    def respond_to(self, source: "MessageBlock"):
+        """Answer every request from ``source`` until the context exits."""
+        from flow_sdk.blocks import _respond_to  # noqa: PLC0415
+
+        return _respond_to(self, source)
+
+    @classmethod
+    async def by_name(cls, name: str) -> "Agent":
+        """The agent called *name* — the registry's lookup (this machine's rows, then the
+        shipped agents) — or ``LookupError``: a script that names an agent means that one."""
+        from flow_sdk.builtin.agent_registry import get_agent  # noqa: PLC0415
+
+        agent = await get_agent(str(name or "").strip())
+        if agent is None:
+            raise LookupError(
+                f"no agent named {name!r} on this machine — check the spelling, or create it: "
+                f"`await Agent(name={name!r}, system_prompt=...).save()` or the Agents screen"
+            )
+        return agent
+
+    # ── deployment ────────────────────────────────────────────────────────
+
+    async def deploy(self, provider: str = "local") -> Deployment:
+        """Idempotent upsert of this agent's placement on *provider* — one per provider and environment.
+
+        Converges through ``Deployment.find_existing`` rather than a derived id:
+        the row keeps whatever v4 it was first minted with, forever, on every
+        tier that holds it.
+        """
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        machine = get_instance_settings().instance_name
+        return await Deployment.upsert(
+            parent_type_id=str(self.typeid),
+            provider=provider,
+            element=self,
+            payload={
+                "name": f"{self.name or self.id} ({provider})",
+                # The box a placement runs on logs in as the agent itself.
+                "identity": "agent",
+                # What it exposes: its chat — an HTTP message channel its loop answers. The channel is
+                # made when the loop is launched (``ensure_chat_channel``), so the backend is not declared.
+                "exposes": [
+                    {"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}},
+                ],
+                "target": {
+                    "provider": provider,
+                    "scope": self.project_id or "machine",
+                    "location": machine,
+                },
+                "origin": {
+                    "kind": provider,
+                    "provider": provider,
+                    # The machine it runs on. `local` is, by definition, this
+                    # one; other providers pass their own node when the placement
+                    # is created for them.
+                    "external_id": ComputeNode._local_id() if provider == "local" else "",
+                },
+                "status": {"sync_state": "current", "provider_state": "configured"},
+                "provider_labels": {
+                    "flowpad.agent.name": str(self.name or ""),
+                    "flowpad.agent.worker": str(self.worker_type or ""),
+                    "flowpad.agent.model": str(self.model or ""),
+                },
+                "project_id": self.project_id,
+            },
+        )
+
+    async def home(self) -> str | None:
+        """The folder this agent's own files are relative to — the project whose folder
+        holds its definition (``handbook`` for its legal agent), else the repository
+        it sits in. ``None`` for an agent with no files (a row-only agent).
+
+        Paths in a system prompt (``docs/legal/guide.md``) mean this folder. When the
+        agent runs in ANOTHER project's checkout (``use(project_id=…)``) its working
+        directory is that project, so the launch mounts this folder and names it.
+        """
+        if not self.asset_ref:
+            return None
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.roots import deepest_project_id_for_path, load_project_mounts  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
 
         try:
-            kind_val = AgentKind(kind)
-        except ValueError:
-            return ApiFailResponse(message=f"invalid kind: {kind!r}")
-        ref = self.asset_ref or ""
-        path = Path("/" + ref.lstrip("/")) if ref else None
-        if path is None or not path.exists():
-            return ApiFailResponse(message="agent source file not found", status_code=404)
-        rec = extract_agent_from_path(path)
-        if rec is None:
-            return ApiFailResponse(message="could not parse agent file")
-        # ``rec.data`` is a read-only view (meta_dict); fields live on __dict__.
-        rec.__dict__["kind"] = kind_val.value
-        path.write_text(render_agent_markdown(rec), encoding="utf-8")
-        await reindex_paths([str(path)])
-        return ApiSuccessResponse(data={"id": self.id, "kind": kind_val.value})
+            ref = canonical_posix_path(self.asset_ref)
+        except OSError:
+            return None
+        owner = deepest_project_id_for_path(ref, await load_project_mounts())
+        project = await Project.get_by_id(owner) if owner else None
+        if project is not None and project.fs_storage_mount_path:
+            return canonical_posix_path(project.fs_storage_mount_path)
+        repo = find_project_root(ref)
+        return canonical_posix_path(repo) if repo else None
+
+    async def local_deployment(self) -> Deployment:
+        """Get-or-create the placement that runs this agent on THIS machine."""
+        return await self.deploy("local")
+
+    @classmethod
+    async def runnable_here(cls) -> list["Agent"]:
+        """The agents a rule on this machine may run: enabled, by name. What a picker offers."""
+        rows = await cls.get_all({"match": {"enabled": True}})
+        return sorted(rows, key=lambda a: (str(a.name or "").casefold(), str(a.id)))
+
+    async def run_locally(self, *, snippet: Optional[str] = None) -> Deployment:
+        """Run this agent on this computer: its one local deployment, as a process running its loop.
+
+        Idempotent — the agent has one local deployment; running it again (after a pause) starts the
+        same one. The app's supervisor starts the process (``builtin/deployment_process``) and keeps
+        it running while the deployment is ``serving``. *snippet* runs that Python file instead of the
+        stock loop (``builtin/agent_loop``). Its ``chat`` endpoint — an HTTP message channel — is made
+        here.
+        """
+        from flow_sdk.builtin.agent_serve import answered_sources, ensure_chat_channel, hold_positions  # noqa: PLC0415
+
+        deployment = await self.deploy("local")
+        # Everything it runs over exists BEFORE it is marked serving — the supervisor (in the app,
+        # another process) acts on `serving`, and must find a deployment that is ready to run.
+        await ensure_chat_channel(self, deployment)
+        # Its position on each channel it answers is taken NOW: what lands from here on is its to
+        # answer, even before its process has made its first pass.
+        await hold_positions(deployment, await answered_sources(self, deployment))
+        deployment.serving, deployment.snippet = True, snippet
+        await deployment.save()
+        return deployment
+
+    async def deployments(self) -> list[Deployment]:
+        rows = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        return [row.with_element(self) for row in rows]
+
+    # ── publish ───────────────────────────────────────────────────────────
+
+    async def ensure_on_hub(self, actor: TypeId, *, force: bool = False) -> bool:
+        """Publish this agent into its project's hub-hosted repository.
+
+        An Agent is not a loose deployment payload. It is an asset inside its
+        owning Project, so publication pushes that asset path into the project's
+        hub repo and registers it there (``publish_git_asset``); the hub can then
+        clone the repository into the sandbox.
+
+        ``remote=True`` without a hub-repo origin is legacy state (the old
+        field-only share path, or a GitHub origin). Treat it as unpublished so
+        the next deploy repairs the row rather than preserving a deployment that
+        cannot load its files (notably ``avatar.png``).
+        """
+        from flow_sdk.builtin.agent_places import hub_origin  # noqa: PLC0415
+
+        # Published means "in its project's hub repo"; any other origin is
+        # republished into the hub repo on the next deploy.
+        if self.remote and hub_origin(self) is not None and not force:
+            return False
+
+        from flow_sdk.builtin.asset_publishing import (
+            owning_project,  # noqa: PLC0415
+            publish_git_asset,  # noqa: PLC0415
+        )
+        from flow_sdk.builtin.readiness import refresh_requirements  # noqa: PLC0415
+
+        project = await owning_project(self)
+        if project is not None:
+            await project.ensure_on_hub()
+        # What it needs travels with it: the commit below carries the current requirements.
+        await refresh_requirements(self)
+        await publish_git_asset(self, actor)
+        return True
+
+    @action.post(action_name="publish")
+    async def publish_action(self):
+        """`POST /agent/<id>/publish` — commit, push, and register this agent."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(message="publish requires an authenticated user", status_code=401)
+        body = await self._body()
+        try:
+            # ``force``: publish the current definition even when already on the
+            # hub — the header's "Publish N changes". Without it this stays the
+            # idempotent first-publish deploy relies on.
+            published = await self.ensure_on_hub(actor, force=bool(body.get("force")))
+        except Exception as exc:
+            return ApiFailResponse(message=f"publish failed: {exc}")
+        return ApiSuccessResponse(
+            data={"agent_id": self.id, "published": published, "already_on_hub": not published}
+        )
+
+    # ── requirements and readiness ────────────────────────────────────────
+
+    @action.get(action_name="requirements")
+    async def requirements_action(self):
+        """`GET /agent/<id>/requirements` — what this agent needs to run anywhere. Names only."""
+        from flow_sdk.builtin.readiness import requirements  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in await requirements(self)])
+
+    @action.get(action_name="readiness")
+    async def readiness_action(self):
+        """`GET /agent/<id>/readiness?deployment_id=` — does that deployment (default: this computer)
+        satisfy each requirement? Names only."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        try:
+            deployment = await Deployment.resolve((request_info.get_param("deployment_id") if request_info else None) or "")
+        except LookupError as e:
+            return ApiFailResponse(message=str(e), status_code=404)
+        return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
+
+    @action.post(action_name="plan_deployment")
+    async def plan_deployment_action(self):
+        """`POST /agent/<id>/plan_deployment  {"environment", "provider"}` — the cloud placement before its
+        machine, and whether it is ready: what a deploy dialog lists, with "use mine" per missing value."""
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        body = await self._body()
+        provider = str(body.get("provider") or "").strip() or None
+        try:
+            allocation = _token_allocation_of(body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            deployment = await self.plan_deployment(
+                str(body.get("environment") or "").strip() or None, provider=provider, token_allocation=allocation
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
+        return ApiSuccessResponse(data={
+            "deployment": deployment.model_dump(mode="json"),
+            "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
+        })
+
+    # ── the mailbox ───────────────────────────────────────────────────────
+
+    @property
+    def mailbox(self) -> AgentMailbox | None:
+        """The mailbox projection resolved for this Agent in this SDK process.
+
+        A plain accessor. It is ``None`` until something resolves one — 
+        :meth:`allocate_mailbox`, or ``AgentMailbox.for_agent(self)`` — because an
+        Agent that was never given a mailbox does not have one, and a property
+        that silently reached the Hub would make every attribute read a network
+        call.
+        """
+        return self._mailbox
+
+    async def allocate_mailbox(self, **options) -> AgentMailbox:
+        """Give this Agent a mailbox, or hand back the one it already has.
+
+        The Agent's whole mail surface, beside :attr:`mailbox`. See
+        :meth:`AgentMailbox.allocate` for the contract; everything afterwards is
+        the mailbox's own.
+        """
+        return await AgentMailbox.allocate(self, **options)
+
+    async def channels(self) -> "list[DataSource]":
+        """Every message channel this agent owns — a source on a channel whose driver can send."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
+
+        return [s for s in await DataSource.find_owned(self.typeid) if is_message_source(s)]
+
+    async def channel(self, kind: str) -> "DataSource":
+        """This agent's one channel of *kind* (``"whatsapp"``, ``"telegram"``, ``"email"``, …).
+
+        Raises rather than picking: none means the agent is not on that channel, and
+        two (say, two WhatsApp numbers) is a choice the caller makes over
+        :meth:`channels`, never one made here by row order.
+        """
+        kind = str(kind or "").strip()
+        found = [s for s in await self.channels() if (s.channel or "").strip() == kind]
+        if len(found) != 1:
+            raise LookupError(f"{self.name or self.id} has {len(found)} {kind!r} channels; expected one")
+        return found[0]
+
+    @action.get(action_name="mailbox_state")
+    @_mailbox_failures("load the mailbox")
+    async def mailbox_state_action(self):
+        """Browser projection of the mailbox and its local DataSource.
+
+        The one action that reconciles: it is the only one that may find no
+        mailbox at all, so it goes through ``state_for_agent`` rather than
+        rendering a mailbox it already holds.
+        """
+        return ApiSuccessResponse(data=await AgentMailbox.state_for_agent(self))
+
+    @action.post(action_name="allocate_mailbox")
+    @_mailbox_failures("allocate a mailbox")
+    async def allocate_mailbox_action(self):
+        """`POST /agent/<id>/allocate_mailbox` — allocate (or adopt) the mailbox.
+
+        Declares NO parameters. This module carries ``from __future__ import
+        annotations`` and the dispatcher resolves an annotated ``request`` by
+        identity, so an annotated parameter would 400 at runtime while every
+        direct-call test still passed.
+        """
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required", status_code=401)
+        body = await request_info.get_post_data() or {}
+        mailbox = await self.allocate_mailbox(**body)
+        return ApiSuccessResponse(data=await mailbox.state())
+
+    @action.post(action_name="disable_mailbox")
+    @_mailbox_failures("disable the mailbox")
+    async def disable_mailbox_action(self):
+        """Pause the mailbox and its local source without releasing the address."""
+        request_info = get_current_request_info()
+        if await request_info.get_post_data() if request_info else False:
+            return ApiFailResponse(message="disable_mailbox does not accept settings", status_code=400)
+        mailbox = await AgentMailbox.for_agent(self)
+        if mailbox is None:
+            return ApiFailResponse(message="this agent has no mailbox", status_code=404)
+        await mailbox.disable()
+        return ApiSuccessResponse(data=await mailbox.state())
+
+    @action.post(action_name="configure_mailbox")
+    @_mailbox_failures("configure the mailbox")
+    async def configure_mailbox_action(self):
+        """Update the mailbox's policy and the paired DataSource cadence.
+
+        Only the LOCAL half is validated here. ``allowed_senders`` and
+        ``filters`` belong to the Hub, which validates and normalizes them and
+        answers with a usable reason — restating its rules here would give two
+        places to keep in step and one of them would drift.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        unknown = sorted(set(body) - {"allowed_senders", "filters", "poll_interval_seconds"})
+        if unknown:
+            return ApiFailResponse(
+                message=f"unknown mailbox setting(s): {', '.join(unknown)}", status_code=400
+            )
+        interval = body.get("poll_interval_seconds")
+        if interval is not None:
+            if isinstance(interval, bool):
+                return ApiFailResponse(message="poll_interval_seconds must be an integer")
+            try:
+                interval = int(interval)
+            except (TypeError, ValueError):
+                return ApiFailResponse(message="poll_interval_seconds must be an integer")
+        mailbox = await AgentMailbox.for_agent(self)
+        if mailbox is None:
+            return ApiFailResponse(message="this agent has no mailbox", status_code=404)
+        return ApiSuccessResponse(
+            data=await mailbox.configure(
+                allowed_senders=body.get("allowed_senders"),
+                filters=body.get("filters"),
+                poll_interval_seconds=interval,
+            )
+        )
+
+    @action.post(action_name="release_mailbox")
+    @_mailbox_failures("release the mailbox")
+    async def release_mailbox_action(self):
+        """Release the address for good. Distinct from disabling, on purpose."""
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required", status_code=401)
+        mailbox = await AgentMailbox.for_agent(self)
+        released = await mailbox.release() if mailbox is not None else False
+        return ApiSuccessResponse(data={"agent_id": self.id, "released": released})
+
+    @action.get(action_name="stream_inbox_scope")
+    async def stream_inbox_scope_action(self):
+        """IDs admitted to this Agent's local Stream Inbox and Conversation views.
+
+        About the Agent's own views, not about the mailbox — which is why it
+        stays here while every mailbox verb moved.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import (  # noqa: PLC0415
+            AgentStreamInboxScopeError,
+            resolve_agent_stream_inbox_scope,
+        )
+
+        try:
+            scope = await resolve_agent_stream_inbox_scope(self.id)
+            return ApiSuccessResponse(data=scope.as_dict())
+        except AgentStreamInboxScopeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+
+    # ── deploy to the cloud ───────────────────────────────────────────────
+
+    async def deploy_to_cloud(
+        self,
+        actor: TypeId,
+        environment: str | None = None,
+        *,
+        provider: str | None = None,
+        token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
+    ) -> dict:
+        """Give this agent a machine of its own on the hub.
+
+        Publish is implicit: a deploy names an agent the hub has to already
+        know, so ``ensure_on_hub`` runs first and the two are never separately
+        orderable by a caller.
+
+        The hub does everything else — it mints the ComputeNode, provisions the
+        Identity, and logs the sandbox in AS the agent. Deliberately no node or
+        principal parameter: were either passable from here they would be
+        passable from anywhere, which is the exact hole the hub's pentest guards
+        exist to keep shut. This call says only *which agent*, on which ``provider`` (none: ``e2b``), which
+        credential ``environment`` the placement reads (``production`` by default), and its
+        ``token_allocation`` (see :meth:`plan_deployment`).
+
+        The credentials live in this process, so the browser never talks to the
+        hub directly.
+        """
+        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
+
+        await self.ensure_on_hub(actor)
+        # The readiness gate: the placement's store must hold every value the agent needs before a
+        # machine is paid for. The hub checks the same names again (``require``).
+        deployment = await self.plan_deployment(environment, provider=provider, token_allocation=token_allocation)
+        ready = await readiness(self, deployment)
+        if not ready.ready:
+            raise NotReady(ready, deployment)
+        return await deploy_entity_to_cloud(self, environment, provider=provider, require=ready.value_names())
+
+    async def webhook_specs(self) -> list["DeploymentWebhookSpec"]:
+        """One hub webhook per driver among this agent's sources that takes provider pushes (its manifest's
+        ``webhook``): named by the driver, its URL stored and placed as the driver's URL variable."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE, DeploymentWebhookSpec  # noqa: PLC0415
+
+        specs: dict[str, DeploymentWebhookSpec] = {}
+        for provider in dict.fromkeys(str(s.provider or "") for s in await DataSource.find_owned(self.typeid)):
+            driver = await driver_of(provider)
+            if driver is None or driver.webhook is None:
+                continue
+            hook = driver.webhook
+            specs[provider] = DeploymentWebhookSpec(
+                name=provider, var=driver.auth.vars[hook.url_var], path=WEBHOOK_ROUTE.format(name=provider),
+                methods=list(hook.methods), required_headers=list(hook.required_headers),
+            )
+        return list(specs.values())
+
+    async def plan_deployment(
+        self,
+        environment: str | None = None,
+        *,
+        provider: str | None = None,
+        token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
+    ) -> "Deployment":
+        """The cloud placement this agent will have on ``provider`` (none: ``e2b``) in ``environment``
+        — the hub's row, adopted here —
+        before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
+        :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
+        so readiness finds them and "use mine" never copies this computer's. ``token_allocation`` gives the
+        placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
+        default; omitted leaves it as it is)."""
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
+
+        environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
+        body = {
+            "environment": environment,
+            "provider": provider or DEFAULT_CLOUD_PROVIDER,
+            "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()],
+        }
+        if token_allocation is not _UNSET:
+            body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
+        data = await hub_post(self.type, body, self.id, "plan_deployment") or {}
+        deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
+        if deployment is None:
+            raise RuntimeError("the hub returned no deployment to plan")
+        return deployment
+
+    @action.post(action_name="deploy")
+    async def deploy_action(self):
+        """`POST /agent/<id>/deploy` — publish, then boot a box for this agent.
+
+        ``{"provider": "local"}`` deploys it on THIS computer instead: the idempotent local placement,
+        no hub and no publish — the one way "This computer" becomes a deployment. Any other
+        ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
+
+        One round trip for the UI's one button. Long by nature (E2B create +
+        boot + health is tens of seconds); if that becomes a timeout in
+        practice the fix is 202-and-poll on the node's ``ops/status``, which
+        already exists, not a longer client timeout.
+        """
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.enabled:
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        body = await self._body()
+        provider = str(body.get("provider") or "").strip()
+        if provider == "local":
+            deployment = await self.run_locally()
+            return ApiSuccessResponse(data={"agent_id": self.id, "deployment": deployment.model_dump(mode="json")})
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
+        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
+
+        environment = str(body.get("environment") or "").strip() or None
+        if environment is not None and not is_valid_environment(environment):
+            return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
+        try:
+            allocation = _token_allocation_of(body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            data = await self.deploy_to_cloud(actor, environment, provider=provider or None, token_allocation=allocation)
+        except NotReady as exc:
+            # The gate: nothing is deployed, and each missing value is named with its fix.
+            return ApiFailResponse(
+                status_code=409,
+                message=str(exc),
+                data={
+                    "code": "not_ready",
+                    "readiness": exc.readiness.model_dump(mode="json"),
+                    "deployment": exc.deployment.model_dump(mode="json") if exc.deployment else None,
+                },
+            )
+        except AssetPublishError as exc:
+            # Deploy publishes the agent through git first, so every publish
+            # precondition is a deploy precondition. These are the caller's
+            # state, not a server fault — reporting them as 500 both mislabels
+            # them in logs and loses the sentence that says what to do.
+            return ApiFailResponse(
+                status_code=exc.status_code,
+                message=exc.actionable,
+                data={"code": str(exc.code), **exc.data},
+            )
+        except Exception as exc:
+            return ApiFailResponse(message=f"deploy failed: {exc}")
+        return ApiSuccessResponse(data={"agent_id": self.id, **data})
+
+    # ── the run verb (HTTP) ───────────────────────────────────────────────
+
+    @action.post(action_name="run")
+    async def run_action(self):
+        """Run this agent once. `POST /agent/<id>/run  {"prompt": "..."}`
+
+        The UI's entry point. Deliberately a command that ACKNOWLEDGES rather
+        than a bare bus emission: the caller needs the process to navigate to
+        (the answer's ``executor``), and a fire-and-forget emit with no
+        registered handler would be a silent no-op. The lifecycle is emitted as node-addressed events
+        alongside — see ``agent_run.dispatch_agent_run``, which owns the
+        local/remote routing.
+        """
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        prompt = str((body or {}).get("prompt") or "").strip()
+        if not prompt:
+            return ApiFailResponse(message="prompt is required")
+
+        # Every outcome — disabled here, placed remotely, busy, accepted — is the
+        # launch's own answer, and the body of every response is that answer
+        # (``executor`` names the process to navigate to). Only ``busy`` is 409.
+        agent = await self.fresh()
+        answer = await agent.launch(prompt, deployment=await agent.local_deployment())
+        payload = answer.model_dump(mode="json")
+        if answer.busy:
+            return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
+        return ApiSuccessResponse(data=payload)
+
+    @action.post(action_name="ask")
+    async def ask_action(self):
+        """`POST /agent/<id>/ask {"text", "conversation_id"?, "message_id"?}` → `{answer, conversation_id}` — one message to
+        this agent and its reply.
+
+        What a hub uses to talk to the agent it placed on this machine (a person's WhatsApp message, routed
+        to their own box): the message goes onto the agent's own ``chat`` channel and is answered by the
+        same loop that answers every channel here — started when it is not serving. ``conversation_id``
+        continues a conversation (one per person). No reply in time is a 504 naming the conversation."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.builtin.agent_serve import CHAT  # noqa: PLC0415
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.server.routes import service_channel  # noqa: PLC0415
+
+        body = await self._body()
+        text = str(body.get("text") or "").strip()
+        if not text:
+            return ApiFailResponse(message="text is required", status_code=400)
+        agent = await self.fresh()
+        if not agent.enabled:
+            return ApiFailResponse(message=f"agent {agent.name!r} is disabled", status_code=409)
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
+        deployment = await agent.local_deployment()
+        if not (deployment.serving and deployment_process.alive(deployment)):
+            deployment = await agent.run_locally()
+        endpoint = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
+        if endpoint is None:
+            return ApiFailResponse(message="this agent's chat channel could not be made", status_code=500)
+        # ``message_id`` names the caller's message, so asking again (after a 504) waits on the SAME
+        # message and its reply -- a fresh copy would be a second turn, answered twice or refused.
+        metadata = {"conversation_id": str(body.get("conversation_id") or "")}
+        if str(body.get("message_id") or "").strip():
+            metadata["message_id"] = str(body["message_id"]).strip()
+        request = {"messages": [{"role": "user", "content": text}], "metadata": metadata}
+        outcome = await service_channel.ask(endpoint, "hub", request)
+        if not isinstance(outcome, tuple):
+            detail = json.loads(bytes(outcome.body) or b"{}").get("error") or {}
+            return ApiFailResponse(message=detail.get("message") or "no answer", status_code=outcome.status_code, data=detail)
+        completion, conversation_id = outcome
+        answer = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return ApiSuccessResponse(data={"answer": answer, "conversation_id": conversation_id})
+
+    # ── places (HTTP) — see ``agent_places`` ──────────────────────────────
+
+    @staticmethod
+    async def _body() -> dict:
+        request_info = get_current_request_info()
+        return (await request_info.get_post_data() if request_info else None) or {}
+
+    @staticmethod
+    async def _place_answer(run) -> "ApiSuccessResponse | ApiFailResponse":
+        """One envelope for the place verbs: a caller error keeps its status code."""
+        from flow_sdk.builtin.agent_schedule import ScheduleError  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await run())
+        except ScheduleError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+
+    @action.get(action_name="places")
+    async def places_action(self):
+        """`GET /agent/<id>/places` — this computer first, then every cloud place, with
+        each place's overrides, whether it is enabled, schedule count and whether it answers email."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        async def run():
+            rows = await agent_places.list_places(self)
+            return [{**row, "deployment": row["deployment"].model_dump(mode="json")} for row in rows]
+
+        return await self._place_answer(run)
+
+    @action.post(action_name="set_place_override")
+    async def set_place_override_action(self):
+        """`POST /agent/<id>/set_place_override {deployment_id, field, value}` — `value: null` resets."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_place_override(
+                self, str(body.get("deployment_id") or ""), str(body.get("field") or ""), body.get("value")
+            )
+        )
+
+    @action.post(action_name="set_place_enabled")
+    async def set_place_enabled_action(self):
+        """`POST /agent/<id>/set_place_enabled {deployment_id, enabled}` — `enabled: null` follows the definition."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_place_enabled(self, str(body.get("deployment_id") or ""), body.get("enabled"))
+        )
+
+    @action.post(action_name="set_email_place")
+    async def set_email_place_action(self):
+        """`POST /agent/<id>/set_email_place {deployment_id}` — the one place that answers email."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_email_place(self, str(body.get("deployment_id") or ""))
+        )
+
+    @action.post(action_name="place_action")
+    async def place_action(self):
+        """`POST /agent/<id>/place_action {deployment_id, op, trigger_id}` — `run_now` a schedule
+        on a CLOUD place, through the hub, which alone reaches the machine."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def relay():
+            deployment = await agent_places._require_place(self, str(body.get("deployment_id") or ""))
+            if deployment.is_local:
+                raise agent_places.PlaceError(
+                    "this computer's place actions run here, not through the hub", status_code=409
+                )
+            payload = {
+                "deployment_id": deployment.id,
+                "op": str(body.get("op") or ""),
+                "trigger_id": str(body.get("trigger_id") or ""),
+            }
+            try:
+                data = await hub_http.hub_post(self.get_type(), payload, self.id, "place_action")
+            except HubError as exc:
+                raise agent_places.PlaceError(f"the hub refused: {exc}", status_code=502) from exc
+            if data is None:
+                raise agent_places.PlaceError("cloud login required to reach a cloud machine", status_code=401)
+            return data
+
+        return await self._place_answer(relay)
+
+    @action.post(action_name="adopt_placement")
+    async def adopt_placement_action(self):
+        """`POST /agent/<id>/adopt_placement {deployment_id}` — on a cloud machine, key this
+        machine's placement by the hub's id so the definition's place entries apply here."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def run():
+            adopted = await agent_places.adopt_placement(
+                self, str(body.get("deployment_id") or ""), body.get("environment")
+            )
+            return adopted.model_dump(mode="json")
+
+        return await self._place_answer(run)
+
+    @action.get(action_name="auto_launch_state")
+    async def auto_launch_state_action(self):
+        """`GET /agent/<id>/auto_launch_state` — ``{"launched": bool | None}``.
+
+        Whether this agent already auto-launched in its OWN project; ``None`` when it
+        has no project. A project that picks the agent up through a context folder
+        keeps its mark under that project, which this does not look at.
+        """
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        launched = self.id in Agent.auto_launched_ids(self.project_id) if self.project_id else None
+        return ApiSuccessResponse(data={"launched": launched})
+
+    @action.post(action_name="reset_auto_launch")
+    async def reset_auto_launch_action(self):
+        """`POST /agent/<id>/reset_auto_launch` — let this agent auto-launch again on its project's next open."""
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.project_id:
+            return ApiFailResponse(message="this agent is not in a project", status_code=400)
+        await Agent.reset_auto_launch(self.project_id, self.id)
+        return ApiSuccessResponse()
+
+    @action.get(action_name="version")
+    async def version_action(self):
+        """`GET /agent/<id>/version` — published commit and pending changes on this computer."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        return await self._place_answer(lambda: asyncio.to_thread(agent_places.version_state, self))
+
+    # ── schedules: child trigger assets (HTTP) ────────────────────────────
+
+    @action.post(action_name="add_schedule")
+    async def add_schedule_action(self):
+        """`POST /agent/<id>/add_schedule {name, every, expr, timezone, prompt, enabled}`
+        — write a schedule under this agent; indexed and armed before returning."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(lambda: agent_schedule.add_schedule(self, body))
+
+    @action.post(action_name="update_schedule")
+    async def update_schedule_action(self):
+        """`POST /agent/<id>/update_schedule {trigger_id, ...fields}` — only the
+        fields present change; hand-authored parts of the document survive."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        body = await self._body()
+        trigger_id = str(body.get("trigger_id") or "")
+        return await self._place_answer(lambda: agent_schedule.update_schedule(self, trigger_id, body))
+
+    @action.post(action_name="remove_schedule")
+    async def remove_schedule_action(self):
+        """`POST /agent/<id>/remove_schedule {trigger_id}` — disarm, delete folder and row."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        trigger_id = str((await self._body()).get("trigger_id") or "")
+
+        async def remove():
+            await agent_schedule.remove_schedule(self, trigger_id)
+            return {"deleted": True, "trigger_id": trigger_id}
+
+        return await self._place_answer(remove)
+
+    @action.post(action_name="run_schedule")
+    async def run_schedule_action(self):
+        """`POST /agent/<id>/run_schedule {trigger_id}` — fire one of THIS agent's schedules now.
+
+        The ownership check and the fire are one call, made where the trigger lives:
+        the hub's ``place_action`` uses it to "Run now" a cloud place's schedule on its machine.
+        """
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+        from flow_sdk.builtin.trigger import _fire_schedule_job  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def run():
+            trigger = await agent_schedule._owned(self, str(body.get("trigger_id") or ""))
+            await _fire_schedule_job(trigger.id)
+            return {"status": "fired", "trigger_id": trigger.id}
+
+        return await self._place_answer(run)
+
+    # ── the use verb (HTTP) ───────────────────────────────────────────────
+
+    @action.post(action_name="use")
+    async def use_action(self):
+        """Open a session as this agent. `POST /agent/<id>/use` → process id.
+
+        No turn is started: the process is created and shown. The optional body
+        ``auto_prompt: true`` queues the agent's auto prompt as the first turn
+        (see ``Agent.use``); the UI sends it and starts the turn after its
+        session setup, and the hub never forwards it to a placement machine.
+        Local placement only — same routing rule as ``run``.
+
+        The optional body ``project_id`` names the project the session ACTS IN,
+        which is not always the project the agent lives in — see ``Agent.use``
+        in the TS SDK for why. Omitted, it falls back to the agent's own project.
+
+        The optional body ``deployment_id`` names ONE exact placement of this
+        agent (``Agent.useDeployment`` in the TS SDK). Validated the way the hub
+        validates it — this agent's, an agent placement, node-backed — and
+        opened through the hub when it is not on this machine. Omitted, the
+        local placement is used, as before.
+        """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_id = str((body or {}).get("project_id") or "").strip() or None
+        deployment_id = str((body or {}).get("deployment_id") or "").strip()
+        auto_prompt = (body or {}).get("auto_prompt") is True
+        launch_surface = (body or {}).get("launch_surface")
+
+        agent = await self.fresh()
+        if deployment_id:
+            if not is_valid_entity_id(deployment_id):
+                return ApiFailResponse(message="deployment_id must be a UUID v4 or v5", status_code=400)
+            deployment = await Deployment.get_by_id(deployment_id)
+            if deployment is None or not deployment.is_agent_placement_of(agent):
+                return ApiFailResponse(message="agent deployment not found", status_code=404)
+            deployment = deployment.with_element(agent)
+        else:
+            deployment = await agent.local_deployment()
+        owner = request_info.someone_typeid if request_info else None
+        try:
+            process = await agent.use(
+                project_id=project_id,
+                deployment=deployment,
+                owner=owner,
+                auto_prompt=auto_prompt,
+                launch_surface=launch_surface,
+            )
+        except NotImplementedError as exc:
+            return ApiFailResponse(message=str(exc))
+        except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()
+            return ApiFailResponse(message=f"use failed: {exc}")
+        return ApiSuccessResponse(
+            data={
+                "process_id": process.id,
+                "process_typeid": str(process.typeid),
+                "deployment_id": deployment.id,
+            }
+        )
+
+    # ── projection into the launch bundle ─────────────────────────────────
+
+    @property
+    def auto_prompt_text(self) -> str:
+        """The auto prompt as ``use(auto_prompt=True)`` queues it; empty = none."""
+        return (self.auto_launch_prompt or "").strip()
+
+    @property
+    def display_name(self) -> str:
+        """How the agent is PRESENTED — the authored title, else the slug, else the id.
+        Mirrors ``Agent.getDisplayName`` in ts_sdk so both tiers name it alike."""
+        return (self.title or "").strip() or self.name or self.id
+
+    def to_agent_options(self, worker_type: Optional[str] = None, **cli_extra) -> "AgentOptions":
+        """Build the vendor options object this agent launches with.
+
+        Only ever sets keys that already exist in ``to_json()`` — the serialized
+        shape must stay byte-identical, because ``last_started_hash`` is an md5
+        over it and any new/renamed key would flip ``restart_required`` on every
+        running process. ``system_prompt`` deliberately does NOT appear here: it
+        travels via ``context_data.instructions`` (see ``Deployment.build``).
+
+        ``additional_dirs`` is deliberately absent too: both drivers overwrite
+        ``cmd.add_dirs`` with ``AgenticProcess.resolved_add_dirs`` at spawn, so a
+        copy here would be dead on arrival AND would perturb the very hash this
+        docstring is protecting. The process field is the single source.
+
+        ``cli_extra`` are per-launch transport keys (``output_format`` for a chat
+        surface) that go through the CONSTRUCTOR: ``ClaudeAgentOptions`` derives
+        ``verbose`` from ``output_format`` there, so setting the field after the
+        fact would persist an inconsistent pair into ``cli_config``.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers import factory  # noqa: PLC0415
+
+        # Vendor extras first, so a named field always wins over a free-form key
+        # of the same name.
+        cli_json: dict = dict(self.cli_options or {})
+        for key, value in (
+            ("model", self.model),
+            ("permission_mode", self.permission_mode),
+            ("effort", self.effort),
+            ("disallowed_tools", self.disallowed_tools),
+        ):
+            if value is not None:
+                cli_json[key] = value
+        cli_json.update({k: v for k, v in cli_extra.items() if v is not None})
+
+        return factory(cli_json, driver_key(worker_type or self.worker_type))
+
+
+def _token_allocation_of(body: dict):
+    """A request's ``token_allocation``: a ``TokenAllocationSpec``, ``None`` (release it), or ``_UNSET`` when the
+    request does not mention it (leave it as it is). ``ValueError`` names a malformed one."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec  # noqa: PLC0415
+
+    if "token_allocation" not in body:
+        return _UNSET
+    if body["token_allocation"] is None:
+        return None
+    try:
+        return TokenAllocationSpec.model_validate(body["token_allocation"])
+    except ValidationError as exc:
+        raise ValueError(f"invalid token allocation: {exc.errors(include_input=False)}") from exc

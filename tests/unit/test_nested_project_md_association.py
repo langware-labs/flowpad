@@ -8,7 +8,7 @@ the INNER project. Today the indexer stamps ``project_id`` from whichever
 walk root reaches the file first — the umbrella root walks the inner
 project's files and stamps them with the umbrella's id (see
 ``_resolve_scoped_roots``: one REAL_PROJECT_CWD root per project, no nested
-handling; and ``real_project_cwd_fn._dedup_nested``: outermost-wins).
+handling, outermost-wins on dedup).
 
 No mocks: real test DB + real Project rows + the real ``build_default_indexer``
 walk over the exact root set the scoped ``/fs-records/index`` route builds.
@@ -34,21 +34,24 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 MD_ID = "7c1b2a90-5d44-4f0e-9a37-1f2e3d4c5b6a"
 
 
-async def _make_project(root: Path, name: str) -> Project:
+async def _make_project(root: Path, name: str, *, system: bool = False) -> Project:
     root.mkdir(parents=True, exist_ok=True)
     pid = Project.derive_id_for_path(str(root))
-    proj = Project(id=pid, name=name, fs_storage_mount_path=str(root))
+    proj = Project(id=pid, name=name, fs_storage_mount_path=str(root), system=system)
     await proj.save()
     return proj
 
 
 async def test_md_in_nested_project_is_associated_with_inner_project(tmp_path: Path) -> None:
     # 1. Two NESTED folder projects: an umbrella workspace project and a real
-    #    project inside it (the ~/Flowpad workspace / …/sapak shape).
-    outer = await _make_project(tmp_path / "workspace", "workspace-umbrella")
+    #    project inside it (the ~/Flowpad workspace / …/sapak shape). Projects do
+    #    not nest; the umbrella is the one exception — a hidden container, like the
+    #    workspace root — so it is created as one.
+    outer = await _make_project(tmp_path / "workspace", "workspace-umbrella", system=True)
     inner = await _make_project(tmp_path / "workspace" / "sapak", "sapak")
 
-    md_path = tmp_path / "workspace" / "sapak" / "SPEC.md"
+    md_path = tmp_path / "workspace" / "sapak" / "docs" / "SPEC.md"
+    md_path.parent.mkdir()
     md_path.write_text(
         f'---\nid: {MD_ID}\ntitle: "Spec"\n---\n# Spec\n\nnested-project association\n',
         encoding="utf-8",
@@ -58,7 +61,7 @@ async def test_md_in_nested_project_is_associated_with_inner_project(tmp_path: P
     #    ``POST /fs-records/index?projects=<outer>,<inner>`` route builds via
     #    ``_resolve_scoped_roots`` (one REAL_PROJECT_CWD per project, caller
     #    order preserved; the full unscoped scan reaches the same shape through
-    #    ``real_project_cwd_fn``). Umbrella first, like the production listing.
+    #    ``get_all_scope_filter``). Umbrella first, like the production listing.
     indexer = build_default_indexer()
     await indexer.index(
         IndexerOptions(

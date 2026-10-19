@@ -1,0 +1,514 @@
+---
+id: ab1f9726-eb39-41cb-86f0-6d57214c24ff
+---
+
+# Glossary — our nouns vs. the ecosystem's
+
+Written once so it isn't re-litigated. The axis that matters here is **who owns the
+concept**: some of our entities *mirror a provider's* on-disk format, and some are ours.
+Names should make that obvious.
+
+## FlowCall — the call-and-result mechanism
+
+**FlowCall** is Flowpad’s own contract for invoking work, receiving a structured outcome and value, and composing that result into further work.
+It names one mechanism implemented by cooperating parts, not a class, entity,
+or universal request object. The contract is specified in
+[FlowCall — calls, outcomes, and returned values](snippets/call-returns.md).
+
+| Term | Role in FlowCall |
+|---|---|
+| `ComputeOp` / FlowCall block | A reusable definition of work, typed input/output, implementation and optional completion check; the entity type remains `compute_op` |
+| `ReturnedValue` | The common answer; specialized results extend it |
+| `ExitCode` | The shared outcome vocabulary for Python, TypeScript, and the CLI |
+| `Wizard` | Composition of calls, binding returned values into later inputs |
+| `ProcessCall` | A message-carried call correlated with its returned answer |
+| `call.py:call` | The conventional entry of a Python-backed block; other variants need no Python wrapper |
+| `CollectionResult` | An explicit per-item map's answer, retaining each reached item's index/key and ReturnedValue |
+
+Say **FlowCall** for the mechanism, **a call** for one invocation, **answer** for
+its `ReturnedValue`, and **value** for `answer.value`. Preserve the code names.
+FlowCall does not mean every SDK method, HTTP response, or event. Transport
+success and the operation's outcome are separate; acceptance and completion
+are separate outcomes too.
+
+A list is one value unless the caller explicitly maps it. `chain` composes
+blocks through Wizard; it does not name another runtime. `invocation_id`
+is the trace id of one top-level run: every call in it, across agents and
+messages, carries it, and `parent_call_id` names the call that made each one. It
+is not a block ID or an idempotency key. `value_present` distinguishes nullable output from no output.
+See [FlowCall blocks](snippets/flowcall-blocks.md).
+
+## Cross-walk
+
+| Flowpad | Claude Code | OpenClaw |
+|---|---|---|
+| `SubAgent` (a `.md` prompt asset) | **subagent** | — |
+| `AgentOptions` | options | — |
+| `SubAgent` + `AgentOptions` together | — | **`agent`** |
+| `Agent` (launchable identity + bundle) | — | closest analogue: `agent` |
+| `AgenticProcess` (one run) | session | session |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` / `OpencodeSession` / `DeepagentsSession` | transcript | — |
+| `Skill` (`SKILL.md`) | skill | skill |
+| `Mcp` + `McpServer` + `Command` | **tool** | **tool** |
+| `DynamicWorkflow` + `WorkflowRun` | workflow (script) | — |
+| `GraphWorkflow` + `GraphWorkflowRun` | — | — (ours) |
+| backend instance | — | gateway |
+
+## The three rows that are not clean matches
+
+**OpenClaw's `agent` is not our `SubAgent`.** Theirs is a persistent tenant —
+`agents.entries.*` with `id`, workspace, model, identity, skill visibility, its own auth
+profile and session store, with channel bindings routing to it; many live in one Gateway
+process, and it has no subagent concept. Our `SubAgent` is only a provider-owned prompt
+asset. The closest Flowpad analogue is `Agent`: a native, launchable identity plus bundle
+stored at `agentic-assets/agent/<name>/agent.json` (+ `system_prompt.md`). A `Deployment` (its parent: the agent) places it, and
+each launch becomes an `AgenticProcess`. Unlike OpenClaw's tenant, Flowpad keeps deployment
+placement and each run as separate entities.
+
+That is why the provider prompt entity is spelled `SubAgent`: Claude Code calls these
+subagents, and our entity is a thin wrapper over its `.claude/agents/*.md` contract.
+`Agent` names Flowpad's launchable principal instead; it may reference SubAgents without
+absorbing their provider-owned format.
+
+**The verbs, pinned.** **load/embed a SubAgent** = write its persona into
+`cli_config.agents_json` (Claude Code `--agents`) — prompt text only; **use/run an Agent** =
+`Deployment.create_process/launch` — the whole launch bundle (worker, model, permissions, system
+prompt via `context_data.instructions`, dirs, `deployment_id`). "Load an agent" means the
+Agent entity; the persona embed is always "sub-agent".
+
+**The type renamed; the directory did not.** `.claude/agents/` is a **provider-owned path**
+— Claude Code reads it directly — so `family` stays `"agents"` and the frontmatter spec
+(`AGENTS_SPEC_FIELDS`) still mirrors its `--agents` JSON verbatim. Entity `subagent`,
+directory `agents`: that disagreement is deliberate, and the code says so at both ends.
+
+**We have no `Tool` noun.** `EntityType` has no `TOOL` member — the concept is split across
+`MCP`, `MCP_SERVER` and `COMMAND`. Both Claude Code and OpenClaw make `tool` first-class.
+
+**`MCP` is ours; `MCP_SERVER` is theirs.** Two types, one word apart, and the difference is who
+owns the file. `MCP` is a flowpad-native REPO asset at `agentic-assets/mcp/<name>/mcp.json` (an
+`McpSpec`) that we author, index with a v4 id in its `Sidecar` (`.flow/capsules/identity.json`), attach to an Agent, and
+render onto a worker's command line. It may also OWN the server's code: an `entrypoint` (default
+`server.py`) names a file inside the asset folder that `fastmcp run` executes, kept relative
+because the folder travels with its agent. `MCP_SERVER` is the READ-ONLY inventory of servers already
+configured in a vendor's own files (`~/.claude.json`, `.codex/config.toml`, `~/.copilot/mcp-config.json`,
+…); it records a *definition site* we cannot write, which is why its id stays path-derived. Discovery
+reads `MCP_SERVER`; attaching writes `MCP`.
+
+**We have eleven `*SESSION` types** where the ecosystem has one: `claude_session`,
+`codex_session`, `copilot_session`, `opencode_session`, `deepagents_session`, `skillit_session`, `remote_worker_session`,
+`active_session`, `active_sessions`, `session_analysis`, `session_classification`. Ours are
+provider *transcripts*; the thing that actually runs is `AgenticProcess`.
+
+## Provider mirrors vs. ours
+
+Keep these apart when naming anything new:
+
+| Mirrors a provider | Ours |
+|---|---|
+| `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
+| `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess`; `OpencodeSession` / `DeepagentsSession` (FlowPad's own transcript of a store-backed worker, snapshotted when shared) |
+| `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Agent` (`agentic-assets/agent/`), `Project`, `Task`, `Spec`, `Journey`, `Deck` |
+
+A provider mirror is read-only-ish and its format is not ours to change. A native asset is
+a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
+
+**Chart** (`flow_sdk/builtin/chart.py`, `agentic-assets/chart/<name>/`) is ours: ONE visual
+asset whose `format` (`sequence` / `excalidraw` / `mermaid`) says which source file it keeps
+(`chart.json` / `board.json` / the ```mermaid``` block of `CHART.md`). It replaced the
+WHITEBOARD entity (a whiteboard is an excalidraw chart; migrated in 0.2.215). Not a
+data-viz chart over a dataset, and not the `graph-view`.
+
+## Contexts — three different things
+
+| Name | What it holds | Owner / scope |
+|---|---|---|
+| `DataContext` (`ts_sdk/src/FlowSync/context.ts`) | The UI's "current X" slots — project, process, compute node, workspace. Read by agents with `flow context list`. | A browser tab |
+| `GraphContext` (`flow_sdk/builtin/graph_context.py`) | A frozen list of typeids bound to a process before launch. | An automation run |
+| **gate** / **subject** (`Trigger.gate`, `automations/decision_subjects.py`) | A rule's `if`: a `decision` op asked of the event's subject — the one state (`stream_inbox.message.state`) a decision reads and the `then` wizard's agent receives. | One rule's fire |
+| **display context** (`context_data.display_context`) | Live state the page shown in a process's display reported about itself (`setDisplayContext`). Read with `flow context display`; delivered to Vibe agents per turn. | One process's display, bound to the shown target |
+
+## Workspaces (2026-10-10)
+
+| Name | Where | What it is |
+|---|---|---|
+| **workspace** | `flow_sdk/builtin/workspace.py` (`Workspace`), `flow workspace`, the account-menu switcher | A folder of related projects. A project belongs to the workspace whose `root_path` contains its folder (a location fact, `workspace_id_for_path` — no membership edge). Ours, not a provider mirror. Everything not owned by a project (conversations, data sources, credentials, user assets, Global tabs) is shared by all workspaces. |
+| **default workspace** ("Flowpad") | the `@local` `Workspace` row | Its folder is the instance's `workspace_root` (`~/Flowpad workspace` on prod), resolved per call, never stored. Every project outside every user-created root belongs to it — so an instance with no user-created workspace behaves exactly as before workspaces. |
+| **active workspace** | URL option `?workspace=<id>` (`WORKSPACE_PARAM`), `useActiveWorkspace()` | Sticky across navigation, switched only by `navigation.openWorkspace()`; absent = the default one. Not the Vibe workspace (`?host=`, a process's display), not a hub/e2b sandbox "workspace", not the `flowpad.workspace` endpoint protocol. |
+
+## type · subkind · kind (2026-09-19)
+
+Three words that were used interchangeably. Full rules and the namespace
+mechanism: [`ontology.md`](ontology.md).
+
+- **`type`** — the closed registry (`EntityType`). A row, a URL, a folder are all
+  named by it. A join key.
+- **`subkind`** — closed, per type: a variant *within* one type (a discriminator
+  field). Today this is spelled `kind` on `Conversation`, `FlowMessage`,
+  `LLMEndpoint` and `SubAgent`; renaming it is what frees the word.
+- **`kind`** — the OPEN dot-path ontology, one grammar
+  (`flow_sdk/tags/grammar.py`), shared with bus tags and capabilities.
+  **A kind is a NAME; what it names is a schema, never an Entity row class**, which cannot
+  validate a value. In practice that schema is a `DataSpec` subclass; `fs_ref` → `FSRef` is the
+  one SDK-registered exception. An asset type resolves to its `asset_spec`; a registered type
+  with no asset document names no schema and raises.
+- **`--ns--` is the ontology namespace**, the grammar's existing first segment
+  (`--acme--.ingest.message.whatsapp`). **Ours is the default and it is SILENT:
+  `--flow--` is never written.** An externally authored asset declares `ns` in its
+  document and every kind its code mints is prefixed; a data driver that declares
+  none is refused at load.
+- Don't reuse `kind` for a registry key. `Capability.kind` and `DataDriver.kind`
+  hold a driver's own *name*, which is neither an ontology kind nor a subkind.
+
+## kind · schema · value (2026-10-07)
+
+"DataSpec" was used for all three. Say which:
+
+- **kind** — the NAME (`navigator.decision`): a dot-path tag, the key a schema is registered
+  under. A value on the wire carries it as `spec_kind`.
+- **schema** — the DEFINITION under that name: the fields and their shapes. Either a
+  `DataSpec` subclass in Python (`class DiagnosisSpec(DataSpec)`, `spec_kind = "diagnosis"`) or
+  a **`data_schema`** folder asset (`agentic-assets/data_schema/<kind>/`), which compiles into an
+  anonymous `DataSpec` subclass. One registry, one set of viewers, either way.
+- **value** — an INSTANCE of a schema: the object in memory, or its JSON / folder on disk.
+- So: "the `diagnosis` schema", "a diagnosis value", "the kind `diagnosis`" — never "a DataSpec"
+  on its own. `DataSpec` is the base class, the way pydantic's `BaseModel` is: subclasses are
+  schemas, instances are values. (`data_schema.json` is itself a value — of the kind
+  `data_schema`, whose schema is `DataSchemaDocSpec`.)
+
+## row · record · item (2026-10-11, one word since 2026-10-15)
+
+Three words were used for neighbours. Say which:
+
+- **row** — one value kept in a **dataset**, with a `key`, an `id`, a `ref` and a `version`. The
+  ONE word, in the API (`query`, `put-row`, `delete_rows`, `usedBy`), on disk (`rows/<key>/row.json`),
+  in types (`RowSpec`, `RowKind` `train|eval|test`) and in evals (`RowEval`, `eval.row`,
+  `rows.jsonl`). "Example" is not an identifier anywhere: in prose, the eval set is the rows
+  whose kind is `eval`.
+- **record** — an entity the instance keeps and indexes (a task, a session, a source item):
+  found with record search, never a dataset row. (`subkind: record` in a data schema is a third,
+  unrelated use: "a schema with fields".)
+- **item** — a `SourceItem`: one record a data source ingested. A row links to one with
+  `ingest.source_item.id.<id>`.
+- **version** means the row's digest here (`expected=`); an asset's `v<n>` and a git revision are
+  other things.
+
+## Naming rules this implies
+
+- **`GraphWorkflow` always carries the full prefix.** Bare `Graph*` collides with
+  `GRAPH_CONTEXT`, `ui/src/components/graph-view/`, the entity graph, and the hub org
+  graph. Bare `Workflow*` collides with the two Claude Code mirrors.
+- **`FlowCall` is the explicit compound for the call-and-result mechanism above.**
+  Bare **`Flow` is still ambiguous** and should not be used for anything new. It survives in
+  `FlowMessage` (a chat message), `FlowEvent` (the bus envelope), `FlowFile`,
+  `flow_sdk/core/flow/`, and `ui/src/pages/flow-page/` — all unrelated to workflows.
+  Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is
+  deliberately kept: the `flow_id` field on `GraphWorkflowRun` and `GraphWorkflowNode`, which
+  is a stored JSON key (renaming it needs a migration — see Phase 2).
+- **`tag` means three unrelated things — say which.** A bus event name
+  (`FlowEvent.tag`), a taxonomy `Tag` entity + its `tag` capsule carrier, and
+  toplog's runtime *trace* tags (`toplog.log([...])` against
+  `.claude/skills/toplog/tags.md`). A **breadcrumb** is the second sense: a `tag`
+  capsule on a failing test pointing at its rules doc (`breadcrumb.test.*`),
+  written by the `tagit` skill and read by `tag-context`. It is not a trace tag
+  and never belongs in the toplog catalog.
+- **icon pack** — a namespace of icons (`IconPackSpec`): its `kind` is the tag's parent
+  segment, so `acme-vendors.sonos` is the `sonos` icon of the `acme-vendors` pack. Built-in
+  packs ship under `flow_sdk/server/icons/`; an **icon pack asset** (`icon_pack` type,
+  `<scope>/agentic-assets/icon_pack/<name>/icon_pack.json` + SVGs) is the same thing authored in
+  any scope, registered when indexed and served at `/icon-packs/<kind>/`. Ours, not a provider
+  mirror. Two packs with one `kind` is an error, never a precedence.
+- **`harness` and `worker` are two names for one axis.** `HarnessType`
+  (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
+  They're deliberately distinct and bridged by the `VENDORS` table (`Vendor.harness`), but the
+  industry word for both is *provider*.
+- **`deepagents` is a provider mirror for the ENGINE only.** The vendor key, package and
+  capability kind follow LangChain's `deepagents` package like every other vendor follows its
+  CLI — but there is no `deepagents` CLI of ours to mirror: the **runner**
+  (`cli_drivers/deepagents/runner.py`) and its JSONL event protocol are OURS. Don't call it
+  a "deep agent" in our own vocabulary (`Agent` is reserved); it is the *Deep Agents worker*,
+  and its role — the hidden, headless worker of last resort — is a set of `Vendor` facts
+  (`hidden`, `bootstrap`, `interactive=False`), not a second name.
+- **`DataSource` is the ingestion entity, not the trace enum.** `DataSource`
+  (`flow_sdk/builtin/data_source.py`) is a configured remote source we sync from —
+  a folder, a feed, a mailbox (its driver's family says which). It is unrelated to `FlowDataSource`, the History/Stream/Sniffer
+  enum in `docs/trace-gutter.md`, and to `Connector`
+  (`flow_sdk/core/capabilities/connectors.py`), which is an intent→install-prompt catalog
+  entry, not a configured feed. The record a DataSource produces is a `SourceItem`, generic
+  and discriminated by `kind` (`content.feed.item`), deliberately not one entity type per
+  provider. Provider-specific knowledge lives only in `flow_sdk/ingest/drivers/`.
+
+## Agent capability fields
+
+`Agent` is the persistent, named binding of identity, system prompt, worker/model choices,
+and launch configuration. A `Deployment` (its parent: the agent) places it; `AgenticProcess` records one run.
+Some capability fields are currently declaration-only: `max_turns`, tool allow/deny lists,
+skills, and SubAgent references round-trip through `agent.json` but are not yet projected into the
+worker. They must not be presented as enforced controls until that projection exists.
+
+MCP servers are **not** in that set. They are not a frontmatter list at all: an agent's servers are
+`MCP` assets nested in its own folder (`agentic-assets/mcp/<name>/`), so the folder IS the list and
+a shared agent carries them with it. `Agent.resolved_mcp_specs()` reads them, `Deployment.create_process`
+copies them onto the process, and each harness renders them onto its own launch channel
+(`cli_drivers/mcp_projection.py`) — claude `--mcp-config`, codex `-c mcp_servers.*`, copilot
+`--additional-mcp-config`, opencode the `mcp` key of its generated config. They are resolved once at
+worker boot, so attaching to a running process flips `restart_required` rather than taking effect.
+
+
+* **system-prompt layer** — ours. One ordered piece of a worker's standing instructions (`system_prompt.LayerKey`: `common`, `common_ui`, `instructions`, `io`, …), composed only by `system_prompt.compose_layers`. Not a `SubAgent`, not a `prompt` (a Prompt Library entry is a user turn). See `docs/agent/system-prompt-layers.md`.
+* **`launch_surface`** — ours. `context_data.launch_surface == "app"` marks a process the Flowpad app launched (stamped through `ts_sdk/src/process/launch-surface.ts`); it selects the `common_ui` layer. Distinct from `launched_from` (a setup session's origin) and `launched_by_agent` (which agent).
+* **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a value of a `DataSpec` schema (kind `ingest.source_item`).
+* **`sent_at` / event time** — ours. A message's EVENT time (when the human sent it on its channel) as opposed to the PROCESSING clocks (`created_date`/`updated_date` — when our row was written). Projection-owned on `FlowMessage`; read everywhere through the one rule `event_time = sent_at or updated_date or created_date`; never render a message's processing clocks directly. See `docs/data-management/stream-inbox-projection.md`.
+* **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.StreamInbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. `files` are `MessageFile`s (a path, `as_`, `caption`; a bare path string is accepted) and `quote=False` answers without quoting. Inbound stays `SourceItemSpec`.
+* **Message files / reactions** — ours, the generic channel verbs (`docs/snippets/message-channels.md`).
+  Three nouns for a file, not one: `MessageFile` is the OUTBOUND value a caller hands a send; `MessageFileData`
+  is the contract's payload for a file riding a message (inbound: the provider's handle and the local copy the
+  runtime staged; outbound: a `local` file); `FlowMessage.Attachment` is the message ROW's attachment (FILE /
+  TYPE_ID / PROMPT) a bubble renders — the projection turns the first into the last. A **reaction** is an
+  emoji on a message: `ReactionData` is the channel's report (`SET` / `ADD` / `REMOVE`), `MessageReaction`
+  the state it folds into (`SourceItem.reactions`, projected onto `FlowMessage.reactions`) — never a message.
+* **`MessageBlock`** — ours. The process-local prompt/reply block (`flow_sdk/blocks/message_block.py`): `send(prompt)` waits while one `listen()` consumer handles the corresponding `MessageRequest` DataSpec and calls `reply(text)`; the source owns the one-shot correlation. `Agent.respond_to(source)` owns that loop and the private per-thread process runner. It has no address or rows and is not a `DataSource`, stream inbox, mailbox, provider connection, `MessageSpec`, or `FlowMessage`.
+* **`ObjectSource` / `RecordSource` / `MessageSource`** — ours, the three source FAMILIES
+  (`flow_sdk/sources/families.py`): the base a driver's class extends, i.e. what its items ARE.
+  `ObjectSource` — files (`FileItem`), reflected onto disk and indexed as assets (folder, gcs, gdrive,
+  git). `RecordSource` — records (`RecordData`), kept as `SourceItem` rows updated in place (rss,
+  hackernews, jira). `MessageSource` — a `RecordSource` whose records are
+  `MessageData` in conversations, threaded into the stream inbox and answered through the source
+  (every channel). Declared, unlike the access protocols (`Openable`, `ByteStore`, `Mutable`, `Messaging`,
+  `Reacting`), which stay discovered; a `MessageSource` also declares its channel's traits (`files`,
+  `quotes`, `reactions_per_actor`); `DataDriver.family` serializes it. A provider with two kinds of stream is two
+  drivers (the shipped `jira` reads issues as records; their comments, as messages, would be a
+  driver of their own). Not `ReflectMode.RECORD`, which is a destination.
+* **`Conversation`** (on a channel) — ours; THE conversation unit, as its channel defines it: an email topic, a chat, a phone call, a Slack thread. `address` is who it is with (set when it starts: the sender of an inbound first message, the recipient of one we sent), `started_at` / `ended_at` when it began and ended (a call hung up, a thread retired by its channel's timeout). `DataSource.start(to=, body=)` opens one and returns it; `Conversation.send(body)` continues it — to whoever last wrote, else to its `address`. The contract spells it `MessageData.conversation`; the agent's session is `conversation-<id>`.
+* **`MessageThread`** — ours. ONE reply chain inside a `Conversation`, found by its natural key `(channel, thread_key, owner, data_source_id)` — looked up, never derived. A channel thread's key is the provider's (Gmail thread id, Slack `thread_ts`; the projection resolves it, and a channel's timeout retires one). A native thread (Flowpad's own chat, channel `flowpad`) is keyed by its root message's id and has no data source: the root id travels as `FlowMessage.thread_root_id` and each member's machine resolves its own row (`stream_inbox/native_threads.py`). `FlowMessage.thread_id` is the local membership; `reply_to_id` is the quote (which message a reply answers), separate from the thread. The UI says "thread" (`ThreadStack`, `?thread=`, `ThreadHeader`). **Not** the task ledger's `thread` (`flow task … --thread current`), which means a whole conversation.
+* **`MessageSource`** (a configured row) — ours. A bidirectional `DataSource`: one with `channel` set whose driver is a `MessageSource` (so `sends`) and carries an identity (`account_identities`) on that channel — Slack, Telegram, a person's Gmail, an Agent's mailbox. It ingests like any data source and can reply, and it belongs to one owner (the local user or an Agent). The predicate is `is_message_source` (`flow_sdk/stream_inbox/agent_scope.py`). Not a driver (the driver is the code; a message source is one configured row of it), not the block above, not a `MessageSpec`, not a connection.
+* **MessageChannel** — ours, the user-facing word for a `MessageSource` row: a data source that receives AND sends messages. `Data sources › Channels` (`/dock/data-sources/channels`, `GET data_source/channels`) lists every one with where its messages arrive — the hub **claim** that delivers to it (this computer, another instance, a machine, nowhere yet) or the source fetching its own — and who answers it. Not a new entity: the row is the `DataSource`.
+* **`Help desk`** — ours, on the hub. A desk is a hub Project with `helpdesk.enabled`; a **ticket** is a hub Conversation of `kind=helpdesk` a guest opens against it (`start_guest_conversation`), which staff `pickup` to join, and whose replies the hub masks to the desk's `display_name`. In the app the desk is a **MessageSource**: the `helpdesk` data source (its asset folder `agentic-assets/data_driver/helpdesk/`) lists the pool as its segments, a ticket's hub messages as its records, and `send` = pickup + `add_message`. Every record carries the hub's own ids as adoption hints (`SourceItemSpec.conversation_id` / `message_id`), so the projection lands on the hub-mirrored rows instead of minting twins. An Agent that owns a desk answers everyone (`open_inbound`) unless its allowlist names someone. The requester side stays the hub-mirrored conversation on the portal.
+* **`StreamInbox`** — ours. Flowpad's own merged, per-owner view: every `MessageSource` an owner has, its threads projected into `Conversation`s (`flow_sdk/stream_inbox/projection.py`), with the unread badge (`StreamInboxManager`) and hub catch-up alongside. `/dock/stream_inbox` is the local user's, `/dock/agent/<id>/stream_inbox` an Agent's. `blocks.StreamInbox` is the SDK handle that watches ONE address of ONE driver and projects what lands there into the stream inbox — a handle, not the projection; `blocks.FolderChanges` is its object-shaped sibling (change pages of a watched folder). The **attached-channels line** on each stream inbox is the owner's `MessageSource`s — `DataSource.find_owned(owner)` ∩ spec `sends` — as round marks with a status dot; a mark filters the list to that channel, the details popover holds the pause/resume switch (`status`) and delete, `+` creates a source born with that `owner`.
+* **`AgentMailbox`** — ours. An Agent's hub-allocated email address (`flow_sdk/builtin/agent_mailbox.py`): `agent.mailbox`, `agent.allocate_mailbox()`, and the sender allowlist (`sender_allowed`) that decides who may drive the Agent by mail — also the loop breaker for the Agent's own replies. An Agent HOLDS a mailbox; it is not one. It surfaces as ONE message source inside that Agent's stream inbox, next to whatever else the Agent owns. A user's Gmail is a `MessageSource`, not an `AgentMailbox`; and it is unrelated to the `agentmail` vendor driver (AgentMail's API calls its accounts "inboxes" — their word, kept as-is).
+* **`MessageSender`** — ours. Who wrote a `FlowMessage`, typed (`flow_sdk/schema/data_spec/message_sender_spec.py`): `user` (a person's local or cloud id), `agent` (an Agent speaking through a channel it holds) or `external` (somebody on a channel — `channel` + `address`). Deliberately not "contact": `Contact` is taken. It is local only (`FlowMessage.sender`, PRIVATE); the hub keeps the `sender_id` wire string, whose grammar (`<uuid>` / `agent:<id>` / `<channel>:<address>`) lives ONLY in `from_wire` / `wire_id`. "Did we write this" is `sender.authored_by(User.self_ids())`.
+* **"inbox" is not a name** — ours, a rule. The bare word names nothing in this tree, because three different things answer to it: a channel's own mail folder (IMAP `INBOX`, AgentMail's `inbox_id`) is the vendor's vocabulary and stays theirs; the Agent's address is its **`AgentMailbox`**; Flowpad's merged view is the **`StreamInbox`**. Say which.
+* **`owner`** — ours. Whose row it is: a user or Agent `TypeId` on `DataSource`, `MessageThread` and `Conversation`, defaulting to the local user. THE key the stream inbox partitions by — an Agent's stream inbox is `owner == agent`, a filter, not a walk from one provider. Read only through `stream_inbox.projection.owner_of`, which also resolves rows written before the field existed (`config.agent_id` → that agent). Not `created_by` (the hub's creator mirror) and not the roster's `owner` role (hub-side authz).
+* **`DataDriverSpec`** — ours. The schema of a data source's `data_driver.json` and the `asset_spec` of the `DataDriver` folder asset; every authoring rule is a validator on it.
+* **dependency / `flow.json`** — ours, shaped after npm's `package.json`. A project's `flow.json` (project root; `FlowJsonSpec` in `flow_sdk/schema/data_spec/flow_json_spec.py`, file I/O `flow_sdk/assets/flow_json.py`) names the folders it expects in its context — `dependencies` (required) / `optionalDependencies`, each a source `git+<url>#<branch>` / `hub:<project id>` / `file:<path>` — plus `autolaunchJourney` and `alwaysUseSkills`. `flow_sdk/builtin/project_dependencies.py` is the one owner that resolves them (transitively) to folders on this machine and keeps the project's folder links equal to the resolved set; `include_dirs` / `context_roots` derive from those links. It declares CONTEXT only: not a copy (that is `deps.json`, the **installed** ledger) and not an export (`project_manifest.json`). `DependencySpec` / `project.dependency` name the `deps.json` row, so the `flow.json` entry is `FlowDependency` / `flow.dependency`. The product says **Packages** (the code, the API and `flow dep` keep "dependency"; "package" is the user-facing word only — it is unrelated to the `installed_package` / `deps.json` ledger and to Python packages). A package is **local**, **required** or **optional**; a **local package** is kept in the per-device project state (`project_device_state.py`), never written to `flow.json` or any file of the project, and nothing a clone or teammate sees records that it exists; the retired words are "context folder" and `.flowpad/bootstrap.json`. **Any folder asset** may carry the same file in its own folder (`AssetFlowJsonSpec`: the two maps only, ids only — `<type>-<uuid>` or `<kind>.id.<uuid>`, short form or `{ref, name, description}`); the root `FlowJsonSpec` is that file plus the project-only fields, and may also name locations. An id resolves this machine → the hub → `not_found` (`flow_sdk/dependencies/resolve.py`); what it puts in context is its type's `TypeInfo.dependency_roots_fn`. A project depends on what its root file names AND on what each of its own folder assets declares. A single-file asset never has dependencies.
+* **controller / addon (project subkinds)** — ours. `ProjectSubkind` (`standard | controller | addon`), declared in `project_manifest.json`. A **controller** is a project used to do work on another project (Q, the QA manager, on a target repo): a launch link (`<hub>/launch?agent=<id>`) asks for the target, checks both out side by side and opens the target with the controller's home-page agent acting in it (`Agent.use(project_id=<target>)`) — the target's `flow.json` is never written. An **addon** is the opposite direction: attached BY its host as a `flow.json` dependency, optional by default (a help desk portal). Not "sidecar": that word is the identity carrier (`Sidecar`) and the sidecar shell.
+* **launch link** — ours. `<hub>/launch?agent=<id> | ?project=<id> | ?repo=<url>`: the USE stage, on the hub (`AgentLaunchLanding`). It ends by handing a machine the path `/?action=launch&target=…[&controller=…][&agent=…]` (`launch-plan.ts`) — the desktop through `flowpad://`, a sandbox through `open/system?next=` — where the SETUP stage (`launch-runner.ts`, `POST project/<id>/launch-ensure`) checks the projects out and opens the face.
+* **driver / source** — ours. A **driver** is the code and manifest that knows how to talk to a system: `DataDriver` (`flow_sdk/builtin/data_driver.py` — the indexed row and the loaded driver; its run-time verbs are `DriverRuntime` in `flow_sdk/ingest/driver_runtime.py`), the driver registry (`driver_registry.py`), and the asset family `agentic-assets/data_driver/<name>/` (`data_driver.json` + `source.py`). A **data source** is one configured instance of a driver — `DataSource` (type `data_source`), itself an asset: `agentic-assets/data_source/<name>/data_source.json` in the project it was created in (the user scope outside one). The file (`DataSourceSpec`) holds what a person authors — name, `data_driver_name`, `data_driver_config`, owner, cadence — and never a secret; status, health, the cursor and discovered identities live on the row only, so a poll never rewrites the file. A folder that arrives by copy or share indexes parked in `setup` until this machine verifies it. A data source reads **one stream** (one feed, channel, mailbox, drive) — its driver builds the query from its config (`Source.query()`) and the row keeps the position (`cursor`); there is no unit under a source. `driver.create_source(config, name=...)` builds one unsaved; `save()` writes it; `async with await source.open() as live` reads it by hand (`live.pages(page_size=…)` + `page.ack()`, `live.items(**narrow)`); `merge(*sources)` reads several as one session, each page still one source's. The running side keeps the source vocabulary: `Source` (the live session), `SourceBinding`, `SourceItem`, `SourceStatus`, `SourceHealth`. The product says **Data sources** (`/dock/data-sources`, `flow source`, the webhook `/api/v1/data_source/webhook/<name>`).
+* **`LLMSource`** — ours, and the FIFTH thing this tree calls a "source", so read it precisely.
+  It is *where a worker's tokens come from* (`flow_sdk/schema/data_spec/llm_source_spec.py`): one
+  frozen `DataSpec` covering all three funding paths — a vendor **device login**, a stored
+  **api_key**, or a hub **endpoint**. It is NOT `DataSource` (a configured source we ingest from),
+  NOT `MessageSource` (a `DataSource` that can also reply), NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
+  `partof` (endpoint → endpoint) relationship, which is the fallback chain an `LLMEndpoint` allocation draws
+  *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `partof` (endpoint → endpoint)
+  names a budget upstream of another budget. `resolve_llm_endpoint` picks one per spawn, and its
+  `reason` / `reason_code` (`LLMSourceRefusal`) are what both the picker and the spawn error render.
+* **public endpoint** — ours. A hub `LLMEndpoint` its admin opened (the `public` action) to
+  **whoever holds its id**: spendable with no login, so a foreign machine binds it with
+  `flow llm user use <endpoint-id>`. The id is the bearer and the endpoint's cost limit is the
+  whole defence. NOT "public" in the `visitor_role` / public-listing sense — it is stamped as
+  `Entity.public_role`, which no listing matches, so a public endpoint is usable but never
+  enumerable. See [llm-endpoints §7](snippets/llm-endpoints.md).
+* **box / `ComputeNode`** — ours. The machine a `Deployment` runs on: this computer (`@local`), an e2b /
+  docker / GCP VM box, or an enrolled machine. It hosts deployments — this computer many, a cloud box
+  one — and answers on their `ServiceEndpoint`s; `health_check()` is the list of all of its services'.
+  "Box" is the spoken word; the type is `ComputeNode`.
+* **control plane** — ours. Hub → box, command driven: `ComputeNode.run_command` / `http` /
+  `write_files` and the hub's `compute_node_tools` (clone, index, place secrets, run a health check).
+  Hub-internal — never a `ServiceEndpoint` and never a REST verb (a REST caller asks for lifecycle and
+  outcomes: `ops/<lifecycle>`, `ops/provision-project`, `sign-out`).
+* **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `subkind` (what it
+  is FOR — `system`, `admin`, `app`, `agent`, `service`; its kind `service_endpoint.<subkind>` is derived),
+  `check` / `health` (how to tell it is alive, and the last check's result — see §7), `protocol` (a
+  tagged kind — `web.app`, `api.rest`, `api.chat.openai`, `api.mcp`, `flowpad.workspace`, or a
+  `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, a `channel` — each
+  request a message on a message channel, its recorded reply the answer: every agent deployment's
+  `chat` — or `routed`, an audience proxy's mount-per-app table) and
+  `supports_direct_access` (a hint to clients, never a grant). Reached through its `service`
+  action — a pure proxy, any method, WebSockets too — and `direct-url`, resolved when asked and
+  never stored. INBOUND traffic to a placement; not an `LLMEndpoint`, which is OUTBOUND spend to a
+  model provider and meters it. See [service-endpoints](snippets/service-endpoints.md).
+* **`system` / `admin` / `app` (endpoint subkinds)** — ours. The three surfaces a placement answers a
+  browser on, each ONE endpoint. `system` is the machine itself — the Flowpad UI and API (`workspace`)
+  and the hub's `shell-mcp` / `fs-mcp`; not a project's. `admin` is the project's operator-facing
+  web app, `app` its end-user one. Do not say "admin" for the machine's own services (they were
+  `admin` until 2026-10-13), and do not confuse the `admin` subkind with the `admin` access ROLE: the
+  subkind says who an app is FOR, the policy (`open-<subkind>` on the endpoint, asked by `admission.admit`) says who may open it.
+* **audience / audience proxy** — ours. An audience is who a project's web app is served to: `admin`
+  or `app` (`WEB_AUDIENCES`). A placement's audience proxy is its ONE `ServiceEndpoint` of that
+  subkind, with a `routed` backend; on the hub it has an origin of its own,
+  `<audience>--<deployment-id>.<app_domain>`, and a gate of its own (visitor role for `app`, hub
+  identity for `admin`). An audience nothing is served to has no proxy.
+* **route / mount** — ours. A route is one app behind an audience proxy (`RouteSpec`: a `static` or
+  `proxy` backend plus the `webapp_id` / `artifact_id` it serves); its mount is the single path
+  segment it is served under (`""` = the audience's root app). An app is addressed as the pair
+  *(endpoint, mount)* — `Placed` in Python (`webapp_placement`), `ServedApp` in the TS SDK, `route`
+  in a display target and on the app dock. A webapp declares its mounts in `webapp.json`
+  (`WebappMountSpec`: `audience`, `path`, `serving`). Not react-router's route, and not a
+  `GraphWorkflow` edge.
+* **serve loop / agent loop / `TurnEngine` / `AgentServer`** — ours (`flow_sdk/builtin/agent_serve.py`,
+  `agent_loop.py`). How an agent ANSWERS where it is deployed. The `TurnEngine` runs one message as a
+  turn: one headless process per (deployment, conversation), one turn at a time, a redelivery answered
+  from the turn's record. The serve loop is one durable drain over the channels a deployment answers (a
+  source's `answer_place`; a source naming none is the default local deployment's) — a consumer, never
+  a poller: it reads what ingest lands and holds the sources' fast-lane lease
+  (`DataSource.note_attention`). A running local
+  deployment IS a process on the machine running that loop — the **agent loop**
+  (`python -m flow_sdk.builtin.agent_loop`, plain SDK code in the same instance) — and its `chat`
+  endpoint is one more channel of it. The `AgentServer`, in the app, only keeps those processes
+  running. Not Claude Code's `Workflow`, and not the bus: nothing answers a channel by reacting to the
+  projection's tags.
+* **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, agent-mailbox, serializer, ingest-provider and reflect-mode registries.
+* **`Credential`** — ours. A named set of environment variables and the ONLY way a secret is declared — WHAT is needed, never where its values live (a Deployment's): a folder asset at `agentic-assets/credential/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). The file is `credential.json`, its shape `CredentialSpec` (value-free); the row is `Credential` (type `credential`; formerly `secret_pack`, 0.2.170–0.2.177, and before that `credential_spec`). Distinct from `ResolvedSecrets`, the values a data source was handed. See [secret_share](secret_share.md).
+* **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Three ship: `env_file` (a dotenv file, the scope root's `.env.local` by default; a form spells it `env`), `vault` (the per-instance encrypted store, `sodot` on disk) and `gcp_secret_manager` (a Google Cloud Secret Manager project, read through a bound `google` connection). A Deployment says which one keeps each variable (`DeploymentSecretsSpec`); a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).
+* **`UserProfile`** — **two things, deliberately kept apart.** In the SDK it is a *payload* (`flow_sdk/sources/values/items.py`, kind `ingest.profile`): who a provider said sent or received a message — an `origin` (a Slack user id, an address) plus observed display fields, minted per item inside `SourceItem.data`, never a row. On the **hub** it is an *entity* (`flowpad/hub/builtin/user_profile.py`, type `user_profile`, formerly `ProviderIdentity`): one external provider account, keyed `provider:external_id`, that a person proved is theirs by signing in with it, `partof` their `User`. The SDK one is an OBSERVATION about anybody; the hub one is an ASSERTION only its own holder can make — they are the input and the output of the same lookup ("which Flow user is this Slack sender?"). Neither is the display name/picture, which live on `User` itself.
+* **environment** — ours. A Deployment's `environment` — Deployment == environment, there is no environment asset. It names which set of values a deployment reads (`.env.<env>.local`, `credential.<env>.…`); the deployment's own binding (`DeploymentSecretsSpec`) says which store keeps each variable. `development` is this computer and the default. Not the hub's `DEPLOY_ENV` tier, which the e2b/GCP `environment` labels carry. See [secret_share](secret_share.md#where-the-values-live--a-deployments-never-the-credentials).
+* **deployment secrets / this computer** — ours. `DeploymentSecretsSpec` (kind `deployment.secrets`) on a Deployment: its `store`, per-variable `exceptions`, extra `require`d variables, `protected`. **This computer** is the one Deployment per instance — the local `ComputeNode`'s own placement — whose binding every process without a deployment of its own reads, and that an agent's local deployment inherits; a project-less web app on this machine is served from it. `credential_store.Placement` = a binding plus its environment.
+* **webhook chain** / **claim** — ours (hub). `webhook/@<provider>` is a vendor's ROOT webhook on the platform's own account (Flowpad's WhatsApp number, Telegram bot, Slack app); a **claim** is a chained hub `Webhook` under it that takes part of that traffic — one sender (`user`, proven by sending a Connect code), one account (`account`, proven by a credential), or a `group` under an account. Each claim has ONE target: a desktop instance or a node, always an instance's channel (`/api/v1/data_source/<id>/webhook`). The hub only chains — verify, split, claim, hand on — and the one way back is `webhook/<claim>/reply` (the instance answering on the platform's account, addressed by the event it answers). No agent runs on the hub for it. See the hub's `docs/flow-channels.md`.
+* **hub `Webhook`** — ours (hub). A stable public URL (`<hub>/api/v1/webhook/<id>`) relayed to a compute node, with its own filters, routes and mode (sync / queue); owned by its creator, it targets a node and can be retargeted with the URL unchanged. Not a plugin webhook (`webhook/plugin/<name>` on the same router), not the desktop's `listen` hooks, and not a ServiceEndpoint (what a placement serves, at a box-minted id). A **deployment's webhook** is one planning a cloud deployment asked for (`DeploymentWebhookSpec`, one per driver whose manifest declares `webhook`): stamped with its deployment, delivering to whatever machine that deployment has (no node of its own, never retargeted), its URL stored as the driver's URL variable and deleted with the deployment. See the hub's `docs/webhooks.md`.
+* **token allocation** — ours. A cloud deployment's own model budget: a hub `LLMEndpoint` allocated from a source its owner administers (`TokenAllocationSpec`: `source`, `cost_usd_per_day`, `model`), set by planning the deployment (the deploy dialog's "Token allocation"), named by `Deployment.llm_endpoint_typeid`, bound to its machine, deleted with it. Unset, the agent spends its owner's capped default. See the hub's `docs/llm-endpoint.md`.
+* **per-machine setting** — ours. A data source value that differs by where it runs (where a container answers, how a provider reaches this instance): a credential variable in the driver's `auth.vars` (`secret: false` when not a secret), resolved per deployment — never `data_source.json` config, which travels with the repo. See [data-source-asset](data-management/data-source-asset.md#auth).
+* **`ResolvedSecrets`** — ours (was `Credentials`, 0.2.178). The values a data source is handed by the application (`flow_sdk/sources/credentials.py`, kind `source.credentials`): a token, env values or named secrets. Not a `Credential`, which declares names and never holds a value.
+* **permission / authorization** — ours. A permission is a capability an asset needs, a dot path `permission.<provider>.<resource>[.<action>]` (`permission.google.drive.read`), declared with how it is granted (`PermissionMappingSpec`: `oauth` scopes, `iam` roles or an `api_key` variable) by the asset that needs it; `flow_sdk/permissions.py` collects them. An **authorization** is the owner's consent that one deployment's machine may use their connection to a provider (`DeploymentAuthorization` on the hub, `Deployment.authorize` / `revoke`); readiness reports each permission at a deployment as `verified` / `declared` / `missing`. Not `ContactPermission` or its *standing grant*, not `permission_mode`, not `Capability` (a runtime feature), not the hub's `target_auth_scopes`.
+* **requirements / readiness** — ours. An agent's requirements (`AgentSpec.requirements`, `RequirementSpec`: credential / permission / connection / variable) are what it needs anywhere, derived from what it owns plus authored entries, written into `agent.json` on publish. Readiness (`builtin/readiness.py`) answers them at one deployment, each missing item with a `remedy` (`use_mine`, `authorize`); it gates a cloud deploy (`NotReady`, 409 `not_ready`). Project setup's `setup requirement` is the same derivation, per project.
+* **hub store / placement / use mine** — ours. The **hub store** is a cloud deployment's `SecretStore` (type `hub`): the hub Deployment's confidential env vars, written by name, never read back to a laptop. **Use mine** copies this computer's values into it. **Placement** is the hub putting those values on the deployment's machine (drop file → `credentials/place`, an 0600 env file), re-placed on rotation and wiped before a user pause. `plan_deployment` is the placement before its machine, where values are stored ahead of a deploy. Not `Placement` in `credential_store` alone (a binding plus an environment, where a process reads) — the hub's placement writes to exactly that. See [secret_share](secret_share.md#a-cloud-deployment--the-hub-store-placement-authorization).
+* **leftover sweep** — ours. `flow credentials audit` (`builtin/credential_sweep.py`): after a delete, reads every store a value can live in — vault, `.env*` files, bound remote stores, the hub's store, live e2b sandboxes — for names that should be gone; unchecked is never clean. Not a `sweep` of rows (the orphan sweep of the indexer). See [secret_share](secret_share.md#deleting--nothing-left-behind).
+
+## Consolidation seams (2026-08-29, Phase 1)
+
+| Ours | One place | Notes |
+|---|---|---|
+| WS frames | `flow_sdk/api/api_types/messages.py` | The single definition site (shared with the hub's vocabulary). `flow_sdk/api/messages.py` re-exports it and adds only app-only frames. |
+| `credential_for(provider, user=None)` / `token_for(...)` | `flow_sdk/core/oauth/provider_registry.py` | The one credential-precedence policy: explicit user → request user → local user → hub. `_get_github_token_for_current_user`, `get_anthropic_token_for_current_user`, `get_github_token` are thin envelopes over it. |
+| `report_type_info(...)` | `flow_sdk/schema/type_info/_report.py` | The shared shape of the flat-JSON report families (agent trace, usage report, asset-cleanup report). |
+| `useJsonDoc<T>(fsRef)` | `ui/src/hooks/use-json-doc.ts` | The one read-once JSON document hook behind `useAgentTraceDoc` / `useUsageReportDoc` / the cleanup-report editor. |
+| `CapabilityRegistry` | `flow_sdk/core/capabilities/registry.py` | A `KindRegistry[CapabilityRunner]` (kinds keep registration order). |
+
+## Consolidation seams (2026-08-30, Phase 2)
+
+| Ours | One place | Notes |
+|---|---|---|
+| `VENDORS` / `Vendor` | `flow_sdk/flowpad_types/vendors.py` | The one table of facts about the five harness vendors (key, persisted `worker_type`, aliases, placement harness, capability kind, dot-dir, session entity type, pricing prefixes) plus the declared facts generic machinery asks instead of branching on a key: `hidden`, `bootstrap`, `interactive`, `python_module` / `python_requires`, `transcript_stems`. Stdlib-only so `placement.py` and `transcript_analyzer` can import it; classes are reached by the dotted `package`. `vendor_for` / `vendor_or_none` / `default_vendor` / `vendor_by` / `vendor_for_path`. |
+| `JsonlTeeStreamWorker` | `flow_sdk/builtin/agentic_process/cli_drivers/jsonl_tee_worker.py` | The one non-interactive JSONL turn loop for vendors whose stdout is one JSON event per line (copilot, opencode, deepagents); a vendor supplies its session-key spelling, terminal types, stdin mode, converter and gate. Claude and codex stay on their own workers. |
+| `GitOriginDriver.materialize(origin, *, preferred_root, preferred_project_id, token)` | `flow_sdk/builtin/drivers/git_driver.py` | THE clone/reuse/pull policy — bundle receive, `Project.setup_from_git_origin`, `setup_from_bootstrap_git`, `Folder.resolve_location` and `create-project-from-git` all route through it. An absent/empty `preferred_root` means *clone here*. The driver is anonymous; callers pass their own `token`. |
+| `GitOrigin.next_clone_target()` / `fresh_clone_slot(leaf, reuse_empty=)` | `flow_sdk/fs_store/origin/git_origin.py` | The two workspace placement policies: reuse a matching checkout vs. never reuse (suffix past a collision; an empty dir is not one unless `reuse_empty=False`). |
+| Live session (`RemoteWorkerSession`) | `flow_sdk/builtin/remote_worker_session.py`; ledger `docs/collab/live-sessions.md` | THE unit of running a prompt on a collaborator's machine: every prompt sent in a conversation opens or continues one, keyed by its `starting_message_id`. Carries the session's `reply_policy` (`auto` \| `review`) and `approved_via` (`manual` \| `standing_grant`). The inbound gate is `decide_inbound_prompt`; the turn runner is `run_session_turn`; a consumed turn is marked by `FlowMessage.prompt_auto_handled`. |
+| `PromptCompletion` | `flow_sdk/builtin/prompt_completion.py` | The per-turn result of a live session; rides the reply as a `prompt_completion-<id>` TYPE_ID attachment with `result_preview`. Never a runnable prompt (no Claude↔Claude loop). |
+| `ContactPermission` (standing grant) | `flow_sdk/builtin/contact_permission.py` | The host's LOCAL policy that a contact's NEW sessions start approved (`auto_approve_session`), per project or everywhere. Not consent for anything else — pause / reply policy / disconnect live on the session. |
+| Header-carried bundle entries | `flow_sdk/builtin/flow_message_bundle.py` `_HEADER_UNPACKERS` + `_unpack_*_entry` | Conversation / flow_message / remote_worker_session unpack through named inverses of their packers (an `_UnpackCtx` carries the unpack-time state) instead of inline branches in `unpack_bundle`. |
+| Hub merge deny-set | `_hub_reflect._merge_skip_fields(entity)`; `wiki_cache._cache_payload` | Derived from the `Sharing` declarations (`fields_not_accepted_from_hub()` + hub wire aliases from `APIField(hub_name=…)`; `fields_not_in_bundle()`), not hand lists. The three ALLOW lists (`_FM_FIELDS`, `hub_bridge._LOCAL_FIELDS`, `membership_sync._MIRRORED_FIELDS`) are wire-format subsets and stay declared. |
+
+| `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
+| `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes a row; a gold label is written against the dataset's output shape |
+| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` route indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. An editor that ships on its own declares `edits` (kinds or type names) and is matched by `flow_sdk/builtin/faas/editors.py`: nested first, then kind, then type. |
+| `data_schema` | ours | A SCHEMA defined by a folder, not code: `agentic-assets/data_schema/<full.kind>/` (`data_schema.json` + `description.md`); the folder name is its kind. Indexing registers it under its project's namespace; nests at any depth; subkind `record` / `dataset` optional (read from the body). Python: `DataSchema` (the row), `DataSchemaDocSpec` (the document). Named `data_spec` until 2026-10-07; a folder still under that name is not read; the asset scan reports it as an issue naming the rename (`TypeInfo.retired_families`). |
+| `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `mounts` (which audience, where) / `services` (APIs it brings along); `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` route (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement's `app` or `admin` proxy, and that route is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's `app` proxy routes its bundles. |
+
+## Help desk (2026-09-02)
+
+`Helpdesk` is one word for two halves that are configured separately and either
+of which may be absent. Say which one you mean.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **ticket queue** | a **hub** Project, named by `desk_project_id` in the manifest | Where a support request is delivered (`start_guest_conversation`, `kind=helpdesk`). Hub-backed; nothing local. |
+| **portal** | a **git repo** cloned locally | The help content: guides, `.flow/customization` branding, optionally a `support` SubAgent. Local; needs no hub. |
+| `Helpdesk` (the entity) | `flow_sdk/builtin/helpdesk.py` | The portal folder as an indexed asset. Fields read THROUGH to `helpdesk.json`, so a `git pull` takes effect with no re-index. |
+| **adopt** (the verb) | `Project.adopt_helpdesk_from_git`, `resolve_adopted_helpdesk` | A project takes on a desk by adding its repo as a `flow.json` dependency. Not "create" — `HelpdeskTypeInfo` is `creatable=False`; a desk is authored in a repo, never in the app. The user-facing tile still reads **Add help desk**, because "adopt" is our word for the mechanism, not theirs for the act. |
+| **serving desk** vs. **a desk that is present** | `resolve_adopted_helpdesk` | Resolution stops at the FIRST desk in `direct_context_roots()` order. A second desk under a later root is present but serves nothing — the `shadowed` outcome. Never conflate the two. |
+| **portal slot** | `helpdesk_project_dir(desk_id)` | `<workspace>/.flow/helpdesk/project-<id>` — the app-managed checkout for the desk the HUB advertises. Distinct from an adopted desk's dependency checkout, which lives in the visible workspace. |
+
+## Diagnosis requests (2026-10-07)
+
+| Ours | One place | Notes |
+|---|---|---|
+| **`FlowpadDiagnosis`** | `flow_sdk/builtin/flowpad_diagnosis.py`; mirrored on the hub (`flowpad/hub/builtin/flowpad_diagnosis.py`) | A recorded diagnosis: symptoms, root cause, fix. Local and metadata-only; the hub mirror exists as the base of the next row. |
+| **`DiagnosisRequest`** | `flow_sdk/builtin/diagnosis_request.py` + the hub twin, same id | A `FlowpadDiagnosis` someone ELSE runs. Its owner opens it (`open_request`), sends `flow diagnose <id>`, and reads the runs back (`runs`). Not a help-desk ticket: the runner needs no account and no session -- the id is the bearer (`public_role = diagnosis_submitter`: `brief` + `submit`, never `read`). |
+| **run** | `runs/<n>.json` in the request's hub storage | One `submit`: the diagnosis it recorded plus its files (`DiagnosisRunSpec`). Every run is kept; the row's diagnosis fields show the latest. |
+| **brief** | the hub action `brief` | What a runner reads before starting: the instructions, the budget's id, the write window, and the list of attachments. No diagnosis content. |
+| **attachment** (of a request) | `attachments/<files\|skills>/<name>` in the request's hub storage; `DiagnosisAttachmentSpec` | What the OWNER sends the runner: a file, or an asset (a skill travels as a zip and is installed into the run's `.claude/skills`). Uploaded through the ordinary `fs` action; fetched by the runner through `brief/attachment/<kind>/<name>` -- the brief's own grant, not a new one. Lives only in the run's temporary folder. |
+| **funding** (of a request) | the hub action `fund`, `token_allocation.allocate_public_for` | A public, lifetime-capped, expiring `LLMEndpoint` allocation the runner spends by id. Drawn from a budget the owner administers, the global root for a verified langware.ai user, or a key on the owner's computer uploaded to the hub as a root. |
+
+## Identity carriers (2026-08-30)
+
+| Ours | One place | Notes |
+|---|---|---|
+| `identity_carrier` (`Frontmatter`, `Sidecar`, `JsonRoot`, `Derived`) | `flow_sdk/assets/identity_carrier.py` | WHERE a type's id lives. A markdown main document: `id:` first in its frontmatter. `locate` / `accepts` / `read` / `stamp` — validation and minting stay in `TypeInfo`. |
+| `TypeInfo.mint` / `TypeInfo.stamp_id` / `TypeInfo.read_id` / `TypeInfo.layout_of` | `flow_sdk/fs_store/schema_registry.py` | `mint` answers a `Found` id, raises on `Foreign`, else mints and (with `write`) stamps; `stamp_id` is the create seam; `read_id` never writes. The walk orders carrier → owning row → mint in `indexer/reconcile.py`. No `observe`/`derive`/`overwrite` vocabulary. |
+| `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. |
+| "capsule" | `flow_sdk/capsules/` | The generic named-block carrier: `tag` blocks in source files, and the `identity` folder capsule the `Sidecar` carrier stores. Not an identity form for markdown — a file still carrying the HTML-comment `identity` block reads as `Foreign` (`flow_sdk/migrations/migration_2026_09_identity_live_forms.py`). |
+
+## Activity (2026-09-03)
+
+**`Activity` is ours, not a provider mirror.** It is the one mechanism any long-running
+work reports progress through — an index, a walk, a RAG pass, a QA cycle, a running
+agentic process — from Python, TypeScript, the REST API, the CLI or an agent.
+
+The noun was free where the near ones were not: `Job` is the FaaS entity, `Task` is a
+folder asset, `Flow` means a chat message and a bus envelope, `Graph` and `Workflow` are
+both already ambiguous. `Activity` collides only with the `InProcessActivity` holder it is
+built to replace in phase 2.
+
+| Ours | One place | Notes |
+|---|---|---|
+| `ActivityProgressSpec` | `flow_sdk/schema/data_spec/activity_spec.py` | The value that travels. Its schema is a registered `DataSpec` (kind `activity.progress`), frozen, recursive. `total=None` means UNKNOWN — never 0. `errors_count` is the truth, `errors` a capped sample. |
+| `Activity` (the handle) | `flow_sdk/activity/activity.py` | The mutable node, addressed by `(scope, path)` and found-or-created at every level. `Activity.get("a/b")` and `Activity.get("a").child("b")` are the same node, so code deep in a walk needs no handle threaded to it. |
+| `inc` vs `set_counter` | `flow_sdk/activity/activity.py` | Two counter verbs for two producer shapes: `inc` adds a DELTA (events seen), `set_counter` takes an ABSOLUTE total (a running count, a re-parsed transcript) and never moves backwards. The monotonicity policy lives on the verb so every producer inherits one answer. |
+| `ActivityProgressMonitor` | `flow_sdk/activity/progress_monitor.py` | The in-memory registry — it IS find-or-create. Holds LIVE work only: a root's terminal untracks its whole tree, so a later `get` yields a FRESH node. "Is it running" is its question; "when did it last finish" is the receipt's (phase 2). |
+| **path** vs. **scope** | — | `path` addresses within a scope (`index`, `index/pdf`); `scope` is the TypeId the work belongs to, absent for instance-wide work. Scope is also the WS routing key: unscoped broadcasts, scoped goes to that entity's watchers. |
+| **tick** vs. **transition** | `flow_sdk/activity/emit.py` | A tick is a coalesced snapshot on the `progress_report` envelope and touches nothing else. A transition (started / blocked / completed / failed) publishes on the event bus immediately and is never coalesced away. |
+| `interrupted` | `ActivityState.INTERRUPTED` | Assigned by the system, never a producer: work that STOPPED rather than finished — a child still running when its root ended. The state the old tracker could not express, which is why a restart made the footer indicator vanish silently. |
+
+Verb casing is deliberately per-language: `inc_success` in Python, `incSuccess` in
+TypeScript, `inc-success` from a shell. The route accepts all three, so it stays one
+vocabulary rather than three APIs.
+
+## Chief of Staff (2026-09-22)
+
+**All ours, none a provider mirror.** The pattern is the orchestrator–worker one (A2A's task
+states for the lifecycle), but no provider owns these nouns. Claude Code's own **subagent**
+is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs, and as the
+*owner* of a task for long ones.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **Chief of Staff** (the mode) | `Agent.chief_of_staff`, `flow_sdk/tasks/cos.py` | A checkbox on the Agent. On: CoS.md joins its instructions, the Flowpad assistant (and its `task-management` skill) is mounted, its staff are registered natively where the harness spawns (`driver.spawns_subagents`), and each turn carries its open tasks. Off: the launch is byte-for-byte what it was. Not a separate entity and not an `Agent` kind. |
+| **staff** | `Agent.subagents` + `general-worker` | The SubAgents a chief may hand work to — the ones that resolve (the agent's project, the user's, the system's). `general-worker` is always there. |
+| **task ledger** | `flow_sdk/tasks/ledger.py` | The ONE writer of a delegated task's lifecycle: the row, a Comment and a `task.<event>` bus tag together. Refuses an event out of turn or by a stranger. Not a queue and not the Task board — the board shows its rows. |
+| **delegated task** | `Task` with `owner` set | A task a principal (`agent:<id>`) handed to an owner (`subagent:<name>`). `placement="instance"`: it lives in the DB + records shadow, never in the project's git tree, until a person **keeps** it (`flow task keep` → a `task.md` folder asset). Authored configuration may live in the repo; runtime state never does. |
+| **task run** | `AgenticProcess` with `context_data.task_id` | The headless worker that works one task as its owner, in `records_data/task/<id>/work/`. It may act only on that task. |
+| **Tasks channel** | `data_driver/task_manager` | A principal's tasks as a standard, PULLED message source: each task it asked, owns, is assigned or reported is a thread, each change and comment a message, and a message sent into the thread is a comment on the task (the ledger's `replied` on a delegated one). One driver, two kinds of row: the local person's (`user:local`, created at startup, `ensure_user_tasks_channel`) and a chief's (`agent:<id>`, follows the checkbox). The bus only says "pull now" (`bus_topics` + `wants`, after the writer commits). The machinery finds it by what it declares (`principal_channel`), never by name. |
+| `created · started · note · asked · replied · done · failed · canceled · stalled` | `TaskEvent` | Ledger events. Statuses: `submitted → working ⇄ input_required → done \| failed \| canceled` (A2A), each on the three-bucket board via `status_family`. |
+
+## Project setup (2026-09-24)
+
+**Ours.** The wizard is the stock `WizardSpec` + ComputeOps; nothing here mirrors a provider.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **setup requirement** | `SetupRequirementSpec` (`project.setup.requirement`), `builtin/project_setup.py` | One thing a project needs a person to provide: `oauth` (a connection, scopes unioned over its requesters), `pack` (a credential and its missing development values) or `gap` (a name nothing declares — reported, never run). Collected read-only from the project's credentials and its data sources' driver `auth`. |
+| **needed for** / **justification** (on a credential) | `CredentialSpec.needed_for`, `CredentialSpec.justification` | Why the project wants the credential: one line shown beside its name when a person is asked for it (the setup dialog), and the optional full reason behind the info icon next to it. Not `description` (what the credential IS), not a variable's `hint` (what one value is), not `setup` (how to obtain the values). A shipped template's are generic; a project's own declaration says what THAT project does with it. |
+| **setup** (on a credential) | `CredentialSpec.setup` | How to obtain the values and store them, for an agent to follow. Required when authoring; its absence means "no AI Assist". Not `setup_wiki` (a page title); the setup wizard passes it to each question as `ComputeOpSpec.setup`, its guide. |
+| **AI Assist** | `AskOp.assist_agent` | A person hands a question to an agent: it follows the op's `setup` and answers the SAME question (`flow ask answer`), for the setup's own span (`setup_timeout_seconds`, else `SETUP_TIMEOUT`). Not a rung — a person starts it. The setup wizard offers it on every credential question with `setup`. |
+| **setup tree** | `core/setup` (`setup_tree`, `execute_setup`, `derive.ProjectTree`) | Ours. A project comes up LEAF FIRST: every asset that needs setting up is a node, the project the root; per node its `prepare` wizard on the way down, its children one at a time, its `run` wizard on the way up. A failed child leaves its parent `blocked` (siblings still run); a node two parents share runs once; a cycle is refused before anything runs. `POST project/<id>/setup {root?}`, `flow project setup`, a web app found down, a received declared app — all run it. Not the `artifact-setup` agent (a free agent that works out how a received app runs); that is only the fallback for an app that declares nothing. |
+| **AssetSetup** | `AssetSetupSpec` (`asset.setup`), `builtin/asset_setup.py`, `agentic-assets/asset_setup/<name>/asset_setup.json` | Ours. A DECLARED node of the setup tree — what a derivation cannot know (a source's container): `prepare` / `run` / `on_load` wizard names (`on_load` runs when the asset is SHOWN — `core/setup/load.load_asset`; never asks), extra `children`, `inputs`. Attaches to its `subject`, else the asset folder holding it (a driver's → every source of that driver). The run's answer is a `SetupTreeResult` of `SetupNodeResult`s, recorded per root beside a wizard's `run.json`. |
+
+
+## Parked worker (2026-10-14)
+
+A headless (`claude -p`) worker normally lives for one turn. When the agent leaves
+background work running (a dev server, a deploy watcher) the CLI stays alive for it, and
+between turns the worker is **parked**: alive and idle, registered but *not a turn* —
+`busy` is false, a message the user sends is written to the SAME process, and
+`background_work` tells the UI why a not-busy process still holds a worker.
+
+* **parked worker** — ours (`ClaudeCLIStreamWorker.parked`, `prompt_worker_parked`).
+  Not a provider concept: Claude Code's own words are "background session" and
+  "supervisor", which flowpad does not use, and its work cannot move between processes.
+* **`background_work`** — the entity field that says a parked worker exists.
+  **`stop-background`** ends it (and the work with it).
+* **`WorkerTurns`** (`worker_turns.py`) — the turns of one worker that outlives them: when
+  each begins and ends, and who listens to it.
+* **Not** the PTY layer's *parked connection id* (`detached_connections`, the "parked-id
+  reaper" in `pty-layer.md`): that is a WebSocket subscription kept for a reconnect, on a
+  PTY. Say "parked worker" or "parked connection", never bare "parked".

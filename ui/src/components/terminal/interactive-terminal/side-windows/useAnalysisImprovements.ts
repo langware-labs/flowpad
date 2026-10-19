@@ -1,12 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  type AgentTrace,
-  type FSRef,
-  ProcessKind,
-  type Skill,
-  type WorkerStatus,
-  isWorkerRunning,
-} from '@sdk';
+import { type AgentTrace, type FSRef, ProcessKind, type Skill, type WorkerStatus, isWorkerRunning } from '@sdk';
 import { useAgentTraceDoc } from '@src/components/assets/editor/agent-trace/useAgentTraceDoc';
 import type { TraceFinding } from '@src/components/assets/editor/agent-trace/trace-types';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -73,7 +67,9 @@ export function useAnalysisImprovements(trace: AgentTrace | null) {
           const skillFile = byName.get(skillName)?.doc ?? null;
           if (!skillFile) return;
           try {
-            const st = await getGitStatus(skillFile.typeId.id, skillFile.parent.path);
+            // `typeId` is protected on FSRef; `localComputeNodeId` is the public
+            // accessor (null for a hub-backed ref — no machine to run git on).
+            const st = await getGitStatus(skillFile.localComputeNodeId ?? '@local', skillFile.parent.path);
             next[skillName] = skillFileIsDirty(st?.files ?? [], skillFile.path);
           } catch {
             /* leave undefined → treated as not-dirty */
@@ -112,13 +108,13 @@ export function useAnalysisImprovements(trace: AgentTrace | null) {
       const skill = byName.get(skillName) ?? null;
       const entry = improvable.find((e) => e.skillName === skillName);
       if (!skill || !entry || !trace) {
-        notify.error({ title: 'Cannot improve', message: `The "${skillName}" skill is not installed.` });
+        notify.error({ title: t`Cannot improve`, message: t`The "${skillName}" skill is not installed.` });
         return;
       }
       if (dirtyBySkill[skillName]) {
         notify.warning({
-          title: 'Commit or discard first',
-          message: 'This skill has uncommitted changes — improve runs only on a clean skill.',
+          title: t`Commit or discard first`,
+          message: t`This skill has uncommitted changes — improve runs only on a clean skill.`,
         });
         return;
       }

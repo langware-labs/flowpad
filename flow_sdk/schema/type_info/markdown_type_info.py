@@ -1,43 +1,41 @@
 """Type metadata for MARKDOWN."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
-from flow_sdk.fs_store.indexer.functions.markdown import (
-    extract_markdown,
-)
-from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.assets.identity import frontmatter_identity
+from flow_sdk.assets.layout import Walk
+from flow_sdk.assets.types.markdown import derive_markdown
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.data_spec.markdown_spec import MarkdownSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-
-def _markdown_default_body(entity) -> str:
-    """Markdown written to docs/<name>.md on create.
-
-    Mirrors Skill/Agent/Workflow: without a default-body writer, create persists
-    the entity + asset_ref but never materializes the .md, so opening the brand-new
-    doc hits a missing file. ``owns_main_ref`` is False, so this only writes when
-    the file is absent (``upsert_main_ref``) — it never clobbers hand edits. Title
-    is carried by the filename stem, so a bare heading round-trips cleanly.
-    """
-    name = (getattr(entity, "title", None) or getattr(entity, "name", None) or "Untitled").strip()
-    return render_entity_frontmatter(entity, {}) + f"\n\n# {name}\n"
-
-
-MARKDOWN = TypeMetadata(
-    type=EntityType.MARKDOWN,
-    icon="WikiW",
-    displayName="Documents",
+MARKDOWN = TypeInfo(
+    hub_main_file="document.md",
+    type_name=EntityType.MARKDOWN,
+    editor="markdown",
+    icon="FileText",
+    display_name="Documents",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
+    cloud_file_transport="git",
     index_fields=["title", "tags", "links"],
-    asset_class="internal",
+    asset_class="docs",
     family="docs",
-    from_disk_fn=extract_markdown,
-    capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
-    post_sync_fn=reconcile_folder_doc_edges,
-    default_body_fn=_markdown_default_body,
+    # ``<home>/docs/**/*.md`` — the DOCS family mount, ONE bounded directory,
+    # and the only user-scope markdown discovery: ``~`` is never content-walked
+    # (a huge tree of venvs and npm packages). Project markdown is the bespoke
+    # per-FOLDER emitter ``markdown_in_folder_fn`` (typed-ancestor fence).
+    walk=Walk(roots=("user_home_folder",), recursive=True),
+    fts_content=("body", "links"),
+    identity_carrier=frontmatter_identity(),
+    # Two observers, and the order does not matter — neither reads the other's writes.
+    # ``mark_rag_stale`` is a containment test plus at most one flag write; it never chunks,
+    # embeds or calls out, so a scan stays free of paid work.
+    # ``owns_main_ref`` stays False: a create materializes the .md when absent
+    # and never clobbers hand edits. Identity lives in the capsule, not the
+    # frontmatter; a fresh doc renders an empty header.
+    asset_spec=MarkdownSpec,
+    derive_fields_fn=derive_markdown,
     # On receive, a note has no setup agent — it just opens (setup_skill=None).
     reception_verb="Open",
 )

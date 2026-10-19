@@ -4,7 +4,6 @@ Health check API test.
 Ported from FlowPad: flowpad/hub/tests/api/test_health_check.py
 """
 
-import pytest
 
 
 async def test_health_check(client):

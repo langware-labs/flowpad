@@ -1,0 +1,430 @@
+"""SourceItem — one record ingested from a cloud DataSource.
+
+Generic and discriminated by ``kind`` (``content.feed.item``, later
+``content.message.chat``) rather than one entity type per provider: providers
+differ only in ``kind`` and ``raw``, and a single queryable table is what any
+later projection over ingested records will need.
+
+**Identity is the natural key, looked up — not derived.** The id is an ordinary
+``uuid4``; what makes a re-poll, a replay and a reconciliation sweep converge on
+one row is ``find_existing``, which resolves ``(data_source, origin)`` to the
+row that already holds it. ``origin`` is the contract's ``CloudOrigin`` — the
+resource's ``(kind, namespace, key)`` — and ``data`` its typed payload; both are
+lifted from the flat header (``flow_sdk/ingest/legacy_lift.py``). Same guarantee as the old v5-derived id
+(idempotency with no delivery ledger and no dedupe table), relocated from id
+arithmetic to a lookup — so rows written before the change still resolve, and
+nothing has to re-derive an id it does not hold.
+
+**Snapshot vs local state.** ``SourceItemSpec`` — the type's ``asset_spec`` — IS
+the snapshot: what a driver emits and what the ingestor copies onto the row
+whenever the content digest moves. ``read``, ``starred`` and ``sent_by_us`` are
+ours, outside the header, and so survive re-delivery structurally rather than by
+a hand-kept field map.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+import os
+from typing import ClassVar, Optional
+
+from pydantic import ConfigDict, model_validator
+
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
+from flow_sdk.builtin import ingest_order
+from flow_sdk.core import Entity
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-exported; the row and its snapshot read as one module
+    NonBlank,
+    SourceItemSpec,
+)
+from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
+from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
+from flow_sdk.schema.types import EntityType
+from flow_sdk.sources.values.items import Payload
+from flow_sdk.sources.values.origin import CloudOrigin
+
+
+class MessageFile(DataSpec):
+    """A file to send, as a value: a path on this machine and how it should arrive. ``as_`` is a
+    ``FileKind`` value (``"voice"`` sends a voice note, ``"document"`` an image uncompressed) or
+    ``"auto"`` — the kind its media type says. A plain path string is accepted wherever one is."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    spec_kind: ClassVar[str] = "message.file"
+
+    path: str
+    as_: str = "auto"
+    caption: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_path(cls, data):
+        return {"path": str(data)} if isinstance(data, (str, os.PathLike)) else data
+
+    def to_item(self):
+        """The contract's form: a ``local`` file item the runtime checks and the driver reads."""
+        from flow_sdk.sources.files import local_file  # noqa: PLC0415
+
+        return local_file(self.path, as_=self.as_, caption=self.caption or None)
+
+
+class MessageSpec(DataSpec):
+    """An OUTBOUND message, as a value — what a script hands ``StreamInbox.send``.
+
+    The channel-generic base of the outbound hierarchy — outbound only,
+    deliberately. Inbound messages keep arriving as ``SourceItemSpec`` until
+    the full inbound family lands; this class exists so the outbound half of a
+    conversation is a spec too — send shape and receive shape stay one family,
+    and threading is visible data rather than verb arguments.
+
+    Subclasses add what their channel genuinely needs (email a ``subject``)
+    and own their ``reply_to`` constructor, because channels disagree on WHO a
+    reply targets: email replies to the author's address, a chat channel
+    replies to the chat itself.
+
+    Identity fields (``external_id`` and friends) are deliberately absent: a
+    message's identity is born at the provider — ``send()`` returns it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    to: list[str]
+    body: str
+    thread_key: str = ""
+    reply_to_external_id: str = ""
+    #: Pointers, never bytes — resolved at the send edge. A channel that cannot
+    #: take one refuses loudly rather than dropping it.
+    files: list[MessageFile] = []
+    #: ``False``: answer without quoting on a channel whose replies quote. A
+    #: channel whose reply only threads keeps its reference either way.
+    quote: bool = True
+
+
+class EmailMessageSpec(MessageSpec):
+    """Outbound email: the generic shape plus a subject line.
+
+    The sent copy re-ingests as a full ``SourceItemSpec`` on the next poll —
+    the mailbox is the record.
+    """
+
+    subject: str = ""
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "EmailMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Email replies target the AUTHOR's address. The provider's thread
+        handle rides ``thread_key`` and the replied-to message's own id rides
+        ``reply_to_external_id`` (what e.g. AgentMail's reply endpoint keys on).
+        """
+        subject = str(getattr(m, "name", "") or "")
+        if subject and not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+        return cls(
+            to=[str(getattr(m, "author_external_id", "") or "")],
+            body=body,
+            subject=subject,
+            thread_key=str(getattr(m, "thread_key", "") or ""),
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
+class TelegramMessageSpec(MessageSpec):
+    """Outbound Telegram message: the generic shape, chat-targeted replies.
+
+    No extra fields — Telegram has no subject; parse modes and media are
+    explicit non-goals for now (the driver sends plain text).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "TelegramMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        Telegram replies target the CHAT, not the author: ``to`` carries the
+        chat id (the leading component of ``thread_key``), and the replied-to
+        message's ``external_id`` (``"<chat_id>/<message_id>"``) rides
+        ``reply_to_external_id`` for the driver's ``reply_to_message_id``.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        chat_id = thread_key.split("/", 1)[0]
+        return cls(
+            to=[chat_id],
+            body=body,
+            thread_key=thread_key,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
+class ChannelMessageSpec(MessageSpec):
+    """Outbound message to a CHANNEL, threaded — the shape Slack and Teams share.
+
+    No extra fields: neither channel has a subject worth modelling here, and
+    blocks, cards, mentions and media are explicit non-goals for now (the
+    drivers post plain text). Providers subclass it by name only, so
+    ``outbound_spec`` can still say which one a source speaks.
+    """
+
+    #: How many trailing components of an item's origin namespace (``<account>/<container>``) name
+    #: the channel it was posted in.
+    container_parts: ClassVar[int] = 1
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "ChannelMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        A channel reply targets the CHANNEL, in the message's thread: ``to`` is
+        the container the item's origin names (a channel ``thread_key`` is a bare
+        message id and names no channel), and ``thread_key`` rides through so the
+        post lands as a threaded reply. Slack's container is a channel id, Teams'
+        ``{team}/{channel}``.
+        """
+        namespace = str(getattr(m, "origin_namespace", "") or "")
+        return cls(
+            to=["/".join(namespace.split("/")[-cls.container_parts:]) if namespace else ""],
+            body=body,
+            thread_key=str(getattr(m, "thread_key", "") or ""),
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
+class SlackMessageSpec(ChannelMessageSpec):
+    """Outbound Slack message: ``thread_key`` is the thread's ``ts``."""
+
+
+class TeamsMessageSpec(ChannelMessageSpec):
+    """Outbound Microsoft Teams message: ``thread_key`` is the ROOT message id.
+
+    Teams' own model is two levels — a root and its replies — so a reply to a
+    reply is still a reply to the root, and ``thread_key`` already names it.
+    """
+
+    container_parts: ClassVar[int] = 2
+
+
+class HelpdeskMessageSpec(ChannelMessageSpec):
+    """Outbound help-desk reply: ``to`` is the TICKET — the hub conversation id
+    the inbound record's ``thread_key`` names — and ``thread_key`` rides
+    through unchanged. The hub threads by conversation, so there is no
+    in-thread reply target beyond the ticket itself."""
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "HelpdeskMessageSpec":
+        ticket = str(getattr(m, "thread_key", "") or "")
+        return cls(
+            to=[ticket],
+            body=body,
+            thread_key=ticket,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
+class VoiceMessageSpec(MessageSpec):
+    """Outbound on a voice channel: something said TO a person — a call placed with ``body`` as its
+    purpose, a line spoken on their live call, or a reply clip. The person IS the thread (their
+    number, their name), so ``to`` and ``thread_key`` carry the same address; a spoken reply quotes nothing.
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "VoiceMessageSpec":
+        """A reply to inbound sentence ``m`` — a pure constructor, no I/O: said to whoever said it."""
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
+
+
+class WhatsAppMessageSpec(MessageSpec):
+    """Outbound WhatsApp message: the generic shape, chat-targeted replies — the person, or the group.
+
+    No extra fields — WhatsApp has no subject, and templates, media and
+    interactive replies are explicit non-goals for now (the driver sends plain
+    text inside the 24-hour window).
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, files=()) -> "WhatsAppMessageSpec":
+        """A reply to inbound message ``m`` — a pure constructor, no I/O.
+
+        WhatsApp replies target the CHAT, and the chat IS the thread: a 1:1
+        conversation is the pair (business number, wa_id), a group's is the
+        group — so ``to`` and ``thread_key`` carry the same id (a wa_id, or the
+        group id: a reply in a group goes to the group, never privately to
+        whoever wrote) and there is nothing to derive. The
+        replied-to id rides ``reply_to_external_id`` and becomes Meta's
+        ``context`` — which renders as a quote and does not start a thread,
+        because WhatsApp has none.
+        """
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        return cls(
+            to=[thread_key],
+            body=body,
+            thread_key=thread_key,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            files=list(files),
+        )
+
+
+class SourceItem(Entity):
+    """The ROW; the snapshot the medium persists is ``SourceItemSpec``
+    (``TypeInfo.asset_spec``)."""
+
+    type: str = APIField(default=EntityType.SOURCE_ITEM.value)
+
+    # ── envelope (the routing header) ──────────────────────────────────────
+    kind: str = APIField(default="", description="Ontology kind, e.g. content.feed.item")
+    provider: str = APIField(default="", description="Driver key: rss | hackernews | …")
+    data_source_id: str = APIField(default="")
+    external_id: str = APIField(default="", description="Provider-native stable id")
+    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for the stream inbox projection")
+    # The provider's id for the record this replies to. Provenance for quoting
+    # and for repairing a thread whose parent arrives late — NOT how threading
+    # is decided (`thread_key` is). Deliberately absent from DIGESTED_FIELDS:
+    # it never changes for a given record, and adding a digested field rewrites
+    # the whole corpus once. The accepted consequence is that rows ingested
+    # before this field existed never backfill it.
+    reply_to_external_id: Optional[str] = APIField(default=None)
+    # Adoption hints (see `SourceItemSpec`): the local Conversation / FlowMessage
+    # ids this record must land on. Not digested, for the same reason as
+    # `reply_to_external_id`.
+    conversation_id: Optional[str] = APIField(default=None)
+    message_id: Optional[str] = APIField(default=None)
+    permalink: Optional[str] = APIField(default=None)
+    occurred_at: Optional[str] = APIField(default=None, description="ISO-8601; the ordering key")
+
+    # ── the contract's value ───────────────────────────────────────────────
+    origin: Optional[CloudOrigin] = APIField(default=None, description="The resource this row mirrors")
+    # The triple, flat: a query cannot reach inside `origin`, and the natural key
+    # (`SOURCE_ITEM.natural_key`) must be indexable. Always equal to `origin`'s.
+    origin_kind: str = APIField(default="")
+    origin_namespace: str = APIField(default="")
+    origin_key: str = APIField(default="")
+    data: Optional[Tagged[Payload]] = APIField(default=None, description="The typed payload, tagged with its spec_kind")
+
+    # ── who ────────────────────────────────────────────────────────────────
+    author_external_id: Optional[str] = APIField(default=None)
+    author_display: Optional[str] = APIField(default=None)
+    recipients: list[str] = APIField(default_factory=list, description="Addressees as the provider printed them")
+
+    # ── body ───────────────────────────────────────────────────────────────
+    # `name` (declared on Entity) is the FTS title. `body` must reach FTS, which
+    # is why it is in the header — see the type_info module.
+    body: str = APIField(default="")
+    # The provider payload, verbatim. Persist.FALSE keeps it a DB column: it
+    # never lands in metadata.json and never pollutes the FTS row.
+    raw: Optional[dict] = APIField(default=None, persist=Persist.FALSE, sharing=Sharing.PRIVATE)
+
+    # ── idempotency ────────────────────────────────────────────────────────
+    # sha256 over the NORMALIZED fields only, never over `raw` — provider
+    # payloads carry volatile keys (scores, reaction counts, re-serialized
+    # whitespace) that would flip the digest on every poll and defeat the gate.
+    content_digest: str = APIField(default="", persist=Persist.TRUE)
+
+    # ── local state — PRESERVED across re-delivery ─────────────────────────
+    read: bool = APIField(default=False, persist=Persist.TRUE)
+    starred: bool = APIField(default=False, persist=Persist.TRUE)
+    # This machine sent it (``DataDriver.send`` records the copy at send time). Outside the spec,
+    # so the provider's echo of the same message — same natural key — never clears it, and no
+    # ingest caller can claim it.
+    sent_by_us: bool = APIField(default=False, persist=Persist.TRUE)
+    # Who reacted with what — the channel's reaction reports folded into state
+    # (``stream_inbox.reactions``). Local state like ``read``: a reaction is never a
+    # record of its own, and the provider's redelivery of the message must not clear it.
+    reactions: list[MessageReaction] = APIField(default_factory=list, persist=Persist.TRUE)
+
+    _api_visible: ClassVar[bool] = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_origin(cls, data):
+        """The flat triple follows ``origin``: a row built from an origin is findable by it."""
+        if not isinstance(data, dict) or not data.get("origin"):
+            return data
+        origin = data["origin"]
+        origin = origin if isinstance(origin, CloudOrigin) else CloudOrigin.model_validate(origin)
+        return {**data, "origin_kind": origin.kind, "origin_namespace": origin.namespace, "origin_key": origin.key}
+
+    def as_row_input(self) -> "tuple[dict, dict]":
+        """``(contents, provenance)`` for one dataset example row: this item's
+        own envelope as ``input/item.json``, and where it came from. The
+        ingest→dataset composition lives with the item, not with ``Dataset``."""
+        from flow_sdk.schema.data_spec.layout import INPUT  # noqa: PLC0415
+
+        envelope = SourceItemSpec.model_validate({k: getattr(self, k) for k in SourceItemSpec.model_fields})
+        return (
+            {f"{INPUT}/item.json": envelope.model_dump(mode="json", exclude_none=True)},
+            {
+                "data_source_id": self.data_source_id,
+                "external_id": self.external_id,
+                "item_id": self.id,
+            },
+        )
+
+    def is_ours(self, source) -> bool:
+        """Did WE write this? Sent from here, or authored by one of the source's own addresses —
+        the latter covers what we sent from elsewhere (a Sent folder, another machine)."""
+        from flow_sdk.stream_inbox.projection import is_self_address  # noqa: PLC0415
+
+        return self.sent_by_us or is_self_address(source, self.author_external_id or "")
+
+    @classmethod
+    async def newest_for(cls, data_source_id: str, *, at_or_before: Optional[datetime] = None) -> Optional["SourceItem"]:
+        """The last row ingested for a source (as of *at_or_before*, when given) — a listener's baseline."""
+        return await ingest_order.newest_for(cls, data_source_id, at_or_before=at_or_before)
+
+    @classmethod
+    async def page_after(
+        cls, data_source_id: str, after: Optional[tuple[datetime, str]], *, limit: int
+    ) -> list["SourceItem"]:
+        """The next *limit* rows in ingest order, strictly after *after* — see ``ingest_order``."""
+        return await ingest_order.page_after(cls, data_source_id, after, limit=limit)
+
+    @classmethod
+    async def find_reply_from_self(cls, source, item, *, since: Optional[datetime] = None) -> Optional["SourceItem"]:
+        """Our own outbound row answering *item*, if one has been ingested. Redelivery's question.
+
+        Two keys, because ``reply_to_external_id`` is stamped only by drivers that map it —
+        Slack threads carry the root ``thread_ts``, not the replied-to message. Primary: a
+        self-authored row whose ``reply_to_external_id`` names the item. Fallback: a
+        self-authored row on the same thread ingested at or after *since* (the moment the
+        reply was attempted). Self-authorship is ``is_ours``.
+
+        The caller syncs first (a crash may have fallen between send and record) and treats
+        "not found" as "do not resend".
+        """
+
+        if item.external_id:
+            rows = await cls.get_all({"data_source_id": str(source.id), "reply_to_external_id": item.external_id})
+            for row in rows:
+                if row.is_ours(source):
+                    return row
+        if item.thread_key:
+            operands = [
+                ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(source.id)]),
+                ExpressionNode(op=QueryOp.EQ, operands=["thread_key", item.thread_key]),
+            ]
+            if since is not None:
+                operands.append(ExpressionNode(op=QueryOp.GE, operands=["created_date", ingest_order.bind(since)]))
+            rows = await cls.get_all(QueryFilter(
+                match=ExpressionNode(op=QueryOp.AND, operands=operands),
+                order_by=[{"created_date": "asc"}, {"id": "asc"}],
+            ))
+            for row in rows:
+                if row.is_ours(source) and str(row.id) != str(getattr(item, "id", "")):
+                    return row
+        return None
+
+    @classmethod
+    async def find_existing(cls, data_source_id: str, origin: CloudOrigin) -> Optional["SourceItem"]:
+        """THE identity lookup — the row this source holds for *origin*, or None.
+
+        The origin's namespace carries the segment, because provider ids are
+        frequently only unique *within* one (a Slack ``ts`` repeats across
+        channels); ``data_source_id`` partitions it, because the same remote feed
+        added twice must not collide. The key itself is declared once, on the type
+        (``TypeInfo.natural_key``); this is its named single-row entry point,
+        indexed by ``ix_entities_source_item_origin_v3``.
+        """
+        return await cls.serializer().resolve_key(cls, (data_source_id, origin.kind, origin.namespace, origin.key))

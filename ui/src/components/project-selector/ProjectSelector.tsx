@@ -8,8 +8,9 @@ export interface ProjectSelectorItem {
   name: string;
   /** Full filesystem path, shown as the row's sub-line. */
   path?: string;
-  /** ISO timestamp used for the "ago" label. */
-  modifiedAt?: string | null;
+  /** Timestamp used for the "ago" label — ISO string, or the `Date` an
+   *  entity date field carries. */
+  modifiedAt?: string | Date | null;
   /** Epoch-ms sort key, precomputed at the mapping boundary via
    *  `projectRecencyMs` (UI-open recency wins, `modifiedAt` falls back). */
   recencyMs?: number | null;
@@ -32,7 +33,7 @@ export interface ProjectSelectorProps {
   excludeIds?: ReadonlyArray<string>;
 }
 
-function timeAgo(iso?: string | null): string | null {
+function timeAgo(iso?: string | Date | null): string | null {
   if (!iso) return null;
   const diff = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(diff)) return null;
@@ -87,7 +88,7 @@ export function ProjectSelector({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t`Filter projects…`}
-          className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="h-8 w-full rounded-md border border-input bg-background pe-2 ps-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
 
@@ -95,7 +96,9 @@ export function ProjectSelector({
         {isLoading && projects.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-6">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            <span className="text-xs text-muted-foreground"><Trans>Loading…</Trans></span>
+            <span className="text-xs text-muted-foreground">
+              <Trans>Loading…</Trans>
+            </span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-6 text-center text-xs text-muted-foreground">
@@ -112,14 +115,14 @@ export function ProjectSelector({
                   type="button"
                   onClick={() => onSelect(isSelected ? null : p.id)}
                   data-testid={`project-selector-row-${p.id}`}
-                  className={`flex w-full flex-col items-stretch gap-0.5 rounded px-2 py-1.5 text-left transition-colors ${
+                  className={`flex w-full flex-col items-stretch gap-0.5 rounded px-2 py-1.5 text-start transition-colors ${
                     isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
                   }`}
                   title={p.path || p.name}
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-sm font-medium">{p.name}</span>
-                    {ago && <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>}
+                    {ago && <span className="ms-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>}
                   </div>
                   {p.path && <div className="truncate font-mono text-[10px] text-muted-foreground">{p.path}</div>}
                 </button>

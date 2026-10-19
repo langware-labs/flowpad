@@ -1,0 +1,22 @@
+{
+  "name": "flow-telegram-connect",
+  "description": "Link your Telegram account to Flowpad — press Connect Telegram, then Start in the chat it opens. Your messages then arrive in Flowpad.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "connect",
+      "label": "Connect Telegram",
+      "kind": "compute",
+      "ref": "flow-telegram-connect",
+      "bind": "connect"
+    },
+    {
+      "id": "ask-connected",
+      "label": "Press Start in Telegram",
+      "kind": "compute",
+      "ref": "flow-telegram-ask-connected"
+    }
+  ]
+}

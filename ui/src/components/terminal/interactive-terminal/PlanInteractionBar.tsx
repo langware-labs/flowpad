@@ -1,8 +1,14 @@
 import { FlowData, FlowElementTypes } from '@sdk';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { cn } from '@src/lib/utils';
-import { ClipboardCheck, ListChecks, Play } from 'lucide-react';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import { ViewMode } from '@src/contexts/view-mode-context';
+import { useDockNavigation } from '@src/navigation';
+import { ClipboardCheck, ListChecks, Play, Terminal } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { getToolUseId } from '@src/components/floating-chat/groupTurnEvents';
 import { useChatPlanMode } from './chat-plan-mode-context';
 
 interface PlanInteractionBarProps {
@@ -21,10 +27,7 @@ interface Question {
   options: QuestionOption[];
 }
 
-type Pending =
-  | { kind: 'question'; questions: Question[] }
-  | { kind: 'plan'; plan: string }
-  | null;
+type Pending = { kind: 'question'; questions: Question[] } | { kind: 'plan'; plan: string } | null;
 
 /** Pull the structured tool input off a TOOL_CALL FlowData (`data.input`/`.args`). */
 function toolInput(fd: FlowData): Record<string, unknown> {
@@ -35,29 +38,55 @@ function toolInput(fd: FlowData): Record<string, unknown> {
 
 /**
  * Find the latest still-pending plan interaction in the stream: the most recent
- * AskUserQuestion / ExitPlanMode tool call that the user hasn't responded to yet
- * (no USER_MESSAGE after it). Returns null when there's nothing to act on.
+ * AskUserQuestion / ExitPlanMode tool call the user hasn't responded to yet.
+ * Returns null when there's nothing to act on.
+ *
+ * TWO independent "it's been answered" signals, because the two transports
+ * record an answer differently and each misses the other's case:
+ *
+ *  - A **TOOL_RESULT paired by `tool_use_id`**. This is how the provider itself
+ *    closes the question — answering in the TUI writes only that (a `user`
+ *    entry carrying a `tool_result` block, which the analyzer maps to
+ *    TOOL_RESULT, never to USER_MESSAGE). Without this check a question
+ *    answered in the terminal stayed on screen forever once the chat surface
+ *    started rendering the card on a PTY worker. Same rule the backend's
+ *    `_pending_user_input_tool` (worker_status.py) uses to clear PENDING_USER.
+ *  - A **later USER_MESSAGE**. The headless flow answers by sending a fresh
+ *    turn, and that turn's tool_use may never receive a result at all (the
+ *    turn ended at the question), so pairing alone would never clear it.
  */
 function findPending(items: FlowData[]): Pending {
   let lastUserIdx = -1;
   let hit: { idx: number; name: string; fd: FlowData } | null = null;
-  items.forEach((it, i) => {
+  const resolved = new Set<string>();
+  // A plain loop, not `forEach`: assigning `hit` inside a callback puts it out
+  // of reach of control-flow narrowing, and every read below `if (!hit)` then
+  // narrows to `never`.
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
     const et = it.elementType;
     if (et === FlowElementTypes.USER_MESSAGE) lastUserIdx = i;
+    if (et === FlowElementTypes.TOOL_RESULT) {
+      const id = getToolUseId(it);
+      if (id) resolved.add(id);
+    }
     if (et === FlowElementTypes.TOOL_CALL) {
       const name = it.attributes['tool-name'];
       if (name === 'AskUserQuestion' || name === 'ExitPlanMode') hit = { idx: i, name, fd: it };
     }
-  });
+  }
   if (!hit) return null;
-  if (lastUserIdx > hit.idx) return null; // already answered / moved on
+  if (lastUserIdx > hit.idx) return null; // answered by a follow-up turn / moved on
+  const hitId = getToolUseId(hit.fd);
+  if (hitId && resolved.has(hitId)) return null; // the provider closed it (TUI answer)
   if (hit.name === 'AskUserQuestion') {
     const qs = toolInput(hit.fd).questions;
     const questions = Array.isArray(qs) ? (qs as Question[]) : [];
     if (questions.length === 0) return null;
     return { kind: 'question', questions };
   }
-  const plan = String(toolInput(hit.fd).plan ?? '');
+  const raw = toolInput(hit.fd).plan;
+  const plan = typeof raw === 'string' ? raw : '';
   return { kind: 'plan', plan };
 }
 
@@ -65,26 +94,95 @@ function findPending(items: FlowData[]): Pending {
  * Sticky action area below the chat stream: renders the structured choice card
  * for an AskUserQuestion, or a "Plan ready → Execute" card for ExitPlanMode.
  * Submitting an answer / executing routes through {@link useChatPlanMode}, which
- * sends it as the next headless turn (the "insert a prompt + Enter" path).
+ * sends it as the next turn (the "insert a prompt + Enter" path).
+ *
+ * Two renderings, picked by `canAnswerInline` (see the flag notes in
+ * `chat-plan-mode-context`):
+ *
+ *  - Headless: the interactive cards. A submit is an ordinary `prompt()` turn.
+ *  - PTY: a read-only notice pointing at the terminal. The agent's own TUI is
+ *    blocked on its picker there, so an answer sent from here is rejected
+ *    (`user-turn-not-landed`) and its text is eaten as keystrokes by that
+ *    picker. The user still needs to KNOW a question is waiting — that is the
+ *    whole reason the bar renders at all on this transport.
  */
+/** The hook-reported question as a pending interaction (see `hookQuestion`). */
+function pendingFromHook(q: ReturnType<typeof useChatPlanMode>['hookQuestion']): Pending {
+  if (!q) return null;
+  if (q.tool_name === 'AskUserQuestion') {
+    const qs = q.input.questions;
+    const questions = Array.isArray(qs) ? (qs as Question[]) : [];
+    return questions.length ? { kind: 'question', questions } : null;
+  }
+  const plan = q.input.plan;
+  return { kind: 'plan', plan: typeof plan === 'string' ? plan : '' };
+}
+
 export function PlanInteractionBar({ items }: PlanInteractionBarProps) {
-  const { enabled, sending, answer, execute, setPlanPending } = useChatPlanMode();
-  const pending = useMemo(() => findPending(items), [items]);
+  const { respondEnabled, canAnswerInline, sending, answer, execute, setPlanPending, hookQuestion } = useChatPlanMode();
+  // The transcript first; the worker's hook when the transcript does not carry
+  // the call yet (Claude may hold a pending AskUserQuestion until it is answered).
+  const pending = useMemo(() => findPending(items) ?? pendingFromHook(hookQuestion), [items, hookQuestion]);
 
   // "Switch back to code" once a plan is ready.
   useEffect(() => {
     if (pending?.kind === 'plan') setPlanPending(false);
   }, [pending?.kind, setPlanPending]);
 
-  if (!enabled || !pending) return null;
+  if (!respondEnabled || !pending) return null;
 
   return (
     <div className="border-t bg-background px-4 py-3" data-testid="plan-interaction-bar">
-      {pending.kind === 'question' ? (
+      {!canAnswerInline ? (
+        <AnswerInTerminalNotice kind={pending.kind} />
+      ) : pending.kind === 'question' ? (
         <QuestionCard questions={pending.questions} sending={sending} onSubmit={answer} />
       ) : (
         <PlanReadyCard plan={pending.plan} sending={sending} onExecute={execute} />
       )}
+    </div>
+  );
+}
+
+/**
+ * The PTY rendering: say what is waiting and where to deal with it. No control,
+ * deliberately — every action available here would be delivered by pasting into
+ * the agent's blocked TUI, which does not answer it and does corrupt it.
+ */
+function AnswerInTerminalNotice({ kind }: { kind: 'question' | 'plan' }) {
+  const { currentDock, navigation } = useDockNavigation();
+
+  // URL-first, a mode switch like the session's own: the address carries the
+  // mode, so the click navigates (marked, so it counts as the user's selection).
+  const openTerminal = () => {
+    if (currentDock)
+      navigation.openDock(currentDock.withViewMode(ViewMode.Advanced), undefined, { viewModeSwitch: true });
+  };
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-foreground"
+      data-testid="answer-in-terminal-notice"
+    >
+      <Terminal className="h-4 w-4 flex-shrink-0 text-blue-400" />
+      <span className="min-w-0 flex-1">
+        {kind === 'question'
+          ? t`The agent has asked a question — answer it in the terminal.`
+          : t`The agent's plan is ready — approve it in the terminal.`}
+      </span>
+      <button
+        type="button"
+        // Advanced is the terminal surface, so this lands the user on this
+        // session's xterm — where the agent's own picker is waiting. The
+        // transport is already PTY here, so `useProcessSurface` reconciles to a
+        // no-op rather than starting anything.
+        onClick={openTerminal}
+        className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        data-testid="answer-in-terminal-open"
+      >
+        <Terminal className="h-3.5 w-3.5" />
+        <Trans>Open terminal</Trans>
+      </button>
     </div>
   );
 }
@@ -186,6 +284,7 @@ function PlanReadyCard({
   onExecute: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const links = useLinkHandlers();
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -210,7 +309,7 @@ function PlanReadyCard({
       </div>
       {open && plan && (
         <div className="max-h-60 overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-2 text-[12px]">
-          <MarkdownView value={plan} compact codeChrome={false} />
+          <MarkdownView value={plan} compact codeChrome={false} links={links} />
         </div>
       )}
     </div>

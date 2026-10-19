@@ -1,32 +1,26 @@
 import { expect, test, type Page } from '@playwright/test';
-import { ensureProjectMarkdown } from './_seed';
+import { writeFileSync } from 'node:fs';
+import { createProjectMarkdown } from './_seed';
 
+// Real body text for the selection tests to select from. `ensureProjectMarkdown`
+// mints a doc with an empty body (frontmatter + identity capsule only, no
+// paragraph) — fine for tests that only need a doc to exist, but these tests
+// select the first 6 characters of the first paragraph/heading, so the doc
+// needs actual text. Mirrors breadcrumb_fence.md.ts's seed pattern: create via
+// the API, then overwrite the file on disk with real content.
+const BODY_TEXT = 'Selection toolbar QA fixture paragraph for the milkdown editor tests.';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// Open the markdown asset list, expand the markdown type + any doc folders,
-// and click the first markdown row to open it in the editor.
+// Create a markdown asset with real body text and open its canonical URL
+// directly. These scenarios exercise Milkdown, not asset-tree expansion or
+// row-label presentation.
 async function openFirstMarkdownDoc(page: Page) {
-  // Project-scoped tree on a fresh instance has an empty docs folder — seed
-  // one doc so "the first .md leaf" exists (see _seed.ts).
-  await ensureProjectMarkdown(page.request);
-  await page.goto('/dock/assets/list/markdown');
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-  const leaf = page.locator('[role="treeitem"]').filter({ hasText: /\.md$/ }).first();
-  await page.locator('[data-testid^="browseable-chevron-asset-type:markdown:"]').first().click().catch(() => {});
-
-  // Expand the markdown type and any nested doc folders until a .md leaf is
-  // visible. Poll instead of fixed sleeps so this stays fast and does not
-  // depend on a single hard-coded settle duration.
-  for (let attempt = 0; attempt < 20; attempt++) {
-    if (await leaf.isVisible().catch(() => false)) break;
-    const folders = page.locator('[data-testid^="browseable-chevron-md-folder:"]');
-    const fcount = await folders.count();
-    for (let i = 0; i < fcount; i++) await folders.nth(i).click().catch(() => {});
-    await page.waitForTimeout(300);
-  }
-  await expect(leaf).toBeVisible({ timeout: 15_000 });
-  await leaf.click();
+  const doc = await createProjectMarkdown(page.request);
+  if (!doc.assetRef) throw new Error('seed markdown returned no asset_ref');
+  writeFileSync(doc.assetRef, `# QA selection toolbar fixture\n\n${BODY_TEXT}\n`, 'utf8');
+  const markdownId = doc.id;
+  await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${markdownId}`);
   // "Doc opened" = the MarkdownEditor header mounted. Do NOT wait on `.ProseMirror`
   // here: the chosen editor mode is persisted across docs (PrefKey.EDITOR_MODE), so a
   // doc can restore in Review mode (ReviewSurface, no `.ProseMirror`) — the view chip
@@ -39,7 +33,7 @@ async function openFirstMarkdownDoc(page: Page) {
   // enters Advanced. Flip it through the live app API the way the footer view pill
   // does (window.setView, exposed by view-mode-context), then wait for the
   // Advanced-only review chip to render.
-  await page.evaluate(() => window.setView('advanced'));
+  await page.evaluate(() => window.setDev(true));
   await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
 }
 
@@ -85,7 +79,7 @@ async function selectFirstChars(page: Page, n: number, container = '.ProseMirror
   }
   return page.evaluate(
     ({ count, sel: containerSel }) => {
-      const root = document.querySelector(containerSel) as HTMLElement | null;
+      const root = document.querySelector(containerSel);
       if (!root) return '';
       const block = (root.querySelector('p, h1, h2, h3, li') as HTMLElement) || root;
       const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
@@ -155,8 +149,8 @@ test.describe('Milkdown selection toolbar', () => {
     await page.waitForTimeout(200);
 
     // The selected substring is now wrapped in <strong>. A markdown strong mark
-    // cannot include leading/trailing whitespace (`**Agent **` is not valid emphasis),
-    // so when the 6-char selection ends in a space ("Agent ") ProseMirror applies the
+    // cannot include leading/trailing whitespace (`**SubAgent **` is not valid emphasis),
+    // so when the 6-char selection ends in a space ("SubAgent ") ProseMirror applies the
     // mark to the trimmed run and pushes the space outside — the resulting
     // <strong> textContent is the selection with boundary whitespace removed.
     const expectedBold = selected.trim();

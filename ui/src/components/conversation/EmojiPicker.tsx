@@ -98,8 +98,26 @@ export interface EmojiPickerProps {
 }
 
 export function EmojiPicker({ onPick, trigger, side = 'top' }: EmojiPickerProps) {
-  const { t } = useLingui();
   const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <EmojiPickerContent
+        side={side}
+        onPick={(emoji) => {
+          onPick(emoji);
+          setOpen(false);
+        }}
+      />
+    </Popover>
+  );
+}
+
+/** The picker's popover body, for a host that owns the `Popover` (and its
+ *  trigger or anchor) — e.g. a menu item that opens it. Remounts per open, so
+ *  the search starts empty each time. */
+export function EmojiPickerContent({ onPick, side = 'top' }: Pick<EmojiPickerProps, 'onPick' | 'side'>) {
+  const { t } = useLingui();
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
@@ -107,12 +125,6 @@ export function EmojiPicker({ onPick, trigger, side = 'top' }: EmojiPickerProps)
     if (!q) return null;
     return ALL_EMOJIS.filter((e) => e.keywords.includes(q) || e.char === q);
   }, [query]);
-
-  const handlePick = (emoji: string) => {
-    onPick(emoji);
-    setOpen(false);
-    setQuery('');
-  };
 
   const renderEmoji = (e: EmojiEntry) => (
     <button
@@ -122,7 +134,7 @@ export function EmojiPicker({ onPick, trigger, side = 'top' }: EmojiPickerProps)
       aria-selected={false}
       aria-label={e.keywords}
       title={e.keywords}
-      onClick={() => handlePick(e.char)}
+      onClick={() => onPick(e.char)}
       className="flex h-7 w-7 items-center justify-center rounded-md text-lg leading-none hover:bg-muted"
     >
       {e.char}
@@ -130,45 +142,36 @@ export function EmojiPicker({ onPick, trigger, side = 'top' }: EmojiPickerProps)
   );
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(o) => {
-        setOpen(o);
-        if (!o) setQuery('');
-      }}
-    >
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent side={side} align="start" className="w-64 p-2">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t`Search emoji…`}
-          className="mb-2 h-7 text-xs"
-          aria-label={t`Search emoji`}
-        />
-        <div className="max-h-48 overflow-y-auto">
-          {filtered ? (
-            filtered.length > 0 ? (
-              <div role="listbox" aria-label={t`Emoji`} className="grid grid-cols-7 gap-0.5">
-                {filtered.map(renderEmoji)}
-              </div>
-            ) : (
-              <p className="px-1 py-4 text-center text-xs text-muted-foreground"><Trans>No emoji found</Trans></p>
-            )
+    <PopoverContent side={side} align="start" className="w-64 p-2">
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t`Search emoji…`}
+        className="mb-2 h-7 text-xs"
+        aria-label={t`Search emoji`}
+      />
+      <div className="max-h-48 overflow-y-auto">
+        {filtered ? (
+          filtered.length > 0 ? (
+            <div role="listbox" aria-label={t`Emoji`} className="grid grid-cols-7 gap-0.5">
+              {filtered.map(renderEmoji)}
+            </div>
           ) : (
-            EMOJI_GROUPS.map((group) => (
-              <div key={group.label} className="mb-2 last:mb-0">
-                <p className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {group.label}
-                </p>
-                <div role="listbox" aria-label={group.label} className="grid grid-cols-7 gap-0.5">
-                  {group.emojis.map(renderEmoji)}
-                </div>
+            <p className="px-1 py-4 text-center text-xs text-muted-foreground"><Trans>No emoji found</Trans></p>
+          )
+        ) : (
+          EMOJI_GROUPS.map((group) => (
+            <div key={group.label} className="mb-2 last:mb-0">
+              <p className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {group.label}
+              </p>
+              <div role="listbox" aria-label={group.label} className="grid grid-cols-7 gap-0.5">
+                {group.emojis.map(renderEmoji)}
               </div>
-            ))
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+            </div>
+          ))
+        )}
+      </div>
+    </PopoverContent>
   );
 }

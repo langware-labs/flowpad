@@ -36,6 +36,19 @@ class HubConnectionStatus(str, Enum):
     ERROR = "error"
 
 
+class LogoutReason(str, Enum):
+    """The one ``reason`` value on a LOGGED_OUT broadcast the frontend pattern-matches on.
+
+    ``reason`` stays free text for everything else (human-readable expiry/
+    rejection explanations) — this only names the value that tells the frontend
+    "someone else just took this machine" so it drops the entity cache and shows
+    ``SessionTakenOverOverlay`` instead of a quiet sign-out (``ts_sdk/src/
+    services/cloud_login.ts``, ``_setLoggedOut``).
+    """
+
+    SWITCHED_OUT = "switched_out"
+
+
 class CloudLoginStatusMessage(BaseMessage):
     message_type: str = WSMessageType.CLOUD_LOGIN_STATUS_MSG.value
     status: HubLoginStatus

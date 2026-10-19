@@ -10,12 +10,21 @@ lives in its own sub-package and implements one structural `WorkerDriver` Protoc
 entity holds a single resolved driver (via `get_driver(worker_type)`) and calls Protocol
 methods instead of `if worker_type == …` ladders.
 
+Session titles use each driver's read-only `naming_adapter` and native-store
+`session_store_env` traits. The [shared naming FSM](session-naming.md) owns
+priority, persistence, lifecycle subscriptions and tab projection for all workers.
+
 ```
 flow_sdk/builtin/agentic_process/cli_drivers/
     cli_worker_base_driver.py   ← the cross-vendor contract (this page's core)
+    cli_serialization.py        ← pure JSON/TOML value + shell-quoting helpers
+    api_auth.py                 ← ApiAuthSpec → provider env/model when auth_mode == "api"
+    auth_probe.py               ← login-state probes + DeviceLoginSpec (stdlib-only)
+    device_login.py             ← the vendor-agnostic link(+code) login engine
     claude/                     ← ClaudeDriver + Claude CLI specifics
     codex/                      ← CodexDriver + Codex CLI specifics
     copilot/                    ← CopilotDriver + GitHub Copilot specifics
+    opencode/                   ← OpenCodeDriver + OpenCode specifics (open-source harness)
 ```
 
 **Drivers expose no HTTP actions.** They are a Python-internal seam under
@@ -30,7 +39,10 @@ gates in the switch context) and
 [docs/agent-management/claude-session-manager.md](../agent-management/claude-session-manager.md)
 (lifecycle ownership, restart detection, per-CLI differences). This page is the interface
 reference; it cross-links rather than duplicates. Flow walkthroughs live in
-[./flows.md](./flows.md).
+[./flows.md](./flows.md). **Adding a vendor** is governed by
+`flow_sdk/builtin/agentic_process/worker_spec/AgenticWorkerSpec.md` (what FlowPad needs
+from the candidate CLI, per capability) and its companion `worker_check_list.md` (how to
+prove it before writing code) — this page describes the seam those two land on.
 
 ---
 
@@ -40,7 +52,7 @@ All cross-vendor types live in one flat module —
 `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py` — so vendor
 drivers depend on that module only and the import graph stays acyclic.
 
-### `AgenticContext(BaseModel)` (~:79) — the per-turn spawn payload
+### `AgenticContext(BaseModel)` (~:557) — the per-turn spawn payload
 
 The execution context handed to a worker for a single turn. camelCase aliases
 (`alias_generator=to_camel`, `validate_by_name=True`).
@@ -68,15 +80,18 @@ The execution context handed to a worker for a single turn. camelCase aliases
 - `to_persistable_dict()` — `model_dump` excluding `compute_node`/`stack_frame`, keeping
   the id.
 
-Related: `AgenticProcessContextKey(StrEnum)` (~:68) — internal `context_data` keys
+Related: `AgenticProcessContextKey(StrEnum)` (~:416) — internal `context_data` keys
 (`WORKER_STARTED_AT`), used by codex/copilot to disambiguate the latest rollout.
-`WorkerExecutionInfo(BaseModel)` (~:59) — small record returned by `Shell.launch()`
-(`pid`, `name`, `cmd`, `started_at`). `worker_capability_kind(worker_type)` (~:414) →
-`harness.<type>.cli`, and `worker_path_env(worker_type)` (~:419) → `{"PATH": …}` PATH
-override from the discovered harness-folder capability (or `None` ⇒ CLI not installed,
-callers fail fast).
+`WorkerExecutionInfo(BaseModel)` (~:407) — small record returned by `Shell.launch()`
+(`pid`, `name`, `cmd`, `started_at`). `worker_capability_kind(worker_type)` (~:910) →
+`harness.<type>.cli`, `worker_bin_folder(worker_type)` (~:930) → the discovered bin
+directory, and `worker_path_env(worker_type)` (~:947) → `{"PATH": …}` PATH override built
+from it (or `None` ⇒ CLI not installed, callers fail fast). `build_worker_spawn_env`
+(~:1020) and `resolve_worker_argv0` (~:1050) apply that PATH and pin argv[0] to the
+discovered binary; `WorkerSpawnError` (~:387) is the fail-fast raised when a spawn
+precondition (missing CLI, missing API key) can't be met.
 
-### `AgenticWorker(ABC)` (~:142) — the per-turn subprocess wrapper
+### `AgenticWorker(ABC)` (~:630) — the per-turn subprocess wrapper
 
 Minimal interface for one execution. `execute()` is the only abstractmethod; the rest are
 no-op defaults a concrete worker overrides.
@@ -93,30 +108,40 @@ no-op defaults a concrete worker overrides.
 | `set_history(history)` | no-op | |
 | `manages_history() -> bool` | `False` | |
 
-### `WorkerCLIOptions` (~:190) — the shell/argv command builder
+### `AgentOptions` (~:687) — the shell/argv command builder
 
 Turns a structured config into an argv (canonical) and a shell string (derived) for PTY
 injection or subprocess spawn. Subclasses declare a vendor spec and override `_emit_flags()`.
 
 - **Vendor spec knobs:** `EXECUTABLE`, `PROMPT_CHANNEL` (`"argv"` claude / `"stdin"`
-  codex+copilot), `SYSTEM_PROMPT_FLAG` (legacy inline append, claude
-  `--append-system-prompt`; `None` ⇒ prepend into the prompt body),
-  `SYSTEM_PROMPT_FILE_FLAG` (claude `--append-system-prompt-file`), `MODEL_TIERS`
-  (tier→model map; empty base = pass-through).
-- **Model-tier resolution lives here, once:** the `model` setter runs the value through
-  `MODEL_TIERS` via `resolve_model_tier`, so `sm`/`md`/`lg` become the concrete model the
-  moment they're set, no matter which path built the options. A concrete name passes through.
-- **argv is the single source of truth.** `cli_cmd(instruction, system_prompt_append)` →
+  codex+copilot), `SYSTEM_PROMPT_FILE_FLAG` (claude `--append-system-prompt-file`,
+  deepagents `--system-prompt-file`; the composed system prompt — see
+  `docs/agent/system-prompt-layers.md` — never rides the prompt body), `MODEL_TIERS`
+  (tier→model/auto map; empty base = pass-through).
+- **Model-tier resolution lives here, once:** `model` preserves the raw persisted intent;
+  `resolved_model` runs it through `MODEL_TIERS` only when the command is emitted. A tier
+  may resolve to a concrete model or to vendor auto (`None`, so no model flag); a concrete
+  name passes through.
+- **argv is the single source of truth.** `cli_cmd(instruction)` →
   argv; `stdin_text(...)` → the stdin string (or `None` for argv-channel vendors);
   `to_spawn(...)` → the one IO contract `(argv, env, stdin|None)`; `to_spawn_args(...)` →
   back-compat `(argv, env)`; `to_shell_string(...)` → posix/win32 shell form derived from
   `_emit_flags()` so it can never drift from argv.
+- **Structured values and shell quoting are separate steps.** `_build_worker_args()`
+  returns *raw* argv (binary name + `_emit_flags()`, no quoting), and
+  `_render_shell_string(platform, instruction)` quotes each value exactly once for the
+  target platform — so a direct subprocess spawn never receives shell syntax, and a
+  vendor that needs a different shell ordering (claude's `--add-dir` quirk) overrides the
+  renderer rather than re-quoting. The primitives live in `cli_serialization.py`:
+  `serialize_json_cli_value` (claude `--agents`), `serialize_toml_cli_value` (codex `-c
+  key=value`, including nested tables like `projects={…}`), `quote_shell_arg(value,
+  platform)` and `quote_powershell_literal`.
 - **Serialisation:** `to_json()` / `from_json()`; `__eq__` compares `to_json()`.
 - `fork_session_id` lives on the base (default `None`) so callers read `cmd.fork_session_id`
   without a `hasattr` guard, but only claude serialises it — codex/copilot wire shape and
   restart hash are unaffected.
 
-### `restart_payload_from_cli_options(options)` (~:380) — the restart snapshot
+### `restart_payload_from_cli_options(options)` (~:876) — the restart snapshot
 
 Returns the CLI payload used for restart-required hashing, **excluding** transient/derived
 inputs that would light up a phantom "restart required" glow:
@@ -126,23 +151,30 @@ inputs that would light up a phantom "restart required" glow:
 | `resume` | Derived from (session_id, transcript-on-disk); flips False→True the instant the worker writes its first JSONL line, racing the snapshot captured at `start_pty()` |
 | `fork_session_id` | Same shape — points at the parent at fork time, then gets stripped from `cli_config` once the new session materialises on disk (see `ClaudeDriver.headless_prompt`'s fork-strip) |
 | `env_vars["FLOWPAD_EXECUTION_SCOPE"]` | Runtime-only, injected after process identity is known — not user launch config |
+| `env_vars["FLOWPAD_PYTHON"]` | Runtime-only, derived from this backend's `sys.executable`; changes on every reinstall/upgrade, so hashing it would glow on every process after an update |
 
 ### Factories
 
-- `get_driver(worker_type) -> WorkerDriver` (~:617) — the resolver `AgenticProcess.driver`
+- `get_driver(worker_type) -> WorkerDriver` (~:1368) — the resolver `AgenticProcess.driver`
   uses. Accepts the `WorkerType` enum, its string value, or `None` (→
   `FLOWPAD_DEFAULT_WORKER` env, `claude` if unset — the hook that lets the UI vitest run the
-  suite under any backend). Aliases (`claude_code`, `claude_code_cli` → `claude`) map to
-  registry keys; result cached per name in `_DRIVER_CACHE`.
-- `factory(cli_json, worker_type) -> WorkerCLIOptions` (~:448) — legacy CLI-options factory,
-  dispatches the string keys `"claude"`/`"codex"`/`"copilot"` (the stable wire form in
-  serialised `cli_config`) to the vendor options class's `from_json`.
+  suite under any backend). A process created by `AgenticProcess.run` or
+  `Deployment.create_process` without a worker gets the harness selected in settings at
+  creation (`selected_worker_type` → `resolve_default_worker_type`), saved on the row — unless
+  the env hook is set, in which case it stays `None` and this default applies. There is no registry dict: the name resolves through the
+  `VENDORS` table (`flowpad_types/vendors.py` — `Vendor.aliases` carries `claude_code`,
+  `claude_code_cli`, …) and the driver is `<Vendor.package>.driver.DRIVER()`; result cached
+  per `vendor.key` in `_DRIVER_CACHE`.
+- `factory(cli_json, worker_type) -> AgentOptions` (~:1099) — legacy CLI-options factory,
+  resolves the vendor the same way and calls `<Vendor.package>.cli.AGENT_OPTIONS.from_json`
+  (the vendor key is the stable wire form in serialised `cli_config`). The module-level
+  `DRIVER` and `AGENT_OPTIONS` aliases are the whole registration handshake.
 
 ---
 
 ## Driver contract
 
-`WorkerDriver(Protocol)` (~:476). It is **structural** — a vendor class satisfies it by
+`WorkerDriver(Protocol)` (~:1198). It is **structural** — a vendor class satisfies it by
 shape, not by inheriting. `AgenticProcess` holds one and never branches on `worker_type`;
 a new vendor plugs in by implementing the Protocol, with no edits to `agentic_process.py`.
 
@@ -153,18 +185,24 @@ a new vendor plugs in by implementing the Protocol, with no edits to `agentic_pr
 | `name` | `str` | Wire id: `"claude"` / `"codex"` / `"copilot"` |
 | `preassign_interactive_session_id` | `bool` | Reserve a session id before the interactive worker starts (claude/copilot = True; codex omits — it mints its own rollout) |
 | `pty_submits_on_paste` | `bool` | True iff the TUI submits a pasted prompt ending in `\r` (claude). False → needs a discrete Enter after the paste settles (codex, copilot) — see `Shell.write_then_submit` |
+| `pty_composer_ready_pattern` | `re.Pattern[str] \| None` | Composer-ready marker in the ANSI-stripped PTY output. When a first prompt must be TYPED (`pty_submits_on_paste` False cold start, or a hot submit), delivery waits for this pattern via `pump_composer_ready` so a boot interstitial (directory trust, login, migration screen) can't eat the prompt. `None` → legacy settle-then-type |
+| `pty_interrupt_sequence` | `bytes` | Bytes that INTERRUPT an in-flight turn in this vendor's TUI, leaving the session alive. Read via `getattr(..., b"\x03")`, so a vendor that omits it keeps Ctrl-C. OpenCode declares `b"\x1b"` (Escape): a single Ctrl-C QUITS its TUI — measured on 1.18.16, the process exits and prints its `opencode -s <id>` resume hint — so the shared cancel path was destroying the session instead of stopping the turn |
 | `pins_resume_cwd` | `bool` | True iff, on resume/fork, the worker's launch cwd (`CLAUDE_PROJECT_DIR` + `workdir`) is pinned to the source session's recorded cwd (claude only) |
+| `device_login_spec` | `DeviceLoginSpec` | How this CLI runs its link(+code) login flow — consumed by the generic engine in `device_login.py`, so no orchestration code branches on vendor |
 
-**Methods (14).** Grouped as declared in the Protocol:
+**Methods.** Grouped as declared in the Protocol (the authoritative list, including the
+process-hook, process-MCP, naming and asset-inventory groups, is §0 of
+`worker_spec/AgenticWorkerSpec.md`):
 
 | Group | Method | Contract |
 | --- | --- | --- |
 | CLI shape | `cli_options(process)` | Fully-configured options (model, session_id, workdir, add_dirs, agents/skills) — used by `cmd_line` and spawn paths |
 | CLI shape | `restart_snapshot(process, options)` | Canonical launch payload for restart hashing (all three delegate to `restart_payload_from_cli_options`) |
-| Per-turn | `headless_prompt(process, instruction)` (async) | One-shot print-mode turn: spawn worker, capture session_id onto `process`, manage lifecycle; returns an `ApiResponse` |
+| Per-turn | `headless_prompt(process, instruction)` (async) | Print-mode turn: spawn worker, capture session_id onto `process`, manage lifecycle; returns an `ApiResponse`. One-shot, except a worker the agent left background work in (claude): it outlives its turn *parked*, and a later prompt is written to that same process instead (`AgenticProcess._deliver_to_parked_worker`, bookkeeping in `worker_turns.py`) |
 | Per-turn | `stream_worker(process)` | Return an `AgenticWorker` for HTTP print-mode streaming (FlowData straight to the response) |
 | Per-turn | `report_event(process, name, data)` (async) | Handle a client-reported event; return a debug payload for unknown/unsupported rather than raising |
-| Discovery | `transcript_descriptor(process)` | Resolved transcript path + native JSONL format metadata, or `None` |
+| Auth | `auth_probe()` (async) | Probe this CLI's login state (≤5s, never raises). `NOT_INSTALLED` when discovery has no bin folder; `UNKNOWN` when the probe couldn't decide (timeout, exec error, unparseable output) — never conflated with `LOGGED_OUT`. `verified` only when the CLI itself confirmed the state |
+| Discovery | `transcript_descriptor(process)` | Resolved transcript path + native JSONL format metadata, or `None`. Set `derived=True` when the path is a FlowPad-materialised projection of another store (opencode's SQLite) rather than the file the worker appends to — live pollers RE-RESOLVE a derived transcript every tick, because its own mtime only moves when FlowPad rewrites it |
 | Discovery | `transcript_path(process)` | Where the worker writes its JSONL/event log, or `None` if no session id yet |
 | Discovery | `skills_root(process, assets_dir)` | Directory a skill folder is laid into so this worker discovers it |
 | Discovery | `tail_status(transcript_path)` | Map the transcript tail to a `WorkerStatus` |
@@ -189,41 +227,64 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | File | Role |
 | --- | --- |
 | `driver.py` | The `WorkerDriver` implementation |
-| `cli.py` | `…CliOptions(WorkerCLIOptions)` — argv/flag builder |
+| `cli.py` | `<Vendor>AgentOptions(AgentOptions)` — argv/flag builder |
 | `stream_worker.py` | `…CLIStreamWorker(AgenticWorker)` — headless subprocess + FlowData stream |
 | `event_to_flowdata.py` | Native JSONL event → `FlowData` mapping |
 | `session_history.py` | Session-file discovery + transcript→`FlowData` replay |
-| `status.py` | Transcript-tail → `WorkerStatus` (claude uses shared `worker_status._tail_status`) |
+| `status.py` | Transcript-tail → `WorkerStatus` — codex/copilot only; claude has no such file and delegates to the shared `flow_sdk/builtin/worker_status.py::_tail_status` |
 
 ### Capability matrix
 
 | Capability | Claude | Codex | Copilot |
 | --- | --- | --- | --- |
 | Wire `name` | `claude` | `codex` | `copilot` |
-| Prompt channel | argv (`-- <text>`) for PTY/shell; the headless stream worker pipes a stream-json user message over stdin (`--input-format stream-json`) and keeps the pipe open as the interrupt channel | stdin (trailing `-`) | stdin |
+| Prompt channel | argv (`-- <text>`) for PTY/shell; the headless stream worker pipes a stream-json user message over stdin (`--input-format stream-json`) and keeps the pipe open as the interrupt channel — and, while the CLI is idle with background work running, as the channel for the NEXT message. stdin closes only when the CLI reports `idle` (`CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS`) with no background work, not at `result` (that exited a process whose background command was still running) | stdin (trailing `-`) | stdin |
+| Process lifetime / when the answer is released | one process per turn, EXCEPT while the agent's background work runs (`claude -p` waits for it, then takes one more turn with the outcome). `TranscriptDurabilityGate.result_proves_durability = True`: the answer is released at `result` (measured: the row is already in the transcript, 9/9 turns) instead of at process exit, which can be minutes away | one process per turn (no durability gate) | one process per turn; released at process exit (the gate's default, `result_proves_durability = False`) |
 | Cancel (headless `close_session`) | `control_request/interrupt` on stdin — the CLI aborts the turn itself and records the interrupted tool calls in its JSONL; SIGTERM→SIGKILL escalation only if it ignores the grace | SIGINT to the root — codex reaps its tool child and records `turn_aborted` in the rollout; tree-kill escalation after the grace | SIGTERM→grace→SIGKILL tree kill (copilot ignores SIGINT); worker synthesizes `flowpad.interrupted` | 
 | System-instruction sink | generated `CLAUDE.md` passed with `--append-system-prompt-file` | `developer_instructions` config (`-c developer_instructions=...`) | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets_dir>` with `.github/instructions/flowpad.instructions.md` |
 | Headless flags | `-p --input-format stream-json --output-format stream-json --verbose` | `exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low … -` | `--output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions` |
 | Bypass-permissions flag | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` | `--allow-all` (gated on `bypassPermissions`) |
 | Session-id semantics | Honours preassigned `--session-id`; `--resume <id>` on multi-turn | Mints its **own** rollout id; ignores a preassigned id — captured from stream, persisted back | Accepts caller `--session-id` on fresh start; `--resume=<id>` when a session file exists |
-| Resume gate (`has_resumable_session`) | `get_claude_session(session_id) is not None` (`claude_sessions.py:430`) | `find_codex_session_jsonl(session_id) is not None` (`session_history.py:74`) | `_has_session` → `find_copilot_session_jsonl(session_id)` (`session_history.py:60`) or a non-empty process-local tee |
+| Resume gate (`has_resumable_session`) | `get_claude_session(session_id) is not None` (`claude_sessions.py:430`) | `find_codex_session_jsonl(session_id) is not None` (`session_history.py:74`) | `_has_session` → `find_copilot_session_jsonl(session_id) is not None` (`session_history.py:67`) |
 | Plan mode (`supports_plan_mode`) | **Yes** — `--permission-mode plan` + `ExitPlanMode`/`AskUserQuestion` | No (follow-up) | No (follow-up) |
 | Fork | **Yes** — `--resume <src> --fork-session --session-id <new>`; gated by `pins_resume_cwd` | No | No |
 | `pty_submits_on_paste` | True | False | False |
+| `pty_composer_ready_pattern` | `❯ Try "` / `❯ ───` | `>_ OpenAI Codex` | `Session: <n> AIC used` |
 | `pins_resume_cwd` | True | False | False |
-| Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` (global, not per-process) | `assets_dir/.claude/skills` (mounted via `--add-dir`) |
-| Embedded agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
+| Login probe (`auth_probe`) | `claude auth status` → JSON `loggedIn` (exit code is 0 either way, so never read it); `verified` | `codex login status` → exit 0 = logged in; `verified` | no status subcommand — heuristic on `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` then a past-login marker in `~/.copilot/config.json`; never `verified` |
+| Login flow (`device_login_spec`) | auth-code + PKCE — the browser shows a code the user pastes back into the CLI | RFC-8628 device flow (URL + one-time code, CLI polls) | RFC-8628 device flow |
+| Config dir | `claude_home` (`FLOWPAD_CLAUDE_HOME`/`CLAUDE_CONFIG_DIR`, default `~/.claude`) with `projects/`, `skills/`, `agents/`, `settings.json`, … | `codex_home` + `codex_sessions_dir`/`codex_config_path` (`CODEX_HOME`) | `copilot_home` + `copilot_session_state_dir`/`copilot_config_path` (`FLOWPAD_COPILOT_HOME` — copilot ships no home env var of its own) |
+| Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` for discovery; process-local skill attachment is refused | `assets_dir/.github/skills` (mounted via `--add-dir` — copilot reads `.github/skills`, not claude's dot-dir) |
+| Embedded sub-agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
 | Transcript location | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` | rollout `~/.codex/sessions/…rollout-*.jsonl`, else process-local stdout tee | session `~/.copilot/session-state/<id>/events.jsonl`, else process-local stdout tee |
 | Transcript format | `CLAUDE_JSONL` | `CODEX_ROLLOUT` (canonical) / `CODEX_STREAM` (tee) | `COPILOT_EVENTS` (canonical) / `COPILOT_STREAM` (tee) |
 | `external_session_dirs` probe | `~/.claude/projects/` entries containing `flow-records-agentic` | `~/.codex/sessions/**/rollout-*.jsonl` names | `~/.copilot/session-state/` dir names |
-| API-key auth (`ApiAuthSpec`) | OpenRouter or Anthropic; env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY` + thinking-off, slug via `--model` | OpenRouter; `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m` | OpenRouter; `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed) |
+| API-key auth (`ApiAuthSpec`) | OpenRouter or the FlowPad hub endpoint (NOT a direct Anthropic key: `base_env` is pinned to OpenRouter's URL, so selecting one would post that key to OpenRouter); env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY` + thinking-off, slug via `--model` | OpenRouter; `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m` | OpenRouter; `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed) |
 
-When a harness's `Capability.auth_mode == "api"`, `resolve_worker_api_auth`
-(`api_auth.py`) reads the driver's `ApiAuthSpec`, pulls the provider key via
-`get_lm_api`, folds the provider env into the spawn (through
-`apply_worker_secret_env`), and overrides `resolved_model` with the spec's
-tier→slug map. A missing key raises `WorkerSpawnError` rather than silently
-falling back to the device-login picker.
+WHICH source funds a spawn is `resolve_llm_endpoint`'s decision (`llm_source.py`);
+`api_auth.py` owns the other half — turning that decision into env, a model slug
+and config overrides. `resolve_worker_api_auth(process)` resolves the source and
+hands it to `binding_for_candidate(worker_type, candidate, tier=…)`, which is the
+half that does not care where the choice came from: it reads the driver's
+`ApiAuthSpec`, takes the key off the chosen endpoint (the hub login for a hub
+endpoint — or, for a **public** one on a box with no login, the `PUBLIC_ENDPOINT_TOKEN`
+placeholder, since the hub admits whoever holds the id — the stored key otherwise — never the environment, so a spawn cannot be
+funded by something the picker never counted), folds the provider env into the
+spawn through `apply_worker_secret_env`, and resolves the slug from the spec's
+tier→slug map ⊕ the harness's `Capability.model_map`. A missing key raises
+`WorkerSpawnError` rather than silently falling back to the device-login picker.
+
+The same binding also has to reach a **person at a prompt**, which is what
+`flow llm` spends: `shell_binding` renders it for one terminal (exports, plus a
+generated file and the variable that points at it for codex and opencode, which
+honour no base-URL variable at all). `user_binding` renders what older versions
+wrote into the file each harness reads by default; nothing writes it any more, and
+`flow llm user clear` reads it only to take those writes back out. Both are thin over the
+same `WorkerApiAuth`, and the per-harness facts they need — `prompt_model_env_vars`
+(the model var a surface with no argv must set), `pointer_env`/`pointer_is_dir`,
+`config_filename`, `user_config_path`/`user_config_fmt`/`user_config_note` — live on
+`ApiAuthSpec` beside the rest, so a new harness is one spec literal rather than an
+edit in each renderer.
 
 ### Vendor-specific notes
 
@@ -243,8 +304,139 @@ falling back to the device-login picker.
   `~/.codex/config.toml` so turns stay inside the test budget.
 - **Copilot** mirrors codex's transport-intent argv toggle and rollout-vs-tee descriptor
   preference. Fresh start passes the caller-provided `--session-id` (copilot accepts it);
-  resume uses `--resume=<id>` only when a session file exists. `_has_session` also counts a
-  non-empty process-local tee as resumable.
+  resume uses `--resume=<id>` only when the exact vendor session file exists. A process-local
+  tee remains available for Flowpad replay but is not Copilot-resumable state.
+- **OpenCode** is the open-source harness, and the one vendor that breaks several of the
+  assumptions the other three share (measured against 1.18.16):
+  - **No `--add-dir`.** Instruction assets and skills reach the worker only through a
+    generated per-process `opencode.json` (`config_gen.py`) pointed at by `OPENCODE_CONFIG`,
+    carrying `instructions: [<root>/AGENTS.md]` and `skills: {paths: […]}`. Because
+    `prepare_system_instruction_assets()` already writes `AGENTS.md`, no new asset content
+    was needed — only the config that registers it. The same file is also how the roots every
+    other vendor receives as `--add-dir` get in: `add_dir_contributions()` folds the process
+    assets dir *and* `resolved_add_dirs` (the Flowpad Assistant mount, a project's context
+    folders, `additional_dirs`) into the two lists. It lists each root's skills CONTAINER —
+    `<root>/.claude/skills`, not `<root>` — because opencode's recursive `**/SKILL.md` scan
+    does not descend into dot-directories, which is where every harness keeps its skills.
+    `OpenCodeAgentOptions._regenerate_config` is the single writer; `apply_process_mcp` only
+    remembers the process id so `_sync_config_env` can write the fallback at spawn for a
+    process that has mounted roots or servers but no instruction assets.
+  - **No file-per-session store.** Sessions live in a SQLite database
+    (`<data>/opencode.db`), so there is nothing tail-readable to point `tail_status` at.
+    FlowPad therefore owns the canonical JSONL in *both* modes: the headless stdout tee
+    (`OPENCODE_STREAM`) and, for PTY sessions, a projection assembled from the store
+    (`OPENCODE_SESSION`, `session_history.assemble_session_jsonl`, refreshed only when the
+    database is newer than the projection). `part.data` in the store is the same shape the
+    stream prints, so **one parser serves both formats**.
+  - **Transcript preference is the inverse of copilot's**, deliberately: the tee is the
+    richer source here because the worker writes the user's prompt into it, which
+    opencode's stdout never emits (upstream #29997). The store projection is the fallback,
+    for PTY sessions that never had a tee — and it carries the user message too, since the
+    database does record it.
+  - **No preassigned session id.** `--session <unknown>` exits 1 with "Session not found",
+    so `preassign_interactive_session_id` is omitted (codex's shape) and the `ses_…` id is
+    captured from the first `step_start`. `ses_…` is a vendor id, never an entity id.
+  - **`--fork` exists** (as a modifier on a resume), making opencode the second forking
+    vendor after claude.
+  - **OpenRouter needs no configuration**: opencode resolves it from a bare
+    `OPENROUTER_API_KEY` in the spawn env, so `ApiAuthSpec` carries only that var and no
+    credential is ever written to disk.
+  - **Redirected by XDG**, not by a vendor env var — there is no `OPENCODE_DATA_DIR`;
+    `InstanceSettings.opencode_data_dir` / `opencode_config_dir` follow `XDG_DATA_HOME` /
+    `XDG_CONFIG_HOME`.
+  - **`pty_submits_on_paste = True`** (claude's side of that split, verified from a real
+    PTY capture), and it paints **no** directory-trust or first-run interstitial, so its
+    `Ask anything` composer marker has nothing to be confused with.
+  - No session *entity* type: with no per-session file there is nothing for the filesystem
+    indexer to mint one from, so `SESSION_TYPE_BY_WORKER` deliberately has no opencode row.
+    Consequence for the UI: nothing resolves through `iconForType('opencode_session')`, so
+    surfaces that need its glyph must read `PROVIDER_META` (see the Spotlight row builder,
+    which used to fall through to `claude_session` and render Claude's mark).
+  - **Ctrl-C QUITS its TUI** — measured on 1.18.16: a single `\x03` mid-turn exits the
+    process, which prints its `opencode -s <id>` resume hint. **Escape** interrupts the turn
+    and leaves the composer up. Hence `pty_interrupt_sequence = b"\x1b"`; the shared
+    `cancel-prompt` PTY branch used to send a hardcoded Ctrl-C and so destroyed the session
+    instead of stopping the turn.
+  - **Its store is SQLite in WAL mode** (`wal_autocheckpoint=1000`), so `opencode.db`'s own
+    mtime does NOT move while a session is being written — the bytes land in
+    `opencode.db-wal`. Anything keying freshness on the database file alone never
+    invalidates; use `sqlite_source_mtime` / `transcript_change_signature`
+    (`transcript_analyzer/resolver.py`), which fold in the `-wal`/`-shm` sidecars.
+  - **Event timestamps are integer epoch-ms**, unlike every other vendor's ISO-8601. The
+    parser normalises them (`_iso_timestamp`); passing them through as a bare numeric string
+    makes `new Date(ts)` an Invalid Date and crashes the terminal pane via the error
+    boundary. Its session ids are also **mixed case**, so never lowercase a path segment
+    that contains one.
+
+---
+
+## Wiring a new vendor
+
+The Protocol keeps `agentic_process.py` free of vendor branches, but a worker type is
+still a name that several registries have to agree on. These are the seams — each one is
+a lookup keyed by the wire name, so "add the vendor" means "add a row", never "add an
+`if`":
+
+| Layer | Where | What to add |
+| --- | --- | --- |
+| Vendor row | `VENDORS` in `flow_sdk/flowpad_types/vendors.py` | THE registration: key, `worker_type`, aliases, harness, capability kind, dot-dir, session entity type, model prefixes, and the facts `hidden` / `interactive` / `python_module` / `transcript_stems`. Driver resolution, the capability-runner loop, placement and the transcript path sniff all derive from it |
+| Worker type | `flow_sdk/flowpad_types/enums/worker_enums.py` (`WorkerType`), plus the driver-side `WorkerType` in `flow_sdk/builtin/worker_history.py` | the wire name (`tests/unit/test_vendors_table.py` keeps all three in step) |
+| Driver package | `cli_drivers/<key>/driver.py` exporting `DRIVER`, `cli_drivers/<key>/cli.py` exporting `AGENT_OPTIONS` | what `get_driver` / `factory` import — no registry to edit |
+| Install discovery | `CapabilityKind.<VENDOR>_CLI` (`core/capabilities/models.py`), a `CapabilitySpec` (name, `icon`, `homepage_url`) in `get_default_capability_specs`, with `install_commands` (`core/capabilities/registry.py`). The runner itself is built by the `VENDORS` loop in `_build_default_registry` — a `PythonModuleCapabilityRunner` when `Vendor.python_module` is set | `harness.<vendor>.cli`, which is what `worker_capability_kind`/`worker_path_env` resolve the spawn PATH from |
+| Model tiers | `<VENDOR>_MODEL_TIERS` in `agentic_process/model_tiers.py` | `sm`/`md`/`lg` → concrete models or vendor auto/no flag, consumed via the options class's `MODEL_TIERS` |
+| Transcript parsing | `TranscriptFormat` members (`transcript_analyzer/formats.py`), a parser module + the `PARSERS` map (`transcript_analyzer/parsers/`), `_resolve_<vendor>` (`transcript_analyzer/resolver.py`); the path sniff is derived (`vendor_for_path` reads `Vendor.dot_dir`, else `Vendor.transcript_stems`) | one format per canonical shape (a rollout/events file and a stdout tee usually need two) |
+| Pricing | `transcript_analyzer/pricing/<vendor>.py` (`<VENDOR>_PRICING` + `pricing_for`) wired into `pricing/__init__.py` | optional — a vendor with empty `model_prefixes` (copilot, deepagents) deliberately inherits the claude table |
+| Session entity | `EntityType.<VENDOR>_SESSION` (`schema/types.py`), `schema/type_info/<vendor>_session_type_info.py` (this is where the entity's `icon` name lives), an indexer function under `fs_store/indexer/functions/`, its import in `indexer/registrations.py` and `add_function` call in `indexer/builtin.py` | vendor sessions expand under `USER_HOME_FOLDER`, not under a project (`indexer/roots.py`) |
+| Asset placement | `Vendor.harness` + `WORKER_PREFIX` in `assets/placement.py` (`coerce_harness` resolves through `VENDORS`) | which harness dir convention the vendor speaks (`.claude` / `.agents` / `.github`) |
+| Vendor dirs | `InstanceSettings` (`flow_sdk/instance_settings/base_settings.py`) | home + sessions/config paths, so tests can redirect them. Claude, Codex, and Copilot all resolve their roots here; new vendors should do the same |
+
+### Logo / icon
+
+There is no single "vendor logo" — three consumers resolve a glyph, and a new vendor
+that skips one silently falls back to Claude's or a generic mark:
+
+1. **Process chips and openers** — `AgenticProcess.icon` (`ts_sdk/src/process/agentic-process.ts`)
+   maps `worker_type` × restored-or-fresh onto a symbolic `ProcessIconKey`; the UI plugs
+   the component in through `PROCESS_ICONS` in `ui/src/components/icons/process-icons.ts`.
+   Each vendor ships a **pair** — `<Vendor>Icon.tsx` and `<Vendor>RestoreIcon.tsx`. A
+   worker_type with no branch in that getter lands on `generic`.
+2. **The terminal strip's vendor chip** — `PROVIDER_META` in `ui/src/tabs/provider-meta.tsx`
+   (icon component, tailwind color class, label).
+3. **Entity icons** — the session type's `TypeInfo.icon` name (e.g. `icon="Copilot"`),
+   resolved at render time by `iconForType` through the named-icon map in
+   `ui/src/lib/lucide-by-name.tsx`. Per the repo rule, never hardcode a glyph for an
+   entity type at a call site — register the name and fix the `TypeInfo` instead.
+
+### Process-local dirs and folder formats
+
+Two directory trees matter beyond the vendor's own config dir:
+
+- **Generated instruction assets** — `ProcessAssets` composes the instruction body;
+  `WorkerDriver.prepare_instruction_assets()` writes the canonical `CLAUDE.md`
+  prompt and the driver's discovery file (`AGENTS.md` for Codex/OpenCode or
+  `.github/instructions/flowpad.instructions.md` for Copilot). Other harness
+  formats are not written. The derived assets directory participates in `add_dirs`.
+
+  **The seam is `AgentOptions.apply_instruction_assets(assets)`, on the argv class.** The
+  default is the directory channel above (`add_dirs` / `custom_instruction_dirs` +
+  `system_prompt_file`). A vendor whose instructions arrive some other way OVERRIDES it
+  rather than the shared caller growing another `hasattr` arm — opencode has no
+  `--add-dir` at all, so its override turns the assets dir into a generated
+  `opencode.json` and sets `config_path`, which `_sync_config_env` exports as
+  `OPENCODE_CONFIG`. Skipping the override is not a degraded experience but a silent one:
+  an interactive session simply receives no instructions and no skills.
+- **Skills** — `skills_root(process, assets_dir)` decides where a skill folder is laid
+  down: under the mounted assets dir, in the vendor's OWN dot-dir
+  (`.claude/skills` — claude, `.github/skills` — copilot, `.opencode/skills` — opencode).
+  Codex exposes a global location (`$CODEX_HOME/skills`); process attachment refuses
+  that destination before writing. The orchestrator routes supported materialization
+  through the shared SDK projection utilities.
+
+  Laying the files down is only half of it. `load-embedded-skill` and
+  `attach-embedded-asset` both record the ref in `embedded_asset_refs`, and that record —
+  not the files — is what makes `resolved_add_dirs` mount the assets dir and
+  `_prepare_system_instruction_assets` return it. A skill materialized without the record is
+  invisible to every vendor whose channel is the mount.
 
 ---
 
@@ -262,3 +454,24 @@ Short pointers; the walkthroughs live in [./flows.md](./flows.md):
   on `pty_mode`. See [mode-switching.md](../agent-management/mode-switching.md).
 - **Restart-required detection** — `restart_snapshot` hashing and what it excludes. See
   [claude-session-manager.md](../agent-management/claude-session-manager.md#restart-required-detection).
+
+
+### Filesystem asset utilities and worker verification
+
+Asset discovery, native-inventory decoding, instruction-file projection and inventory
+reconciliation live under `flow_sdk/assets/`. Driver adapters select worker-specific
+search roots and transport configuration, then call those utilities. Native inventory
+adapters are in `assets/worker_inventory/`; neither their filesystem results nor
+process attachment references alone establish observed usage.
+
+`skills_root` must return a process-contained destination for process attachment.
+If a worker supplies a global skills directory instead, attachment fails before
+writing. User/project installation is a separate caller-selected exact-path operation.
+Native verification errors remain explicit, including unsupported roots; they never
+become a successful empty inventory. A running PTY uses its captured launch settings.
+
+Native inventories can report physical paths and collapse symlink aliases. Inventory
+reconciliation marks only the exact observed occurrence; filesystem listing and
+transcript usage retain distinct alias paths. Duplicate-name winner precision is
+limited by the provider observation, including OpenCode, rather than guessed from
+all folders that share a name.

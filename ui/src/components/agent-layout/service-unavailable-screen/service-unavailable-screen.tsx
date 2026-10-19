@@ -2,11 +2,14 @@ import { Button } from '@src/components/ui/button';
 import { Trans } from '@lingui/react/macro';
 
 interface ServiceUnavailableScreenProps {
-  statusCode?: number | string;
   onClose?: () => void;
 }
 
-const ServiceUnavailableScreen = ({ statusCode, onClose }: ServiceUnavailableScreenProps) => {
+/** Shown only when the backend did not respond at all. Deliberately carries NO
+ *  status code: the caller used to pass the literal string `'xxx'` when it had
+ *  none, rendering "Error: xxx" — and the only code available now would be the
+ *  synthetic 503 the interceptor stamps on network failures. Both are fiction. */
+const ServiceUnavailableScreen = ({ onClose }: ServiceUnavailableScreenProps) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-lg bg-background/95 p-8 text-center shadow-xl">
@@ -21,10 +24,15 @@ const ServiceUnavailableScreen = ({ statusCode, onClose }: ServiceUnavailableScr
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold"><Trans>Service Unavailable</Trans></h1>
-          {statusCode && <p className="mb-2 font-mono text-lg text-orange-600"><Trans>Error: {statusCode}</Trans></p>}
-          <p className="mb-2 text-muted-foreground"><Trans>The FlowPad backend server is not responding.</Trans></p>
-          <p className="text-sm text-muted-foreground"><Trans>Please make sure the server is running.</Trans></p>
+          <h1 className="mb-2 text-2xl font-bold">
+            <Trans>Service Unavailable</Trans>
+          </h1>
+          <p className="mb-2 text-muted-foreground">
+            <Trans>The FlowPad backend server is not responding.</Trans>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Please make sure the server is running.</Trans>
+          </p>
         </div>
 
         {onClose && (

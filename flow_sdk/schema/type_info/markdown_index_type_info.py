@@ -1,16 +1,15 @@
 """Type metadata for MARKDOWN_INDEX."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.markdown_index import (
-    extract_markdown_index,
-    markdown_index_identity_key,
-)
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.markdown_index import extract_markdown_index, markdown_index_identity_key
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
-MARKDOWN_INDEX = TypeMetadata(
-    type=EntityType.MARKDOWN_INDEX,
+MARKDOWN_INDEX = TypeInfo(
+    type_name=EntityType.MARKDOWN_INDEX,
+    shape=File(ext=".md"),
     from_disk_fn=extract_markdown_index,
-    identity_backend=derived_identity(),
+    identity_carrier=derived_identity(),
     id_stable_key_fn=markdown_index_identity_key,
     indexed_by_default=False,
     creatable=True,
@@ -23,6 +22,6 @@ MARKDOWN_INDEX = TypeMetadata(
         "vault_root",
         "parent_path",
     ],
-    asset_class="internal",
+    asset_class="docs",
     family="docs",
 )

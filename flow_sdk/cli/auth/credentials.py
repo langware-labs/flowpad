@@ -26,10 +26,13 @@ into the new sodot.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 # Well-known sod entry names. Stable wire format inside the sodot file —
@@ -177,7 +180,18 @@ def load_credentials(user_id: str | None = None) -> UserHubCredentials | None:
     keys are read.
 
     Returns None when secrets are not yet enabled — load is a read-only
-    probe and shouldn't force a keychain prompt by raising.
+    probe and shouldn't force a keychain prompt by raising. An UNREADABLE
+    store answers None for the same reason: a sod this process cannot decrypt
+    (its Fernet key resolves to a different keychain slot than the one that
+    wrote it) means "no credentials here", not "abort the caller" — letting
+    ``InvalidToken`` escape turned every worker spawn into a raw 500, since
+    ``resolve_worker_api_auth`` reaches this probe on the spawn path.
+
+    The guard lives HERE and not in ``FileSodStorage.read`` because that
+    primitive's strictness is a deliberate, test-enforced contract
+    (``test_file_sod_sync.py::test_different_keys_cannot_read``): a wrong-key
+    store must fail LOUDLY for writers. Readers that want a probe opt in.
+    ``instance_settings.cookie_gate._read`` makes the same choice.
     """
     from flow_sdk.instance_settings import SecretsNotEnabledError
     try:
@@ -188,11 +202,19 @@ def load_credentials(user_id: str | None = None) -> UserHubCredentials | None:
     uid = user_id or _active_user_id()
 
     def read(field: str) -> str | None:
-        if uid:
-            scoped = sod.read(_scoped_key(field, uid))
-            if scoped:
-                return scoped
-        return sod.read(field)
+        try:
+            if uid:
+                scoped = sod.read(_scoped_key(field, uid))
+                if scoped:
+                    return scoped
+            return sod.read(field)
+        except Exception:
+            logger.warning(
+                "hub credentials: sod store is unreadable; treating as logged out. "
+                "Re-login or reset the store to repair it.",
+                exc_info=True,
+            )
+            return None
 
     api_key = read(SOD_API_KEY)
     if not api_key:

@@ -1,12 +1,10 @@
 import { makeObservable, observable, reaction, runInAction } from 'mobx';
 import { dataManager } from '../APIEntity';
 import { ApiResponse } from '../ApiResponse';
-import { Workspace } from '../entities';
+import { EntityTypes } from '../schema/types';
 import { dataContext, TypeId } from '../FlowSync';
-import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo } from '../models';
+import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo, UserRole } from '../models';
 import { navigator } from './navigationService';
-
-export type UserRole = 'owner' | 'admin' | 'editor' | 'guest' | 'reader' | 'anonymous_viewer';
 
 /**
  * Direct member selector — one of these keys identifies the member to act on.
@@ -136,7 +134,7 @@ class MembershipService {
   }
 
   async fetchMemberships(entity_typeId: TypeId): Promise<Membership[]> {
-    if (entity_typeId.type == Workspace.type) {
+    if (entity_typeId.type == EntityTypes.Workspace) {
       const workspace = dataManager.getByTypeIdFromCache(entity_typeId);
       const roles = workspace?.expand?.roles;
       if (!roles || (roles.length === 1 && roles[0] === 'guest')) {
@@ -145,12 +143,45 @@ class MembershipService {
     }
 
     try {
-      const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'GET');
-      actionInfo.hubReflect = true; // roster is hub-owned — reflect to the hub
-      const fetchedMemberships = await dataManager.callAction<undefined, Membership[]>(actionInfo);
-      return fetchedMemberships ?? [];
+      return await this.readMemberships(entity_typeId, false);
     } catch (error) {
       console.error('Failed to fetch memberships', error);
+      return [];
+    }
+  }
+
+  /** A failed roster is unknown membership, never proof that nobody belongs. */
+  async fetchMembershipsStrict(entityTypeId: TypeId): Promise<Membership[]> {
+    return this.readMemberships(entityTypeId, true);
+  }
+
+  private async readMemberships(entityTypeId: TypeId, requireAuthoritative: boolean): Promise<Membership[]> {
+    const actionInfo = new ActionInfo('members', entityTypeId.type, entityTypeId.id, 'GET');
+    actionInfo.hubReflect = true;
+    if (requireAuthoritative) actionInfo.queryParameters = { require_authoritative: true };
+    const roster = await dataManager.callAction<undefined, Membership[]>(actionInfo);
+    if (!Array.isArray(roster)) throw new Error('The server did not return project members.');
+    // Desktop reflection normalizes hub user_email/user_name into email/name.
+    // Restore the membership service's public shape for all roster consumers.
+    return roster.map((member) => {
+      const reflected = member as Membership & { email?: string; name?: string };
+      return {
+        ...member,
+        user_email: member.user_email ?? reflected.email ?? '',
+        user_name: member.user_name ?? reflected.name,
+      };
+    });
+  }
+
+  /** The roles a share invite may grant — the backend's global list
+   *  (``GET /graph/share-roles``). Empty on failure: the invite form then offers
+   *  no picker and the backend's default role applies. */
+  async fetchShareRoles(): Promise<string[]> {
+    try {
+      const actionInfo = new ActionInfo('share-roles', null, null, 'GET');
+      return (await dataManager.callAction<undefined, string[]>(actionInfo)) ?? [];
+    } catch (error) {
+      console.error('Failed to fetch share roles', error);
       return [];
     }
   }

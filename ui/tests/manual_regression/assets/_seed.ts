@@ -9,22 +9,25 @@
  * create lands under $HOME and may not surface in the tree).
  */
 import { expect, type Page } from '@playwright/test';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 async function defaultProjectId(page: Page): Promise<string> {
-  const boot = await page.request.get('/api/v1/graph/bootstrap');
+  const boot = await page.request.get(`${API}/api/v1/graph/bootstrap`);
   expect(boot.status()).toBe(200);
   const dp = (await boot.json()).data.default_project;
   return typeof dp === 'string' ? dp : dp.id;
 }
 
 async function ensureAsset(page: Page, type: 'agent' | 'skill', name: string): Promise<void> {
-  const list = await page.request.get(`/api/v1/graph/${type}`);
+  const list = await page.request.get(`${API}/api/v1/graph/${type}`);
   expect(list.status()).toBe(200);
   const rows: Array<{ name?: string }> = (await list.json()).data ?? [];
   if (rows.length > 0) return;
 
   const projectId = await defaultProjectId(page);
-  const res = await page.request.post(`/api/v1/graph/project/${projectId}/${type}`, {
+  const res = await page.request.post(`${API}/api/v1/graph/project/${projectId}/${type}`, {
     data: { name },
   });
   expect(res.status(), `seed ${type} "${name}"`).toBe(200);
@@ -33,7 +36,7 @@ async function ensureAsset(page: Page, type: 'agent' | 'skill', name: string): P
   // auto-index on create). Without this the created asset never surfaces as a
   // tree row. Index the just-created type under its project scope.
   const idx = await page.request.post(
-    `/api/v1/graph/compute_node/@local/fs-records/index?type=${type}&projects=${projectId}&user=false&force=true`,
+    `${API}/api/v1/graph/compute_node/@local/fs-records/index?type=${type}&projects=${projectId}&user=false&force=true`,
   );
   expect(idx.status(), `index ${type} after seed`).toBe(200);
 }
@@ -51,7 +54,7 @@ async function ensureAsset(page: Page, type: 'agent' | 'skill', name: string): P
 async function markWorkspaceIndexed(page: Page): Promise<void> {
   const projectId = await defaultProjectId(page);
   const res = await page.request.post(
-    `/api/v1/graph/compute_node/@local/fs-records/index?projects=${projectId}&user=false&force=true`,
+    `${API}/api/v1/graph/compute_node/@local/fs-records/index?projects=${projectId}&user=false&force=true`,
   );
   expect(res.status(), 'project index to clear never_indexed').toBe(200);
 }

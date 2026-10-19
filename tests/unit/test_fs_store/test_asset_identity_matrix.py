@@ -8,38 +8,54 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_backend import (
-    CapsuleIdentityBackend,
-    DerivedIdentityBackend,
-    NativeJsonIdentityBackend,
+from flow_sdk.assets.identity_carrier import (
+    Derived,
+    Frontmatter,
+    JsonRoot,
+    NotWritable,
+    Sidecar,
 )
+from flow_sdk.assets.layout import Folder
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
+from tests.fixtures.identity import frontmatter_id, resolve_id
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "identity-matrix"))
 V7 = "018f0000-0000-7000-8000-000000000000"
 
 INDEXED_TYPES = {
-    "agent_trace", "agent", "agentic_flow", "asset_cleanup_report",
+    "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
+    "deepagents_session", "opencode_session",
+    "asset_setup", "credential", "compute_op", "data_source", "data_driver", "data_schema",
     "dataset", "deck_template", "deck", "dynamic_workflow",
-    "journey", "markdown_index", "markdown", "mcp_server", "plan", "plugin",
-    "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
+    "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
+    "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
+    "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run", "icon_pack",
 }
 
-FRONTMATTER_PORTABLE = ("agent", "claude_md", "markdown")
+FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
-    "agentic_flow", "dataset", "deck", "deck_template", "journey", "skill", "task",
-    "whiteboard",
+    "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
+    "chart", "wizard", "icon_pack",
 )
+#: Folder-capsule types introduced after the json capsule; they mint +
+#: persist + adopt like the rest. ``project_manifest`` is the per-project
+#: published-asset ledger: a singleton folder whose main is JSON.
+FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger")
+#: Folder types whose main document is markdown: the id lives in that
+#: document's frontmatter (``Frontmatter``).
+FOLDER_MARKDOWN = ("skill", "task", "chart")
+FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
+#: Entity documents (``<type>.json``): the id is the document root's ``"id"``
+#: (``JsonRoot``), and an authored asset mints a portable v4 like any capsule.
+JSON_PORTABLE = ("agent", "asset_setup", "compute_op", "data_source", "data_schema")
 
 
 def _info(type_name: str):
@@ -50,12 +66,22 @@ def _info(type_name: str):
     return info
 
 
-def _frontmatter(path: Path, *, canonical: str | None = None, legacy: str | None = None) -> None:
+def _own_document(tmp_path: Path, type_name: str, default: str) -> Path:
+    """A file the type CLAIMS: its declared main document for a folder type
+    (``agent.json``, ``trace.json``), its fixed filename for a named file type
+    (``CLAUDE.md``), else ``default``. The seam writes an id only into a path
+    of the type's own shape (FLOWPAD-2083) — the same gate every walker
+    applies — so a mint-and-persist case must present one."""
+    info = _info(type_name)
+    names = getattr(info.shape, "names", ())
+    main = info.shape.main if isinstance(info.shape, Folder) else None
+    return tmp_path / (main or (names[0] if names else default))
+
+
+def _frontmatter(path: Path, *, canonical: str | None = None) -> None:
     rows = ["---"]
     if canonical is not None:
         rows.append(f"id: {canonical}")
-    if legacy is not None:
-        rows.append(f"asset_id: {legacy}")
     rows.extend(["name: Matrix", "---", "", "body"])
     path.write_text("\n".join(rows), encoding="utf-8")
 
@@ -71,26 +97,35 @@ def test_every_registered_extractor_has_one_identity_backend() -> None:
     assert actual == INDEXED_TYPES
     for name in sorted(actual):
         info = _info(name)
-        assert info.identity_backend is not None, name
+        assert info.identity_carrier is not None, name
 
 
 def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
-    capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
-    native_types = set(JSON_STABLE)
+    capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_CAPSULE)
+    native_types = set(JSON_STABLE) | set(JSON_PORTABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (17, 3, 13)
+    # Capsule: base's 17 + `mcp` + `wizard` + `project_manifest` +
+    # `credential` (an asset we AUTHOR carries its own v4; the shipped
+    # credential templates commit theirs, so every install indexes one row).
+    # The sibling `mcp_server` SCAN is derived, because its source is a vendor
+    # config file we cannot write an id into. 15 derived, including `micro_app`,
+    # whose webapp.json carries no id — so it still owes an install-independent
+    # key. See `test_shipped_asset_declares_an_install_independent_key`.
+    # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op` and
+    # `data_source`, which carry their ids.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 8, 17)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
+        # A markdown main document carries its id in its frontmatter; a folder
+        # whose main is JSON keeps the json capsule.
         expected_backend = (
-            CapsuleIdentityBackend if name in capsule_types
-            else NativeJsonIdentityBackend if name in native_types
-            else DerivedIdentityBackend
+            Frontmatter if name in FRONTMATTER_ALL or name in FOLDER_MARKDOWN
+            else Sidecar if name in capsule_types
+            else JsonRoot if name in native_types
+            else Derived
         )
-        assert isinstance(info.identity_backend, expected_backend), name
-        assert tuple((spec.name, spec.version) for spec in info.capsules) == (
-            (("identity", 1),) if name in capsule_types else ()
-        ), name
+        assert isinstance(info.identity_carrier, expected_backend), name
         parameters = list(inspect.signature(info.from_disk_fn).parameters.values())
         assert [parameter.name for parameter in parameters[:2]] == ["ref", "resolved_id"], name
 
@@ -100,48 +135,37 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
 def test_file_canonical_id_is_adopted_unchanged_without_write(
     tmp_path: Path, type_name: str, existing: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     _frontmatter(path, canonical=existing)
     before = path.read_bytes()
     info = _info(type_name)
-    assert info.extract_id(path) == existing
-    assert info.mint_id(path) == existing
+    assert resolve_id(info, path) == existing
+    assert resolve_id(info, path) == existing
     assert path.read_bytes() == before
-
-
-@pytest.mark.parametrize("type_name", FRONTMATTER_ALL)
-def test_file_invalid_canonical_does_not_mask_valid_legacy(
-    tmp_path: Path, type_name: str,
-) -> None:
-    path = tmp_path / "asset.md"
-    _frontmatter(path, canonical=V7, legacy=V5)
-    before = path.read_bytes()
-    assert _info(type_name).mint_id(path) == V5
-    assert path.read_bytes() == before, "legacy adoption never cleans/backfills"
 
 
 @pytest.mark.parametrize("type_name", FRONTMATTER_PORTABLE)
 def test_missing_portable_file_mints_persists_and_is_idempotent(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     path.write_text("body", encoding="utf-8")
     info = _info(type_name)
-    first = info.mint_id(path)
+    first = resolve_id(info, path)
     assert uuid.UUID(first).version == 4
-    assert AssetCapsule.from_path(path).read("identity").data["id"] == first
-    assert info.mint_id(path) == first
+    assert frontmatter_id(path) == first
+    assert resolve_id(info, path) == first
 
 
 @pytest.mark.parametrize("type_name", FRONTMATTER_STABLE)
 def test_missing_stable_file_mints_exact_path_v5_and_persists(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "asset.md"
+    path = _own_document(tmp_path, type_name, "asset.md")
     path.write_text("body", encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
-    assert info.mint_id(path) == expected
+    assert resolve_id(info, path) == expected
 
 
 def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Path) -> None:
@@ -150,81 +174,37 @@ def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Pa
     ref = FSRef(path, scope="project")
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "command:project:deploy"))
     info = _info("command")
-    assert info.mint_id(ref) == expected
-    assert AssetCapsule.from_path(path).read("identity").data["id"] == expected
-    assert info.mint_id(path) == expected
+    assert resolve_id(info, ref) == expected
+    assert frontmatter_id(path) == expected
+    assert resolve_id(info, path) == expected
 
 
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
-@pytest.mark.parametrize("existing", (V4, V5))
-def test_folder_capsule_adopted_unchanged_without_write(
-    tmp_path: Path, type_name: str, existing: str,
-) -> None:
-    folder = tmp_path / type_name
-    (folder / ".flow").mkdir(parents=True)
-    capsule = folder / ".flow" / "id"
-    capsule.write_text(existing + "\n", encoding="utf-8")
-    before = capsule.read_bytes()
-    info = _info(type_name)
-    assert info.extract_id(folder) == existing
-    assert info.mint_id(folder) == existing
-    assert capsule.read_bytes() == before
-
-
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
+@pytest.mark.parametrize("type_name", FOLDER_CAPSULE)
 def test_missing_folder_id_mints_persists_and_is_idempotent(
     tmp_path: Path, type_name: str,
 ) -> None:
     folder = tmp_path / type_name
     folder.mkdir()
     info = _info(type_name)
-    first = info.mint_id(folder)
+    if type_name in FOLDER_MARKDOWN:
+        # The id lives in the main document's header; a folder without its
+        # main document is not the shape and nothing may be written into it.
+        with pytest.raises(NotWritable):
+            resolve_id(info, folder)
+        (folder / info.shape.main).write_text("---\nname: m\n---\nbody\n", encoding="utf-8")
+    first = resolve_id(info, folder)
     assert uuid.UUID(first).version == 4
-    assert AssetCapsule.from_path(folder).read("identity").data["id"] == first
-    assert info.mint_id(folder) == first
+    assert info.read_id(folder) == first, "persisted in the folder's carrier (json capsule; a main doc's header when one exists)"
+    assert resolve_id(info, folder) == first
 
 
-def _folder_with_legacy(root: Path, type_name: str) -> Path:
-    folder = root / type_name
-    folder.mkdir()
-    (folder / ".flow").mkdir()
-    (folder / ".flow" / "id").write_text(V7, encoding="utf-8")
-    if type_name == "skill":
-        _frontmatter(folder / "SKILL.md", canonical=V7, legacy=V5)
-    elif type_name == "whiteboard":
-        _frontmatter(folder / "WHITE_BOARD.md", canonical=V7, legacy=V5)
-    elif type_name == "task":
-        _frontmatter(folder / "task.md", canonical=V7, legacy=V5)
-    elif type_name == "dataset":
-        (folder / "dataset.json").write_text(json.dumps({"metadata": {"id": V5}, "data": {}}))
-    elif type_name == "deck":
-        (folder / "deck.json").write_text(json.dumps({"id": V5}))
-    elif type_name == "deck_template":
-        (folder / "template.json").write_text(json.dumps({"metadata": {"id": V5}, "data": {}}))
-    elif type_name in ("agentic_flow", "journey"):
-        (folder / "graph.json").write_text(json.dumps({"id": V5, "nodes": [], "edges": []}))
-    return folder
+def test_markdown_render_puts_identity_first_in_frontmatter() -> None:
+    from flow_sdk.builtin.claude_memory_entities import Docs
 
-
-@pytest.mark.parametrize("type_name", FOLDER_PORTABLE)
-def test_invalid_folder_capsule_falls_through_to_valid_legacy_without_backfill(
-    tmp_path: Path, type_name: str,
-) -> None:
-    folder = _folder_with_legacy(tmp_path, type_name)
-    capsule = folder / ".flow" / "id"
-    before = capsule.read_bytes()
-    assert _info(type_name).mint_id(folder) == V5
-    assert capsule.read_bytes() == before
-
-
-def test_markdown_default_body_leaves_identity_to_capsule() -> None:
-    from types import SimpleNamespace
-
-    from flow_sdk.schema.type_info.markdown_type_info import _markdown_default_body
-
-    body = _markdown_default_body(SimpleNamespace(id=V4, name="A", title="A"))
-    assert f"id: {V4}" not in body
-    assert "# A" in body
+    info = _info("markdown")
+    text = info.serializer().render(Docs(id=V4, name="A", title="A"), info)
+    assert text.startswith(f"---\nid: {V4}\n"), "the header IS the carrier: an owned render keeps the id first"
+    assert "title: A" in text
 
 
 @pytest.mark.parametrize("type_name", JSON_STABLE)
@@ -232,24 +212,51 @@ def test_markdown_default_body_leaves_identity_to_capsule() -> None:
 def test_json_canonical_id_is_adopted_unchanged(
     tmp_path: Path, type_name: str, existing: str,
 ) -> None:
-    path = tmp_path / "report.json"
+    path = _own_document(tmp_path, type_name, "report.json")
     path.write_text(json.dumps({"id": existing, "name": "R"}) + "\n", encoding="utf-8")
     before = path.read_bytes()
     info = _info(type_name)
-    assert info.extract_id(path) == existing
-    assert info.mint_id(path) == existing
+    assert resolve_id(info, path) == existing
+    assert resolve_id(info, path) == existing
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("type_name", JSON_PORTABLE)
+@pytest.mark.parametrize("existing", (V4, V5))
+def test_entity_document_canonical_id_is_adopted_unchanged_without_write(
+    tmp_path: Path, type_name: str, existing: str,
+) -> None:
+    path = _own_document(tmp_path, type_name, "entity.json")
+    path.write_text(json.dumps({"type": type_name, "id": existing, "name": "Matrix"}) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+    info = _info(type_name)
+    assert resolve_id(info, path) == existing
+    assert resolve_id(info, path) == existing
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("type_name", JSON_PORTABLE)
+def test_missing_entity_document_id_mints_persists_and_is_idempotent(
+    tmp_path: Path, type_name: str,
+) -> None:
+    path = _own_document(tmp_path, type_name, "entity.json")
+    path.write_text(json.dumps({"type": type_name, "name": "Matrix"}) + "\n", encoding="utf-8")
+    info = _info(type_name)
+    first = resolve_id(info, path)
+    assert uuid.UUID(first).version == 4
+    assert json.loads(path.read_text(encoding="utf-8"))["id"] == first
+    assert resolve_id(info, path) == first
 
 
 @pytest.mark.parametrize("type_name", JSON_STABLE)
 def test_missing_json_id_mints_exact_path_v5_and_persists(
     tmp_path: Path, type_name: str,
 ) -> None:
-    path = tmp_path / "report.json"
+    path = _own_document(tmp_path, type_name, "report.json")
     path.write_text('{"name": "R"}\n', encoding="utf-8")
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
     info = _info(type_name)
-    assert info.mint_id(path) == expected
+    assert resolve_id(info, path) == expected
     assert json.loads(path.read_text(encoding="utf-8"))["id"] == expected
 
 
@@ -269,6 +276,17 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         folder = root / "raw-copilot"
         folder.mkdir()
         return FSRef(folder / "events.jsonl"), "copilot_session:raw-copilot", uuid.NAMESPACE_DNS
+    if type_name == "opencode_session":
+        path.write_text('{"type":"step_start","sessionID":"ses_raw"}\n', encoding="utf-8")
+        return FSRef(path), "opencode_session:ses_raw", uuid.NAMESPACE_DNS
+    if type_name == "deepagents_session":
+        path.write_text('{"type":"init","session_id":"raw-deep"}\n', encoding="utf-8")
+        return FSRef(path), "deepagents_session:raw-deep", uuid.NAMESPACE_DNS
+    if type_name == "data_driver":
+        folder = root / "rss"
+        folder.mkdir()
+        (folder / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
+        return FSRef(folder), "data_driver:rss", namespace
     if type_name == "dynamic_workflow":
         path.write_text("export const meta = {name: 'W'};", encoding="utf-8")
         return FSRef(path), f"dynamic_workflow:{path.resolve()}", namespace
@@ -282,9 +300,6 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         return ref, "plugin:demo@market", uuid.NAMESPACE_DNS
     if type_name == "project":
         return FSRef(path), f"project-fsref:{path}", uuid.NAMESPACE_DNS
-    if type_name == "secret_origin":
-        path.write_text(json.dumps({"data": {"locator": {"kind": "local", "sod_name": "demo"}}}))
-        return FSRef(path), "secret-origin:local:demo", namespace
     if type_name == "spreadsheet":
         return FSRef(path), str(path.resolve()), namespace
     if type_name == "todo_file":
@@ -297,8 +312,10 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
 
 DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
-    "dynamic_workflow", "markdown_index", "mcp_server", "plugin", "project",
-    "secret_origin", "spreadsheet", "todo_file", "workflow_run",
+    "deepagents_session", "opencode_session",
+    "data_driver", "dynamic_workflow", "markdown_index", "mcp_server",
+    "plugin", "project", "spreadsheet", "todo_file",
+    "workflow_run",
 )
 
 
@@ -306,12 +323,14 @@ DETERMINISTIC_TYPES = (
 def test_deterministic_provider_exact_v5_matrix(tmp_path: Path, type_name: str) -> None:
     ref, stable_key, namespace = _deterministic_case(tmp_path, type_name)
     info = _info(type_name)
-    assert info.extract_id(ref) is None
-    assert info.id_stable_key_fn(ref) == stable_key
-    assert info.mint_id(ref) == str(uuid.uuid5(namespace, stable_key))
+    assert info.read_id(ref) is None
+    assert info.stable_key_for(ref) == stable_key
+    assert resolve_id(info, ref) == str(uuid.uuid5(namespace, stable_key))
 
 
-@pytest.mark.parametrize("type_name", ("claude_session", "codex_session", "copilot_session", "dynamic_workflow", "secret_origin"))
+@pytest.mark.parametrize(
+    "type_name", ("claude_session", "codex_session", "copilot_session", "deepagents_session", "dynamic_workflow")
+)
 def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -> None:
     path = tmp_path / "asset"
     if type_name == "claude_session":
@@ -324,10 +343,114 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
         folder = tmp_path / V4
         folder.mkdir()
         ref = FSRef(folder / "events.jsonl")
+    elif type_name == "deepagents_session":
+        path.write_text(json.dumps({"type": "init", "session_id": V4}) + "\n")
+        ref = FSRef(path)
     elif type_name == "dynamic_workflow":
         path.write_text(f"export const meta = {{id: '{V4}'}};")
         ref = FSRef(path)
     else:
         path.write_text(json.dumps({"data": {"id": V4}}))
         ref = FSRef(path)
-    assert _info(type_name).mint_id(ref) == V4
+    assert resolve_id(_info(type_name), ref) == V4
+
+
+# ── Shipped assets survive an install relocation ──────────────────────────────
+#
+# A REPO asset that ships inside the wheel lives under `site-packages`, so its
+# absolute path is a property of the INSTALL, not of the asset: it differs
+# between a uv tool dir, a plain python prefix and uv's own cache archive — all
+# three of which coexist on one machine — and it changes on every upgrade.
+# `reconcile` falls back to `uuid5(resolved path)` for a derived-identity
+# type that declares no stable key, so each install location mints a SEPARATE
+# row for the same shipped asset and the Data Sources picker renders one button
+# per row.
+
+#: Derived-identity types whose assets SHIP with the SDK, so their absolute path
+#: is the install's and never the asset's.
+#:
+#: `micro_app` still fails: it has the same missing-key defect, but `name` is not
+#: its natural key — every shipped source nests an editor at
+#: `data_source/<name>/agentic-assets/webapp/editor`, so nine of them are called
+#: `editor` and keying on the bare name would collapse nine assets into one. It
+#: needs a key that carries its owner (e.g. `<owner>/<app>`), which is a separate
+#: change from FLOWPAD-2070; xfail keeps the defect visible until then.
+SHIPPED_RELOCATABLE_TYPES = (
+    "data_driver",
+    pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
+)
+
+_SHIPPED_MANIFEST = {
+    "data_driver": ("data_driver", "data_driver.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
+    "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
+}
+
+
+def _shipped_asset(install_root: Path, type_name: str) -> FSRef:
+    """The SAME authored asset, materialized under one install root.
+
+    Mirrors the on-disk shape the walker finds:
+    ``<install>/flow_sdk/system_projects/flowpad_assistant/agentic-assets/<family>/<name>/``.
+    """
+    family, main_file, manifest = _SHIPPED_MANIFEST[type_name]
+    folder = (
+        install_root / "Lib" / "site-packages" / "flow_sdk" / "system_projects"
+        / "flowpad_assistant" / "agentic-assets" / family / manifest["name"]
+    )
+    folder.mkdir(parents=True)
+    (folder / main_file).write_text(json.dumps(manifest), encoding="utf-8")
+    return FSRef(folder, scope="system")
+
+
+@pytest.mark.parametrize("type_name", SHIPPED_RELOCATABLE_TYPES)
+def test_shipped_asset_keeps_one_id_across_install_locations(
+    tmp_path: Path, type_name: str,
+) -> None:
+    """One shipped asset is one entity, wherever the wheel was unpacked.
+
+    Reinstalling/upgrading relocates `site-packages`; the three roots below are
+    the shape actually observed on a dev box (uv tool dir, python prefix, uv
+    cache archive). A path-keyed id turns one source into three, which the
+    picker renders as three identical providers.
+    """
+    info = _info(type_name)
+    refs = [
+        _shipped_asset(tmp_path / install, type_name)
+        for install in ("uv-tools-flowpad", "pythoncore-3.14-64", "uv-cache-archive-v0")
+    ]
+    assert [info.read_id(ref) for ref in refs] == [None] * len(refs), "no carrier — identity is derived"
+
+    ids = {resolve_id(info, ref) for ref in refs}
+    assert len(ids) == 1, (
+        f"{type_name}: the same shipped asset minted {len(ids)} ids across install "
+        f"locations, so an upgrade forks it into {len(ids)} rows — {sorted(ids)}"
+    )
+
+
+@pytest.mark.parametrize("type_name", SHIPPED_RELOCATABLE_TYPES)
+def test_shipped_asset_declares_an_install_independent_key(
+    tmp_path: Path, type_name: str,
+) -> None:
+    """The mechanism behind the test above: with no stable key, `reconcile`
+    falls through to `uuid5(NAMESPACE_URL, resolved path)`."""
+    info = _info(type_name)
+    ref = _shipped_asset(tmp_path / "uv-tools-flowpad", type_name)
+    stable_key = info.stable_key_for(ref)
+    assert stable_key is not None, (
+        f"{type_name} declares neither id_stable_key_fn nor identity_key_fn, so its id "
+        f"is uuid5 of the absolute install path"
+    )
+    assert str(Path(getattr(ref, "_path", ref)).resolve()) not in stable_key, (
+        f"{type_name}: the stable key still embeds the install path — {stable_key!r}"
+    )
+
+
+def test_an_installed_copilot_transcript_keeps_its_session_id(tmp_path: Path) -> None:
+    """An install keeps the file name, so a received Copilot transcript is
+    ``<project>/agentic-assets/copilot_session/events.jsonl``: its parent is the type folder,
+    not the session. The id comes from the ``session.start`` event, so the installed row is the
+    shared one and Open finds it."""
+    events = tmp_path / "agentic-assets" / "copilot_session" / "events.jsonl"
+    events.parent.mkdir(parents=True)
+    events.write_text(json.dumps({"type": "session.start", "data": {"sessionId": V4}}) + "\n", encoding="utf-8")
+    assert resolve_id(_info("copilot_session"), FSRef(events)) == V4

@@ -3,7 +3,7 @@
 Proves the hub-optional wire contract end-to-end with two real identities —
 alice (in-process SDK, the HOST) and bob (raw HTTP, the GUEST):
 
-  1. alice shares a conversation with bob (canonical invite → accept → join).
+  1. alice shares a conversation with bob (canonical assignment → join).
   2. GUEST → HOST: bob posts a prompt message carrying the guest-minted session
      id — the ``remote_worker_session-<id>`` TYPE_ID attachment is the
      authoritative carrier; the test asserts ``derive_session_fields`` recovers
@@ -22,6 +22,7 @@ Auto-skips without a local hub (conftest) or bob credentials.
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 import json
@@ -40,12 +41,16 @@ from flow_sdk.builtin.flow_message import (
     FlowMessage,
     FlowMessageKind,
     derive_session_fields,
+    session_start_settings,
 )
 from flow_sdk.builtin.flow_message_bundle import unpack_bundle
 from flow_sdk.builtin.remote_worker_session import (
     RemoteWorkerSession,
+)
+from flow_sdk.builtin.remote_worker_session import (
     RemoteWorkerSessionStatus as S,
 )
+from tests.hub_tests._assignment import assert_auto_assigned
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
@@ -81,43 +86,44 @@ async def _bob_headers(hub_base_url: str) -> dict:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "X-Bob-Email": bob_email,  # test-local convenience, stripped below
+        "X-Bob-Id": (data.get("user") or {})["id"],
     }
 
 
-async def _accept_and_join(hub_base_url: str, headers_b: dict, conv_id: str, bob_email: str) -> None:
-    """Canonical recipient flow: pending → accept (302-tolerant) → join."""
+async def _assert_assigned_and_join(
+    hub_base_url: str,
+    headers_b: dict,
+    conv_id: str,
+    bob_id: str,
+) -> None:
+    """Canonical recipient flow: immediate assignment → idempotent join."""
+    token = headers_b["Authorization"].removeprefix("Bearer ")
+    await assert_auto_assigned(
+        hub_base_url,
+        token,
+        entity_type="conversation",
+        entity_id=conv_id,
+        user_id=bob_id,
+        expected_role="member",
+    )
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers_b)
-        r.raise_for_status()
-        pending = [
-            inv for inv in (r.json()["data"] or [])
-            if inv.get("recipient_email") == bob_email
-        ]
-        assert pending, "bob has no pending invitation"
-        pending.sort(key=lambda x: x.get("created_date") or "", reverse=True)
-        r = await h.get(
-            f"{hub_base_url}/api/v1/graph/members/accept",
-            headers=headers_b,
-            params={"invitation-id": pending[0]["id"]},
-        )
-        if r.status_code in (301, 302, 303, 307, 308):
-            location = (r.headers.get("location") or "")
-            assert "login" not in location.lower(), f"accept bounced to login: {location[:200]}"
-        else:
-            r.raise_for_status()
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
-            headers=headers_b, json={},
+            headers=headers_b,
+            json={},
         )
         assert r.status_code < 300, r.text
 
 
 @pytest.mark.asyncio
 async def test_live_session_transport_loop(
-    hub_base_url, hub_login_payload, isolated_hub_keyring, tmp_path,
+    hub_base_url,
+    hub_login_payload,
+    isolated_hub_keyring,
+    tmp_path,
 ) -> None:
-    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
+    from tests.hub_tests._local_login import login_as
 
     login_as(hub_login_payload)
     alice_key = hub_login_payload.get("api_key") or hub_login_payload.get("token")
@@ -126,13 +132,22 @@ async def test_live_session_transport_loop(
 
     headers_b = await _bob_headers(hub_base_url)
     bob_email = headers_b.pop("X-Bob-Email")
+    bob_id = headers_b.pop("X-Bob-Id")
 
-    # ── 1. share the conversation (invite → accept → join) ──────────────────
-    conv = Conversation(title=f"live-session-loop-{int(time.time())}-{uuid.uuid4().hex[:6]}")
+    # ── 1. share the conversation (assignment → join) ────────────────────
+    from flow_sdk.builtin.project import Project
+
+    # project-mapped: the host gate only runs for conversations with a workdir
+    host_root = tmp_path / "host-project"
+    host_root.mkdir()
+    local_project = Project(name="live-session-host", fs_storage_mount_path=str(host_root))
+    await local_project.save(notify=False)
+    conv = Conversation(title=f"live-session-loop-{int(time.time())}-{uuid.uuid4().hex[:6]}",
+                        project_id=local_project.id)
     await conv.share(recipients=[bob_email])
     assert conv.remote is True
     await conv.save(notify=False)  # persist remote=True for the local send path
-    await _accept_and_join(hub_base_url, headers_b, conv.id, bob_email)
+    await _assert_assigned_and_join(hub_base_url, headers_b, conv.id, bob_id)
 
     # The guest-minted live-session id (uuid4 — must pass validate-on-adopt).
     sid = str(uuid.uuid4())
@@ -148,7 +163,8 @@ async def test_live_session_transport_loop(
                 "remote_worker_session_id": sid,  # header field — may be dropped (F1)
                 "attachment": [
                     {"attachment_type": AttachmentType.PROMPT.value, "data": "run the tests"},
-                    {"attachment_type": AttachmentType.TYPE_ID.value, "data": carrier},
+                    {"attachment_type": AttachmentType.TYPE_ID.value, "data": carrier,
+                     "prompt_preview": json.dumps({"session_start": {"reply_policy": "review"}})},
                 ],
             },
         )
@@ -157,7 +173,8 @@ async def test_live_session_transport_loop(
 
         # alice reads it back off the hub — the receiver's wire view.
         r = await h.get(
-            f"{hub_base_url}/api/v1/graph/flow_message/{bob_fm_id}", headers=headers_a,
+            f"{hub_base_url}/api/v1/graph/flow_message/{bob_fm_id}",
+            headers=headers_a,
         )
         assert r.status_code == 200, r.text
         wire = r.json()["data"]
@@ -166,14 +183,30 @@ async def test_live_session_transport_loop(
     # Document which carrier was live (observable when the hub schema catches up).
     print(f"[live-session-loop] hub mirrors remote_worker_session_id header: {hub_mirrors_header}")
 
-    inbound = FlowMessage.model_validate({
-        k: v for k, v in wire.items() if k in FlowMessage.model_fields
-    })
+    inbound = FlowMessage.model_validate({k: v for k, v in wire.items() if k in FlowMessage.model_fields})
     derive_session_fields(inbound)
     # F1 pin: with OR without the hub schema mirror, the receiver recovers the id.
     assert inbound.remote_worker_session_id == sid
     att_data = [a.data for a in inbound.attachment or []]
     assert carrier in att_data, f"carrier attachment stripped by hub: {att_data}"
+    assert session_start_settings(inbound).reply_policy == "review"  # the guest's opening proposal survived
+
+    # ── 2b. HOST gate: no standing grant → the session parks at PENDING with
+    #        the proposal adopted; approve flips it and announces ─────────────
+    from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
+
+    inbound.conversation_id = conv.id
+    await inbound.save(notify=False)
+    await process_inbound_prompt(inbound.id, conv.id)
+    parked = await RemoteWorkerSession.get_one({"id": sid})
+    assert parked is not None and parked.status == S.PENDING.value
+    assert parked.starting_message_id == inbound.id
+    assert parked.reply_policy == "review"
+    assert parked.guest_user_id == bob_id
+    assert (await FlowMessage.get_one({"id": inbound.id})).prompt_auto_handled is False
+    assert await parked.approve() is True
+    assert parked.status == S.IDLE.value and parked.approved_via == "manual"
+    await parked.delete()
 
     # ── 3. HOST → GUEST: SESSION_EVENT + snapshot through the blob store ────
     host_session = RemoteWorkerSession(
@@ -184,6 +217,9 @@ async def test_live_session_transport_loop(
         guest_name="Bob",
         status=S.IDLE.value,
         last_activity_at="2026-07-14T10:00:00+00:00",
+        starting_message_id=bob_fm_id,
+        reply_policy="review",
+        approved_via="manual",
         host_process_id="ap-host-local",  # host-local — must NOT travel
         project_id="proj-host-local",
     )
@@ -194,11 +230,13 @@ async def test_live_session_transport_loop(
         "Alice approved the live session",
         remote_worker_session_id=sid,
         kind=FlowMessageKind.SESSION_EVENT.value,
-        attachments=[{
-            "attachment_type": AttachmentType.TYPE_ID.value,
-            "data": carrier,
-            "prompt_preview": json.dumps({"live_session_event": "approved"}),
-        }],
+        attachments=[
+            {
+                "attachment_type": AttachmentType.TYPE_ID.value,
+                "data": carrier,
+                "prompt_preview": json.dumps({"live_session_event": "approved"}),
+            }
+        ],
     )
     assert data.get("body_status") == BodyStatus.UPLOADING.value, data
 
@@ -212,7 +250,8 @@ async def test_live_session_transport_loop(
     # bob pulls the row + the bundle bytes through the hub.
     async with httpx.AsyncClient(timeout=10.0) as h:
         r = await h.get(
-            f"{hub_base_url}/api/v1/graph/flow_message/{event_fm.id}", headers=headers_b,
+            f"{hub_base_url}/api/v1/graph/flow_message/{event_fm.id}",
+            headers=headers_b,
         )
         assert r.status_code == 200, r.text
         assert r.json()["data"]["body_status"] == "ready"
@@ -232,6 +271,9 @@ async def test_live_session_transport_loop(
         snap = json.loads(zf.read(header_name))
     assert snap["id"] == sid
     assert snap["status"] == S.IDLE.value
+    assert snap["starting_message_id"] == bob_fm_id
+    assert snap["reply_policy"] == "review"
+    assert snap["approved_via"] == "manual"
     assert "host_process_id" not in snap
     assert "project_id" not in snap
 
@@ -243,6 +285,8 @@ async def test_live_session_transport_loop(
     assert restored is not None
     assert restored.status == S.IDLE.value
     assert restored.host_name == "Alice"
+    assert restored.starting_message_id == bob_fm_id
+    assert restored.reply_policy == "review"
     assert not restored.host_process_id  # never crosses machines
 
     await restored.delete()

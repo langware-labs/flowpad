@@ -1,6 +1,6 @@
 """Integration: a queued prompt boots a real worker and is processed.
 
-Queue of one. Parametrized PTY (visible=True) and headless (visible=False).
+Queue of one. Parametrized PTY (pty_mode=True) and headless (pty_mode=False).
 Both boot the worker WITH the queued prompt — deterministic, no boot-empty-
 then-stdin race — but via different (correct) seams:
 
@@ -32,8 +32,14 @@ from flow_sdk.builtin.faas.compute_node import ComputeNode
 @pytest.mark.asyncio
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("visible", [True, False], ids=["pty", "headless"])
-async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, visible):
+# ``pty_mode`` is the SOLE transport routing key (``visible`` is tab chrome
+# only, and defaults independently) — see the ``pty_mode`` APIField docs. This
+# test used to parametrize ``visible`` alone, which left the "headless" row
+# running on a default ``pty_mode=True`` process: ``_queue_ready`` refuses to
+# drain a PTY process (its cold boot belongs to ``start_pty``), so the queue
+# never drained and the row failed as a transcript timeout.
+@pytest.mark.parametrize("pty_mode", [True, False], ids=["pty", "headless"])
+async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, pty_mode):
     cn = await ComputeNode.get_one({"uname": "local"})
     assert cn, "No @local compute node found"
 
@@ -41,7 +47,8 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
         compute_node_id=f"compute_node-{cn.id}",
         cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
         workdir=str(tmp_path),
-        visible=visible,
+        pty_mode=pty_mode,
+        visible=pty_mode,
     )
     await process.save()
 
@@ -55,7 +62,7 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
         assert process.queue.log_entries()[-1]["action"] == "enqueue"
 
         # ── boot the worker; the queued head feeds it as the launch prompt ──
-        if visible:
+        if pty_mode:
             # PTY: loader path. start_pty() with no instruction → _perform_open
             # pops the head as the launch arg.
             await process.start_pty()
@@ -92,7 +99,7 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
         inject_line = logs[i_inj]
         assert inject_line.get("source") == inject_source, inject_line
         assert sentinel in inject_line.get("prompt", "")
-        if not visible:
+        if not pty_mode:
             i_ok = next(i for i, line in enumerate(logs)
                         if line["action"] == "drain_check" and line.get("reason") == "ok")
             assert i_enq < i_ok < i_pop, f"drain_check(ok) misordered: {actions}"

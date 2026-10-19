@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Application manifest for flowpad-install.exe (shipped as Flowpad-Setup.exe).
+
+     requestedExecutionLevel asInvoker is the whole point: without a manifest, Windows'
+     installer-detection heuristic (a file whose name or version strings say "setup" /
+     "install") demands elevation at launch, so every user got a UAC prompt before the
+     launcher even ran — and the launcher, the installer it starts, and the app it then
+     launches would all have run as administrator. Seen on the Windows VM on 2026-10-09
+     with launcher-v1 (consent.exe waiting, exit 1 when the prompt timed out). The NSIS
+     installer declares asInvoker itself; the launcher must too. -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="Langware.Flowpad.Launcher" version="1.0.0.0" processorArchitecture="*"/>
+  <description>Flowpad installer launcher</description>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+    </windowsSettings>
+  </application>
+</assembly>

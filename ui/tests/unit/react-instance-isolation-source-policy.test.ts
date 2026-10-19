@@ -66,16 +66,19 @@ describe('React launched-instance isolation source policy', () => {
     expect(liveSdkFiles).toEqual([
       'agentic_process_stress.test.ts',
       'asset-loader-project-context.test.tsx',
+      'boot-order-locale-catchup.test.ts',
       'chat-history-row-rename-sync.test.tsx',
       'chats-open-recency.test.ts',
       'dock-dead-scope-tab-setup.test.tsx',
-      'project-view-mode-memory.test.ts',
+      'project-context-locale-follows.test.ts',
+      'project-locale-memory.test.ts',
       'pty_corruption.test.ts',
       'reactivity.test.ts',
       'shell_stress.test.ts',
       'unit/hooks/useClaudeHistory.test.tsx',
       'unit/hooks/useEntityByPath.test.tsx',
       'unit/useFS.test.tsx',
+      'vibe-switch-project-locale.test.ts',
     ]);
   });
 

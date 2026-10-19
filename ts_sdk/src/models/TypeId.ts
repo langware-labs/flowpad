@@ -1,7 +1,7 @@
 const delimiter = '-';
 const uuidRegex = '[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 
-// Identifier patterns matching backend (flowpad/hub/api/identifier.py)
+// Identifier patterns matching backend (hub identifier.py)
 const numberLimit = 10000;
 const maxDigits = numberLimit.toString().length - 2;
 const namedIdPattern = /^@([a-zA-Z][a-zA-Z0-9_-]*)$/;
@@ -9,7 +9,7 @@ const keyPattern = new RegExp(`^([_a-zA-Z0-9]+)-(?:0|[1-9]\\d{0,${maxDigits}}|${
 const propIdPattern = /^([_a-zA-Z0-9]+)\.([_a-zA-Z0-9]+)$/;
 
 /**
- * Identifier types matching backend (flowpad/hub/api/identifier.py::IdentifierType)
+ * Identifier types matching backend (hub identifier.py::IdentifierType)
  */
 export enum IdentifierType {
   UUID = 'uuid',
@@ -28,7 +28,7 @@ export function isValidUUIDv4(id: string): boolean {
 
 /**
  * Check if identifier is a valid named ID (@name format)
- * Matches backend: flowpad/hub/api/identifier.py::is_valid_named_id
+ * Matches backend: hub identifier.py::is_valid_named_id
  */
 export function isValidUName(id: string): boolean {
   return namedIdPattern.test(id);
@@ -36,7 +36,7 @@ export function isValidUName(id: string): boolean {
 
 /**
  * Check if identifier is a valid namespace key (namespace-index format)
- * Matches backend: flowpad/hub/api/identifier.py::is_valid_key
+ * Matches backend: hub identifier.py::is_valid_key
  */
 export function isValidKey(id: string): boolean {
   return keyPattern.test(id);
@@ -44,7 +44,7 @@ export function isValidKey(id: string): boolean {
 
 /**
  * Check if identifier is a valid property ID (property.value format)
- * Matches backend: flowpad/hub/api/identifier.py::is_valid_prop_id
+ * Matches backend: hub identifier.py::is_valid_prop_id
  */
 export function isValidPropId(id: string): boolean {
   return propIdPattern.test(id);
@@ -60,7 +60,7 @@ export function isValidIdentifier(id: string): boolean {
 
 /**
  * Determine the type of an identifier
- * Matches backend: flowpad/hub/api/identifier.py::get_identifier_type
+ * Matches backend: hub identifier.py::get_identifier_type
  *
  * @param identifier - The identifier string to classify
  * @returns The identifier type enum value
@@ -98,7 +98,7 @@ export function isTypeId(typeId: unknown): boolean {
 
 /**
  * Parse a TypeId string into [type, identifier] parts
- * Matches backend: flowpad/hub/api/type_id.py::TypeId.__init__ (line 62)
+ * Matches backend: hub type_id.py::TypeId.__init__ (line 62)
  *
  * Splits on the FIRST delimiter only, allowing identifiers to contain delimiters
  * Examples:
@@ -174,7 +174,7 @@ export class TypeId {
 
   /**
    * Get the identifier type for this TypeId
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.identifier_type (property)
+   * Matches backend: hub type_id.py::TypeId.identifier_type (property)
    */
   get identifierType(): IdentifierType {
     return getIdentifierType(this.id);
@@ -189,7 +189,7 @@ export class TypeId {
 
   /**
    * Extract uname from a named identifier (@uname)
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.uname (property)
+   * Matches backend: hub type_id.py::TypeId.uname (property)
    */
   get uname(): string | null {
     if (this.identifier && isValidUName(this.identifier)) {
@@ -201,7 +201,7 @@ export class TypeId {
 
   /**
    * Extract namespace from a namespace key (namespace-index format)
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.namespace (property)
+   * Matches backend: hub type_id.py::TypeId.namespace (property)
    */
   get namespace(): string | null {
     if (isValidKey(this.identifier)) {
@@ -213,7 +213,7 @@ export class TypeId {
 
   /**
    * Get the full key if this is a namespace key identifier
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.key (property)
+   * Matches backend: hub type_id.py::TypeId.key (property)
    */
   get key(): string | null {
     if (isValidKey(this.identifier)) {
@@ -224,7 +224,7 @@ export class TypeId {
 
   /**
    * Extract the index from a namespace key (namespace-index format)
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.key_index (property)
+   * Matches backend: hub type_id.py::TypeId.key_index (property)
    */
   get keyIndex(): number | null {
     if (isValidKey(this.identifier)) {
@@ -240,7 +240,7 @@ export class TypeId {
 
   /**
    * Extract property name from a property ID (property.value format)
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.prop_id_name (property)
+   * Matches backend: hub type_id.py::TypeId.prop_id_name (property)
    */
   get propIdName(): string | null {
     if (isValidPropId(this.identifier)) {
@@ -252,7 +252,7 @@ export class TypeId {
 
   /**
    * Extract property value from a property ID (property.value format)
-   * Matches backend: flowpad/hub/api/type_id.py::TypeId.prop_id_value (property)
+   * Matches backend: hub type_id.py::TypeId.prop_id_value (property)
    */
   get propIdValue(): string | null {
     if (isValidPropId(this.identifier)) {

@@ -1,8 +1,17 @@
-import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService, Shell } from '@sdk';
+import {
+  Capability,
+  capabilityManager,
+  dataContext,
+  EventBus,
+  FSRef,
+  GitWorkdir,
+  type JourneyActSpec,
+  oauthService,
+} from '@sdk';
 
 import { getGitStatus } from '@src/lib/git-status-cache';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
-import type { JourneyActSpec } from './use-journey';
+import { runInTerminal } from '@src/terminal/run-in-terminal';
 
 /** A step's act landed / could not land. The step's `await` listens for these
  *  like any other bus event — gating stays ONE mechanism (see docs/tags.md). */
@@ -28,6 +37,33 @@ function editableWithin(host: HTMLElement): HTMLElement | null {
   if (isEditable(host)) return host;
   return host.querySelector<HTMLElement>('input, textarea, [contenteditable="true"]');
 }
+
+/**
+ * Press a `data-tag`-tagged surface, as a user would.
+ *
+ * The tag is not always ON the control: a group like `ViewToggle` tags a wrapper
+ * and holds the real buttons inside, so clicking the host would hit a div and do
+ * nothing. The control is resolved the same way {@link performFill} resolves an
+ * editable — the host itself when it is clickable, else the first clickable
+ * descendant.
+ *
+ * `el.click()` dispatches a real click event, which is what React's synthetic
+ * handlers listen for — the same path a mouse takes.
+ *
+ * Returns false when the target isn't on screen, so the caller emits
+ * `app.journey.act.failed` and the step falls back to asking the user.
+ */
+export function performClick(target: string): boolean {
+  const host = document.querySelector<HTMLElement>(`[data-tag="${CSS.escape(target)}"]`);
+  if (!host) return false;
+  const el = host.matches(CLICKABLE) ? host : host.querySelector<HTMLElement>(CLICKABLE);
+  if (!el) return false;
+  el.click();
+  return true;
+}
+
+/** What counts as the control inside a tagged host. */
+const CLICKABLE = 'button, a[href], [role="button"], input[type="button"], input[type="submit"]';
 
 /**
  * Type `text` into a `data-tag`-tagged surface, as a user would.
@@ -120,10 +156,13 @@ async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
   }
 }
 
-/** A path inside the journey's project — the same base the footer git pill
- *  uses. `rel` is optional: no `rel` is the project root itself. */
-function projectPath(rel?: string): string | null {
-  const base = dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
+/** A path inside the journey's project. The journey's own root wins; the
+ *  active project is the fallback for acts raised outside one. `rel` is
+ *  optional: no `rel` is the root itself. */
+function projectPath(rel: string | undefined, ctx: ActContext): string | null {
+  const base = ctx.projectRoot === undefined
+    ? dataContext.project?.fs_storage_mount_path ?? dataContext.workdir
+    : ctx.projectRoot;
   if (!base) return null;
   return rel ? `${base.replace(/\/+$/, '')}/${rel.replace(/^\/+/, '')}` : base;
 }
@@ -140,9 +179,9 @@ function projectPath(rel?: string): string | null {
  * concurrent pill fetch, and refreshing the shared entry means the footer count
  * agrees with what the journey just verified.
  */
-async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
+async function runGitCheck(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
-    const workdir = projectPath(act.dir);
+    const workdir = projectPath(act.dir, ctx);
     if (!workdir) return announce(act, false);
     const computeNodeId = dataContext.computeNodeTypeId?.id ?? LOCAL_COMPUTE_NODE.id;
     const git = new GitWorkdir(workdir, computeNodeId);
@@ -180,73 +219,31 @@ export interface ActContext {
   /** Aborted when the step changes or the tray unmounts, so a watcher waiting
    *  on output lets go instead of outliving the step that started it. */
   signal?: AbortSignal;
+  /** The project the JOURNEY ships in — where its try-it steps run. Not the
+   *  active project: a tour that says "the repo you're in IS syncmd" must open
+   *  its terminal and read its files THERE, whatever the user has open. */
+  projectRoot?: string | null;
 }
 
 /**
- * Type a command into the terminal and — when the step asserts something —
- * WATCH WHAT IT PRINTS.
+ * Type the step's command into the terminal on screen, asserting its output
+ * when the step says `contains`.
  *
- * `sendInput` is fire-and-forget: it proves bytes reached the PTY, never that
- * the command worked. A step with `contains` therefore appends a sentinel
- * (`; echo "<marker>_$?"`), collects the ANSI-stripped line stream via
- * `Shell.onLine`, and decides only once the sentinel line arrives — that is
- * the one moment we know the command FINISHED. `ls` printing "No such file"
- * now fails the step instead of going green.
- *
- * Deliberately unbounded: no timer races the user's command. A command that
- * never finishes leaves the step pending (Skip is still there) rather than
- * being declared failed by a clock.
+ * The mechanics live in `runInTerminal` — a terminal is not journey-private,
+ * and an agent driving it through `flow terminal` must behave identically. This
+ * is only the journey's adapter: shell identity from the context, verdict onto
+ * the bus.
  */
 async function runShellCommand(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
     // The terminal on screen IS the target, and the navigation layer owns
     // "what am I looking at" — never re-parse the address bar here.
     if (!ctx.shellId || !act.command) return announce(act, false);
-    const shell = await Shell.getById(ctx.shellId);
-    if (!shell) return announce(act, false);
-
-    const needle = act.contains;
-    if (!needle) {
-      await shell.sendInput(`${act.command}\r`);
-      return announce(act, true);
-    }
-
-    // Assert on output: watch the line stream until the sentinel reports the
-    // exit code. Only the verdict is kept — never a growing transcript.
-    const marker = `__journey_${Math.random().toString(36).slice(2, 10)}`;
-    let seen = false;
-    const settled = await new Promise<boolean>((resolve) => {
-      let stop = () => {};
-      // The sentinel's own echo carries the marker — ignore those lines so a
-      // step can never "pass" by matching the command it just typed.
-      const offLine = shell.onLine((line: string) => {
-        if (!line.includes(marker) && line.includes(needle)) seen = true;
-      });
-      const offTrigger = shell.addTrigger({
-        label: 'journey step',
-        pattern: new RegExp(`${marker}_(\\d+)`),
-        onMatch: (_line: string, m: RegExpMatchArray) => {
-          stop();
-          resolve(m[1] === '0' && seen);
-        },
-      });
-      // ONE teardown, reached by both endings: the sentinel, and the step
-      // being abandoned. Without the abort path a hung command would leave
-      // these listeners (and this promise) on the PtyConnection for its life.
-      stop = () => {
-        offTrigger();
-        offLine?.();
-        ctx.signal?.removeEventListener('abort', onAbort);
-      };
-      function onAbort() {
-        stop();
-        resolve(false);
-      }
-      if (ctx.signal?.aborted) onAbort();
-      else ctx.signal?.addEventListener('abort', onAbort);
+    const ok = await runInTerminal(ctx.shellId, act.command, {
+      contains: act.contains,
+      signal: ctx.signal,
     });
-    await shell.sendInput(`${act.command}; echo "${marker}_$?"\r`);
-    return announce(act, settled);
+    return announce(act, ok);
   } catch {
     return announce(act, false);
   }
@@ -263,8 +260,8 @@ async function runOpenTerminal(act: JourneyActSpec, ctx: ActContext): Promise<bo
 }
 
 /** The project-relative file an `fs_check` act probes. */
-function projectFile(path: string): FSRef | null {
-  const full = projectPath(path);
+function projectFile(path: string, ctx: ActContext): FSRef | null {
+  const full = projectPath(path, ctx);
   return full ? new FSRef(full, dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE) : null;
 }
 
@@ -273,9 +270,9 @@ function projectFile(path: string): FSRef | null {
  * the filesystem is the truth. The user's terminal commands never reach the
  * bus, so "they said they ran it" is not evidence; this reads the file back.
  */
-async function runFsCheck(act: JourneyActSpec): Promise<boolean> {
+async function runFsCheck(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
-    const ref = projectFile(act.path ?? '');
+    const ref = projectFile(act.path ?? '', ctx);
     if (!ref || !act.path) return announce(act, false);
     if (!act.contains) return announce(act, await ref.exists());
     const body = await ref.read().catch(() => null);
@@ -288,6 +285,8 @@ async function runFsCheck(act: JourneyActSpec): Promise<boolean> {
 /** Run a step's act and announce the outcome on the bus. */
 export function runAct(act: JourneyActSpec, ctx: ActContext = {}): boolean | Promise<boolean> {
   switch (act.kind) {
+    case 'click':
+      return announce(act, performClick(act.target));
     case 'fill':
       return announce(act, performFill(act.target, act.text ?? ''));
     case 'open_terminal':
@@ -295,9 +294,9 @@ export function runAct(act: JourneyActSpec, ctx: ActContext = {}): boolean | Pro
     case 'run':
       return runShellCommand(act, ctx);
     case 'fs_check':
-      return runFsCheck(act);
+      return runFsCheck(act, ctx);
     case 'git_check':
-      return runGitCheck(act);
+      return runGitCheck(act, ctx);
     default:
       return runSetupAct(act);
   }

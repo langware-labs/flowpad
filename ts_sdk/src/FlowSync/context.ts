@@ -1,36 +1,31 @@
+import { perfTime } from '../utils/perf';
 import { EventEmitter } from 'events';
 import { autorun, computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
-import apiClient from '../client';
-import {
-  ActionInfo,
-  Agent,
-  ExpansionRequest,
-  Plugin,
-  PluginManifest,
-  QueryFilter,
-  QueryRequest,
-  Visitor,
-  WebDomain,
-} from '..';
-import { AgenticProcess } from '../process/agentic-process';
-import { APIEntity, dataManager } from '../APIEntity';
-import { ComputeNode } from '../entities/compute_node';
-import { Project } from '../entities/project';
-import { User } from '../entities/user';
+// Owning modules, never the package barrel, and never an entity CLASS as a value:
+// this module is reachable from the `services` barrel, so a class value-import here
+// puts every entity subclass into whatever loads a service. Type names come from
+// `EntityTypes`, construction from `EntityFactory` (see entities/*-types.ts).
+import { ActionInfo } from '../models/ActionInfo';
+import { ExpansionRequest, QueryFilter, QueryRequest } from './query';
+import type { Plugin, PluginManifest } from '../entities/plugin';
+import type { Visitor } from '../entities/visitor';
+import type { WebDomain } from '../entities/web-domain';
+import type { AgenticProcess } from '../process/agentic-process';
+import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
+import type { ComputeNode } from '../entities/compute_node';
+import type { Project } from '../entities/project';
+import type { User } from '../entities/user';
 import type { Shell } from '../entities/shell';
-import { Workspace } from '../entities/workspace';
+import type { Workspace } from '../entities/workspace';
 import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
+import { isHubOnly } from '../utils/hub-runtime';
+import { isHiddenProject } from '../constants/system-projects';
+import { RuntimeInfo, RuntimeKind } from '../utils/runtime';
 import { SnifferHook } from '../services/sniffer-hook';
-import {
-  HubConnectionStatus,
-  HubLoginStatus,
-  LocalConnectionStatus,
-  LocalLoginStatus,
-} from '../services/cloud_status';
-import { sdkConfig } from '../config/index';
+import { HubConnectionStatus, HubLoginStatus, LocalConnectionStatus, LocalLoginStatus } from '../services/cloud_status';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
 import {
@@ -41,6 +36,19 @@ import {
 } from './context-local-storage';
 import { EntityFactory } from './factory';
 import { EntityTypes } from '../schema/types';
+import type { DeferredInfo } from '../models/BootstrapInfo';
+
+/**
+ * The class registered for an entity type.
+ *
+ * This module sits below the entity classes (it is reachable from the `services`
+ * barrel), so it cannot value-import them — see the layering rule in
+ * `entities/compute-node/compute-node-types.ts`. Statics are reached through the
+ * registry instead, which is what `_onAddedToContext` already did for expansions.
+ */
+function entityClass<T>(type: string): T {
+  return EntityFactory.getEntityConstructor(type) as unknown as T;
+}
 
 export enum ContextEventType {
   CONTEXT_CHANGED = 'context_changed',
@@ -83,7 +91,6 @@ export enum ContextEntitiesEnum {
   CurrentProcessTypeId = 'CurrentProcessTypeId',
 }
 
-
 /**
  * Soft-runtime-failure descriptor for the currently-rendered terminal.
  * Kept in sync with ``ProcessLoadErrorKind`` (ui/src/routes/loaders/
@@ -122,8 +129,13 @@ class DataContext extends EventEmitter {
   _cloudLoggedIn = false;
   setCloudLoggedIn(v: boolean) {
     if (this._cloudLoggedIn === v) return;
-    runInAction(() => { this._cloudLoggedIn = v; });
+    runInAction(() => {
+      this._cloudLoggedIn = v;
+    });
   }
+
+  private _workspaceRevision = 0;
+  private _projectRevision = 0;
 
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
     [ContextEntitiesEnum.CurrentWorkspaceTypeId, null],
@@ -144,15 +156,26 @@ class DataContext extends EventEmitter {
   isBootstrapping: boolean = true;
   bootstrapInfo: any = null; // Store the full bootstrap response including desktop_info
 
+  /** Merge only discovery slices; identity, paths, and live manager state stay authoritative. */
+  applyInfo(info: DeferredInfo): void {
+    runInAction(() => {
+      const next = { ...this.bootstrapInfo };
+      for (const key of ['sandbox_available', 'sandbox_compute_node', 'notice'] as const) {
+        if (info[key] != null) next[key] = info[key];
+      }
+      if (info.desktop_info) {
+        next.desktop_info = { ...next.desktop_info };
+        for (const key of ['llm_providers', 'installed_agents', 'cloud_login_available'] as const) {
+          if (info.desktop_info[key] != null) next.desktop_info[key] = info.desktop_info[key];
+        }
+      }
+      this.bootstrapInfo = next;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   // User warnings - displayed in the footer status line
   _warnings: UserWarning[] = [];
-
-  /**
-   * Get the environment name from bootstrap info
-   */
-  get envName(): string | null {
-    return this.bootstrapInfo?.env?.env_name ?? null;
-  }
 
   /**
    * Get the cloud API URL from bootstrap info
@@ -181,25 +204,41 @@ class DataContext extends EventEmitter {
 
   setCloudLoginStatus(v: HubLoginStatus) {
     if (this._cloudLoginStatus === v) return;
-    runInAction(() => { this._cloudLoginStatus = v; });
+    runInAction(() => {
+      this._cloudLoginStatus = v;
+    });
   }
   setCloudConnectionStatus(v: HubConnectionStatus) {
     if (this._cloudConnectionStatus === v) return;
-    runInAction(() => { this._cloudConnectionStatus = v; });
+    runInAction(() => {
+      this._cloudConnectionStatus = v;
+    });
   }
   setLocalLoginStatus(v: LocalLoginStatus) {
     if (this._localLoginStatus === v) return;
-    runInAction(() => { this._localLoginStatus = v; });
+    runInAction(() => {
+      this._localLoginStatus = v;
+    });
   }
   setLocalConnectionStatus(v: LocalConnectionStatus) {
     if (this._localConnectionStatus === v) return;
-    runInAction(() => { this._localConnectionStatus = v; });
+    runInAction(() => {
+      this._localConnectionStatus = v;
+    });
   }
 
-  get cloudLoginStatus(): HubLoginStatus { return this._cloudLoginStatus; }
-  get cloudConnectionStatus(): HubConnectionStatus { return this._cloudConnectionStatus; }
-  get localLoginStatus(): LocalLoginStatus { return this._localLoginStatus; }
-  get localConnectionStatus(): LocalConnectionStatus { return this._localConnectionStatus; }
+  get cloudLoginStatus(): HubLoginStatus {
+    return this._cloudLoginStatus;
+  }
+  get cloudConnectionStatus(): HubConnectionStatus {
+    return this._cloudConnectionStatus;
+  }
+  get localLoginStatus(): LocalLoginStatus {
+    return this._localLoginStatus;
+  }
+  get localConnectionStatus(): LocalConnectionStatus {
+    return this._localConnectionStatus;
+  }
 
   /**
    * Get the desktop info from bootstrap
@@ -217,10 +256,38 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Check if the environment is desktop
+   * The runtime the backend resolved for THIS client — the single answer to
+   * "what am I running on". Read this instead of sniffing hostnames, `env_name`,
+   * or `window.electronAPI`.
+   *
+   * The fallback is where the two bootstrap signals are reconciled, and it has
+   * to be here rather than in `hub-runtime`: against a backend too old to send
+   * `runtime`, `supported_pages` still identifies a hub, and defaulting such a
+   * server to `desktop` would make `isHubOnly()` and this getter contradict each
+   * other — the banner would read "Desktop" on the hub. Everything else old is
+   * a local install, hence `desktop`.
+   */
+  get runtimeKind(): RuntimeKind {
+    if (this.bootstrapInfo?.runtime?.kind) return this.bootstrapInfo.runtime.kind;
+    return isHubOnly() ? RuntimeKind.HUB : RuntimeKind.DESKTOP;
+  }
+
+  /** The full aggregate, inputs included. For diagnostics; render off `runtimeKind`. */
+  get runtime(): RuntimeInfo | null {
+    return this.bootstrapInfo?.runtime ?? null;
+  }
+
+  /**
+   * Backed by a flow_sdk app server rather than the hub — i.e. the full desktop
+   * API surface is available (tabs, capabilities, bookmarks, local harness).
+   *
+   * This is what `env_name === 'desktop'` always actually meant, so the meaning
+   * is unchanged: a browser tab on a local server and a cloud sandbox are both
+   * "the app", and only the hub is not. It is NOT a test for the Electron shell
+   * — for that, ask `runtimeKind === RuntimeKind.DESKTOP`.
    */
   get isDesktop(): boolean {
-    return this.envName?.toLowerCase() === 'desktop';
+    return this.runtimeKind !== RuntimeKind.HUB;
   }
 
   /**
@@ -295,6 +362,13 @@ class DataContext extends EventEmitter {
   setSnifferEnabled(value: boolean): void {
     runInAction(() => {
       this.snifferEnabled = value;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
+  setSnifferReady(value: boolean): void {
+    runInAction(() => {
+      this.snifferReady = value;
     });
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
@@ -409,7 +483,7 @@ class DataContext extends EventEmitter {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId);
   }
 
-  get activeEntity(): APIEntity<any> | null {
+  get activeEntity(): AnyEntity | null {
     return this.getContextEntity(ContextEntitiesEnum.CurrentActiveEntityTypeId);
   }
 
@@ -431,6 +505,7 @@ class DataContext extends EventEmitter {
   snifferHook: SnifferHook | null = null;
   snifferEnabled: boolean = false;
   snifferInstalled: boolean = false;
+  snifferReady: boolean = false;
 
   constructor() {
     super();
@@ -473,15 +548,16 @@ class DataContext extends EventEmitter {
       activeOntology: observable,
       bootstrapError: observable,
       isBootstrapping: observable,
-      bootstrapInfo: observable,
+      bootstrapInfo: observable.ref,
       connection: observable,
       isConnected: computed,
       activeShellId: observable,
       activeTerminalTargetTypeId: observable,
       workdir: observable,
       terminalRuntimeError: observable,
-      envName: computed,
       desktopInfo: computed,
+      runtimeKind: computed,
+      runtime: computed,
       isDesktop: computed,
       version: computed,
       instanceName: computed,
@@ -490,6 +566,7 @@ class DataContext extends EventEmitter {
       snifferHook: observable,
       snifferEnabled: observable,
       snifferInstalled: observable,
+      snifferReady: observable,
     });
     this.setupAuthListeners();
     this.setupConnectionListeners();
@@ -567,9 +644,8 @@ class DataContext extends EventEmitter {
     // realm and reject after teardown.  Initial adoption also covers a context
     // constructed after the socket has already begun connecting.
     this.setLocalConnectionStatus(connectionManager.connectionStatus);
-    connectionManager.on(
-      'connection_status_changed',
-      (slot: { status: LocalConnectionStatus }) => this.setLocalConnectionStatus(slot.status),
+    connectionManager.on('connection_status_changed', (slot: { status: LocalConnectionStatus }) =>
+      this.setLocalConnectionStatus(slot.status),
     );
 
     connectionManager.on('on_open', () => {
@@ -618,6 +694,9 @@ class DataContext extends EventEmitter {
       // shells, lenses), so the backend matches against this pathname instead
       // (e.g. to tell whether a conversation is the open page).
       out.CurrentPathname = typeof window !== 'undefined' ? window.location.pathname : null;
+      // The full address: the query carries what the path does not (viewMode, scope, focus),
+      // and the backend's "you are here" (`navigation.here_from`) reads it.
+      out.CurrentUrl = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : null;
       return out;
     };
 
@@ -670,19 +749,19 @@ class DataContext extends EventEmitter {
 
   activeEntityTypeId2ContextEnum(typeId: TypeId): ContextEntitiesEnum | null {
     switch (typeId.type) {
-      case User.type:
+      case EntityTypes.User:
         // Active-entity highlight maps to the local desktop user; cloud user
         // is informational only and handled separately by CloudManager.
         return ContextEntitiesEnum.LocalUserTypeId;
-      case Workspace.type:
+      case EntityTypes.Workspace:
         return ContextEntitiesEnum.CurrentWorkspaceTypeId;
-      case Project.type:
+      case EntityTypes.Project:
         return ContextEntitiesEnum.CurrentProjectTypeId;
-      case ComputeNode.type:
+      case EntityTypes.ComputeNode:
         return ContextEntitiesEnum.CurrentComputeNodeTypeId;
-      case Agent.type:
+      case EntityTypes.SubAgent:
         return ContextEntitiesEnum.CurrentAgentTypeId;
-      case AgenticProcess.type:
+      case EntityTypes.AgenticProcess:
         return ContextEntitiesEnum.CurrentProcessTypeId;
       default:
         return null;
@@ -733,41 +812,30 @@ class DataContext extends EventEmitter {
     // Per-step perf prints tied to the shell-nav T0 marker set by tab clicks.
     // Lets us see exactly which awaited step inside the context-set tail eats
     // the milliseconds (load vs loadHistory vs loadContextEntity).
-    const w = (typeof window !== 'undefined' ? window : undefined) as
-      | { __shellNavT0?: number }
-      | undefined;
-    const t0 = w?.__shellNavT0;
-    const stamp = (label: string, start: number) => {
-      if (t0 === undefined) return;
-      const now = performance.now();
-      // eslint-disable-next-line no-console
-      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
-    };
 
     let entity = dataManager.getByTypeIdFromCache(typeId);
     if (!entity) {
-      const s = performance.now();
-      entity = await this.loadContextEntity(typeId);
-      stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (cache miss)`, s);
+      entity = await perfTime(`_onAddedToContext(${_entityKey}) loadContextEntity (cache miss)`, () =>
+        this.loadContextEntity(typeId),
+      );
     } else {
-      const s = performance.now();
-      await entity.load(); // tests mock flows never being fetched
-      stamp(`_onAddedToContext(${_entityKey}) entity.load (cache hit)`, s);
+      // tests mock flows never being fetched
+      await perfTime(`_onAddedToContext(${_entityKey}) entity.load (cache hit)`, () => entity!.load());
       // Check if cached entity has required expansions
       const entityConstructor = EntityFactory.getEntityConstructor(typeId.type);
       const expansionRequest = (entityConstructor as typeof APIEntity).getLoadingExpansions();
       if (!entity.isExpanded(expansionRequest)) {
-        const s2 = performance.now();
         // Entity exists in cache but doesn't have required expansions, reload it
-        await this.loadContextEntity(typeId);
-        stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, s2);
+        await perfTime(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, () =>
+          this.loadContextEntity(typeId),
+        );
       }
     }
     if (_entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId && entity) {
       defineGlobal('workspace', entity);
     }
     // Load history for process entities when added to context
-    if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity instanceof AgenticProcess) {
+    if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity?.getType() === EntityTypes.AgenticProcess) {
       defineGlobal('activeProcess', entity);
       // In jsdom/Electron, window.process is the host Node process. Keep the
       // explicit app global and only preserve the legacy alias in plain browsers.
@@ -780,13 +848,54 @@ class DataContext extends EventEmitter {
       if (!hasNodeProcess) {
         defineGlobal('process', entity);
       }
-      const s = performance.now();
-      await entity.loadHistory();
-      stamp(`_onAddedToContext(${_entityKey}) entity.loadHistory`, s);
+      // History is NOT loaded here. This runs inside the route loader's context
+      // write, and a full `get-history` there held the URL on the largest payload
+      // the app fetches — for PTY sessions nothing even reads. Every view that
+      // shows history loads it on its own mount (SimpleChatPane, VibeChatPane,
+      // EntityExecutionPanel, useFlowDataTrace); docs/navigation/dock-loading.md, I3.
     }
   }
 
+  /**
+   * Is this project one that must never become the current project?
+   *
+   * Reads the entity (cache first, then a fetch — which the context write is
+   * about to do anyway, so nothing extra is loaded in the common case). An
+   * unresolvable project is NOT treated as excluded: a network failure must not
+   * silently swallow a legitimate project switch.
+   */
+  private async isHiddenProjectId(projectTypeId: TypeId): Promise<boolean> {
+    let project = dataManager.getByTypeIdFromCache<Project>(projectTypeId);
+    if (!project) {
+      project = await dataManager.getByTypeId<Project>(projectTypeId).catch(() => null);
+    }
+    return isHiddenProject(project);
+  }
+
   async setContextEntityTypeId(entityKey: ContextEntitiesEnum, newTypeId: TypeId | null): Promise<void> {
+    // App-managed projects (the Flowpad Assistant, a help-desk portal checkout)
+    // are places you VISIT, never places you work: opening one of their screens
+    // must leave the current project — the footer chip, the nav chip, the
+    // workdir, every project-scoped action — pointing where the user actually
+    // was. Rejecting here rather than in each caller is the point: this setter
+    // is the ONE writer of the project context, so the rule holds for the
+    // helpdesk loader, the assistant's own pages, the localStorage restore in
+    // `setupProject`, and whatever opens one of them next.
+    //
+    // Before the revision bump, so a rejected write never cancels a real switch
+    // that is still loading.
+    if (
+      entityKey === ContextEntitiesEnum.CurrentProjectTypeId &&
+      newTypeId &&
+      (await this.isHiddenProjectId(newTypeId))
+    ) {
+      return;
+    }
+    // Latest CALL wins for the project, not the latest to finish loading. Bumped
+    // before the equality short-circuit: re-selecting the committed project while
+    // another switch is still loading must still supersede that switch.
+    const projectRevision =
+      entityKey === ContextEntitiesEnum.CurrentProjectTypeId ? ++this._projectRevision : undefined;
     const existingTypeId = this._contextEntitiesMap.get(entityKey);
     if (!existingTypeId && !newTypeId) {
       return;
@@ -794,6 +903,9 @@ class DataContext extends EventEmitter {
     if (existingTypeId && existingTypeId.equals(newTypeId)) {
       return;
     }
+
+    const workspaceRevision =
+      entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId ? ++this._workspaceRevision : undefined;
 
     if (existingTypeId) {
       if (!newTypeId) {
@@ -806,6 +918,9 @@ class DataContext extends EventEmitter {
       await this._onAddedToContext(entityKey, newTypeId!);
     }
 
+    if (workspaceRevision !== undefined && workspaceRevision !== this._workspaceRevision) return;
+    if (projectRevision !== undefined && projectRevision !== this._projectRevision) return;
+
     // Update observable AFTER ensuring entity is loaded with proper expansions
     runInAction(() => {
       this._contextEntitiesMap.set(entityKey, newTypeId);
@@ -816,17 +931,25 @@ class DataContext extends EventEmitter {
     if (entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId && newTypeId) {
       defineGlobal('workspace', this.workspace);
     }
-    // Load compute node when project is set
-    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId) {
-      void this.refreshProject();
-      // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
-      // via the generic `activate` action — the project pickers' primary sort
-      // key. This is the single choke point every "user is now in this
-      // project" path funnels through (loaders, pickers, quick-create,
-      // startup restore), and the equality guard above means it fires only on
-      // an actual project switch — never on same-project re-navigation.
-      // Fire-and-forget: context writes must stay fast.
-      void Project.activateById(newTypeId.id).catch(() => {});
+    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId) {
+      // The workdir belongs to the project: a switch re-points it at the new
+      // project's folder. Callers with a narrower cwd (a shell, a process) set
+      // it after the switch, as they already do.
+      this.setWorkdir(this.project?.fs_storage_mount_path ?? null);
+      // Load compute node when project is set
+      if (newTypeId) {
+        void this.refreshProject();
+        // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
+        // via the generic `activate` action — the project pickers' primary sort
+        // key. This is the single choke point every "user is now in this
+        // project" path funnels through (loaders, pickers, quick-create,
+        // startup restore), and the equality guard above means it fires only on
+        // an actual project switch — never on same-project re-navigation.
+        // Fire-and-forget: context writes must stay fast.
+        void entityClass<typeof Project>(EntityTypes.Project)
+          .activateById(newTypeId.id)
+          .catch(() => {});
+      }
     }
 
     // Emit CONTEXT_CHANGED event AFTER observable update so components get the updated values
@@ -837,13 +960,13 @@ class DataContext extends EventEmitter {
     return this._contextEntitiesMap.get(entityKey) ?? null;
   }
 
-  getContextEntity(entityKey: ContextEntitiesEnum): APIEntity<any> | null {
+  getContextEntity(entityKey: ContextEntitiesEnum): AnyEntity | null {
     const typeId = this.getContextEntityTypeId(entityKey);
     if (!typeId) {
       return null;
     }
 
-    const entity = dataManager.getByTypeIdFromCache<APIEntity<any>>(typeId);
+    const entity = dataManager.getByTypeIdFromCache<AnyEntity>(typeId);
     return entity ?? null;
   }
 
@@ -891,24 +1014,13 @@ class DataContext extends EventEmitter {
       return null;
     }
     if (this._sandboxComputeNode === null) {
-      this._sandboxComputeNode = new ComputeNode(this.bootstrapInfo.sandbox_compute_node as any);
+      this._sandboxComputeNode = EntityFactory.createEntity({
+        ...(this.bootstrapInfo.sandbox_compute_node as object),
+        type: EntityTypes.ComputeNode,
+      }) as ComputeNode;
       this._sandboxComputeNode.markAsExpanded();
     }
     return this._sandboxComputeNode;
-  }
-
-  /** Lazily-hydrated @docker-<name> compute nodes from bootstrap. One entry per live worker. */
-  private _dockerComputeNodes: ComputeNode[] | null = null;
-  get dockerComputeNodes(): ComputeNode[] {
-    const raws = this.bootstrapInfo?.docker_compute_nodes ?? [];
-    if (this._dockerComputeNodes === null || this._dockerComputeNodes.length !== raws.length) {
-      this._dockerComputeNodes = raws.map((r) => {
-        const cn = new ComputeNode(r as any);
-        cn.markAsExpanded();
-        return cn;
-      });
-    }
-    return this._dockerComputeNodes;
   }
 
   get domainTypeId(): TypeId | null {
@@ -968,7 +1080,7 @@ class DataContext extends EventEmitter {
       query: filter,
       name: 'context getUserWorkspaces query',
     });
-    return await Workspace.query(request);
+    return await entityClass<typeof Workspace>(EntityTypes.Workspace).query(request);
   }
 
   async createNewUserWorkspace(): Promise<Workspace> {
@@ -976,7 +1088,10 @@ class DataContext extends EventEmitter {
       throw new Error('Cannot create workspace without user');
     }
     const query = new ExpansionRequest({ expand: ['permissions'] });
-    const workspace = new Workspace({ name: this.user.name + ' Workspace' });
+    const workspace = EntityFactory.createEntity({
+      name: this.user.name + ' Workspace',
+      type: EntityTypes.Workspace,
+    }) as Workspace;
     await workspace.save();
     const expanded = await dataManager.getByTypeId<Workspace>(workspace.typeId, query);
     if (!expanded) {
@@ -990,10 +1105,13 @@ class DataContext extends EventEmitter {
       return;
     }
 
+    const revision = this._workspaceRevision;
     const workspaces = await this.getUserWorkspaces();
+    if (revision !== this._workspaceRevision) return;
 
     if (workspaces.length === 0) {
       const newWorkspace = await this.createNewUserWorkspace();
+      if (revision !== this._workspaceRevision) return;
       workspaces.push(newWorkspace);
     }
 
@@ -1036,7 +1154,12 @@ class DataContext extends EventEmitter {
     }
   }
 
-  async setupProject() {
+  /**
+   * Restore the remembered project (else the server's choice) into context.
+   * `accept` narrows what may be restored — the UI passes "belongs to the active
+   * workspace", so a workspace never wakes up in another workspace's project.
+   */
+  async setupProject(accept?: (project: Project) => boolean) {
     // Skip if no user logged in
     if (!this.userTypeId) {
       return;
@@ -1055,22 +1178,37 @@ class DataContext extends EventEmitter {
       return;
     }
 
-    // Fetch user's projects to validate persisted one or find fallback
-    const query = new QueryRequest({
-      type: Project.type,
-      name: 'context setupProject query',
-    });
-    const projects = await Project.query(query);
+    // Browser memory wins when it resolves; an absent/inaccessible row falls
+    // back to the server's choice. A transient failure must remain visible.
+    const resolveProject = async (typeId: TypeId): Promise<Project | null> => {
+      try {
+        const expansions = entityClass<typeof APIEntity>(EntityTypes.Project).getLoadingExpansions();
+        return await dataManager.getByTypeId<Project>(typeId, expansions);
+      } catch (error) {
+        const status =
+          (error as { response?: { status?: number }; status?: number })?.response?.status ??
+          (error as { status?: number })?.status;
+        if (status === 404 || status === 403) return null;
+        throw error;
+      }
+    };
+    // An app-managed project (the assistant, a help-desk portal) is never a
+    // place to RESTORE into — browser memory can still hold one from before
+    // that rule existed, and it would otherwise be reinstated on every load.
+    // Dropped rather than adopted, so the server's choice still gets its turn.
+    const unlessHidden = (project: Project | null): Project | null =>
+      project && !isHiddenProject(project) && (!accept || accept(project)) ? project : null;
+    const remembered = unlessHidden(persistedProjectTypeId ? await resolveProject(persistedProjectTypeId) : null);
+    const serverChoiceId = this.bootstrapInfo?.default_project?.id;
+    const targetProject =
+      remembered ??
+      unlessHidden(serverChoiceId ? await resolveProject(new TypeId(EntityTypes.Project, serverChoiceId)) : null);
 
-    if (projects.length === 0) {
+    // Nothing valid to adopt. Leaving the context alone beats picking arbitrarily:
+    // whatever a loader resolves next is a better answer than a project nobody chose.
+    if (!targetProject) {
       return;
     }
-
-    // Restore persisted project if it exists, otherwise fall back to first available
-    let targetProject = persistedProjectTypeId
-      ? projects.find((project) => project.typeId.equals(persistedProjectTypeId))
-      : null;
-    targetProject ??= projects[0];
 
     await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, targetProject.typeId);
   }

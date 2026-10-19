@@ -1,4 +1,7 @@
-import { cloudManager, connectionManager, dataContext } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { cloudManager, connectionManager, ContextEventType, dataContext, type IEntity, TypeId } from '@sdk';
+import { subscribeToEntityOps } from '@sdk/FlowSync/entity-ops';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { NotificationAction } from './types';
 import { dismiss, notify } from './notify';
@@ -37,15 +40,15 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
   if (suppressed > 0) {
     notify.warning({
       id: 'cloud-errors-suppressed',
-      title: 'Hub errors suppressed',
-      message: `${suppressed} hub errors were suppressed in the current window.`,
+      title: t`Hub errors suppressed`,
+      message: t`${suppressed} hub errors were suppressed in the current window.`,
     });
     return;
   }
 
   // Stash the raw transport detail behind a power-user action, not the headline.
   const detail: NotificationAction = {
-    label: 'Detail',
+    label: t`Detail`,
     command: 'debug.logHubError',
     args: { method, path, statusCode, message: rawMessage },
   };
@@ -53,13 +56,13 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
   if (statusCode === 0) {
     notify.error({
       id: 'cloud-unreachable',
-      title: 'Cloud is not available',
-      message: "We couldn't reach the cloud service. Check your connection or try again in a moment.",
+      title: t`Cloud is not available`,
+      message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
       actions: [detail],
     });
   } else if (statusCode === 401) {
     // A 401 while we were never authenticated (or after an explicit logout) is
-    // the *normal* logged-out state — not an error. The inbox/conversation
+    // the *normal* logged-out state — not an error. The stream inbox/conversation
     // surfaces show a Login CTA overlay for that case, so swallow the toast.
     // Only surface "sign-in expired" when a previously-valid cloud session
     // actually lapsed (we still believe we're logged in) — without it the
@@ -68,29 +71,29 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     if (cloudManager.loginStatus !== 'logged_in') return;
     notify.error({
       id: 'cloud-auth-expired',
-      title: 'Cloud sign-in expired',
-      message: 'Please sign in again to keep using cloud features.',
-      actions: [{ label: 'Sign in', command: 'cloud.signin' }, detail],
+      title: t`Cloud sign-in expired`,
+      message: t`Please sign in again to keep using cloud features.`,
+      actions: [{ label: t`Sign in`, command: 'cloud.signin' }, detail],
     });
   } else if (statusCode === 403) {
     notify.error({
       id: 'cloud-access-denied',
-      title: 'Cloud access denied',
-      message: "You don't have permission for this action. Contact your admin if this seems wrong.",
+      title: t`Cloud access denied`,
+      message: t`You don't have permission for this action. Contact your admin if this seems wrong.`,
       actions: [detail],
     });
   } else if (statusCode === 404) {
     notify.warning({
       id: 'cloud-not-found',
-      title: 'Cloud resource not found',
-      message: "We couldn't find what you were looking for on the cloud.",
+      title: t`Cloud resource not found`,
+      message: t`We couldn't find what you were looking for on the cloud.`,
       actions: [detail],
     });
   } else if (statusCode >= 500) {
     notify.error({
       id: 'cloud-server-error',
-      title: 'Cloud service is having trouble',
-      message: 'The cloud service returned an error. Please try again in a moment.',
+      title: t`Cloud service is having trouble`,
+      message: t`The cloud service returned an error. Please try again in a moment.`,
       actions: [detail],
     });
   } else if (statusCode >= 400) {
@@ -103,7 +106,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     }
     notify.error({
       id: 'cloud-request-rejected',
-      title: 'Cloud request rejected',
+      title: t`Cloud request rejected`,
       message: rawMessage || `The cloud rejected the request (${statusCode}).`,
       actions: [detail],
     });
@@ -126,15 +129,15 @@ function handleCloudConnectionStatus(): void {
   if (status === 'error') {
     notify.error({
       id: 'cloud-unreachable',
-      title: 'Cloud is not available',
-      message: "We couldn't reach the cloud service. Check your connection or try again in a moment.",
+      title: t`Cloud is not available`,
+      message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
     });
   } else if (status === 'auth_rejected') {
     notify.error({
       id: 'cloud-auth-expired',
-      title: 'Cloud sign-in expired',
-      message: 'Please sign in again to keep using cloud features.',
-      actions: [{ label: 'Sign in', command: 'cloud.signin' }],
+      title: t`Cloud sign-in expired`,
+      message: t`Please sign in again to keep using cloud features.`,
+      actions: [{ label: t`Sign in`, command: 'cloud.signin' }],
     });
   } else if (status === 'connected' || status === 'verified') {
     dismiss('cloud-unreachable');
@@ -183,7 +186,7 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
           level: 'info',
           title: meta.skill_name,
           category: ViewType.ASSETS,
-          actions: [{ label: 'View', href: '/dock/assets/list/skill' }],
+          actions: [{ label: t`View`, href: '/dock/assets/list/skill' }],
         });
       }
     } else if (eventName === 'started_generating_skill' && context?.skill_name) {
@@ -192,12 +195,12 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
         id: `skill:${context.session_id ?? context.skill_name}`,
         level: 'info',
         busy: true,
-        title: `Generating: ${context.skill_name}`,
+        title: t`Generating: ${context.skill_name}`,
         category: ViewType.ASSETS,
         actions: context.session_id
           ? [
               {
-                label: 'View Session',
+                label: t`View Session`,
                 command: 'terminal.resume',
                 args: { sessionId: context.session_id, ...(context.cwd ? { cwd: context.cwd } : {}) },
               },
@@ -208,9 +211,9 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
       notify({
         id: `skill:${context.session_id ?? context.skill_name}`,
         level: 'success',
-        title: `Ready: ${context.skill_name}`,
+        title: t`Ready: ${context.skill_name}`,
         category: ViewType.ASSETS,
-        actions: [{ label: 'View Skill', href: '/dock/assets/list/skill' }],
+        actions: [{ label: t`View Skill`, href: '/dock/assets/list/skill' }],
       });
     }
   }
@@ -230,7 +233,7 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
       category: ViewType.TASKS,
       typeId: taskTypeId,
       actions: [
-        { label: 'View', href: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : `/dock/${ViewType.TASKS}` },
+        { label: t`View`, href: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : `/dock/${ViewType.TASKS}` },
       ],
     });
 
@@ -248,12 +251,53 @@ function onFlowDataEvent(typeId: unknown, flowData: Record<string, unknown>): vo
   void handleFlowData(typeId, flowData);
 }
 
+// --- a help request / message that did not reach the hub ---------------------
+
+/** The failure kind each message last told the person about — so a retry that fails the same way
+ *  (every startup, sign-in and reconnect retries) does not toast again. */
+const deliveryToldKind = new Map<string, string>();
+
+function onFlowMessageOp(typeId: TypeId, _op: unknown, data: IEntity | undefined): void {
+  const fm = data as
+    | {
+        outbound?: boolean;
+        delivery_status?: string;
+        body_status?: string;
+        conversation_id?: string | null;
+        delivery_failure?: { kind: string; message: string } | null;
+      }
+    | undefined;
+  if (!fm?.outbound) return;
+  const owed = fm.delivery_status === 'created' || fm.delivery_status === 'pending_send' || fm.body_status === 'failed';
+  const failure = owed ? fm.delivery_failure : null;
+  const key = typeId.id;
+  if (!failure) {
+    if (deliveryToldKind.delete(key)) dismiss(`delivery:${key}`);
+    return;
+  }
+  if (deliveryToldKind.get(key) === failure.kind) return;
+  deliveryToldKind.set(key, failure.kind);
+  const open: NotificationAction[] = fm.conversation_id
+    ? [{ label: t`Open`, href: DockPointer.forConversation(fm.conversation_id).toUrl() }]
+    : [];
+  notify({
+    id: `delivery:${key}`,
+    level: failure.kind === 'signed_out' || failure.kind === 'offline' ? 'warning' : 'error',
+    title: failure.kind === 'signed_out' ? t`Saved — it will send after you sign in` : t`Not sent yet`,
+    message: failure.message,
+    actions: failure.kind === 'signed_out' ? [{ label: t`Sign in`, command: 'cloud.signin' }, ...open] : open,
+    forceToast: true,
+  });
+}
+
 /** Wire all WS-driven notifications. Call once at app start; returns a cleanup fn. */
 export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
+  dataContext.on(ContextEventType.CONTEXT_CHANGED, flushBootstrapNotice);
   cloudManager.on('hub_client_error', handleHubClientError);
   cloudManager.on('connection_status_changed', handleCloudConnectionStatus);
   connectionManager.on('on_flow_data', onFlowDataEvent);
+  const offFlowMessages = subscribeToEntityOps('flow_message', onFlowMessageOp, { ops: ['update', 'create'] });
   // Catch a box that already booted into an errored connection before this wired up.
   handleCloudConnectionStatus();
 
@@ -270,8 +314,10 @@ export function initNotificationIngest(): () => void {
   }
 
   return () => {
+    dataContext.off(ContextEventType.CONTEXT_CHANGED, flushBootstrapNotice);
     cloudManager.off('hub_client_error', handleHubClientError);
     cloudManager.off('connection_status_changed', handleCloudConnectionStatus);
     connectionManager.off('on_flow_data', onFlowDataEvent);
+    offFlowMessages();
   };
 }

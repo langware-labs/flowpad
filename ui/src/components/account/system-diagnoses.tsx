@@ -1,21 +1,8 @@
 import { useCallback, useMemo, useState, type ComponentType } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@src/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,8 +91,10 @@ function ConvPickerButton({
           {/* Forward into a brand-new conversation (opens the share dialog with
               a recipient picker), not only an existing one. */}
           <DropdownMenuItem onSelect={() => setShareOpen(true)}>
-            <MessageSquarePlus className="mr-2 h-3.5 w-3.5 text-primary" />
-            <span className="truncate"><Trans>Start new conversation</Trans></span>
+            <MessageSquarePlus className="me-2 h-3.5 w-3.5 text-primary" />
+            <span className="truncate">
+              <Trans>Start new conversation</Trans>
+            </span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -174,7 +163,14 @@ function DiagnosisRowActions({
 
   return (
     <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={t`View diagnosis`} title={t`View`} onClick={onView}>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0"
+        aria-label={t`View diagnosis`}
+        title={t`View`}
+        onClick={onView}
+      >
         <Eye className="h-4 w-4" />
       </Button>
       <Button
@@ -247,16 +243,12 @@ export function SystemDiagnoses() {
   // Reactive list of all recorded diagnoses — subscribes to the entity store, so a
   // delete (or a freshly recorded diagnosis) updates the table without a manual
   // refetch. Only queried while the dialog is open.
-  const request = useMemo(
-    () => new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
-    [],
-  );
+  const request = useMemo(() => new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }), []);
   const { data, isLoading } = useEntitiesQuery<FlowpadDiagnosis>(request, { enabled: open });
   const rows = useMemo(
     () =>
       [...(data ?? [])].sort(
-        (a, b) =>
-          new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
+        (a, b) => new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
       ),
     [data],
   );
@@ -271,41 +263,51 @@ export function SystemDiagnoses() {
   return (
     <>
       <Button variant="outline" className="w-full" onClick={() => setOpen(true)}>
-        <Stethoscope className="mr-2 h-4 w-4" />
+        <Stethoscope className="me-2 h-4 w-4" />
         <Trans>System Diagnoses</Trans>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle><Trans>System Diagnoses</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>System Diagnoses</Trans>
+            </DialogTitle>
             <DialogDescription>
               <Trans>Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis.</Trans>
             </DialogDescription>
           </DialogHeader>
 
           {loading ? (
-            <p className="p-4 text-sm text-muted-foreground"><Trans>Loading…</Trans></p>
+            <p className="p-4 text-sm text-muted-foreground">
+              <Trans>Loading…</Trans>
+            </p>
           ) : rows.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground"><Trans>No diagnoses recorded.</Trans></p>
+            <p className="p-4 text-sm text-muted-foreground">
+              <Trans>No diagnoses recorded.</Trans>
+            </p>
           ) : (
             <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[28%]"><Trans>Title</Trans></TableHead>
-                    <TableHead className="w-[22%]"><Trans>Recorded</Trans></TableHead>
-                    <TableHead className="w-[28%]"><Trans>Summary</Trans></TableHead>
-                    <TableHead className="w-[22%] text-right"><Trans>Actions</Trans></TableHead>
+                    <TableHead className="w-[28%]">
+                      <Trans>Title</Trans>
+                    </TableHead>
+                    <TableHead className="w-[22%]">
+                      <Trans>Recorded</Trans>
+                    </TableHead>
+                    <TableHead className="w-[28%]">
+                      <Trans>Summary</Trans>
+                    </TableHead>
+                    <TableHead className="w-[22%] text-end">
+                      <Trans>Actions</Trans>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((d) => (
-                    <TableRow
-                      key={d.id}
-                      className="cursor-pointer"
-                      onClick={() => setViewId(d.id)}
-                    >
+                    <TableRow key={d.id} className="cursor-pointer" onClick={() => setViewId(d.id)}>
                       <TableCell className="truncate font-medium" title={d.title || d.name || ''}>
                         {d.title || d.name || '—'}
                       </TableCell>
@@ -315,7 +317,7 @@ export function SystemDiagnoses() {
                       <TableCell className="truncate text-xs" title={d.summary || ''}>
                         {d.summary || '—'}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <DiagnosisRowActions
                           diag={d}
                           onView={() => setViewId(d.id)}
@@ -332,11 +334,7 @@ export function SystemDiagnoses() {
         </DialogContent>
       </Dialog>
 
-      <DiagnosisReportModal
-        open={viewId !== null}
-        diagnosisId={viewId ?? undefined}
-        onClose={() => setViewId(null)}
-      />
+      <DiagnosisReportModal open={viewId !== null} diagnosisId={viewId ?? undefined} onClose={() => setViewId(null)} />
 
       <ConfirmDialog
         open={confirmId !== null}

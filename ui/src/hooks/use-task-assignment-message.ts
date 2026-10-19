@@ -4,7 +4,7 @@ import { useSendToConversation } from '@src/hooks/use-send-to-conversation';
 
 /**
  * The "assign a task" notification message — the same channel as the
- * context-folder push notify: one new conversation to all recipients carrying
+ * dependency-folder push notify: one new conversation to all recipients carrying
  * the optional text plus entity chips. A task never rides alone: its PARENT
  * task (the group overview for a member task) rides as its own chip too. Chips
  * = the task + its parent, both as ENTITY chips. The task's Files & Folders are

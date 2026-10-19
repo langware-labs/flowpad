@@ -9,7 +9,7 @@ Adapted for flow-cli:
 - Tests basic set/get/remove/invalidate/clear operations
 """
 
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.cache.entity_cache import EntityCache, entity_cache
 
 

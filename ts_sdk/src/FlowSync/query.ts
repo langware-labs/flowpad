@@ -17,6 +17,44 @@ export type QueryOp =
   | '$IS_NOT_NULL'
   | '$PROP';
 
+/** Several values at one path (a `*` step): a test passes when any of them does. */
+export class Many extends Array<any> {}
+
+/**
+ * The value at `path` in `data` — ONE path grammar, the Python twin of
+ * `flow_sdk.datasets.query.field_of` (held together by `test_fixtures/dataset_query_cases.json`):
+ * the key as written when the object has it, else walked dot by dot (`input.stage_dates.won`); a
+ * list is stepped into by index (`input.steps.0`), and `*` is every element of a list
+ * (`input.tags.*`) — the path then has several values (`Many`). `undefined` when the path leads
+ * nowhere. A link is NOT followed here (`input.persona.icp`): the rows it leads to are on the
+ * server, which is where a row query is answered.
+ */
+export function fieldOf(data: any, path: unknown): any {
+  if (data == null || typeof path !== 'string') return undefined;
+  if (typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, path)) return data[path];
+  let current: any[] = [data];
+  let many = false;
+  for (const step of path.split('.')) {
+    if (step === '*') {
+      many = true;
+      current = current.flatMap((at) => (Array.isArray(at) ? at : []));
+    } else {
+      current = current.map((at) => {
+        if (Array.isArray(at)) return /^\d+$/.test(step) ? at[Number(step)] : undefined; // an index, never a property
+        return at != null && typeof at === 'object' ? at[step] : undefined;
+      });
+    }
+    if (!current.length) break;
+  }
+  if (many) return Many.from(current.filter((v) => v != null)) as Many;
+  return current.length ? current[0] : undefined;
+}
+
+/** The values a test is tried against: each of a `Many`, else the one. */
+function valuesOf(value: any): any[] {
+  return value instanceof Many ? [...value] : [value];
+}
+
 export class ExpressionNode {
   // IS_NULL/IS_NOT_NULL are unary: canonical leaf shape is ``operands:
   // [field]`` — a trailing ``null`` would be DROPPED by axios GET param
@@ -48,6 +86,13 @@ export class ExpressionNode {
       // nodes that pass `instanceof` casts but lack `op`/`operands`.
       this.operands = data.operands.map((operand: any) => {
         if (operand instanceof ExpressionNode) return operand;
+        // A literal value-list operand (e.g. the id array of an ``$IN`` /
+        // ``$NIN`` leaf) is NOT a sub-expression — it must pass through
+        // unchanged. Without this guard ``typeof [] === 'object'`` sent the
+        // array down the plain-map branch, where ``Object.keys`` turned its
+        // indices into a bogus nested ``$AND``/``$EQ`` tree and the backend
+        // ``ids`` filter silently matched everything.
+        if (Array.isArray(operand)) return operand;
         if (typeof operand !== 'object' || operand === null) return operand;
         return new ExpressionNode(operand);
       });
@@ -93,9 +138,17 @@ export class ExpansionRequest {
 
 export type OrderByType = Record<string, 'asc' | 'desc'>;
 
+/**
+ * A plain field→value map — the `ExpressionNode` constructor's second, and by
+ * far most common, input form: one key becomes an `$EQ` leaf, several become an
+ * `$AND` of `$EQ` leaves. Not an `ExpressionNode` shape at all, which is why
+ * `QueryFilter.match` has to admit it separately.
+ */
+export type MatchMap = Record<string, string | number | boolean | null>;
+
 export class QueryFilter extends ExpansionRequest {
   type?: string;
-  match?: ExpressionNode | Partial<ExpressionNode>;
+  match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
   limit?: number;
   offset?: number;
   order_by?: OrderByType | OrderByType[];
@@ -122,7 +175,11 @@ export class QueryFilter extends ExpansionRequest {
         data = { ...data, ...data.filter };
         delete data.filter;
       }
-      if (!data.match && Object.keys(data).length > 0 && !data.expand) {
+      // A map without `match` is the match itself (`{status: 'open'}`) — unless every key is a
+      // filter word: `{limit: 3}` is a page of three, never "the rows whose limit is 3".
+      const words = ['limit', 'offset', 'order_by', 'expand'];
+      const keys = Object.keys(data);
+      if (!data.match && keys.length > 0 && !data.expand && !keys.every((key) => words.includes(key))) {
         data = { match: data, type: entityType };
       }
       data = { ...data, type: entityType };
@@ -188,7 +245,7 @@ export class QueryFilter extends ExpansionRequest {
       }
       case '$NE': {
         const greaterThanOperator = (a: any, b: any) => a !== b;
-        return this.isValid(data, operands, greaterThanOperator);
+        return this.isValid(data, operands, greaterThanOperator, false, true);
       }
       case '$GT': {
         const greaterThanOperator = (a: any, b: any) => a > b;
@@ -206,29 +263,41 @@ export class QueryFilter extends ExpansionRequest {
         const greaterThanOperator = (a: any, b: any) => a <= b;
         return this.isValid(data, operands, greaterThanOperator);
       }
-      case '$IN': {
-        const greaterThanOperator = (a: any, b: any) => a.includes(b);
-        return this.isValid(data, operands, greaterThanOperator, true);
-      }
+      case '$IN':
       case '$NIN': {
-        const greaterThanOperator = (a: any, b: any) => !a.includes(b);
-        return this.isValid(data, operands, greaterThanOperator, true);
+        // Two shapes. The backend's own — ``[field, [values]]``, "the field is one of these" (a
+        // batch by ids) — must re-check the same way here, or every update of a row in such a live
+        // query splices it OUT of the results (the Vibe help button lost its unread count that way).
+        // The older ``[value, {$PROP: field}]`` — "this array field contains the value" — is kept.
+        if (Array.isArray(operands[1])) {
+          const hit = valuesOf(fieldOf(data, operands[0])).some((v) => (operands[1] as unknown[]).includes(v));
+          return op === '$IN' ? hit : !hit;
+        }
+        // a field that is no list holds nothing: neither `in` nor `not in` passes (as the Python twin)
+        const contains = (a: any, b: any) =>
+          (Array.isArray(a) || typeof a === 'string') && (op === '$IN' ? a.includes(b) : !a.includes(b));
+        return this.isValid(data, operands, contains, true);
       }
       case '$LIKE': {
         // Mirror the SQL driver's ``field LIKE %value%``: case-insensitive
         // substring of the FIELD value. (Was a regex built from the field and
         // tested against the query — backwards, and regex metachars in either
         // side could throw or mismatch live data_op re-validation vs SQL.)
-        const greaterThanOperator = (a: any, b: any) =>
-          String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
-        return this.isValid(data, operands, greaterThanOperator);
+        // On a list field: ANY element contains it (never the list's printed form).
+        const like = (a: any, b: any): boolean =>
+          Array.isArray(a)
+            ? a.some((item) => like(item, b))
+            : String(a ?? '')
+                .toLowerCase()
+                .includes(String(b ?? '').toLowerCase());
+        return this.isValid(data, operands, like);
       }
       // Loose null-check on purpose: an unset field is `undefined` on the
       // cached entity but NULL in the DB — both must match $IS_NULL.
       case '$IS_NULL':
-        return data[operands[0] as keyof any] == null;
+        return valuesOf(fieldOf(data, operands[0])).every((v) => v == null);
       case '$IS_NOT_NULL':
-        return data[operands[0] as keyof any] != null;
+        return valuesOf(fieldOf(data, operands[0])).some((v) => v != null);
       default:
         throw new Error(`Unsupported operation: ${op}`);
     }
@@ -251,7 +320,14 @@ export class QueryFilter extends ExpansionRequest {
     operands: any[],
     operand: (a: any, b: any) => boolean,
     mustContainsPROP: boolean = false,
+    everyValue: boolean = false,
   ): boolean {
+    // A path over a list (`*`) has several values: a test passes when ANY does — and "is not X"
+    // (`everyValue`) when none of them is.
+    const over = (held: any, wanted: any): boolean => {
+      if (!(held instanceof Many)) return operand(held, wanted);
+      return everyValue ? held.every((v) => operand(v, wanted)) : held.some((v) => operand(v, wanted));
+    };
     if (!data || typeof data !== 'object') {
       return false;
     }
@@ -260,13 +336,13 @@ export class QueryFilter extends ExpansionRequest {
       if (operands[1].op && operands[1].op === '$PROP') {
         // If the second operand is a PROP operation, assume it's a field
         const field = operands[1].operands[0];
-        return operand(data[field], operands[0]);
+        return over(fieldOf(data, field), operands[0]);
       } else {
         if (mustContainsPROP) {
           return false;
         }
         // Otherwise, compare the field directly with the value in the second operand
-        return operand(data[operands[0]], operands[1]);
+        return over(fieldOf(data, operands[0]), operands[1]);
       }
     } else {
       return false; // If there are not exactly 2 operands, return false
@@ -315,7 +391,16 @@ export class WatchedQuery<T = any> {
   public pendingPromise?: Promise<T[]>;
   private callbacks: Map<string, QueryCallback<T>>;
 
-  constructor(request: QueryRequest, results?: T[], pendingPromise?: Promise<T[]>) {
+  /**
+   * `subscribe: false` builds an in-flight record: it carries the request's
+   * promise and results but subscribes nobody, whatever callback the request has.
+   */
+  constructor(
+    request: QueryRequest,
+    results?: T[],
+    pendingPromise?: Promise<T[]>,
+    { subscribe = true }: { subscribe?: boolean } = {},
+  ) {
     WatchedQuery.instanceCounter++;
     this.instance_id = WatchedQuery.instanceCounter;
     this.request = request;
@@ -324,7 +409,7 @@ export class WatchedQuery<T = any> {
     this.callbacks = new Map();
 
     // Add the initial callback from the request if it exists
-    if (request.callback) {
+    if (subscribe && request.callback) {
       const queryCallback = new QueryCallback({
         callback: request.callback as (entities: T[]) => void | Promise<void>,
         name: request.name,
@@ -429,6 +514,14 @@ export class QueryRequest {
     callback?: (entities: any[]) => void | Promise<void>;
     name?: string;
   }) {
+    // A key this constructor does not read was silently dropped — `new QueryRequest({type, limit: 3})`
+    // asked for everything. Paging and matching belong in `query` (a `QueryFilter`).
+    const unknown = Object.keys(data).filter((key) => !['type', 'query', 'scope', 'callback', 'name'].includes(key));
+    if (unknown.length) {
+      throw new Error(
+        `QueryRequest: unknown ${unknown.map((k) => `'${k}'`).join(', ')} — put match / limit / offset / order_by in \`query\` (new QueryFilter({...}))`,
+      );
+    }
     this.type = data.type;
     this.query =
       data.query && !(data.query instanceof QueryFilter)

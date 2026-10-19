@@ -24,7 +24,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 logger = logging.getLogger(__name__)
 
 
-@action.all(action_name="mcp", types=["agent"], methods=["get", "post"])
+@action.all(action_name="mcp", types=["subagent"], methods=["get", "post"])
 async def mcp_endpoint():
     """MCP server endpoint stub.
 

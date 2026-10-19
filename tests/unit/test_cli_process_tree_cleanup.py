@@ -19,6 +19,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCLIStreamWorker
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCLIStreamWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.stream_worker import DeepAgentsCLIStreamWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.opencode.stream_worker import OpenCodeCLIStreamWorker
 
 _SLEEPING_CHILD = """
 import os
@@ -316,8 +318,16 @@ async def test_explicit_termination_sweeps_marker_after_clean_wrapper_exit(tmp_p
             CopilotCLIStreamWorker,
             "flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker.CANCEL_GRACE_SECONDS",
         ),
+        (
+            OpenCodeCLIStreamWorker,
+            "flow_sdk.builtin.agentic_process.cli_drivers.opencode.stream_worker.CANCEL_GRACE_SECONDS",
+        ),
+        (
+            DeepAgentsCLIStreamWorker,
+            "flow_sdk.builtin.agentic_process.cli_drivers.deepagents.stream_worker.CANCEL_GRACE_SECONDS",
+        ),
     ],
-    ids=["claude", "codex", "copilot"],
+    ids=["claude", "codex", "copilot", "opencode", "deepagents"],
 )
 async def test_worker_close_session_kills_wrapper_and_child(
     tmp_path: Path,

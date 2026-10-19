@@ -33,12 +33,12 @@ def _get_default_compute_node_id(bootstrap_payload: dict) -> str:
 
 @pytest.mark.asyncio
 async def test_open_external_resolves_workspace_relative_path(bootstrapped_client, monkeypatch, tmp_path: Path):
-    """Relative paths should resolve against AGENT_MOUNT_FOLDER workspace."""
+    """Relative paths should resolve against agent_workspace_root() workspace."""
     workspace = tmp_path / "Flowpad workspace"
     project_dir = workspace / "my_first_project"
     project_dir.mkdir(parents=True)
 
-    monkeypatch.setattr(compute_node_module, "AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
     open_calls = _capture_open_calls(monkeypatch)
 
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")

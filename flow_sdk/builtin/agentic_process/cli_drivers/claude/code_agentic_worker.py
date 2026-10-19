@@ -62,6 +62,11 @@ def _gen_instruction_id() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
+def _local_plugin_configs(plugin_dirs: list[str]) -> list[dict[str, str]]:
+    """Translate prepared runtime paths into Claude Agent SDK plugin specs."""
+    return [{"type": "local", "path": path} for path in plugin_dirs]
+
+
 # System prompt for AMD instruction handling
 AMD_INSTRUCTION_PROMPT = """You are executing AMD (Agentic Markdown) instructions.
 
@@ -241,6 +246,8 @@ class ClaudeCodeAgenticWorker(AgenticWorker):
                 "include_partial_messages": True,
                 "mcp_servers": mcp_servers,
             }
+            if context.plugin_dirs:
+                options_dict["plugins"] = _local_plugin_configs(context.plugin_dirs)
 
             model = resolve_model_tier(CLAUDE_MODEL_TIERS, context.model)
             if model:

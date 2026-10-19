@@ -15,6 +15,7 @@ wire flip and the raw worker moves within a busy turn broadcast.
 Drives the REAL flush path (real ``_tail_status`` over real JSONL file writes) —
 only ``driver`` + ``notify_updated`` are shimmed, never the status logic.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,16 +26,25 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
+from flow_sdk.builtin.agentic_process.agentic_process import _DEBOUNCE_TASKS
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
+from flow_sdk.builtin.agentic_process.naming.runtime import refresh_process_name
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
 
 
 # do not increase timeout without approval
+def _flush_task(ap):
+    """The armed flush, keyed by process id — the streamer hydrates a fresh
+    AP per event, so this never lived on the instance."""
+    return _DEBOUNCE_TASKS.get(str(ap.id))
+
+
 pytestmark = pytest.mark.timeout(30)
 
 
-class _RealTailDriver:
+class _RealTailDriver(ClaudeDriver):
     """Driver shim that reads a REAL JSONL file via the canonical ``_tail_status``
     — no status mocking, just a fixed transcript path."""
 
@@ -61,11 +71,17 @@ async def _make_headless_ap(monkeypatch, path: Path) -> AgenticProcess:
     )
     ap.status = ProcessStatus.RUNNING.value
     ap.pty_mode = False  # HEADLESS transport
+    await ap.save(notify=False)
+    # Settle initial naming migration before measuring status-only broadcasts.
+    await refresh_process_name(ap)
     # A headless turn is in flight for its whole duration. Under the OLD code this
     # pinned worker_status to INITIALIZING and suppressed every broadcast.
     object.__setattr__(ap, "_turn_in_flight", True)
     monkeypatch.setattr(
-        type(ap), "driver", property(lambda self: _RealTailDriver(path)), raising=False,
+        type(ap),
+        "driver",
+        property(lambda self: _RealTailDriver(path)),
+        raising=False,
     )
     return ap
 
@@ -78,25 +94,30 @@ async def test_headless_turn_in_flight_reads_raw_tail_not_initializing(
     (thinking), NOT a pinned INITIALIZING — this is what unblocks mid-turn
     broadcasts."""
     path = tmp_path / "session.jsonl"
-    _write(path, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
-    ])
+    _write(
+        path,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
+        ],
+    )
     ap = await _make_headless_ap(monkeypatch, path)
     assert ap.fetch_worker_status() == WorkerStatus.THINKING
 
 
+@pytest.mark.long  # 2.02s
 @pytest.mark.asyncio
-async def test_headless_midturn_transition_broadcasts(
-    initialize_test_db, monkeypatch, tmp_path
-) -> None:
+async def test_headless_midturn_transition_broadcasts(initialize_test_db, monkeypatch, tmp_path) -> None:
     """A headless mid-turn move (thinking → tool_call) broadcasts, even though the
     wire status stays ``busy`` across both — the pair key catches the raw move."""
     path = tmp_path / "session.jsonl"
-    _write(path, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
-    ])
+    _write(
+        path,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
+        ],
+    )
     ap = await _make_headless_ap(monkeypatch, path)
 
     notify_calls: list[None] = []
@@ -108,33 +129,38 @@ async def test_headless_midturn_transition_broadcasts(
 
     # First flush: thinking → wire busy. Broadcasts (fresh key).
     await ap.on_transcript_change(path, [])
-    await ap._debounce_task
+    await _flush_task(ap)
     assert notify_calls == [None]
     assert ap._last_broadcast_key == ("running", True, "thinking")
 
     # Worker advances to a tool call — same busy, different worker.
-    _write(path, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": []}},
-    ])
+    _write(
+        path,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": []}},
+        ],
+    )
     await ap.on_transcript_change(path, [])
-    await ap._debounce_task
+    await _flush_task(ap)
     # The triple key changed (…,thinking) → (…,tool_call), so it re-broadcasts.
     assert notify_calls == [None, None]
     assert ap._last_broadcast_key == ("running", True, "tool_call")
 
 
+@pytest.mark.long  # 2.03s
 @pytest.mark.asyncio
-async def test_headless_turn_end_flips_wire_to_ready(
-    initialize_test_db, monkeypatch, tmp_path
-) -> None:
+async def test_headless_turn_end_flips_wire_to_ready(initialize_test_db, monkeypatch, tmp_path) -> None:
     """At turn end the worker writes end_turn (COMPLETE); the turn is no longer in
     flight so ``busy`` flips true → false and broadcasts."""
     path = tmp_path / "session.jsonl"
-    _write(path, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
-    ])
+    _write(
+        path,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
+        ],
+    )
     ap = await _make_headless_ap(monkeypatch, path)
 
     notify_calls: list[None] = []
@@ -145,16 +171,19 @@ async def test_headless_turn_end_flips_wire_to_ready(
     monkeypatch.setattr(type(ap), "notify_updated", lambda self: _fake_notify(), raising=False)
 
     await ap.on_transcript_change(path, [])
-    await ap._debounce_task
+    await _flush_task(ap)
     assert ap._last_broadcast_key == ("running", True, "thinking")
 
     # Turn ends: end_turn on disk AND the driver clears _turn_in_flight.
-    _write(path, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
-    ])
+    _write(
+        path,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+        ],
+    )
     object.__setattr__(ap, "_turn_in_flight", False)
     await ap.on_transcript_change(path, [])
-    await ap._debounce_task
+    await _flush_task(ap)
     assert ap._last_broadcast_key == ("running", False, "complete")
     assert notify_calls == [None, None]

@@ -37,6 +37,20 @@
  * verbatim on the wire (RUNNING included — no ready/busy projection). "Is a turn
  * in flight?" is the separate ``busy`` boolean (see ``isBusy``).
  */
+/**
+ * The CLI worker vendors a process can run.
+ *
+ * ONE spelling, in the SDK, because the app currently carries several
+ * incompatible ones — `'claude'` vs `'claude_code'`, with and without
+ * `'workflow'`, with and without `'opencode'` — and picking the wrong union at a
+ * call site silently yields `undefined` rather than an error (the app's
+ * `type-check` script is a no-op, so nothing catches it).
+ *
+ * New vendors add a member HERE; every signature that accepts a vendor should
+ * reference this rather than re-spelling the union inline.
+ */
+export type WorkerType = 'claude_code' | 'codex' | 'copilot' | 'opencode';
+
 export enum ProcessStatus {
   NEW = 'new',
   STARTING = 'starting',
@@ -68,12 +82,30 @@ export function isProcessRunning(status: ProcessStatus): boolean {
   return RUNNING_PROCESS_STATUSES.has(status);
 }
 
+/** True while a session is on its way or live (NEW/STARTING/RUNNING/STOPPING) — what a chip tints as "handling". */
+export function isProcessLive(status: ProcessStatus | string | null | undefined): boolean {
+  return status === ProcessStatus.NEW || isProcessRunning(status as ProcessStatus);
+}
+
+/** True when a session ended without finishing its work. */
+export function isProcessFailed(status: ProcessStatus | string | null | undefined): boolean {
+  return status === ProcessStatus.FAILED;
+}
+
 /** @deprecated Use ``isProcessRunning``. Kept as an alias during the rename sweep. */
 export const isProcessActive = isProcessRunning;
 
 /** True when ``start()`` can be invoked (NEW/STOPPED/FAILED). */
 export function isProcessStartable(status: ProcessStatus): boolean {
   return STARTABLE_PROCESS_STATUSES.has(status);
+}
+
+/**
+ * True once the process RAN and ended (STOPPED/FAILED): its worker and PTY are gone until
+ * it is started again. NEW is startable but has not ended — nothing of it is held yet.
+ */
+export function isProcessEnded(status: ProcessStatus): boolean {
+  return status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED;
 }
 
 /**
@@ -158,13 +190,13 @@ const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
 ]);
 
 /** True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
-export function isWorkerRunning(status: WorkerStatus): boolean {
-  return WORKER_RUNNING_STATUSES.has(status);
+export function isWorkerRunning(status: WorkerStatus | null | undefined): boolean {
+  return status != null && WORKER_RUNNING_STATUSES.has(status);
 }
 
 /** True when the worker turn has ended and cannot be resumed in place. */
-export function isWorkerTerminal(status: WorkerStatus): boolean {
-  return WORKER_TERMINAL_STATUSES.has(status);
+export function isWorkerTerminal(status: WorkerStatus | null | undefined): boolean {
+  return status != null && WORKER_TERMINAL_STATUSES.has(status);
 }
 
 /**
@@ -172,8 +204,9 @@ export function isWorkerTerminal(status: WorkerStatus): boolean {
  * and is not in the ready-for-input baseline. Used to gate operations like
  * "fork" that are only sensible after at least one turn has happened.
  */
-export function hasWorkerStarted(status: WorkerStatus): boolean {
-  return status !== WorkerStatus.INITIALIZING;
+export function hasWorkerStarted(status: WorkerStatus | null | undefined): boolean {
+  // No reported status means no transcript — same "nothing yet" as INITIALIZING.
+  return status != null && status !== WorkerStatus.INITIALIZING;
 }
 
 /**
@@ -184,8 +217,20 @@ export interface StatusBearingProcess {
   status?: ProcessStatus | string;
   /** Turn-in-flight — the orthogonal boolean the input/toggle gates read. */
   busy?: boolean;
-  workerStatus?: WorkerStatus | string;
-  worker_status?: WorkerStatus | string;
+  // Nullable: the wire sends `worker_status: null` for a process that has never
+  // had a worker, and `AgenticProcess` declares it that way.
+  workerStatus?: WorkerStatus | string | null;
+  worker_status?: WorkerStatus | string | null;
+  /** The CLI's own sentence behind a bare ERROR ("Not logged in · Please run /login"). */
+  workerStatusDetail?: string | null;
+  worker_status_detail?: string | null;
+  /**
+   * WHICH refused turn the detail came from — the transcript entry's own uuid.
+   * The sentence cannot identify a turn: every signed-out turn writes the
+   * identical one, so anything keyed on the text treats a new failure as a
+   * re-read of the old one. Stable across re-reads, different per entry.
+   */
+  worker_status_detail_id?: string | null;
   session_id?: string | null;
   /** Tab visibility only — NOT the transport router (see ``pty_mode``). */
   visible?: boolean;
@@ -215,6 +260,19 @@ export enum WorkerMode {
   Interactive = 'interactive',
   CLI         = 'cli',
 }
+
+/** The two palettes a worker can be pinned to. */
+export type TerminalTheme = 'light' | 'dark';
+
+/**
+ * The `switch-mode` request body, tagged on `mode` — mirrors
+ * `flow_sdk/builtin/agentic_process/switch_mode_spec.py`, whose `extra="forbid"`
+ * rejects a field the other arm owns. PTY dimensions are deliberately absent:
+ * they seed the client's own `attachPty` and no handler has ever read them.
+ */
+export type SwitchModeBody =
+  | { mode: WorkerMode.Interactive; theme?: TerminalTheme }
+  | { mode: WorkerMode.CLI };
 
 /**
  * Portable model **tier** (size) — set as `context.model` instead of a vendor
@@ -250,8 +308,27 @@ export type ProcessIconKey =
   | 'codex-restore'
   | 'copilot'
   | 'copilot-restore'
+  | 'opencode'
+  | 'opencode-restore'
   | 'generic'
   | 'generic-restore';
+
+/**
+ * The icon TAG a process key names — `claude-restore` -> `brands.claude.restore`.
+ *
+ * The two axes the key encodes are exactly the two the tag grammar already has:
+ * the vendor is the icon and `restore` is a role, one more segment. So this is a
+ * spelling change, not a lookup, and it lives here beside the key rather than in
+ * the UI because both halves are the SDK's own vocabulary.
+ *
+ * `generic` is ours rather than a vendor's, hence the `flowpad` pack.
+ */
+export function processIconTag(key: ProcessIconKey): string {
+  const restored = key.endsWith('-restore');
+  const vendor = restored ? key.slice(0, -'-restore'.length) : key;
+  const pack = vendor === 'generic' ? 'flowpad' : 'brands';
+  return `${pack}.${vendor}${restored ? '.restore' : ''}`;
+}
 
 /**
  * True when the process runs on the PTY transport. Keys on ``pty_mode`` (the
@@ -422,6 +499,23 @@ export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | Worke
   const status = resolveStatus(p);
   if (status === undefined) return undefined;
   const worker = resolveWorkerStatus(p);
+  // A turn in flight outranks a terminal worker status, and must be checked
+  // BEFORE the error branch below.
+  //
+  // ``workerStatus`` is derived from the transcript tail's most recent
+  // *assistant* entry, however old (``worker_status.py`` walks backwards until
+  // it finds one). So between accepting a prompt and the new turn writing its
+  // first entry, the tail still describes the PREVIOUS turn — and if that one
+  // ended badly (a logged-out ``stop_sequence``, a session limit) the badge
+  // paints its ERROR onto the turn the user just sent, then flips to WORKING a
+  // second later. That flash is a stale read, not a new failure.
+  //
+  // ``busy`` cannot be stale in the same way: the backend derives it from the
+  // prompt lock / registered worker / in-flight flag, none of which outlive the
+  // turn. When it disagrees with a terminal tail, ``busy`` is the live truth.
+  if (isBusy(p) && (worker === undefined || !WORKER_BUSY_STATUSES.has(worker))) {
+    return WorkerStatus.WORKING;
+  }
   if (worker !== undefined && worker !== WorkerStatus.UNKNOWN && ERROR_WORKER_STATUSES.has(worker)) {
     return worker;
   }

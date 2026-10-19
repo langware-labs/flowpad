@@ -31,11 +31,12 @@ OS PTY fd (raw bytes)
   → PtyStreamFile.write(data, seq) appends a framed output line to disk (§10)
   → PtyOutputMessage.from_bytes() base64-encodes data
   → WebSocket send to all attached attached_connections
-  → ConnectionManager dispatches 'pty_output_msg'
-  → ShellManager.handlePtyOutputMsg()
-      - atob() → Uint8Array → TextDecoder({ stream: true }) → string
-      - routes to ShellSession.appendPtyOutput(data, seq)
-  → InteractiveTerminal output listener
+  → ConnectionManager emits 'on_pty_output_msg'
+  → DataManager.onPtyOutputMessage() looks up the cached Shell entity by shell_id
+      (not cached yet → ptyOrphanBuffer)
+  → shell.ptyConnection.routeOutput(data, seq)
+      - seq dedup, atob() → Uint8Array → TextDecoder({ stream: true }) → string
+  → InteractiveTerminal output listener (shell.onOutput)
       - term.write(decoded string)
   → xterm.js renders ANSI → DOM
 ```
@@ -62,10 +63,10 @@ User keystroke in xterm.js
 | PTY fd → read_thread | Raw bytes |
 | read_thread → stream file | Framed JSONL line: base64 + seq (§10) |
 | read_thread → WebSocket | Base64 string in JSON (`PtyOutputMessage.data`) |
-| WebSocket → ShellManager | `atob()` → `Uint8Array` → `TextDecoder('utf-8', { stream: true })` → string |
-| ShellManager → xterm.js | UTF-8 string via `term.write()` |
-| xterm.js → ShellManager (input) | UTF-8 string via `term.onData()` |
-| ShellManager → WebSocket | UTF-8 string in JSON body `{ data: "..." }` |
+| WebSocket → PtyConnection | `atob()` → `Uint8Array` → `TextDecoder('utf-8', { stream: true })` → string |
+| PtyConnection → xterm.js | UTF-8 string via `term.write()` |
+| xterm.js → Shell (input) | UTF-8 string via `term.onData()` |
+| PtyConnection → WebSocket | UTF-8 string in JSON body `{ shell_id, data }` |
 | WebSocket → PTY stdin | `data.encode('utf-8')` → `PtyProcess.write(bytes)` |
 
 **Why base64 for output?** PTY output can contain arbitrary binary data (ANSI escape sequences, box-drawing chars). Base64 ensures safe transport over JSON/WebSocket text frames (~33% overhead).
@@ -84,6 +85,8 @@ WebSocket /api/v1/connect/ws/{connection_id}
 ```
 
 Multiple browser tabs/windows can attach to the same PTY session simultaneously — each gets its own `connection_id` in the session's `attached_connections` set.
+
+**One WebSocket, one request lane.** The endpoint's receive loop awaits each `rest_api_msg` handler before reading the next frame (`handle_json_message` in `flow_sdk/server/routes/websocket.py`), so every `terminal-command` op a page sends — `input`, `resize`, `attach`, `ping`, across **all** its panes — runs strictly in series. Order is preserved, but latency is shared: a burst on one pane (e.g. one `input` per wheel tick while scrolling a mouse-tracking TUI) delays keystroke echo in every other pane behind it. `ui/tests/api/pty_throughput_bench.test.ts` measures this path through the TS SDK — output throughput + seq/line integrity, keystroke echo latency, and echo under a wheel-report flood on a second pane (opt-in: `PTY_BENCH=1 FLOW_INSTANCE=<name> npx vitest run --project api tests/api/pty_throughput_bench.test.ts`).
 
 #### Connection-membership FSM (backend-owned)
 
@@ -270,83 +273,88 @@ The in-memory `PtyReplayBuffer` was **removed** (commit `4466d9bc`): replaying r
 
 ### 4.2 Frontend State
 
-#### ShellSession (TypeScript SDK, `shellSession.ts`)
+#### Shell entity (TypeScript SDK, `ts_sdk/src/entities/shell.ts`)
+
+The shell is an ordinary cached entity (`type: 'shell'`) — there is no session
+manager. Wire fields (`IShell`) plus the PTY handle:
 
 ```typescript
-class ShellSession {
-    sessionId: string;
-    name: string;
-    isPty: boolean;
-    ptyStarted: boolean;              // PTY process running on backend
-    computeNodeId?: string;
-    lastSeqReceived: number;          // For deduplication + reattach
-    workingDir?: string;
-    initialCommand?: string;          // Command to inject on PTY start
-    processId?: string;               // Owner AgenticProcess ID
-    createdAt: number;
-    isRunning: boolean;
+class Shell extends APIEntity<Shell> {
+    name?: string | null;
+    status?: string;                  // ShellStatus: idle | running | closing | closed | error
+    workdir?: string | null;
+    pty_pid?: string | null;          // backend PTY id
+    compute_node_id?: string | null;
+    agentic_process_id?: string | null;  // owning AgenticProcess
+    readonly ptyConnection: PtyConnection;   // one per Shell, created in the constructor
+
+    get connected(): boolean;         // ptyConnection.isLive
+    get attached(): boolean;
+    get ptyStarted(): boolean;
+    attachPty(opts: IShellConnectionOptions): Promise<void>;
+    sendInput(data: string): Promise<void>;
+    resize(cols: number, rows: number): Promise<void>;
+    start(opts?: IShellStartOptions): Promise<string>;
+    close(): Promise<void>;
 }
 ```
 
-**PTY data listeners**: `session.onPtyData((data, seq) => ...)` — xterm.js subscribes here.
+**PTY data listeners**: `shell.onOutput(fn)` (live output, only after attach),
+`shell.onLine(fn)` (ANSI-stripped lines, including replay), and
+`shell.on('status', s => ...)` (`'connected'` / `'disconnected'`).
 
-#### ShellManager (Singleton, `shellManager.ts`)
+#### PtyConnection (`ts_sdk/src/services/shell/ptyConnection.ts`)
 
-- Owns all sessions via active ComputeNode
-- Routes `pty_output_msg` from WebSocket to correct session
-- Manages orphan buffer for output arriving before session loads
-- Emits events: `SESSION_CREATED`, `PTY_STARTED`, `PTY_OUTPUT`, `SESSION_REMOVED`
-
-#### Zustand Store (`use-terminal-state-store.ts`)
-
-Minimal store tracking `activeSessionId`. Rarely used — TabbedTerminal uses local React state.
+- Holds `started`, `lastSeq`, the live `chunks` map and the attach state
+- `routeOutput()` dedups by seq and decodes `pty_output_msg` chunks
+- `attach()` / `sendInput()` / `resize()` call `compute_node` `terminal-command` over WS
+- Output for a shell not yet in the entity cache waits in `ptyOrphanBuffer.ts`
 
 #### React Hooks
 
 | Hook | Purpose |
 |------|---------|
-| `useShell()` | Access all sessions, CRUD operations, PTY commands |
-| `useShellSession(sessionId)` | Reactive single-session data (stream, items, isRunning) |
-| `useShellSessions()` | Sorted array of all sessions, re-renders on changes |
+| `useShell(shellId)` | Reactive `Shell` entity for one id (`ui/src/hooks/useShell.ts`) |
 | `useOpenTerminal()` | Open builtin xterm or external terminal |
 | `useResumeInTerminal()` | Resume Claude session in a ProcessTerminal |
 
 ### 4.3 Session Persistence (API-backed records)
 
-Shell session persistence is backed by `ShellSessionRecord` on the server, not localStorage. The frontend `ShellSessionRecord` class (`ts_sdk/src/services/shell/shellSessionRecord.ts`) provides `list()`, `get()`, and `update()` methods that call ComputeNode actions over WebSocket.
-
-During `syncSessionsWithBackend()`, the `ShellManager` fetches all records via `ShellSessionRecord.list()` and creates/reattaches local `ShellSession` instances for records with `status === "running"`. Each `ShellSession` holds an optional `record` reference for access to backend-persisted metadata.
+Shell persistence is the `shell` FSRecord on the server (`flow_sdk/builtin/shell.py`:
+`get_shell_record`, `close_shell_record`, `shell_pty_stream_path`), not localStorage.
+The frontend reads it as `Shell` entities through `dataManager`; `Shell.list(computeNodeId)`
+and `Shell.getActiveSessions()` list them.
 
 The previous `localStorage`-based `PtySessionPersistence` interface has been removed.
 
 ### 4.4 Session Lifecycle
 
 ```
-Created (frontend only)
+Shell entity (status: idle)
     │
-    ├─ startPty() ──→ PTY Running (backend spawned)
+    ├─ shell.start() / AgenticProcess.start() ──→ running (backend spawned, attachPty)
     │                      │
-    │                      ├─ Page refresh ──→ Detached (backend keeps running)
+    │                      ├─ Page refresh ──→ backend keeps running
     │                      │                      │
-    │                      │                      └─ reattachFromServer() ──→ PTY Running (restored)
+    │                      │                      └─ route loader re-opens → attachPty() ──→ attached (restored)
     │                      │
-    │                      ├─ closePty() ──→ Closed (backend killed)
+    │                      ├─ shell.close() ──→ closing → closed (backend killed)
     │                      │
-    │                      └─ Process exits ──→ Closed (exit callback fires)
+    │                      └─ Process exits ──→ closed (exit callback fires)
     │
-    └─ removeSession() ──→ Removed
+    └─ start fails ──→ error
 ```
 
-### 4.5 TTL Cleanup (Backend) — two bounded reapers, no leaks
+### 4.5 TTL Cleanup (Backend) — two bounded reapers, one running
 
-Background task runs every **120 seconds** (`cleanup_expired_sessions`):
+Server startup (`_start_pty_parked_reaper`) runs a background task every **120 seconds**:
 
 ```python
-pty_registry.start_cleanup_task(interval_seconds=120, ttl_seconds=900)
+pty_registry.start_cleanup_task()   # interval 120 s, ttl None, detach grace 900 s
 ```
 
-1. **Orphan TTL** — a `PtyState` with an empty `attached_connections` set for > **900 s** (15 min) is closed (PTY killed). `last_detached_at` is stamped when the last connection parks or detaches, arming the timer; a reconnect clears it.
-2. **Parked grace** — a `DETACHED` connection that does not reconnect within `detach_grace_seconds` is dropped from `detached_connections`, so a long-lived `PtyState` can't accumulate stale parked ids.
+1. **Parked grace** (runs in production, `reap_parked_connections`) — a `DETACHED` connection that does not reconnect within **900 s** is dropped from `detached_connections`, so a long-lived `PtyState` can't accumulate stale parked ids (a page reload mints a new connection id, so the id it parked never returns).
+2. **Orphan TTL** (defined in `cleanup_expired_sessions`, **not started in production**) — a `PtyState` with an empty `attached_connections` set for > `ttl_seconds` is closed (PTY killed). `last_detached_at` is stamped when the last connection parks or detaches, arming the timer; a reconnect clears it. Only a caller that passes `ttl_seconds` to `start_cleanup_task` turns this on; whether it should ever run is an open product decision.
 
 A `PtyState` is "orphaned" when **no connection is ATTACHED** (all parked or gone) — parked subscriptions still alive count as detached, so they don't keep the PTY alive on their own.
 
@@ -399,10 +407,9 @@ chunk buffer.
 Both backend and frontend track sequence numbers:
 
 - **Backend**: `last_seq_received` on `PtyState`
-- **Frontend**: `lastSeqReceived` on `ShellSession`
-- **ShellManager**: 200-entry recent chunk key cache for dedup
+- **Frontend**: `lastSeq` on the shell's `PtyConnection`
 
-When `msg.seq <= session.lastSeqReceived`, the message is discarded.
+When `seq <= ptyConnection.lastSeq` (and `lastSeq > 0`), the chunk is discarded.
 
 ---
 
@@ -431,14 +438,14 @@ ContentPanel (routing)
 **xterm.js Configuration**:
 ```typescript
 {
-  scrollback: 10000,
+  scrollback: 50000,
   convertEol: true,
   cursorBlink: true,
   scrollOnUserInput: true,
   disableStdin: false,
   cursorStyle: 'block',
-  fontFamily: 'Cascadia Code, Fira Code, JetBrains Mono, Menlo, Monaco',
-  fontSize: 14,
+  fontFamily: FONT_FAMILY,     // terminalConfig.ts: "Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, …
+  fontSize: FONT_SIZE_PX,      // terminalConfig.ts: 14
   allowTransparency: true,
 }
 ```
@@ -488,66 +495,49 @@ term.parser.registerCsiHandler({ final: 'O' }, () => true);                // Fo
 
 **Problem**: On page reload, `TabbedTerminal` mounts all N terminal tabs with `visibility: hidden`. Without lazy loading, each `InteractiveTerminal` would call `attach`+`start` immediately — N simultaneous PTY connections.
 
-**Solution**: PTY connection is deferred until a tab is first activated. All control logic lives in `Shell.connectLazy()` in the SDK; `InteractiveTerminal` makes a single SDK call.
+**Solution**: PTY attach is the route loader's job (URL-first), not the mounted view's: `load-shell.ts` calls `shell.start()` and `AgenticProcess.start()` calls `shell.attachPty()`, so only the tab being opened attaches. The SDK keeps an activation gate on the single lifecycle entry point, `Shell.attachPty()`.
 
 #### Shell SDK fields (transient, not persisted)
 
 ```typescript
-_hasEverBeenActive = false;   // true once this tab has been active at least once
-pty: PtyConnection | null;    // existing field, still null until connectLazy() is called
+private _hasEverBeenActive = false;   // true once attachPty ran with isActive (the default)
+readonly ptyConnection: PtyConnection; // always present; created in the Shell constructor
 ```
 
-#### `Shell.connectLazy(isActive, cols, rows, workdir)`
+#### `Shell.attachPty({ isActive = true, cols, rows, ptyId, force, timeout })`
 
 ```
-isActive=false, _hasEverBeenActive=false  →  return null   (still deferred)
+isActive=false, _hasEverBeenActive=false  →  return        (still deferred, no request)
 isActive=true   →  set _hasEverBeenActive=true, proceed
-pty?.started    →  return []             (already connected, no replay needed)
+→ ptyConnection.attach(ptyId, { force, timeout, cols, rows })
+     already attached to ptyId (and !force)  →  no-op
+     attach in flight for ptyId              →  returns the in-flight promise
+     force                                   →  reset attach state, re-attach
 ```
 
-When connection is needed:
-1. Create `PtyConnection`, subscribe `liveBuffer` listener
-2. Call `reattach(0)` — replay chunks arrive as `pty_output_msg`, fire into `liveBuffer`
-3. Unsubscribe `liveBuffer`
-4. Call `ensurePty()` — starts fresh PTY if no existing session (not_found)
-5. Return `replayChunks`
+`attach` does no byte replay: the server asserts the client's size and forces the TUI to repaint. History comes from the framed stream (§13).
 
-#### `InteractiveTerminal` connect effect
+#### `InteractiveTerminal` connect handler
 
 ```typescript
-useEffect(() => {
-  // Re-runs when active changes — deferred until first activation
-  const replayChunks = await shell.connectLazy(active, cols, rows, workdir);
-  if (replayChunks === null) return;   // still deferred
-  // write replayChunks to xterm, then setReplayComplete(true)
-}, [terminalReady, sessionId, active]);
+// Attach is issued by the loader; the view reacts once the PtyConnection is ready.
+const unsubStatus = shell.on('status', (s: string) => {
+  if (s === 'connected') onConnected();   // fetch + replay pty-stream (§13), write
+                                          // shell.getPtyChunks() past the replayed seq,
+                                          // shell.resize(term.cols, term.rows),
+                                          // then shell.onOutput(handlePtyData)
+  if (s === 'disconnected') onDisconnected();
+});
+if (shell.connected) onConnected();        // already attached on mount
 ```
 
-#### Output handler subscription timing
-
-The output handler effect has `replayComplete` in its deps. After `connectLazy()` writes replay chunks and calls `setReplayComplete(true)`, React re-renders and the output handler re-runs, subscribing to `shell.onOutput()`. By this time `shell.pty` is the finalized `PtyConnection` (from `ensurePty()`).
-
-#### Behavior comparison
-
-| Scenario | Before | After |
-|----------|--------|-------|
-| Reload with 10 tabs | 10 PTY connections simultaneously | 1 PTY connection (active tab only) |
-| Switch to inactive tab | Instant (PTY already running) | One `attach`+`start` on first switch, instant thereafter |
-| Switch back | Instant | Instant (`pty.started` guard) |
-| All control logic | Scattered across TSX refs | `Shell._hasEverBeenActive` + `Shell.connectLazy()` |
-
-#### TSX refs removed
-
-The following refs were in `InteractiveTerminal.tsx` and moved into the SDK:
-- `sinceSeqRef` → internal to `connectLazy()` (always resets to 0 for full replay)
-- `ptyOwnedByUsRef` → replaced by `shell.pty?.started` guard in `connectLazy()`
-- `reattachBufferRef` → replaced by `liveBuffer` inside `connectLazy()`
+`onConnected` also re-runs on `on_recovered` and `on_reconnected`; a `connectGen` token lets the newest run win. A dead PTY is re-attached with `shell.attachPty({ cols, rows, force: true })`.
 
 ### 6.6 Entity Relationships
 
 ```
 AgenticProcess
-  ├── pty_pid ────→ ShellSession (frontend)
+  ├── shell_id ───→ Shell entity (frontend: shell.ptyConnection; shell.pty_pid = PTY id)
   │                         └── maps to PtyState (backend)
   ├── worker_session_id ──→ Claude CLI session (survives PTY restarts)
   └── compute_node_id ───→ ComputeNode
@@ -616,8 +606,8 @@ When `startPty` is first called (~line 422), it passes `terminalRef.current.cols
 ### 7.7 Backend Resize Optimization
 
 ```python
-# compute_node.py lines 1335-1344
-if session.cols == cols and session.rows == rows:
+# flow_sdk/compute/providers/base_pty_state.py:69 (PTY handle resize)
+if session and session.cols == cols and session.rows == rows:
     return  # Skip — no SIGWINCH
 ```
 
@@ -717,7 +707,7 @@ server restarts.
 ### 10.1 Storage
 
 ```
-~/.flow/instances/<name>/records_data/shell/shell-@<uid>/<pty_pid>.pty
+~/.flow/instances/<name>/records_data/shell/<id>/<pty_pid>.pty
 ```
 
 ### 10.2 Format — framed JSONL
@@ -744,12 +734,25 @@ JSONL stream: one JSON value per line.
 
 ### 10.3 Rolling truncation — frame boundaries only
 
-When the file exceeds `max_size_bytes` (default 10 MB) it is compacted to 75%
+When the file exceeds `max_size_bytes` (default 30 MB) it is compacted to 75%
 by dropping **whole frames** from the front — never splitting an escape
 sequence mid-byte. The header is rewritten to the winsize in effect at the
 first retained frame (resize frames folded in as they are dropped). A torn
 final line (crash mid-write) is dropped by the reader. The writer caches the
 file size in memory, so the hot output path performs no `stat()` per chunk.
+
+**Modes survive the cut, and a new process starts without the dead one's.**
+The private modes a program sets once at startup — alternate screen, mouse
+tracking and encoding, cursor keys, focus reporting, bracketed paste, cursor
+visibility — are exactly what front-truncation would drop, and replay rebuilds
+the terminal from what is left. So `_truncate_front` computes the modes still in
+force at the cut and carries them in a first output frame, and a respawn into
+the same file calls `PtyStreamFile.mark_new_generation()`, which appends a frame
+turning them off before the new process writes (a classic-renderer process must
+not inherit a fullscreen screen). Neither frame carries a seq, so
+generation-scoped readers never see them. Keep both rules when editing
+`pty_stream_file.py`: without them the wheel has nothing to scroll
+([pty-scroll.md](pty-scroll.md#issue-log), issues 2 and 4).
 
 ### 10.4 Lifecycle
 
@@ -785,24 +788,24 @@ On server restart, sessions that were running before the shutdown need to be rec
 
 ## 12. Shell Session Record Lifecycle
 
-`ShellSessionRecord` tracks the full lifecycle of a shell session on disk. The record is created when a PTY is started and transitions through states until closed.
+The `shell` FSRecord (`flow_sdk/builtin/shell.py`, status values `ShellStatus`) tracks the full lifecycle of a shell session on disk. The record is created when a PTY is started and transitions through states until closed.
 
 ### 12.1 State Machine
 
 ```
-start_machine_pty_session()
-  → Create ShellSessionRecord(state=RUNNING)
-  → Create PtyStreamFile at record's pty_stream_path
-  → Store PtyStreamFile on PtyState.pty_stream_file
+start_machine_pty_session()                       (flow_sdk/builtin/faas/pty_actions.py)
+  → get_shell_record(shell_id), else FSRecord(type="shell", status=RUNNING).save()
+  → Create PtyStreamFile at shell_pty_stream_path(record.id, pty_pid)
+  → Store PtyStreamFile on session_state.pty_stream_file
 
 on_pty_output()
-  → PtyStreamFile.write(data)  (if pty_stream_file is set)
+  → pty_stream_file.write(data, seq)  (if pty_stream_file is set)
 
-close_session()
-  → Record state → CLOSED
-  → PtyStreamFile.delete()
-  → Remove PtyState from pty_registry
-
+close_session()                                   (desktop/pty_session_manager.py)
+  → Remove the session from the registry's states
+  → close_shell_record(record)  → status CLOSED
+  → pty_stream_file.delete()
+  → compute_provider.close_pty_session()
 ```
 
 ### 12.2 API Endpoints
@@ -838,7 +841,7 @@ implementation — see §13.5.
 │ force_repaint() jiggle (both flips)─┘  │   │ visible xterm: reset() → write(serial)  │
 │                                        │   │ write live chunks with seq > lastSeq    │
 │         <pty_pid>.pty (framed JSONL,   │   │ shell.resize(real dims) → TUI repaints  │
-│          10MB rolling, §10)            │   │ subscribe live output                   │
+│          30MB rolling, §10)            │   │ subscribe live output                   │
 └────────────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
 
@@ -886,6 +889,7 @@ content written at width A and reflowed to B equals content written at B.
 | xterm.js drops a multi-byte UTF-8 char when a `write(Uint8Array)` split leaves a `0x80` continuation byte in interim decoder state (`Utf8ToUtf32.decode` counts interim bytes by value-truthiness; `0x80 & 0x3F === 0`) | chars like `—` `›` ZWJ vanish at unlucky chunk boundaries | string-decode discipline (§13.3.1) | [xtermjs/xterm.js#6003](https://github.com/xtermjs/xterm.js/issues/6003) · `tests/pty_fuzz/xterm-utf8-split-repro.mjs` |
 | `@xterm/headless` 6.0.0 declares `module: lib/xterm.mjs` but ships `lib-headless/xterm-headless.mjs` — bundlers preferring `module` (Vite) cannot resolve the package | frontend build fails | vite alias in `ui/vite.config.ts` pointing at the shipped `.mjs` | `tests/pty_fuzz/xterm-headless-module-entry-repro.mjs` |
 | `SerializeAddon` loses the leading blank cells of a wrapped continuation row (+1 adjacent cell at exact-fit boundaries); such rows arise from reflow gaps when a resize lands mid-soft-wrapped-line | rare cosmetic loss inside one historical wrapped line | none (bounded-loss oracle documents it in `pty-replay-production.test.ts`) | `tests/pty_fuzz/serialize-wrapped-blank-repro.mjs` |
+| `SerializeAddon` writes the mouse *tracking* mode (`?1003h`) but never the *encoding* (`?1006h`), so a restored terminal has tracking on and xterm's default X10 encoding — and xterm emits X10 reports on `onBinary`, which nothing forwards | after a re-attach, every wheel tick and click in a fullscreen TUI is dropped in the browser | `replayPtyStream` tracks the program's encoding switches and appends the last one | [pty-scroll.md#3](pty-scroll.md#3--replay-dropped-the-mouse-encoding) · `ui/tests/unit/pty-replay-mouse-encoding.test.ts` |
 
 ### 13.5 Validation
 
@@ -916,7 +920,7 @@ content written at width A and reflowed to B equals content written at B.
 | Mechanism | framed-stream replay (§13.1) | kill PTY + respawn `claude --resume <session_id>` |
 | Source | `<pty_pid>.pty` (exact bytes, recorded sizes) | Claude's session transcript (`.jsonl`) |
 | Live process | untouched | restarted |
-| Depth | 10MB rolling window | full conversation re-render |
+| Depth | 30MB rolling window | full conversation re-render |
 | Use | every reattach, automatic | deep fallback (stream truncated/lost, legacy v0 session) |
 
 ---
@@ -926,7 +930,7 @@ content written at width A and reflowed to B equals content written at B.
 An interactive agent tab (`InteractiveTerminal.tsx`) can present the *same*
 agentic session two ways. This section is the consolidated reference for the two
 renderers, their transports, and how each derives its content. **Mode switching
-UX (the toggle control, View mode) is owned by `docs/viewmodes.md`; the
+UX (the switch control, View mode) is owned by `docs/viewmodes.md`; the
 headless/PTY session concept is owned by the headless⇄PTY mode docs — this
 section only covers what each renderer draws and from where.**
 
@@ -938,38 +942,64 @@ section only covers what each renderer draws and from where.**
 | Data source | **PTY byte stream** (`pty_output_msg` over WS + attach replay, §1/§13) | **`AgenticProcess.flowDataStream`** — transcript-derived `FlowData` items |
 | Transport that feeds it | PTY only | Transport-independent (see §14.3) |
 | Availability | **PTY mode only** — needs a live PTY/shell | **Both** PTY-mode and headless processes |
-| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1760`) |
+| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1753`) |
 
 The chat UI is an **opaque overlay** painted over the xterm, not a replacement:
 in PTY mode the xterm stays mounted and fitted underneath (comment at
-`InteractiveTerminal.tsx:1756-1759`), so toggling chat⇄terminal is instant and
+`InteractiveTerminal.tsx:1749-1752`), so toggling chat⇄terminal is instant and
 never resets the PTY.
 
 ### 14.2 Which renderer shows — selection logic
 
-All in `InteractiveTerminal.tsx:159-168`:
+All in `InteractiveTerminal.tsx` (the `showSimpleChat` derivation):
 
 ```
-isAdvanced   = useIsAdvanced()                    // View mode (Standard ⊂ Advanced ⊂ Dev)
-chatOverride = useChatUiOverride()                // 'chat' | 'terminal' | null (bottom-ribbon toggle)
-wantChat     = chatOverride != null ? chatOverride === 'chat' : !isAdvanced
+surface      = useSessionSurface()                // 'vibe'|'chat'|'terminal', or null = not known yet
+wantChat     = surface === 'chat'
 isHeadless   = !embedded && process.pty_mode === false
 showSimpleChat = isHeadless || (wantChat && !embedded && process)
 canToggleView  = !embedded && process
 ```
 
-- **Default skin** (no override): Standard ⇒ chat UI, Advanced/Dev ⇒ xterm.
-- **Override** (`preferences.ui.chat_ui_mode`, a boot pref; `chat-ui-mode-context.tsx`)
-  takes priority over View mode until cleared. Console/global helpers
-  `window.setChatUi('chat'|'terminal'|null)` / `getChatUi()`.
+- **One mode.** The surface is derived from the View mode alone
+  (`surfaceForViewMode`): Vibe ⇒ the vibe workspace, Standard ⇒ chat pane,
+  Advanced/Dev ⇒ xterm. There is no second "chat mode" preference — it existed
+  briefly and could drift out of sync with View mode (both carried a `vibe`, and
+  each control wrote only its own), so it was folded into this one.
+- **`null` = not known yet.** `InstancePreferences.get()` cannot distinguish
+  "nothing stored" from "nothing read in yet" — both return the registry default
+  — so `useSessionSurface` gates on `usePreferenceResolved(PrefKey.VIEW_MODE)`
+  and reports `null` until the value is known. This matters only on the first
+  load in a browser profile: boot keys are seeded synchronously from
+  localStorage, so every later load resolves before first paint, but without the
+  seed the default would paint the wrong surface for ~1s until
+  `preferences.json` lands. `InteractiveTerminal` covers the pane
+  (`surfacePending`, `InteractiveTerminal.tsx:192`) and withholds the mode switch
+  and bottom ribbon until it resolves; the xterm still mounts and attaches
+  underneath, so the hold costs no open latency. See
+  `tests/unit/session-surface-first-paint.test.tsx`.
+- Console/global helpers: `window.setView('vibe'|'standard'|'advanced'|'dev')` /
+  `getView()`.
 - **Embedded** terminals (chat side panel) and **shell-only** tabs (no
   `AgenticProcess`) always keep the xterm — `showSimpleChat` requires `process`
   and `!embedded`.
 - **Headless** (`pty_mode === false`): the chat pane is forced on **and the xterm
-  container is not rendered at all** (`InteractiveTerminal.tsx:1685`, `!isHeadless
+  container is not rendered at all** (`InteractiveTerminal.tsx:1675`, `!isHeadless
   && <div ref={xtermContainerRef}>`). The mount effect early-returns on the
   missing ref, so no `PtySync` attach is attempted for a process that has no
   shell.
+
+**The control** is the footer `ViewToggle` — the single mode selector, showing
+the CURRENT mode as the selected segment. (An in-context twin briefly lived in the
+terminal header; it was removed because two controls picking the same thing is
+exactly the overlap this design set out to end.)
+
+Every pick is URL-first: the click only navigates (`?viewMode=`), and the mounted
+URL adopts the mode as the preference, so the arrangement is shareable and
+back-safe. Picking a mode whose surface implies a different TRANSPORT also moves
+the worker — that reconcile lives in an effect (`useProcessSurface`), not in the
+click handler, so it happens however the mode changed: the toggle, a `?viewMode=`
+URL, or `window.setView()`. See `docs/agent-management/mode-switching.md`.
 
 ### 14.3 Where the chat UI's content comes from (NOT the PTY)
 
@@ -1002,7 +1032,7 @@ happens to sit over the xterm.
 **Confirmed**, with one clarification on *how*:
 
 - ✅ **xterm is PTY-only.** Headless processes render no xterm
-  (`InteractiveTerminal.tsx:1685`); the xterm's only data source is the PTY byte
+  (`InteractiveTerminal.tsx:1675`); the xterm's only data source is the PTY byte
   stream.
 - ✅ **Chat UI works over both.** In headless mode it is the sole view; in PTY mode
   it overlays the live xterm.
@@ -1021,3 +1051,43 @@ so the composer is identical whether the chat overlay or the xterm is on top;
 `SimpleChatPane` deliberately does not carry its own composer (comment at
 `SimpleChatPane.tsx:20-33`).
 
+
+---
+
+## 15. Startup Budget — how long a session takes to accept input
+
+Measured on one macOS dev host (`claude` 2.1.220, local backend, warm), 5 runs
+per layer. All four use the **same readiness criterion** — the driver's
+`pty_composer_ready_pattern` (`cli_drivers/claude/driver.py:70`,
+`❯ Try "` / `❯ ───`), i.e. the composer is painted and will accept a keystroke —
+so the layers are directly comparable.
+
+| Layer | What is timed | ready (median) | range |
+|---|---|---|---|
+| Bare CLI | `claude` in a raw PTY, no Flowpad | **953 ms** | 872–1796 |
+| Python / HTTP | `createProcess` → `open`, polling the framed stream | **1816 ms** | 1623–2231 |
+| ts_sdk | `ComputeNode.createProcess` → `open` → `attachPty` | **1638 ms** | 1499–1991 |
+| Browser | click *Start Claude* → composer in the xterm | **2100 ms** | 1659–2182 |
+
+Reading it:
+
+- **Flowpad's overhead over the bare CLI is ~700–1150 ms**, and ~850 ms of that
+  lands before the PTY exists: `createProcess` (entity mint + save) then `open`
+  (shell materialize + spawn). Claude's own ~950 ms boot then overlaps the tail.
+- **Python vs ts_sdk is not a real gap.** Both drive the identical two actions;
+  the difference is measurement — the HTTP harness polls
+  `GET /shell/{id}/pty-stream` on an interval, the SDK reads the live WS chunk
+  store. Treat both as ~1.6–1.8 s.
+- **The browser adds ~300–450 ms** over the SDK path: route navigation, terminal
+  mount, and replay-through-headless-xterm (§13) before the live attach.
+- **The first click in a freshly loaded page cost 7547 ms** — capability probe
+  (`capabilityManager.ensureChecked`) plus first terminal mount. Every subsequent
+  tab in the same page was ~1.7–2.2 s. That cold path, not the steady-state
+  number, is where the remaining headroom is.
+
+The nearest standing guard is `ui/tests/long_tests/open_tab_timing.test.ts`
+(execute < 4500 ms, prompt visible in the scrollback < 7000 ms) — budgets loose
+enough that a regression of the size this table would show slips under them;
+`create_process_claude_timing.test.ts` logs its number without asserting one.
+Absolute numbers are host-bound, so the decomposition (which layer owns which
+slice) is the durable part, not the millisecond values.

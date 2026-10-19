@@ -17,23 +17,22 @@ import { useMemo } from 'react';
  */
 export function useProcessesForTarget(
   targetVfsPath: string | null | undefined,
-  options?: { enabled?: boolean; processType?: ProcessKind },
+  options?: { enabled?: boolean; processType?: ProcessKind; deploymentId?: string },
 ) {
   const key = targetVfsPath || '';
   const processType = options?.processType;
-  const query = useMemo(
-    () => {
-      const match: Record<string, unknown> = { target_typeid_str: key };
-      if (processType) match.process_type = processType;
-      return new QueryRequest({
-        type: AgenticProcess.type,
-        scope: [],
-        name: `processesForTarget:${key || 'none'}:${processType ?? 'any'}`,
-        query: new QueryFilter({ match }),
-      });
-    },
-    [key, processType],
-  );
+  const deploymentId = options?.deploymentId;
+  const query = useMemo(() => {
+    const match: Record<string, unknown> = { target_typeid_str: key };
+    if (processType) match.process_type = processType;
+    if (deploymentId) match.deployment_id = deploymentId;
+    return new QueryRequest({
+      type: AgenticProcess.type,
+      scope: [],
+      name: `processesForTarget:${key || 'none'}:${processType ?? 'any'}:${deploymentId ?? 'any-deployment'}`,
+      query: new QueryFilter({ match }),
+    });
+  }, [deploymentId, key, processType]);
 
   const enabled = (options?.enabled ?? true) && !!key;
   const { data, isLoading, error } = useEntitiesQuery<AgenticProcess>(query, { enabled });

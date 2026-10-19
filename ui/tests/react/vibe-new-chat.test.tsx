@@ -2,17 +2,45 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { DEFAULT_WORKER_TYPE } from '@src/components/workers/worker-types';
 import { VIBE_MODEL_DEFAULT } from '@src/pages/flow-page/vibe-model-select';
 
 const startVibe = vi.fn();
 
+// `useStartVibeSession` returns a `StartVibeSession` object, not a bare function:
+// the harness-install dialog rides along with `start` so a caller that drops it
+// loses the only recovery a failed start has. Mocking it as a function made
+// VibeNewChat's `const { start: startVibe } = ...` destructure to undefined, so
+// submitting threw instead of calling this spy.
 vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
-  useStartVibeSession: () => startVibe,
+  useStartVibeSession: () => ({ start: startVibe, installDialog: null }),
 }));
+
+// Stable identity, like the real hook — a fresh object per render would
+// re-fire any consumer memo/effect keyed on it.
+const EMPTY_ENTITIES_QUERY = {
+  data: [] as never[],
+  isLoading: false,
+  error: null,
+  isError: false,
+  isSuccess: true,
+  refetch: () => {},
+};
 
 vi.mock('@sdk/react/hooks', () => ({
   useAuth: () => ({ user: { name: 'Ada Lovelace' } }),
+  // ProjectActionsRow (rendered by VibeNewChat) reads `useProjects()`, which is
+  // built on `useEntitiesQuery`. This surface only branches on whether the list
+  // is non-empty, and the assertions below are about the submitted model tier —
+  // so an empty, settled result keeps the row in its no-projects state without
+  // pulling a live query into this render.
+  useEntitiesQuery: () => EMPTY_ENTITIES_QUERY,
+  // ProjectAgentsStrip (rendered by VibeNewChat) resolves the active project
+  // via `useProject()`; no project keeps the strip empty, which is fine — the
+  // assertions below are about the submitted model tier.
+  useProject: () => ({ project: null }),
+  // useAgentContext loads the URL's agentic process via `useEntity`; this URL
+  // names no process, so nothing loads.
+  useEntity: () => ({ data: null }),
 }));
 
 vi.mock('@src/components/open-project-component/open-project-component', () => ({
@@ -28,7 +56,7 @@ vi.mock('@src/pages/flow-page/vibe-recent-sessions', () => ({
 import { VibeNewChat } from '@src/pages/flow-page/vibe-new-chat';
 
 describe('VibeNewChat', () => {
-  it('submits the default portable model tier and worker', async () => {
+  it('submits the portable model tier and leaves worker resolution to the backend', async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -43,7 +71,16 @@ describe('VibeNewChat', () => {
       'build a dashboard',
       undefined,
       VIBE_MODEL_DEFAULT,
-      DEFAULT_WORKER_TYPE,
     );
+  });
+
+  it('carries no model picker — the tier is set in the chat pane, not on the home', () => {
+    render(
+      <MemoryRouter>
+        <VibeNewChat />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('vibe-model-select')).toBeNull();
   });
 });

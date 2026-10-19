@@ -1,7 +1,9 @@
-import { AuthError, TypeId, User } from '@sdk';
+import { AuthError } from '../../FlowSync/auth';
+import { User } from '../../entities/user';
+import { TypeId } from '../../models/TypeId';
 import { useContext } from './useContext';
 
-interface UseAuthResult {
+export interface UseAuthResult {
   /** Local desktop user — historical alias of `localUser`. Auth principal for local API calls. */
   user: User | null;
   /** Display-bound identity: cloud user when logged in, otherwise local. */

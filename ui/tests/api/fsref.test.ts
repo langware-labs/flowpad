@@ -5,11 +5,12 @@
  * Direct disk validation uses independent fsManager calls (not the FSRef under test).
  */
 
-import { ComputeNode, TypeId, fsManager, apiClient, GRAPH_API_PREFIX } from '@sdk';
+import { ComputeNode, TypeId, fsManager } from '@sdk';
 import { Skill } from '@sdk/entities/skill';
 import { FSRef } from '@sdk/fs/FSRef';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
+import { testEntityName, trackForCleanup } from '../_cleanup';
 
 const COMPUTE_NODE_TYPEID = new TypeId('compute_node', '@local');
 
@@ -200,29 +201,37 @@ describe('FSRef', () => {
 
 describe('entity.record()', () => {
   const signupInfo = getTestSignupInfo();
-  // Skill ID obtained from a discovered skill — stable across test runs.
-  let skillId: string | null = null;
+  // A skill this file CREATES, so `.record()` has something to resolve.
+  //
+  // This used to bind to `GET /graph/skill` → `records[0]`, on the premise that
+  // "the entity list only returns graph-resolvable skills". That premise is false:
+  // `.record()` resolves through `/graph/skill/<id>/record/refs`, whose handler
+  // 404s "Record not found" when `entity.get_record()` finds no FSRecord — and the
+  // graph list happily returns rows that have none (a row whose fs record is gone,
+  // e.g. written under a different records root, or left behind when its asset was
+  // removed). Whether the FIRST such row was resolvable was pure luck of ordering
+  // on the developer's machine, so this block failed on any home with an
+  // unresolvable skill sorted first.
+  //
+  // Creating the subject makes the premise true by construction and drops the
+  // dependency on whatever skills happen to exist locally.
+  let skillId: string;
+
+  // FILE scope, not per-test: `installCleanup`'s afterEach purges what THAT test
+  // tracked, so a subject created in `beforeEach` would be deleted after the first
+  // test and 404 for the rest. A `beforeAll` create is registered before any test's
+  // mark, so it survives the whole block and is purged once, in afterAll.
+  beforeAll(async (context: any) => {
+    await apiTestSetup(signupInfo, context.task?.name ?? 'entity.record()');
+    const skill = trackForCleanup(await Skill.create(testEntityName('skill')));
+    skillId = skill.typeId.id;
+  });
 
   beforeEach(async (context: any) => {
     await apiTestSetup(signupInfo, context.task.name);
-    if (!skillId) {
-      // Discover a skill from the graph ENTITY list — not the fs-records scan.
-      // The scan also surfaces orphaned fs-only skill records (leftover test
-      // skills with no graph entity), and `.record()` resolves through the
-      // entity action (`/graph/skill/<id>/refs`), which 404s for those orphans.
-      // The entity list only returns graph-resolvable skills, so the chosen id
-      // is guaranteed to have a record.
-      const res = await apiClient.get<unknown>(`${GRAPH_API_PREFIX}/skill`);
-      const data = (res as any)?.data ?? res;
-      const records = (Array.isArray(data)
-        ? data
-        : (data?.records ?? data?.items ?? data?.results ?? [])) as Array<{ id: string }>;
-      skillId = records[0]?.id ?? null;
-    }
   });
 
   it('skill.record() returns non-null recordFolderRef and mainRef', async () => {
-    if (!skillId) { return; } // skip if no skills on this machine
     const skill = new Skill({ id: skillId });
     const rec = await skill.record();
     expect(rec.recordFolderRef).not.toBeNull();
@@ -230,7 +239,6 @@ describe('entity.record()', () => {
   });
 
   it('record.mainRef has correct refType', async () => {
-    if (!skillId) { return; }
     const skill = new Skill({ id: skillId });
     const rec = await skill.record();
     expect(rec.mainRef).not.toBeNull();
@@ -238,7 +246,6 @@ describe('entity.record()', () => {
   });
 
   it('record.recordFolderRef is a folder type', async () => {
-    if (!skillId) { return; }
     const skill = new Skill({ id: skillId });
     const rec = await skill.record();
     if (rec.recordFolderRef) {
@@ -247,7 +254,6 @@ describe('entity.record()', () => {
   });
 
   it('record.mainRef supports child chaining', async () => {
-    if (!skillId) { return; }
     const skill = new Skill({ id: skillId });
     const rec = await skill.record();
     expect(rec.mainRef).not.toBeNull();

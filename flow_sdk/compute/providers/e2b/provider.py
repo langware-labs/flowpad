@@ -7,6 +7,7 @@ PTY routing, replay buffer, and websocket plumbing all work unchanged.
 Lifecycle: one E2B Sandbox per ComputeNode (provider_node_id), shared by all
 PTY sessions on that node. Sandbox is killed when the last PTY closes.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +20,9 @@ from flow_sdk.compute.providers.compute_provider import (
     ComputeProvider,
     ListDirItem,
     get_remote_paths_and_data_for_files,
+    sandbox_public_url,
 )
+from flow_sdk.compute.providers.env_prefix import command_environment
 from flow_sdk.flowpad_types import (
     CLICommand,
     ExecutionEnvironmentStatus,
@@ -49,7 +52,7 @@ E2B_API_KEY_ENV = "E2B_KEY"
 # extends it well before expiry, so the value just needs to be a comfortable
 # margin > KEEPALIVE_INTERVAL.
 E2B_SANDBOX_LIVE_TIMEOUT = 1800  # 30 min
-E2B_KEEPALIVE_INTERVAL = 600     # extend timeout every 10 min
+E2B_KEEPALIVE_INTERVAL = 600  # extend timeout every 10 min
 E2B_HOME_PATH = "/home/user"
 
 
@@ -73,9 +76,7 @@ class E2BComputeProvider(ComputeProvider):
     def __init__(self):
         super().__init__()
         if not E2B_AVAILABLE:
-            raise RuntimeError(
-                "E2B SDK not installed. Install with: pip install e2b"
-            )
+            raise RuntimeError("E2B SDK not installed. Install with: pip install e2b")
         self._sandboxes: dict[str, AsyncSandbox] = {}
         # (provider_node_id, session_id) -> {"sandbox", "pty", "running", "on_output", "rows", "cols"}
         self._pty_processes: dict[tuple[str, str], dict[str, Any]] = {}
@@ -202,7 +203,7 @@ class E2BComputeProvider(ComputeProvider):
     def get_host(self, provider_node_id: str, port: int) -> str:
         sandbox = self._sandboxes.get(provider_node_id)
         sandbox_id = sandbox.sandbox_id if sandbox is not None else provider_node_id
-        return f"https://{port}-{sandbox_id}.e2b.dev"
+        return sandbox_public_url(port, sandbox_id)
 
     # ---------------------------------------------------------------- helpers
 
@@ -222,13 +223,9 @@ class E2BComputeProvider(ComputeProvider):
                 )
                 if info.state == SandboxState.RUNNING:
                     return sandbox
-                service_log.warning(
-                    f"[E2B] Cached sandbox {sandbox.sandbox_id} is in state {info.state}; rebooting"
-                )
+                service_log.warning(f"[E2B] Cached sandbox {sandbox.sandbox_id} is in state {info.state}; rebooting")
             except Exception as e:
-                service_log.warning(
-                    f"[E2B] Cached sandbox {sandbox.sandbox_id} unreachable ({e}); rebooting"
-                )
+                service_log.warning(f"[E2B] Cached sandbox {sandbox.sandbox_id} unreachable ({e}); rebooting")
             # Drop stale ref + cancel its keepalive
             self._sandboxes.pop(provider_node_id, None)
             task = self._keepalive_tasks.pop(provider_node_id, None)
@@ -244,9 +241,7 @@ class E2BComputeProvider(ComputeProvider):
             api_key=api_key,
             metadata={"environment": "desktop"},
         )
-        service_log.info(
-            f"[E2B] Sandbox booted for node {provider_node_id}: {sandbox.sandbox_id}"
-        )
+        service_log.info(f"[E2B] Sandbox booted for node {provider_node_id}: {sandbox.sandbox_id}")
         self._sandboxes[provider_node_id] = sandbox
         # Start a keepalive task that extends the sandbox timeout periodically
         # so it doesn't get reaped during a long terminal session.
@@ -289,12 +284,8 @@ class E2BComputeProvider(ComputeProvider):
         data_or_local_path: str | bytes | BytesIO | None = None,
     ) -> list[str]:
         sandbox = await self._get_or_boot_sandbox(provider_node_id)
-        remote_paths, remote_data = get_remote_paths_and_data_for_files(
-            remote_path_or_files, data_or_local_path
-        )
-        write_entries = [
-            cast(WriteEntry, {"path": p, "data": d}) for p, d in zip(remote_paths, remote_data)
-        ]
+        remote_paths, remote_data = get_remote_paths_and_data_for_files(remote_path_or_files, data_or_local_path)
+        write_entries = [cast(WriteEntry, {"path": p, "data": d}) for p, d in zip(remote_paths, remote_data)]
         await sandbox.files.write_files(write_entries)
         return remote_paths
 
@@ -308,16 +299,12 @@ class E2BComputeProvider(ComputeProvider):
         if isinstance(remote_paths, str):
             remote_paths = [remote_paths]
         try:
-            content = await asyncio.gather(
-                *(sandbox.files.read(p, format=file_format) for p in remote_paths)
-            )
+            content = await asyncio.gather(*(sandbox.files.read(p, format=file_format) for p in remote_paths))
             return {p: c for p, c in zip(remote_paths, content)}
         except Exception as e:
             raise FileNotFoundError(f"Error reading files {remote_paths}: {e}")
 
-    async def list_dir(
-        self, provider_node_id: str, remote_paths: str | list[str]
-    ) -> dict[str, list[ListDirItem]]:
+    async def list_dir(self, provider_node_id: str, remote_paths: str | list[str]) -> dict[str, list[ListDirItem]]:
         sandbox = await self._get_or_boot_sandbox(provider_node_id)
         if isinstance(remote_paths, str):
             remote_paths = [remote_paths]
@@ -348,18 +335,13 @@ class E2BComputeProvider(ComputeProvider):
         sandbox = await self._get_or_boot_sandbox(provider_node_id)
         if isinstance(remote_paths, str):
             remote_paths = [remote_paths]
-        await asyncio.gather(
-            *(sandbox.files.make_dir(p) for p in remote_paths), return_exceptions=True
-        )
+        await asyncio.gather(*(sandbox.files.make_dir(p) for p in remote_paths), return_exceptions=True)
 
     # ---------------------------------------------------------------- env / commands
 
     async def set_env(self, provider_node_id: str, name: str, value: Optional[str]) -> None:
         if value is None:
-            cmd = (
-                f"grep -q '^export {name}=' ~/.bashrc "
-                f"&& sed -i '/^export {name}=/d' ~/.bashrc || true"
-            )
+            cmd = f"grep -q '^export {name}=' ~/.bashrc && sed -i '/^export {name}=/d' ~/.bashrc || true"
         else:
             escaped = value.replace("'", "'\\''")
             cmd = (
@@ -377,35 +359,34 @@ class E2BComputeProvider(ComputeProvider):
         provider_node_id: str,
         command: str,
         session_id: Optional[str] = None,
-        background: bool = False,
-        env: Optional[dict[str, str]] = None,
+        background: bool = True,
+        env: Optional[list] = None,
     ) -> CLICommand:
+        """Run a command in the sandbox.
+
+        ``env`` is a ``list[FlowEnv]``, matching every caller and the other
+        providers — it used to be annotated as a ``dict`` and call
+        ``.items()``, which raised ``AttributeError`` on the list that
+        ``ComputeNode.run_command`` actually forwards.
+        """
         import uuid
 
         sandbox = await self._get_or_boot_sandbox(provider_node_id)
         message_id = str(uuid.uuid4())
         cmd = CLICommand(command, message_id=message_id)
-        self.running_commands[message_id] = cmd
-
-        env_prefix = ""
-        if env:
-            assignments = []
-            for k, v in env.items():
-                escaped = v.replace("'", "'\\''")
-                assignments.append(f"{k}='{escaped}'")
-            env_prefix = " ".join(assignments) + " "
-        full_command = env_prefix + command if env_prefix else command
 
         try:
             process = await sandbox.commands.run(
-                full_command,
-                on_stdout=lambda data: self._handle_stdout(message_id, data),
-                on_stderr=lambda data: self._handle_stderr(message_id, data),
+                command,
+                envs=command_environment(env),
+                on_stdout=cmd.append_stdout,
+                on_stderr=cmd.append_stderr,
                 timeout=None,
                 background=background,
                 cwd=self.default_working_dir,
             )
             if background:
+
                 async def handle_output():
                     try:
                         await process.wait()
@@ -414,7 +395,7 @@ class E2BComputeProvider(ComputeProvider):
                         cmd.mark_complete(e.exit_code)
                     except Exception as e:
                         service_log.warning(f"[E2B] Error waiting on background command: {e}")
-                        cmd.mark_complete(-1)
+                        cmd.mark_complete(None)
 
                 asyncio.create_task(handle_output(), name=f"e2b_run_command_{message_id}")
             else:
@@ -423,19 +404,9 @@ class E2BComputeProvider(ComputeProvider):
             cmd.mark_complete(e.exit_code)
         except Exception as e:
             service_log.error(f"[E2B] Error running command on {provider_node_id}: {e}")
-            cmd.mark_complete(-1)
+            cmd.mark_complete(None)
 
         return cmd
-
-    def _handle_stdout(self, message_id: str, data: str):
-        cmd = self.running_commands.get(message_id)
-        if cmd is not None:
-            cmd.append_stdout(data)
-
-    def _handle_stderr(self, message_id: str, data: str):
-        cmd = self.running_commands.get(message_id)
-        if cmd is not None:
-            cmd.append_stderr(data)
 
     # ---------------------------------------------------------------- pty
 
@@ -458,7 +429,7 @@ class E2BComputeProvider(ComputeProvider):
         if spawn_args:
             service_log.debug(f"[E2B] Ignoring spawn_args for sandbox PTY: {spawn_args}")
         if extra_env:
-            service_log.debug(f"[E2B] Ignoring extra_env for sandbox PTY (use set_env instead)")
+            service_log.debug("[E2B] Ignoring extra_env for sandbox PTY (use set_env instead)")
 
         pty_key = (provider_node_id, session_id)
         existing = self._pty_processes.get(pty_key)
@@ -484,9 +455,7 @@ class E2BComputeProvider(ComputeProvider):
             on_data=on_pty_output,
             timeout=0,
         )
-        service_log.info(
-            f"[E2B] PTY created pid={pty.pid} session={session_id} sandbox={sandbox.sandbox_id}"
-        )
+        service_log.info(f"[E2B] PTY created pid={pty.pid} session={session_id} sandbox={sandbox.sandbox_id}")
 
         self._pty_processes[pty_key] = {
             "sandbox": sandbox,
@@ -520,16 +489,12 @@ class E2BComputeProvider(ComputeProvider):
             await self._cleanup_pty_session(provider_node_id, session_id, reason=f"send_stdin: {e}")
             raise RuntimeError(f"Failed to send input to PTY: {e}") from e
 
-    async def resize_pty(
-        self, provider_node_id: str, session_id: str, cols: int, rows: int
-    ) -> None:
+    async def resize_pty(self, provider_node_id: str, session_id: str, cols: int, rows: int) -> None:
         pty_info = self._pty_processes.get((provider_node_id, session_id))
         if pty_info is None:
             raise RuntimeError(f"PTY session not found for {provider_node_id}:{session_id}")
         try:
-            await pty_info["sandbox"].pty.resize(
-                pty_info["pty"].pid, PtySize(rows=rows, cols=cols)
-            )
+            await pty_info["sandbox"].pty.resize(pty_info["pty"].pid, PtySize(rows=rows, cols=cols))
             pty_info["rows"] = rows
             pty_info["cols"] = cols
         except Exception as e:
@@ -549,17 +514,13 @@ class E2BComputeProvider(ComputeProvider):
         if not remaining and provider_node_id in self._sandboxes:
             await self.shutdown(provider_node_id)
 
-    async def _cleanup_pty_session(
-        self, provider_node_id: str, session_id: str, reason: str
-    ) -> None:
+    async def _cleanup_pty_session(self, provider_node_id: str, session_id: str, reason: str) -> None:
         pty_key = (provider_node_id, session_id)
         pty_info = self._pty_processes.pop(pty_key, None)
         if pty_info is None:
             return
         pty_info["running"]["value"] = False
-        service_log.info(
-            f"[E2B] PTY session closed: node={provider_node_id} session={session_id} reason={reason}"
-        )
+        service_log.info(f"[E2B] PTY session closed: node={provider_node_id} session={session_id} reason={reason}")
 
     # ---------------------------------------------------------------- misc
 

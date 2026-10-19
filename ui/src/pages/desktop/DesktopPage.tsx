@@ -7,9 +7,8 @@ import { Trans } from '@lingui/react/macro';
 import { useMemo } from 'react';
 
 /**
- * DesktopPage — the full-page favorites desktop at /dock/desktop: the exact
- * same DesktopSurface the home MiniDesktop hosts, just with room to breathe
- * (large tiles, full viewport). URL-first sibling of the compact strip.
+ * DesktopPage — the full-page favorites desktop at /dock/desktop: the
+ * DesktopSurface with large tiles over the full viewport.
  *
  * Scope-keyed: `/dock/desktop?<scope>` pins the grid to that scope (e.g. a
  * project's favorites) and titles the page "<project> Desktop".

@@ -9,7 +9,7 @@
  * Uses production SDK only — no mocks, no hand-rolled HTTP.
  */
 
-import { AgenticProcess, ActionInfo, ClaudeCliOptions, ComputeNode, GRAPH_API_PREFIX, apiClient, dataManager } from '@sdk';
+import { AgenticProcess, ActionInfo, ClaudeAgentOptions, ComputeNode, GRAPH_API_PREFIX, apiClient, dataManager } from '@sdk';
 import { Markdown } from '@sdk/entities/markdown';
 import { Skill } from '@sdk/entities/skill';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -50,7 +50,7 @@ describe('wiki: skill body links to agentic process', () => {
     const skillName = `wiki-skill-${stamp()}`;
 
     // Real AgenticProcess persisted via the production SDK.
-    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
     const process = track(await new AgenticProcess({
       name: procName,
       cli_config: cliConfig.toJson(),
@@ -106,7 +106,7 @@ describe('wiki: skill body links to agentic process', () => {
 
   it('entity.reindex(body) returns the resolved edges', async () => {
     const procName = `wiki-reproc-${stamp()}`;
-    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
     const process = track(await new AgenticProcess({
       name: procName,
       cli_config: cliConfig.toJson(),
@@ -130,7 +130,7 @@ describe('wiki: skill body links to agentic process', () => {
   }, 20000);
 
   it('record without a body returns empty link lists', async () => {
-    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
     const process = track(await new AgenticProcess({
       name: `wiki-emptyproc-${stamp()}`,
       cli_config: cliConfig.toJson(),
@@ -154,7 +154,7 @@ describe('wiki: skill body links to agentic process', () => {
    */
   it('backlink count tracks source delete, body edit, and target delete', async () => {
     const targetName = `bl-target-${stamp()}`;
-    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
     const target = track(await new AgenticProcess({
       name: targetName,
       cli_config: cliConfig.toJson(),

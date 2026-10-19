@@ -22,5 +22,7 @@ class BinaryFsRef(FSRef):
     def write_bytes(self, data: bytes) -> None:
         if self.read_only:
             raise IOError(f"BinaryFsRef at {self.path!r} is read-only")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_bytes(data)
+        from flow_sdk.capsules.atomic import atomic_write, capsule_lock
+
+        with capsule_lock(self._path):
+            atomic_write(self._path, data)

@@ -1,3 +1,4 @@
+import { isFolderShape, type TypeShape } from '../FlowSync/schema';
 import { RecordType } from '../resource_management/fs_records/record-types';
 import { IMAGE_EXTENSIONS } from '../utils/utils';
 
@@ -10,10 +11,11 @@ import { IMAGE_EXTENSIONS } from '../utils/utils';
 export enum AssetEditor {
   CODE = 'code', // raw text editor — any file, no backing entity
   MARKDOWN = 'markdown', // rich markdown editor — entity-backed markdown family
+  SUBAGENT = 'subagent',
   AGENT = 'agent',
   SKILL = 'skill',
   TASK = 'task',
-  WHITEBOARD = 'whiteboard',
+  CHART = 'chart',
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
@@ -22,6 +24,25 @@ export enum AssetEditor {
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey', // guided onboarding — overview + Start, opens the journey tray
+  // An autonomous setup document: its steps, their live state, and the form
+  // for whatever value the run is currently blocked on.
+  WIZARD = 'wizard',
+  MCP = 'mcp', // an MCP server asset (agentic-assets/mcp/<name>/mcp.json)
+  // A hub LLM budget, rendered READ-ONLY: what this person may spend, which
+  // models it lets through, and a Test button. Entity-backed but never
+  // file-backed — the row is a projection of hub state with no local record, so
+  // the router resolves it from the box listing instead of an FSRef.
+  LLM_ENDPOINT = 'llm_endpoint',
+  // A credential (agentic-assets/credential/<name>/credential.json): what it
+  // declares, where its values live and which are set — never the values.
+  CREDENTIAL = 'credential',
+  // A diagnosis request: open it, fund it, send files along, read the runs that came back.
+  // A local row with no file, so it is fileless like LLM_ENDPOINT.
+  DIAGNOSIS_REQUEST = 'diagnosis_request',
+  // A declared setup node: its steps and their live state, and the wizard each of its hooks fires.
+  ASSET_SETUP = 'asset_setup',
+  // A compute op: what it does, whether it is done (Check), and Run.
+  COMPUTE_OP = 'compute_op',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -30,9 +51,66 @@ export enum AssetEditor {
   VIDEO = 'video',
   AUDIO = 'audio',
   PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
+  ARCHIVE = 'archive', // a .zip, browsed as the folder it extracts to (a temp copy)
+  // A `.value.json`: one DataSpec value carrying its own `spec_kind`, shown by that kind's
+  // viewer (a diagnosis, an eval run) — the data-viewer registry, outside any host app.
+  VALUE = 'value',
 }
 
-/** editor → record types it edits. `code` is file-only (no record type). */
+/**
+ * The slice of the bootstrap `TypeInfo` this module reads. The store BINDS its
+ * registry into this module at bootstrap; only the SHAPE is shared, from the
+ * one declaration of it (`FlowSync/schema`), so a backend shape change lands in
+ * one place instead of two that silently drift.
+ */
+export interface EditorTypeInfo {
+  type_name: string;
+  /** Backend-declared editor for the type (`'markdown'`, `'skill'`, …). */
+  editor?: string | null;
+  /** Backend-declared on-disk shape. */
+  shape?: TypeShape | null;
+}
+
+/** Read-side of the registry: a type lookup and the full list. */
+export interface EditorTypeRegistry {
+  get(type: string): EditorTypeInfo | undefined;
+  all(): EditorTypeInfo[];
+}
+
+let registry: EditorTypeRegistry | null = null;
+
+/**
+ * Bind the frontend SchemaRegistry (bootstrap `types`) as the authority for the
+ * type → editor mapping and the per-type file extensions. Called by the store
+ * once `loadTypes` has populated it. Until then — and on the hub, whose
+ * bootstrap ships no `types` — every lookup falls back to the static tables.
+ */
+export function bindAssetEditorRegistry(r: EditorTypeRegistry | null): void {
+  registry = r;
+}
+
+/** Registry entry for `type`, or undefined when unbound / unknown. */
+function registryEntry(type: string): EditorTypeInfo | undefined {
+  if (!registry || typeof type !== 'string') return undefined;
+  try {
+    return registry.get(type);
+  } catch {
+    return undefined;
+  }
+}
+
+function registryAll(): EditorTypeInfo[] {
+  if (!registry) return [];
+  try {
+    return registry.all();
+  } catch {
+    return [];
+  }
+}
+
+/** editor → record types it edits. `code` is file-only (no record type).
+ *  STATIC fallback table — the registry (`TypeInfo.editor`) is the authority
+ *  whenever it is bound; see `editorForType`. */
 export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.CODE]: [],
   [AssetEditor.MARKDOWN]: [
@@ -44,24 +122,34 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
     RecordType.PLAN,
     RecordType.PROMPT, // library prompt — md + frontmatter (docs/prompt-library.md)
   ],
+  [AssetEditor.SUBAGENT]: [RecordType.SUBAGENT],
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
   [AssetEditor.TASK]: [RecordType.TASK],
-  [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
+  [AssetEditor.CHART]: [RecordType.CHART],
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
   [AssetEditor.DECK]: [RecordType.DECK],
   [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
+  [AssetEditor.WIZARD]: [RecordType.WIZARD],
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
   [AssetEditor.ASSET_CLEANUP_REPORT]: [RecordType.ASSET_CLEANUP_REPORT],
   [AssetEditor.JOURNEY]: [RecordType.JOURNEY],
+  [AssetEditor.MCP]: [RecordType.MCP],
+  [AssetEditor.LLM_ENDPOINT]: [RecordType.LLM_ENDPOINT],
+  [AssetEditor.CREDENTIAL]: [RecordType.CREDENTIAL],
+  [AssetEditor.DIAGNOSIS_REQUEST]: [RecordType.DIAGNOSIS_REQUEST],
+  [AssetEditor.ASSET_SETUP]: [RecordType.ASSET_SETUP],
+  [AssetEditor.COMPUTE_OP]: [RecordType.COMPUTE_OP],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],
   [AssetEditor.VIDEO]: [],
   [AssetEditor.AUDIO]: [],
   [AssetEditor.PDF]: [],
+  [AssetEditor.ARCHIVE]: [],
+  [AssetEditor.VALUE]: [],
 };
 
 /** True for editors that render raw files and have no backing record type. */
@@ -69,32 +157,129 @@ export function isFileOnlyEditor(editor: AssetEditor): boolean {
   return EDITOR_TYPES[editor].length === 0;
 }
 
-/** Derived inverse: record type → the editor that edits it. */
+
+/**
+ * The other direction: editors whose asset has a record type but NO FILE. `llm_endpoint` is a
+ * read-only projection of hub state with no local row either (`flow_sdk/builtin/llm_endpoint.py`);
+ * `diagnosis_request` is a local row whose content lives on the hub
+ * (`flow_sdk/builtin/diagnosis_request.py`). Either way there is nothing on disk for an agent to
+ * open, diff or edit.
+ *
+ * The distinction earns its keep in `isContentAssetDock`: an asset-editor dock normally means
+ * "a single file is the subject", which is what puts a work-context chat beside it. For a
+ * fileless one that chat would be offering to work on a path that does not exist, so these
+ * docks stay ordinary browser surfaces — tab strip, navigator tree, no chat.
+ */
+export const FILELESS_EDITORS: ReadonlySet<AssetEditor> = new Set([
+  AssetEditor.LLM_ENDPOINT,
+  AssetEditor.DIAGNOSIS_REQUEST,
+]);
+
+export function isFilelessEditor(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && FILELESS_EDITORS.has(editor);
+}
+
+/** A passive preview a vibe Display pane renders inline — a different axis from
+ *  `isFileOnlyEditor`. `code` is out (raw source is worked ON, not shown), and so
+ *  is `mcp_app`: a live sandbox + agent bridge is interactive, not a render. */
+export const PREVIEW_EDITORS: ReadonlySet<AssetEditor> = new Set([
+  AssetEditor.HTML,
+  AssetEditor.IMAGE,
+  AssetEditor.VIDEO,
+  AssetEditor.AUDIO,
+  AssetEditor.PDF,
+  AssetEditor.ARCHIVE,
+  AssetEditor.VALUE,
+]);
+
+export function isPreviewEditor(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && PREVIEW_EDITORS.has(editor);
+}
+
+/** An editor whose subject carries its OWN chat — an agent is talked to through its placement's
+ *  Chat, not through a Vibe session about its file — so the Vibe chat pane beside it is noise and
+ *  stays collapsed. */
+const OWN_CHAT_EDITORS: ReadonlySet<AssetEditor> = new Set([AssetEditor.AGENT]);
+
+export function hasOwnChat(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && OWN_CHAT_EDITORS.has(editor);
+}
+
+/** Derived inverse of the STATIC table: record type → the editor that edits it. */
+
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(
-  Object.entries(EDITOR_TYPES).flatMap(([editor, types]) =>
-    types.map((t) => [t as string, editor as AssetEditor]),
-  ),
+  Object.entries(EDITOR_TYPES).flatMap(([editor, types]) => types.map((t) => [t as string, editor as AssetEditor])),
 );
 
-/** The editor that edits `type`, or undefined if the type has no asset editor. */
+/**
+ * The editor that edits `type`, or undefined if the type has no asset editor.
+ *
+ * The bound registry (`TypeInfo.editor`) answers first; the static table only
+ * answers when the registry has no entry for the type — the hub bootstrap
+ * ships no `types`, and a unit test may run with nothing bound.
+ */
 export function editorForType(type: string): AssetEditor | undefined {
+  const declared = registryEntry(type)?.editor;
+  if (declared && isAssetEditor(declared)) return declared;
   return TYPE_TO_EDITOR[type];
+}
+
+/**
+ * The record type the registry declares for `editor` — the inverse of
+ * `editorForType` read from the SAME authority, for a caller that only has
+ * the editor segment of a pointer. Undefined when the registry is unbound or
+ * no type declares that editor; callers must not guess in that case.
+ */
+export function primaryTypeForEditor(editor: string): string | undefined {
+  return registryAll().find((t) => t.editor === editor)?.type_name;
 }
 
 export function isAssetEditor(v: string): v is AssetEditor {
   return (Object.values(AssetEditor) as string[]).includes(v);
 }
 
-/** Extension → file-only viewer/editor. Single source: every "open/show a raw
- * file" surface (openFile, explorer, chat attachments, vibe display) routes
- * through `editorForPath`, so adding a viewer means adding a row here. */
-const EXT_TO_EDITOR: Record<string, AssetEditor> = {
-  md: AssetEditor.MARKDOWN,
-  markdown: AssetEditor.MARKDOWN,
-  // Tabular files — same dual routing as markdown (entity-backed AND
-  // extension-routed). XLSX opens read-only; CSV is editable.
-  csv: AssetEditor.SPREADSHEET,
-  xlsx: AssetEditor.SPREADSHEET,
+/** `.md` → `md`; tolerant of a bare `md`. */
+function bareExt(ext: string): string {
+  return ext.replace(/^\./, '').toLowerCase();
+}
+
+/**
+ * File extensions (without the dot) the registry declares for `type` — the
+ * file-shaped `shape.ext` plus its `also` list. Empty when the registry is
+ * unbound, the type is unknown, or the type is folder-shaped.
+ */
+export function registryExtensionsForType(type: string): string[] {
+  const shape = registryEntry(type)?.shape;
+  if (!shape || shape.kind !== 'file' || !shape.ext) return [];
+  return [shape.ext, ...(shape.also ?? [])].map(bareExt).filter(Boolean);
+}
+
+/** Static markdown extensions — the fallback when the registry is unbound. */
+const STATIC_MARKDOWN_EXTENSIONS = ['md', 'markdown'];
+/** Static spreadsheet extensions — the fallback when the registry is unbound. */
+const STATIC_SPREADSHEET_EXTENSIONS = ['csv', 'xlsx'];
+
+/**
+ * Extensions the markdown editor opens: the registry's `markdown` shape when
+ * bound, else the static pair. Every "is this a markdown document?" predicate
+ * derives from here so the set cannot drift between surfaces.
+ */
+export function markdownExtensions(): string[] {
+  const fromRegistry = registryExtensionsForType(RecordType.MARKDOWN);
+  return fromRegistry.length ? fromRegistry : STATIC_MARKDOWN_EXTENSIONS;
+}
+
+/** Extensions the spreadsheet editor opens — same derivation as markdown. */
+export function spreadsheetExtensions(): string[] {
+  const fromRegistry = registryExtensionsForType(RecordType.SPREADSHEET);
+  return fromRegistry.length ? fromRegistry : STATIC_SPREADSHEET_EXTENSIONS;
+}
+
+/** Extension → file-only viewer/editor for the rows that never come from the
+ * registry. Single source: every "open/show a raw file" surface (openFile,
+ * explorer, chat attachments, vibe display) routes through `editorForPath`, so
+ * adding a viewer means adding a row here. */
+const STATIC_EXT_TO_EDITOR: Record<string, AssetEditor> = {
   html: AssetEditor.HTML,
   htm: AssetEditor.HTML,
   ...Object.fromEntries([...IMAGE_EXTENSIONS].map((ext) => [ext, AssetEditor.IMAGE])),
@@ -106,11 +291,31 @@ const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   m4a: AssetEditor.AUDIO,
   ogg: AssetEditor.AUDIO,
   pdf: AssetEditor.PDF,
+  zip: AssetEditor.ARCHIVE,
 };
+
+/**
+ * The full extension → editor table. Computed per call (cheap: two registry
+ * reads) because the markdown / spreadsheet rows come from the registry, which
+ * is bound AFTER module init.
+ */
+export function extToEditor(): Record<string, AssetEditor> {
+  return {
+    ...Object.fromEntries(markdownExtensions().map((ext) => [ext, AssetEditor.MARKDOWN])),
+    // Tabular files — same dual routing as markdown (entity-backed AND
+    // extension-routed). XLSX opens read-only; CSV is editable.
+    ...Object.fromEntries(spreadsheetExtensions().map((ext) => [ext, AssetEditor.SPREADSHEET])),
+    ...STATIC_EXT_TO_EDITOR,
+  };
+}
 
 /** MCP-app suffix rule — `.mcp.html` needs a suffix check because its last-dot
  * extension is plain `html`. The UI's `isMcpAppPath` delegates here. */
 const MCP_APP_PATH_RE = /\.mcp\.html?$/i;
+
+/** A kind-tagged value file — `diagnosis.value.json`. Its last-dot extension is plain `json`,
+ * which stays the code editor's: only the suffix says the file is one value of a kind. */
+export const VALUE_PATH_RE = /\.value\.json$/i;
 
 /**
  * Editor for a RAW file path (no entity). Unknown extensions fall back to the
@@ -118,6 +323,17 @@ const MCP_APP_PATH_RE = /\.mcp\.html?$/i;
  */
 export function editorForPath(path: string): AssetEditor {
   if (MCP_APP_PATH_RE.test(path)) return AssetEditor.MCP_APP;
+  if (VALUE_PATH_RE.test(path)) return AssetEditor.VALUE;
   const ext = path.split('.').pop()?.toLowerCase();
-  return (ext && EXT_TO_EDITOR[ext]) || AssetEditor.CODE;
+  return (ext && extToEditor()[ext]) || AssetEditor.CODE;
+}
+
+/**
+ * Fixed inner main file of a folder-shaped type (`SKILL.md` for `skill`) as the
+ * registry declares it; `fallback` when the registry is unbound / silent.
+ */
+export function mainFileForType(type: string, fallback: string | null = null): string | null {
+  const shape = registryEntry(type)?.shape;
+  if (isFolderShape(shape) && shape.main) return shape.main;
+  return fallback;
 }

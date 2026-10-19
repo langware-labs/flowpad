@@ -23,7 +23,6 @@ from flow_sdk.builtin.flow_message_bundle import (
     unpack_bundle,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -158,13 +157,9 @@ class TestPackBundle:
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Task" in content
-            capsule = json.loads(
-                zf.read(
-                    f"attachment/task-{task_id}/agentic-assets/task/My_Task/"
-                    ".flow/capsules/identity.json"
-                )
-            )
-            assert capsule == {"version": 1, "data": {"id": task_id}}
+            # task.md IS the task's identity carrier: the id rides in its frontmatter.
+            assert content.startswith(f"---\nid: {task_id}\n")
+            assert not any(n.endswith(".flow/capsules/identity.json") for n in names)
             assert "in_progress" in content
             # Sender-local fields must never ride along in the shared file.
             assert "my_process_id" not in content
@@ -216,8 +211,8 @@ class TestPackBundle:
 
     @pytest.mark.asyncio
     async def test_pack_spec_with_ondisk_asset_ref_ships_parent_folder(self, tmp_path):
-        """A real on-disk spec-style asset (asset_ref = inner spec.md,
-        main_file_is_asset_ref=True) ships its PARENT folder verbatim — both the
+        """A real on-disk spec asset (asset_ref = its folder) ships that
+        folder verbatim — both the
         main file and its siblings — using the real on-disk body (not
         default_body_fn). Existing-source bundles are copied byte-for-byte and
         do not retrofit an identity that was absent on the source."""
@@ -459,7 +454,7 @@ class TestUnpackBundle:
         """unpack_bundle calls append_message_pointer on the target conversation."""
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.user import User
-        from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
+        from flow_sdk.fs_store.operations.conversation import default_jsonl_path
 
         # Pin the records-data root to tmp_path so the canonical jsonl lives here.
         monkeypatch.setattr(
@@ -536,8 +531,8 @@ class TestPromptAttachmentRoundtrip:
             zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
-            # New unified layout: prompts/<name>.md (file-layout, prompts subdir).
-            expected = f"attachment/prompt-{_PROMPT_UUID}/prompts/Fix_the_bug.md"
+            # Repo layout: agentic-assets/prompt/<name>.md (file-layout leaf).
+            expected = f"attachment/prompt-{_PROMPT_UUID}/agentic-assets/prompt/Fix_the_bug.md"
             assert expected in zf.namelist()
             content = zf.read(expected).decode("utf-8")
             assert "Fix the bug in auth." in content
@@ -573,7 +568,7 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-{_PROMPT_UUID}/prompts/Fix_the_bug.md": prompt_md.encode("utf-8")},
+            {f"attachment/prompt-{_PROMPT_UUID}/agentic-assets/prompt/Fix_the_bug.md": prompt_md.encode("utf-8")},
         )
 
         saved_fm = FlowMessage(text="carrier")
@@ -632,7 +627,7 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
+            {f"attachment/prompt-{_PROMPT_UUID}/agentic-assets/prompt/x.md": b"---\nname: x\n---\n\nx\n"},
         )
 
         mock_conv = Conversation(shared_context_entities=[])
@@ -677,7 +672,7 @@ async def test_unpack_stages_before_fm_materializes_and_notifies_after(tmp_path)
     }
     zip_path = _write_flowmsg_zip(
         tmp_path, fm_data,
-        {f"attachment/prompt-{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
+        {f"attachment/prompt-{_PROMPT_UUID}/agentic-assets/prompt/x.md": b"---\nname: x\n---\n\nx\n"},
     )
 
     mock_conv = Conversation(shared_context_entities=[])
@@ -784,11 +779,11 @@ class TestRawFileAttachmentStaging:
         assert ma.name == fname
         assert ma.user_scope_allowed is True
         assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
-        # Synthesized entry dir: .md files use the .claude/docs/ layout so
-        # install mirrors to <root>/.claude/docs/<name> (indexed as MARKDOWN on
+        # Synthesized entry dir: .md files use the docs/ layout so
+        # install mirrors to <root>/docs/<name> (indexed as MARKDOWN on
         # both project and user scopes).
         entry_dir = fm_data_ops.staged_entry_dir(fm_id, entry_key)
-        assert (entry_dir / ".claude" / "docs" / fname).is_file()
+        assert (entry_dir / "docs" / fname).is_file()
 
     @pytest.mark.asyncio
     async def test_unpack_does_not_stage_image_file_attachment(self, tmp_path):
@@ -989,20 +984,19 @@ async def test_pack_dbonly_spec_capsules_id_and_sanitizes_hostile_name(tmp_path)
         bundle_root = (tmp_path / "_resolve_check").resolve()
         resolved = (bundle_root / main_arc).resolve()
         assert str(resolved).startswith(str(bundle_root))
-        # Identity is outside frontmatter, in the file's comment capsule.
+        # Identity is the first frontmatter key; no comment capsule any more.
         body = zf.read(main_arc).decode("utf-8")
         frontmatter = body.split("---", 2)[1]
-        assert f"id: {spec_id}" not in frontmatter
-        assert "<!-- flowpad:capsule identity" in body
-        assert f"id: {spec_id}" in body
+        assert f"id: {spec_id}" in frontmatter
+        assert "flowpad:capsule" not in body
 
-    # --- default_body_fn None → early return, nothing shipped ---
+    # --- nothing renderable → early return, nothing shipped ---
     spec_info = SchemaRegistry.get("spec")
     fm2 = _make_flow_message(fm_id="f0f00004-0000-4000-8000-000000000004")
     fm2.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"spec-{spec_id}")]
     with (
         patch.object(Spec, "get_one", new=AsyncMock(return_value=mock_spec)),
-        patch.object(spec_info, "default_body_fn", None),
+        patch("flow_sdk.fs_store.serializer.disk.DiskSerializer.render", return_value=None),
     ):
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path2, "r") as zf:

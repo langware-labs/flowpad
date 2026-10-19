@@ -66,6 +66,40 @@ async def test_hook_op_task_update(bootstrapped_client, user):
     assert data.get("action") == "updated"
 
 
+@pytest.mark.asyncio
+async def test_hook_op_task_create_is_searchable(bootstrapped_client, user):
+    """A webhook-created task is in FTS as soon as the listen route returns.
+
+    ``_reflect_entity`` only calls ``entity.save()``; ``Entity.save()`` owns the
+    FTS write for a ``db_only`` type with ``TypeInfo.fts_content`` (task:
+    ``title``/``description``), so ``/fs-records/search`` must find the row
+    without any separate index step (docs/data-management/listen-action.md,
+    "FTS indexing").
+    """
+    token = "hookopftsprobe7f3a9c"
+    payload = _envelope(
+        {
+            "type": "task",
+            "id": "analysis-rs-test-fts",
+            "operation": "create",
+            "data": {"title": f"Searchable {token}", "status": "in_progress"},
+        }
+    )
+    created = await bootstrapped_client.post(LISTEN_URL, json=payload)
+    assert created.status_code == 200, created.text
+    task_id = created.json()["data"]["task_id"]
+    assert task_id
+
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = bootstrap.json()["data"]["default_compute_node"]["id"]
+    found = await bootstrapped_client.get(
+        f"/api/v1/graph/compute_node/{cn_id}/fs-records/search?q={token}&record_type=task"
+    )
+    assert found.status_code == 200, found.text
+    results = found.json()["data"]["results"]
+    assert any(r["record_id"] == task_id for r in results), results
+
+
 # -- Skill events -------------------------------------------------------------
 
 

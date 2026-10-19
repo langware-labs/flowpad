@@ -44,7 +44,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // recovery commands to the clipboard, and quit from the panel.
   onStartupError: (callback) => ipcRenderer.on('startup-error', (_event, data) => callback(data)),
   copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
+  openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
+  shareLogs: (detail, email) => ipcRenderer.invoke('share-logs', detail, email),
   quitApp: () => ipcRenderer.send('quit-app'),
+  // Re-run the install/start in-app after a failed first install (no relaunch).
+  retryStartup: () => ipcRenderer.send('retry-startup'),
+  // Windows: application control blocked the engine's Python — repair the runtime (runtime-repair.js).
+  // The user confirmed on the panel; main downloads the official python.org interpreter, reinstalls
+  // the engine on it and starts it, streaming progress over `startup-status`.
+  repairRuntime: () => ipcRenderer.send('repair-runtime'),
+  // FLOWPAD-2231 recovery: install the newer desktop release the panel offered (verified by the updater,
+  // once per version and failure), and save the support zip where the user chooses.
+  updateDesktopRecovery: () => ipcRenderer.send('update-desktop-recovery'),
+  exportLogs: (detail) => ipcRenderer.invoke('export-logs', detail),
 
   // Provision the per-instance Fernet sod-key in the OS keychain via the
   // bundled signed flow-rs binary, and return the value so the renderer
@@ -65,7 +77,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopNotify: ({ title, body, clickTarget }) => ipcRenderer.invoke('notify-os', { title, body, clickTarget }),
   setBadge: (n) => ipcRenderer.invoke('set-badge', n),
   notifyAttention: () => ipcRenderer.invoke('notify-attention'),
-  onNotificationClick: (callback) => ipcRenderer.on('notification-click', (_event, data) => callback(data)),
+  // Returns a disposer. The renderer mounts this from a React effect, so without
+  // one every remount left another listener on the channel — and each listener
+  // navigates, so one banner click fired the navigation once per leak.
+  onNotificationClick: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('notification-click', handler);
+    return () => ipcRenderer.removeListener('notification-click', handler);
+  },
 
   // Show/hide the application menu. The renderer calls this with the current
   // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.

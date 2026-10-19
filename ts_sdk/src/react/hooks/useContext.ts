@@ -1,4 +1,4 @@
-import { ContextEventType, dataContext } from '../..';
+import { ContextEventType, dataContext } from '../../FlowSync/context';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 // Single subscription manager to avoid multiple EventEmitter listeners
@@ -60,19 +60,19 @@ export function useContext() {
     plugins: typeof dataContext.plugins;
     project: typeof dataContext.project;
     computeNode: typeof dataContext.computeNode;
+    sandboxComputeNode: typeof dataContext.sandboxComputeNode;
     visitor: typeof dataContext.visitor;
     bootstrapError: typeof dataContext.bootstrapError;
     isBootstrapping: typeof dataContext.isBootstrapping;
-    envName: typeof dataContext.envName;
     cloudApiUrl: typeof dataContext.cloudApiUrl;
     cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
+    cloudConnectionStatus: typeof dataContext.cloudConnectionStatus;
     desktopInfo: typeof dataContext.desktopInfo;
+    runtimeKind: typeof dataContext.runtimeKind;
     isDesktop: typeof dataContext.isDesktop;
     version: typeof dataContext.version;
     instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
-    workflow: typeof dataContext.workflow;
-    workflowTypeId: typeof dataContext.workflowTypeId;
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
@@ -80,6 +80,8 @@ export function useContext() {
     workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
     snifferInstalled: typeof dataContext.snifferInstalled;
+    snifferReady: typeof dataContext.snifferReady;
+    terminalRuntimeError: typeof dataContext.terminalRuntimeError;
     isConnected: typeof dataContext.isConnected;
   }>({
     user: dataContext.user,
@@ -99,19 +101,19 @@ export function useContext() {
     plugins: dataContext.plugins,
     project: dataContext.project,
     computeNode: dataContext.computeNode,
+    sandboxComputeNode: dataContext.sandboxComputeNode,
     visitor: dataContext.visitor,
     bootstrapError: dataContext.bootstrapError,
     isBootstrapping: dataContext.isBootstrapping,
-    envName: dataContext.envName,
     cloudApiUrl: dataContext.cloudApiUrl,
     cloudLoginAvailable: dataContext.cloudLoginAvailable,
+    cloudConnectionStatus: dataContext.cloudConnectionStatus,
     desktopInfo: dataContext.desktopInfo,
+    runtimeKind: dataContext.runtimeKind,
     isDesktop: dataContext.isDesktop,
     version: dataContext.version,
     instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
-    workflow: dataContext.workflow,
-    workflowTypeId: dataContext.workflowTypeId,
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
@@ -119,6 +121,8 @@ export function useContext() {
     workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
     snifferInstalled: dataContext.snifferInstalled,
+    snifferReady: dataContext.snifferReady,
+    terminalRuntimeError: dataContext.terminalRuntimeError,
     isConnected: dataContext.isConnected,
   });
 
@@ -148,19 +152,19 @@ export function useContext() {
       plugins: dataContext.plugins,
       project: dataContext.project,
       computeNode: dataContext.computeNode,
+      sandboxComputeNode: dataContext.sandboxComputeNode,
       visitor: dataContext.visitor,
       bootstrapError: dataContext.bootstrapError,
       isBootstrapping: dataContext.isBootstrapping,
-      envName: dataContext.envName,
       cloudApiUrl: dataContext.cloudApiUrl,
       cloudLoginAvailable: dataContext.cloudLoginAvailable,
+      cloudConnectionStatus: dataContext.cloudConnectionStatus,
       desktopInfo: dataContext.desktopInfo,
+      runtimeKind: dataContext.runtimeKind,
       isDesktop: dataContext.isDesktop,
       version: dataContext.version,
       instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
-      workflow: dataContext.workflow,
-      workflowTypeId: dataContext.workflowTypeId,
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
@@ -168,6 +172,8 @@ export function useContext() {
       workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
       snifferInstalled: dataContext.snifferInstalled,
+      snifferReady: dataContext.snifferReady,
+      terminalRuntimeError: dataContext.terminalRuntimeError,
       isConnected: dataContext.isConnected,
     };
 
@@ -197,19 +203,19 @@ export function useContext() {
       prev.plugins !== current.plugins ||
       prev.project !== current.project ||
       prev.computeNode !== current.computeNode ||
+      prev.sandboxComputeNode !== current.sandboxComputeNode ||
       prev.visitor !== current.visitor ||
       prev.bootstrapError !== current.bootstrapError ||
       prev.isBootstrapping !== current.isBootstrapping ||
-      prev.envName !== current.envName ||
       prev.cloudApiUrl !== current.cloudApiUrl ||
       prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
+      prev.cloudConnectionStatus !== current.cloudConnectionStatus ||
       prev.desktopInfo !== current.desktopInfo ||
+      prev.runtimeKind !== current.runtimeKind ||
       prev.isDesktop !== current.isDesktop ||
       prev.version !== current.version ||
       prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
-      prev.workflow !== current.workflow ||
-      typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||
@@ -217,6 +223,9 @@ export function useContext() {
       prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
       prev.snifferInstalled !== current.snifferInstalled ||
+      prev.snifferReady !== current.snifferReady ||
+      prev.terminalRuntimeError?.kind !== current.terminalRuntimeError?.kind ||
+      prev.terminalRuntimeError?.processId !== current.terminalRuntimeError?.processId ||
       prev.isConnected !== current.isConnected
     ) {
       snapshotRef.current = current;

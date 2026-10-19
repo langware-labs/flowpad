@@ -13,6 +13,9 @@ The dispatch contract:
       file is from an unmanaged session (e.g. a transcript on disk with no
       paired AP) and we no-op.
     - The AP's :meth:`on_transcript_change` handles per-entry routing.
+    - The return value says whether the session is claimed: True when an AP
+      owns it, False otherwise. The registry's startup catch-up keeps a
+      parsed streamer only for a claimed session.
 """
 from __future__ import annotations
 
@@ -33,24 +36,25 @@ async def _route_to_ap(
     session_id: str,
     jsonl_path: Path,
     new_entries: list["TranscriptEntry"],
-) -> None:
-    """Resolve the AP for this session_id and forward the delta to it."""
+) -> bool:
+    """Resolve the AP for this session_id and forward the delta to it.
+    Returns True when at least one AP owns the session."""
     if not session_id:
-        return
+        return False
     # Lazy import: AgenticProcess module loads this submodule at import time,
     # so a top-level import would cycle.
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
     try:
-        aps = await AgenticProcess.get_all(
-            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
-        )
+        aps = await AgenticProcess.local_owners_of_session(session_id)
     except Exception:
         _log.exception("transcript_subscriber: AP lookup failed for session %s", session_id)
-        return
+        return False
+    if not aps:
+        aps = await _adopt_unstamped_session(session_id, jsonl_path, new_entries)
     if not aps:
         # Unmanaged session — transcript exists but no AP paired with it.
-        return
+        return False
     # Dispatch to every matching AP (forked / shared sessions are rare but
     # real — same JSONL can back multiple AgenticProcess entities).
     for ap in aps:
@@ -60,6 +64,42 @@ async def _route_to_ap(
             _log.exception(
                 "transcript_subscriber: on_transcript_change raised on AP %s", ap.id
             )
+    return True
+
+
+async def _adopt_unstamped_session(
+    session_id: str, jsonl_path: Path, entries: list["TranscriptEntry"],
+) -> list:
+    """Pair a new transcript with the running process that launched it before its id was known.
+
+    A harness that mints its session id after launch (codex, opencode) starts
+    with no ``session_id``, so the lookup above cannot match its events. A
+    transcript announces its identity once, in its ``session_meta`` header, so
+    adoption runs only on the batch carrying it — once per file, not per write.
+    Each id-less running process of that vendor resolves its own transcript
+    through its driver; the one that owns this file adopts the id.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+    from flow_sdk.flowpad_types.vendors import vendor_for_path
+    from flow_sdk.instance_settings import get_instance_settings
+
+    if not any(getattr(entry, "meta_kind", None) == "session_meta" for entry in entries):
+        return []
+    vendor = vendor_for_path(jsonl_path, get_instance_settings().vendor_homes)
+    if vendor is None:
+        return []
+    try:
+        candidates = await AgenticProcess.local_rows(entities_filter=QueryFilter(match=ExpressionNode(
+            worker_type=vendor.worker_type, status=ProcessStatus.RUNNING.value,
+        )))
+    except Exception:
+        _log.exception("transcript_subscriber: adoption lookup failed for session %s", session_id)
+        return []
+    for ap in candidates:
+        if not ap.session_id and await ap.adopt_discovered_session() == session_id:
+            return [ap]
+    return []
 
 
 # Register at module load. The AP package's __init__ imports this submodule

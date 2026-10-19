@@ -60,7 +60,7 @@ describe('tag grammar contract (shared fixture)', () => {
 
 describe('tag grammar behavior', () => {
   it('tryTag returns null instead of throwing', () => {
-    expect(tryTag('flow.step.done')).toBe('flow.step.done');
+    expect(tryTag('graph_workflow.step.done')).toBe('graph_workflow.step.done');
     expect(tryTag('not a tag!')).toBeNull();
     expect(tryTag(42)).toBeNull();
   });
@@ -72,14 +72,14 @@ describe('tag grammar behavior', () => {
   });
 
   it('glob vs prefix semantics diverge as designed', () => {
-    expect(tagMatches('flow', 'flow.done')).toBe(false);
-    expect(tagIsWithin('flow.done', 'flow')).toBe(true);
+    expect(tagMatches('graph_workflow', 'graph_workflow.done')).toBe(false);
+    expect(tagIsWithin('graph_workflow.done', 'graph_workflow')).toBe(true);
   });
 
   it('tagTree derives implicit intermediate nodes', () => {
-    const tree = tagTree(['flow.step.done', 'flow.done', 'entity.created']);
-    expect(tree['']).toEqual(['entity', 'flow']);
-    expect(tree['flow']).toEqual(['flow.done', 'flow.step']);
-    expect(tree['flow.step']).toEqual(['flow.step.done']);
+    const tree = tagTree(['graph_workflow.step.done', 'graph_workflow.done', 'entity.created']);
+    expect(tree['']).toEqual(['entity', 'graph_workflow']);
+    expect(tree['graph_workflow']).toEqual(['graph_workflow.done', 'graph_workflow.step']);
+    expect(tree['graph_workflow.step']).toEqual(['graph_workflow.step.done']);
   });
 });

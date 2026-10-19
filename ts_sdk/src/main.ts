@@ -1,35 +1,61 @@
+import { prefetchStartupAssets } from './lazy/startup';
+import { lazyAssets, LazyAsset } from './lazy';
 import axios from 'axios';
 import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
-import { Agent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
-import { AgentHook } from './entities/agent-hook';
-import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
+import { SubAgent, ComputeNode, Project, User, Visitor, WebDomain } from './entities';
+import { loadIconPacks } from './icons/registry';
+import type { IconPackSpec } from './icons/types';
+import { dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
-import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
+import { markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
+import { RuntimeKind } from './utils/runtime';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
-import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
 import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
+import type { BootstrapInfo } from './models/BootstrapInfo';
+import { applyBootstrapUser } from './session-refresh';
+import { adoptHostVisibility, appTypeId } from './apps/host';
 
 declare global {
   interface Window {
     appReady: boolean;
+    /** Introspection hooks for manual_regression specs; see initSdk. */
+    context?: typeof dataContext;
+    sniffer?: typeof snifferManager.entity;
   }
 }
 
 let initPromise: Promise<void> | null = null;
+let asyncInitPromise: Promise<void> | null = null;
+let initialized: BootstrapInfo | undefined;
+let setupWorkspace = false;
 
-export async function initSdk(params?: { agentId?: string; setupWorkspace?: boolean }): Promise<void> {
+export async function initSdk(params?: {
+  agentId?: string;
+  setupWorkspace?: boolean;
+  /** Hub mode: render this load signed-out instead of redirecting to the
+   *  provider. Only the root loader passes it, and only for the entry routes in
+   *  `routes/anonymous-entry.ts`. Memoised with the rest of init, which is
+   *  correct — the first load of a session decides, and every later caller is
+   *  already past the point where the redirect could have fired. */
+  allowAnonymous?: boolean;
+}): Promise<void> {
   if (initPromise) {
     return initPromise;
   }
+  setupWorkspace = params?.setupWorkspace === true;
+  // A served app (addressed by its endpoint) is parked, not unloaded, when its tab is not shown:
+  // let its `document.hidden` say so, so its timers and polls rest with it (`adoptHostVisibility`).
+  if (appTypeId()) adoptHostVisibility();
+  performance.mark?.('sdk:init:start');
   initPromise = (async () => {
     try {
       // Check if API port is properly configured
@@ -42,13 +68,13 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       const session = !(window as any).allow_persistent_visitor; // session=true if no GDPR consent
       const bootstrapInfo = await dataManager.bootstrap(domain, session);
       // Dev override: `VITE_FORCE_HUB=true` forces hub mode when testing the OSS
-      // UI against a hub backend that doesn't yet advertise `supported_pages`
-      // (e.g. an un-updated dev backend). Set it ON bootstrapInfo so BOTH consumers
-      // agree — the leaf `isHubOnly()` signal AND main-loader's page-redirect,
-      // which reads `dataContext.bootstrapInfo.supported_pages` directly. No effect
-      // in normal builds.
+      // UI against a hub backend that doesn't yet declare its runtime. Set it ON
+      // bootstrapInfo so EVERY consumer agrees — the leaf `isHubOnly()` signal,
+      // `dataContext.runtimeKind`, and main-loader's page-redirect (which reads
+      // `bootstrapInfo.supported_pages` directly). No effect in normal builds.
       if (import.meta.env.VITE_FORCE_HUB === 'true') {
         (bootstrapInfo as { supported_pages?: string[] }).supported_pages = ['hub'];
+        bootstrapInfo.runtime = { ...bootstrapInfo.runtime, kind: RuntimeKind.HUB };
       }
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
@@ -56,29 +82,39 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // dataContext into entities — see utils/hub-runtime.ts).
       setSupportedPagesForHubMode((bootstrapInfo as { supported_pages?: string[] })?.supported_pages);
 
-      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl.
-      // Hub identity comes directly from this bootstrap response and must be ready
-      // before the initial route renders. Keep the desktop bootstrap fire-and-forget
-      // so its existing startup timing is unchanged.
-      const cloudBootstrap = cloudManager.bootstrap(bootstrapInfo);
-      if (isHubOnly()) await cloudBootstrap;
-      else void cloudBootstrap;
-
-      // Seed the data-privacy mode (Local/Connected); it mirrors into dataContext
-      // and listens for live mode changes over WS.
-      void privacyManager.bootstrap(bootstrapInfo.privacy_mode);
-
-      // Seed the capabilities summary so the Capabilities view paints without a
-      // second round-trip (it can still refresh via getSummary(true)).
-      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
-
       // Load the type registry (TypeInfo + schema) into the SchemaRegistry
       // (pass empty array if null to prevent re-fetching)
+      //
+      // BEFORE seeding the login, not after. `seedBootstrap` hydrates the signed-in
+      // User and marks it expanded, which reads the schema — with the registry still
+      // empty that logged "Schema not found for user" and silently dropped the
+      // `blobs` expansion. Harmless for `user` (it declares no blob fields) but not
+      // in general: the same window would drop blobs for any blob-carrying entity,
+      // and `APIEntity.hasBlobs` throws rather than degrading. Same class of bug the
+      // route loaders already guard against (see main-loader's initSdk await).
+      //
+      // Safe to move: this only reads `bootstrapInfo.types`, already in hand, and
+      // does no fetching when handed the array.
       await dataManager.loadTypes(bootstrapInfo.types || []);
+
+      // The icon vocabulary rides the same payload as the types that reference
+      // it: a `TypeInfo.icon` name is only renderable if the pack it lives in
+      // is loaded too, so the two are seeded together or not at all.
+      loadIconPacks((bootstrapInfo as { icon_packs?: IconPackSpec[] }).icon_packs);
+
+      // Known identity and privacy are required for the first render. No probes
+      // or subscriptions run here; asyncSdkInit owns those after UI paint.
+      await cloudManager.seedBootstrap(bootstrapInfo, { allowAnonymous: params?.allowAnonymous === true });
+      privacyManager.seedBootstrap(bootstrapInfo.privacy_mode);
 
       // Set domain in context if present
       if (bootstrapInfo.domain) {
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId, bootstrapInfo.domain.typeId);
+        // Hydrated like its neighbours below: the bootstrap payload is wire JSON, so
+        // the row has no `typeId` accessor of its own. BEHAVIOUR CHANGE — the old
+        // `bootstrapInfo.domain.typeId` read a getter that does not exist on a plain
+        // object, so this context slot was never actually set.
+        const domain = new WebDomain(bootstrapInfo.domain);
+        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId, domain.typeId);
       }
 
       // Set visitor in context if present (visitor object is returned, cookie already set by backend)
@@ -95,30 +131,23 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // is applied, so callers that read localStorage directly don't issue requests against
       // a dead UUID.
       if (bootstrapInfo.default_compute_node) {
+        const persistedTypeId = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId);
+        // Constructors register in cache. Evict old aliases BEFORE adopting the seed.
+        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
+        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         const computeNode = new ComputeNode(bootstrapInfo.default_compute_node as any);
         computeNode.markAsExpanded();
-        const persistedTypeId = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId);
         if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
           setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
         }
-        // Evict cached compute_node entities so getById('@local') re-fetches the fresh
-        // UUID. Without this, a prior expanded ComputeNode keyed under the @local alias
-        // survives bootstrap and createProcess posts to a dead UUID → 404.
-        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
-        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 
-      // Register the bootstrap project in cache, but only set it as current
-      // if the user doesn't already have a project selected in localStorage.
-      const userPersistedProject = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentProjectTypeId);
+      // Route loaders own active-project selection; retain the full default in
+      // cache so a URL or remembered/default fallback needs no extra request.
       if (bootstrapInfo.default_project) {
         const project = new Project(bootstrapInfo.default_project);
         project.markAsExpanded();
-        if (!userPersistedProject) {
-          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-          dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
-        }
       }
 
       // Set agent in context from params or default agent from bootstrap
@@ -127,44 +156,15 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         console.log('[initSdk] Using agentId from params:', params.agentId);
         await dataContext.setContextEntityTypeId(
           ContextEntitiesEnum.CurrentAgentTypeId,
-          new TypeId(Agent.type, params.agentId),
+          new TypeId(SubAgent.type, params.agentId),
         );
       }
 
-      // Create User instance from bootstrap data FIRST (before workspace)
-      // This ensures user is set when refreshWorkspace() is called
-      let user: User | null = null;
-      if (bootstrapInfo.user) {
-        user = new User(bootstrapInfo.user);
-        user.markAsExpanded();
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
-        // Startup does not block rendering on the WebSocket handshake, but the
-        // background promise still needs an owner. In particular, disposing an
-        // isolated SDK realm can intentionally close a still-CONNECTING socket;
-        // observing that rejection prevents it from escaping as an unhandled
-        // promise while the connection manager handles reconnect/reporting.
-        void ConnectionManager.getInstance().connect().catch(() => undefined);
-      }
-
-      // Set default workspace in context if present (after user is set)
-      if (bootstrapInfo.default_workspace) {
-        const workspace = new Workspace(bootstrapInfo.default_workspace);
-        workspace.markAsExpanded();
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentWorkspaceTypeId, workspace.typeId);
-      }
-      // Register sniffer hook in cache so flow-data messages find it by UUID
-      if (bootstrapInfo.sniffer_hook) {
-        const snifferHook = new AgentHook(bootstrapInfo.sniffer_hook);
-        snifferHook.markAsExpanded();
-        await snifferManager.attach(snifferHook);
-      }
-      dataContext.setSnifferEnabled(!!bootstrapInfo.sniffer_hook);
-      // The settings file is the truth about whether hooks actually fire —
-      // another instance may have installed them without an entity here.
-      dataContext.setSnifferInstalled(!!bootstrapInfo.sniffer_installed);
-
-      await authManager.init(user);
-      await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
+      // User, workspace, auth and capabilities — the user-dependent context. Shared
+      // with `refreshSession`, which applies the same block after a sign-in that
+      // happens without a reload, so the two paths cannot drift.
+      await applyBootstrapUser(bootstrapInfo);
+      await dataContext.initContext();
       //await acceptInvitation(url); // TODO Handle this
       // Expose introspection hooks for manual_regression specs (and for
       // hands-on debugging). ``window.context`` mirrors the dataContext
@@ -174,11 +174,13 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // attached entity, exposing its flowDataStream for event-count
       // assertions.
       try {
-        (window as Record<string, unknown>).context = dataContext;
-        (window as Record<string, unknown>).sniffer = snifferManager.entity;
+        window.context = dataContext;
+        window.sniffer = snifferManager.entity;
       } catch {
         // ignore — non-browser env
       }
+      initialized = bootstrapInfo;
+      performance.mark?.('sdk:init:ready');
       window['appReady'] = true;
     } catch (error: any) {
       console.error('initSdk error:', error);
@@ -211,6 +213,46 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
   })();
 
   return initPromise;
+}
+
+/** Optional services. The mounted UI calls this after paint; never await it in a loader. */
+export function asyncSdkInit(): Promise<void> {
+  return (asyncInitPromise ??= (async () => {
+    await initSdk();
+    if (!initialized) {
+      asyncInitPromise = null;
+      return;
+    }
+    performance.mark?.('sdk:async:start');
+    const run = async (name: string, job: () => Promise<unknown>) => {
+      performance.mark?.(`sdk:async:${name}:start`);
+      try {
+        await job();
+      } catch (error) {
+        console.warn(`[asyncSdkInit] ${name} unavailable`, error);
+      } finally {
+        performance.mark?.(`sdk:async:${name}:settled`);
+      }
+    };
+    await Promise.all([
+      run('info', () => lazyAssets.load(LazyAsset.RuntimeInfo)),
+      run('cloud-status', () => lazyAssets.load(LazyAsset.CloudStatus)),
+      run('assets', prefetchStartupAssets),
+      run('index-activity', async () => {
+        const { systemTools } = await import('./services/system-tools-service');
+        await systemTools.refreshActivityStatus(false);
+      }),
+      run('live', async () => {
+        await Promise.all([
+          run('cloud-listeners', () => cloudManager.startSubscriptions()),
+          run('privacy-listeners', () => privacyManager.startSubscriptions()),
+        ]);
+        if (dataContext.user) await ConnectionManager.getInstance().connect();
+      }),
+      ...(setupWorkspace ? [run('workspace', () => dataContext.setupWorkspace())] : []),
+    ]);
+    performance.mark?.('sdk:async:settled');
+  })());
 }
 
 // @ts-ignore - Intentionally unused, reserved for future use

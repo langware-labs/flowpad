@@ -18,7 +18,7 @@ from flow_sdk.llm_index import (
     git_unified_diff,
     is_binary_bytes,
 )
-from flow_sdk.llm_index.index_document import IndexDocument
+from flow_sdk.llm_index.index_document import IndexData, IndexDocument
 
 FIXED_NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 LATER_NOW = datetime(2026, 6, 3, tzinfo=timezone.utc)
@@ -265,6 +265,69 @@ def test_manual_folder_is_never_stamped_or_flagged(tmp_path: Path):
     assert "auth" not in d["stale_folders"] and "auth" not in d["unindexed_folders"]
 
 
+def test_ground_truth_folder_is_protected_like_manual(tmp_path: Path):
+    """`ground_truth: true` protects a HAND-WRITTEN index.md — one with no
+    `inputs_hash`, which would otherwise read as stale and get overwritten."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    (vault / "auth" / "index.md").write_text(
+        "---\nid: b27cd997-c564-573a-bf9c-ac5fa323b555\nground_truth: true\n---\n\n"
+        "# Authentication\n\nHand-written prose, not a generated index.\n"
+    )
+    base = tmp_path / "data" / "baseline"
+
+    idx = LLMIndexer(vault, baseline_dir=base)
+    auth = next(i for i in idx.indexes() if i.rel_path == "auth")
+    # It IS stale (no inputs_hash) — protection, not freshness, is what saves it.
+    assert auth.is_stale and auth.is_ground_truth and auth.is_protected
+    assert not auth.is_manual
+    assert "auth" not in [i.rel_path for i in idx.stale_indexes()]
+
+    original = (vault / "auth" / "index.md").read_bytes()
+    stats = idx.rebuild(lambda doc, text: "s", lambda item: "f")
+    assert (vault / "auth" / "index.md").read_bytes() == original
+    assert "auth" not in [i.rel_path for i in idx.indexes() if i._assembled is not None]
+    assert stats.folders_assembled == 1          # root only
+
+    LLMIndexer(vault, baseline_dir=base).stamp(now=FIXED_NOW)
+    assert not (base / "auth" / "index.md.json").exists()
+
+    fresh = LLMIndexer(vault, baseline_dir=base)
+    assert _statuses(fresh.to_graph())["auth"] == "ground_truth"
+    d = fresh.diff_since_baseline()
+    assert "auth" not in d["stale_folders"] and "auth" not in d["unindexed_folders"]
+
+
+def test_generator_authored_distinguishes_missing_from_hand_written(tmp_path: Path):
+    """`existing_hash == ""` alone can't tell "no index.md" from "someone's own
+    index.md" — the second is the one a rebuild would destroy."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    (vault / "auth" / "index.md").write_text("---\nid: x\n---\n\n# Authentication\n")
+
+    by_rel = {i.rel_path: i for i in LLMIndexer(vault).indexes()}
+    root, auth = by_rel[""], by_rel["auth"]
+
+    # No index.md at all.
+    assert not root.has_index and not root.is_generator_authored
+    assert root.index_title == ""
+    # An index.md nobody generated — same empty existing_hash, different meaning.
+    assert auth.has_index and not auth.is_generator_authored
+    assert auth.existing_hash == root.existing_hash == ""
+    assert auth.index_title == "Authentication"
+
+    # And a generated one reads as authored.
+    IndexDocument(IndexData(
+        typeid="markdown_index-1", vault_root=str(vault), folder_rel_path="auth",
+        folder_name="auth", inputs_hash=auth.inputs_hash, self_summary="s",
+        generated_at="2026-01-01T00:00:00+00:00",
+    )).write(vault / "auth")
+    rebuilt = {i.rel_path: i for i in LLMIndexer(vault).indexes()}["auth"]
+    assert rebuilt.has_index and rebuilt.is_generator_authored
+
+
 def test_blobs_written_size_guarded_and_gcd(tmp_path: Path):
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -295,8 +358,9 @@ def test_blobs_written_size_guarded_and_gcd(tmp_path: Path):
 
 def test_legacy_demo_sidecar_degrades_to_unindexed(tmp_path: Path):
     """Regression pin: the old IndexMdJson schema (per-file rel_path/size_bytes,
-    fake sha256:demo_* hashes, as in docs/index.md.json) must load as NO
-    baseline — folder `unindexed`, zero `modified` — not as all-modified."""
+    fake sha256:demo_* hashes — the shape the retired synthetic docs/index.md.json
+    demo fixture carried) must load as NO baseline — folder `unindexed`, zero
+    `modified` — not as all-modified."""
     vault = tmp_path / "vault"
     vault.mkdir()
     _make_vault(vault)

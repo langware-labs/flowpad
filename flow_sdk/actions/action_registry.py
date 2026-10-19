@@ -16,12 +16,14 @@ class Action:
         handler: ActionHandler,
         methods: str | List[str] | None = None,
         types: str | List[str] | None = None,
+        allow_missing_target: bool = False,
     ):
         self.action_name: str = action_name
         self.function_name: str = function_name
         self.methods: List[str] = []
         self.types: List[str] = []
         self.handler: ActionHandler = handler
+        self.allow_missing_target = allow_missing_target
         if types:
             if isinstance(types, str):
                 self.types.append(types)
@@ -78,9 +80,17 @@ class ActionManager:
         handler: ActionHandler,
         methods: List[str] | str = "all",
         types: List[str] | str = "all",
+        allow_missing_target: bool = False,
     ):
         action_name = action_name.lower()
-        a = Action(action_name, function_name, handler, methods, types)
+        a = Action(
+            action_name,
+            function_name,
+            handler,
+            methods,
+            types,
+            allow_missing_target=allow_missing_target,
+        )
         self.function_registry[action_name] = a
         return a
 
@@ -95,6 +105,7 @@ class ActionManager:
         action_name=None,
         methods: List[str] | str = "all",
         types: List[str] | str = "all",
+        allow_missing_target: bool = False,
     ):
         def decorator(func):
             qualname = getattr(func, "__qualname__", action_name or func.__name__)
@@ -122,7 +133,14 @@ class ActionManager:
             if action_name:
                 # Use action_name at the end of the qualname
                 qualname = ".".join(qualname.split(".")[:-1] + [action_name])
-            self.register(qualname, func.__name__, func, methods, types)
+            self.register(
+                qualname,
+                func.__name__,
+                func,
+                methods,
+                types,
+                allow_missing_target=allow_missing_target,
+            )
             return func
 
         return decorator

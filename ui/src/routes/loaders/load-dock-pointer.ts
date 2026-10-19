@@ -1,46 +1,69 @@
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
+  ContextEntitiesEnum,
   dataContext,
   isValidTag,
+  isHubOnly,
+  PageId,
   Plan,
   Project,
-  QueryRequest,
   RemoteWorkerSession,
-  Trigger,
+  systemTools,
   TypeId,
   VFSPath,
 } from '@sdk';
 import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
+import { AssetMode } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
+import { projectInDockWorkspace } from './workspace-scope';
+import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
 import { loadProject, loadProjectRoute } from './load-project';
-import { loadProcess, ProcessLoadError } from './load-process';
-import { loadShellRoute } from './load-shell';
+import { loadProcess, loadProcessProject, ProcessLoadError } from './load-process';
+import { loadShellRoute, processRouteCarry } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
+import { loadAgentStreamInboxRoute } from './load-agent-stream-inbox';
 
 export interface DockLoaderContext {
   requestPath: string;
 }
 
 /**
- * Adopt the project pinned in a dock's scope filter into context. This is the
- * URL-first project write for CONTEXT-NEUTRAL docks — the scoped browse views
- * (assets list, explorer, desktop, triggers) whose loaders have no entity to
- * derive a project from. Without it, entering a project whose landing tab is
- * one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
+ * Adopt the project pinned in a dock's scope filter into context: the URL-first
+ * project write for any dock whose loader has no entity to derive a project
+ * from (browse views, micro apps, lenses). `main-loader` runs it for every
+ * scope-pinned dock before the tab is materialized; the per-view calls below
+ * cover the unscoped restore. Without it, entering a project whose landing tab
+ * is one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
  * project (the stuck-footer switch bug). Entity-backed docks keep their own
- * derivation: they run after this and their entity's project wins.
+ * derivation only when the URL names no project (`loadAssetRoute`'s
+ * `keepProject`): a project named here is final.
  * Best-effort — a missing project must not fail a browse landing.
  */
-async function adoptScopeProject(dock: DockPointer): Promise<void> {
+export async function adoptScopeProject(dock: DockPointer): Promise<void> {
   const projectId = dock.scopeProjectId;
-  if (!projectId || dataContext.project?.id === projectId) return;
+  if (!projectId) {
+    // Only an unscoped, context-neutral route restores browser memory. Explicit
+    // global scopes and entity-owned routes must never inherit a default here.
+    // A project of ANOTHER workspace is neither restored nor kept: a workspace
+    // starts with no project, like a fresh install (`?workspace=`, the URL's).
+    const inWorkspace = projectInDockWorkspace(dock);
+    if (inWorkspace && dataContext.project && !inWorkspace(dataContext.project)) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+    }
+    if (!dock.scopeFilter && !dataContext.project && !isHubOnly()) {
+      await dataContext.setupProject(inWorkspace ?? undefined);
+    }
+    return;
+  }
+  if (dataContext.project?.id === projectId) return;
   await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
 }
 
@@ -67,8 +90,8 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
         'hard',
         {
           action: 'render_error',
-          title: 'Plan not found',
-          message: 'This plan no longer exists.',
+          title: t`Plan not found`,
+          message: t`This plan no longer exists.`,
         },
         'plan',
       );
@@ -95,8 +118,8 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
       'hard',
       {
         action: 'render_error',
-        title: 'Session not found',
-        message: 'This session URL is malformed or unavailable.',
+        title: t`Session not found`,
+        message: t`This session URL is malformed or unavailable.`,
       },
       'agentic_process',
       error,
@@ -109,6 +132,51 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
       throw processLoadErrorToDockError(error, 'agentic_process');
     }
     throw error;
+  }
+}
+
+/**
+ * `/dock/session/<processId>` — the session view: the process into context and
+ * its project, like any process-owned dock. Cache-first identity; no runtime work.
+ */
+async function loadSessionRoute(pointer: string | undefined): Promise<void> {
+  const processTypeId = pointer ? new TypeId(AgenticProcess.type, pointer) : null;
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, processTypeId);
+  if (!processTypeId || !pointer) return;
+  await dataContext.setActiveEntityTypeId(processTypeId);
+  const process =
+    AgenticProcess.getByIdFromCache<AgenticProcess>(pointer) ??
+    (await AgenticProcess.getById<AgenticProcess>(pointer).catch(() => null));
+  if (!process) {
+    await systemTools.resolveProjectContext(undefined, undefined);
+    return;
+  }
+  // The same project phase as any process route; a session URL stays loadable
+  // when the project cannot be recovered — its workdir decides, else Global.
+  await loadProcessProject(process).catch(() => systemTools.resolveProjectContext(process.workdir ?? undefined, process));
+}
+
+/** Resolve the portal project so context is written URL-first, exactly as a
+ *  PROJECT dock does. The article (if any) is resolved by the view from the
+ *  pointer — it is a file path, not an entity, so there is nothing to load. */
+async function loadHelpdeskRoute(pointer: string | undefined): Promise<void> {
+  const { projectId } = DockPointer.parseHelpdeskPointer(pointer);
+  if (!projectId) return; // portal root with no project — the view renders its own empty state
+  try {
+    await loadProject(new TypeId(Project.type, projectId));
+  } catch (error) {
+    throw new DockLoadError(
+      'helpdesk_project_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: t`Help desk unavailable`,
+        message: t`The help desk files are missing. Open the help desk again to download them.`,
+        retryable: true,
+      },
+      'helpdesk',
+      error,
+    );
   }
 }
 
@@ -125,8 +193,8 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Live session not found',
-        message: 'This live-session URL is malformed or unavailable.',
+        title: t`Live session not found`,
+        message: t`This live-session URL is malformed or unavailable.`,
       },
       'live_session',
       error,
@@ -161,7 +229,7 @@ export async function loadGraphIdentityRoute(dock: DockPointer, surface: 'graph'
       {
         action: 'render_error',
         title: surface === 'worldview' ? 'WorldView not found' : 'Graph root not found',
-        message: `This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
+        message: t`This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
       },
       surface,
       error,
@@ -179,8 +247,8 @@ function loadTagRoute(dock: DockPointer): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Tag view not found',
-        message: 'Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.',
+        title: t`Tag view not found`,
+        message: t`Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.`,
       },
       'tag',
     );
@@ -195,8 +263,8 @@ function loadSubgraphRoute(dock: DockPointer): void {
       'hard',
       {
         action: 'render_error',
-        title: 'Subgraph not found',
-        message: 'Expected /dock/subgraph/<projection>.',
+        title: t`Subgraph not found`,
+        message: t`Expected /dock/subgraph/<projection>.`,
       },
       'subgraph',
     );
@@ -204,11 +272,24 @@ function loadSubgraphRoute(dock: DockPointer): void {
 }
 
 export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
+  // `/dock/home` is the dock spelling of the app root, and the root's canonical
+  // URL is `/`. Without this redirect both spellings stay live: the address bar
+  // reads `/dock/home` while the pointer parsed from it serializes to `/`, so
+  // the URL silently changes under the user on their next navigation. Redirect
+  // rather than render, so one location keeps exactly one address — which is the
+  // point of making the root a pointer at all.
+  if (dock.isRoot) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(dock.toUrl(context.requestPath));
+  }
+
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath, { scope: dock.scopeFilter, viewMode: dock.viewMode });
+      case ViewType.VIBE:
+        // Step 3 ran in the dispatcher, before the tab was minted.
+        await loadShellRoute(dock.pointer, context.requestPath, processRouteCarry(dock, { resolved: true }));
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer, { viewMode: dock.viewMode });
@@ -216,9 +297,23 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.CONVERSATION:
         await loadConversationRoute(dock.pointer);
         break;
+      case ViewType.AGENT:
+        await loadAgentStreamInboxRoute(dock.pointer);
+        break;
       case ViewType.ASSETS:
-        await adoptScopeProject(dock);
-        await loadAssetRoute(dock.pointer);
+        // A concrete asset resolves its owner; only a browse landing needs a
+        // remembered/default project before it can resolve anything. The
+        // project landing (`project-home`) IS a browse landing — it has no
+        // owner of its own — so an unscoped one restores the project too,
+        // instead of rendering an empty home for no project.
+        if (!dock.pointer || dock.pointer === (AssetMode.PROJECT_HOME as string) || dock.scopeProjectId) {
+          await adoptScopeProject(dock);
+        }
+        await loadAssetRoute(dock.pointer, {
+          allowLocalWikiAlias: dock.page !== PageId.HUB,
+          wikiAuthority: wikiAuthorityForPage(dock.page),
+          keepProject: !!dock.scopeProjectId,
+        });
         break;
       case ViewType.TASKS:
         await loadTasksRoute(dock.pointer);
@@ -226,17 +321,28 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
         break;
+      case ViewType.SESSION:
+        await loadSessionRoute(dock.pointer);
+        break;
+      case ViewType.HELPDESK:
+        await loadHelpdeskRoute(dock.pointer);
+        break;
       case ViewType.LIVE_SESSION:
         loadLiveSessionRoute(dock.pointer);
         break;
-      case ViewType.TRIGGERS:
+      // Automations: context only. The list is the mounted view's own data
+      // (`useAutomations`) — a query here would repeat on every visit (dock-loading I3).
+      case ViewType.AUTOMATIONS:
         await adoptScopeProject(dock);
-        await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
         break;
       case ViewType.PLAN:
         await loadPlanRoute(dock.pointer);
         break;
       case ViewType.LENS:
+        // Only a claude transcript owns a project (its session's). Every other
+        // lens is context-neutral: the project its URL pins was already adopted
+        // by the dispatcher (`main-loader`), and a claude transcript's own
+        // project wins here.
         await loadLensRoute(dock.pointer);
         break;
       case ViewType.GRAPH:
@@ -253,9 +359,12 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.SUBGRAPH:
         loadSubgraphRoute(dock);
         break;
+      case ViewType.WEB_APP:
+        // Context only, and `main-loader` already adopted it ahead of the mint.
+        break;
       default:
-        // Explorer, desktop, and other loader-less views: still honor a
-        // project-pinned scope so a scoped browse landing switches the project.
+        // Explorer, desktop, and other loader-less views: an unscoped one
+        // restores the remembered project (a scoped one was adopted up front).
         await adoptScopeProject(dock);
         break;
     }

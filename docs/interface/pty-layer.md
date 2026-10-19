@@ -50,14 +50,18 @@ Helpers: `next_seq()`, `mark_attached(cid)`, `is_attached`, `connection_id`
 | `close_session(pty_key)` | Destroy: transition Shell record → CLOSED, delete `.pty` file, provider `close_pty_session`, drop state. |
 | `is_expired(state, ttl)` | `True` if detached longer than `ttl` (never while attached). |
 | `cleanup_expired_sessions(ttl=900, detach_grace=900)` | Two bounded reapers: close orphan states (no attached > ttl); drop stale parked ids (> grace). |
-| `start_cleanup_task(interval=120, ttl=900)` / `stop_cleanup_task()` | Background reaper loop lifecycle. |
+| `reap_parked_connections(detach_grace=900)` | The parked-id half alone: drop ids parked longer than the grace. Never closes a PTY. |
+| `start_cleanup_task(interval=120, ttl=None, detach_grace=900)` / `stop_cleanup_task()` | Background reaper loop lifecycle. With `ttl=None` (the default) the loop runs `reap_parked_connections` only. |
 
-> **Caution — the reapers do not run in production.** `start_cleanup_task` has
-> **no production caller** (arch-review CONFIRMED). `cleanup_expired_sessions`,
-> `is_expired`, and the detach-grace logic are therefore dormant; the only live
-> backstop against PTY leaks is the **`_PTY_CAP` FIFO eviction** in
-> `start_machine_pty_session` (see below). Orphaned-but-attached-once states are
-> never TTL-reaped.
+> **What runs in production.** Server startup
+> (`server/app.py::_start_pty_parked_reaper`) calls `start_cleanup_task()` with
+> its defaults, so the **parked-id reaper runs** every 120 s and drops ids
+> parked for more than 900 s — a page reload parks a fresh per-page-load id on
+> every shell it watched, and nothing else removes it. The **orphan TTL close
+> stays off**: `cleanup_expired_sessions` and `is_expired` have no production
+> caller, so a viewer-less PTY is never TTL-killed; the live backstop against
+> PTY leaks is still the **`_PTY_CAP` FIFO eviction** in
+> `start_machine_pty_session` (see below).
 
 ### `PtyStreamFile` — framed rolling buffer (`desktop/pty_stream_file.py`)
 
@@ -66,14 +70,19 @@ after reattach (refresh / server restart). Frame format: header
 `{"v":1,"cols":C,"rows":R}`, then output frames `["o", "<b64>", seq]` and resize
 frames `["r", [cols, rows]]`. Every winsize change (including the attach-time
 jiggle) is recorded so replay interprets output at the correct width. Rolling cap
-is **10 MB on-disk** (~7.5 MB raw after base64), truncated **at frame
+is **30 MB on-disk** (~22.5 MB raw after base64), truncated **at frame
 boundaries** from the front (never splitting an escape sequence), rewriting the
-header to the winsize in effect at the first retained frame.
+header to the winsize in effect at the first retained frame and prepending an
+output frame with the private modes still in force at the cut (alternate screen,
+mouse tracking and encoding, cursor keys, focus reporting, bracketed paste,
+cursor visibility) — a program sets those once at startup, which is exactly what
+front-truncation drops.
 
 | Method | Semantics |
 | --- | --- |
 | `write(data, seq=None)` | Append an output frame (from the PTY read thread); creates file + header on first write. |
 | `write_resize(cols, rows)` | Append a resize frame (from the event loop). |
+| `mark_new_generation()` | Append a frame turning those same modes OFF — called on respawn into the same file, so a new (e.g. classic-renderer) process never inherits the dead one's fullscreen screen. |
 | `read_frames()` | `{"v","cols","rows","events"}` or `None`. Legacy raw files → v0 (size `None`); salvages framed tails of chimera files. |
 | `max_seq()` | Highest persisted output-frame seq (0 if none) — used to reseed `seq` on respawn. |
 | `read_all()` | Concatenated raw output bytes (resize frames excluded) — forensics/tests only. |
@@ -210,6 +219,10 @@ so seqs never regress across a server-process epoch. This underwrites the
 frontend's replay-vs-live dedup (`chunk.seq <= replay.lastSeq` is dropped) — a
 regressed seq makes the terminal "look dead after a server restart."
 
+The two synthetic mode frames (the truncation carry-over and
+`mark_new_generation`) deliberately carry **no seq**, so `max_seq()` and
+`read_output_after_seq` never see them.
+
 ---
 
 ## Frontend TS interface
@@ -240,7 +253,7 @@ Attach-time history replay of the framed stream:
 | Export | Semantics |
 | --- | --- |
 | `fetchPtyStream(shellId)` | GET the framed stream via `apiClient`; `null` on 404/none. |
-| `replayPtyStream(stream)` | Replay through a **headless xterm at the recorded sizes** (applies `["r",[c,r]]` frames), serialize scrollback+screen+cursor, return `{serialized, lastSeq, cols, rows}`. Returns `null` for empty or v0 legacy (unknown-size) streams. |
+| `replayPtyStream(stream)` | Replay through a **headless xterm at the recorded sizes** (applies `["r",[c,r]]` frames), serialize scrollback+screen+cursor, return `{serialized, lastSeq, cols, rows}`. `SerializeAddon` does not serialize the mouse encoding, so the program's last `?1006h`/`?1016h` (tracked through the headless parser) is appended — without it a fullscreen TUI's wheel reports come out as X10 on `onBinary` and are dropped (see [../pty-scroll.md](../pty-scroll.md)). Returns `null` for empty or v0 legacy (unknown-size) streams. |
 
 Disciplines (fuzz-derived): decode bytes with a **streaming `TextDecoder`**
 before `term.write()` (xterm's Uint8Array path drops multi-byte chars split

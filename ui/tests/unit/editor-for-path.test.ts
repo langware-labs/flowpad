@@ -43,6 +43,13 @@ describe('editorForPath', () => {
     ['/tmp/song.wav', AssetEditor.AUDIO],
     ['/tmp/song.m4a', AssetEditor.AUDIO],
     ['/tmp/song.ogg', AssetEditor.AUDIO],
+    // archive — browsed as its extracted folder, never as text
+    ['/tmp/flowpad-logs.zip', AssetEditor.ARCHIVE],
+    ['/tmp/LOGS.ZIP', AssetEditor.ARCHIVE],
+    // one value of a kind — its kind's data viewer; a plain .json stays code
+    ['/tmp/diagnosis.value.json', AssetEditor.VALUE],
+    ['/tmp/Run.VALUE.JSON', AssetEditor.VALUE],
+    ['/tmp/value.json', AssetEditor.CODE],
     // code fallback
     ['/tmp/main.ts', AssetEditor.CODE],
     ['/tmp/data.json', AssetEditor.CODE],
@@ -55,7 +62,7 @@ describe('editorForPath', () => {
   });
 
   it('new viewer editors are file-only (no record types)', () => {
-    for (const e of [AssetEditor.HTML, AssetEditor.MCP_APP, AssetEditor.IMAGE, AssetEditor.VIDEO, AssetEditor.AUDIO]) {
+    for (const e of [AssetEditor.HTML, AssetEditor.MCP_APP, AssetEditor.IMAGE, AssetEditor.VIDEO, AssetEditor.AUDIO, AssetEditor.ARCHIVE]) {
       expect(EDITOR_TYPES[e]).toEqual([]);
       expect(isFileOnlyEditor(e)).toBe(true);
     }

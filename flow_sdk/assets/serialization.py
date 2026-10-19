@@ -1,0 +1,573 @@
+"""Pure filesystem asset document decoding and rendering."""
+from __future__ import annotations
+
+import json
+from functools import cache
+from pathlib import Path
+from typing import Any, Optional
+
+from pydantic import TypeAdapter
+
+from flow_sdk.assets.layout import Folder
+from flow_sdk.fs_store.serializer.fields import FieldKind, asset_class, asset_info, field_kinds, spec_layout
+
+
+def _main_doc(info: Any, root: Path) -> Optional[Path]:
+    """The main document's path for a stored asset, or None."""
+    if info is None:
+        return root if root.suffix else None
+    return info.layout_of(root).body
+
+
+def _asset_ref(info: Any, root: Path) -> Path:
+    """The ref the type's identity backend is registered for — the asset ROOT."""
+    return info.layout_of(root).root or root
+
+
+def _sub_target(root: Path, name: str, sub_cls: type) -> Path:
+    """Where a single nested asset field lives — by the nested TYPE's own
+    placement: a folder-layout type is a directory, a file-layout one a file."""
+    info = asset_info(sub_cls)
+    return root / name if isinstance(info.shape, Folder) else root / f"{name}{info.shape.ext}"
+
+
+def _list_element_ext(sub_cls: type) -> str:
+    """A ``list[...]`` of assets is a directory of FILES, one per element —
+    ``check_asset_spec`` refused a folder-layout element type at registration."""
+    return asset_info(sub_cls).shape.ext
+
+
+def _manifest_layout(info: Any) -> str:
+    """``sections`` = ``{metadata, data}``; ``flat`` = the header's keys merged
+    onto the payload's own document. Declared on the asset spec, projected through ``TypeInfo``; else sections
+    when the spec has a ``FreeSection``, flat otherwise."""
+    declared = getattr(info, "manifest_layout", None)
+    if declared:
+        return declared
+    return "sections" if spec_layout(info.asset_spec).free else "flat"
+
+
+def _manifest(obj: Any, info: Any) -> dict[str, Any]:
+    """The JSON main doc. ``sections``: the header under ``metadata``, the
+    spec's ``FreeSection`` as the free ``data`` section. ``flat``: the header's
+    keys merged ONTO the payload's own document (a dict-valued header key — a
+    ``summary`` — merges one level deep so payload-only keys inside it survive)."""
+    free_field = spec_layout(info.asset_spec).free
+    free = getattr(obj, free_field, None) if free_field else None
+    payload = free if isinstance(free, dict) else {}
+    header = _frontmatter(obj, info)
+    if _manifest_layout(info) == "sections":
+        return {"metadata": header, "data": payload}
+    doc = dict(payload)
+    for key, value in header.items():
+        if isinstance(value, dict) and isinstance(doc.get(key), dict):
+            doc[key] = {**doc[key], **value}
+        else:
+            doc[key] = value
+    return doc
+
+
+def entity_body_path(root: Path, field: str) -> Path:
+    """Where an entity document keeps one markdown body: ``<field>.md`` beside ``<type>.json``."""
+    return root / f"{field}.md"
+
+
+def render_entity_json(obj: Any, info: Any, *, entity_id: str | None = None, name: str | None = None, version: Any = None) -> str:
+    """THE entity document text: ``type``, ``id``, ``name``, the carried ``version``, then every header
+    field the spec declares, in declaration order. Bodies are not here — they are their own files.
+
+    ``entity_id`` / ``name`` / ``version`` are what the caller carries across a re-render: the file's own
+    id and folder name when ``obj`` is a bare spec (a ``name_from_path`` type declares neither), and the
+    revision counter, which is not a spec field."""
+    from flow_sdk.assets.identity_carrier import dump_json_document  # noqa: PLC0415
+
+    header = _frontmatter(obj, info)
+    doc: dict[str, Any] = {"type": info.type_name}
+    resolved_id = str(getattr(obj, "id", "") or entity_id or "")
+    if resolved_id:
+        doc["id"] = resolved_id
+    if header.get("name") or name:
+        doc["name"] = header.pop("name", None) or name
+    if version is not None:
+        doc["version"] = version
+    doc.update((key, value) for key, value in header.items() if key not in ("type", "id", "version"))
+    return dump_json_document(doc)
+
+
+def write_entity_bodies(obj: Any, info: Any, root: Path) -> None:
+    """The ``Body`` field of an entity document as its own ``<field>.md`` — every writer's second half.
+
+    THE body normalisation: stripped, one trailing newline (empty stays empty), so the editor, an
+    entity save and the migration all leave the same bytes and no save churns the file."""
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
+    if info is None or not info.is_entity_document or info.body_file is None:
+        return
+    _write_body_file(obj, info.body_file, root)
+
+
+def _write_body_file(obj: Any, field: str, root: Path) -> None:
+    """One markdown body beside its manifest — stripped, one trailing newline (empty stays empty)."""
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
+    text = (getattr(obj, field, "") or "").strip()
+    _atomic_write_text(entity_body_path(root, field), f"{text}\n" if text else "")
+
+
+def read_entity_json(info: Any, root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """``(header, bodies)`` of an entity document. A document naming another type is refused."""
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+    main = root / info.shape.main
+    doc = load_json_dict(main)
+    declared = doc.get("type")
+    if declared not in (None, "", info.type_name):
+        raise ValueError(f"{main} is a {declared!r} document, not a {info.type_name!r}")
+    header = {key: value for key, value in doc.items() if key not in ("type", "id", "version")}
+    bodies: dict[str, Any] = {}
+    if info.body_file is not None:
+        try:
+            bodies[info.body_file] = entity_body_path(root, info.body_file).read_text(encoding="utf-8").strip()
+        except OSError:
+            bodies[info.body_file] = ""
+    return header, bodies
+
+
+def _body(obj: Any, info: Any) -> str:
+    """The spec's ``Body`` field, stripped; ``""`` when the spec has none."""
+    body_field = spec_layout(info.asset_spec).body
+    return (getattr(obj, body_field, "") or "").strip() if body_field else ""
+
+
+@cache
+def _field_adapter(cls: type, name: str) -> TypeAdapter:
+    return TypeAdapter(cls.model_fields[name].rebuild_annotation())
+
+
+def _field_value(obj: Any, name: str) -> Any:
+    value = getattr(obj, name)
+    # Hydrated rows can already hold their serialized scalar (e.g. an enum's
+    # string value). Only structured/custom values need annotation serialization.
+    return value if value is None or isinstance(value, (str, int, float, bool)) else _field_adapter(type(obj), name).dump_python(value)
+
+
+def _frontmatter(obj: Any, info: Any) -> dict[str, Any]:
+    """The spec SELECTS which fields are frontmatter — its ``Body`` and
+    ``FreeSection`` are the document, not the header, and ``extra="ignore"``
+    drops the rest. ``None`` is absent, not ``null``: absent reads back as the
+    field's default, which is how "None means inherit" round-trips. A
+    path-named asset writes its name first, as authored."""
+    spec = info.asset_spec
+    lay = spec_layout(spec)
+    # By alias: a spec field may carry the FILE's key (``schema`` on a manifest)
+    # while the entity holds it under the row's name (``manifest_schema``).
+    # ``exclude_defaults``: a default is not authored — absent reads back as the
+    # default, so the file says only what the author said (a fresh doc has an
+    # empty header; a counter is written only once it moved).
+    # ``sectioned``: a ``SectionedHeader`` nests its section fields for the FILE only.
+    from flow_sdk.fs_store.serializer.fields import DISK_ONLY, field_kinds
+    structural = {name for name, kind in field_kinds(spec) if kind in DISK_ONLY}
+    validated = obj if isinstance(obj, spec) else spec.model_validate({
+        name: _field_value(obj, name) for name in lay.header_fields if name in type(obj).model_fields
+    })
+    out = validated.model_dump(
+        mode="json", exclude_none=True, exclude_defaults=True, by_alias=True,
+        exclude=lay.marker_fields | structural, context={"sectioned": True},
+    )
+    if info.name_from_path and getattr(obj, "name", None):
+        out = {"name": obj.name, **out}
+    from flow_sdk.assets.identity_carrier import Frontmatter  # noqa: PLC0415
+
+    if isinstance(info.identity_carrier, Frontmatter) and getattr(obj, "id", None):
+        # The header IS this type's identity carrier: an owned re-render must
+        # keep the id (it rewrites the header wholesale), so it is written first.
+        out = {"id": str(obj.id), **out}
+    return out
+
+
+def _read_identity(info: Any, root: Path) -> str:
+    """The id the type's carrier holds at ``root``, or ``""``. A malformed carrier raises."""
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+
+    if info is None or info.identity_carrier is None:
+        return ""
+    return info.read_id(FSRef(_asset_ref(info, root))) or ""
+
+
+def render_asset(obj: Any, info: Any) -> Optional[str]:
+    """The main document's TEXT, or None when the type has none. A type
+    with no ``asset_spec`` renders through ``TypeInfo.default_body_fn`` (a
+    template the spec vocabulary cannot express) — or nothing."""
+    if info is not None and info.render_fn is not None:
+        return info.render_fn(obj, info)
+    if info is None or info.asset_spec is None:
+        fn = info.default_body_fn if info else None
+        return fn(obj) if fn is not None else None
+    from flow_sdk.assets.frontmatter import _render_frontmatter
+
+    if info.is_entity_document:
+        return render_entity_json(obj, info)
+    folder = isinstance(info.shape, Folder)
+    main = info.shape.main if folder else None
+    if main and main.endswith(".json"):
+        # A flat document IS its payload: an entity carrying no payload (a
+        # metadata-only save of a report) has nothing to say — no document,
+        # so an owned file is never clobbered by a summary-only render.
+        free_field = spec_layout(info.asset_spec).free
+        if _manifest_layout(info) == "flat" and free_field and getattr(obj, free_field, None) is None:
+            return None
+        return json.dumps(_manifest(obj, info), indent=2, ensure_ascii=False) + "\n"
+    if folder and not main:
+        return None
+    body = _body(obj, info)
+    tail = f"\n\n{body}\n" if body or not folder else "\n"
+    return _render_frontmatter(_frontmatter(obj, info)) + tail
+
+
+def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """``(entity kwargs, raw header)`` — the raw header is what the rows
+    layout reads its knobs from."""
+    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import load_doc, load_json_dict  # noqa: PLC0415
+
+    spec = info.asset_spec
+    lay = spec_layout(spec)
+    header_raw: dict[str, Any] = {}
+    data: dict[str, Any] = {}
+    if info.is_entity_document:
+        # Its own reader knows both files; locating a main document would stat the folder for nothing.
+        header_raw, bodies = read_entity_json(info, root)
+        data.update(bodies)
+    elif (main := _main_doc(info, root)) is not None and main.suffix == ".json":
+        if _manifest_layout(info) == "sections":
+            header_raw, free = load_doc(main)
+            if free:
+                data[lay.free] = free
+        else:
+            # Flat: the whole document is both the header's source and,
+            # for a spec with a ``FreeSection``, the payload itself.
+            header_raw = load_json_dict(main)
+            if lay.free and header_raw:
+                data[lay.free] = header_raw
+            if lay.body:
+                # The spec's markdown body is its own file beside the manifest (a credential's
+                # ``setup.md``); a manifest written before that still carries it inline.
+                body = entity_body_path(main.parent, lay.body)
+                if body.is_file():
+                    data[lay.body] = body.read_text(encoding="utf-8").strip()
+                elif isinstance(header_raw.get(lay.body), str):
+                    data[lay.body] = header_raw[lay.body]
+    elif main is not None:
+        ref = FrontMatterFsRef(main)
+        if lay.body:
+            # One read and parse for both halves; the file is not opened again for its body.
+            header_raw, data[lay.body] = ref.read_frontmatter_and_body()
+        else:
+            header_raw = ref.read_frontmatter()
+    # Absent on disk ⇒ the entity's DEFAULT, not None: the spec's None is
+    # "not present", and a non-Optional entity field (an enum) must not see it.
+    # The marker fields are EXCLUDED: they were read above, and the spec's
+    # own default ("") must not overwrite the body/section just read.
+    authored = header_raw if "name" in spec.model_fields else {k: v for k, v in header_raw.items() if k != "name"}
+    data.update(spec.model_validate({**authored, **(field_data or {})}).model_dump(exclude_none=True, exclude=lay.marker_fields))
+    if info.name_from_path:
+        data["name"] = header_raw.get("name") or (root.name if root.is_dir() else root.stem)
+    return data, header_raw
+
+
+def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
+    """Decode file-owned fields into a filesystem record without an Entity."""
+    return read_asset_data_with_header(path, info, identity=identity)[0]
+
+
+def read_asset_data_with_header(path: Path, info: Any, *, identity: str | None = None) -> tuple[Any, dict[str, Any]]:
+    """``read_asset_data`` plus the main document's raw header it was decoded from.
+
+    The header is handed back so a caller that needs it too (the indexer's
+    ``row_derive_fn``) does not read and parse the main document a second time.
+    It belongs to this one call — nothing is kept. ``{}`` for a type with no
+    ``asset_spec``, whose own reader never exposes one.
+    """
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.fs_store.fs_ref import FSRef
+
+    layout = info.layout_of(path, verify=True)
+    resolved_id = identity or info.read_identity(layout)
+    if info.asset_spec is None:
+        if info.from_disk_fn is None:
+            raise ValueError(f"{info.type_name} has no filesystem reader")
+        records = info.from_disk_fn(FSRef(layout.root, read_only=True), resolved_id)
+        if len(records) != 1:
+            raise ValueError("Asset reader must return one record")
+        return records[0], {}
+    data, header = read_main(info, layout.root, field_data=read_asset_fields(layout.root, info))
+    if info.rows_field and info.rows_layout_field:
+        from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum
+        from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for
+        rows_layout = coerce_dataset_enum(header.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
+        data[info.rows_field] = dataset_layout_for(rows_layout).read(
+            layout.root, DEFAULT_DATASET_SPEC.row_type(), dataset_id=resolved_id,
+            field_spec=header.get("field_spec") or {}, delimiter=header.get("delimiter") or ",",
+        )
+    if info.derive_fields_fn is not None:
+        info.derive_fields_fn(data, layout.root, header)
+    return FSRecord(type=info.type_name, id=resolved_id, asset_ref=str(layout.root), **data), header
+
+
+def read_asset_parent(path: Path, info: Any):
+    """An explicitly authored parent reference; never inferred from containment."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.assets.document import read_document
+    from flow_sdk.fs_store.type_id import TypeId
+
+    layout = info.layout_of(path, verify=True)
+    candidates = [layout.body] if layout.body is not None else []
+    if isinstance(info.shape, Folder):
+        candidates.append(layout.root / "metadata.json")
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        if candidate.suffix == ".json":
+            fields = json.loads(candidate.read_text(encoding="utf-8"))
+            if isinstance(fields, dict) and isinstance(fields.get("metadata"), dict):
+                fields = {**fields, **fields["metadata"]}
+        else:
+            document = read_document(candidate)
+            if document.metadata_error:
+                raise ValueError(document.metadata_error)
+            fields = document.fields
+        value = fields.get("parent_type_id") if isinstance(fields, dict) else None
+        if value:
+            ref = TypeId(value)
+            if not is_valid_entity_id(ref.id):
+                raise ValueError("Authored asset parent must have a valid entity ID")
+            return ref
+    return None
+
+
+def read_asset_fields(root: Path, info: Any) -> dict[str, Any]:
+    """Nested DataSpec asset fields use the same registered disk grammar."""
+    from flow_sdk.fs_store.serializer.fields import FieldKind, asset_class, field_kinds
+
+    fields = {}
+    for name, kind in field_kinds(info.asset_spec):
+        if kind not in (FieldKind.SUB_ASSET, FieldKind.SUB_ASSET_LIST):
+            continue
+        spec, _ = asset_class(info.asset_spec.model_fields[name].rebuild_annotation())
+        child_info = asset_info(spec)
+        if kind is FieldKind.SUB_ASSET_LIST:
+            folder = root / name
+            paths = sorted(folder.glob(f"*{child_info.shape.ext}")) if folder.is_dir() else []
+        else:
+            target = _sub_target(root, name, spec)
+            paths = [target] if target.exists() else []
+        values = []
+        for path in paths:
+            record = read_asset_data(path, child_info)
+            payload = {key: value for key, value in record.meta_dict().items() if key in spec.model_fields}
+            values.append(spec.model_validate(payload))
+        if kind is FieldKind.SUB_ASSET_LIST:
+            fields[name] = values
+        elif values:
+            fields[name] = values[0]
+    return fields
+
+
+def write_asset_fields(root: Path, info: Any, spec: Any) -> None:
+    """Materialize declared nested specs; scope selection stays with the caller."""
+    from flow_sdk.assets.creation import create_asset
+    from flow_sdk.fs_store.serializer.fields import FieldKind, asset_class, field_kinds
+    from flow_sdk.schema.types import EntityType
+
+    if info.asset_spec is None:
+        return
+    for name, kind in field_kinds(info.asset_spec):
+        if kind not in (FieldKind.SUB_ASSET, FieldKind.SUB_ASSET_LIST):
+            continue
+        child_spec, _ = asset_class(info.asset_spec.model_fields[name].rebuild_annotation())
+        child_info = asset_info(child_spec)
+        value = getattr(spec, name, None)
+        children = value or [] if kind is FieldKind.SUB_ASSET_LIST else ([] if value is None else [value])
+        for child in children:
+            if kind is FieldKind.SUB_ASSET_LIST:
+                leaf = getattr(child, "name", None)
+                if not leaf or Path(leaf).name != leaf or leaf in {".", ".."}:
+                    raise ValueError("Nested asset name must be one filename component")
+                destination = root / name / f"{leaf}{child_info.shape.ext}"
+            else:
+                destination = _sub_target(root, name, child_spec)
+            create_asset(destination, EntityType(child_info.type_name), child)
+
+
+def _commit_identity(info: Any, root: Path, obj: Any) -> str:
+    """The identity step every disk store ends with: the carrier is
+    authoritative, so the COMMITTED id may differ from the one proposed (the
+    seam owns the read-only / suppression gates).
+
+    The ref handed to ``stamp_id`` is the ASSET_REF the type's carrier
+    was registered for — the folder for a folder type, the file for a file
+    type; the carrier locates the main document itself."""
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+
+    entity_id = getattr(obj, "id", None)
+    if info is None or info.identity_carrier is None or not entity_id:
+        return str(entity_id or "")
+    return str(info.stamp_id(FSRef(_asset_ref(info, root)), str(entity_id)))
+
+
+_NOT_ON_OBJ = object()
+
+
+def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
+    """A save of an entity document that EXISTS writes only the keys whose value it changes.
+
+    The file is the author's: a save that changed nothing in it — a record-only save (publish state,
+    status), or the hub echoing back the row it was just sent — leaves its bytes alone. Re-rendering it
+    wholesale wrote every entity default (``skills: []``, ``intro: ""``) into a hand-written file, so a
+    just-published agent read as changed. A key the file does not have reads back as the entity's
+    default, so a default is not a change. Unknown keys and key order survive (``patch_entity_document``)."""
+    from flow_sdk.assets.document import DocumentPatch  # noqa: PLC0415
+    from flow_sdk.assets.entity_document import IDENTITY_KEYS, patch_entity_document, read_entity_document  # noqa: PLC0415
+
+    # The file's key → the field it holds (a spec may name a field by alias: ``data_driver_name``).
+    field_of = {(f.alias or name): name for name, f in info.asset_spec.model_fields.items()}
+    wanted = {key: value for key, value in _frontmatter(obj, info).items() if key not in IDENTITY_KEYS}
+    current = read_entity_document(main, info).fields
+    set_fields = {
+        key: value for key, value in wanted.items()
+        if (current[key] != value if key in current else not _reads_back_as(obj, info, field_of.get(key, key), value))
+    }
+    # A key the entity now leaves unset (``None`` = inherit) is removed, and so is one whose field went BACK to
+    # what an absent key reads as (a switch turned off): left in place, the file's old value would load again on
+    # the next read. A key the spec does not know is kept.
+    from pydantic_core import to_jsonable_python  # noqa: PLC0415
+
+    def _back_to_default(key: str) -> bool:
+        held = getattr(obj, field_of[key], _NOT_ON_OBJ)
+        if held is None:
+            return True
+        if held is _NOT_ON_OBJ:
+            return False
+        value = to_jsonable_python(held)
+        return current[key] != value and _reads_back_as(obj, info, field_of[key], value)
+
+    drop = tuple(key for key in current if key not in wanted and key in field_of and _back_to_default(key))
+    body = getattr(obj, info.body_file, None) if info.body_file else None
+    patch_entity_document(main, DocumentPatch(set_fields=set_fields, drop_fields=drop, body=body), info=info)
+
+
+def _reads_back_as(obj: Any, info: Any, name: str, value: Any) -> bool:
+    """Would a file WITHOUT field ``name`` load as ``value``? The folder names a path-named asset; any
+    other absent field loads as the entity's default."""
+    from pydantic_core import to_jsonable_python  # noqa: PLC0415
+
+    if name == "name" and info.name_from_path:
+        return True
+    field = type(obj).model_fields.get(name)
+    return field is not None and to_jsonable_python(field.get_default(call_default_factory=True)) == value
+
+
+def _write_main(obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
+    from flow_sdk.assets.document import read_document_bytes, write_document
+    from flow_sdk.assets.frontmatter import _atomic_write_text
+
+    if info is not None and isinstance(info.shape, Folder):
+        root.mkdir(parents=True, exist_ok=True)       # the carrier target for a FolderCapsule
+    if main is None:
+        return
+    # Both substrates are atomic and skip a byte-identical rewrite, so a
+    # no-op save never churns the mtime the hash sentinel keys on.
+    if info is not None and info.is_entity_document:
+        if main.is_file():
+            _patch_entity_main(obj, info, main)
+            return
+        _atomic_write_text(main, render_entity_json(obj, info))
+        write_entity_bodies(obj, info, root)
+        return
+    if info is None or info.asset_spec is None:
+        text = render_asset(obj, info)
+        if text is None:
+            return                                    # nothing to render: the folder is the asset
+        if main.suffix.lower() in {".md", ".markdown"}:
+            document = read_document_bytes(text.encode("utf-8"))
+            if document.metadata_error:
+                raise ValueError(document.metadata_error)
+            write_document(main, body=document.body, fields=document.fields, replace_fields=True)
+        else:
+            _atomic_write_text(main, text)
+    elif main.suffix == ".json":
+        text = render_asset(obj, info)
+        if text is not None:
+            _atomic_write_text(main, _with_carried_id(info, main, text))
+            if body_field := spec_layout(info.asset_spec).body:
+                # A flat manifest's markdown body is its own file (a credential's ``setup.md``): the
+                # manifest carries the header fields only, so without this the body would be lost.
+                _write_body_file(obj, body_field, root)
+    else:
+        write_document(main, body=f"\n{_body(obj, info)}\n", fields=_frontmatter(obj, info), replace_fields=True)
+
+
+def _with_carried_id(info: Any, main: Path, text: str) -> str:
+    """Carry a ``JsonRoot`` id through the render.
+
+    That carrier keeps the id in the main document's own ``"id"`` key, but the
+    render does not emit it — so a plain write drops the id and the carrier
+    stamps it straight back. The document is written twice per save, its mtime
+    moves on a save that changed nothing (the indexer keys on mtime), and
+    between the two writes the file on disk has no identity at all.
+
+    The entity-document branch already reads the id off what is there; this is
+    the same move for the one other format that stores it in the document.
+    """
+    from flow_sdk.assets.identity_carrier import JsonRoot  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+    if info is None or not isinstance(getattr(info, "carrier", None), JsonRoot) or not main.is_file():
+        return text
+    existing = load_json_dict(main).get("id")
+    if not existing:
+        return text
+    rendered = json.loads(text)
+    if not isinstance(rendered, dict) or rendered.get("id"):
+        return text
+    return json.dumps({**rendered, "id": existing}, indent=2, ensure_ascii=False) + "\n"
+
+
+def _write_fields(obj: Any, info: Any, root: Path) -> None:
+    """Every field by its declared persistence. A sub-asset is stored through
+    THIS serializer with its own origin, so it commits its own identity via
+    its own TypeInfo. Rows go through the layout the manifest names."""
+    fields = type(obj).model_fields
+    for name, kind in field_kinds(type(obj)):
+        value = getattr(obj, name, None)
+        if kind is FieldKind.SUB_ASSET_LIST:
+            sub_cls, _ = asset_class(fields[name].rebuild_annotation())
+            ext = _list_element_ext(sub_cls)
+            (root / name).mkdir(parents=True, exist_ok=True)
+            for item in value or []:
+                if not getattr(item, "name", None):
+                    raise ValueError(f"{type(item).__name__}.name is required to place it in a directory")
+                write_asset_tree(item, asset_info(sub_cls), root / name / f"{item.name}{ext}")
+        elif kind is FieldKind.SUB_ASSET and value is not None:
+            sub_cls, _ = asset_class(fields[name].rebuild_annotation())
+            write_asset_tree(value, asset_info(sub_cls), _sub_target(root, name, sub_cls))
+        elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
+            from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
+
+            source = getattr(obj, "asset_ref", None)
+            dataset_layout_for(getattr(obj, info.rows_layout_field)).write(
+                root, value or [], dataset_id=str(getattr(obj, "id", "") or ""),
+                field_spec=getattr(obj, "field_spec", None) or {}, delimiter=getattr(obj, "delimiter", None) or ",",
+                source=Path(source) if source else None,
+            )
+
+
+def write_asset_tree(obj: Any, info: Any, root: Path, *, force: bool = False) -> str:
+    """Store declared filesystem fields and identity, without constructing rows."""
+    main = _main_doc(info, root)
+    exists = main is not None and main.is_file()
+    if force or bool(info and info.owns_main_ref) or not exists:
+        _write_main(obj, info, root, main)
+    if info is not None and info.asset_spec is not None:
+        _write_fields(obj, info, root)
+    return _commit_identity(info, root, obj)

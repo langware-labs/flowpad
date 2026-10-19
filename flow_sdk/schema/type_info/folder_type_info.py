@@ -16,7 +16,8 @@ Deliberate shape:
 """
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.dependencies.roots import folder_roots
+from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -26,12 +27,15 @@ class FolderMeta(BaseMeta):
     path: Optional[str] = None
 
 
-FOLDER = TypeMetadata(
-    type=EntityType.FOLDER,
+FOLDER = TypeInfo(
+    type_name=EntityType.FOLDER,
+    dependency_roots_fn=folder_roots,
     icon="Folder",
     api_visible=True,
     creatable=False,
     indexed_by_default=False,
     index_fields=["name"],
     meta_model=FolderMeta,
+    # A git context folder rides a message as its origin; ``Folder`` owns the hooks.
+    receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
 )

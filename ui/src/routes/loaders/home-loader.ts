@@ -1,13 +1,24 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
-import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
-import { runLoadRedirects } from './load-redirects';
+import { isDeepLinkAction } from '@src/navigation/inbound-link';
+import { workspaceEntryDock } from './workspace-scope';
+import { adoptScopeProject } from './load-dock-pointer';
+import { DockPointer, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
+import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
+import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
+import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
+import { endLaunch, forgetLastPlace, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
+
+// Last, from this module's body — after the side-effect imports above have run —
+// so every redirect the user or the app asked for on this load outranks it.
+registerLoadRedirect(lastPlaceRestoreRedirect);
 
 /**
  * Ensure compute node is loaded for the current project
- * Project setup is handled by initSdk -> initContext -> setupProject
+ * The route loader owns project selection; initSdk only caches the default.
  */
 async function ensureComputeNodeLoaded(): Promise<void> {
   if (dataContext.project && !dataContext.computeNode) {
@@ -43,22 +54,63 @@ export async function loadHomePage(args: LoaderArgs) {
     throw redirect('/dock/hub/home');
   }
 
+  const url = new URL(args.request.url);
+  const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
+
+  const workspaceEntry = await workspaceEntryDock(dock);
+  if (workspaceEntry) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(workspaceEntry.toUrl(url.pathname));
+  }
+
+  // The home has no view mode — it is the one open screen. An address that still
+  // carries one (an old bookmark, a history entry from before) is canonicalized
+  // to the plain home, so no entry can show a second home.
+  //
+  // `replace`, NOT `redirect`: a redirect on the INITIAL document load pushes,
+  // which would leave the stale URL sitting behind home as an entry that re-runs
+  // this loader and redirects forward again — a Back step that does nothing.
+  //
+  // FIRST, before any awaited work: this throw discards the rest of the pass and
+  // the router re-runs the whole matched loader tree on the canonical URL.
+  if (url.searchParams.has(VIEW_MODE_PARAM)) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(dock.toUrl(url.pathname));
+  }
+
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
+
+  // `/?scope-…` means what `/dock/home?scope-…` meant: the root is an ordinary
+  // location now, so a scoped home has to adopt its project like any other
+  // scoped dock. Together with the viewMode canonicalization above, these are the
+  // only two steps the home loader borrows from the dock loader — the rest (tab
+  // setup, the other canonicalizers, page redirects) stays out deliberately,
+  // because `/` is every cold start and this is the boot path.
+  // An inbound handler resolves its own target. Restoring the ambient project
+  // first activates it and queues an unrelated auto-index ahead of the launch.
+  if (!isDeepLinkAction(url.searchParams.get('action'))) {
+    await adoptScopeProject(dock);
+    t.time('adoptScope');
+  }
 
   // Feature load-redirects (journey auto-launch et al) — done here, at load
   // time, so the destination is real URL state (reload/back safe) rather than
   // a post-render navigation hijack. The loader stays feature-agnostic:
   // features register resolvers from their own modules.
   const loadRedirect = await runLoadRedirects(args.request);
+  // The launch gets one resolver pass: if another redirect won it, a later Home click must not restore.
+  endLaunch();
   t.time('loadRedirects');
   if (loadRedirect) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw loadRedirect;
   }
+  // Home is the view with no tab: the next launch opens here, not on the tab just left.
+  forgetLastPlace();
 
   t.done(1.2); // warn if total > 1200ms
 
-  // Project setup is handled by initSdk -> initContext -> setupProject
+  // The route loader owns project selection; initSdk only caches the default.
   // If no projects exist, user will be shown project setup screen
 }

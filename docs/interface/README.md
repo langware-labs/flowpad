@@ -22,7 +22,7 @@ cross-referenced, never duplicated.
 | [shell.md](./shell.md) | `Shell` entity (4 actions) + TS `Shell`/`PtyConnection`; shell_mode vs direct spawn |
 | [pty-layer.md](./pty-layer.md) | Internal PTY layer: `PtyRegistry`/`PtyState`, `PtyStreamFile`, provider PTY surface, WS lifecycle + `GET /shell/{id}/pty-stream` replay route |
 | [compute-node.md](./compute-node.md) | `ComputeNode` — 44 actions grouped by mixin; `createProcess`/`upsertSessionProcess` factories; TS class |
-| [cli-drivers.md](./cli-drivers.md) | `WorkerDriver` 14-method contract, `WorkerCLIOptions`, per-CLI matrix (claude/codex/copilot) |
+| [cli-drivers.md](./cli-drivers.md) | `WorkerDriver` 14-method contract, `AgentOptions`, per-CLI matrix (claude/codex/copilot) |
 | [status-model.md](./status-model.md) | Paired status enums/predicates backend↔TS, parity table, serialization path |
 | [flows.md](./flows.md) | Test-derived canonical flows + critique (non-slick flows, coverage gaps) |
 
@@ -42,7 +42,7 @@ cross-referenced, never duplicated.
 ```
 
 Each layer is independently usable and has no knowledge of the layer above it.
-(Refreshed from the historical root `AgentApi.md` framing.)
+(Refreshed from the historical [`AgentApi.md`](../historical/AgentApi.md) framing.)
 
 ## Rules & invariants
 
@@ -65,9 +65,18 @@ violations are flagged inline as debt.
    preserves both. `session_id` is a *worker* id, not an entity id — never feed
    it to TypeId construction (codex mints v7 rollout ids).
 
-3. **Mid-turn guard.** A prompt turn in flight ⇒ 409 on `prompt` and on
-   `switch-mode`→CLI. *Known asymmetry (debt):* `switch-mode`→interactive and
-   `restart` have no backend guard — the UI gates them.
+3. **Mid-turn guard.** A turn in flight ⇒ 409 on `prompt`, on `switch-mode` in
+   **both** directions, and on `restart`. The guard
+   (`_reject_if_turn_in_flight`) sits in `switch_mode` above the branch and keys
+   on `is_turn_busy` — the same predicate the wire `busy` flag derives from, so
+   the 409 and the client's own gate can never disagree. The frontend still
+   declines rather than firing a call it knows will 409
+   (`surfaceTransportGate`), keyed on that same `busy`. Both the →CLI-only
+   backend asymmetry and the client-side one it produced are fixed: the UI's
+   →terminal direction used to route at `open`, which has no such guard, so the
+   gate mirrored an unguarded route (FLOWPAD-2130). `open` itself is still
+   unguarded, by design — loaders, the watchdog and auto-recovery call it — and
+   tightening THAT is FLOWPAD-2117.
 
 4. **`restart_required` is a snapshot-hash contract.** `save()` while RUNNING
    compares the worker-config snapshot (MD5 of generic + finalized CLI options,
@@ -112,4 +121,4 @@ violations are flagged inline as debt.
 - Recovery: [docs/pty-sync.md](../pty-sync.md) Part 3.5
 - Rendering: [docs/pty-terminal-spec.md](../pty-terminal-spec.md) §14
 - Shell vs agentic PTY: [docs/shell-claude-session-api.md](../shell-claude-session-api.md)
-- Historical: root `AgentApi.md` (three-layer design spec, pre two-axis model)
+- Historical: [`AgentApi.md`](../historical/AgentApi.md) (three-layer design spec, pre two-axis model)

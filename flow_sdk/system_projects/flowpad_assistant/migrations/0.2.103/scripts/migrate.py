@@ -170,12 +170,6 @@ def run(*, dry_run: bool = False) -> None:
         counts["shadow_dirs"], counts["staging_arcs"], counts["ma_rows"],
     )
 
-    # Keep this call after the stem transaction is closed: the Artifact split
-    # creates its own sqlite backup before beginning its independent write.
-    from flow_sdk.migrations.artifact_deployment import run_artifact_deployment_migration
-
-    run_artifact_deployment_migration(db_path, dry_run=dry_run)
-
 
 if __name__ == "__main__":
     import sys

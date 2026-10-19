@@ -1,9 +1,8 @@
 """Unit tests for storage system and filesystem operations.
 
-Tests VFSPath, storage drivers, FSItem entities, and API responses.
+Tests VFSPath, storage drivers, FSEntry entities, and API responses.
 """
 
-import asyncio
 import os
 import tempfile
 from io import BytesIO
@@ -11,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.api.fs.fs_api import VFSPath, EntityFSReqInfo, parse_custom_uri
-from flow_sdk.api.type_id import TypeId
-from flow_sdk.models import FSItem
-from flow_sdk.responses import ApiSuccessResponse, ApiFailResponse, ApiResponseStatus
+from flow_sdk.api.fs.fs_api import VFSPath, parse_custom_uri
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.models import FSEntry
+from flow_sdk.responses import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.storage import LocalStorageDriver
 
 
@@ -58,25 +57,25 @@ class TestVFSPath:
         assert vpath.typeid.id == "@local"
 
 
-class TestFSItem:
-    """Tests for FSItem Pydantic model"""
+class TestFSEntry:
+    """Tests for FSEntry Pydantic model"""
 
     def test_fsitem_creation(self):
-        """Test creating FSItem instance"""
-        item = FSItem(
+        """Test creating FSEntry instance"""
+        item = FSEntry(
             vfs_abs_path="project-@local/file.txt",
             is_dir=False,
             size=1024,
             display_name="file.txt",
         )
-        assert item.type == "fs_item"
+        assert item.type == "fs_entry"
         assert item.vfs_abs_path == "project-@local/file.txt"
         assert item.is_dir == False
         assert item.size == 1024
 
     def test_fsitem_directory(self):
-        """Test FSItem for directory"""
-        item = FSItem(
+        """Test FSEntry for directory"""
+        item = FSEntry(
             vfs_abs_path="project-@local/folder",
             is_dir=True,
             display_name="folder",
@@ -85,8 +84,8 @@ class TestFSItem:
         assert item.size is None  # Directories don't have size
 
     def test_fsitem_with_symlink(self):
-        """Test FSItem with symlink target"""
-        item = FSItem(
+        """Test FSEntry with symlink target"""
+        item = FSEntry(
             vfs_abs_path="project-@local/link",
             is_dir=False,
             symlink_target="/path/to/target",

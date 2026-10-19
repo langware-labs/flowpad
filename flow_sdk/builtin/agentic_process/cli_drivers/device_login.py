@@ -20,9 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import sys
 import threading
 from functools import partial
 from typing import Any, Awaitable, Callable
+
+import psutil
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
     DeviceLoginSpec,
@@ -34,17 +38,63 @@ from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
     scrape_device_login,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    WorkerSpawnError,
     build_worker_spawn_env,
     get_driver,
     run_worker_auth_probe,
-    WorkerSpawnError,
 )
+from flow_sdk.config import PLATFORM_WIN32
 
 logger = logging.getLogger(__name__)
 
 # Wide terminal so long OAuth URLs never soft-wrap mid-scrape (the scraper can
 # rejoin wraps, but a generous width keeps the raw stream simple).
 PTY_DIMENSIONS = (50, 1000)
+
+# A login CLI that has printed its URL and is waiting at a paste prompt says
+# nothing more, so a stale one is invisible until you look at the process table.
+# Each spawn mints its OWN PKCE challenge, so a code obtained from one session's
+# URL is only redeemable by that session: a second live login for the same
+# harness makes the paste-back a coin flip. Hence exactly one, enforced.
+
+# The CLI's own complaint about a code it would not redeem. Deliberately narrow:
+# it must mention the code, so ordinary prose ("error opening browser") does not
+# tip a healthy session into ERROR.
+_CODE_REJECTED_RE = re.compile(
+    r"(?i)(invalid|expired|incorrect|rejected|could not.{0,20}verify)[^\n]{0,40}\bcode\b"
+    r"|\bcode\b[^\n]{0,40}(invalid|expired|incorrect|rejected)"
+)
+
+
+def _reap_stray_logins(argv: list[str], keep_pid: int | None = None) -> int:
+    """Kill login processes for this harness that no session owns any more.
+
+    ``_SESSIONS`` lives in this process's memory, but the PTY child does not:
+    restart the server (``flow start service`` on every workspace-ready) and the
+    registry is empty while the old ``claude auth login`` is still sitting at its
+    paste prompt. The next login then spawns a SECOND one, and the user's pasted
+    code goes to whichever the registry happens to hold — the observed
+    "stuck on Waiting for you" with three live logins.
+
+    So singleton-ness is enforced against the process table, which survives a
+    restart, rather than against the dict, which does not. Returns the number
+    reaped. Never raises: this is best-effort hygiene on the way to a spawn.
+    """
+    if not argv:
+        return 0
+    reaped = 0
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            if list(cmdline[: len(argv)]) != argv:
+                continue
+            if keep_pid is not None and proc.info["pid"] == keep_pid:
+                continue
+            proc.kill()
+            reaped += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+            continue
+    return reaped
 
 
 class DeviceLoginSession:
@@ -81,6 +131,7 @@ class DeviceLoginSession:
         self._reader: threading.Thread | None = None
         self._answered: set[int] = set()
         self._cancelled = False
+        self._code_submitted = False
 
         self.state = DeviceLoginState.IDLE
         self.url: str | None = None
@@ -113,12 +164,24 @@ class DeviceLoginSession:
         except WorkerSpawnError as exc:
             self._set(DeviceLoginState.ERROR, message=str(exc), notify=False)
             return
-        try:
-            from ptyprocess import PtyProcess  # noqa: PLC0415 — unix; login flows are PTY-bound
+        # Enforce one login per harness against the PROCESS TABLE before
+        # spawning. The in-memory cancel in start_device_login only covers
+        # sessions this process still remembers; anything orphaned by a restart
+        # is invisible to it and would race us for the pasted code.
+        reaped = await asyncio.to_thread(_reap_stray_logins, self._argv)
+        if reaped:
+            logger.info("device login: reaped %d stray %s login(s)", reaped, self.worker_type)
 
-            self._pty = await asyncio.to_thread(
-                PtyProcess.spawn, self._argv, env=env, dimensions=PTY_DIMENSIONS
-            )
+        try:
+            # PTY handling mirrors the desktop compute provider: winpty on
+            # Windows (Unix-only ptyprocess needs fcntl, which doesn't exist
+            # there), ptyprocess elsewhere.
+            if sys.platform == PLATFORM_WIN32:
+                from winpty import PtyProcess  # noqa: PLC0415 — windows
+            else:
+                from ptyprocess import PtyProcess  # noqa: PLC0415 — unix
+
+            self._pty = await asyncio.to_thread(PtyProcess.spawn, self._argv, env=env, dimensions=PTY_DIMENSIONS)
         except Exception as exc:
             self._set(DeviceLoginState.ERROR, message=f"failed to spawn login: {exc}", notify=False)
             return
@@ -126,19 +189,48 @@ class DeviceLoginSession:
         self._reader.start()
 
     def submit_code(self, code: str) -> bool:
-        """Inject a browser-shown code back into the login PTY (claude)."""
+        """Inject a browser-shown code back into the login PTY (claude).
+
+        Refuses unless this session is actually AWAITING_USER. "PTY is alive"
+        was too weak a test: a session that has already errored, authenticated,
+        or not yet printed its URL still has a live child, so the write silently
+        went nowhere and the caller was told it had succeeded.
+        """
+        if self.state is not DeviceLoginState.AWAITING_USER:
+            return False
         if self._pty is None or not self._pty.isalive():
             return False
-        self._pty.write((code.strip() + "\r").encode())
+        self._pty.write(self._encode_for_pty(code.strip() + "\r"))
+        self._code_submitted = True
         return True
 
     def cancel(self) -> None:
+        """Stop this login for good — and make sure the CLI actually died.
+
+        ``terminate(force=True)`` is best-effort and ``isalive()`` can race the
+        reader thread's own ``waitpid``, so a survivor here would sit at its
+        paste prompt forever and compete with the next login for the code. The
+        argv sweep is the backstop: it does not depend on this object's view of
+        whether the child is alive.
+        """
         self._cancelled = True
-        if self._pty is not None and self._pty.isalive():
+        pty = self._pty
+        if pty is not None:
             try:
-                self._pty.terminate(force=True)
+                if pty.isalive():
+                    pty.terminate(force=True)
             except Exception:
                 logger.debug("device login terminate failed", exc_info=True)
+        # Backstop: whatever this object believes, leave no login of this shape
+        # running. Cheap, and the only thing that holds across a server restart.
+        try:
+            _reap_stray_logins(self._argv)
+        except Exception:
+            logger.debug("device login reap-on-cancel failed", exc_info=True)
+
+    async def acancel(self) -> None:
+        """``cancel()`` off the event loop — its force-terminate sleeps between signals."""
+        await asyncio.to_thread(self.cancel)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -148,6 +240,11 @@ class DeviceLoginSession:
             "message": self.message,
             "accepts_code_paste": self.spec.accepts_code_paste,
         }
+
+    @staticmethod
+    def _encode_for_pty(text: str) -> str | bytes:
+        """winpty.write() expects str; ptyprocess.write() expects bytes."""
+        return text if sys.platform == PLATFORM_WIN32 else text.encode()
 
     # ── Reader thread ────────────────────────────────────────────────────────
 
@@ -176,7 +273,17 @@ class DeviceLoginSession:
         answer = find_auto_answer(clean, self._answered)
         if answer is not None:
             self._answered.add(answer[0])
-            self._pty.write(answer[1].encode())
+            self._pty.write(self._encode_for_pty(answer[1]))
+        # A code the CLI rejects leaves it sitting at the SAME paste prompt, so
+        # without this the session never leaves AWAITING_USER and the UI shows
+        # "waiting for you" forever against a code that will never be accepted.
+        if self._code_submitted and _CODE_REJECTED_RE.search(clean):
+            self._code_submitted = False
+            self._set_threadsafe(
+                DeviceLoginState.ERROR,
+                message="the pasted code was rejected — start the login again to get a fresh one",
+            )
+            return
         if self.url and self.state == DeviceLoginState.STARTING:
             self._set_threadsafe(DeviceLoginState.AWAITING_USER)
         elif changed:
@@ -245,10 +352,11 @@ async def start_device_login(
     ``spec``+``probe_fn``, any spec-driven CLI keyed by that name)."""
     async with _SESSIONS_LOCK:
         old = _SESSIONS.get(worker_type)
-        if old is not None:
-            old.cancel()
         session = DeviceLoginSession(worker_type, on_change=on_change, spec=spec, probe_fn=probe_fn)
         _SESSIONS[worker_type] = session
+    # Outside the lock: the old login's teardown must not hold up other workers' starts.
+    if old is not None:
+        await old.acancel()
     await session.start()
     return session
 

@@ -1,7 +1,9 @@
+import { t } from '@lingui/core/macro';
 import {
   AgentTrace,
   AgenticProcess,
   ComputeNode,
+  ExpressionNode,
   ProcessKind,
   QueryFilter,
   QueryRequest,
@@ -9,8 +11,6 @@ import {
 } from '@sdk';
 import { notify } from '@src/notifications';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
-import { launchWorkerWithAsset } from '@src/components/workers/launchWorkerWithAsset';
-import type { WorkerType } from '@src/components/workers/worker-types';
 import type { AgentTraceDoc, TraceFinding } from '../agent-trace/trace-types';
 
 const SKILLIT_NAME = 'skillit';
@@ -25,9 +25,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * the reactive `useSkillsByName` hook mirrors this for React callers.
  */
 export async function loadSkillsByName(): Promise<Map<string, Skill>> {
-  const skills = await Skill.query<Skill>(
-    new QueryRequest({ type: Skill.type, scope: [], name: 'skillsByName:all' }),
-  );
+  const skills = await Skill.query<Skill>(new QueryRequest({ type: Skill.type, scope: [], name: 'skillsByName:all' }));
   return new Map(skills.map((s) => [s.name, s]));
 }
 
@@ -46,7 +44,7 @@ export async function runSkillWorker(
 ): Promise<AgenticProcess | null> {
   const skill = (await loadSkillsByName()).get(attachSkillName) ?? null;
   if (!skill) {
-    notify.error({ title: notInstalledTitle, message: `The "${attachSkillName}" skill is not installed.` });
+    notify.error({ title: notInstalledTitle, message: t`The "${attachSkillName}" skill is not installed.` });
     return null;
   }
   const computeNode = await ComputeNode.getById('@local');
@@ -96,38 +94,6 @@ const assetProcessOpts = (
   outputFormat: 'stream-json',
   permissionMode: 'bypassPermissions',
 });
-
-/**
- * Spin up an **interactive** worker so the author can test the skill by hand —
- * the "quick start testing" toolbar next to the eval flag.
- *
- * Unlike {@link launchSkillEval} (which auto-prompts `skillit` in a stream-json
- * execution process), this opens a real interactive terminal tab via the shared
- * {@link launchWorkerWithAsset} helper in **staged** mode: the worker boots idle
- * and a starter prompt sits on the queue (draining disabled) for the author to
- * send. The skill is referenced by name so the harness discovers the installed
- * skill on boot (see the helper's note on why `embeddedAssets.attach` can't run
- * pre-boot for an interactive tab).
- */
-export async function launchSkillTest(
-  targetSkill: Skill,
-  workerType: WorkerType,
-): Promise<AgenticProcess | null> {
-  try {
-    return await launchWorkerWithAsset({
-      workerType,
-      seedPrompt: `Let's test the "${targetSkill.name}" skill. `,
-      stage: true,
-      enqueueSource: 'skill-test',
-    });
-  } catch (err) {
-    notify.error({
-      title: 'Could not start test worker',
-      message: err instanceof Error ? err.message : 'Failed to launch worker.',
-    });
-    return null;
-  }
-}
 
 export interface LaunchSkillEvalArgs {
   /** The skill being evaluated — the analysis process is keyed to its TypeId. */
@@ -218,8 +184,9 @@ export interface AssetAnalysisResult {
 }
 
 function traceCreatedMs(trace: AgentTrace): number {
-  const raw = (trace as unknown as { created_date?: string | Date; createdDate?: string | Date }).created_date
-    ?? (trace as unknown as { createdDate?: string | Date }).createdDate;
+  const raw =
+    (trace as unknown as { created_date?: string | Date; createdDate?: string | Date }).created_date ??
+    (trace as unknown as { createdDate?: string | Date }).createdDate;
   if (raw instanceof Date) return raw.getTime();
   if (typeof raw === 'string') {
     const ms = Date.parse(raw);
@@ -231,7 +198,7 @@ function traceCreatedMs(trace: AgentTrace): number {
 async function readTraceDoc(trace: AgentTrace): Promise<AgentTraceDoc | null> {
   try {
     const raw = await trace.doc?.read();
-    return raw ? JSON.parse(raw) as AgentTraceDoc : null;
+    return raw ? (JSON.parse(raw) as AgentTraceDoc) : null;
   } catch {
     return null;
   }
@@ -252,8 +219,9 @@ export function selectAssetFindings(
   sel: { assetKey: string; assetTypeid: string; assetPath: string },
 ): TraceFinding[] {
   const byAsset = doc?.annotations?.by_asset ?? {};
-  const bucket = byAsset[sel.assetKey]
-    ?? Object.values(byAsset).find((value) => value.asset_ref === sel.assetPath || value.typeid === sel.assetTypeid);
+  const bucket =
+    byAsset[sel.assetKey] ??
+    Object.values(byAsset).find((value) => value.asset_ref === sel.assetPath || value.typeid === sel.assetTypeid);
   if (bucket || Object.keys(byAsset).length) return bucket?.findings ?? [];
   const stem = basename(sel.assetPath).replace(/\.[^.]+$/, '');
   return (stem && doc?.annotations?.by_skill?.[stem]?.findings) || [];
@@ -271,7 +239,7 @@ async function findAssetAnalysisResult(
       type: AgentTrace.type,
       scope: [],
       name: `agentTracesForAssetImprove:${sessionId}`,
-      query: new QueryFilter({ match: { session_id: sessionId } }),
+      query: new QueryFilter({ match: new ExpressionNode({ session_id: sessionId }) }),
     }),
   );
   const ordered = [...traces].sort((a, b) => traceCreatedMs(b) - traceCreatedMs(a));
@@ -350,7 +318,7 @@ export function launchAssetCorrect({
   analysisTrace,
 }: LaunchAssetCorrectArgs): Promise<AgenticProcess | null> {
   if (!findings.length) {
-    notify.error({ title: 'Nothing to improve', message: 'No substantiated findings to apply for this asset.' });
+    notify.error({ title: t`Nothing to improve`, message: t`No substantiated findings to apply for this asset.` });
     return Promise.resolve(null);
   }
   const ctx = sessionId ? ` (from analysis of session ${sessionId})` : '';
@@ -380,7 +348,7 @@ export function launchSkillCorrect({
   analysisTrace,
 }: LaunchSkillCorrectArgs): Promise<AgenticProcess | null> {
   if (!findings.length) {
-    notify.error({ title: 'Nothing to improve', message: 'No substantiated findings to apply for this skill.' });
+    notify.error({ title: t`Nothing to improve`, message: t`No substantiated findings to apply for this skill.` });
     return Promise.resolve(null);
   }
   const ctx = sessionId ? ` (from analysis of session ${sessionId})` : '';

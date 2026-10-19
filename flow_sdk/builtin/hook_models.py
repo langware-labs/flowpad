@@ -9,43 +9,50 @@ import inspect
 import logging
 import os
 import stat
+import sys
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
-from flow_sdk._compat import StrEnum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 from pydantic import BaseModel
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.change_event import ChangeEvent
+from flow_sdk.claude_hook_events.hook_event_data import HookEventData as HookEventData
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 _log = logging.getLogger(__name__)
 
 _DEFAULT_SCRIPT_TIMEOUT_S = 30.0
-# Bytes captured from stdout/stderr — bounded so TriggerLogRecord stays small.
-_SCRIPT_OUTPUT_CAP = 8192
+
+# POSIX-only: Windows has no process groups in this sense, so there the script
+# is spawned and killed as a lone child (a Windows script that forks a detached
+# grandchild can still outlive its timeout — a known gap, not a regression).
+#
+# Deliberately NOT cli_drivers' psutil-based `terminate_asyncio_process_tree`,
+# which solves the same failure mode for CLI workers: that one is keyed on a
+# per-launch run_id marker and knows about npm wrapper processes, neither of
+# which a one-shot trigger script has, and it sits a layer above this module.
 
 
-@dataclass
-class RunResult:
-    """Result of executing a RUN_SCRIPT action."""
+def _kill_script_tree(proc) -> None:
+    """SIGKILL the timed-out script AND everything it forked.
 
-    stdout: str
-    stderr: str
-    returncode: Optional[int]
-    duration_ms: int
-    timed_out: bool
-    script_path: Optional[str] = None  # which path actually ran (after resolution)
+    The rule and the reason it exists now live in one place — see
+    ``flow_sdk/utils/process_tree``; the wizard runner needs the same discipline
+    and cannot import this module (it holds entities).
+    """
+    kill_process_tree(proc)
 
 
-class ActionType(StrEnum):
-    """Types of actions that can be triggered."""
 
-    NOP = "nop"
-    NOTIFY_ENTITY = "notify_entity"
-    RUN_SCRIPT = "run_script"
-    CALLBACK = "callback"
+
+
 
 
 class RelationshipSubAction(StrEnum):
@@ -77,18 +84,7 @@ class SuccessMessage(StrEnum):
     TRIGGER_DISCONNECTED = "Trigger disconnected successfully"
 
 
-class TriggerAction(BaseModel):
-    """Action to be executed when a trigger matches."""
 
-    action_type: ActionType
-    # RUN_SCRIPT delivery: external script path on disk (preferred if it exists).
-    script_path: Optional[str] = None
-    # RUN_SCRIPT delivery: filename inside the trigger record's data folder
-    # (`record.data_dir / script_filename`). Used when `script_path` is None or
-    # the file doesn't exist on disk. Editable via flowpad's file editor.
-    script_filename: Optional[str] = None
-    # CALLBACK delivery: name registered via `@trigger_callbacks.register("name")`.
-    callback_name: Optional[str] = None
 
 
 class ExecutedAction(BaseModel):
@@ -100,8 +96,6 @@ class ExecutedAction(BaseModel):
     counter: int
 
 
-# Re-export canonical HookEventData from shared module
-from flow_sdk.claude_hook_events.hook_event_data import HookEventData
 
 
 class WebhookHandleResult(BaseModel):
@@ -202,15 +196,21 @@ async def _exec_script(
     trigger: Any,
     changes: Optional[list["ChangeEvent"]],
     timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
-) -> RunResult:
-    """Run an external script via asyncio.create_subprocess_exec.
+) -> "CliResult":
+    """Run an external script via asyncio.create_subprocess_exec. Never raises:
+    a script that cannot start, fails or hangs is a ``CliResult`` (``command`` is
+    the path that actually ran).
 
     Env vars: TRIGGER_ID / TRIGGER_NAME / CHANGES_COUNT / FIRST_CHANGED_PATH /
     FIRST_CHANGE_TYPE for quick access; the full batch is serialized to a
     tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
     passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
+    FLOWPAD_PYTHON (the interpreter that can ``import flow_sdk``), FLOWPAD_FLOW and
+    FLOW_INSTANCE (``flow_env``) say how to reach THIS Flowpad, the same three a
+    worker gets: a script that writes dataset rows through the Python SDK must not
+    guess an interpreter, and a ``flow`` call must reach the backend that fired it.
 
-    Captures stdout/stderr (truncated to _SCRIPT_OUTPUT_CAP). Kills the
+    Captures stdout/stderr whole. Kills the
     process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
     """
     import json
@@ -236,6 +236,8 @@ async def _exec_script(
         finally:
             tmp.close()
 
+        from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
+
         env = {
             **os.environ,
             "TRIGGER_ID": str(getattr(trigger, "id", "")),
@@ -244,33 +246,42 @@ async def _exec_script(
             "FIRST_CHANGED_PATH": str(first.path) if first else "",
             "FIRST_CHANGE_TYPE": first.change_type if first else "",
             "CHANGES_JSON_PATH": changes_json_path,
+            "FLOWPAD_PYTHON": sys.executable,
+            **flow_env(),
         }
-        proc = await asyncio.create_subprocess_exec(
-            str(script_path),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(Path(script_path).parent),
-        )
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
         t0 = time.monotonic()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                str(script_path),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(Path(script_path).parent),
+                # Own process GROUP so a timeout can kill the whole tree — see
+                # _kill_script_tree() for why the child alone is not enough.
+                start_new_session=CAN_KILLPG,
+            )
+        except (OSError, ValueError) as exc:
+            return CliResult.of_process(str(script_path), None, "", f"{type(exc).__name__}: {exc}")
         timed_out = False
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
         except asyncio.TimeoutError:
-            proc.kill()
+            _kill_script_tree(proc)
             timed_out = True
             try:
                 stdout, stderr = await proc.communicate()
             except Exception:
                 stdout, stderr = b"", b""
-        duration_ms = int((time.monotonic() - t0) * 1000)
-        return RunResult(
-            stdout=stdout.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stdout else "",
-            stderr=stderr.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stderr else "",
-            returncode=proc.returncode,
-            duration_ms=duration_ms,
+        return CliResult.of_process(
+            str(script_path),
+            proc.returncode,
+            stdout.decode(errors="replace") if stdout else "",
+            stderr.decode(errors="replace") if stderr else "",
             timed_out=timed_out,
-            script_path=str(script_path),
+            duration_s=time.monotonic() - t0,
         )
     finally:
         if changes_json_path is not None:
@@ -280,6 +291,20 @@ async def _exec_script(
                 pass
 
 
+async def _script_at(given: str, trigger: Any) -> Optional[Path]:
+    """The script ``given`` names, when it is on disk: an absolute path as it is, a relative one under
+    the trigger's project folder (``trigger.project_id``). None when there is no such file."""
+    path = Path(given)
+    if path.is_absolute():
+        return path if path.exists() else None
+    from flow_sdk.diagnose.runner import project_path_of  # noqa: PLC0415
+
+    root = await project_path_of(getattr(trigger, "project_id", None))
+    if root and (Path(root) / path).exists():
+        return Path(root) / path
+    return None
+
+
 class RunScriptActionHandler(TriggerActionHandler):
     """Subprocess-execute a script. Source order: external `action.script_path` →
     embedded `trigger.data_dir / action.script_filename` → warn + no-op.
@@ -287,6 +312,9 @@ class RunScriptActionHandler(TriggerActionHandler):
     One subprocess per fire (i.e. per debounce batch), not per event. The full
     batch is delivered via CHANGES_JSON_PATH; FIRST_* env vars give quick access
     to the head of the batch for simple scripts.
+
+    Always answers a ``CliResult`` — never ``None``: a script that is not where
+    the trigger says is NOT_FOUND, a call with no action NOT_APPLICABLE.
     """
 
     async def execute(
@@ -295,15 +323,24 @@ class RunScriptActionHandler(TriggerActionHandler):
         action: Optional["TriggerAction"] = None,
         changes: Optional[list["ChangeEvent"]] = None,
         timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
-    ) -> Optional[RunResult]:
-        if action is None:
-            _log.warning("RUN_SCRIPT on %s: no action supplied", getattr(trigger, "name", "?"))
-            return None
+    ) -> "CliResult":
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
 
-        # Resolution mode 1: external script path (preferred if it exists on disk).
+        name = getattr(trigger, "name", "?")
+
+        def missing(message: str, command: str = "") -> "CliResult":
+            _log.warning("RUN_SCRIPT on %s: %s", name, message)
+            return CliResult.not_found(message, command=command)
+
+        if action is None:
+            _log.warning("RUN_SCRIPT on %s: no action supplied", name)
+            return CliResult.not_applicable("No action was supplied, so there is no script to run.")
+
+        # Resolution mode 1: external script path (preferred if it exists on disk). A relative one is
+        # the trigger's project's: a trigger checked into a project runs the same on every clone.
         if action.script_path:
-            ext = Path(action.script_path)
-            if ext.exists():
+            ext = await _script_at(action.script_path, trigger)
+            if ext is not None:
                 return await _exec_script(
                     ext, trigger, changes, timeout_seconds=timeout_seconds
                 )
@@ -313,31 +350,132 @@ class RunScriptActionHandler(TriggerActionHandler):
         if action.script_filename:
             data_dir = getattr(trigger, "data_dir", None)
             if data_dir is None:
-                _log.warning(
-                    "RUN_SCRIPT on %s: script_filename set but trigger has no data_dir",
-                    getattr(trigger, "name", "?"),
-                )
-                return None
+                return missing(f"script {action.script_filename} is named but the trigger has no data folder.")
             embedded = Path(data_dir) / action.script_filename
             if not embedded.exists():
-                _log.warning(
-                    "RUN_SCRIPT on %s: embedded script %s does not exist in %s",
-                    getattr(trigger, "name", "?"),
-                    action.script_filename,
-                    data_dir,
-                )
-                return None
+                return missing(f"embedded script {action.script_filename} does not exist in {data_dir}.", str(embedded))
             # Ensure +x before exec (embedded files won't have it from write_file).
             _ensure_executable(embedded)
             return await _exec_script(
                 embedded, trigger, changes, timeout_seconds=timeout_seconds
             )
 
-        _log.warning(
-            "RUN_SCRIPT on %s: no script_path on disk and no script_filename",
-            getattr(trigger, "name", "?"),
+        return missing("no script_path on disk and no script_filename.", action.script_path or "")
+
+
+class RunAgentActionHandler(TriggerActionHandler):
+    """Handler for RUN_AGENT — run an Agent headlessly with the action's prompt.
+
+    The agent comes from the action's ``target_type_id``, else the trigger's
+    own parent: a trigger nested inside an agent folder runs that agent, the
+    same containment rule ``run_wizard`` uses. The run goes through
+    ``Agent.launch``, so the agent's worker, model, system prompt and MCP
+    servers all apply, and it is born headless and tab-less.
+
+    Deliberately no unattended trust gate (``_run_wizard_trigger`` has one): an
+    enabled trigger on an indexed agent runs, on whichever machine indexed it.
+
+    Answers the launch's ``PromptResult`` — its ``executor`` is how the fire
+    logs the run — and never ``None``: another machine's place is
+    NOT_APPLICABLE, a place switched off REFUSED. A missing prompt, or no agent
+    to run, is a broken trigger document, and raises (reported as
+    ``trigger.failed``).
+    """
+
+    async def execute(
+        self,
+        trigger: Any,
+        action: Optional["TriggerAction"] = None,
+        changes: Optional[list["ChangeEvent"]] = None,
+    ) -> Any:
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
+        from flow_sdk.builtin.agent_serve import workdir_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        prompt = str(getattr(action, "prompt", "") or "").strip()
+        if not prompt:
+            raise ValueError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r} has no prompt")
+
+        agent = None
+        for candidate in (getattr(action, "target_type_id", None), getattr(trigger, "parent_type_id", None)):
+            ref = str(candidate or "")
+            if ref.startswith("agent-"):
+                agent = await Agent.get_by_id(ref.split("-", 1)[1])
+                if agent is not None:
+                    break
+        if agent is None:
+            # The document names nothing runnable — a broken trigger, like a
+            # missing prompt; raising is what reports it as `trigger.failed`.
+            raise LookupError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: no agent to run")
+
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        runs_on = str(getattr(trigger, "runs_on", "") or "")
+        if runs_on:
+            from flow_sdk.builtin.agent_places import place_of  # noqa: PLC0415
+
+            deployment = await place_of(agent, runs_on, local=True)
+            if deployment is None:
+                return PromptResult.not_applicable(
+                    f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: place {runs_on} is not "
+                    "this agent's place on this machine."
+                )
+        else:
+            # Resolved once here and handed to `launch`, which would otherwise resolve it again.
+            deployment = await agent.local_deployment()
+        # A place can be switched off on its own; a schedule on it is then a QUIET
+        # refusal, checked here before `launch` — which would refuse too, but only
+        # after announcing a run: every tick of a schedule on a switched-off place
+        # would emit `agent.run.requested` / `failed`.
+        if not agent.enabled_on(deployment.id):
+            return PromptResult.refused(
+                f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: agent {agent.name!r} is disabled "
+                f"on place {deployment.id}."
+            )
+        answer = await agent.launch(
+            prompt,
+            deployment=deployment,
+            name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
+            workdir=await workdir_for(agent),
+            context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
         )
-        return None
+        if not answer.ok:
+            _log.info("RUN_AGENT on %s: %s", getattr(trigger, "name", "?"), answer.detail)
+            return answer
+        # A launched run is never finished by anyone: `launch` returns at
+        # scheduling time and the lifecycle stays RUNNING forever, so the run
+        # history showed every scheduled run as still running. Supervise it to
+        # its end — detached, because a "Run now" fires inside a request whose
+        # transaction is gone by the time the turn ends.
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_typeid(answer.executor)
+        if process is not None:
+            create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
+        return answer
+
+
+async def _finish_agent_run(process: Any) -> None:
+    """Wait for the run's turn to reach a terminal state, then end its lifecycle:
+    STOPPED when the worker completed, FAILED when it errored. The same one-shot
+    shape as the ingest agent driver (``wait`` then ``exit``)."""
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+    try:
+        await process.wait()
+        if process.status == ProcessStatus.FAILED.value:
+            return
+        errored = process.fetch_worker_status() == WorkerStatus.ERROR
+        await process.exit()
+        # `exit` settles a headless process STOPPED; a run whose worker ended in
+        # ERROR is re-settled FAILED here.
+        final = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
+        if process.status != final:
+            process.status = final
+            await process.save()
+    except Exception:
+        _log.exception("RUN_AGENT: could not finish run %s", getattr(process, "id", "?"))
 
 
 _ACTION_HANDLERS: dict[ActionType, TriggerActionHandler] = {
@@ -345,6 +483,7 @@ _ACTION_HANDLERS: dict[ActionType, TriggerActionHandler] = {
     ActionType.NOTIFY_ENTITY: NotifyEntityActionHandler(),
     ActionType.RUN_SCRIPT: RunScriptActionHandler(),
     ActionType.CALLBACK: CallbackActionHandler(),
+    ActionType.RUN_AGENT: RunAgentActionHandler(),
 }
 
 

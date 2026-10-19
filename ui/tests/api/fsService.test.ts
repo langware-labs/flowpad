@@ -1,4 +1,4 @@
-import { FSItem, FileUpload, Workspace, TypeId, fsManager } from '@sdk';
+import { FSEntry, FileUpload, Workspace, TypeId, fsManager } from '@sdk';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
@@ -137,7 +137,7 @@ describe('FSManager Integration Tests', () => {
 
       // Wait for completion
       const uploadedItem = await upload.waitForCompletion();
-      expect(uploadedItem).toBeInstanceOf(FSItem);
+      expect(uploadedItem).toBeInstanceOf(FSEntry);
       expect(uploadedItem.name).toBe('upload_test.txt');
       expect(uploadedItem.size).toBeGreaterThan(0);
     }, 15000);
@@ -157,7 +157,7 @@ describe('FSManager Integration Tests', () => {
       // Wait for all uploads to complete
       const uploadedItems = await Promise.all(uploads.map((u) => u.waitForCompletion()));
       expect(uploadedItems.length).toBe(3);
-      expect(uploadedItems[0]).toBeInstanceOf(FSItem);
+      expect(uploadedItems[0]).toBeInstanceOf(FSEntry);
     }, 15000);
 
     it('should track upload progress', async () => {
@@ -266,15 +266,15 @@ describe('FSManager Integration Tests', () => {
   });
 
   /**
-   * FSItem Convenience Methods Tests
+   * FSEntry Convenience Methods Tests
    */
-  describe('FSItem Convenience Methods', () => {
-    it('should download file using FSItem.download()', async () => {
-      const content = 'FSItem download test';
+  describe('FSEntry Convenience Methods', () => {
+    it('should download file using FSEntry.download()', async () => {
+      const content = 'FSEntry download test';
       // Create file using writeFile
       await fsManager.writeFile(testTypeid, 'fsitem_test.txt', content);
 
-      // Get FSItem
+      // Get FSEntry
       const browseResult = await fsManager.listDirectory(testTypeid, '/');
       const fsItem = browseResult.items.find((item) => item.name === 'fsitem_test.txt');
       expect(fsItem).toBeTruthy();
@@ -284,11 +284,11 @@ describe('FSManager Integration Tests', () => {
       expect(downloadedContent).toBe(content);
     }, 15000);
 
-    it('should delete file using FSItem.deleteFile()', async () => {
+    it('should delete file using FSEntry.deleteFile()', async () => {
       // Create file using writeFile
-      await fsManager.writeFile(testTypeid, 'fsitem_delete.txt', 'Delete via FSItem');
+      await fsManager.writeFile(testTypeid, 'fsitem_delete.txt', 'Delete via FSEntry');
 
-      // Get FSItem
+      // Get FSEntry
       const browseResult = await fsManager.listDirectory(testTypeid, '/');
       const fsItem = browseResult.items.find((item) => item.name === 'fsitem_delete.txt');
       expect(fsItem).toBeTruthy();
@@ -315,7 +315,7 @@ describe('FSManager Integration Tests', () => {
       // Copy to new location
       const copiedItem = await fsManager.copy(testTypeid, 'original.txt', 'copied.txt');
 
-      expect(copiedItem).toBeInstanceOf(FSItem);
+      expect(copiedItem).toBeInstanceOf(FSEntry);
       expect(copiedItem.name).toBe('copied.txt');
 
       // Verify both files exist
@@ -357,7 +357,7 @@ describe('FSManager Integration Tests', () => {
       // Move to new location
       const movedItem = await fsManager.move(testTypeid, 'to_move.txt', 'moved.txt');
 
-      expect(movedItem).toBeInstanceOf(FSItem);
+      expect(movedItem).toBeInstanceOf(FSEntry);
       expect(movedItem.name).toBe('moved.txt');
 
       // Verify original is gone and new file exists
@@ -390,7 +390,7 @@ describe('FSManager Integration Tests', () => {
       // Rename file
       const renamedItem = await fsManager.rename(testTypeid, 'old_name.txt', 'new_name.txt');
 
-      expect(renamedItem).toBeInstanceOf(FSItem);
+      expect(renamedItem).toBeInstanceOf(FSEntry);
       expect(renamedItem.name).toBe('new_name.txt');
 
       // Verify old name is gone and new name exists
@@ -456,7 +456,7 @@ describe('FSManager Integration Tests', () => {
     it('should create a new folder', async () => {
       const folderItem = await fsManager.mkdir(testTypeid, 'test_folder');
 
-      expect(folderItem).toBeInstanceOf(FSItem);
+      expect(folderItem).toBeInstanceOf(FSEntry);
       expect(folderItem.is_dir).toBe(true);
 
       // Verify folder exists in directory listing
@@ -473,7 +473,7 @@ describe('FSManager Integration Tests', () => {
       // Create nested folder
       const nestedFolder = await fsManager.mkdir(testTypeid, 'parent_folder/nested_folder');
 
-      expect(nestedFolder).toBeInstanceOf(FSItem);
+      expect(nestedFolder).toBeInstanceOf(FSEntry);
       expect(nestedFolder.is_dir).toBe(true);
 
       // Verify nested folder exists
@@ -499,7 +499,7 @@ describe('FSManager Integration Tests', () => {
       const content = 'Hello, this is written content!';
       const fileItem = await fsManager.writeFile(testTypeid, 'written_file.txt', content);
 
-      expect(fileItem).toBeInstanceOf(FSItem);
+      expect(fileItem).toBeInstanceOf(FSEntry);
       expect(fileItem.name).toBe('written_file.txt');
       expect(fileItem.is_dir).toBe(false);
 
@@ -536,7 +536,7 @@ describe('FSManager Integration Tests', () => {
       const content = 'Content in subdirectory';
       const fileItem = await fsManager.writeFile(testTypeid, 'subdir/nested_file.txt', content);
 
-      expect(fileItem).toBeInstanceOf(FSItem);
+      expect(fileItem).toBeInstanceOf(FSEntry);
       expect(fileItem.name).toBe('nested_file.txt');
 
       // Verify file exists in subdirectory

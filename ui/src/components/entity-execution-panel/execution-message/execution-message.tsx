@@ -1,8 +1,11 @@
-import { FlowData, FlowDataType, FlowElementTypes } from '@sdk';
+import { FlowData, FlowDataType, FlowElementTypes, type Agent } from '@sdk';
 import { useDataStreamText } from '@sdk/react/hooks';
 import { DotPulse } from '@src/components/dot-pulse';
 import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { AgentSignature } from '@src/components/agents/AgentSignature';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
+import { translateCliMessage } from '@src/i18n/cli-messages';
 import { cn } from '@src/lib/utils';
 import { User } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -16,10 +19,24 @@ interface ExecutionMessageProps {
   className?: string;
   /** Assistant vendor (claude_code/codex/copilot) — picks the worker icon + label. */
   worker?: string;
+  /**
+   * The Agent this process runs AS (`useLaunchingAgent`). When present the
+   * assistant turn is signed by the agent — its avatar and name — not by the
+   * vendor: the vendor is plumbing, the agent is who is talking.
+   */
+  agent?: Agent | null;
 }
 
-const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, animateIn = false, className, worker }) => {
+const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
+  flowData,
+  isUser,
+  animateIn = false,
+  className,
+  worker,
+  agent,
+}) => {
   const { t } = useLingui();
+  const links = useLinkHandlers();
   // Determine if this message type should stream
   // Must check both elementType AND dataType since useDataStreamText only supports string data
   const messageTypes: string[] = [FlowElementTypes.TEXT, FlowElementTypes.CHAT, FlowElementTypes.USER_MESSAGE];
@@ -57,8 +74,13 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
   // Stacked, left-aligned turns (ChatGPT / Gemini / Claude-Code style): a leading
   // identity row (colored icon + name) over the message body — no left/right
   // bubble split. User = blue, worker = emerald, so the two read distinctly.
-  const Icon = isUser ? User : workerIcon(worker);
-  const name = isUser ? t`You` : workerLabel(worker);
+  const name = isUser ? t`You` : agent ? agent.displayName : workerLabel(worker);
+  const WorkerIcon = workerIcon(worker);
+  const nameNode = (
+    <span className="text-[13px] font-semibold text-foreground" data-testid="execution-message-name">
+      {name}
+    </span>
+  );
   const accent = isUser
     ? { circle: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', body: 'text-blue-700 dark:text-blue-200' }
     : { circle: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', body: 'text-foreground' };
@@ -71,13 +93,33 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
       aria-live={isStreaming ? 'polite' : undefined}
     >
       <div className="mb-1 flex items-center gap-2">
-        <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
-          <Icon className="h-3 w-3" />
-        </span>
-        <span className="text-[13px] font-semibold text-foreground">{name}</span>
+        {!isUser && agent ? (
+          <AgentSignature agent={agent} />
+        ) : (
+          <>
+            <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
+              {isUser ? <User className="h-3 w-3" /> : <WorkerIcon className="h-3 w-3" />}
+            </span>
+            {nameNode}
+          </>
+        )}
       </div>
-      <div className={cn('min-w-0 break-words pl-7 text-[15px] leading-7', accent.body)}>
-        <MarkdownView value={currentContent} compact />
+      <div
+        className={cn(
+          'min-w-0 break-words ps-7 text-[15px] leading-7',
+          // A user's Enter is a line break, not markdown's soft wrap that joins lines.
+          isUser && '[&_p]:whitespace-pre-line',
+          accent.body,
+        )}
+      >
+        {/*
+          Worker messages pass through the CLI-sentence whitelist: a signed-out
+          Claude Code answers "Not logged in · Please run /login", which is the
+          one error the user can act on and so the one worth reading in their own
+          language. Anything not on the whitelist renders exactly as written, and
+          a user's own message is never rewritten.
+        */}
+        <MarkdownView value={isUser ? currentContent : translateCliMessage(currentContent)} compact links={links} />
         {isStreaming && (
           <span className="mt-1 inline-flex" aria-label={t`Assistant is responding`}>
             <DotPulse />

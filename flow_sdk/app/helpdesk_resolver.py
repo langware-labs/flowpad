@@ -1,0 +1,110 @@
+"""Project-scoped helpdesk resolution shared by portal and ticket actions.
+
+This module deliberately knows nothing about HTTP actions or Hub transport. It
+only answers which already-indexed Helpdesk a Project adopted through its own
+root or one of its direct context roots.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass
+
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.builtin.helpdesk import Helpdesk
+from flow_sdk.builtin.project import Project, mount_key, scoped_assets
+from flow_sdk.fs_store.path_utils import is_path_under
+from flow_sdk.schema.types import EntityType
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AdoptedHelpdesk:
+    """One locally adopted desk and the Hub queue named by its manifest.
+
+    ``portal_project_id`` is None when the desk's folder has not (yet) been
+    indexed as a Project of its own. That is a presentation detail — it is what
+    lets the UI open the portal's project home — and it deliberately does NOT
+    gate resolution: the queue a ticket routes to is named by the manifest, not
+    by whether the checkout happens to have a Project projection.
+    """
+
+    portal_project_id: str | None
+    queue_project_id: str
+    mount_path: str
+
+
+async def resolve_adopted_helpdesk(project_id: str) -> AdoptedHelpdesk | None:
+    """Return the deterministic desk adopted by ``project_id``, if any.
+
+    Roots are authoritative in Project order: the target root first, followed
+    by direct context roots in their declared order. Within one root, Helpdesks
+    are ordered by canonical asset path and then entity id, so database row
+    order can never change which Hub queue receives a ticket.
+
+    Resolution writes only the desks' own rows: a declared desk not yet indexed
+    is indexed here (the project's first index runs detached on open). A context
+    root whose Project projection has not been indexed yet is never minted here.
+
+    It is not SKIPPED either, which it used to be. A desk attached by path
+    rather than through the git flow has no Project of its own, and requiring
+    one made resolution return None: the ticket then fell through to the hub's
+    default desk, silently, with no error anywhere. Routing a customer's
+    support request to a different company than the one whose desk they
+    adopted is the worst failure this module has, so the Project projection is
+    now carried when present and simply absent when not.
+    """
+    project = await Project.get_by_id(project_id)
+    if project is None:
+        return None
+
+    roots = project.direct_context_roots()
+    if not roots:
+        return None
+
+    # Before the detached first index lands, a declared desk has no row and the ticket
+    # would go, silently, to the hub's default desk.
+    await project.index_missing_assets("helpdesk", {EntityType.HELPDESK.value}, lambda _candidate: True)
+
+    # Independent reads: neither feeds the other, so pay one round trip, not two.
+    all_desks, projects_by_mount = await asyncio.gather(Helpdesk.get_all(), Project.index_by_mount())
+
+    # Canonicalize and order the desks ONCE. `assets_under_roots(all_desks, [root])`
+    # inside the loop re-ran a realpath syscall per desk for every root; filtering the
+    # prepared rows keeps the identical (path, id) first-wins rule at roots x desks
+    # string comparisons instead.
+    desk_rows = scoped_assets(all_desks)
+
+    for root in roots:
+        # ``mount_key`` on both sides: ``index_by_mount`` builds its keys with it,
+        # and a root that differs only by a trailing slash would otherwise miss
+        # and read as "this checkout has no Project" — see ``no_portal_project``.
+        portal = projects_by_mount.get(mount_key(root))
+        # `scoped_assets` owns the (canonical path, id) ordering. Sorting here too
+        # would be a second copy of the rule that decides which company receives a
+        # ticket. Root-major iteration is deliberate: an earlier root wins outright.
+        for canonical, _desk_id, desk in desk_rows:
+            if not is_path_under(canonical, root):
+                continue
+            queue_id = desk.desk_project_id
+            queue_id = queue_id.strip() if isinstance(queue_id, str) else ""
+            if not is_valid_entity_id(queue_id):
+                # A desk asset IS adopted here but names no usable queue. Say so:
+                # the caller is about to fall through to the hub's default desk,
+                # i.e. send this ticket to somebody else, and a silent fallback
+                # is indistinguishable from "no desk adopted".
+                log.warning(
+                    "[helpdesk] adopted desk at %s names no valid desk_project_id (%r) — "
+                    "ticket routing will fall through to the default desk",
+                    desk.asset_ref,
+                    queue_id,
+                )
+                continue
+            return AdoptedHelpdesk(
+                portal_project_id=str(portal.id) if portal is not None else None,
+                queue_project_id=queue_id,
+                mount_path=root,
+            )
+    return None

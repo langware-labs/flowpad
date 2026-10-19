@@ -1,8 +1,7 @@
 """ComputeNode HTTP-action sweep — Desktop / Analytics / ops / worker-history.
 
 Drives the documented `/api/v1/graph/compute_node/{id}/{action}` interface via
-`bootstrapped_client`. Covers the Desktop mixin (get-host redirect,
-machine-status, system-profile, get/save-json-file round-trip, guarded
+`bootstrapped_client`. Covers the Desktop mixin (machine-status, system-profile, get/save-json-file round-trip, guarded
 pick-folder / open-terminal / open-external, generate-amd-plan), the Analytics
 mixin (get-cost-overview, get-claude-context), the unified worker-history
 action (limit + project_ids scoping), and `ops/command` (buffered + streaming)
@@ -22,7 +21,6 @@ import pytest
 
 import flow_sdk.builtin.faas.analytics.claude_context as claude_context_mod
 from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
-
 from tests.api.conftest import default_compute_node_id
 
 
@@ -33,32 +31,6 @@ def _py(script: str) -> str:
 # ---------------------------------------------------------------------------
 # Desktop mixin
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_host_redirects_to_localhost_port(bootstrapped_client, bootstrap_payload):
-    """get-host with a provider set returns a redirect to http://localhost:<port>."""
-    node_id = default_compute_node_id(bootstrap_payload)
-
-    resp = await bootstrapped_client.get(
-        f"/api/v1/graph/compute_node/{node_id}/get-host?port=8080",
-        follow_redirects=False,
-    )
-    assert resp.status_code in (302, 307), resp.text
-    assert resp.headers["location"] == "http://localhost:8080"
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_host_rejects_out_of_range_port(bootstrapped_client, bootstrap_payload):
-    """A port outside 1024-65535 is a guarded failure, not a redirect."""
-    node_id = default_compute_node_id(bootstrap_payload)
-    resp = await bootstrapped_client.get(
-        f"/api/v1/graph/compute_node/{node_id}/get-host?port=80",
-        follow_redirects=False,
-    )
-    assert resp.json()["status"] == "FAIL", resp.text
 
 
 @pytest.mark.asyncio
@@ -160,6 +132,9 @@ async def test_open_terminal_route_guarded(bootstrapped_client, bootstrap_payloa
         return _P()
 
     monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    # Linux probes shutil.which for an emulator BEFORE Popen; headless CI has
+    # none, so stub discovery too — the spawn itself is already captured above.
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/fake-terminal")
 
     node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(

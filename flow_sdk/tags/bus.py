@@ -25,11 +25,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from flow_sdk.tags.envelope import FlowEvent, FlowEventCtx
-from flow_sdk.tags.grammar import (
-    segments_match as _segments_match,
-    tag_matches,
-    tag_pattern_problem,
-)
+from flow_sdk.tags.grammar import segments_match as _segments_match
+from flow_sdk.tags.grammar import tag_pattern_problem
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +83,24 @@ def target_matches(pattern: str, target: str) -> bool:
     return False
 
 
+def explain_subscription_match(pattern: str, tag: str, target: str, *,
+                               target_filter: Optional[str] = None,
+                               scope_filter: Optional[list[str]] = None,
+                               scope: Optional[list[str]] = None) -> dict[str, bool]:
+    """Would a subscription ``(pattern, target_filter, scope_filter)`` receive this
+    event — answered PER FIELD, so a person can be told which part did not match.
+
+    The same predicate the bus applies (``TagEventBus._sub_matches`` for pattern
+    and target, then ``emit``'s scope check), off the hot path: the bus keeps its
+    own pre-split copy because emit runs per event. Every key is True when the
+    event would be delivered."""
+    return {
+        "tag": pattern == "*" or _segments_match(pattern.split("."), tag.split(".")),
+        "target": target_filter in (None, "") or target_matches(target_filter, target),
+        "scope": not scope_filter or any(s in (scope or []) for s in scope_filter),
+    }
+
+
 class _Subscription:
     __slots__ = ("pattern", "segments", "handler", "target", "scope")
 
@@ -97,6 +112,22 @@ class _Subscription:
         self.handler = handler
         self.target = target
         self.scope = scope
+
+
+#: Strong references to in-flight handler tasks.
+#:
+#: The event loop holds only WEAK references to tasks, so a bare
+#: ``ensure_future(...)`` whose Task nobody keeps can be garbage-collected while
+#: it is still awaiting — asyncio says so itself ("Save a reference to the result
+#: of this function, to avoid a task disappearing mid-execution") and announces
+#: the loss as ``Task was destroyed but it is pending!``. Short handlers usually
+#: finish inside one GC cycle and hide it; a handler that awaits real work — a
+#: spawned worker, an HTTP round trip — is the one that vanishes, and it vanishes
+#: SILENTLY as far as its caller is concerned, because Law 3 already means nobody
+#: is awaiting it. Holding the task here until it completes is what makes "emit
+#: never awaits consumers" mean "runs independently" rather than "runs if the
+#: collector does not get there first".
+_INFLIGHT: "set[asyncio.Task[Any]]" = set()
 
 
 def _log_task_exception(task: "asyncio.Task[Any]") -> None:
@@ -180,16 +211,52 @@ class TagEventBus:
             if not self._sub_matches(sub, tag_segments, target):
                 continue
             if event is None:
-                event = FlowEvent(tag=tag, target=target, data=data or {},
-                                  ctx=FlowEventCtx(**{"origin": self._tier, **(ctx or {})}))
+                # Built on the first MATCHING sub (not merely the first sub) —
+                # the laziness is the point. Tier-stamping lives in make_event.
+                event = self.make_event(tag, target, data, ctx)
             if sub.scope and not any(s in event.ctx.scope for s in sub.scope):
                 continue
             self._dispatch(sub, event)
         return event
 
+    def make_event(self, tag: str, target: str, data: dict | None = None,
+                   ctx: dict | None = None) -> FlowEvent:
+        """Build an envelope WITHOUT dispatching it — the tier-stamping half of
+        ``emit`` on its own.
+
+        Exists so a caller that must know the envelope id *before* it is
+        published (to write it onto a record, so the record and the envelope are
+        the same fact) can get one unconditionally. ``emit`` cannot serve that:
+        its zero-subscriber fast path returns None, so the id would be present
+        only when somebody happened to be listening.
+
+        Always go through here rather than constructing a ``FlowEvent`` at a call
+        site — ``ctx.origin`` must keep coming from the bus TIER, which is the
+        one thing a hand-built envelope always gets wrong (a worker or sandbox
+        flow_sdk must not self-label ``local_server``).
+        """
+        return FlowEvent(tag=tag, target=target, data=data or {},
+                         ctx=FlowEventCtx(**{"origin": self._tier, **(ctx or {})}))
+
+    def publish(self, event: FlowEvent) -> FlowEvent:
+        """Dispatch an envelope built here by ``make_event`` — the emit half.
+
+        Observes (an emitted tag is seen whether or not anyone listens) and fans
+        out, returning the same object so the caller can read its id. Distinct
+        from ``deliver``, which is the RELAY entry for an envelope minted on
+        another tier and deliberately does not observe.
+        """
+        self._observe(event.tag, event.target)
+        self._fanout(event)
+        return event
+
     def deliver(self, event: FlowEvent) -> None:
         """Dispatch a PRE-BUILT envelope (relay entry — id/timestamp/actor are
         never rewritten; the caller stamps ``origin`` per the arriving hop)."""
+        self._fanout(event)
+
+    def _fanout(self, event: FlowEvent) -> None:
+        """The shared pre-built-envelope dispatch loop (publish + deliver)."""
         tag_segments = event.tag.split(".")
         for sub in list(self._subs.values()):
             if not self._sub_matches(sub, tag_segments, event.target):
@@ -203,8 +270,12 @@ class TagEventBus:
             result = sub.handler(event)
             if inspect.iscoroutine(result):
                 # Law 3: emit never awaits consumers — async handlers become
-                # loop tasks whose failures are logged, never raised here.
-                asyncio.ensure_future(result).add_done_callback(_log_task_exception)
+                # loop tasks whose failures are logged, never raised here. The
+                # task is kept in `_INFLIGHT` until it finishes; see that set.
+                task = asyncio.ensure_future(result)
+                _INFLIGHT.add(task)
+                task.add_done_callback(_INFLIGHT.discard)
+                task.add_done_callback(_log_task_exception)
         except Exception:
             logger.exception("[EventBus] handler failed tag=%s target=%s",
                              event.tag, event.target)
@@ -233,6 +304,31 @@ event_bus = TagEventBus()
 def emit_tag(tag: str, target: str, data: dict | None = None,
                ctx: dict | None = None) -> Optional[FlowEvent]:
     return event_bus.emit(tag, target, data, ctx)
+
+
+def make_tag_event(tag: str, target: str, data: dict | None = None,
+                   ctx: dict | None = None) -> FlowEvent:
+    return event_bus.make_event(tag, target, data, ctx)
+
+
+def publish_tag(event: FlowEvent) -> FlowEvent:
+    return event_bus.publish(event)
+
+
+async def drain() -> None:
+    """Await every handler the bus has in flight, including the ones those schedule.
+
+    For a script, a snippet or a test that emitted and wants to read what the handlers wrote:
+    Law 3 (emit never awaits consumers) still holds — this is the caller choosing to wait.
+    Bounded by rounds, not time: a handler that keeps scheduling more is a runaway and is
+    reported as one."""
+    current = asyncio.current_task()
+    for _ in range(50):
+        pending = [t for t in _INFLIGHT if t is not current and not t.done()]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+    raise RuntimeError("the bus never went quiet: a handler keeps scheduling more work")
 
 
 def on_tag(pattern: str, handler: FlowEventHandler, *,

@@ -1,0 +1,92 @@
+"""One per-event-loop lock idiom, shared by the stream inbox lanes.
+
+An ``asyncio.Lock`` is loop-scoped, and a single module-level Lock breaks under
+per-test event loops: a loop torn down while a fire-and-forget task holds the
+lock leaves it locked and bound to a dead loop forever, and every later acquire
+from a new loop raises "bound to a different event loop". Keying the lock by
+the RUNNING loop in a weak-keyed table sidesteps both; in the backend's single
+long-lived loop this is identical to one Lock.
+
+Extracted because the unread projection and the thread projector each grew a
+byte-identical copy — a third was inevitable.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import weakref
+from typing import Any, Awaitable, Callable
+
+Registry = "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]"
+
+
+def new_registry() -> "weakref.WeakKeyDictionary":
+    return weakref.WeakKeyDictionary()
+
+
+def loop_lock(registry: "weakref.WeakKeyDictionary") -> asyncio.Lock:
+    """The calling loop's lock from ``registry``, created on first use."""
+    loop = asyncio.get_running_loop()
+    lock = registry.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        registry[loop] = lock
+    return lock
+
+
+def keyed_loop_lock(registry: "weakref.WeakKeyDictionary", key: str) -> asyncio.Lock:
+    """The calling loop's lock for *key* from ``registry`` — one lock per (loop, key).
+
+    Weak-valued: a key's lock lives only while someone holds or awaits it, so a registry
+    keyed by something unbounded (a conversation id) does not grow for the process's life.
+    A lock nobody references is unlocked, so minting a fresh one later changes nothing.
+    """
+    per_loop = registry.get(asyncio.get_running_loop())
+    if per_loop is None:
+        per_loop = registry[asyncio.get_running_loop()] = weakref.WeakValueDictionary()
+    lock = per_loop.get(key)
+    if lock is None:
+        lock = per_loop[key] = asyncio.Lock()
+    return lock
+
+
+def keyed_lock_held(registry: "weakref.WeakKeyDictionary", key: str) -> bool:
+    """Whether *key*'s lock is held on any loop. Never creates a lock.
+
+    The read-only companion of ``keyed_loop_lock`` for a status predicate: a lock
+    nobody holds is not in the registry at all, so a lookup that minted one would
+    both answer wrongly (a fresh lock is unlocked) and pin it. Needs no running
+    loop — a serializer or a sync test asks this outside one.
+    """
+    for per_loop in list(registry.values()):
+        lock = per_loop.get(key)
+        if lock is not None and lock.locked():
+            return True
+    return False
+
+
+def any_keyed_lock_held(registry: "weakref.WeakKeyDictionary") -> bool:
+    """Whether any key's lock in *registry* is held. Never creates a lock."""
+    return any(lock.locked() for per_loop in list(registry.values()) for lock in list(per_loop.values()))
+
+
+async def single_flight(registry: "weakref.WeakKeyDictionary", key: str, run: Callable[[], Awaitable[Any]], failed: str) -> None:
+    """Run ``run`` for ``key`` once at a time on this loop; a call that lands while it runs buys ONE
+    more round, never a pile of them (a sync that completes during a sweep). A failing round is
+    logged (``failed`` % key) and the next call tries again."""
+    pending = registry.setdefault(asyncio.get_running_loop(), {})
+    if key in pending:
+        pending[key] = True
+        return
+    pending[key] = False
+    try:
+        while True:
+            try:
+                await run()
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).exception(failed, key)
+            if not pending[key]:
+                return
+            pending[key] = False
+    finally:
+        pending.pop(key, None)

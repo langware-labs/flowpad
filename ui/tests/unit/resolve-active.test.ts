@@ -3,7 +3,7 @@
  * plus the consume-once / not-a-member edges. Pure — no React, no SDK.
  */
 import { describe, expect, it } from 'vitest';
-import { type TabCandidate, resolveActive } from '@src/tabs/tab-model';
+import { type TabCandidate, resolveActive } from '@sdk/tabs';
 
 const c = (key: string, lastActiveAt: number | null, tabOrder: number): TabCandidate => ({
   key,

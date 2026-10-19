@@ -1,0 +1,32 @@
+{
+  "type": "compute_op",
+  "id": "02eb8e56-3a16-495f-bc67-d106b06ea8af",
+  "name": "cowsay-on-path",
+  "label": "cowsay",
+  "description": "cowsay is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install cowsay",
+      "linux": "apt-get update && apt-get install -y cowsay"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install cowsay (https://github.com/piuccio/cowsay) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v cowsay >/dev/null 2>&1",
+      "linux": "command -v cowsay >/dev/null 2>&1"
+    },
+    "timeout_seconds": 30
+  }
+}

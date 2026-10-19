@@ -1,4 +1,4 @@
-import { dataContext, fsManager } from '@sdk';
+import { dataContext, fsManager, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { notify } from '@src/notifications';
@@ -41,7 +41,7 @@ const LOG_SUBDIRS = ['server', 'monitor', 'main_desktop'] as const;
 
 // Find the newest log file across all subdirectories
 async function findNewestLogFile(
-  typeId: string,
+  typeId: TypeId,
   logsPath: string,
 ): Promise<{ path: string; name: string; date: Date } | null> {
   let newest: { path: string; name: string; date: Date } | null = null;
@@ -125,7 +125,9 @@ export function SystemLog() {
           <div className="flex cursor-pointer items-center justify-between border-b pb-3 text-sm font-medium text-muted-foreground hover:text-foreground">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              <span><Trans>System Log</Trans></span>
+              <span>
+                <Trans>System Log</Trans>
+              </span>
             </div>
             <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </div>
@@ -142,11 +144,11 @@ export function SystemLog() {
                 disabled={!currentLogFile}
                 className="flex-1"
               >
-                <FileText className="mr-2 h-4 w-4" />
+                <FileText className="me-2 h-4 w-4" />
                 <Trans>Open Log File</Trans>
               </Button>
               <Button variant="outline" onClick={() => void handleOpenArchive()} className="flex-1">
-                <FolderOpen className="mr-2 h-4 w-4" />
+                <FolderOpen className="me-2 h-4 w-4" />
                 <Trans>Archive</Trans>
               </Button>
             </div>

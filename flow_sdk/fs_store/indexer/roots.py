@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from flow_sdk.assets.placement import Scope
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -77,7 +78,17 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
         conn.close()
 
 
+# Canonical cwd -> real project id. A second copy of "which project owns this
+# folder" next to ``all_projects._PROJECTS_CACHE``, and it must follow the same
+# lifecycle: ``invalidate_projects_cache`` drops both, so a deleted project's id
+# is never stamped on a record again and the dict holds at most one entry per
+# live project row.
 _CWD_PID_CACHE: dict[str, str | None] = {}
+
+
+def forget_project_cwd_ids() -> None:
+    """Drop every cached cwd -> project id. Called when the set of projects changes."""
+    _CWD_PID_CACHE.clear()
 
 
 def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
@@ -117,25 +128,27 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
     if not is_valid_project_cwd(cwd, include_temp=True):
         return None
 
-    # Cache only confirmed real-id hits — a project's id won't change once it
-    # exists. The derived-alias fallback is intentionally NOT cached so a
-    # project created later in this process's lifetime (e.g. by a project
-    # walker in the same index run) is picked up on the next call instead of
-    # being masked by a stale alias. Keyed by the RAW cwd so a repeat hit —
-    # the common case, many sessions sharing one project cwd — skips both the
-    # Path.resolve() syscall and the project-table scan.
-    cached = _CWD_PID_CACHE.get(cwd)
-    if cached is not None:
-        return cached
-
     try:
         canonical = canonical_posix_path(cwd)
     except OSError:
         return None
 
+    # Cache only confirmed real-id hits — a project's id won't change while it
+    # exists. The derived-alias fallback is intentionally NOT cached so a
+    # project created later in this process's lifetime (e.g. by a project
+    # walker in the same index run) is picked up on the next call instead of
+    # being masked by a stale alias. Keyed by the CANONICAL cwd so one folder
+    # is one entry however a session spells it; the ``is_valid_project_cwd``
+    # check above already costs several times what canonicalising does, so a
+    # repeat hit — many sessions sharing one project cwd — still skips only
+    # what matters, the project-table scan.
+    cached = _CWD_PID_CACHE.get(canonical)
+    if cached is not None:
+        return cached
+
     real = _lookup_project_id_by_cwd(canonical)
     if real is not None:
-        _CWD_PID_CACHE[cwd] = real
+        _CWD_PID_CACHE[canonical] = real
         return real
     return Project.derive_id_for_path(canonical)
 
@@ -153,7 +166,7 @@ async def load_project_mounts() -> tuple[tuple[str, str], ...]:
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
         canonical_posix_path,
-        is_valid_project_cwd,
+        is_valid_project_mount,
     )
 
     try:
@@ -165,7 +178,10 @@ async def load_project_mounts() -> tuple[tuple[str, str], ...]:
         mount = proj.fs_storage_mount_path or getattr(proj, "cwd", None)
         if not mount or not proj.id:
             continue
-        if not is_valid_project_cwd(mount, include_temp=True):
+        # Ownership gate, NOT the worker-cwd/delete gate: a shipped system
+        # project is undeletable but perfectly ownable, and excluding it here
+        # hands its files to the enclosing checkout instead.
+        if not is_valid_project_mount(mount, include_temp=True):
             continue
         try:
             mounts.append((canonical_posix_path(str(mount)).rstrip("/"), str(proj.id)))
@@ -282,7 +298,7 @@ def flowpad_assistant_scoped_roots() -> tuple[FSRef, ...]:
             FSRef(
                 system_root,
                 record_type=RecordType.SYSTEM_ROOT,
-                scope="system",
+                scope=Scope.SYSTEM.value,
                 project_id=system_pid,
             ),
         )
@@ -308,9 +324,13 @@ def classify_path(path: str | Path) -> str | None:
 
     try:
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
-        system_root = flowpad_assistant_project_root().resolve()
-        if target == system_root or system_root in target.parents:
-            return "system"
+        from flow_sdk.core.log_dataset import temp_datasets  # noqa: PLC0415
+
+        # Flowpad's own: its shipped project, and its logs' folder in temp (SmartNavigationLog, FlowCall
+        # logs). Only that folder: a project made under temp (a mock project, a test's) stays a project.
+        for system_root in (flowpad_assistant_project_root().resolve(), temp_datasets().resolve()):
+            if target == system_root or system_root in target.parents:
+                return Scope.SYSTEM.value
     except Exception:
         pass
 
@@ -332,14 +352,45 @@ def classify_path(path: str | Path) -> str | None:
     return None
 
 
+async def owning_project_id(path: str | Path, default: str | None = None) -> str | None:
+    """The id of the DEEPEST Project whose mount contains ``path`` — the entity id
+    credentials, search and scope filters key on — else ``default``."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        return deepest_project_id_for_path(canonical_posix_path(str(path)), await load_project_mounts(), default)
+    except OSError:
+        return default
+
+
+async def system_project_id() -> str | None:
+    """The id of the system project (flowpad_assistant), which ``system`` rows are listed under."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.config import FLOWPAD_ASSISTANT_PROJECT_UNAME  # noqa: PLC0415
+
+    project = await Project.get_by_uname(FLOWPAD_ASSISTANT_PROJECT_UNAME)
+    return str(project.id) if project is not None else None
+
+
+def scope_for(path: str | Path, project_id: str | None) -> str | None:
+    """``classify_path``, with an owning project authoritative.
+
+    ``classify_path`` knows only the server cwd as a project, so an asset in a
+    workspace project (which lives under the user home) classifies as ``user``.
+    When a project owns the path it is ``project`` — shipped ``system`` content
+    stays system.
+    """
+    scope = classify_path(path)
+    return Scope.PROJECT.value if project_id and scope != Scope.SYSTEM else scope
+
+
 def default_roots() -> list[FSRef]:
     """Return the three canonical roots plus any env-supplied extras.
 
     USER_HOME_FOLDER comes from InstanceSettings.user_home so test mode
     (which sandboxes user_home) walks the sandbox, not the real home.
     """
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import legacy_project_scope_id  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     settings = get_instance_settings()
     cwd = Path.cwd()
@@ -377,7 +428,7 @@ def default_roots() -> list[FSRef]:
                 cwd,
                 record_type=RecordType.CWD_ROOT,
                 scope=Scope.PROJECT.value,
-                project_id=Project.derive_id_for_path(cwd),
+                project_id=legacy_project_scope_id(cwd),
             )
         )
 

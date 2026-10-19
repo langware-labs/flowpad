@@ -1,9 +1,10 @@
 // React Testing Library Setup for Vitest + jsdom
-import { afterEach } from 'vitest';
+import { afterEach, beforeAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { installCleanup } from '../_cleanup';
+import { loadShippedIconPacks } from '../_icon-packs';
 import { resolveReactTestInstance } from './_instance';
 
 // Config evaluation must remain safe for `--project unit`, but an actual React
@@ -35,6 +36,11 @@ if (!launchedInstance || __REACT_INSTANCE_NAME__ !== selectedInstance || __REACT
 // sweep also covers agentic_process so an un-tracked live create is caught.
 // Coexists with RTL's own afterEach(cleanup) below — they're independent hooks.
 installCleanup({ sweepTypes: ['agentic_process'] });
+
+// Production loads these manifests during bootstrap. Many component tests do
+// not call apiTestSetup themselves, so install the same packs at tier setup and
+// keep their icon rendering independent of file order.
+loadShippedIconPacks();
 
 // Mock matchMedia for jsdom (used by react-resizable-panels and other UI libraries)
 Object.defineProperty(window, 'matchMedia', {
@@ -150,3 +156,18 @@ console.error = (...args: any[]) => {
   // Log other errors normally
   originalError.apply(console, args);
 };
+
+// Developer mode is a PREFERENCE, and this tier persists preferences to one live
+// backend shared by every file — so a file that turned Dev on (or left the legacy
+// stored `view_mode = "dev"`, which reads as on) handed it to the next file, whose
+// Advanced/Dev-gated assertions then flipped with the file order (CI: WorkerToolbar
+// rendered every worker). Every FILE starts with Dev off; within a file, tests own
+// their sequence. Written only when on, so the common case costs no preference save.
+// Read through the SDK store by its own module paths — files mock both
+// view-mode-context and the `@sdk` barrel, and a mock replaces exactly that id.
+beforeAll(async () => {
+  const { instancePreferences } = await import('@sdk/services/InstancePreferences');
+  const { PrefKey } = await import('@sdk/preferences/prefRegistry');
+  if (instancePreferences.get(PrefKey.DEV_MODE) === true) instancePreferences.set(PrefKey.DEV_MODE, false);
+  if (instancePreferences.get(PrefKey.VIEW_MODE) === 'dev') instancePreferences.set(PrefKey.VIEW_MODE, 'advanced');
+});

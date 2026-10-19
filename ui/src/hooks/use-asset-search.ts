@@ -1,28 +1,16 @@
+import type { SearchRow } from './search-row';
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import { applyFilterToParams } from '@src/components/assets/assetFilter';
 
-export interface SearchResult {
-  record_id: string;
-  record_type: string;
-  name: string;
+/** A row from the `/search` endpoint. Shared fields live in `SearchRow`. */
+export interface SearchResult extends SearchRow {
   snippet: string | null;
-  status: string;
-  scope: string;
-  asset_ref: string;
-  created_at: string;
-  modified_at: string;
   // Extra entity-specific fields (optional, populated when available)
-  uname?: string;
-  title?: string;
-  description?: string;
-  file_path?: string;
   filename?: string;
-  work_dir?: string;
-  project_id?: string;
-  project_name?: string;
   asset_type?: string;
+  remote?: boolean;
   /** Group-task member pointer — member tasks are hidden from asset lists. */
   parent_id?: string;
 }
@@ -96,12 +84,15 @@ export function useAssetSearch(params: UseAssetSearchParams): UseAssetSearchResu
         .then((data: unknown) => {
           if (cancelledRef.current) return;
           const d = data as { results?: SearchResult[]; total?: number } | null;
-          const rows = d?.results ?? [];
-          // Member tasks (group-task children) live in their group task's
-          // editor ("Member tasks" section), not the asset lists.
-          const visible = recordType === 'task' ? rows.filter((r) => !r.parent_id) : rows;
-          setResults(visible);
-          setTotal((d?.total ?? 0) - (rows.length - visible.length));
+          // Child tasks are NOT filtered out. They used to be, on the theory
+          // that a member task belongs in its group task's editor — but that
+          // assumes the parent is local, and on the ASSIGNEE's machine the
+          // parent is a read-only mirror, so the one row they actually own
+          // vanished from every list. The asset tree nests children under a
+          // present parent and roots the rest (`buildTaskTree`), which is the
+          // right place for that presentation decision.
+          setResults(d?.results ?? []);
+          setTotal(d?.total ?? 0);
           setIsLoading(false);
         })
         .catch(() => {

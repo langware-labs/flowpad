@@ -65,10 +65,10 @@ describe('WebSocket FlowData Stream Test', () => {
 
     // Track FlowData reception
     let flowDataReceived = false;
-    let _receivedFlowData: FlowData | null = null;
+    const received: FlowData[] = [];
     bookmark.on('flow_data', (data: FlowData) => {
       flowDataReceived = true;
-      _receivedFlowData = data;
+      received.push(data);
     });
 
     // Delete entity - backend sends FlowData notification before delete
@@ -83,14 +83,13 @@ describe('WebSocket FlowData Stream Test', () => {
     );
 
     expect(flowDataReceived).toBe(true);
-    expect(bookmark.flowDataStream.count).toBe(1);
 
-    // Check the FlowData content
-    const items = bookmark.flowDataStream.items;
-    expect(items.length).toBe(1);
-    expect(items[0].elementType).toBe('notification');
-    expect(items[0].attributes['event']).toBe('entity_deleted');
-    expect(items[0].attributes['entity_id']).toBe(bookmark.id);
+    // Check the FlowData content as it was DELIVERED: the delete also drops the entity from the
+    // store, which frees its stream (`onEvicted`), so what the stream holds afterwards is not the claim.
+    expect(received.length).toBe(1);
+    expect(received[0].elementType).toBe('notification');
+    expect(received[0].attributes['event']).toBe('entity_deleted');
+    expect(received[0].attributes['entity_id']).toBe(bookmark.id);
   }, 15000);
 
   it('multiple entities receive independent FlowData streams', async () => {
@@ -110,10 +109,14 @@ describe('WebSocket FlowData Stream Test', () => {
     expect(bookmark1.flowDataStream.count).toBe(0);
     expect(bookmark2.flowDataStream.count).toBe(0);
 
-    // Track FlowData for bookmark1 only
+    // Track FlowData per entity: what was DELIVERED to each (bookmark1's own stream is freed by its delete).
     let bookmark1FlowDataReceived = false;
+    let bookmark2Deliveries = 0;
     bookmark1.on('flow_data', () => {
       bookmark1FlowDataReceived = true;
+    });
+    bookmark2.on('flow_data', () => {
+      bookmark2Deliveries += 1;
     });
 
     // Delete bookmark1 - should only affect bookmark1's stream
@@ -126,7 +129,7 @@ describe('WebSocket FlowData Stream Test', () => {
       { timeout: 5000, interval: 100 },
     );
 
-    expect(bookmark1.flowDataStream.count).toBe(1);
+    expect(bookmark2Deliveries).toBe(0);
     expect(bookmark2.flowDataStream.count).toBe(0);
   }, 15000);
 });

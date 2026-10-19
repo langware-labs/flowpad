@@ -1,0 +1,16 @@
+{
+  "type": "compute_op",
+  "name": "ripgrep-on-path-agent",
+  "label": "ripgrep (agent)",
+  "description": "The rg CLI is on the PATH.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "provisioner",
+    "prompt": "Reach this goal on this machine."
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "command -v rg"
+    }
+  }
+}

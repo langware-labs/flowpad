@@ -7,13 +7,18 @@ invariant in-repo: the proxy carries the HTTP method **verbatim** and strips
 hop-by-hop + Host + stale Authorization on the forwarded request — i.e. it can
 never turn a roster GET into a destructive DELETE.
 """
+
 from __future__ import annotations
+
+import asyncio
 
 import httpx
 import pytest
-
-from flow_sdk.cloud_client.transport.proxy import CloudProxy
 from starlette.requests import Request
+
+from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.transport import hub_http
+from flow_sdk.cloud_client.transport.proxy import CloudProxy
 
 
 def _make_request(method: str, headers: dict[str, str]) -> Request:
@@ -42,14 +47,17 @@ async def test_cloudproxy_carries_method_verbatim_and_strips_hop_by_hop():
     target = httpx.URL("https://hub.example/api/v1/graph/conversation/c1/members")
     try:
         for method in ("GET", "DELETE", "POST", "PUT", "PATCH", "REPORT"):
-            req = _make_request(method, {
-                "host": "client.invalid",
-                "connection": "keep-alive",
-                "keep-alive": "timeout=5",
-                "upgrade": "h2c",
-                "authorization": "Bearer stale-client-token",
-                "x-end-to-end": "keep-me",
-            })
+            req = _make_request(
+                method,
+                {
+                    "host": "client.invalid",
+                    "connection": "keep-alive",
+                    "keep-alive": "timeout=5",
+                    "upgrade": "h2c",
+                    "authorization": "Bearer stale-client-token",
+                    "x-end-to-end": "keep-me",
+                },
+            )
             built = proxy._build(client, req, target)
             seen = {k.lower() for k in built.headers}
 
@@ -70,3 +78,143 @@ async def test_cloudproxy_carries_method_verbatim_and_strips_hop_by_hop():
             assert built.headers.get("x-end-to-end") == "keep-me"
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.parametrize("status", [200, 400, 500])
+async def test_cloudproxy_delivers_the_hub_body_verbatim(monkeypatch, status):
+    """The proxied body must reach the caller intact — at every status.
+
+    The shared client's response hook reads the body to report hub 4xx/5xx (and
+    to sniff auth-failure envelopes on 2xx JSON). On a proxied hop that read
+    would consume the stream, so ``aiter_raw()`` raises ``StreamConsumed`` after
+    the headers — including the hub's Content-Length — have already been sent,
+    and the browser reports a bare "Network Error" instead of the hub's message.
+    The passthrough marker on the forwarded request is what keeps the hook out.
+    """
+    import flow_sdk.cloud_client.client_hooks as hooks
+
+    class Reporter:
+        def __init__(self):
+            self.reports = []
+
+        async def report(self, **kwargs):
+            self.reports.append(kwargs)
+
+    reporter = Reporter()
+    monkeypatch.setattr(hooks, "hub_error_reporter", reporter)
+
+    body = b'{"status":"fail","message":"hub said no"}'
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        # An async-iterator body, like a real network response: unread until
+        # someone streams it. (Passing `content=bytes` would hand back an
+        # already-consumed stream and prove nothing about the hook.)
+        async def stream():
+            yield body
+
+        return httpx.Response(
+            status,
+            content=stream(),
+            headers={
+                "content-type": "application/json",
+                "content-length": str(len(body)),
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        event_hooks={"response": [hooks._on_response]},
+    )
+    proxy = CloudProxy.__new__(CloudProxy)
+    proxy._client = lambda: _resolved(client)  # type: ignore[method-assign]
+
+    try:
+        out = await proxy(_make_request("GET", {}), url="https://hub.example/api/v1/x")
+        streamed = b"".join([chunk async for chunk in out.body_iterator])
+    finally:
+        await client.aclose()
+
+    assert out.status_code == status
+    assert streamed == body
+    assert out.headers["content-length"] == str(len(body))
+    if status >= 400:
+        # Status still reported; the message comes from the status alone because
+        # the body belongs to the caller downstream.
+        assert reporter.reports == [
+            {
+                "status_code": status,
+                "method": "GET",
+                "path": "/api/v1/x",
+                "message": f"HTTP {status}",
+            }
+        ]
+
+
+async def _resolved(value):
+    return value
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_cloudproxy_without_a_client_uses_the_shared_hub_client():
+    """``CloudProxy()`` built inline per request must not own a client: every
+    client-less proxy resolves the ONE process-shared hub client, and the
+    server's shutdown hook (``close_hub_client``) closes it. No network."""
+    try:
+        a = await CloudProxy()._client()
+        b = await CloudProxy()._client()
+        assert a is b
+        assert hub_http._shared_client is not None
+        assert a is await hub_http._shared_client._get_client()
+        assert not a.is_closed
+    finally:
+        await hub_http.close_hub_client()
+    assert a.is_closed
+    assert hub_http._shared_client is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_cloudproxy_reuses_one_hub_connection_across_requests(tmp_path, monkeypatch):
+    """20 proxied requests through ``CloudProxy()`` (the per-request call shape)
+    open ONE hub connection — not one per call left for the GC to close. The
+    hub is a real keep-alive HTTP/1.1 server on a unix socket in ``tmp_path``;
+    the shared hub client is pointed at it through its transport."""
+    accepted = 0
+
+    async def _serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        nonlocal accepted
+        accepted += 1
+        body = b'{"status":"success","data":{"ok":true}}'
+        try:
+            while True:
+                await reader.readuntil(b"\r\n\r\n")
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n"
+                    b"content-length: %d\r\n\r\n" % len(body) + body
+                )
+                await writer.drain()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+        finally:
+            writer.close()
+
+    monkeypatch.chdir(tmp_path)  # sun_path is 104 bytes on macOS; dial a relative path
+    server = await asyncio.start_unix_server(_serve, path="hub.sock")
+    shared = FlowpadClient(ApiConfig.from_env(), transport=httpx.AsyncHTTPTransport(uds="hub.sock"))
+    monkeypatch.setattr(hub_http, "_shared_client", shared)
+    monkeypatch.setattr(hub_http, "_shared_client_loop", asyncio.get_running_loop())
+    try:
+        for _ in range(20):
+            resp = await CloudProxy()(_make_request("GET", {}), "http://hub.example/api/v1/graph/x")
+            assert resp.status_code == 200
+            async for _ in resp.body_iterator:  # what Starlette does: stream, then run .background
+                pass
+            await resp.background()
+        assert accepted == 1
+    finally:
+        await hub_http.close_hub_client()
+        server.close()
+        await server.wait_closed()

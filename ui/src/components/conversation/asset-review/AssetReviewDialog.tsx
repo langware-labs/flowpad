@@ -1,5 +1,7 @@
-import { MessageAttachment, Project, TypeId } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
+import { isHubRepoOrigin, projectSourceLabel } from '@sdk/models/FSOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -8,14 +10,13 @@ import { Cloud, ExternalLink, File, FolderDown, GitBranch, Globe, Loader2, Packa
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { notify } from '@src/notifications';
 import { buildDockPointer, iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
+import { isCloudOnlyProject, ProjectInstallAction } from './ProjectInstallAction';
+import { ProjectPreview } from './ProjectPreview';
 import { StagedAssetViewer } from './StagedAssetViewer';
 
 /** Where the asset's content actually comes from — the reviewer's trust signal.
@@ -23,15 +24,61 @@ import { StagedAssetViewer } from './StagedAssetViewer';
  *  clones/pulls it); staged bytes rode inside the .flowmsg; anything else is a
  *  hub-served reference fetched on open. */
 function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
-  const origin = (ma.git_origin ?? null) as GitOrigin | null;
+  const origin = (ma.origin ?? null) as GitOrigin | null;
+  // A project shared `via: hub_repo` rides as its hub-hosted copy: no git URL to show.
+  if (isHubRepoOrigin(origin)) return { label: t`Hub`, Icon: Cloud, detail: projectSourceLabel(origin) };
   if (ma.transfer_mode === 'git' || origin) {
-    return { label: 'Git', Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
+    return { label: t`Git`, Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
   }
-  if (ma.unpacked_path) return { label: 'Embedded in message', Icon: Package, detail: null };
-  return { label: 'Cloud', Icon: Cloud, detail: null };
+  if (ma.unpacked_path) return { label: t`Embedded in message`, Icon: Package, detail: null };
+  return { label: t`Cloud`, Icon: Cloud, detail: null };
 }
 
-const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.git_origin != null;
+/** What a git share points at — the bytes arrive by git when it is downloaded. */
+function GitPointerPreview({ ma }: { ma: MessageAttachment }) {
+  const origin = (ma.origin ?? null) as (GitOrigin & { head_commit?: string | null }) | null;
+  const commit = origin?.head_commit ? origin.head_commit.slice(0, 12) : null;
+  return (
+    <div
+      className="rounded border border-border px-4 py-5 text-sm text-muted-foreground"
+      data-testid="git-pointer-preview"
+    >
+      <p>
+        <Trans>
+          Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.
+        </Trans>
+      </p>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs">
+        {origin?.rel_path && (
+          <>
+            <dt>
+              <Trans>Path</Trans>
+            </dt>
+            <dd className="truncate text-foreground">{origin.rel_path}</dd>
+          </>
+        )}
+        {commit && (
+          <>
+            <dt>
+              <Trans>Version</Trans>
+            </dt>
+            <dd className="text-foreground">{commit}</dd>
+          </>
+        )}
+        {origin?.branch && (
+          <>
+            <dt>
+              <Trans>Branch</Trans>
+            </dt>
+            <dd className="text-foreground">{origin.branch}</dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.origin != null;
 const typeWordOf = (type?: string): string => {
   const t = type || 'file';
   return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');
@@ -72,7 +119,7 @@ function AssetParentSubscriber({
   typeId: TypeId | null;
   onParent: (maId: string, parentAssetId: string | null) => void;
 }) {
-  const { data } = useEntity<{ parent_id?: string | null }>(typeId);
+  const { data } = useEntity<AnyEntity & { parent_id?: string | null }>(typeId);
   const parentAssetId = data?.parent_id ? String(data.parent_id) : null;
   useEffect(() => {
     onParent(maId, parentAssetId);
@@ -81,37 +128,13 @@ function AssetParentSubscriber({
 }
 
 /**
- * The selected attachment's content pane. As soon as the asset's entity resolves
- * with a readable `asset_ref` — which for a task happens at unpack, BEFORE any
- * install — we render that entity's own viewer via {@link AssetEditorRouter}
- * (task → task view, skill → skill view, …). We deliberately do NOT gate on
- * install scope: a staged task shows the task viewer straightaway. Only when no
- * entity/asset_ref is resolvable yet (e.g. a staged skill not materialized until
- * install, or a raw file) do we fall back to the raw staged-file preview.
- */
-function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment }) {
-  const typeId = attachment.asset_type === 'file' ? null : attachment.targetTypeId;
-  const editor = typeId ? editorForType(typeId.type) : undefined;
-  const { data } = useEntity<{ asset_ref?: string | null }>(typeId);
-  if (typeId && editor && data?.asset_ref) {
-    const pointer = AssetDocPointer.forTypeId(editor, typeId).toPointer();
-    return (
-      <div className="h-[55vh] overflow-hidden rounded border border-border">
-        <AssetEditorRouter key={pointer} pointer={pointer} />
-      </div>
-    );
-  }
-  return <StagedAssetViewer attachment={attachment} />;
-}
-
-/**
  * Review modal for a received message's staged attachments (opened from a
  * dashed conversation chip). Two panes: a left rail listing every entity
  * attached to the message — nested as a shallow tree, a child (task with a
  * `parent_id` pointing at a sibling) indented under its parent — with the
- * clicked one selected by default; and a right pane showing the selected
- * entity's OWN viewer (task view, skill view, …) for installed assets, or a
- * bare staged-file preview for not-yet-installed ones ({@link SelectedEntityViewer}).
+ * clicked one selected by default; and a right pane reviewing the selected
+ * one's staged copy BY PATH in its own viewer, read-only ({@link StagedAssetViewer}).
+ * Review never resolves by record; "Open" is the by-record path, once installed.
  *
  * The install header stays on top. Install / Uninstall act on the WHOLE list
  * (batch): "Install in project" installs every attachment into the target
@@ -120,16 +143,34 @@ function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment })
  * "Install in project" opens the same picker switch-project uses to choose the
  * target, then installs.
  *
+ * A project is the exception: it is not installed INTO a scope, it is cloned as
+ * itself, so its branch offers one **Install project** ({@link ProjectInstallAction}).
+ * A project reference with no MessageAttachment row opens the popup through
+ * `project` instead of `attachments`.
+ *
  * All state flips live off the per-attachment MessageAttachment UPDATE via the
  * `AttachmentLiveSubscriber`s below — no optimistic writes anywhere.
  */
-export function AssetReviewDialog({
-  open,
-  onClose,
-  attachments,
-  initialAttachmentId,
-  attachmentProjectId,
-}: {
+export function AssetReviewDialog(props: AssetReviewDialogProps) {
+  return props.project ? (
+    <ProjectReviewDialog {...props} project={props.project} />
+  ) : (
+    <AttachmentReviewDialog {...props} />
+  );
+}
+
+/** A project referenced by a message — the popup's project branch. */
+export interface ProjectReviewRef {
+  typeId: TypeId;
+  /** Display-name fallback until the row arrives (the attachment's name). */
+  name?: string | null;
+  /** The row as the chip's `useEntity` resolved it (undefined = loading). */
+  entityRow?: Project | null;
+  /** The per-TypeId fetch settled on not-found / refused. */
+  entityUnavailable: boolean;
+}
+
+interface AssetReviewDialogProps {
   open: boolean;
   onClose: () => void;
   /** Every MessageAttachment on the message (entities + files). */
@@ -139,7 +180,76 @@ export function AssetReviewDialog({
   /** The conversation's mapped project (install target when present). When
    *  null, "Install in project" opens the picker to choose one. */
   attachmentProjectId: string | null;
-}) {
+  /** A project reference with no MessageAttachment row: the popup shows the
+   *  project branch alone. */
+  project?: ProjectReviewRef;
+  /** Why opening the clicked attachment just failed (a 1-click git open), shown
+   *  inline beside its Retry. */
+  initialError?: string | null;
+}
+
+/**
+ * The popup's project branch: Install project / Open project, and the
+ * project's name and type, and a {@link ProjectPreview} built from the Project
+ * row — a project invite carries no staged files to preview.
+ */
+function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps & { project: ProjectReviewRef }) {
+  const { t } = useLingui();
+  const Icon = iconForEntity(Project.type);
+  const row = project.entityRow ?? null;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-xl" data-testid="asset-review-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-bold">
+            {isCloudOnlyProject(row) ? (
+              <Trans>Received project</Trans>
+            ) : (
+              <Trans>Received project — review before installing.</Trans>
+            )}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {isCloudOnlyProject(row) ? (
+              <Trans>Review and open the shared project.</Trans>
+            ) : (
+              <Trans>Review the shared project and install it.</Trans>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <ProjectInstallAction
+          typeId={project.typeId}
+          entityRow={project.entityRow}
+          entityUnavailable={project.entityUnavailable}
+          onDone={onClose}
+        />
+        <div className="flex flex-col gap-3 border-t border-border pt-3">
+          <div className="flex items-center gap-2">
+            <Icon className="h-4 w-4 shrink-0 text-primary" />
+            <span className="truncate font-semibold">{row?.name || project.name || t`Project`}</span>
+            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+              {typeWordOf(Project.type)}
+            </span>
+          </div>
+          <ProjectPreview project={row} fallbackName={project.name} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AttachmentReviewDialog({
+  open,
+  onClose,
+  attachments,
+  initialAttachmentId,
+  attachmentProjectId,
+  initialError,
+}: AssetReviewDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
@@ -228,7 +338,11 @@ export function AssetReviewDialog({
 
   // Non-git attachments are the ones the project/global scope buttons act on;
   // git rows install through their own Download/Setup flow (AssetInstallActions).
-  const installable = useMemo(() => liveOrdered.filter((a) => !isGitAttachment(a)), [liveOrdered]);
+  // A project is cloned as itself, never installed into a scope — excluded too.
+  const installable = useMemo(
+    () => liveOrdered.filter((a) => !isGitAttachment(a) && a.asset_type !== Project.type),
+    [liveOrdered],
+  );
 
   // Install target: the conversation mapping wins; otherwise the project the
   // user picks through the switch-project dialog on "Install in project".
@@ -248,18 +362,49 @@ export function AssetReviewDialog({
   const allProject = installable.length > 0 && scopes.every((s) => s === 'project');
   const allUser = installable.length > 0 && scopes.every((s) => s === 'user');
   const userScopeAllowed = installable.every((a) => a.user_scope_allowed !== false);
+  // Plain files (a received zip, a pdf) are not assets: putting one in a project
+  // is a copy, so the buttons say so instead of "install".
+  const allPlainFiles = installable.length > 0 && installable.every((a) => a.asset_type === 'file');
+  const labels = allPlainFiles
+    ? {
+        added: t`Copied to project`,
+        addFailed: t`Copy failed`,
+        removed: t`Removed from project`,
+        removeFailed: t`Remove failed`,
+        add: t`Copy to project`,
+        remove: t`Remove from project`,
+        titleOne: t`Received file — review before copying.`,
+        titleMany: t`Received files — review before copying.`,
+      }
+    : {
+        added: t`Installed in project`,
+        addFailed: t`Install failed`,
+        removed: t`Uninstalled`,
+        removeFailed: t`Uninstall failed`,
+        add: t`Install in project`,
+        remove: t`Uninstall from project`,
+        titleOne: t`Received attachment — review before installing.`,
+        titleMany: t`Received attachments — review before installing.`,
+      };
 
   const selectedIsGit = isGitAttachment(selected);
+  // A project in the list gets Install project in place of the scope pair.
+  const selectedProjectTypeId = selected.asset_type === Project.type ? selected.targetTypeId : null;
+  const {
+    data: selectedProjectRow,
+    notFound: selectedProjectNotFound,
+    isError: selectedProjectError,
+  } = useEntity<Project>(selectedProjectTypeId);
   const selectedInstalled = selected.effectiveScope != null;
 
   const installAllToProject = async (projectId: string, name?: string) => {
     setBusyAction('project');
     try {
       for (const a of installable) await a.install('project', projectId);
-      notify.success({ title: t`Installed in project`, message: name ?? '' });
+      notify.success({ title: labels.added, message: name ?? '' });
     } catch (err) {
       console.error('[asset-review] batch project install failed', err);
-      notify.error({ title: t`Install failed` });
+      notify.error({ title: labels.addFailed });
     } finally {
       setBusyAction(null);
     }
@@ -292,10 +437,10 @@ export function AssetReviewDialog({
     setBusyAction('uninstall');
     try {
       for (const a of installable) if (a.effectiveScope != null) await a.uninstall();
-      notify.success({ title: t`Uninstalled` });
+      notify.success({ title: labels.removed });
     } catch (err) {
       console.error('[asset-review] batch uninstall failed', err);
-      notify.error({ title: t`Uninstall failed` });
+      notify.error({ title: labels.removeFailed });
     } finally {
       setBusyAction(null);
     }
@@ -312,10 +457,17 @@ export function AssetReviewDialog({
   // Advanced-mode affordance: once an asset is installed its entity exists, so
   // the modal offers a jump to the SELECTED entity's real view (e.g. the task
   // view). Staged/not-yet-installed → nothing to open, so it's hidden.
-  const openSelected = () => {
+  const openSelected = async () => {
     const tid = selected.targetTypeId;
     if (!tid?.id) return;
-    const pointer = buildDockPointer({ type: tid.type, id: tid.id }, undefined);
+    // Resolve the entity rather than hand `buildDockPointer` a {type, id} stub.
+    // Most types need nothing more — they open by TypeId and the loader resolves
+    // them — but a transcript is addressed by its FILE, so a stub silently
+    // dropped its `asset_ref` and every install-then-Open fell through to the
+    // session-id form, which cannot resolve on a machine that never ran the
+    // session. Fetching here costs one request on an explicit click.
+    const entity = await dataManager.getByTypeId<AnyEntity & { type: string }>(tid).catch(() => null);
+    const pointer = buildDockPointer(entity ?? { type: tid.type, id: tid.id }, undefined);
     if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
     onClose();
   };
@@ -349,13 +501,7 @@ export function AssetReviewDialog({
         <DialogHeader>
           {/* Whole-popup title — the per-entity icon/name/type moved down to the
               selected-entity pane. Singular vs plural tracks the list size. */}
-          <DialogTitle className="font-bold">
-            {multi ? (
-              <Trans>Received attachments — review before installing.</Trans>
-            ) : (
-              <Trans>Received attachment — review before installing.</Trans>
-            )}
-          </DialogTitle>
+          <DialogTitle className="font-bold">{multi ? labels.titleMany : labels.titleOne}</DialogTitle>
           <DialogDescription className="sr-only">
             <Trans>Review each attached asset and choose how to install it.</Trans>
           </DialogDescription>
@@ -365,8 +511,20 @@ export function AssetReviewDialog({
             list; Open acts on the selected entity. When no project is mapped,
             "Install in project" opens the picker to choose the target. */}
         <div className="flex flex-wrap items-center gap-2">
-          {selectedIsGit ? (
-            <AssetInstallActions attachment={selected} conversationProjectId={attachmentProjectId} />
+          {selectedProjectTypeId ? (
+            <ProjectInstallAction
+              typeId={selectedProjectTypeId}
+              attachment={selected}
+              entityRow={selectedProjectRow}
+              entityUnavailable={selectedProjectNotFound || selectedProjectError}
+              onDone={onClose}
+            />
+          ) : selectedIsGit ? (
+            <AssetInstallActions
+              attachment={selected}
+              conversationProjectId={attachmentProjectId}
+              initialError={selected.id === initialAttachmentId ? initialError : null}
+            />
           ) : (
             <>
               {allProject ? (
@@ -378,7 +536,7 @@ export function AssetReviewDialog({
                   data-testid="asset-uninstall-project"
                 >
                   {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
-                  <Trans>Uninstall from project</Trans>
+                  {labels.remove}
                 </Button>
               ) : (
                 <Button
@@ -390,7 +548,7 @@ export function AssetReviewDialog({
                   data-testid="asset-install-project"
                 >
                   {spinnerFor('project') ?? <FolderDown className="h-3.5 w-3.5" />}
-                  <Trans>Install in project</Trans>
+                  {labels.add}
                 </Button>
               )}
               {userScopeAllowed &&
@@ -420,8 +578,8 @@ export function AssetReviewDialog({
                 ))}
             </>
           )}
-          {selectedInstalled && (
-            <Button size="sm" variant="secondary" onClick={openSelected} data-testid="asset-open-entity">
+          {selectedInstalled && !selectedProjectTypeId && (
+            <Button size="sm" variant="secondary" onClick={() => void openSelected()} data-testid="asset-open-entity">
               <ExternalLink className="h-3.5 w-3.5" />
               <Trans>Open</Trans>
             </Button>
@@ -431,7 +589,7 @@ export function AssetReviewDialog({
         {/* Two panes: entity list | selected entity's default content view. */}
         <div className="flex min-h-0 gap-3 border-t border-border pt-3">
           {multi && (
-            <div className="max-h-[55vh] w-52 shrink-0 overflow-y-auto border-r border-border pr-2">
+            <div className="max-h-[55vh] w-52 shrink-0 overflow-y-auto border-e border-border pe-2">
               {rows.map(({ a, depth }) => {
                 const r = resolve(a);
                 const RowIcon = iconFor(r);
@@ -445,7 +603,7 @@ export function AssetReviewDialog({
                     data-testid={`asset-review-row-${a.id}`}
                     style={depth ? { paddingLeft: `${depth * 0.875 + 0.375}rem` } : undefined}
                     className={cn(
-                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] transition-colors',
+                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start text-[12px] transition-colors',
                       isSel ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
                     )}
                   >
@@ -478,7 +636,15 @@ export function AssetReviewDialog({
               {selected.description && <p className="text-[12px] text-muted-foreground">{selected.description}</p>}
               <SourceRow ma={selected} />
             </div>
-            <SelectedEntityViewer attachment={selected} />
+            {selected.asset_type === Project.type ? (
+              // A project has no staged files: it previews from its row.
+              <ProjectPreview project={selectedProjectRow} fallbackName={selected.name} />
+            ) : selectedIsGit ? (
+              // A git share stages a POINTER, not files: say what it opens.
+              <GitPointerPreview ma={selected} />
+            ) : (
+              <StagedAssetViewer attachment={selected} />
+            )}
           </div>
         </div>
 

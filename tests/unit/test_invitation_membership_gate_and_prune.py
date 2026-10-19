@@ -1,7 +1,7 @@
 """Invitation routing + expired-invitation pruning.
 
 Regression tests for the "10 phantom Organization invitations" incident:
-expired flow_message-share invitations sat in the inbox forever, mislabeled
+expired flow_message-share invitations sat in the stream inbox forever, mislabeled
 as organization invitations.
 
 Covered here:
@@ -55,7 +55,7 @@ async def test_target_routes_to_membership_path_only_without_conversation(
 ):
     hub_inv = {
         "id": _INV_ID,
-        "recipient_email": "bob@langware.ai",
+        "recipient_email": "judy@example.com",
         "accepted": False,
         "sent": True,
         "target": {"type": target_type, "id": "9bd31dfd-8359-4860-8804-f44aef0b4d3e", "role": "reader"},
@@ -85,18 +85,18 @@ async def test_target_routes_to_membership_path_only_without_conversation(
 def test_common_fields_mirror_expiration_and_inviter():
     fields = _invitation_common_fields(
         {
-            "recipient_email": "Bob@Langware.AI",
+            "recipient_email": "Judy@Example.COM",
             "accepted": False,
             "sent": True,
             "message": "hi",
             "expiration_at": "2026-07-02T11:26:37.242319+00:00",
-            "inviter": {"user_id": "u-1", "name": "Gadi 20"},
+            "inviter": {"user_id": "u-1", "name": "Alice 20"},
         }
     )
-    assert fields["recipient_email"] == "bob@langware.ai"
+    assert fields["recipient_email"] == "judy@example.com"
     assert fields["expiration_at"] == datetime(2026, 7, 2, 11, 26, 37, 242319, tzinfo=UTC)
     assert fields["sender_user_id"] == "u-1"
-    assert fields["sender_name"] == "Gadi 20"
+    assert fields["sender_name"] == "Alice 20"
 
     # Absent / unparsable values degrade to None, never to a raw string
     # (assignment on a loaded entity is unvalidated — a str would poison

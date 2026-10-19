@@ -12,7 +12,6 @@ import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { isApiError } from '../../ApiResponse';
 import { TypeId } from '../../models/TypeId';
 import type { IAgenticProcess } from '../../process/agentic-process';
-import { ConnectionManager } from '../../websocket';
 import {
   FlowData,
   FlowElementTypes,
@@ -23,20 +22,36 @@ import {
   ShellInputFlowData,
   ShellOutputFlowData,
 } from '../../flow_processing';
-import { IEntity } from '../../IEntity';
+import { EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models';
-import { ComputeProviderType, RuntimeEnvironment } from './compute-node-types';
+import { hostTerminalTheme } from '../../utils/runtime';
+import {
+  type AppUpgrade,
+  ComputeProviderType,
+  type NodeStatus,
+  type ProvisionResult,
+  type ProvisionSetup,
+  RuntimeEnvironment,
+  SANDBOX_PROVIDERS,
+  type WorkspaceReady,
+  IComputeNode,
+} from './compute-node-types';
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
-import { PtyConnection } from '../../services/shell/ptyConnection';
+import type { NodeHealth } from '../service-endpoint';
 import { GitWorkdir } from '../git-workdir';
 
+/**
+ * The `node_config` marker the sandbox UI writes at create time to mean "this box
+ * is a workspace someone opens", as opposed to an agent's deployment box.
+ */
+export const WORKSPACE_FLAVOR = 'workspace';
+
 /** Callback for when a new machine session is detected */
-export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
 /** CLI worker kind shared across resolver APIs. */
-export type WorkerKind = 'claude' | 'codex' | 'copilot';
+export type WorkerKind = 'claude' | 'codex' | 'copilot' | 'opencode';
 
 /** Descriptor returned by {@link ComputeNode.findSession} on hit. */
 export interface FindSessionResult {
@@ -50,10 +65,10 @@ export interface FindSessionResult {
 
 /**
  * Convert a VFS-relative path to an OS absolute path.
- * VFS paths are relative (no leading slash, no drive letter) like "Users/gadi/Flowpad workspace".
+ * VFS paths are relative (no leading slash, no drive letter) like "Users/bob/Flowpad workspace".
  * This function combines them with the OS root and normalizes slashes for the target OS.
  *
- * @param vfsPath - VFS-relative path (e.g., "Users/gadi/Flowpad workspace/.flow/system_skills")
+ * @param vfsPath - VFS-relative path (e.g., "Users/bob/Flowpad workspace/.flow/system_skills")
  * @param root - OS filesystem root (e.g., "C:\\" on Windows, "/" on Unix)
  * @returns OS absolute path with normalized slashes
  */
@@ -67,17 +82,13 @@ export function vfsToOsPath(vfsPath: string, root: string): string {
 }
 
 /**
- * Interface for ComputeNode entity data.
+ * Declaration merge: `implements IComputeNode` only CHECKS the class, it adds no
+ * members — so every field declared solely on IComputeNode read as "does not exist
+ * on type ComputeNode", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
  */
-export interface IComputeNode extends IEntity {
-  name: string;
-  runtime: RuntimeEnvironment;
-  node_provider_type?: ComputeProviderType;
-  node_provider_id?: string;
-  node_config?: Record<string, unknown>;
-  fs_storage_mount_path?: string | null;
-  home_dir?: string | null;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ComputeNode extends EntityMerge<IComputeNode> {}
 
 /**
  * ComputeNode entity class.
@@ -92,6 +103,10 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   node_config?: Record<string, unknown>;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
+  auto_login?: boolean;
+  allow_login?: boolean;
+  login_roles?: string[];
+  logged_in_user?: string | null;
   static type: string = 'compute_node';
 
   /**
@@ -105,11 +120,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   private knownMachineSessions: Set<string> = new Set();
 
   /** Callback for when a new machine session is detected */
-  private machineSessionCallback: MachineSessionCallback | null = null;
 
   /** Bound handler for WebSocket data ops (for cleanup) */
-  private boundDataOpHandler: ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void) | null =
-    null;
 
   constructor(entity: Partial<IComputeNode> = {}) {
     super(entity);
@@ -120,6 +132,16 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.node_config = entity.node_config;
     this.fs_storage_mount_path = entity.fs_storage_mount_path ?? undefined;
     this.home_dir = entity.home_dir ?? undefined;
+    // Declaring these as class fields is NOT enough to carry them. Under the
+    // app's `useDefineForClassFields: true`, a declared-but-unassigned field is
+    // DEFINED as `undefined` at construction — overwriting whatever `super`
+    // copied off the payload. So the server sent `logged_in_user`, the entity
+    // dropped it, and every card rendered "signed out". Every other field here
+    // is assigned for the same reason; these two were simply missed.
+    this.auto_login = entity.auto_login;
+    this.allow_login = entity.allow_login;
+    this.login_roles = entity.login_roles;
+    this.logged_in_user = entity.logged_in_user;
   }
 
   /**
@@ -193,16 +215,26 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       launchPrompt?: string;
     },
   ): Promise<import('../../process/agentic-process').AgenticProcess> {
-    const { AgenticProcess } = await import('../../process/agentic-process');
     const { serializeAgenticContext } = await import('../../process/agentic-context');
 
     const action = new ActionInfo('createProcess', ComputeNode.type, this.id, 'POST');
     action.bodyParameters = {
       context: serializeAgenticContext(context),
-      ...(options?.result ? { result: { uname: options.result.uname, resultType: options.result.resultType, sourceSessionId: options.result.sourceSessionId } } : {}),
+      ...(options?.result
+        ? {
+            result: {
+              uname: options.result.uname,
+              resultType: options.result.resultType,
+              sourceSessionId: options.result.sourceSessionId,
+            },
+          }
+        : {}),
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
+      // This action spawns the PTY server-side for a visible process, so the
+      // theme has to ride the CREATE — the later `open` only reattaches.
+      ...(hostTerminalTheme() ? { theme: hostTerminalTheme() } : {}),
     };
 
     const response = await dataManager.callAction<unknown, IAgenticProcess>(action);
@@ -210,8 +242,10 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     const process = dataManager.updateEntityFromJson<import('../../process/agentic-process').AgenticProcess>(response);
     process._context = context;
 
+    // A lease, not a bare watch: the caller gets no release to keep, so the process's
+    // end gives the count back (AgenticProcess.watchWhileLive).
     if (options?.watchProcess !== false) {
-      await process.watch();
+      await process.watchWhileLive();
     }
 
     return process;
@@ -227,10 +261,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @param workerType - Optional hint to skip the other indexer.
    * @returns Descriptor on hit, `null` on 404 (session not found in either history).
    */
-  async findSession(
-    sessionId: string,
-    workerType?: WorkerKind,
-  ): Promise<FindSessionResult | null> {
+  async findSession(sessionId: string, workerType?: WorkerKind): Promise<FindSessionResult | null> {
     const action = new ActionInfo('findSession', ComputeNode.type, this.id, 'GET');
     action.queryParameters = {
       session_id: sessionId,
@@ -251,26 +282,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   appendSession(session: Shell): void {
     session.compute_node_id = this.id;
     this.sessions.set(session.id, session);
-  }
-
-  /**
-   * Create a new shell session in this node's frontend cache.
-   * @param sessionId - Unique session identifier
-   * @param name - Display name for the session
-   * @returns The created Shell
-   */
-  async createSession(sessionId: string, name: string): Promise<Shell> {
-    if (this.sessions.has(sessionId)) {
-      console.warn(`[ComputeNode] Session '${sessionId}' already exists`);
-      return this.sessions.get(sessionId)!;
-    }
-    const shell = Shell.create(this, { name });
-    // Override the auto-generated ID with the requested sessionId
-    (shell as any).id = sessionId;
-    shell.pty = new PtyConnection();
-    shell.pty.computeNodeId = this.id;
-    this.sessions.set(sessionId, shell);
-    return shell;
   }
 
   /**
@@ -357,92 +368,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     return this.sessions.size;
   }
 
-  // ============================================================
-  // Machine Session WebSocket Watching
-  // ============================================================
-
-  /**
-   * Start watching for machine session updates via WebSocket.
-   * When new PTY sessions are detected in `active_pty_sessions`, creates local shell sessions.
-   * @param onNewSession - Callback invoked when a new machine session is detected
-   */
-  startWatchingMachineSessions(onNewSession?: MachineSessionCallback): void {
-    this.machineSessionCallback = onNewSession || null;
-
-    // Already watching
-    if (this.boundDataOpHandler) {
-      return;
-    }
-
-    const manager = ConnectionManager.getInstance();
-    if (!manager.connected) {
-      console.warn('[ComputeNode] Cannot watch machine sessions: ConnectionManager not connected');
-      return;
-    }
-
-    this.boundDataOpHandler = (toEntity: string, _op: string, data: { active_pty_sessions?: string[] }) => {
-      // on_data_op emits the entity as a string (e.g. "compute_node-@local").
-      // Parse it and only handle updates for this compute node.
-      let parsedTypeId: TypeId;
-      try {
-        parsedTypeId = new TypeId(toEntity);
-      } catch {
-        return;
-      }
-      if (parsedTypeId.type !== 'compute_node' || parsedTypeId.id !== this.id) {
-        return;
-      }
-
-      const activeMachineSessions = data.active_pty_sessions;
-      if (!activeMachineSessions || !Array.isArray(activeMachineSessions)) {
-        return;
-      }
-
-      // Find new sessions that we haven't seen before
-      for (const sessionId of activeMachineSessions) {
-        if (!this.knownMachineSessions.has(sessionId)) {
-          this.knownMachineSessions.add(sessionId);
-
-          // Create Shell entity for the new machine session
-          const sessionName = `Terminal ${sessionId.substring(0, 8)}`;
-          void this.createSession(sessionId, sessionName).then((shell) => {
-            // Mark PTY as started — the PTY is already running on the backend
-            shell.pty = shell.pty ?? new PtyConnection();
-            shell.pty.started = true;
-            shell.pty.computeNodeId = this.id;
-            shell.status = 'running';
-
-            // Notify callback if provided
-            if (this.machineSessionCallback) {
-              this.machineSessionCallback(sessionId, shell);
-            }
-          });
-        }
-      }
-    };
-
-    manager.on('on_data_op', this.boundDataOpHandler);
-  }
-
-  /**
-   * Stop watching for machine session updates.
-   */
-  stopWatchingMachineSessions(): void {
-    if (this.boundDataOpHandler) {
-      const manager = ConnectionManager.getInstance();
-      manager.off('on_data_op', this.boundDataOpHandler);
-      this.boundDataOpHandler = null;
-    }
-    this.machineSessionCallback = null;
-  }
-
-  /**
-   * Check if currently watching for machine session updates.
-   */
-  get isWatchingMachineSessions(): boolean {
-    return this.boundDataOpHandler !== null;
-  }
-
   /**
    * Setup the compute node provider.
    * This initializes the compute provider and sets the node_provider_id.
@@ -461,21 +386,159 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * await computeNode.setup(); // Initialize provider
    * ```
    */
-  async setup(): Promise<string> {
-    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
-    action.subpath = 'setup';
-
-    const response = await dataManager.callAction(action);
-    const data = (response as Record<string, unknown>).data || response;
+  async setup(body?: Record<string, unknown>): Promise<string> {
+    const data = await this.ops<string>('setup', body);
 
     if (!data) {
       throw new Error('Failed to setup compute node: No response data');
     }
 
     // Update local provider_id from response
-    this.node_provider_id = data as string;
+    this.node_provider_id = data;
 
-    return data as string;
+    return data;
+  }
+
+  /**
+   * Call one `ops/<op>` command on this node.
+   *
+   * THE single place a client builds an ops URL. Callers used to hand-roll
+   * `new ActionInfo('ops', ...)` wherever they needed one — `use-sandboxes.ts`
+   * carried its own copy and called it for eleven different commands, which is
+   * why `executeCommand` below had no callers outside tests despite doing the
+   * same thing. One spelling, so a change to the action name or the envelope
+   * lands in one place.
+   *
+   * `op` mirrors the hub's command names verbatim (`compute_node_tools.py` and
+   * the `ops` dispatch table), so the pair greps as a pair.
+   */
+  private async ops<T>(op: string, body?: Record<string, unknown>): Promise<T> {
+    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
+    action.subpath = [op];
+    if (body) action.bodyParameters = body;
+    return dataManager.callAction<Record<string, unknown> | undefined, T>(action);
+  }
+
+  /**
+   * Whether this node is a cloud SANDBOX — a box a person opens and works in,
+   * as opposed to an agent's deployment box or the local machine.
+   *
+   * On the entity, not in a screen. `use-sandboxes.ts` used to answer it inline
+   * by reading BOTH the provider AND a magic string out of the untyped
+   * `node_config` blob, so every surface that wanted the question had to know
+   * that blob's shape. The rule is one thing; it belongs in one place.
+   *
+   * Worth knowing before touching it: the
+   * hub stopped reading `flavor` for TEMPLATE selection ("one family, one axis,
+   * no client-derived input" — `setup_node`), which reads like the marker is
+   * dead. It is not: the sandbox UI writes it at create time and nothing clears
+   * it, so it remains the marker separating an interactive workspace from a
+   * provider's other compute nodes.
+   *
+   * The provider field is read tolerantly because the hub spells it
+   * `node_provider` and this entity types it `node_provider_type`.
+   */
+  get isSandbox(): boolean {
+    const provider = (this as unknown as { node_provider?: string }).node_provider ?? this.node_provider_type;
+    const flavor = (this.node_config as { flavor?: string } | undefined)?.flavor;
+    return SANDBOX_PROVIDERS.has(provider ?? '') && flavor === WORKSPACE_FLAVOR;
+  }
+
+  // ── lifecycle ────────────────────────────────────────────────────────
+
+  /** Start a provisioned node. */
+  async startup(): Promise<void> {
+    await this.ops<void>('startup');
+  }
+
+  /** Stop it for good — the provider machine goes away. */
+  async shutdown(): Promise<void> {
+    await this.ops<void>('shutdown');
+  }
+
+  /** Put it to sleep. Cheap to wake; the shared link wakes it on its own. */
+  async pause(): Promise<void> {
+    await this.ops<void>('pause');
+  }
+
+  /** Wake it. */
+  async resume(): Promise<void> {
+    await this.ops<void>('resume');
+  }
+
+  /**
+   * What the backing machine is doing.
+   *
+   * Normalized server-side into one shape across providers, so this type is no
+   * longer the union of one provider's fields with another's.
+   */
+  async status(): Promise<NodeStatus> {
+    return this.ops<NodeStatus>('status');
+  }
+
+  /**
+   * Bring the Flowpad app inside the box up, and sign it in.
+   *
+   * Returns whether it is healthy and who it ended up signed in as — the hub
+   * reads that identity back from the box rather than reporting what it asked
+   * for.
+   */
+  async workspaceReady(): Promise<WorkspaceReady> {
+    return this.ops<WorkspaceReady>('workspace-ready');
+  }
+
+  /**
+   * Upgrade the FlowPad app INSIDE the box to the latest published release, and
+   * bring it back up: `flow stop`, `flow upgrade`, and the hub's own start.
+   *
+   * The equivalent of typing those commands into a terminal on the machine,
+   * except that the start is the hub's workspace-ready path — the only one that
+   * carries the hub url into the process — so a box does not come back pointed
+   * at the image's default hub.
+   *
+   * One call per box, and it is slow by nature: it is a PyPI install followed by
+   * an app boot, not a request. Owner-only, like every other `ops` command.
+   */
+  async upgradeApp(): Promise<AppUpgrade> {
+    return this.ops<AppUpgrade>('upgrade-app');
+  }
+
+  /** Every service on this machine, checked now — each endpoint's result, in one report. */
+  async healthCheck(): Promise<NodeHealth> {
+    const action = new ActionInfo('health', ComputeNode.type, this.id, 'GET');
+    return dataManager.callAction<undefined, NodeHealth>(action);
+  }
+
+  // ── setting a box's project up ───────────────────────────────────────
+  //
+  // The box commands underneath (validate, clone, index, attach, default…) are
+  // the hub's control plane and are not reachable from here. A client asks for
+  // the outcome; the hub runs the sequence.
+
+  /**
+   * Set the box up with its project and make it the one the box opens on —
+   * the whole first-launch sequence, run by the hub. `steps` names each step's
+   * outcome, and a failed call carries them too, so a checklist can say which
+   * step broke.
+   */
+  async provisionProject(setup: ProvisionSetup): Promise<ProvisionResult> {
+    return this.ops<ProvisionResult>('provision-project', setup as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Sign the box out of the cloud, clearing the credentials stored ON it.
+   *
+   * Deliberately NOT the same thing as turning `auto_login` off. That also
+   * revokes the node-bound API key, which is a change to how the box behaves
+   * from now on; this is just "end the session that is running in there", and
+   * leaves the setting alone. With `auto_login` on, the next open signs the box
+   * straight back in — the correct behaviour for "log me out of it now".
+   *
+   * Signing the box out never touches the caller's OWN hub session.
+   */
+  async signOut(): Promise<unknown> {
+    const action = new ActionInfo('sign-out', ComputeNode.type, this.id, 'POST');
+    return dataManager.callAction<undefined, unknown>(action);
   }
 
   /**
@@ -524,7 +587,11 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
 
         // Check if this is the final chunk
         if (flowData.isFinal) {
-          const exitCode = parseInt(flowData.attributes['exit-code'] || '0', 10);
+          // A missing or non-numeric code is UNKNOWN, never success: defaulting to
+          // '0' reported a command that never reported an exit (or never started)
+          // as having exited cleanly. `exitCode` stays undefined.
+          const raw = flowData.attributes['exit-code'];
+          const exitCode = raw !== undefined && /^-?\d+$/.test(raw) ? parseInt(raw, 10) : undefined;
           output.markComplete(exitCode);
         }
       }
@@ -645,11 +712,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     // Kill the process
     const killResult = await this.runShell(`kill ${process.pid}`);
     if (killResult.includes('No such process')) {
-      throw new ServiceControlError(
-        `Failed to kill process ${process.pid}: No such process`,
-        service.id || '',
-        'stop',
-      );
+      throw new ServiceControlError(`Failed to kill process ${process.pid}: No such process`, service.id || '', 'stop');
     }
 
     return process;
@@ -741,9 +804,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @param data - JSON data to write
    */
   async saveJsonFile(path: string, data: unknown): Promise<void> {
-    const action = new ActionInfo('save-json-file', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { path, data };
-    await dataManager.callAction(action);
+    await this.post('save-json-file', { path, data });
   }
 
   /**
@@ -754,8 +815,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @returns number of sessions cleared
    */
   async resetPty(): Promise<number> {
-    const action = new ActionInfo('reset-pty', ComputeNode.type, this.id, 'POST');
-    const response = await dataManager.callAction<void, { cleared: number }>(action);
+    const response = await this.post<{ cleared: number }>('reset-pty');
     return (response as any)?.data?.cleared ?? 0;
   }
 
@@ -773,9 +833,10 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Returns null if the user cancelled.
    */
   async openPathDialog(initialDir?: string, mode: 'folder' | 'file' = 'folder'): Promise<string | null> {
-    const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { ...(initialDir ? { initial_dir: initialDir } : {}), mode };
-    const response = await dataManager.callAction<void, { path: string | null }>(action);
+    const response = await this.post<{ path: string | null }>('pick-folder', {
+      ...(initialDir ? { initial_dir: initialDir } : {}),
+      mode,
+    });
     return (response as any)?.path ?? null;
   }
 
@@ -787,4 +848,39 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     return new GitWorkdir(workDir, this.id);
   }
 
+  /** Which of a project's declared secrets this node may see: `{project_id: [ENV_VAR]}`.
+   *  Value-free — the token IS the env var name. An ABSENT project key means
+   *  ALL of that project's secrets (an uncurated node is unrestricted). */
+  attached_secrets: Record<string, string[]> = {};
+
+  private secretAction<T>(name: string, body: Record<string, unknown>): Promise<T | null> {
+    const action = new ActionInfo(name, ComputeNode.type, this.id, 'POST');
+    action.bodyParameters = body;
+    return dataManager.callAction<unknown, T>(action) as Promise<T | null>;
+  }
+
+  /** Every declared secret on the project, flagged attached or not.
+   *  `all_attached` is true when nothing has been curated yet, so the UI can
+   *  show every row checked without pretending someone chose them. */
+  async listAttachedSecrets(projectId: string): Promise<{
+    project_id: string;
+    all_attached: boolean;
+    secrets: { env_var: string; attached: boolean }[];
+  } | null> {
+    return this.secretAction('list-attached-secrets', { project_id: projectId });
+  }
+
+  async attachSecret(projectId: string, envVar: string): Promise<void> {
+    await this.secretAction('attach-secret', { project_id: projectId, env_var: envVar });
+  }
+
+  async detachSecret(projectId: string, envVar: string): Promise<void> {
+    await this.secretAction('detach-secret', { project_id: projectId, env_var: envVar });
+  }
+
+  /** Attach everything the project declares RIGHT NOW — a snapshot, not a
+   *  standing wildcard. */
+  async attachAllSecrets(projectId: string): Promise<void> {
+    await this.secretAction('attach-all-secrets', { project_id: projectId });
+  }
 }

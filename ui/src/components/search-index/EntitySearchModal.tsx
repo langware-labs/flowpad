@@ -65,9 +65,18 @@ export function EntitySearchModal({
           .sort((a, b) => (b.modified_at || '').localeCompare(a.modified_at || ''));
         setResults(rows);
       })
-      .catch(() => { if (!cancelled) { setResults([]); setError(true); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) {
+          setResults([]);
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, recordType, q, limit, scope]);
 
   return (
@@ -76,15 +85,21 @@ export function EntitySearchModal({
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
             {title}
-            {!loading && <span className="ml-2 text-xs font-normal text-muted-foreground">{results.length}</span>}
+            {!loading && <span className="ms-2 text-xs font-normal text-muted-foreground">{results.length}</span>}
           </DialogTitle>
         </DialogHeader>
         {loading ? (
-          <div className="py-8 text-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </div>
         ) : error ? (
-          <div className="py-8 text-center text-sm text-destructive"><Trans>Failed to load entities.</Trans></div>
+          <div className="py-8 text-center text-sm text-destructive">
+            <Trans>Failed to load entities.</Trans>
+          </div>
         ) : results.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground"><Trans>No entities.</Trans></div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            <Trans>No entities.</Trans>
+          </div>
         ) : (
           <div className="max-h-[60vh] overflow-auto">
             <AssetDataTable
@@ -94,7 +109,10 @@ export function EntitySearchModal({
               pageSize={results.length}
               onPageChange={() => {}}
               recordType={recordType ?? ''}
-              onRowClick={(r) => { void navigateToResult(r, navigation); onOpenChange(false); }}
+              onRowClick={(r) => {
+                void navigateToResult(r, navigation);
+                onOpenChange(false);
+              }}
             />
           </div>
         )}

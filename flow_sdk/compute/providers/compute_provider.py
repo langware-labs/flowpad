@@ -10,6 +10,28 @@ from pydantic import BaseModel
 
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 
+#: The domain E2B publishes sandbox ports on. Every url under it is https and
+#: only https, which is why ``serve_static._browser_scheme`` can read a browser-facing scheme
+#: off nothing but the Host header — E2B's proxy terminates TLS and forwards
+#: plain http WITHOUT an ``X-Forwarded-Proto``, so the host is the only
+#: evidence left that the browser is on https.
+E2B_PUBLIC_DOMAIN = "e2b.dev"
+
+
+def is_e2b_public_host(host: str) -> bool:
+    """Is ``host`` (a Host header, port optional) an E2B public sandbox host?"""
+    return host.split(":")[0].strip().lower().endswith("." + E2B_PUBLIC_DOMAIN)
+
+
+def sandbox_public_url(port: int, sandbox_id: str) -> str:
+    """The public per-port url E2B serves a sandbox on.
+
+    One spelling, shared by the E2B provider (which learns the id from the
+    control plane) and by a box resolving its OWN id. Two copies would drift,
+    and the one that drifted would hand out a dead link.
+    """
+    return f"https://{port}-{sandbox_id}.{E2B_PUBLIC_DOMAIN}"
+
 
 class ListDirItem(BaseModel):
     """Item in a directory listing."""
@@ -96,7 +118,10 @@ class ComputeProvider(ABC):
 
     def __init__(self):
         """Initialize the compute provider."""
-        self.running_commands: dict[str, CLICommand] = {}
+        # No registry of commands: the CLICommand a provider returns is the only
+        # handle anyone uses, and a per-process dict keyed by a one-time uuid
+        # would pin every command's output and queues for the life of the
+        # backend.
         self.default_working_dir: str = "."
 
     @property
@@ -333,8 +358,8 @@ class ComputeProvider(ABC):
         provider_node_id: str,
         command: str,
         session_id: Optional[str] = None,
-        background: bool = False,
-        env: Optional[dict[str, str]] = None,
+        background: bool = True,
+        env: Optional[list] = None,
     ) -> CLICommand:
         """Execute a command on the compute node.
 
@@ -424,6 +449,15 @@ class ComputeProvider(ABC):
     def is_pty_alive(self, provider_node_id: str, session_id: str) -> bool:
         """Return True if the PTY session process is still running (cross-platform)."""
         return False
+
+    def get_pty_foreground_pgid(self, provider_node_id: str, session_id: str) -> int | None:
+        """The process group in the foreground of this PTY session (what a Ctrl-C reaches), or
+        ``None`` when the provider cannot tell."""
+        return None
+
+    def get_pty_cwd(self, provider_node_id: str, session_id: str) -> str | None:
+        """Return the live working directory of the PTY session's shell, or None when unknown."""
+        return None
 
     async def close_pty_session(
         self,

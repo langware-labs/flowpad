@@ -18,25 +18,24 @@ from typing import (
 
 from pydantic import BaseModel, Field, model_validator
 
-from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes, ExpansionType, RelationshipDirection
+from flow_sdk import service_log
+from flow_sdk.api.api_types.api_field import NoDBAPIField, Sharing
 from flow_sdk.api.api_types.messages import DataOpMessage, OperationType
-from flow_sdk.api.type_id import TypeId, is_namespace_key
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.db.drivers.db_driver import DBDriver, LazyDBDriver, get_db_driver
+from flow_sdk.db.db_relationship import DBRelationshipType
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, db_fields_sync
+from flow_sdk.db.drivers.db_driver import DBDriver, LazyDBDriver
 from flow_sdk.db.drivers.path_model import NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.db.relationship_model import (
     InvitedThroughRelationship,
     Relationship,
 )
 from flow_sdk.db.rolerelationship import RoleRelationship
 from flow_sdk.db.tracked_collections import TrackedDict, TrackedList
-
-from flow_sdk import service_log
-from flow_sdk.api.api_types.api_field import NoDBAPIField
-from flow_sdk.db.db_relationship import DBRelationshipType
-from flow_sdk.db.drivers.db_base_record import db_fields_sync
+from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes, ExpansionType, RelationshipDirection
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId, is_namespace_key
 
 DBEntityType = TypeVar("DBEntityType", bound="DBEntity")
 
@@ -69,13 +68,28 @@ class EntityExpansion(BaseModel):
             self.expansions.add(expansion)
 
 
+# Per-class cache of the field names that mark an entity dirty. Both source
+# lists derive purely from ``model_fields`` (static after class creation), but
+# were recomputed on EVERY attribute assignment — two full field scans building
+# two fresh lists per ``x.y = z``. On a ~40-field entity that made one plain
+# assignment cost ~86us instead of ~0.05us, and it is paid by every entity
+# mutation in the app, not just saves. Module-level (not a class attr) so
+# pydantic does not adopt it as a private model attribute.
+_DIRTY_FIELDS_CACHE: "dict[type, frozenset[str]]" = {}
+
+
 class DBEntity(DBBaseRecord):
     _generate_key: bool = False
     _db_fields_sync: ClassVar[List[str]] = db_fields_sync
     _api_visible: ClassVar[bool] = False
+    #: This type lives ONLY on the hub -- there is no local row to read, save or push. Generic
+    #: actions that would otherwise resolve a local entity first (see ``share_action``) branch on
+    #: this instead of 404ing. Declared here so it is greppable and type-checked rather than a
+    #: getattr default understood by a single caller.
+    _hub_only: ClassVar[bool] = False
     _observers: List[Callable[[DataOpMessage], None]] = []
     _db: ClassVar[DBDriver] = LazyDBDriver()
-    expand: EntityExpansion | None = NoDBAPIField(None)
+    expand: EntityExpansion | None = NoDBAPIField(None, sharing=Sharing.PRIVATE)
     _dirty: bool = False
 
     def __init__(self, **data):
@@ -151,6 +165,7 @@ class DBEntity(DBBaseRecord):
         # SchemaRegistry is the single source of truth; fall back to the
         # class-level default for unregistered/abstract classes.
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         try:
             type_name = cls.get_type()
         except Exception:
@@ -161,8 +176,16 @@ class DBEntity(DBBaseRecord):
                 return info.api_visible
         return cls._api_visible
 
+    @classmethod
+    def _dirty_marking_fields(cls) -> "frozenset[str]":
+        cached = _DIRTY_FIELDS_CACHE.get(cls)
+        if cached is None:
+            cached = frozenset(cls.get_db_fields_attribute_names()) | frozenset(cls.get_blob_fields_names())
+            _DIRTY_FIELDS_CACHE[cls] = cached
+        return cached
+
     def __setattr__(self, key, value):
-        if key in self.get_db_fields_attribute_names() or key in self.get_blob_fields_names():
+        if key in self._dirty_marking_fields():
             self._dirty = True
         return super().__setattr__(key, value)
 
@@ -179,7 +202,9 @@ class DBEntity(DBBaseRecord):
                 raise ValueError(
                     f"Can not serialize form json : Model not found for db_entity type {entity_json['type']}"
                 )
-            return entity_model(**entity_json)
+
+            with lenient_entity_load():  # a wire payload may carry fields this build dropped
+                return entity_model(**entity_json)
         except Exception as e:
             raise e
 
@@ -220,9 +245,12 @@ class DBEntity(DBBaseRecord):
                 fields["expand"] = EntityExpansion(**fields["expand"])  # Convert dict to EntityExpansion
             elif not isinstance(fields["expand"], EntityExpansion):
                 fields["expand"] = EntityExpansion()  # Fallback if value is None or invalid
+
         updated_dump = self.model_dump()
         updated_dump.update(fields)
-        updated_model = self.model_validate(updated_dump)
+        # Only declared fields are applied below; the rest of a client's PUT is dropped, not an error.
+        with lenient_entity_load():
+            updated_model = self.model_validate(updated_dump)
         for k in fields.keys():
             # Computed fields ride every outbound payload, so clients echo them
             # back on a full-entity PUT (e.g. Project.include_dirs) — they have
@@ -234,6 +262,7 @@ class DBEntity(DBBaseRecord):
 
     async def expand_permissions(self):
         from flow_sdk.request_context.methods import get_current_request_info
+
         if self.expand is None:
             self.expand = EntityExpansion()
         self.mark_expansion(ExpansionType.Permissions)
@@ -267,7 +296,8 @@ class DBEntity(DBBaseRecord):
         return self
 
     async def expand_auth_scopes(self):
-        from flow_sdk.request_context.methods import get_current_request_info, get_current_auth_scopes
+        from flow_sdk.request_context.methods import get_current_auth_scopes, get_current_request_info
+
         self.mark_expansion(ExpansionType.AuthScopes)
 
         # this handle the case where the auth scopes are already set (e.g. in the case using query)
@@ -306,7 +336,9 @@ class DBEntity(DBBaseRecord):
     @classmethod
     async def get_by_id(cls: type[DBEntityType], eid: str) -> Optional[DBEntityType]:
         import logging as _logging
+
         from flow_sdk.request_context.methods import get_current_request_info
+
         request_info = get_current_request_info()
         e_type = cls.get_type()
         if request_info and request_info.target_entity_typeid:
@@ -354,7 +386,11 @@ class DBEntity(DBBaseRecord):
         return entity
 
     @classmethod
-    async def get_by_typeid(cls: type[DBEntityType], typeid: TypeId) -> Optional[DBEntityType]:
+    async def get_by_typeid(cls: type[DBEntityType], typeid: "TypeId | str") -> Optional[DBEntityType]:
+        # A typed-id STRING is accepted too — it is what travels (a result's
+        # ``executor``, a URL segment). Anything else is used as given.
+        if isinstance(typeid, str):
+            typeid = TypeId(typeid)
         model: Type[DBEntityType] = SchemaRegistry.get_entity_cls(typeid.type)
         if not model:
             raise ValueError(f"get by typeid error: Model not found for db_entity type {typeid.type}")
@@ -393,7 +429,9 @@ class DBEntity(DBBaseRecord):
             owner = owner.typeid
         return await self._db.create(self, owner)
 
-    async def save(self: DBEntityType, owner: Union[DBEntity, TypeId, str, None] = None, notify: bool = True) -> DBEntityType:
+    async def save(
+        self: DBEntityType, owner: Union[DBEntity, TypeId, str, None] = None, notify: bool = True
+    ) -> DBEntityType:
         if isinstance(owner, DBEntity):
             owner = owner.typeid
         elif isinstance(owner, str) and owner:
@@ -407,10 +445,13 @@ class DBEntity(DBBaseRecord):
         if not self.dirty:
             return self
 
-        if not self.exist_in_db:
-            await self._db.save(self, owner)
-        else:
-            await self._db.update(self, owner)
+        try:
+            if not self.exist_in_db:
+                await self._db.save(self, owner)
+            else:
+                await self._db.update(self, owner)
+        finally:
+            self._after_persist()
 
         # Must notify after the entity is saved to the DB and the children are saved
         if notify:
@@ -420,13 +461,34 @@ class DBEntity(DBBaseRecord):
                 op = OperationType.UPDATE
             # from_entity = the save's owner — rides the notification so the
             # unified-bus adapter can stamp containment scope (phase 3).
-            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid,
-                                    from_entity=owner)
-            await self.add_entity_op_notification(self_op)
-            self._notify_observers(self_op)
+            # Announced once the write is DURABLE. Inside a caller's transaction
+            # (``Entity.save`` holds one across the row and its record) that is at
+            # its commit — a listener reading the row on the announcement would
+            # otherwise read the snapshot before it. With none, it is now, as
+            # before. A copy rides, so what is announced is what was written.
+            self_op = DataOpMessage(data=self.model_copy(), op=op, to_entity=self.typeid, from_entity=owner)
+
+            async def announce() -> None:
+                await self.add_entity_op_notification(self_op)
+                self._notify_observers(self_op)
+
+            after_commit = getattr(self._db, "after_commit", None)
+            if after_commit is None:
+                await announce()
+            else:
+                await after_commit(announce)
         self._dirty = False
 
         return self
+
+    def _after_persist(self) -> None:
+        """The seam between the write and its announcement.
+
+        A subclass that persists a DIFFERENT shape from the one it holds
+        (``FlowMessage``: a reference row stores no body) puts the read shape
+        back here. The announcement below serializes the row on the spot, so
+        what the row looks like after this hook is what every socket sees.
+        """
 
     async def notify_updated(self):
         change = DataOpMessage(data=self, op=OperationType.UPDATE, to_entity=self.typeid)
@@ -451,7 +513,9 @@ class DBEntity(DBBaseRecord):
 
     async def delete(self):
         try:
-            await self.add_entity_op_notification(DataOpMessage(data=None, op=OperationType.DELETE, to_entity=self.typeid))
+            await self.add_entity_op_notification(
+                DataOpMessage(data=None, op=OperationType.DELETE, to_entity=self.typeid)
+            )
             deleted_ids = await self._db.delete(self.typeid)
             if not deleted_ids:
                 raise DeletionFailedException(self.typeid, message="Deletion failed for entity.")
@@ -934,13 +998,32 @@ class DBEntity(DBBaseRecord):
         return list(unique_by_id.values())
 
     # Children API
-    async def add_child(self, child: DBEntityType, role_params: Optional[dict] = None) -> DBEntityType:
+    async def add_child(
+        self, child: DBEntityType, role_params: Optional[dict] = None, notify: bool = True
+    ) -> DBEntityType:
         # service_log.info(f"Parent {self.typeid} adding Child {child.typeid}")
         await child.save()
-        await self.attach_child(child, role_params)
+        await self.attach_child(child, role_params, notify=notify)
         return child
 
-    async def attach_child(self, child: DBEntity | TypeId, role_params: Optional[dict] = None):
+    async def _has_child_edge(self, child: DBEntity) -> bool:
+        """Does a parent→child ``is_child`` edge already exist?
+
+        The one implementation of the probe — ``Entity.ensure_child_edge`` uses it
+        to keep re-convergence write-free, and ``attach_child`` uses it to decide
+        whether an edge is genuinely NEW (and therefore worth announcing).
+        """
+        from flow_sdk.db.rolerelationship import RoleRelationship  # noqa: PLC0415
+
+        rel_filter = QueryFilter(
+            type=RoleRelationship.get_type(),
+            match=ExpressionNode(op=QueryOp.EQ, operands=["is_child", True]),
+        )
+        rels = await child.get_incoming_relationships(rel_filter)
+        self_tid = str(self.typeid)
+        return any(str(r.from_typeid) == self_tid for r in rels if r.from_typeid)
+
+    async def attach_child(self, child: DBEntity | TypeId, role_params: Optional[dict] = None, notify: bool = True):
         if role_params is None:
             role_params = {}
 
@@ -952,21 +1035,131 @@ class DBEntity(DBBaseRecord):
         else:
             child_entity = child
 
+        # Capture BEFORE grant_role, which dedups an existing edge and so can't
+        # tell us afterwards whether this attach actually added anything.
+        is_new_edge = not await self._has_child_edge(child_entity)
+
         # Delegate to grant_role on child with is_child=True in role_params
         # This creates relationship FROM self TO child (parent grants role to child)
-        return await child_entity.grant_role(self, role_params={**role_params, "is_child": True})
+        result = await child_entity.grant_role(self, role_params={**role_params, "is_child": True})
 
-    async def remove_child(self, child_typeid: TypeId) -> None:
-        await self.detach_child(child_typeid)
+        # Announce the subtree change to watchers of the PARENT — the child's own
+        # save() CREATE is addressed to the child and reaches a different
+        # audience. Only for a genuinely new edge: the kernel re-converges the
+        # same (parent, child) pair on every live op and every catch-up pass, and
+        # those must be silent. ``notify=False`` is for bulk paths that announce
+        # once at the end instead of once per child.
+        if notify and is_new_edge:
+            await self.emit_child_op(child_entity, OperationType.CHILD_CREATED)
+
+        return result
+
+    async def emit_child_op(self, child: DBEntity, op: OperationType) -> None:
+        """Announce a subtree change to watchers of THIS entity (the parent).
+
+        The one place a child op frame is built. Named after the hub's
+        ``_emit_child_op`` (hub ``graph_crud_actions``), which is likewise a
+        step of its own rather than something ``add_child`` does — worth
+        keeping the two vocabularies in step, since the frame shapes have to
+        match anyway.
+
+        The envelope is INVERTED on purpose and mirrors the hub's: ``to_entity``
+        is the PARENT (the thing watchers subscribed to), ``from_entity`` and
+        ``data`` are the child that actually changed.
+
+        Kept separate from ``attach_child`` because writing the edge and
+        declaring the parent ready to re-read are different moments whenever
+        there is more parent state to write in between. ``Conversation`` is the
+        case that proves it: a client reacts by re-reading the parent, so
+        announcing before ``message_ids``/``message_count`` are projected hands
+        it the pre-arrival row — and the projection write is silent, so nothing
+        ever corrects it. Attach silently, project, then call this.
+
+        Callers own the "did anything actually change" decision (probe with
+        ``_has_child_edge`` BEFORE attaching): re-convergence must stay silent,
+        since the kernel re-attaches the same pair on every live op and every
+        catch-up pass.
+        """
+        import logging as _logging  # noqa: PLC0415
+
+        # Best-effort: an announcement must NEVER fail the write that earned it.
+        # The edge is already committed by the time we get here, so raising would
+        # turn a cosmetic "the view didn't hear about it" into a lost message —
+        # trading a late bubble for no bubble and no row. Same rule the hub states
+        # on its own ``_emit_child_op`` ("never raises into the CRUD response")
+        # and that ``emit_entity_tag`` follows one layer up; ``attach_child`` /
+        # ``detach_child`` call this bare, so the guard has to live here.
+        try:
+            # Logged because the ONLY other evidence this fired is a WS frame on a
+            # live client. Without it, "the row landed but the open view never
+            # updated" cannot be split into "never announced" vs "announced and the
+            # client ignored it" after the fact.
+            _logging.getLogger(__name__).info(
+                "[child-edge] announced %s parent=%s child=%s",
+                getattr(op, "value", op),
+                str(self.typeid),
+                str(child.typeid),
+            )
+            await self.add_entity_op_notification(
+                DataOpMessage(data=child, op=op, to_entity=self.typeid, from_entity=child.typeid)
+            )
+        except Exception as e:  # noqa: BLE001
+            _logging.getLogger(__name__).warning(
+                "[child-edge] emit %s parent=%s failed (non-fatal): %s",
+                getattr(op, "value", op),
+                str(self.typeid),
+                e,
+            )
+
+    async def remove_child(self, child_typeid: TypeId, notify: bool = True) -> None:
+        await self.detach_child(child_typeid, notify=notify)
         child = await self.get_by_typeid(child_typeid)
         if child:
             await child.delete()
 
-    async def detach_child(self, child_typeid: TypeId) -> int:
+    async def detach_child(self, child_typeid: TypeId, notify: bool = True) -> int:
         child = await self.get_by_typeid(child_typeid)
         if not child:
             return 0
-        return await child.remove_role(self.typeid)
+        removed = await child.remove_role(self.typeid)
+        # Announce the subtree change to watchers of the PARENT — the mirror of
+        # attach_child's CHILD_CREATED. Only when an edge was actually removed,
+        # so a detach of something that was never a child stays silent (same
+        # "genuinely changed" rule the create side uses).
+        #
+        # The child is captured BEFORE the caller deletes it (``remove_child``
+        # deletes right after this returns) — a frame built afterwards would
+        # carry a dangling reference the recipient cannot resolve.
+        if notify and removed:
+            await self.emit_child_op(child, OperationType.CHILD_DELETED)
+        return removed
+
+    async def detach_from_all_parents(self) -> int:
+        """Remove this entity's incoming ``is_child`` edges from EVERY parent.
+
+        Defensive severing for a shared singleton that must never be reachable
+        as a descendant of a delete cascade — the @local compute node above all.
+        A ``parent.detach_child(self)`` only cuts ONE edge, so it cannot protect
+        the singleton when the offending edge sits on a nested/descendant parent
+        (the 9007 incident: a nested project carried the legacy
+        ``project -> @local`` edge, and the self-only detach missed it, so the
+        recursive delete walked into @local and destroyed every PTY/agentic
+        session on the instance).
+
+        Returns the number of edges removed. Idempotent: a singleton with no
+        parents removes nothing.
+        """
+        rel_filter = QueryFilter.parse({"is_child": True}, RoleRelationship.get_type())
+        incoming = await self.get_incoming_relationships(rel_filter)
+        removed = 0
+        for rel in incoming:
+            await self._db.delete_relationship(rel)
+            removed += 1
+        if removed:
+            from flow_sdk.core.auth.auth_cache import get_auth_cache
+
+            get_auth_cache().clear()
+        return removed
 
     async def remove_role(self, removed_entity_typeid: TypeId, roles_filter: QueryFilter | None = None) -> int:
         relationships = await self.get_incoming_relationships(roles_filter)
@@ -1020,6 +1213,12 @@ class DBEntity(DBBaseRecord):
         relationship_filter: QueryFilter | None = None,
         child_filter: QueryFilter | None = None,
     ) -> List[EntityChild[DBEntity]]:
+        """Direct children (``is_child`` edges).
+
+        Order is CALLER-SPECIFIED: pass ``child_filter.order_by`` (plus optional
+        ``offset`` / ``limit``) to get a defined order. Without it the order is
+        unspecified — it follows whatever the relationship rows come back in.
+        """
         return await self._db.get_children(
             root=self.typeid,
             relationship_filter=relationship_filter,

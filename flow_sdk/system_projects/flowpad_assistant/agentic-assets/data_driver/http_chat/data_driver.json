@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "http_chat",
+  "title": "Chat API",
+  "icon_name": "MessageCircle",
+  "description": "An agent deployment's chat over HTTP: an OpenAI-style chat request to the deployment's chat endpoint is a message on this channel, and the agent's reply is the response. Made with every local deployment.",
+  "kind": "datasource.internal.http_chat",
+  "config": {
+    "deployment_id": {
+      "type": "text",
+      "label": "Deployment",
+      "hint": "The deployment whose chat endpoint this channel carries. Set when the deployment is launched."
+    }
+  }
+}

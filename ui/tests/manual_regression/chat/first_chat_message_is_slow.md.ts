@@ -10,12 +10,18 @@ import { expect, test } from '@playwright/test';
 import { gotoLanding } from './helpers';
 
 test('first home message immediately acknowledges submit and opens chat', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await gotoLanding(page);
 
   const prompt =
     "generate architecture documentation for a gym management application that allows to match trainers to users based on user's needs, trainer's abilities and available gym infrastructure";
-  const input = page.locator('textarea[aria-label^="What would you like to work on"]');
+  const input = page.locator('textarea[aria-label="What would you like to work on?"]');
   await input.fill(prompt);
 
   const createRequest = page.waitForRequest(
@@ -28,6 +34,6 @@ test('first home message immediately acknowledges submit and opens chat', async 
 
   await expect(input).toHaveValue('');
   await createRequest;
-  await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-/);
+  await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/);
   await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
 });

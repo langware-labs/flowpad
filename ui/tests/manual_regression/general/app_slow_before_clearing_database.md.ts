@@ -24,8 +24,8 @@ test('core views remain interactive without a browser-triggered database clear',
   await page.goto('/dock/ai-config');
   await expect(page.getByText('AI Configuration', { exact: true })).toBeVisible();
 
-  await page.goto('/dock/environment');
-  await expect(page.getByText(/Environment Variables|Login Required/).first()).toBeVisible();
+  await page.goto('/dock/credentials/environment');
+  await expect(page.locator('[data-testid="credentials-view"], [data-testid="login-required"]').first()).toBeVisible();
 
   await page.goto('/dock/home');
   await expect(page.getByTestId('flow-page')).toBeVisible();

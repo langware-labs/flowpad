@@ -1,13 +1,15 @@
-import { Journey, JourneyJournal } from '@sdk';
+import { Journey, JourneyJournal, type JourneyStep } from '@sdk';
 import { Check, Circle, Clock, Compass, History, Loader2, Play, RotateCcw } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { clearJourneyDismissed } from './journey-dismissed';
-import { groupSteps, useActiveJournal, useBusyRun, useJourneySteps, type JourneyStep } from './use-journey';
+import { useActiveJournal, useBusyRun, useJourneySteps } from './use-journey';
+
+const NO_DONE_IDS: ReadonlySet<string> = new Set<string>();
 
 const STATUS_LABEL: Record<string, string> = {
   new: 'Not started',
@@ -27,28 +29,22 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const isAdvanced = useIsAdvanced();
-  const { steps, loading } = useJourneySteps(journey);
+  const { graph, loading } = useJourneySteps(journey);
   const { journal: activeJournal, refresh } = useActiveJournal();
   const { busy, run } = useBusyRun(refresh);
   const [history, setHistory] = useState<JourneyJournal[] | null>(null);
 
   const journal = activeJournal?.journey_id === journey.id ? activeJournal : null;
-  const cursorIndex = useMemo(
-    () => (journal?.cursor ? steps.findIndex((s) => s.node_id === journal.cursor) : -1),
-    [journal?.cursor, steps],
-  );
-  const doneIds = useMemo(
-    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
-    [journal?.entries],
-  );
-  const complete = journal?.status === 'complete';
+  const cursorIndex = journal?.indexIn(graph) ?? -1;
+  const doneIds = journal?.doneNodeIds() ?? NO_DONE_IDS;
+  const complete = !!journal?.isComplete;
 
   const show = () => {
     clearJourneyDismissed();
     navigation.showJourney(journey.id);
   };
 
-  if (loading && steps.length === 0) {
+  if (loading && graph.isEmpty) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading journey…</Trans>
@@ -65,7 +61,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight">{journey.name}</h1>
           <p className="text-sm text-muted-foreground" data-testid="journey-viewer-status">
-            {steps.length} steps
+            {graph.length} steps
             {journal ? ` · ${STATUS_LABEL[journal.status ?? ''] ?? journal.status}` : ' · not started'}
             {journal && !complete ? ` · ${journal.steps_left ?? 0} left` : ''}
           </p>
@@ -73,7 +69,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
       </header>
 
       <ol className="flex flex-col gap-1">
-        {groupSteps(steps).map((section) => {
+        {graph.sections.map((section) => {
           const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
             const done = complete || doneIds.has(step.node_id);
             const current = !complete && i === cursorIndex;
@@ -83,7 +79,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
                 className={cn(
                   'flex items-start gap-3 rounded-lg px-3 py-2.5',
                   current && 'bg-primary/5 ring-1 ring-primary/30',
-                  indent && 'ml-6',
+                  indent && 'ms-6',
                 )}
               >
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
@@ -113,16 +109,14 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
           };
 
           if (section.group === null) {
-            return section.indices.map((i) => renderStep(steps[i], i, false));
+            return section.indices.map((i) => renderStep(graph.steps[i], i, false));
           }
           return (
             <li key={`group:${section.group}:${section.indices[0]}`} data-group={section.group}>
               <div className="px-3 pb-0.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {section.group}
               </div>
-              <ol className="flex flex-col gap-1">
-                {section.indices.map((i) => renderStep(steps[i], i, true))}
-              </ol>
+              <ol className="flex flex-col gap-1">{section.indices.map((i) => renderStep(graph.steps[i], i, true))}</ol>
             </li>
           );
         })}
@@ -137,7 +131,13 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
           data-testid="journey-start"
         >
           <Play className="h-4 w-4" />
-          {complete ? <Trans>Show journey</Trans> : journal ? <Trans>Continue journey</Trans> : <Trans>Start journey</Trans>}
+          {complete ? (
+            <Trans>Show journey</Trans>
+          ) : journal ? (
+            <Trans>Continue journey</Trans>
+          ) : (
+            <Trans>Start journey</Trans>
+          )}
         </Button>
 
         {journal && (
@@ -160,9 +160,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
             type="button"
             variant="ghost"
             disabled={busy}
-            onClick={() =>
-              history === null ? run(async () => setHistory(await journey.history())) : setHistory(null)
-            }
+            onClick={() => (history === null ? run(async () => setHistory(await journey.history())) : setHistory(null))}
             className="gap-2 text-muted-foreground"
             data-testid="journey-history"
           >
@@ -188,7 +186,7 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
                   <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="w-24 shrink-0 font-medium">{STATUS_LABEL[h.status ?? ''] ?? h.status}</span>
                   <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    {(h.entries?.length ?? 0)} of {h.total_steps ?? steps.length} done
+                    {h.entries?.length ?? 0} of {h.total_steps ?? graph.length} done
                     {h.cursor ? ` · at ${h.cursor}` : ''}
                   </span>
                   <Button
@@ -197,7 +195,15 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
                     variant="outline"
                     disabled={busy || h.isActive}
                     title={t`Resume this run`}
-                    onClick={() => run(() => Journey.resume(h.id), () => { setHistory(null); show(); })}
+                    onClick={() =>
+                      run(
+                        () => Journey.resume(h.id),
+                        () => {
+                          setHistory(null);
+                          show();
+                        },
+                      )
+                    }
                     className="h-7 px-2 text-xs"
                     data-testid="journey-history-resume"
                   >

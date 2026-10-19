@@ -4,7 +4,8 @@ Print reporter - formats and prints hook events to console.
 
 import json
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
+
 from .base import BaseReporter
 
 # ANSI color codes

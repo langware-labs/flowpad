@@ -21,13 +21,22 @@ test('home prompt → close chat emits no 401', async ({ page }) => {
     }
   });
 
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-  await gotoLanding(page);
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
+  // Home submissions open a Vibe tab. Its chip's X in the global strip is the
+  // user-facing close path for its process tab.
+  await gotoLanding(page, 'advanced');
   await submitFromLanding(page, 'hi');
   const chatUrl = page.url();
-  expect(chatUrl).toContain('/dock/shell/agentic_process-');
+  expect(chatUrl).toMatch(/\/dock\/(shell|vibe)\/agentic_process-/);
 
-  const close = page.getByRole('button', { name: 'Close tab' }).last();
+  const chip = page.locator('[data-testid="terminal-tab-bar"] [data-testid^="tab-shell|agentic_process-"]').first();
+  const close = chip.getByRole('button', { name: 'Close tab' });
   await expect(close).toBeVisible();
   await close.click();
   await expect(page).not.toHaveURL(chatUrl);

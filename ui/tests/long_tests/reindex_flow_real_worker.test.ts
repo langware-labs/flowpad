@@ -190,8 +190,9 @@ describe('file change → reindex → entity change → refresh', () => {
     await fsManager.writeFile(COMPUTE, skillMd, '---\nname: demo-skill\ndescription: demo\n---\n# Demo\n');
 
     // Mint the skill entity by discovering the folder.
-    const disc = await systemTools.discoverByPath('skill', skillDir);
-    const id: string = disc.id;
+    const disc = await systemTools.resolveByPath(skillDir);
+    expect(disc?.type, 'skillDir must classify as skill').toBe('skill');
+    const id: string = disc!.id;
     expect(id, 'skill discover must return an entity id').toBeTruthy();
     const typeId = new TypeId('skill', id);
 
@@ -228,8 +229,9 @@ describe('file change → reindex → entity change → refresh', () => {
     await fs.mkdir(skillDir, { recursive: true });
     const skillMd = path.join(skillDir, 'SKILL.md');
     await fsManager.writeFile(COMPUTE, skillMd, '---\nname: edit-skill\ndescription: v1\n---\n# v1\n');
-    const disc = await systemTools.discoverByPath('skill', skillDir);
-    const id: string = disc.id;
+    const disc = await systemTools.resolveByPath(skillDir);
+    expect(disc?.type, 'skillDir must classify as skill').toBe('skill');
+    const id: string = disc!.id;
     const typeId = new TypeId('skill', id);
     const before = await fetchEntity('skill', id);
     const updatedBefore = toMs(before.updated_date);
@@ -255,8 +257,9 @@ describe('file change → reindex → entity change → refresh', () => {
     const mdPath = path.join(tmpRoot, 'doc.md');
     await fsManager.writeFile(COMPUTE, mdPath, '# doc\nv1\n');
 
-    const disc = await systemTools.discoverByPath('markdown', mdPath);
-    const id: string = disc.id;
+    const disc = await systemTools.resolveByPath(mdPath);
+    expect(disc?.type, 'mdPath must classify as markdown').toBe('markdown');
+    const id: string = disc!.id;
     expect(id, 'markdown discover must return an entity id').toBeTruthy();
     const typeId = new TypeId('markdown', id);
 
@@ -289,8 +292,9 @@ describe('file change → reindex → entity change → refresh', () => {
     const target = path.join(workdir, 'foo.md');
     await fsManager.writeFile(COMPUTE, target, '# foo\noriginal\n');
 
-    const disc = await systemTools.discoverByPath('markdown', target);
-    const id: string = disc.id;
+    const disc = await systemTools.resolveByPath(target);
+    expect(disc?.type, 'target must classify as markdown').toBe('markdown');
+    const id: string = disc!.id;
     expect(id).toBeTruthy();
     const typeId = new TypeId('markdown', id);
 
@@ -301,8 +305,16 @@ describe('file change → reindex → entity change → refresh', () => {
     const marker = 'AGENT_MARKER_123';
     const worker = await new sdk.AgenticProcess({ workdir, visible: false, pty_mode: false }).save([]);
     await worker.watch();
+    // Pin the TOOL, not just the outcome. The turn-end reindex sources its
+    // touched set from FileWrite/FileEdit transcript entries, so a file the
+    // agent writes through a Bash redirect is invisible to it (proven: with the
+    // old wording the model chose Bash, `_collect_touched_from_transcript_tail`
+    // returned [], and the entity never re-parsed). That blind spot is a real
+    // product gap tracked separately — this scenario exists to prove the
+    // file-op → reindex → entity-change loop, so it must drive the file-op path
+    // deterministically rather than letting tool choice decide whether it runs.
     await worker.prompt(
-      `Edit the file ${target} and set its ENTIRE content to exactly:\n${marker}\nDo not add anything else.`,
+      `Use the Write tool (do NOT use Bash) to set the ENTIRE content of ${target} to exactly:\n${marker}\nDo not add anything else.`,
     );
 
     const chat = chatContent(worker.flowDataStream.items, sdk.FlowElementTypes);

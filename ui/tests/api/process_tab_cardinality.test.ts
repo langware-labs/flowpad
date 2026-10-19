@@ -43,4 +43,49 @@ describe('api: process tab cardinality', () => {
     expect(mine[0].dockPointer?.viewType).toBe('shell');
     expect(mine[0].parent_tab_id ?? null).toBeNull();
   }, 15000);
+
+  it('N shows produce ONE active-display row that re-points, not N chips', async () => {
+    // The wire proof of the replaceable display. Each `flow show` writes a pointer
+    // whose TARGET differs but whose `tabHash` is the hosting workspace, so the
+    // backend must reconcile them onto a single row and rewrite it in place —
+    // otherwise a chatty agent buries the user under a chip per show.
+    const id = uuidv4();
+    await new AgenticProcess({ id, name: 'display cardinality', worker_type: 'claude_code' } as any).save();
+    const shellPointer = JSON.stringify({ viewType: 'shell', pointer: `agentic_process-${id}` });
+    const anchor = await Tab.newTab(shellPointer, { targetType: AgenticProcess.type, targetId: id });
+    const anchorId = anchor.find((t) => t.target_id === id)?.id ?? null;
+
+    // A raw `editor` pointer rather than a project-rebased one: a pointer naming a
+    // project that does not exist is reaped on the list read (correctly), and this
+    // test is about cardinality, not project resolution.
+    const tabHash = `workspaceActive|agentic_process-${id}`;
+    const targetIds: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const markdownId = uuidv4();
+      targetIds.push(markdownId);
+      await Tab.newTab(
+        JSON.stringify({
+          viewType: 'editor',
+          pointer: `/workspace/docs/doc-${markdownId}.md`,
+          options: { activeDisplay: '1' },
+          tabHash,
+          workspaceContent: true,
+        }),
+        { targetType: 'markdown', targetId: markdownId, name: `doc-${i}`, parentTabId: anchorId },
+      );
+    }
+
+    const all = await Tab.listAll();
+    const displays = all.filter((t) => (t.pointer ?? '').includes(tabHash));
+    expect(displays).toHaveLength(1);
+    // It points at the LAST show, and its label followed — the backfill-only rule
+    // is deliberately relaxed for this one namespace.
+    expect(displays[0].pointer).toContain(targetIds[targetIds.length - 1]);
+    expect(displays[0].name).toBe('doc-9');
+    // Still exactly one row for the process itself, still a top-level anchor.
+    const processRows = all.filter((t) => t.target_id === id);
+    expect(processRows).toHaveLength(1);
+    expect(processRows[0].parent_tab_id ?? null).toBeNull();
+  }, 25000);
+
 });

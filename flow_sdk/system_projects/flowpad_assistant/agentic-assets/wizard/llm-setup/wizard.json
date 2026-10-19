@@ -1,0 +1,43 @@
+{
+  "name": "llm-setup",
+  "label": "Finish setting up Flowpad",
+  "description": "Flowpad works best with a few tools on your machine: Claude Code, Python, Git and Node.js. We'll check what's already there and only ask before installing anything that's missing.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "popup": true,
+  "requires_llm_source": true,
+  "success_message": "Setup finished — everything is installed.",
+  "failure_message": "Setup didn't finish successfully.",
+  "restart_label": "Restart setup",
+  "steps": [
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "kind": "wizard",
+      "ref": "llm-setup-claude-code",
+      "on_fail": "continue"
+    },
+    {
+      "id": "python",
+      "label": "Python 3",
+      "kind": "wizard",
+      "ref": "llm-setup-python",
+      "on_fail": "continue"
+    },
+    {
+      "id": "git",
+      "label": "Git",
+      "kind": "wizard",
+      "ref": "llm-setup-git",
+      "on_fail": "continue"
+    },
+    {
+      "id": "node",
+      "label": "Node.js",
+      "kind": "wizard",
+      "ref": "llm-setup-node",
+      "on_fail": "continue"
+    }
+  ]
+}

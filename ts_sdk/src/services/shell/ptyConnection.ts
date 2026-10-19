@@ -1,9 +1,14 @@
+import { perfLog } from '../../utils/perf';
+import { isHubOnly } from '../../utils/hub-runtime';
+import { toplog } from '../toplog';
 import { dataContext } from '../../FlowSync/context';
 import type { OutputChunk } from '../../pty-sync/types.js';
 import type { OrphanEntry } from './ptyOrphanBuffer';
 
 export type PtyOutputListener = (data: string, seq?: number) => void;
 export type PtyLineListener = (line: string) => void;
+/** Raw decoded output, escapes included — every chunk, attached or not. */
+export type PtyTextListener = (text: string) => void;
 /**
  * Pattern watcher registered via ``Shell.addTrigger`` /
  * ``PtyConnection.addTrigger``. ``onMatch`` fires when an ANSI-stripped PTY
@@ -48,7 +53,7 @@ export type PtyConnectionStatus = 'idle' | 'connecting' | 'live' | 'restarting' 
  * output Claude Code / shell prompts produce.
  */
 const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
-function stripAnsi(s: string): string {
+export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
@@ -69,8 +74,24 @@ export class PtyConnection {
   restarting = false;
   lastSeq = 0;
 
-  /** Live in-session output chunks keyed by seq — feeds pty-sync (VT rebuild, gutters). */
+  /**
+   * Live in-session output chunks keyed by seq — feeds pty-sync (VT rebuild, gutters) and the
+   * attach gap (chunks newer than the recording). A replay WINDOW, not the session's history:
+   * the oldest entries are dropped once the window exceeds a chunk or byte bound, so a TUI that
+   * redraws one line all day (one chunk per frame) costs a fixed amount, not one entry per frame.
+   * Older output is the recording's job (pty-stream), never memory's.
+   */
   readonly chunks: Map<number, OutputChunk> = new Map();
+  /**
+   * The window covers the VirtualTerminal's whole scrollback at one chunk per row
+   * (rows + 10,000 `scrollbackLines`, see PtySyncSession) with room for cursor-only frames,
+   * and ~1.5 MiB of payload. Sized for the replay, not a wait: neither is a timeout or a budget.
+   */
+  static readonly CHUNK_WINDOW_MAX_CHUNKS = 12_288;
+  static readonly CHUNK_WINDOW_MAX_BYTES = 1_572_864;
+  private _chunkBytes = 0;
+  /** Highest seq dropped from the window; 0 while nothing has been dropped. */
+  trimmedThroughSeq = 0;
 
   private readonly decoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -91,6 +112,9 @@ export class PtyConnection {
   /** Pending raw text not yet terminated by LF or a terminal-row CR. */
   private _lineBuffer = '';
 
+  /** Raw text listeners — the decoded stream as it arrives, escapes and all. */
+  private readonly _textListeners = new Set<PtyTextListener>();
+
   /** onReady subscribers — fired once when attach completes + live stream opens. */
   private readonly _readyListeners = new Set<() => void>();
 
@@ -99,9 +123,31 @@ export class PtyConnection {
 
   /** True once attach() has completed and the output gate is open. */
   private _attached = false;
+  // `pty` toplog: log the first line of a run of dropped chunks / inputs only.
+  private _traceDedupRun = false;
+  private _traceInputDropRun = false;
+
+  /**
+   * Keystrokes typed before this connection was EVER ready — a real terminal's
+   * typeahead. A view mounts its xterm before the first attach completes, and
+   * what a person types in that gap belongs to the shell, not the floor. Only
+   * the first attach flushes it: input into a pane that WAS live and then
+   * dropped is still refused, so a dead pane never replays stale keys later.
+   */
+  private _typeahead = '';
+  private _everReady = false;
 
   /** Backend PTY ID currently attached in this browser client. */
   private _attachedPtyId: string | null = null;
+
+  /**
+   * The size of the view showing this PTY on screen, or null while none is.
+   * A PTY has ONE winsize shared by every client attached to it, so whoever
+   * sizes it last wins — kept here, never dropped, it is what this client
+   * asserts on every attach (and re-sends after one), not a window-sized guess.
+   * A hidden view releases it, so it never resizes a PTY nobody is looking at.
+   */
+  private _viewSize: { cols: number; rows: number } | null = null;
 
   /** In-flight attach dedup guard. */
   private _attachPromise: Promise<void> | null = null;
@@ -147,7 +193,7 @@ export class PtyConnection {
 
   // ── Sorted chunk accessor ─────────────────────────────────────────────────
 
-  /** Sorted live-session chunks — feeds VirtualTerminal rebuild on resize. */
+  /** Sorted chunks of the replay window — feeds VirtualTerminal rebuild on resize. */
   getSortedChunks(): OutputChunk[] {
     return [...this.chunks.values()].sort((a, b) => a.seq - b.seq);
   }
@@ -173,7 +219,16 @@ export class PtyConnection {
    */
   appendOutput(base64Data: string, seq?: number, timestamp_ms?: number): string | null {
     if (seq !== undefined) {
-      if (seq <= this.lastSeq && this.lastSeq > 0) return null; // dedup
+      if (seq <= this.lastSeq && this.lastSeq > 0) {
+        // One line per run of drops: a short overlap after reattach is normal;
+        // a run that never ends (seq far below lastSeq) is a lost epoch.
+        if (!this._traceDedupRun) {
+          this._traceDedupRun = true;
+          toplog.log('pty', `dedup_drop shell=${this.shellId} seq=${seq} last_seq=${this.lastSeq}`);
+        }
+        return null;
+      }
+      this._traceDedupRun = false;
       this.lastSeq = seq;
     }
     let bytes: Uint8Array;
@@ -187,10 +242,19 @@ export class PtyConnection {
     }
     if (seq !== undefined) {
       this.chunks.set(seq, { seq, data: bytes, timestamp: timestamp_ms ?? Date.now() });
+      this._chunkBytes += bytes.length;
+      this._trimChunks(seq);
     }
     // Feed line listeners regardless of attach state — triggers must fire
     // for orphan-flushed output too so early pattern detection works.
     this._feedLineBuffer(decoded);
+    for (const fn of this._textListeners) {
+      try {
+        fn(decoded);
+      } catch (e) {
+        console.error('[PtyConnection] text listener error:', e);
+      }
+    }
     // Only fire live listeners once attach has completed.
     // Gate on _attached only (not isLive) so unit tests work without a WS.
     if (this._attached) {
@@ -203,6 +267,48 @@ export class PtyConnection {
       }
     }
     return decoded;
+  }
+
+  /**
+   * Drop the oldest chunks beyond the window. Seqs are inserted in increasing order (the dedup
+   * above refuses anything at or below lastSeq), so the Map's first key is the oldest. The chunk
+   * that just arrived is never dropped: the output listener reads it back by seq.
+   */
+  private _trimChunks(newestSeq: number): void {
+    while (
+      this.chunks.size > PtyConnection.CHUNK_WINDOW_MAX_CHUNKS ||
+      this._chunkBytes > PtyConnection.CHUNK_WINDOW_MAX_BYTES
+    ) {
+      const oldest = this.chunks.keys().next().value as number;
+      if (oldest === newestSeq) break;
+      this._chunkBytes -= this.chunks.get(oldest)!.data.length;
+      this.chunks.delete(oldest);
+      this.trimmedThroughSeq = oldest;
+    }
+  }
+
+  /**
+   * Let the whole replay window go — the program in this PTY ended and no view will replay it
+   * (a restart attaches a new PTY, which `attach` clears for anyway). Only the window: the seq
+   * counter, line buffer, event fires and every listener stay, so the shell reads the same as
+   * before and the next attach dedups and routes as it always did.
+   */
+  releaseWindow(): void {
+    if (this.lastSeq > 0) this.trimmedThroughSeq = this.lastSeq;
+    this.chunks.clear();
+    this._chunkBytes = 0;
+  }
+
+  // ── Raw text ──────────────────────────────────────────────────────────────
+
+  /**
+   * Subscribe to the decoded stream as it arrives — escapes included, attached or not. What a
+   * reader of invisible markers needs (`Shell.runCommand`), where `onLine` has stripped them.
+   * Returns an unsubscribe function.
+   */
+  onText(fn: PtyTextListener): () => void {
+    this._textListeners.add(fn);
+    return () => this._textListeners.delete(fn);
   }
 
   // ── Line stream ───────────────────────────────────────────────────────────
@@ -225,8 +331,8 @@ export class PtyConnection {
    *
    * If chunks have already arrived (e.g. registration happens after a
    * tab-reload's replay completes), the new trigger is run against the
-   * accumulated line history so consumers don't lose visibility of
-   * matches that fired pre-registration. Synthesized fires are flagged
+   * lines still in the replay window (not the whole session) so consumers
+   * don't lose visibility of matches that fired pre-registration. Synthesized fires are flagged
    * ``duringReplay: true`` so the viewer can distinguish catchup hits
    * from live ones.
    *
@@ -239,7 +345,7 @@ export class PtyConnection {
   }
 
   /**
-   * Walk the buffered replay chunks in seq order, decode + ANSI-strip,
+   * Walk the replay window's chunks in seq order, decode + ANSI-strip,
    * split on LF / CRLF / bare CR terminal-row boundaries, and run a single
    * trigger against each line. Used by
    * ``addTrigger`` to retroactively match history when a watcher
@@ -409,10 +515,22 @@ export class PtyConnection {
 
   /** Send keystrokes to the backend PTY. */
   async sendInput(data: string): Promise<void> {
+    if (!this.isLive && !this._everReady) {
+      if (this._typeahead.length + data.length <= PtyConnection.TYPEAHEAD_MAX) {
+        if (!this._typeahead) toplog.log('pty', `input_typeahead shell=${this.shellId} started=${this.started}`);
+        this._typeahead += data;
+        return;
+      }
+    }
     if (!this.isLive) {
-      console.warn('[PtyConnection] sendInput: PTY not live');
+      if (!this._traceInputDropRun) {
+        console.warn('[PtyConnection] sendInput: PTY not live');
+        this._traceInputDropRun = true;
+        toplog.log('pty', `input_dropped shell=${this.shellId} reason=not_live started=${this.started}`);
+      }
       return;
     }
+    this._traceInputDropRun = false;
     if (!this.computeNodeId) return;
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
@@ -424,6 +542,7 @@ export class PtyConnection {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('PTY session not found')) {
+        toplog.log('pty', `input_dropped shell=${this.shellId} reason=session_not_found`);
         this.started = false;
         this._attached = false;
         this._attachedPtyId = null;
@@ -434,22 +553,48 @@ export class PtyConnection {
     }
   }
 
-  /** Notify the backend PTY of a terminal resize. */
-  async resize(cols: number, rows: number): Promise<void> {
-    if (!this.started) return;
-    if (!this.computeNodeId) return;
+  /**
+   * Size the PTY to the view on screen. Kept even when the PTY is not live yet:
+   * the next attach asserts it. Always sent when live — the backend may hold
+   * another client's size, so a client-side "unchanged" says nothing.
+   *
+   * `repaint`: the view drew output at another size — redraw even at an unchanged size.
+   * Resolves false only when a live send failed.
+   */
+  async resize(cols: number, rows: number, opts: { repaint?: boolean } = {}): Promise<boolean> {
+    this._viewSize = { cols, rows };
+    if (!this.started) return true; // kept for the attach, which repaints
+    if (!this.computeNodeId) return true;
+    return this._sendResize(cols, rows, opts.repaint === true);
+  }
+
+  /** The view stopped showing this PTY: it no longer claims the size. */
+  releaseViewSize(): void {
+    this._viewSize = null;
+  }
+
+  /** The size the view on screen claims, or null when no view does. */
+  get viewSize(): { cols: number; rows: number } | null {
+    return this._viewSize;
+  }
+
+  private async _sendResize(cols: number, rows: number, repaint = false): Promise<boolean> {
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
     const action = new ActionInfo('terminal-command', 'compute_node', this.computeNodeId, 'POST');
     action.subpath = 'resize';
-    action.bodyParameters = { shell_id: this.shellId, cols, rows };
+    action.bodyParameters = { shell_id: this.shellId, cols, rows, repaint };
+    toplog.log('pty', `resize shell=${this.shellId} size=${cols}x${rows}${repaint ? ' repaint=drift' : ''}`);
     try {
       await dataManager.callActionOverWS<any, any>(action);
+      return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      toplog.log('pty', `resize_failed shell=${this.shellId} error=${msg}`);
       if (msg.includes('PTY session not found') || msg.includes('Failed to resize PTY')) {
         this.started = false;
       }
+      return false;
     }
   }
 
@@ -468,7 +613,7 @@ export class PtyConnection {
     ptyId: string,
     opts: { force?: boolean; timeout?: number; cols?: number; rows?: number } = {},
   ): Promise<void> {
-    const { force = false, timeout, cols, rows } = opts;
+    const { force = false, timeout } = opts;
     const targetPtyId = ptyId;
 
     if (!this.computeNodeId) return;
@@ -491,21 +636,29 @@ export class PtyConnection {
         this._attached = false;
       }
 
+      // The view's size when one claims it; never a guess. None → the backend
+      // repaints at the PTY's current size.
+      const cols = opts.cols ?? this._viewSize?.cols;
+      const rows = opts.rows ?? this._viewSize?.rows;
+      const t0 = performance.now();
       const ok = await this._reattach(targetPtyId, timeout, cols, rows);
+      toplog.log(
+        'pty',
+        `attach shell=${this.shellId} pty=${targetPtyId} ok=${ok} force=${force} ms=${(performance.now() - t0).toFixed(0)}`,
+      );
       if (!ok) {
         this._attached = false;
         this._attachedPtyId = null;
         throw new Error(`PTY ${targetPtyId} not found for shell ${this.shellId}`);
       }
 
-      const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
-      if (_t0.__shellNavT0 !== undefined)
-        console.log(
-          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms PtyConnection.attach() attached=true (shell=${this.shellId.slice(0, 8)})`,
-        );
+      perfLog(`PtyConnection.attach() attached=true (shell=${this.shellId.slice(0, 8)})`);
 
       this._attachedPtyId = targetPtyId;
       this._attached = true;
+      // A view that claimed (or changed) its size while the attach was in flight.
+      const view = this._viewSize;
+      if (view && (view.cols !== cols || view.rows !== rows)) void this._sendResize(view.cols, view.rows);
       // Remembered independently of attach state: a FAILED re-attach attempt
       // (not_found during the recovery gap) nulls _attachedPtyId, but the
       // self-healing hooks must still know what to re-attach when
@@ -513,16 +666,34 @@ export class PtyConnection {
       this._reattachPtyId = targetPtyId;
       this._wireReattachHooks();
       this._emitReady();
+      this._everReady = true;
+      void this._flushTypeahead();
     })();
 
     this._attachingPtyId = targetPtyId;
-    this._attachPromise = attachWork.finally(() => {
-      if (this._attachPromise === attachWork) {
+    // Compare against the stored promise, not `attachWork`: the field holds the
+    // `.finally()` wrapper, so the old comparison never matched and a settled
+    // attach was handed back to every later non-forced attach of the same id.
+    const attachPromise: Promise<void> = attachWork.finally(() => {
+      if (this._attachPromise === attachPromise) {
         this._attachPromise = null;
         this._attachingPtyId = null;
       }
     });
-    return this._attachPromise;
+    this._attachPromise = attachPromise;
+    return attachPromise;
+  }
+
+  /**
+   * Forget the attach because the backend killed this PTY (→CLI switch).
+   * The next →PTY respawn reuses the same pty id, so a stale `_attached`
+   * turned its attach into a no-op and left the pane blank whenever the
+   * terminal mounted too late to catch `restarted`. Local only: no request,
+   * no repaint, no disconnect event.
+   */
+  markPtyGone(): void {
+    this._attached = false;
+    this._attachedPtyId = null;
   }
 
   // ── Self-healing membership (frozen-terminal RCA, bug A) ──────────────────
@@ -602,6 +773,8 @@ export class PtyConnection {
    *  stale once we re-attach to a fresh pid. */
   clear(): void {
     this.chunks.clear();
+    this._chunkBytes = 0;
+    this.trimmedThroughSeq = 0;
     this.lastSeq = 0;
     this._lineBuffer = '';
     this._eventFires.length = 0;
@@ -619,10 +792,24 @@ export class PtyConnection {
     this._eventFireListeners.clear();
     this._eventFires.length = 0;
     this.chunks.clear();
+    this._chunkBytes = 0;
+    this.trimmedThroughSeq = 0;
     this._lineBuffer = '';
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  /** Upper bound on held typeahead — a paste larger than this before attach is refused as before. */
+  static readonly TYPEAHEAD_MAX = 4096;
+
+  /** Send what was typed before the first attach, in order, once the PTY is live. */
+  private async _flushTypeahead(): Promise<void> {
+    const pending = this._typeahead;
+    if (!pending || !this.isLive) return; // kept for the next attach that comes up live
+    this._typeahead = '';
+    toplog.log('pty', `input_typeahead_flush shell=${this.shellId} chars=${pending.length}`);
+    await this.sendInput(pending);
+  }
 
   private _emitReady(): void {
     for (const fn of this._readyListeners) {
@@ -646,6 +833,7 @@ export class PtyConnection {
 
   /** Reset all attach state for a force re-attach. */
   private _doReset(): void {
+    toplog.log('pty', `reset shell=${this.shellId} chunks=${this.chunks.size} last_seq=${this.lastSeq}`);
     this.clear();
     this._attached = false;
     this._attachedPtyId = null;
@@ -672,6 +860,9 @@ export class PtyConnection {
       pty_id: ptyId,
       connection_id,
       ...(cols !== undefined && rows !== undefined ? { cols, rows } : {}),
+      // The hub records no pty-stream file: its replay buffer is the history,
+      // sent on attach from the last seq this connection saw.
+      ...(isHubOnly() ? { since_seq: this.lastSeq } : {}),
     };
     const result = await dataManager.callActionOverWS<any, any>(
       action,

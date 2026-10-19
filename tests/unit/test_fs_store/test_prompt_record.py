@@ -6,15 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.prompt import (
-    _read_prompt_frontmatter_id,
-    extract_prompt,
-    prompt_project_fn,
-)
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import frontmatter_id, resolve_id
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -23,7 +20,7 @@ V7_ID = "0190a0a0-aaaa-7bbb-8ccc-eeeeeeeeeeee"  # foreign version — must be re
 
 
 def _extract(ref: FSRef):
-    return extract_prompt(ref, SchemaRegistry.get("prompt").mint_id(ref))
+    return SchemaRegistry.get("prompt").from_disk_fn(ref, resolve_id(SchemaRegistry.get("prompt"), ref))
 
 
 def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
@@ -33,15 +30,17 @@ def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
     return path
 
 
-def test_walker_finds_only_prompts_md(tmp_path: Path):
-    _write_md(tmp_path / "prompts" / "a.md", "A")
-    _write_md(tmp_path / "prompts" / "b.md", "B")
-    _write_md(tmp_path / "prompts" / "notes.txt", "not md")
-    _write_md(tmp_path / "docs" / "c.md", "outside prompts/")
-    refs = prompt_project_fn([FSRef(tmp_path)], opts=None)
-    names = sorted(Path(r.path).name for r in refs)
-    assert names == ["a.md", "b.md"]
-    assert all(r.record_type == RecordType.PROMPT for r in refs)
+def test_walker_finds_only_prompt_md(tmp_path: Path):
+    """Prompt is a REPO asset — the generic ``repo_assets_fn`` discovers it at
+    ``agentic-assets/prompt/*.md`` (file-backed leaf, no bespoke walker)."""
+    root = tmp_path / "agentic-assets" / "prompt"
+    _write_md(root / "a.md", "A")
+    _write_md(root / "b.md", "B")
+    _write_md(root / "notes.txt", "not md")
+    _write_md(tmp_path / "docs" / "c.md", "outside the prompt family")
+    refs = repo_assets_fn([FSRef(tmp_path)], IndexerOptions(verbose=False))
+    prompts = [r for r in refs if r.record_type == RecordType.PROMPT]
+    assert sorted(Path(r.path).name for r in prompts) == ["a.md", "b.md"]
 
 
 def test_extract_full_frontmatter(tmp_path: Path):
@@ -73,12 +72,12 @@ def test_extract_name_falls_back_to_stem_and_optionals_absent(tmp_path: Path):
 def test_foreign_version_id_rejected_v4_adopted(tmp_path: Path):
     """Entity-id policy: only v4/v5 frontmatter ids are adopted."""
     p7 = _write_md(tmp_path / "prompts" / "seven.md", "x", frontmatter=f"id: {V7_ID}\n")
-    assert _read_prompt_frontmatter_id(p7) is None
+    assert SchemaRegistry.get("prompt").read_id(p7) is None
     [rec] = _extract(FSRef(p7))
     assert rec.id != V7_ID  # derived uuid5(path) instead
 
     p4 = _write_md(tmp_path / "prompts" / "four.md", "x", frontmatter=f"id: {V4_ID}\n")
-    assert _read_prompt_frontmatter_id(p4) == V4_ID
+    assert SchemaRegistry.get("prompt").read_id(p4) == V4_ID
 
 
 def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
@@ -88,11 +87,10 @@ def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
         frontmatter='name: Keeper\nicon: "🚀"\n',
     )
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    first = SchemaRegistry.get("prompt").mint_id(FSRef(p))
-    second = SchemaRegistry.get("prompt").mint_id(FSRef(p))
+    first = resolve_id(SchemaRegistry.get("prompt"), FSRef(p))
+    second = resolve_id(SchemaRegistry.get("prompt"), FSRef(p))
     assert first == second
-    assert _read_prompt_frontmatter_id(p) is None
-    assert AssetCapsule.from_path(p).read("identity").data["id"] == first
+    assert SchemaRegistry.get("prompt").read_id(p) == first == frontmatter_id(p)
     [rec] = _extract(FSRef(p))
     assert rec.name == "Keeper"
     assert rec.icon == "🚀"  # emoji round-trips through yaml quoting
@@ -143,12 +141,12 @@ def test_extract_usage_counter_defaults_and_junk(tmp_path: Path):
 
 
 def test_default_body_renders_usage_counter(tmp_path: Path):
-    """Entity save path (_prompt_default_body) writes counters extract reads back."""
+    """Entity save path (the serializer's render) writes counters extract reads back."""
     from flow_sdk.builtin.prompt import Prompt
-    from flow_sdk.schema.type_info.prompt_info import _prompt_default_body
 
+    render = SchemaRegistry.get("prompt").serializer().render
     entity = Prompt(name="Counted", text="Count me.", use_count=3, last_used_at="2026-06-05T10:00:00Z")
-    body = _prompt_default_body(entity)
+    body = render(entity)
     p = tmp_path / "prompts" / "counted.md"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
@@ -158,5 +156,5 @@ def test_default_body_renders_usage_counter(tmp_path: Path):
     assert rec.text == "Count me."
 
     fresh = Prompt(name="Fresh", text="New.")
-    fresh_body = _prompt_default_body(fresh)
+    fresh_body = render(fresh)
     assert "use_count" not in fresh_body  # zero-usage prompts stay minimal

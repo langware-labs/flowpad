@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "name": "folder",
+  "title": "Local folder",
+  "icon_name": "SourceFolder",
+  "description": "A directory on this machine. Enumerates and diffs; no credentials.",
+  "kind": "datasource.fs.folder",
+  "reflect": [
+    "none",
+    "copy",
+    "symlink"
+  ],
+  "config": {
+    "root": {
+      "type": "path",
+      "label": "Folder",
+      "account_key": true,
+      "hint": "Every file under it becomes an asset."
+    }
+  }
+}

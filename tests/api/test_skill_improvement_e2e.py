@@ -97,14 +97,13 @@ async def test_analysis_carries_per_skill_findings(tmp_path, monkeypatch):
         r = client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
                         json={"annotations": ANNOTATIONS})
         assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["ok"] is True
+        body = r.json()["data"]
         assert body["summary"]["issue_count"] >= 1  # drives the row's issue badge
         assert body["id"]
 
-    # Read the SAME trace.json the panel consumes via FSRef (asset_ref under the
-    # @local node root = home) — assert the per-skill projection it offers Improve from.
-    trace_doc = json.loads((Path.home() / body["asset_ref"]).read_text())
+    # Read the SAME trace.json the panel consumes via FSRef (asset_ref is the
+    # asset ROOT, under the @local node root = home) — assert the per-skill projection it offers Improve from.
+    trace_doc = json.loads((Path.home() / body["asset_ref"] / "trace.json").read_text())
     by_skill = trace_doc["annotations"]["by_skill"]
     assert SKILL in by_skill
     assert by_skill[SKILL]["findings"], "skill finding must survive into by_skill"

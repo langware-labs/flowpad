@@ -29,6 +29,8 @@ export interface ConversationSendPayload {
     /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
      *  asset when it installs. Default off. */
     createBookmark?: boolean;
+    /** Send files git excludes too — set only after the sender saw them listed. */
+    includeGitignored?: boolean;
   };
 }
 
@@ -51,6 +53,73 @@ export async function sendToExistingConversation(
     payload.files,
     hasAssetRefs || hasSharedCtx || !!payload.shareConfig ? extras : undefined,
   );
+}
+
+/** An attachment the sender cannot actually ship — the packer would write nothing for it, so the
+ *  recipient would get a bundle without it and nobody would be told. */
+export interface UnshippableReference {
+  /** The serialized TypeId, e.g. ``"claude_session-<uuid>"``. */
+  type_id: string;
+  /** Why it would arrive empty, in a sentence. */
+  reason: string;
+}
+
+/** An attachment whose copy would carry files git excludes — often private (a data source's local
+ *  copy, an env file). The sender is shown them and decides; nothing is dropped silently. */
+export interface GitignoredReference {
+  /** The serialized TypeId. */
+  type_id: string;
+  /** The excluded files and folders, relative to the asset; `.` when the asset itself is excluded. */
+  paths: string[];
+}
+
+export interface ShareAttachmentCheck {
+  unshippable: UnshippableReference[];
+  gitignored: GitignoredReference[];
+}
+
+/**
+ * The read-only preflight of a share, asked BEFORE anything is created: what would arrive empty, and what
+ * would carry files git excludes. A git-mode share sends a reference, so it is never asked about those.
+ *
+ * Sharing into a NEW conversation creates it and invites the recipient first and sends second, so a
+ * refusal at send time leaves them holding an invitation to an empty conversation. Asking here costs
+ * one read-only call and lets the caller offer "send without it" (or "send anyway") instead.
+ */
+export async function checkShareAttachments(
+  assetReferences: readonly string[],
+  options: { transferMode?: 'copy' | 'git' } = {},
+): Promise<ShareAttachmentCheck> {
+  const refs = [...new Set(assetReferences)];
+  if (refs.length === 0) return { unshippable: [], gitignored: [] };
+  const info = new ActionInfo('check-attachments', null, null, 'POST');
+  info.bodyParameters = { asset_references: refs, share_config: { transfer_mode: options.transferMode ?? 'copy' } };
+  const result = await dataManager.callAction<
+    { asset_references: string[]; share_config: { transfer_mode: string } },
+    Partial<ShareAttachmentCheck>
+  >(info);
+  return { unshippable: result?.unshippable ?? [], gitignored: result?.gitignored ?? [] };
+}
+
+/** The same payload minus these references — from the attachments AND from the shared context, so
+ *  the conversation is never left pointing at something that was not sent. */
+export function withoutReferences(
+  payload: ConversationSendPayload,
+  drop: ReadonlySet<string>,
+): ConversationSendPayload {
+  return {
+    ...payload,
+    ...(payload.assetReferences ? { assetReferences: payload.assetReferences.filter((r) => !drop.has(r)) } : {}),
+    ...(payload.sharedContextEntities
+      ? { sharedContextEntities: payload.sharedContextEntities.filter((r) => !drop.has(r)) }
+      : {}),
+  };
+}
+
+/** Whether a send still carries anything the backend will accept (text, files or an attachment —
+ *  shared context alone is not a message). */
+export function hasSomethingToSend(payload: ConversationSendPayload): boolean {
+  return !!(payload.text.trim() || payload.files?.length || payload.assetReferences?.length);
 }
 
 /**
@@ -97,7 +166,8 @@ export async function sendDiagnosisEmailReport(diagnosisId: string): Promise<voi
 }
 
 export interface CreateAndSendParams {
-  /** Required for project-local conversations; null for cross-user bundle. */
+  /** Required for project-local conversations; for a cross-user bundle it is
+   *  the sender's local-only project mapping — pass it whenever one is selected. */
   project_id?: string | null;
   participants: ConversationParticipant[];
   title?: string;
@@ -139,11 +209,25 @@ export async function createConversationForShare(
       const gate = await opts.ensureCloudLogin();
       if (!gate.ok) throw new Error(gate.error);
     }
-    const emails = params.participants
-      .map((p) => normalizeEmail(p.email) || '')
-      .filter((e): e is string => !!e && e.includes('@'));
-    if (emails.length === 0) {
-      throw new Error('At least one recipient email is required');
+    // Two ways to admit someone, because the address book knows people two
+    // ways. A contact learned from a conversation roster carries a hub user_id
+    // and no email (the hub does not disclose other people's addresses), and
+    // ContactPicker deliberately offers those contacts — so requiring an email
+    // here made every one of them pickable but unsendable. An email wins when a
+    // participant has both: it is the path that also works for someone without
+    // an account yet.
+    const invitees: string[] = [];
+    for (const p of params.participants) {
+      const email = normalizeEmail(p.email) || '';
+      if (email.includes('@')) {
+        invitees.push(email);
+        continue;
+      }
+      const userId = (p.user_id || '').trim();
+      if (userId) invitees.push(userId);
+    }
+    if (invitees.length === 0) {
+      throw new Error('At least one recipient email or hub contact is required');
     }
 
     const conv =
@@ -166,7 +250,7 @@ export async function createConversationForShare(
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();
-    await conv.share(emails);
+    await conv.share(invitees);
     conversationId = conv.id;
   } else {
     if (!params.project_id) {

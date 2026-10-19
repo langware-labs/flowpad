@@ -3,7 +3,7 @@
  * ``field LIKE %value%`` — case-insensitive substring of the FIELD value.
  * It used to build a RegExp from the field and test the query against it
  * (backwards), so live data_op re-validation of $LIKE-watched queries (e.g.
- * the inbox message search) disagreed with what the DB returned, and regex
+ * the stream inbox message search) disagreed with what the DB returned, and regex
  * metachars in message text could throw mid-render.
  */
 import { describe, expect, it } from 'vitest';

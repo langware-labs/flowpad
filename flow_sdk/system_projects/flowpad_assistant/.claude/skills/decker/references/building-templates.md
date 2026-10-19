@@ -7,7 +7,7 @@ undecided, go back and run it.
 ## 1. Copy the scaffold
 
 ```bash
-cp -R "<this skill's directory>/template/." "<project root>/assets/deck-templates/<template name>/"
+cp -R "<this skill's directory>/template/." "<project root>/agentic-assets/deck_template/<template name>/"
 ```
 
 `<template name>` is short kebab-case, derived from what the user asked for
@@ -25,7 +25,7 @@ If the folder already exists, this is not a bootstrap: check
 
 ```bash
 S="<this skill's directory>/styles/<style slug>"
-T="<project root>/assets/deck-templates/<template name>/common"
+T="<project root>/agentic-assets/deck_template/<template name>/common"
 cp "$S/tokens.css" "$T/tokens.css"
 cp "$S/style.css"  "$T/style.css"
 ```
@@ -101,7 +101,7 @@ re-style without guessing from the CSS. Unknown metadata keys ride through the
 indexer into the entity's metadata, so this needs no schema change.
 
 Then index the **project root** (not the template folder — the walker scans
-`<root>/assets/deck-templates/`, so indexing the template folder finds nothing):
+`<root>/agentic-assets/deck_template/`, so indexing the template folder finds nothing):
 
 ```bash
 flow record index "<project root>"

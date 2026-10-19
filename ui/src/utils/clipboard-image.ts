@@ -51,9 +51,7 @@ export function isImageFile(file: Pick<File, 'name' | 'type'>): boolean {
 // Raster image MIME types a <canvas> 2D context can decode and re-encode —
 // every type in IMAGE_MIME_EXTENSIONS except SVG (vector; canvas tainting +
 // fidelity loss). Single source of truth so a new format is added in one place.
-const RASTERIZABLE_IMAGE_MIMES = new Set(
-  Object.keys(IMAGE_MIME_EXTENSIONS).filter((mime) => mime !== 'image/svg+xml'),
-);
+const RASTERIZABLE_IMAGE_MIMES = new Set(Object.keys(IMAGE_MIME_EXTENSIONS).filter((mime) => mime !== 'image/svg+xml'));
 
 /** True when the file is an image the canvas can rasterize (excludes SVG). */
 export function isRasterizableImage(file: Pick<File, 'type'>): boolean {
@@ -143,4 +141,15 @@ export async function imageFilesFromClipboardItems(
     files.push(imageFileFromClipboardBlob(blob, files.length, now, options));
   }
   return files;
+}
+
+/** The plain text that rode along with a clipboard read (e.g. a copied web page's text beside its image); '' when none. */
+export async function textFromClipboardItems(items: ClipboardItem[] | null | undefined): Promise<string> {
+  const item = items?.find((it) => it.types.includes('text/plain'));
+  if (!item) return '';
+  try {
+    return await (await item.getType('text/plain')).text();
+  } catch {
+    return '';
+  }
 }

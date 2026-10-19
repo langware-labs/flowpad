@@ -12,8 +12,6 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.responses.response import ApiResponse
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,7 +60,7 @@ async def test_shell_alive_after_start(bootstrapped_client):
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -93,7 +91,7 @@ async def test_shell_write_echo(bootstrapped_client):
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start()
+        await shell.start_pty()
         await shell.write("echo shell_api_test_marker")
         await asyncio.sleep(0.5)
         output = await shell.read()
@@ -115,7 +113,7 @@ async def test_shell_kill_marks_not_alive(bootstrapped_client):
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive is True
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
@@ -131,7 +129,7 @@ async def test_shell_read_survives_kill(bootstrapped_client):
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start()
+        await shell.start_pty()
         await shell.write("echo before_destruct")
         await asyncio.sleep(0.5)
         pty = shell.compute_node.get_pty(shell.id)
@@ -149,13 +147,13 @@ async def test_shell_reopen_after_kill(bootstrapped_client):
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start()
+        await shell.start_pty()
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
             await pty.kill()
         assert shell.is_alive is False
 
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -193,7 +191,7 @@ async def test_proc_send_input_delegates_to_shell(bootstrapped_client):
     """proc.send() writes to the PTY and the output is readable."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
-    await shell.start()
+    await shell.start_pty()
 
     proc = AgenticProcess(
         id=str(uuid.uuid4()),
@@ -223,7 +221,7 @@ async def test_proc_sync_status_corrects_after_kill(bootstrapped_client):
     """sync_status() corrects state to idle when shell PTY has been killed."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
-    await shell.start()
+    await shell.start_pty()
 
     proc = AgenticProcess(
         id=str(uuid.uuid4()),

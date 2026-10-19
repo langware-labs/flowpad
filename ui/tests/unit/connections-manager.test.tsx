@@ -1,0 +1,650 @@
+/**
+ * `ConnectionsManager` — the table over a credential's two sides.
+ *
+ * The distinction this file exists to pin: a **grant** (the user holds a token)
+ * and a **placement** (a project may use it) are different things. Connect makes
+ * a grant and needs no project — it used to refuse outright without one, which
+ * made every row a dead end on the hub, where a user can hold zero projects.
+ * Attach/detach are placements and do need one. And deleting the credential is
+ * neither: it is a third, confirmed act that must never happen implicitly.
+ */
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const h = vi.hoisted(() => ({
+  openFile: vi.fn(),
+  connect: vi.fn(),
+  attach: vi.fn(),
+  detach: vi.fn(),
+  disconnect: vi.fn(),
+  notifyError: vi.fn(),
+  providers: [{ name: 'github', display_name: 'GitHub', icon: undefined }] as unknown[],
+  statuses: {} as Record<string, string>,
+  grants: {} as Record<string, string>,
+  projects: [] as unknown[],
+  usage: {} as Record<string, unknown[]>,
+  checkHarnessLogins: vi.fn(),
+  save: vi.fn(() => Promise.resolve({ typeid: 'credential-new', title: 'Twilio', project_id: null })),
+  remove: vi.fn(() => Promise.resolve({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
+  refresh: vi.fn(() => Promise.resolve()),
+  status: { project_id: null, vault_enabled: true, credentials: [], files: [] } as Record<string, unknown>,
+  templates: [] as unknown[],
+  rows: [] as unknown[],
+  blocked: false,
+  connections: null as unknown[] | null,
+}));
+
+// Spread the original: the barrel `@sdk/react/hooks` re-exports this module, so
+// a bare object mock would also erase `GrantStatus`/`deriveConnectionStatus` from
+// the barrel the component imports them through.
+vi.mock('@sdk/react/hooks/useOAuthConnection', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOAuthConnection: () => ({
+    connectingConnectionId: null,
+    availableProviders: h.providers,
+    connectionStatuses: h.statuses,
+    grantStatuses: h.grants,
+    userTable: { values: [] },
+    connect: h.connect,
+    attach: h.attach,
+    detach: h.detach,
+    disconnect: h.disconnect,
+  }),
+}));
+vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: h.projects, isLoading: false }) }));
+// The usage fan-out has its own test; here it is a fixture so the table's own
+// behaviour is what's under test.
+vi.mock('@src/components/connections-manager/use-credential-usage', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useCredentialUsage: () => ({ usage: h.usage, isLoading: false, isEnabled: true, isComplete: true }),
+}));
+// The credential half is a fixture here: this file is about the table, and the
+// fold itself is covered by `credential-rows.test.ts`.
+vi.mock('@src/components/credentials/use-credentials', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useCredentials: () => ({ status: h.status, templates: h.templates, ready: true, refresh: h.refresh }),
+}));
+vi.mock('@sdk', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  credentialsService: { save: h.save, remove: h.remove, setValues: vi.fn(), status: vi.fn() },
+}));
+// The consolidated read. Stubbed rather than provided with a QueryClient: this
+// file is about the table's own producers, and the harness rows it feeds are
+// presenters covered by their own file. `null` is also the real hub answer, so
+// the component takes the same path it takes off-desk.
+vi.mock('@src/hooks/use-connections', () => ({
+  useConnections: () => ({ connections: h.connections, isLoading: false, refetch: vi.fn() }),
+}));
+vi.mock('@src/components/status/use-status-record', () => ({
+  useRefreshStatusOnArrival: () => h.checkHarnessLogins(),
+}));
+// `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
+// not render. The host owns navigation so the harness rows can stay presenters.
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openFile: h.openFile }, currentDock: null }),
+}));
+vi.mock('@src/notifications', () => ({
+  notify: { error: h.notifyError, success: vi.fn(), info: vi.fn() },
+}));
+
+import { ConnectionsManager } from '@src/components/connections-manager';
+
+const PROJECT = { type: 'project', id: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' } as never;
+const ALPHA = { id: 'p1', name: 'Alpha', displayName: 'Alpha', typeId: PROJECT };
+
+describe('ConnectionsManager', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    h.statuses = { github: 'DISCONNECTED' };
+    h.grants = { github: 'none' };
+    h.projects = [];
+    h.usage = {};
+    h.blocked = false;
+    h.rows = [];
+    h.providers = [{ name: 'github', display_name: 'GitHub', icon: undefined }];
+  });
+  afterEach(() => cleanup());
+
+  it('owns no frame, and takes a className', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} className="h-full p-4" />);
+    const root = screen.getByTestId('connections-manager');
+
+    expect(root.className).toContain('h-full');
+    // The host decides height and padding; the component must not bake them in.
+    expect(root.className).not.toMatch(/\bp-4\b.*\bp-4\b/);
+  });
+
+  it('hides its heading when the host supplies one', () => {
+    const { rerender } = render(<ConnectionsManager projectTypeId={PROJECT} />);
+    expect(screen.queryByRole('heading', { name: 'Connections' })).toBeTruthy();
+
+    rerender(<ConnectionsManager projectTypeId={PROJECT} header={false} />);
+    expect(screen.queryByRole('heading', { name: 'Connections' })).toBeNull();
+  });
+
+  it('grants without a project instead of refusing — the token is the user’s', async () => {
+    // The inverted case. A grant is user-scoped on both backends (neither `auth`
+    // handler reads a target entity), so with no project this must run the flow,
+    // not raise "No project selected" at a user who has no project to select.
+    //
+    // Driven from the Add dialog, because that is where connecting something for
+    // the first time now begins: the table lists only what you hold.
+    render(<ConnectionsManager />);
+
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-github'));
+
+    expect(h.connect).toHaveBeenCalledTimes(1);
+    expect(h.attach).not.toHaveBeenCalled();
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('calls a held credential Connected — the Status column is about the account, not a project', () => {
+    // It used to read "Ready to connect" here, because the column showed the
+    // per-project status: with no project attached, a credential you are holding
+    // rendered as if you had none. Placement is the Used-by column's job.
+    h.grants = { github: 'held' };
+    h.statuses = { github: 'AVAILABLE' };
+    render(<ConnectionsManager />);
+
+    expect(screen.getByText('Connected')).toBeTruthy();
+    expect(screen.queryByText('Ready to connect')).toBeNull();
+  });
+
+  it('offers no placement affordance when there is no project to place into', () => {
+    h.grants = { github: 'held' };
+    h.statuses = { github: 'AVAILABLE' };
+    render(<ConnectionsManager />);
+
+    // Absent, not disabled-with-an-error: there is nothing to explain.
+    expect(screen.queryByTestId('connection-attach-github')).toBeNull();
+    expect(screen.queryByTestId('connection-detach-github')).toBeNull();
+  });
+
+  it('separates the grant from the placement', async () => {
+    // No credential → the row does not exist; Connect runs the full flow from
+    // the Add dialog.
+    const { rerender } = render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-github'));
+    expect(h.connect).toHaveBeenCalledTimes(1);
+    expect(h.attach).not.toHaveBeenCalled();
+
+    // Credential held, this project not attached → attach only, no new grant.
+    h.grants = { github: 'held' };
+    h.statuses = { github: 'AVAILABLE' };
+    rerender(<ConnectionsManager projectTypeId={PROJECT} key="2" />);
+
+    await userEvent.click(screen.getByTestId('connection-attach-github'));
+    expect(h.attach).toHaveBeenCalledTimes(1);
+    expect(h.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('detaches a connected provider without destroying the credential', async () => {
+    h.grants = { github: 'held' };
+    h.statuses = { github: 'CONNECTED' };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    await userEvent.click(screen.getByTestId('connection-detach-github'));
+
+    expect(h.detach).toHaveBeenCalledTimes(1);
+    // The regression that matters: removing the last placement is not a delete.
+    expect(h.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('says so when there is nothing connected', () => {
+    // The table holds credentials as well as OAuth providers now, so the empty
+    // state can no longer speak only of OAuth.
+    h.providers = [];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByText(/No connections yet/i)).toBeTruthy();
+  });
+
+  it('names the grant and lists the scopes it will request', async () => {
+    // The two things a user needs before granting: which flow runs, and what it
+    // will be allowed to do. Both used to be invisible.
+    h.providers = [
+      { name: 'github', display_name: 'GitHub', kind: 'code', scopes: ['repo', 'read:org'] },
+      { name: 'anthropic', display_name: 'Anthropic', kind: 'loopback', scopes: ['user:profile'] },
+    ] as unknown[];
+    // Held: these are row facts, and only held providers are rows.
+    h.grants = { github: 'held', anthropic: 'held' };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    // One method per cell; the grant flavour (PKCE) is the tooltip's detail.
+    const method = (id: string) => screen.getByTestId(`connection-kind-${id}`).querySelector('[data-method]')!;
+    expect(method('github').getAttribute('data-method')).toBe('oauth');
+    expect(method('anthropic').getAttribute('data-method')).toBe('oauth');
+    expect(method('anthropic').getAttribute('aria-label')).toMatch(/PKCE/);
+
+    // One chip and a count, not a stack: four chips wrapped the row to four
+    // lines and pushed Status and Actions out of view. The rest is a hover away.
+    const cell = screen.getByTestId('connection-scopes-github');
+    expect(cell.textContent).toBe('repo+1');
+
+    // And the hover actually reveals them. This used to be a native `title`,
+    // which asks for a second of stillness and often never appeared in the
+    // desktop shell at all — so the count read as a dead end.
+    await userEvent.hover(cell.querySelector('[tabindex]') as HTMLElement);
+    await waitFor(() => {
+      expect(screen.getAllByText('read:org').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('asks the box to re-check the harness logins', () => {
+    // This screen is where a person comes to find out whether they are signed
+    // in, and the harness rows read "Not checked" until someone asks the vendor
+    // CLIs. Asking is the status refresh, a separate verb because it WRITES —
+    // the same list read resolves `require()` and must not spawn subprocesses.
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(h.checkHarnessLogins).toHaveBeenCalled();
+  });
+
+  it('does not claim "no scopes" when the owning side never published them', () => {
+    // A hub provider's scopes live in its manifest, which the table does not
+    // carry. Rendering an empty list would assert something false.
+    h.providers = [{ name: 'slack', display_name: 'slack', kind: 'code' }] as unknown[];
+    h.grants = { slack: 'held' };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-scopes-slack').textContent).toContain('Shown at approval');
+  });
+});
+
+describe('ConnectionsManager — where a credential is used', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    h.providers = [{ name: 'github', display_name: 'GitHub', icon: undefined }];
+    h.statuses = { github: 'CONNECTED' };
+    h.grants = { github: 'held' };
+    h.projects = [ALPHA];
+    h.usage = {};
+    h.blocked = false;
+    h.rows = [];
+  });
+  afterEach(() => cleanup());
+
+  it('says a held credential is unused rather than leaving the cell blank', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    expect(screen.getByTestId('connection-usage-github').textContent).toContain('Not used yet');
+  });
+
+  it('names the projects that use it', () => {
+    h.usage = { github: [ALPHA] };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    expect(screen.getByTestId('connection-usage-github').textContent).toContain('Alpha');
+  });
+
+  it('shows nothing to manage for a credential the user does not hold', () => {
+    h.grants = { github: 'none' };
+    h.statuses = { github: 'DISCONNECTED' };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    expect(screen.queryByTestId('connection-usage-trigger')).toBeNull();
+    // Stronger than it used to be: there is no row to manage anything on.
+    expect(screen.queryByTestId('connection-kind-github')).toBeNull();
+  });
+
+  it('lists only what you hold, and offers the rest in Add connection', async () => {
+    // The table and the dialog are complements, not overlapping lists. A
+    // provider used to be in both at once: a "Not connected" row you could not
+    // act on, beside a tile offering to add the very same thing.
+    h.providers = [
+      { name: 'github', display_name: 'GitHub' },
+      { name: 'slack', display_name: 'Slack' },
+    ] as unknown[];
+    h.grants = { github: 'held' };
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-kind-github')).toBeTruthy();
+    expect(screen.queryByTestId('connection-kind-slack')).toBeNull();
+
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    expect(screen.getByTestId('add-connection-slack')).toBeTruthy();
+    expect(screen.queryByTestId('add-connection-github')).toBeNull();
+  });
+});
+
+describe('ConnectionsManager — a credential that is held but dead', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    h.providers = [{ name: 'googledrive', display_name: 'Google Drive', icon: undefined }];
+    h.statuses = { googledrive: 'NEEDS_REAUTH' };
+    h.grants = { googledrive: 'needs_reauth' };
+    h.projects = [];
+    h.usage = {};
+    h.blocked = false;
+    h.rows = [];
+  });
+  afterEach(() => cleanup());
+
+  it('says reconnect is needed rather than claiming a connection', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    expect(screen.getByText('Reconnect needed')).toBeTruthy();
+    expect(screen.queryByText('Connected')).toBeNull();
+  });
+
+  it('runs the full flow, not attach — attaching would re-share the refused token', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByRole('button', { name: /reconnect/i }));
+    expect(h.connect).toHaveBeenCalledWith('googledrive', 'googledrive', undefined, {});
+    expect(h.attach).not.toHaveBeenCalled();
+  });
+});
+
+const TWILIO_TEMPLATE = {
+  id: 'spec-twilio',
+  name: 'twilio',
+  title: 'Twilio',
+  description: '',
+  icon_name: '',
+  help_url: '',
+  value_store: 'env',
+  lm_provider: '',
+  scope: 'system',
+  // Every shipped template carries one, and a credential without it cannot be saved.
+  setup: 'Open the Twilio console and copy the Account SID.',
+  vars: { TWILIO_SID: { label: 'Account SID', required: 'MUST' } },
+  varNames: ['TWILIO_SID'],
+};
+
+const statusWith = (over: Record<string, unknown> = {}) => ({
+  project_id: null,
+  vault_enabled: true,
+  credentials: [],
+  files: [],
+  ...over,
+});
+
+const credential = (over: Record<string, unknown> = {}) => ({
+  typeid: 'credential-1',
+  name: 'twilio',
+  title: 'Twilio',
+  description: '',
+  icon_name: '',
+  help_url: '',
+  scope: 'user',
+  project_id: null,
+  value_store: 'env',
+  lm_provider: '',
+  state: 'connected',
+  vars: [
+    {
+      env_var: 'TWILIO_SID', label: 'SID', hint: '', placeholder: '', pattern: '', help_url: '',
+      secret: false, required: 'MUST', present: true, found_in: 'env', warning: null, shadowed_by: null,
+    },
+  ],
+  ...over,
+});
+
+const resetCredentials = () => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  h.providers = [];
+  h.statuses = {};
+  h.grants = {};
+  h.projects = [];
+  h.usage = {};
+  h.templates = [TWILIO_TEMPLATE];
+  h.status = statusWith();
+};
+
+const openTemplate = async () => {
+  await userEvent.click(screen.getByTestId('add-connection-open'));
+  await userEvent.click(screen.getByTestId('add-connection-twilio'));
+};
+
+describe('ConnectionsManager — adding a credential', () => {
+  beforeEach(resetCredentials);
+  afterEach(() => cleanup());
+
+  it('a catalogue template opens the one credential form with its variable fixed', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
+
+    expect(screen.getByTestId('credential-dialog')).toBeTruthy();
+    expect(screen.getByTestId('credential-var-name-0').tagName).toBe('CODE');
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('saving writes the declaration and its values in one call, then re-reads', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
+
+    await userEvent.type(screen.getByTestId('credential-var-value-0'), 'sid-1');
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: 'user',
+        project_id: null,
+        manifest: expect.objectContaining({ name: 'twilio' }),
+        store: 'env',
+        values: { TWILIO_SID: 'sid-1' },
+      }),
+    );
+    await waitFor(() => expect(h.refresh).toHaveBeenCalled());
+  });
+
+  it('with a project selected, a new credential defaults to that project', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} project={{ id: 'p1', typeId: PROJECT } as never} />);
+    await openTemplate();
+
+    await userEvent.type(screen.getByTestId('credential-var-value-0'), 'sid-1');
+    await userEvent.click(screen.getByTestId('credential-save'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalled());
+    expect(h.save.mock.calls[0][0]).toMatchObject({ scope: 'project', project_id: 'p1' });
+  });
+
+  it('Custom credentials opens a name and name + value pairs, the rest behind Advanced', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} project={{ id: 'p1', typeId: PROJECT } as never} />);
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    await userEvent.click(screen.getByTestId('add-connection-custom'));
+
+    expect(screen.getByTestId('credential-title')).toBeTruthy();
+    expect(screen.getByTestId('credential-var-name-0').tagName).toBe('INPUT');
+    expect(screen.getByTestId('credential-var-value-0')).toBeTruthy();
+    expect(screen.queryByTestId('credential-advanced')).toBeNull();
+
+    await userEvent.click(screen.getByTestId('credential-advanced-toggle'));
+
+    // Defaults: this project, the .env.local file — each with its wiki section.
+    expect(screen.getByTestId('credential-scope').textContent).toMatch(/this project/i);
+    expect(screen.getByTestId('credential-store').textContent).toMatch(/\.env\.local/i);
+    expect(screen.getByTestId('credential-scope-info')).toBeTruthy();
+    expect(screen.getByTestId('credential-store-info')).toBeTruthy();
+    expect(screen.getByTestId('credential-description')).toBeTruthy();
+  });
+
+  it('refuses to write a value into a committable .env.local, and says why', async () => {
+    h.status = statusWith({
+      files: [
+        {
+          scope: 'user', project_id: null, path: '/h/.env.local', exists: true, blocked: true,
+          block_code: 'tracked', block_reason: '.env.local is already TRACKED by git.', detected: [],
+        },
+      ],
+    });
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
+    await userEvent.type(screen.getByTestId('credential-var-value-0'), 'sid-1');
+
+    expect(screen.getByTestId('env-local-blocked-notice').textContent).toMatch(/TRACKED/);
+    expect(screen.getByTestId('credential-save').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('a vault credential asks for the vault to be enabled first', async () => {
+    h.status = statusWith({ vault_enabled: false });
+    // A provider key always lives in the vault.
+    h.templates = [{ ...TWILIO_TEMPLATE, lm_provider: 'openai' }];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openTemplate();
+
+    expect(screen.getByTestId('vault-disabled-notice')).toBeTruthy();
+    expect(screen.getByTestId('credential-save').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('auto setup saves edited details and preserves blank values without a selection dialog', async () => {
+    h.status = statusWith({
+      files: [
+        {
+          scope: 'user', project_id: null, path: '/h/.env.local', exists: true, blocked: false,
+          block_code: null, block_reason: null,
+          detected: [
+            { key: 'QA_A', line: 1 },
+            { key: 'QA_B', line: 2 },
+          ],
+        },
+      ],
+    });
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByText('Environment variables')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Open QA_B in .env.local at line 2' }));
+    expect(h.openFile).toHaveBeenCalledWith('/h/.env.local', { line: 2 });
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    await userEvent.type(screen.getByLabelText('Value for QA_A'), 'new-value');
+    await userEvent.click(screen.getByRole('button', { name: 'Details for QA_A' }));
+    await userEvent.type(screen.getByLabelText('Label'), 'Account token');
+    await userEvent.type(screen.getByLabelText('Hint'), 'Copy from settings');
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'Add variable' }));
+    await userEvent.type(screen.getByLabelText('New variable name 1'), 'NEW_KEY');
+    await userEvent.type(screen.getByLabelText('New variable value 1'), 'new-secret');
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(3));
+    expect(h.save.mock.calls[0][0]).toMatchObject({
+      scope: 'user', auto_declare: true, manifest: { name: '', vars: { QA_A: { label: 'Account token', hint: 'Copy from settings' } } }, values: { QA_A: 'new-value' },
+    });
+    expect(h.save.mock.calls[1][0]).toMatchObject({
+      scope: 'user', auto_declare: true, manifest: { name: '', vars: { QA_B: {} } }, values: {},
+    });
+    expect(h.save.mock.calls[2][0]).toMatchObject({
+      auto_declare: true, manifest: { name: '', vars: { NEW_KEY: {} } }, values: { NEW_KEY: 'new-secret' },
+    });
+  });
+});
+
+describe('ConnectionsManager — credential rows', () => {
+  beforeEach(() => {
+    resetCredentials();
+    h.status = statusWith({ credentials: [credential({ value_store: 'vault' })] });
+  });
+  afterEach(() => cleanup());
+
+  const openMenuItem = async (key: string, item: 'edit' | 'delete') => {
+    await userEvent.click(screen.getByTestId(`connection-more-${key}`));
+    await userEvent.click(await screen.findByTestId(`connection-${item}-${key}`));
+  };
+
+  it('lists a declared credential with where its values live and who gets it', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-row-user-twilio')).toBeTruthy();
+    const method = screen.getByTestId('connection-kind-user-twilio');
+    expect(method.dataset.method).toBe('api_key');
+    expect(method.getAttribute('aria-label')).toMatch(/vault/i);
+    expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);
+  });
+
+  it('chips each credential MUST or OPTIONAL — the manifest\'s own word', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    const chip = screen.getByTestId('connection-required-user-twilio');
+    expect(chip.textContent).toBe('MUST');
+    expect(chip.dataset.required).toBe('MUST');
+  });
+
+  it('a credential missing values offers to set them, and asks only for values', async () => {
+    h.status = statusWith({
+      credentials: [
+        credential({
+          state: 'missing',
+          vars: [{ ...(credential().vars as object[])[0], present: false, found_in: null, warning: 'missing' }],
+        }),
+      ],
+    });
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-status-user-twilio').textContent).toMatch(/needs values/i);
+    await userEvent.click(screen.getByTestId('connection-setvalues-user-twilio'));
+
+    expect(screen.getByTestId('credential-var-value-0')).toBeTruthy();
+    expect(screen.queryByTestId('credential-title')).toBeNull();
+  });
+
+  it('deleting a vault credential says its values are deleted', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openMenuItem('user-twilio', 'delete');
+
+    expect(document.body.textContent).toMatch(/deleted from the vault/i);
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(h.remove).toHaveBeenCalledWith('credential-1'));
+  });
+
+  it('deleting an env-file credential says its lines are deleted too', async () => {
+    h.status = statusWith({ credentials: [credential({ value_store: 'env' })] });
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await openMenuItem('user-twilio', 'delete');
+
+    const text = document.body.textContent ?? '';
+    expect(text).toMatch(/TWILIO_SID are deleted from every \.env file/i);
+    expect(text).not.toMatch(/deleted from the vault/i);
+  });
+});
+
+describe('ConnectionsManager — an OAuth connection is a credential', () => {
+  const GOOGLE_ROW = {
+    typeid: 'credential-6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f', name: 'google', title: 'Google', description: '',
+    icon_name: '', help_url: '', setup_wiki: '', setup: '', scope: 'project', project_id: 'p1',
+    environment: 'development', value_store: 'connection', lm_provider: '', kind: 'oauth', provider: 'google',
+    scopes: ['drive.readonly'], missing_scopes: ['drive'], state: 'partial', vars: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.providers = [
+      { name: 'github', display_name: 'GitHub' },
+      { name: 'google', display_name: 'Google' },
+    ] as unknown[];
+    h.grants = { github: 'none', google: 'none' };
+    h.statuses = { github: 'DISCONNECTED', google: 'DISCONNECTED' };
+    h.status = { project_id: 'p1', vault_enabled: true, credentials: [GOOGLE_ROW], files: [] };
+  });
+  afterEach(() => {
+    cleanup();
+    h.status = { project_id: null, vault_enabled: true, credentials: [], files: [] };
+  });
+
+  it('lists a connection the project declares before it is held, with Connect, as that credential', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    const row = screen.getByTestId('connection-row-oauth-google');
+    expect(row.getAttribute('data-typeid')).toBe(GOOGLE_ROW.typeid);
+    expect(screen.getByTestId('connection-connect-google')).toBeTruthy();
+    expect(screen.getByTestId('connection-missing-scopes-google').textContent).toContain('drive');
+    expect(screen.getByTestId('connection-usage-google').textContent).toBe('This project');
+    // Never also an API-key row; and a provider neither held nor declared has no row at all.
+    expect(screen.queryByTestId('connection-row-project-google')).toBeNull();
+    expect(screen.queryByTestId('connection-kind-github')).toBeNull();
+  });
+
+  it('selects the credential the URL names', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} selectedTypeid={GOOGLE_ROW.typeid} />);
+    expect(screen.getByTestId('connection-row-oauth-google').getAttribute('aria-current')).toBe('true');
+  });
+
+  it('keeps Add connection the complement: a declared provider is a row, not an offer', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByTestId('add-connection-open'));
+    expect(screen.queryByTestId('add-connection-google')).toBeNull();
+    expect(screen.getByTestId('add-connection-github')).toBeTruthy();
+  });
+});

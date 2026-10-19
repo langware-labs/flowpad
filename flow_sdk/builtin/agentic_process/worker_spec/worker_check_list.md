@@ -301,6 +301,9 @@ workarounds.
 - [ ] Confirm flag ordering constraints.
 - [ ] Confirm `--` separator requirement, if any.
 - [ ] Confirm shell-string command and argv+env command can be rendered consistently.
+- [ ] Identify any flag whose value is structured (JSON or TOML) and confirm it
+      can be emitted as ONE raw argv value — quoting belongs to shell rendering,
+      never to the value builder (`cli_serialization.py`).
 
 Required mapping table:
 
@@ -320,7 +323,7 @@ Exit criteria:
 
 - [ ] Headless argv shape is known.
 - [ ] Interactive argv shape is known or marked unsupported.
-- [ ] Serialization requirements for `WorkerCLIOptions` are known.
+- [ ] Serialization requirements for `AgentOptions` are known.
 
 ## 8. FlowData Parser Feasibility
 
@@ -426,14 +429,21 @@ Goal: determine whether visible terminal mode can be supported.
 - [ ] Validate process exits cleanly on terminal close.
 - [ ] Validate restart reuses or resumes expected session.
 - [ ] Validate transcript is discoverable after visible launch.
+- [ ] Determine whether a pasted prompt ending in `\r` self-submits, or needs a
+      discrete Enter (`pty_submits_on_paste`).
+- [ ] Capture the exact composer-ready line printed when input is accepted
+      (`pty_composer_ready_pattern`), from ANSI-stripped output.
+- [ ] Enumerate blocking boot interstitials (directory trust, login, migration,
+      update prompts) and how to suppress each.
 - [ ] Mark interactive mode unsupported if vendor is headless-only.
 
 Exit criteria:
 
 - [ ] Interactive support is proven or explicitly out of scope.
 - [ ] PTY argv shape is known if supported.
+- [ ] Prompt-delivery timing is grounded in an observed marker, not a sleep.
 
-## 12. Embedded Agents and Context Injection
+## 12. Embedded Sub-Agents and Context Injection
 
 Goal: prove FlowPad context can be delivered to the worker.
 
@@ -443,10 +453,10 @@ Goal: prove FlowPad context can be delivered to the worker.
 - [ ] Determine whether process `add_dirs` are visible in headless mode.
 - [ ] Determine whether process `add_dirs` are visible in interactive mode.
 - [ ] Confirm generated process instruction assets are created under `<record_dir>/execution/assets`.
-- [ ] Confirm the worker consumes `CLAUDE.md` / `AGENTS.md` / `.agents` / custom-instruction files as expected.
-- [ ] Confirm embedded agent specs are delivered through instruction assets, not prompt inlining.
+- [ ] Confirm the worker consumes its driver-projected prompt / discovery files as expected.
+- [ ] Confirm embedded sub-agent specs are delivered through instruction assets, not prompt inlining.
 - [ ] Confirm prompt composition preserves the original user instruction unchanged.
-- [ ] Confirm large embedded agent specs fit the worker's instruction sink.
+- [ ] Confirm large embedded sub-agent specs fit the worker's instruction sink.
 - [ ] Confirm process-local assets are accessible.
 - [ ] Confirm environment variables are visible to tools.
 - [ ] Confirm project/workspace metadata can be injected safely.
@@ -544,7 +554,90 @@ Exit criteria:
 - [ ] Fixture set is enough for parser, status, and stream-worker tests.
 - [ ] Sensitive data has been redacted without changing schema.
 
-## 16. Implementation Readiness Summary
+## 16. Registration Surfaces
+
+Goal: list every registry the worker name must appear in, so nothing falls back
+silently. Each item is a table row in FlowPad code, not vendor behavior — see
+`AgenticWorkerSpec.md` §10 for the file for each.
+
+- [ ] A `Vendor` row in `VENDORS` (`flowpad_types/vendors.py`) — THE registration. Driver
+      resolution, aliases, the capability-runner loop, placement and the transcript path
+      sniff all derive from it; there is no `get_driver` registry or `factory()` key to edit.
+- [ ] The declared facts are set honestly: `hidden`, `bootstrap`, `interactive`,
+      `python_module` + `python_requires`, `transcript_stems` (required when `dot_dir` is None).
+- [ ] `cli_drivers/<key>/driver.py` exports `DRIVER`; `cli_drivers/<key>/cli.py` exports
+      `AGENT_OPTIONS` — the two module-level aliases ARE the handshake.
+- [ ] Worker type added to both `WorkerType` enums (`test_vendors_table.py` keeps them in step).
+- [ ] Capability kind and `CapabilitySpec` (the runner itself is built by the `VENDORS` loop).
+- [ ] Model tier map (`sm`/`md`/`lg` → concrete models or vendor auto/no flag).
+- [ ] `ApiAuthSpec` + `_SPECS` row with three DISTINCT tier slugs; `_<vendor>_hub_binding` if a
+      hub `LLMEndpoint` can fund it; `has_device_login=False` if it has no account of its own.
+- [ ] `TranscriptFormat` member(s) — one per canonical shape, plus the stdout tee.
+- [ ] Transcript parser module and its `_REGISTRY` / `_BY_FORMAT` rows.
+- [ ] Transcript resolver branch (only when the vendor has per-session files to resolve).
+- [ ] Pricing module and dispatcher row — OPTIONAL (empty `model_prefixes` = the claude table).
+- [ ] Session `EntityType`, `TypeInfo`, indexer function — ONLY for per-session files; a
+      store-backed vendor sets `session_entity_type=None`.
+- [ ] `Vendor.harness` names the placement convention the vendor reads.
+- [ ] `InstanceSettings` paths for the vendor's home/session/config — a store of OURS lives
+      under `instance_dir` (sandboxed by construction) and needs no redirect env var.
+- [ ] Every capability the vendor lacks is DECLARED unsupported (see the spec's §0), and the
+      vendor has joined the contract tests listed there.
+
+Exit criteria:
+
+- [ ] Every registry above has a row for this worker.
+- [ ] No `if worker_type == ...` branch was added to `agentic_process.py`.
+
+## 17. Authentication and Installation
+
+Goal: prove FlowPad can detect, install-check, and log in this CLI without
+guessing.
+
+- [ ] Confirm the executable is discoverable and record its bin folder — or, for a harness
+      that is a Python package, that its distributions are readable from package metadata
+      and its `--version` answers WITHOUT importing the engine (the probe budget is 5s).
+- [ ] Confirm the CLI runs with a PATH that does NOT include the user's shell
+      profile (workers do not inherit nvm shims).
+- [ ] Identify the auth-state command and whether its exit code is meaningful.
+- [ ] Confirm "cannot determine" is distinguishable from "logged out".
+- [ ] Record whether the probe can be `verified` (vendor-confirmed) or heuristic.
+- [ ] Confirm the probe completes within the 5s budget.
+- [ ] Identify the login command and whether it is a device flow or paste-back.
+- [ ] Capture the exact stdout lines carrying the verification URL and code.
+- [ ] Confirm login can be driven non-interactively enough to script.
+- [ ] Identify env-var overrides for base URL, API key, and model slug.
+- [ ] Confirm a missing API key fails fast rather than falling back to a login prompt.
+- [ ] Identify which credentials live in the OS credential store vs. on disk.
+
+Exit criteria:
+
+- [ ] Install detection is proven.
+- [ ] Login state is machine-detectable.
+- [ ] Login flow is classified (device / paste-back / manual only).
+- [ ] API-key mode is proven or explicitly out of scope.
+
+## 18. Presentation and Naming
+
+Goal: make the worker visually and verbally distinct before it ships.
+
+- [ ] Source a monochrome-able vendor mark that reads at 12–16 px.
+- [ ] Produce the fresh icon component.
+- [ ] Produce the restored-session icon variant.
+- [ ] Register both in the process-icon map.
+- [ ] Add the terminal-strip provider entry (icon, color class, label).
+- [ ] Register the entity icon name on the session `TypeInfo`.
+- [ ] Confirm no glyph is hardcoded at a call site.
+- [ ] Choose the capability-card icon and homepage URL.
+- [ ] Check every new noun against `docs/glossary.md`.
+- [ ] Confirm the display name matches the vendor's own product name.
+
+Exit criteria:
+
+- [ ] Icons resolve in all three surfaces without falling back to generic.
+- [ ] Names do not collide with taken vocabulary.
+
+## 19. Implementation Readiness Summary
 
 Complete this summary before opening any implementation task.
 
@@ -564,13 +657,13 @@ Complete this summary before opening any implementation task.
 - [ ] History strategy:
 - [ ] Usage/cost strategy:
 - [ ] Permission strategy:
-- [ ] Embedded agent strategy:
+- [ ] Embedded sub-agent strategy:
 - [ ] Unsupported features:
 - [ ] Required implementation files:
 - [ ] Required tests:
 - [ ] Open risks:
 
-## 17. Critical Acceptance Gate
+## 20. Critical Acceptance Gate
 
 Development may start only when every critical item below is `Supported` or
 `Partial` with a documented workaround.
@@ -595,6 +688,8 @@ Development may start only when every critical item below is `Supported` or
 - [ ] Cancellation behavior.
 - [ ] Permission bypass or non-blocking approval strategy.
 - [ ] Test fixtures captured.
+- [ ] Install/auth detection wired (§17) — a worker that cannot report "not
+      installed" or "logged out" fails opaquely at spawn time.
 
 Stop conditions:
 

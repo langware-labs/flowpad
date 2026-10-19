@@ -42,6 +42,8 @@ async function loadOwnedRealm(apiUrl: string, includeMain: boolean): Promise<Own
         if (disposed) return;
         disposed = true;
         sdk.connectionManager.dispose();
+        sdk.lazyAssets.setScope('disposed');
+        sdk.queryClient.clear();
         ownedRealms.delete(realm);
         // `vi.resetModules()` is worker-global, so retain the graph while any
         // sibling owned realm is still live. Once the final realm is gone,

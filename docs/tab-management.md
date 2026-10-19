@@ -11,12 +11,12 @@ id: 4123bb18-2066-5923-9cd7-fc2417b2b880
 > `TerminalTab` view-model, Part 0 supersedes them. Code comments that cite
 > "Part 3 §N" point at the historical design rationale, not the current wiring.**
 
-# Part 0 — As-built: the `Tab` entity + lifecycle wrapper + one source
+# Part 0 — As-built: the `Tab` entity + SDK `TabManager` + one source
 
 **Every tab in the content-panel strip — terminals and content alike — is a
 first-class `Tab` entity** (`flow_sdk/builtin/tab.py`, DB-only, the `File`
 pattern). There is ONE membership system, ONE backend-authoritative source, ONE
-client store, and ONE strip component.
+client manager, and ONE strip component.
 
 ## The `Tab` entity (backend)
 
@@ -38,25 +38,79 @@ lookup), `visible` (membership — non-null so a close broadcasts), `name` (labe
 `icon_key` + `worktree` (CREATE-only display primitives so a chip draws without
 fetching its backing entity), `tab_order`, `last_active_at`, `project_id`.
 
-**Identity is the `pointer` natural key — dedup reconciles by it, NOT by the
-derived id.** `ensure_tab(pointer, …)` queries `get_all({"pointer": pointer})`,
+**Identity is the canonical pointer hash; exact serialized-pointer reconciliation
+runs first.** `ensure_tab(pointer, …)` queries `get_all({"pointer": pointer})`,
 reuses the canonical `id == tab_id_for(pointer)` row, and soft-hides any
-foreign-id strays sharing that pointer. (Before this fix, a row minted under the
-old client-side scheme carried a random uuid4 id that an id-only lookup missed →
-a _second_ canonical row was minted → two visible chips for one pointer. The
-natural-key reconcile self-heals that on next open.)
+foreign-id strays sharing that pointer. Scope-keyed docks may carry presentation
+metadata that does not change the hash; when their exact JSON differs,
+`ensure_tab` falls back to the canonical id and updates the stored variant rather
+than inserting a second row. (Before natural-key reconciliation, a row minted
+under the old client-side scheme carried a random uuid4 id that an id-only lookup
+missed → a _second_ canonical row was minted → two visible chips for one pointer.)
+
+## Host tabs (nested tabs, one level deep)
+
+A tab is either a LEAF or a HOST. A host draws its own nested strip of child tabs
+(`Tab.parent_tab_id` = the host's id); the global strip shows only top-level tabs
+and, on a child's URL, lights the host's chip.
+
+- **Declaring a host:** `VIEWER_REGISTRY[viewType].hostsTabs` (`ui/src/types/ViewType.ts`).
+  Which docks it accepts as children: `ui/src/navigation/tab-hosts.ts`, mirrored by
+  `_HOST_CHILD_RULES` in `flow_sdk/builtin/tab.py`. `tests/fixtures/tab_host_children.json`
+  pins both sides (`tests/unit/test_tab_host_children.py`,
+  `ui/tests/unit/tab-host-children.test.ts`).
+- **Depth 1:** a host is a workspace ANCHOR (`isWorkspaceAnchorDock`) and is never
+  accepted as a child (backend: `_pointer_is_adoptable_child` refuses a host view).
+- **Closing a host closes its children** — `Tab.close`, the `close` action and
+  `close_many` hide the children in the same `tabs_changed` broadcast and tear them
+  down. The edge is kept, so a child reopened inside the host regroups under it.
+- **Vibe is the first host:** `ViewType.VIBE`, `/dock/vibe/agentic_process-<id>`. Its
+  `tabHash` folds onto `shell|agentic_process-<id>`, so a process is one row whether
+  it is shown as a chat, a terminal or a Vibe workspace; the stored pointer is
+  re-pointed between them. Several Vibe tabs can be open at once, each a chip in
+  the global strip (`flow-page` draws the strip above the Vibe workspace; the
+  home stays tabless); one workspace component renders whichever is active and
+  resets its per-workspace show state when the session changes. While a child
+  fills a Vibe tab, its chip keeps the Vibe tab's own name (the nested strip
+  shows the child).
+- **One strip owner:** `flow-page` draws the global strip above every layout
+  (`TabStripOwnedAbove` tells an embedded `ContentPanel` not to draw a second), so
+  switching between a Vibe tab and a terminal tab never remounts it; it pins the
+  desk `--radius` so the Vibe skin cannot reshape it.
+- **Reopen beside, with its children:** a host closed with its tab marks the
+  children it closed `closed_with_parent`; reopening the host (`ensure_tab`) with
+  an opener places it right after that opener and brings those children back —
+  never a child the user closed on its own. A Vibe chat's New / Recent use this
+  (`NavigationActions.openVibeTabBeside`).
+- **Leaving Vibe carries children out:** re-pointing a host to a non-host
+  presentation (Vibe → chat/terminal) makes its nested tabs top-level tabs right
+  after it; the workspace's active-display row stays attached.
+- **Surface switch:** every session shows a Terminal | Chat | Vibe control
+  (`SessionSurfaceSwitch`, in the terminal/chat headers and the Vibe settings
+  menu) — the footer's switch scoped to one session
+  (`NavigationActions.switchSessionSurface`). The strip's agent openers and
+  history always open a terminal (PTY) session; "New Vibe" opens the Vibe home.
+- **Closing a project's last tab** lands where Home does (`goHome({ homePage:
+  true })`): the project's home agent, else the tabless home. A session launched
+  as an agent shows the agent's avatar on its chip.
+- **Top-level opens:** the global strip's chips and "+" open with
+  `NavigationCommitOptions.topLevel` — no host is carried, so a terminal opened
+  beside a Vibe tab is never adopted as its child.
 
 ## The `tab` actions (the only wire contract)
 
-Collection-level: `list?project=<id>` (the project view = that project +
-projectless tabs, `filter_for_project`), `list_all` (every visible tab, all
+Collection-level: `list?project=<id>` (the exact project scope;
+`project=` is the separate Global scope, via `filter_for_project`), `list_all` (every visible tab, all
 projects — the global source the client store reads), `new_tab` (loader-driven
 get-or-create + global-order placement), `order` (drag-reorder commit).
 By-id: `close` (soft `visible=false` + per-`target_type` teardown via
-`teardown_for_tab`), `rename` (sets `Tab.name` THEN reflects onto the target via
-the generic `Entity.rename`; shell/AP also pin `auto_rename=false`), `set_name`
-(sets ONLY `Tab.name` — the PTY auto-title mirror; never touches the target or
-`auto_rename`, unlike `rename`). List/display mutations broadcast a
+`teardown_for_tab`), `rename` (reflects explicit user input onto the target;
+worker processes update their canonical name and linked tabs atomically), and
+`set_name` (sets an ordinary tab label; worker process tabs instead reconcile the
+canonical process name and ignore the supplied automatic label). Worker
+terminal titles are never naming evidence; provider provenance and name priority
+live in the [shared naming service](interface/session-naming.md). Ordinary shell
+and entity tabs retain their existing label/reflection behavior. List/display mutations broadcast a
 `tabs_changed` ping. Orphan cleanup: `Entity.delete` soft-closes any Tab pointing
 at a deleted target; `AgenticProcess.close` calls `hide_tabs_for_target` (the
 process row persists as `stopped`, so delete-cleanup never fires for it).
@@ -71,11 +125,20 @@ true tab recency.
 ## Runtime lifecycle (frontend only)
 
 `Tab.visible` remains the durable membership source. Opening/closing progress is
-client runtime state in `ui/src/tabs/tab-lifecycle.ts`; it is not persisted and
-does not ride backend `Tab` rows.
+client runtime state in the SDK's headless `TabLifecycleRegistry`
+(`ts_sdk/src/tabs/tab-lifecycle-registry.ts`); it is not persisted and does not
+ride backend `Tab` rows. Route/content setup, cleanup, and adoption policy stay
+in `ui/src/tabs/tab-content-lifecycle.ts`, because they depend on the concrete UI
+`DockPointer`, route classifiers, and content adapters.
 
 ```ts
-type TabLifecycleState = 'opening' | 'opened' | 'open_failed' | 'closing' | 'close_failed';
+enum TabLifecycleState {
+  Opening = 'opening',
+  Opened = 'opened',
+  OpenFailed = 'open_failed',
+  Closing = 'closing',
+  CloseFailed = 'close_failed',
+}
 
 interface TabContentAdapter {
   setupTab(dock: DockPointer): Promise<TabSetupResult>;
@@ -95,13 +158,20 @@ navigate to dock
 close chip
   -> closing
   -> cleanupTab(dock, tab)
-  -> Tab.closeById(tab.id)
+  -> tabManager.close(tab.id)
   -> tabs_changed/list_all no longer contains tab
   -> lifecycle entry removed
 
 cleanup failure
   -> close_failed
 ```
+
+The first landing (or a landing after the client lifecycle registry is reset)
+materializes/resolves the backend row. An already-`opened` content-asset dock with
+the same tab identity takes a deliberate reuse fast path: it stamps activation and
+reruns the route-owned content adapter without another list/new-tab round trip.
+That path returns `TabSetupResult.tab == null`; the durable identity remains the
+existing backend `Tab` row and the lifecycle entry's `tabId`.
 
 Shell lifecycle:
 
@@ -144,19 +214,20 @@ styling/tooltip. The redirect-only `/dock/shell/new_terminal` route is explicitl
 not materialized as a persistent tab; it creates a shell and redirects to the
 concrete shell dock.
 
-## A tab's project follows its target, never the ambient active project
+## A tab's project follows its target or explicit project URL, never ambient context
 
-`Tab.project_id` is the project of the tab's **target entity**, not whatever project
-was active in the client when the tab was materialized. The ambient project is the
-wrong source: on a cross-project open (switching projects and resuming a tab that
-lives in a non-active project, a deep link, or a recovery that races the loader's
-context switch) the active project is a _different_ project, and stamping it
-re-parented the tab — the chip then vanished from its real project's strip (the
-"wrong project minted on tab" bug).
+`Tab.project_id` is the project of the tab's **target entity**, with one explicit
+fallback: a `/dock/project/<project-id>/…` URL names the project when its content
+target is not indexed yet. It is never whatever project happened to be active in
+the client. Ambient context is the wrong source: on a cross-project open, deep
+link, or loader race it can be a _different_ project, and stamping it re-parents
+the tab so its chip vanishes from the real project's strip.
 
-One chokepoint resolves it: **`Tab.getFromDockPointer(dock)`** (SDK, `entities/tab.ts`),
-called by the loader as the single writer (`main-loader.ts`). It is self-sufficient
-(cache-first, network fallback) and resolves `project_id` from the dock's TARGET:
+The frontend chokepoint is **`tabManager.ensureDock(dock)`** (SDK,
+`tabs/tab-manager.ts`), called by the UI content-lifecycle coordinator. The
+manager delegates to the low-level `Tab.getFromDockPointer(dock)` gateway in
+`entities/tab.ts`, which resolves the target cache-first with a network fallback
+and sends that project hint to `new_tab`:
 
 - a **project** tab (`targetTypeId.type === 'project'`) → its **own id** (a project
   belongs to itself);
@@ -164,7 +235,15 @@ called by the loader as the single writer (`main-loader.ts`). It is self-suffici
   entity's `project_id` (`getByTypeId` fallback on a cold miss);
 - else a **vfs** asset dock (`…/vfs/<path>`) → `dataManager.getEntityByPath(path)`
   → that entity's `project_id`;
+- else a project-pinned scope → that scoped project;
 - else (target-less: settings/search/home/diff) → null.
+
+The backend is the second authority belt. `ensure_tab` retries project resolution
+from the target when the client hint is absent. Every `list` / `list_all` then
+backfills a still-null row in memory from the target, or from the leading project
+segment of a project-scoped pointer when that project exists. This keeps a
+not-yet-indexed Markdown tab project-colored on its first cold load without
+consulting ambient client context.
 
 The pieces, each at the right layer:
 
@@ -176,19 +255,26 @@ The pieces, each at the right layer:
   isn't knowable from a vfs URL since one editor backs many types). No recovery, no
   indexing — distinct from `discoverByPath`, which stays only in `useEntityByPath`
   for the editor view's on-mount resolution.
-- The backend `ensure_tab` stores exactly the `project_id` it's given; all
-  resolution lives in `Tab.getFromDockPointer`.
+- The backend `ensure_tab` persists the resolved hint on create/reopen;
+  `_resolve_tab_projects` supplies the read-time target/pointer fallback for old
+  or still-unresolved rows.
 
-## One client store, views derived locally
+## One SDK tab manager, views derived locally
 
-`ui/src/tabs/all-tabs-store.ts` is the **single store**: it holds the global
-visible-tab list from `Tab.listAll()` and refreshes on the `tabs_changed` ping.
-There is NO reactive entity query and NO second (project-scoped) store. Every
-consumer reads this one source and derives its view client-side:
+The headless **`TabManager`** (`ts_sdk/src/tabs/tab-manager.ts`) is the single
+client store: it holds the global visible-tab list from `Tab.listAll()` and
+refreshes on the `tabs_changed` ping. Pure membership, topology, ordering, and
+selection projections live beside it in `ts_sdk/src/tabs/`. There is NO reactive
+entity query and NO second (project-scoped) store.
+
+`ui/src/tabs/use-tab-manager.ts` is only the React subscription layer. It binds
+`useSyncExternalStore` to the manager and supplies React context/entity hydration
+needed for rendering; it does not own tab membership or actions. Every consumer
+reads this one source and derives its view through SDK selectors:
 
 - **strip** (`UnifiedTabStrip`, `scope='project'|'all'`): `'project'` filters to
-  the active project + projectless (mirroring the backend `filter_for_project`,
-  order preserved); `'all'` is the developer sessions view.
+  the active project's exact scope (mirroring the backend `filter_for_project`,
+  order preserved); `'all'` is the developer sessions view, including Global.
 - **terminal body** (`useTerminalTabs`): filters to terminal target types.
 - **project switcher chip** (`useTabProjectBuckets`): buckets by `project_id`,
   **kind-agnostically** (terminal AND content); `project_id == null` tabs are
@@ -202,17 +288,26 @@ consumer reads this one source and derives its view client-side:
   (terminal glyph from `icon_key` + `PROVIDER_META`; content glyph from
   `iconForType` / the backend TypeInfo registry — never a hardcoded per-call-site
   glyph). Active = `currentDock.tabHash` (URL-first; never a `Tab` field).
-  Close goes through `closeTabWithLifecycle` (cleanup first, then `Tab.closeById`);
-  rename/reorder go through the `tab` actions by id (`renameById` / `reorder`).
-  Drag-reorder paints an optimistic `applyPredictedOrder` (the
-  parity-tested `computeReorder`) and commits `Tab.reorder`; the `tabs_changed`
-  refresh adopts the canonical order.
+  Close goes through `closeTabWithLifecycle` (cleanup first, then the manager's
+  close command); rename/reorder go through `TabManager` commands by id.
+  Drag-reorder paints an optimistic `tabManager.previewReorder` (using the
+  parity-tested `computeReorder`) and commits `tabManager.reorder`; the
+  `tabs_changed` refresh adopts the canonical order.
+- Content tabs also carry runtime-only `target_remote`, resolved by the backend
+  in one bulk query per distinct target type. The field is a `NoDBAPIField`: it
+  is serialized for the strip but never persisted or denormalized at tab
+  creation. The compact chip renders known location immediately before the
+  registry glyph (Cloud / **Available on cloud** for true; HardDrive /
+  **Local only** for false). The tab's existing tooltip owns that copy, avoiding
+  a nested tooltip trigger. TypeScript keeps the field optional only for
+  old-backend compatibility; omission means unknown and renders no location
+  claim.
 - **`TabbedTerminal`** is the terminal **body only** — it maps the terminal
   `Tab`s and renders one warm-mounted `TerminalPanel` per row; each panel
   hydrates its OWN live entity (`useEntity`) for the transport `shell_id` + PTY
   (URL-first corollary: the view attaches on mount, not via a list-wide join).
   The chrome controller (`useTerminalStripController`) is spawn openers + the
-  new-tab menu + the projects chip + modals — no session list, no active-key, no
+  new-tab menu + modals — no session list, no active-key, no
   close/rename/select handlers.
 
 ## The content panel — one main view + tabbed shell
@@ -250,23 +345,24 @@ the radix `<Tabs>` ladder are deleted. Agent stream focus is URL-first:
 ```
 click → navigation.openDock(pointer)              # click handlers do ONLY this
       → react-router loader runs
-      → setupTab(dock)                            # lifecycle wrapper
-           → Tab.getFromDockPointer(dock)         # materialize membership
+      → setupTab(dock)                            # UI content coordinator
+           → tabManager.ensureDock(dock)          # materialize membership
            → route setup (loadShellRoute, loadProjectRoute, ...)
            → opened OR open_failed
            → backend broadcasts tabs_changed
-      → all-tabs-store refreshes → strip + body re-render from the one source
+      → TabManager refreshes → strip + body re-render from the one source
 ```
 
 Default-tab pick (pointer-less `/dock/shell`, recovery): the loaders read a
-`Tab.listAll()` snapshot and choose via `resolveNextTab` (the pure
+`tabManager.getTerminalTabsSnapshot()` result and choose via
+`tabManager.resolveNext` (the pure
 `resolveActive` precedence — pending intent → recency `last_active_at` →
 `tab_order`). The resolver reads recency from `Tab.last_active_at`; currently the
 terminal loaders still stamp the backing Shell/AP entity, so tab recency is a
 known drift and `tab_order` is the effective fallback when no Tab row has
 recency. Close/rename/sync for a target (loaders, notifications, PTY auto-title)
-resolve the Tab row by `target_id` then call the by-id action (`closeById` /
-`renameById` / `setNameById`).
+resolve the Tab row by `target_id` through `TabManager`, which delegates to the
+corresponding low-level by-id action.
 
 ## Deleted by the cutover
 
@@ -284,9 +380,12 @@ chrome.
 `tests/unit/test_tab_entity.py` (dedup-by-`pointer` heal, `list_all` global vs
 scoped, `set_label` vs `rename`, soft-close, teardown dispatch, rename
 reflection, orphan cleanup, the `visible=false` wire rule);
-`ui/tests/unit/tab-lifecycle.test.ts` (opening/opened/open_failed/closing/
-close_failed and `new_terminal` non-materialization), `all-tabs-store.test.ts`
-(drag data-path), `resolve-next-tab.test.ts`
+`ui/tests/unit/tab-lifecycle.test.ts` (route/content materialization, cleanup,
+and `new_terminal` non-materialization), `tab-lifecycle-registry.test.ts`
+(opening/opened/open_failed/closing/close_failed), `tab-manager*.test.ts`
+(canonical refresh, pending intent, recency, and drag data-path),
+`tab-selectors.test.ts` (membership and topology projections),
+`resolve-next-tab.test.ts`
 (`resolveNextTab` precedence), `tab-project-filter.test.ts`
 (`terminalRowsForScope`), `tab-hash.test.ts` (identity), `tab-name.test.ts`,
 `terminal-tab-switch.test.ts` (warm-mount), and the live browser matrix (§11,
@@ -332,13 +431,12 @@ any dock-less URL — is parked for the unified-tabs phase, Part 2).
 
 ```
 BACKEND — membership + order truth
-  compute_node._terminal_list   (compute_node.py:498)  strip membership: {pure_shells, visible_processes};
-                                                       drops AP-owned/sidecar shells; reaps stuck STOPPING
-  compute_node._terminal_close  (compute_node.py:611)  batched close: AP→STOPPING+visible=False, shell→CLOSING,
-                                                       async PTY teardown
-  Shell                         (shell.py:100,102)     tab_order (Persist.FALSE), last_active_at (stamped at PTY START only)
-  AgenticProcess                (agentic_process.py:386-391) shell_id (transport), visible (membership),
-                                                       last_active_at (new; not yet stamped server-side)
+  Tab entity list / close       (tab.py)                strip membership + order: the `Tab` placement rows
+  compute_node._terminal_close  (faas/compute_node.py:909) batched close (behind the `tabs/close` compat router):
+                                                       AP→STOPPING+visible=False, shell→CLOSING, async PTY teardown
+  Entity                        (entity_model.py:376,385) tab_order (Persist.FALSE), last_active_at (base-Entity fields,
+                                                       stamped by the generic `activate` action; Shell also at PTY start)
+  AgenticProcess                (agentic_process.py:586,618) shell_id (transport), visible (shown as a terminal tab)
 SDK — live entities
   dataManager.callAction + castAndDeepAssign            hydrate entity cache; WS subscribeToEntityOps streams ops
 MODULE STORES — derived, per-client
@@ -401,6 +499,20 @@ targets (never a per-tab loop — locked by `terminal-close-all-race.test.ts`);
 backend flips `visible=False` / `status=CLOSING` (both **non-null**, so they
 broadcast) + async teardown; the initiating client optimistically removes
 accepted keys; other clients converge via the WS membership refetch.
+
+**(e) Close — what the client cache keeps:** nothing. The entity cache
+(`ts_sdk/src/FlowSync/store.ts`) drops a row its type calls *retired* — a Tab
+with `visible=false`, a `closed` Shell, a `pty_mode` process that ended and whose
+tab is closed — as soon as nothing references it (no subscriber, no watch, no
+live query holding it, no view listening to it), and a broadcast `create` this
+page never asked for is not kept at all. Leaving the cache goes through one
+function (`_evict`: delete op, removal, identity switch, eviction alike), which
+also frees what the entity owns: its flow-data stream, a shell's PTY connection
+(its hooks on the connection manager and its replay window), a process's loaded
+artifacts. Rows that are not retired stay warm (I4 in
+[dock-loading](navigation/dock-loading.md)); an evicted row is simply fetched
+again by the next cache-first read. No cap and no expiry — a reference going
+away is the trigger. Locked by `ui/tests/unit/entity-cache-eviction.test.ts`.
 
 ## 5. The two bugs and the fix
 
@@ -509,7 +621,7 @@ chip-surfacing issue (see §8).
 **Every screen is a tab; every dock pointer is a potential tab.** Target
 surfaces: docs/markdowns, skills, workflows, code editors, terminals,
 processes, agents, file browser, scan page — plus the existing viewer surfaces
-(diff, webapp, graph, whiteboard, wiki, lens/transcript). One strip model, one
+(diff, webapp, graph, chart, wiki, lens/transcript). One strip model, one
 resolver, one membership mechanism, regardless of what the tab shows.
 
 The terminal-tab model from Part 1 is the template: _a tab IS an entity,
@@ -530,13 +642,13 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
 | workflow                                                                   | `forWorkflows(id)`                   | **yes** `workflow`                               | A                                        |
 | agent / process                                                            | AP terminal pointer                  | **yes** `agentic_process`                        | A (template)                             |
 | terminal                                                                   | `forShell(id)`                       | **yes** `shell`                                  | A (template)                             |
-| spec / task / whiteboard                                                   | per-type pointers                    | **yes**                                          | A                                        |
+| spec / task / chart                                                        | per-type pointers                    | **yes**                                          | A                                        |
 | code editor file                                                           | `forFile(path)`                      | **no** — `load-asset.ts:78`: CODE is file-only   | ~~B~~ → C _(Part 3: bucket B dissolved)_ |
 | file browser / explorer                                                    | `forExplorer(path)`                  | **no** — raw VFS path                            | ~~B~~ → C _(Part 3: bucket B dissolved)_ |
-| wiki page                                                                  | `forWiki(name)`                      | indirect — resolves to a `markdown` at view time | A (resolves at view time)                |
+| wiki page                                                                  | `forWiki(name, …, wikiRef)`          | indirect — resolves to an asset `TypeId` at view time | A (resolves at view time)                |
 | diff / checkpoint                                                          | `forCheckpoint(hash)`                | no — git hash                                    | C                                        |
 | webapp preview                                                             | port                                 | no                                               | C                                        |
-| scan page / llm-indexers / graph / lens / settings / inbox / search / home | page pointers                        | no                                               | C                                        |
+| scan page / llm-indexers / graph / lens / settings / stream_inbox / search / home | page pointers                        | no                                               | C                                        |
 
 ## 3. The three buckets
 
@@ -544,7 +656,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
   **base Entity** (`entity_model.py:81`) and every type inherits membership;
   `tab_order` + `last_active_at` ride along (Shell already has both —
   `shell.py:100-102`). Opening materializes (`tabbed=true`); closing clears it
-  (non-null — broadcasts). Markdown, skill, workflow, spec, task, whiteboard
+  (non-null — broadcasts). Markdown, skill, workflow, spec, task, chart
   join the strip with **zero per-type tab plumbing**.
 - **(B) — DISSOLVED into C (Part 3 decision 20a).** The original plan minted
   v5 path-entities for code files and explorer paths. Rejected: the unified
@@ -552,9 +664,10 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
   surfaces simply ride the URL-dock transient slot like bucket C. No minted
   path-entities, no client-persisted membership for them, and the
   rename-lifecycle problem (§6) disappears entirely. Wiki pages still resolve
-  to a `markdown` at view time → fold into A.
+  to their target entity at view time (Markdown, Skill, or another registered
+  asset type) → fold into A.
 - **(C) Inherently transient — never persisted.** Diff hashes, webapp ports,
-  scan page, lens/transcripts, settings/inbox/search/home. These are the
+  scan page, lens/transcripts, settings/stream_inbox/search/home. These are the
   **URL-dock transient tab**: present while the URL points at them, target
   optional, gone on navigation. `VIEWER_REGISTRY.canAddAsTab:false` is
   effectively today's bucket-C marker.
@@ -631,7 +744,7 @@ TypeIds and v5 path-ids alike), `pending-intent`, the `last_active_at` seed,
 1. **U1 — viewer-tab merge**: retire `useViewerStore` membership; bucket-C
    surfaces become URL-dock transient tabs; fix the overview reset bug.
 2. **U2 — bucket A**: `tabbed` on base Entity already live from Phase 2; wire
-   open/close/pin for markdown, skill, workflow, spec, task, whiteboard; strip
+   open/close/pin for markdown, skill, workflow, spec, task, chart; strip
    renders heterogeneous kinds via TypeInfo icons; preview-tab promotion.
 3. ~~**U3 — bucket B**: v5 path-entities for code files + explorer; rename
    lifecycle.~~ **Dropped — bucket B dissolved into C (Part 3, decision 20a).
@@ -764,7 +877,8 @@ only write. This guard exists so loaders never become tab-creators.
   and nothing else; active highlight derives from `currentDock`; explicit
   picks pin `pending-intent`; loaders remain the only context writers;
   self-heal resolves-and-navigates via `resolveActive`, never writes state.
-- **Project switcher chip** (`ProjectsCounterChip`): kind-agnostic —
+- **Project switcher** (the nav bar's `RuntimeChip`, via `project-list-menu`;
+  the strip carries no chip of its own): kind-agnostic —
   `useTabProjectBuckets` lists one row per project with ≥1 open tab of ANY kind
   (it buckets the raw `Tab` entities by `project_id`, never `buildTerminalRows`).
   Selecting a row is a **current-project context switch**, identical to the
@@ -862,6 +976,37 @@ origin: on matching key → navigate away via resolveActive
     `switchCurrentProject`), not a navigate-to-first-tab. Correction to the
     earlier terminal-derived chip, which both undercounted projects (content-only
     projects vanished) and couldn't switch to a tab-less project.
+
+### Asset-origin Vibe workspaces
+
+A single asset/file tab can become a Vibe workspace child without changing its
+tab identity:
+
+- **Entry stays URL-first:** the strip's `Discuss` action opens the same
+  dock with `viewMode=vibe`; it performs no context or tab writes.
+- **Adoption has one seam:** `materializeTab` classifies workspace CONTENT as
+  adoptable (`isAdoptableChildDock`) and takes the host from the URL
+  (`DockPointer.hostProcessId`, spelled
+  `/dock/project/<P>/process/<typeid>/display/<tail>`), resolved to its tab by a
+  pure store read. `Tab.getFromDockPointer` persists the resulting
+  `parent_tab_id`. A dock whose URL names no host is not workspace content — the
+  app never infers or creates a host for it.
+- **Raw files are first-class children:** non-empty `editor` pointers are
+  adoptable; scope-keyed Assets tabs fold that sub-pointer out of tab identity
+  but preserve `workspaceContent: true` in their serialized pointer so backend
+  parent validation keeps the content classification. Empty editors, lists,
+  folders, projects, and graph/lens docks are not adoptable.
+- **Terminals are children too:** a plain shell dock opened while a workspace
+  is mounted is adopted and renders in its display pane (`ContentPanel`'s
+  `ViewType.SHELL` case), so "open a terminal" in Vibe keeps the chat pane.
+  The process's OWN dock shares `ViewType.SHELL` and is the workspace ANCHOR —
+  it is never adoptable, on either side of the wire.
+- **The parent remains authoritative on child URLs:** chat, `flow show`, and
+  file-write subscriptions resolve from the parent process id. A shown
+  file/entity is materialized through the normal loader and focused as another
+  child; the launching asset does not re-key process history.
+- **Standard and Vibe share one content host:** collapsing/expanding the chat
+  panel preserves the `ContentPanel` instance and any dirty editor state.
 
 ## 10. Delivery phases
 

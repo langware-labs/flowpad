@@ -1,3 +1,7 @@
+---
+id: c3e9416c-2a1c-45d7-9e29-f0e813f29159
+---
+
 # Tags — the unified event bus
 
 > **Delivery status lives in [flow-events.md](flow-events.md)** — the phased
@@ -60,7 +64,13 @@ unchanged: the bus never consults an entity to route.
   never a client-writable field, and never the bus.
 - **User worlds** take a `--<namespace>--` first segment (`--acme--.orders.created`).
   The marker is legal only as segment 0; global uniqueness is a hub concern, not a local
-  one.
+  one. `grammar.split_namespace` reads it and `grammar.join_namespace` writes it — one
+  owner, with a TS twin each and both directions pinned by the event-contract fixture.
+- **The kind ontology uses the same marker**, and is its first live consumer: an
+  externally authored asset declares an `ns` and every shape its code registers is
+  prefixed with it, so a user-written driver cannot claim a kind a shipped one already
+  names. **Ours is the default and it is silent — `--flow--` is never written.** See
+  [`ontology.md`](ontology.md).
 
 ## Binding things to tags — the carriers ARE the store
 
@@ -74,12 +84,20 @@ query time, so a moved file or renamed doc can't leave a dangling edge.
 | `tags:` in SKILL.md frontmatter | rides `skill.metadata` generically | a skill to its subjects |
 | `[[dot.tag.name]]` | any wiki body | a mention (blessed tags resolve by canonical name) |
 
+A source file carries one `tag` capsule **per annotated position** (the name is
+repeatable — see `docs/data-management/asset-capsules.md`), so a test module
+points each of its tests at its own subject and every block reports its own line.
+
 `flow tag <name> get [--mode line|block|full]` assembles that join for an agent:
 blessed header plus ancestors, bound docs, capsule-carrying code sites, and wiki
 mentions. The three modes are LLMIndex's summary tiers (`flow_sdk/llm_index/sizes.py`),
 resolved without an LLM call. The `tag-context` skill teaches agents the trigger (a
 capsule or `tags:` in a file you are about to change) and the line → block → full
 escalation. Asking for a tag includes its descendants (`tag_is_within`).
+`flow tag create <name>` blesses a name from the CLI (generic `POST /graph/tag`;
+idempotent by uuid5-of-name), and the `tagit` skill is the writer that produces
+both carriers at once — a rules doc plus a `breadcrumb.test.*` capsule on the
+failing test it explains.
 
 The same derivation renders as a graph: the `tag` subgraph projection
 (`flow_sdk/tags/graph.py`) emits taxonomy `child` edges (hierarchy) plus `bound` edges
@@ -163,7 +181,7 @@ EventBus.on(tag_pattern, handler, {target?, scope?}) → unsub
 |------------|-------|
 | `DBEntity.save` / `notify_updated` / `delete` | `entity.created/updated/deleted`, target = `to_entity`, scope += `from_entity` — **dual-published**; legacy `data_op_msg` invalidation untouched |
 | `fsop_watcher._fire` | `fs.added/modified/deleted`, target = the path's asset (or vfs ref); Triggers become `(pattern, target?, scope?)` subscriptions |
-| `FlowManager` boundaries (`_broadcast_*`) | `flow.started/waiting/done/failed`, target = the flow/journey entity, run/node detail in `data`; run-*internal* routing stays inside the engine; inbound, `inject`/`$external` = how a bus event enters a run |
+| `GraphWorkflowManager` boundaries (`_broadcast_*`) | `flow.started/waiting/done/failed`, target = the flow/journey entity, run/node detail in `data`; run-*internal* routing stays inside the engine; inbound, `inject`/`$external` = how a bus event enters a run |
 | Worker status tick | `agent.status`, target = the AgenticProcess (status enum in `data`) |
 | Heartbeat / hub link / compute registration | `node.connected/disconnected/heartbeat/status`, target = the ComputeNode — replaces today's three-mechanism spread |
 | Hub bridge (`_dispatch_event`) | relays inbound hub events with `origin: hub`, `actor` preserved |
@@ -191,8 +209,3 @@ it safe to exist. Not built now.
 5. Compute-node liveness unification
 6. Recorder interface stub
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: c3e9416c-2a1c-45d7-9e29-f0e813f29159
-flowpad:endcapsule identity -->

@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "name": "app-answers",
+  "label": "the demo health endpoint",
+  "description": "Something serves 200 at http://localhost:8099/health.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "cd /work && nohup python3 -m http.server 8099 >/tmp/http.log 2>&1 & sleep 1"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "curl -sf http://localhost:8099/health"
+    }
+  }
+}

@@ -29,6 +29,51 @@ repos:
         files: '^ui/'
         types_or: [javascript, ts, tsx, json, css, html]
 
+      # ---------- Electron packaging manifest (electron/) ----------
+      # electron-builder.json `files` is a whitelist: a new module under
+      # electron/ that is not listed is silently left out of the desktop build
+      # and only fails at runtime (`Cannot find module`). Block the commit until
+      # every staged electron/ file matches a `files` pattern — positive (ships)
+      # or `!` (deliberately not packaged). The JSON is the single source of
+      # truth; fix the list, not this hook.
+      - id: electron-builder-files
+        name: Electron builder files manifest
+        # `language: node` (not system): pre-commit provisions node itself
+        # (system node when present), so this runs on macOS, Linux and Windows
+        # without the bash `node-hook.sh` wrapper. minimatch is pinned to the
+        # major electron-builder depends on, so the gate matches exactly what
+        # the build will package.
+        entry: node scripts/check-electron-builder-files.js
+        language: node
+        additional_dependencies: ['minimatch@10']
+        files: '^electron/'
+
+      # The desktop wrapper's unit tests (updater / uv install / shutdown / semver).
+      # Plain node scripts, ~3s. Whole-suite on any electron/ change (they share
+      # helpers), never per-file. Runs through node-hook.sh so git's stripped PATH
+      # still finds a node toolchain; CI runs the same `npm test`.
+      - id: electron-tests
+        name: Electron unit tests
+        entry: scripts/node-hook.sh bash -c 'cd electron && npm test'
+        language: system
+        files: '^electron/.*\.(js|cjs|json)$'
+        pass_filenames: false
+
+      # ---------- Native-dependency manifest (electron/native-deps.json) ----------
+      # The desktop app freezes the engine's dependencies in time at install
+      # (`uv tool install --exclude-newer`, electron/uv-manager.js) and applies the
+      # reputation margin only to packages that ship native wheels. That list is
+      # derived from uv.lock, so a `uv lock` that adds or drops a native package
+      # must regenerate it. The hook rewrites the manifest; if it changed,
+      # pre-commit fails so you re-stage + commit it (same flow as lingui below).
+      # tests/unit/test_native_deps_manifest.py is the CI side of the same guard.
+      - id: native-deps-manifest
+        name: Native dependency manifest (electron/native-deps.json)
+        entry: uv run python scripts/native_deps_from_lock.py
+        language: system
+        files: '^(uv\.lock|electron/native-deps\.json|scripts/native_deps_from_lock\.py)$'
+        pass_filenames: false
+
       # ---------- TypeScript SDK (ts_sdk/) ----------
       # ts_sdk is a top-level SIBLING of ui/ with no TypeScript of its own, so it
       # can't run tsc against its own tsconfig (the @types it references live in
@@ -37,10 +82,10 @@ repos:
       # because its SDK is nested at flowpad/ui/sdk; ours isn't.)
       - id: tsc-sdk
         name: TypeScript Check SDK
-        entry: scripts/node-hook.sh bash -c 'cd ui && npx tsc --noEmit'
+        entry: scripts/node-hook.sh bash -c 'cd ui && npm run type-check:ceiling'
         language: system
         types_or: [ts, tsx]
-        files: '^ts_sdk/'
+        files: '^(ts_sdk|ui/src)/'
         pass_filenames: false
 
       # ---------- i18n catalogs (ui/src/locales) ----------

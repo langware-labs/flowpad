@@ -1,0 +1,27 @@
+{
+  "type": "compute_op",
+  "id": "6740e013-65a5-48bc-88b6-6e2382890ba3",
+  "name": "copilot-on-path",
+  "label": "Copilot",
+  "description": "copilot (GitHub Copilot CLI) is runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "curl -fsSL https://gh.io/copilot-install | bash",
+      "linux": "curl -fsSL https://gh.io/copilot-install | bash",
+      "win32": "winget install GitHub.Copilot"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install GitHub Copilot CLI (https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "status_check": "install:copilot"
+}

@@ -12,10 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions._claude_projects import (
-    _real_path_from_jsonl,
-    iter_claude_project_paths,
-)
+from flow_sdk.assets.types.claude_project_path import _real_path_from_jsonl
+from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 from flow_sdk.fs_store.path_utils import is_protected_path, is_valid_project_cwd
 
 # ---------------------------------------------------------------------------
@@ -79,7 +77,6 @@ def test_canonical_project_cwd_policy_preserves_safe_descendants(
         records_data_dir=records_data,
     )
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: patched)
-    monkeypatch.setattr(config, "AGENT_MOUNT_FOLDER", str(workspace))
     monkeypatch.setattr(config, "agent_workspace_root", lambda: workspace)
 
     assert not is_valid_project_cwd(home, include_temp=True)
@@ -124,7 +121,6 @@ def test_protected_path_policy_keeps_windows_semantics_on_posix(
         records_data_dir=r"C:\Users\Alice\.flow\records_data",
     )
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)
-    monkeypatch.setattr(config, "AGENT_MOUNT_FOLDER", r"C:\Users\Alice\Flowpad workspace")
     monkeypatch.setattr(
         config,
         "agent_workspace_root",
@@ -320,7 +316,7 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
         # Force the decode fallback explicitly so discovery changes cannot make
         # this test exercise the JSONL path by accident.
         monkeypatch.setattr(
-            "flow_sdk.fs_store.indexer.functions._claude_projects._real_path_from_jsonl",
+            "flow_sdk.assets.types.claude_project_path._real_path_from_jsonl",
             lambda _: None,
         )
         result = list(iter_claude_project_paths(include_temp=True))

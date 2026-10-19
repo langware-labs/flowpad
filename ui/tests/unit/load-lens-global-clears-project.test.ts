@@ -19,7 +19,8 @@ const sdk = vi.hoisted(() => ({
 }));
 const loadProjectMock = vi.hoisted(() => vi.fn(async () => undefined));
 
-vi.mock('@sdk', () => ({
+vi.mock('@sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sdk')>()),
   ClaudeSession: { getById: sdk.getById },
   Project: { type: 'project' },
   systemTools: { resolveProjectContext: sdk.resolveProjectContext },

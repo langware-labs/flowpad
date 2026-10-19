@@ -60,45 +60,85 @@ secret: that an instance is gated is something the Forbidden page reveals anyway
 > and the only restart path is gated on `workspace_hub_url`, which defaults to empty. The gate would
 > silently stay off — the wrong direction for this to fail in.
 
+## What refuses to arm
+
+**A desktop-managed instance cannot be gated.** `set_cookie_gate` raises `DesktopGateRefused` when
+`<instance_dir>/.desktop_managed` exists, and both writers — the CLI command and
+`/auth/login_callback` — go through it. The callback logs and drops the secret rather than failing
+the login, the same posture it already takes for an unassignable `runtime`.
+
+This is not defensive dressing; it closes a real incident. `flow auth set-cookie-gate` is hub-driven
+and, as its help says, not meant to be typed by a human — but nothing enforced that, and a sandbox
+provisioning command aimed at `FLOW_INSTANCE=prod` armed the gate on a desktop install. Because the
+gate exempts no path, the Electron shell's own `/health/status` poll got the 403 like every other
+caller: 222 refusals across its 120-second startup budget, after which it concluded the backend it
+had just spawned was dead and killed it. The backend was healthy the whole time. Nothing in the
+desktop logs said "gate" — only "Backend failed to start within 120s timeout".
+
+Arming a desktop install is never correct: the gate exists to protect a sandbox's public
+`https://9007-<sandbox-id>.e2b.dev` URL, and a desktop app has no public URL to protect.
+
+The marker is written by the backend at startup (`server/startup.py::mark_desktop_managed`) when it
+sees `FLOWPAD_DESKTOP=1`, which `electron/uv-manager.js` sets on the process it spawns. It has to be
+persisted because that env var is visible only inside that one process — every `flow` CLI call is a
+separate process, which is exactly why the CLI could not tell a desktop install from a sandbox.
+
+Keyed on positive desktop evidence rather than on the absence of a hub `runtime` assignment: a real
+sandbox has no assignment either until `/auth/login_callback` lands, so refusing "unassigned"
+instances would block legitimate arming on a box that has not finished starting.
+
 ## How a caller gets in
 
-One credential, three transports — not three special cases:
+Two credentials, three transports — not three special cases:
 
 | Transport | Who uses it |
 |---|---|
-| `__Host-cookie-gate` cookie | the browser, on every request after its first |
-| `X-Cookie-Gate` header | machine callers — workers |
-| `?cookie-gate=` query param | the hub's loopback curl, and the browser's first contact |
+| `X-Cookie-Gate` header | machine callers — the hub's relay, the workers inside this box. The gate **secret** itself; never a browser's. |
+| `__Host-grant` cookie | the browser, on every request after its first: a **grant** the hub issued for the `system` door, minted by `/auth/gate` from a ticket |
+| `?ticket=` query param | the browser's first contact, which is necessarily cookie-less: the hub's signed **ticket**, good for a minute |
 
-Each is checked independently rather than collapsed into `a or b or c`. `or` yields the first
-*present* value, so a stale cookie would short-circuit and a valid `?cookie-gate=` could never
-override it — rotating the secret would permanently lock out every browser holding an old cookie,
-with the one link that should rescue them being the thing that gets ignored.
+A grant (`flow_sdk/server/service_proxy.py`, `Grant`) names WHO may enter WHICH door of WHICH
+endpoint: `caller|audience|endpoint`. The hub decides (`service_endpoint/<id>/open`) and signs
+that subject with this box's gate secret — the ticket. The box verifies it with the secret it already
+holds and keeps the same subject as a cookie signed with a key of its own (`server/grants.py`:
+the secret × a boot nonce). **The secret never rides a URL or a cookie.** A grant for one door opens
+no other: the `system` door (the box's own UI on 9007) refuses an `app` grant, and an audience door
+(`server/audience_listener.py`, ports `AUDIENCE_PORTS`) refuses a `system` one.
+
+Each transport is checked independently rather than collapsed into `a or b or c`. `or` yields the
+first *present* value, so a stale cookie would short-circuit and a valid ticket could never override
+it — a browser holding a grant from before a restart would be locked out, with the one link that
+should rescue them being the thing that gets ignored.
 
 **No path is exempt** — not `/health/status`, not `/auth/login_callback`, not `/auth/gate`. The rule
-is not "block everything except these URLs", it is "block anything that cannot present the secret",
+is not "block everything except these URLs", it is "block anything that cannot present a credential",
 and every legitimate caller can. A path exemption would be a permanent hole; this has none.
 
-### The exchange: `GET /auth/gate?cookie-gate=S&next=/`
+### The exchange: `GET /auth/gate?ticket=T&next=/`
 
 The callback that armed the instance was made by **curl, inside the sandbox** — `-o /dev/null`, no
-cookie jar. Its `Set-Cookie` went to curl and died there. The browser made zero requests during any
-of this; it may not even have been open. So its first request is cold and has to carry the secret in
-the URL, then trade it for a cookie.
+cookie jar. The browser made zero requests during any of this; it may not even have been open. So its
+first request is cold and carries the ticket in the URL, once, then trades it for the grant cookie.
 
 `/auth/gate` is a route, not a branch in the middleware, and that is load-bearing. The hub knows
-which caller is which — it builds the browser's link *and* curl's link. Doing the exchange inside
-path-agnostic middleware would throw that knowledge away and force it to be re-derived by sniffing
-request headers, and guessing wrong for the hub's re-login curl would swallow the login while
-returning the 302 that `_workspace_login` reads as success. As a route, each caller states its
-intent by choosing a URL: curl asks for `login_callback` and gets it, the browser asks for `gate`
-and gets a cookie.
+which caller is which — it builds the browser's link *and* curl's link (which presents the secret as
+the header). As a route, each caller states its intent by choosing a URL: curl asks for
+`login_callback` and gets it, the browser asks for `gate` and gets a cookie.
 
-The route is gated like everything else. It is reachable because the caller presents the secret, not
-because it is on a list.
+The route is gated like everything else. It is reachable because the caller presents the ticket, not
+because it is on a list. On an unarmed instance it is inert: it redirects to `next` without setting
+anything, so a stale link still lands in the app.
 
-On an unarmed instance it is inert: it redirects to `next` without setting anything, so a stale gate
-link still lands in the app.
+The same exchange exists on each audience door (`/auth/gate` on 9017 and 9027) for that door's
+tickets; a door that is handed a ticket for another door answers 403.
+
+### Revocation: `POST /auth/revoke`
+
+`{"caller": "<typeid>" | null, "endpoints": ["<id>", …]}`, presented with the gate secret as the
+machine header — a grant holder cannot revoke anybody. The hub posts it the moment someone's standing
+narrows (a member removed, a role lowered, a public stamp withdrawn, a placement deleted); the named
+caller's grants on those endpoints (everyone's, when `null`) are refused from then on. The denylist
+lives in the process: it only has to outlive the grants it refuses, and those die with the boot nonce.
 
 ## Cookie attributes
 
@@ -107,9 +147,9 @@ link still lands in the app.
 | Name prefix | `__Host-` | Forces host-only scope. `e2b.dev` is a suffix shared across every tenant; a `Domain=`-scoped cookie would be visible to every other sandbox. |
 | HttpOnly | yes | Out of reach of any XSS in the app. |
 | Secure | yes | Required by the prefix. The browser reaches the app through E2B's TLS edge even though the app serves plain http. Browsers treat `http://localhost` as trustworthy, so this still works for a local instance. |
-| SameSite | Lax | The user arrives by cross-site top-level navigation. Strict would drop the cookie on later click-throughs and produce intermittent, baffling Forbiddens. |
+| SameSite | None + Partitioned | The app display embeds an audience door in an iframe on the box UI's origin, a different port host. A partitioned (CHIPS) cookie is the one a browser still keeps there; browsers without CHIPS ignore the attribute. |
 | Path | `/` | Required by the prefix. |
-| Lifetime | session | Closing the browser ends access; re-open from the hub to return. |
+| Lifetime | session | Closing the browser ends access; the signature carries its own 12h expiry, and a restart of the box ends every grant. |
 
 ## The WebSocket half
 
@@ -117,41 +157,36 @@ Enforced explicitly, in the same middleware, because nothing else would. Cookies
 same-origin WS handshake, but `RequestTransactionMiddleware` bails on non-HTTP scopes — which is why
 no WS handshake in this app is authenticated today. `CookieGateMiddleware` is therefore pure ASGI
 rather than `BaseHTTPMiddleware`, which cannot see WebSocket scopes at all. A rejected handshake is
-closed with 1008 before accept.
+closed with 1008 before accept. The audience doors check the grant cookie on their handshakes too.
 
 ## Hub contract
 
-The oss side is inert without this (FLOWPAD-1942):
-
-1. `_workspace_login` mints `S = secrets.token_urlsafe(32)`, stashes it at
-   `node_config["cookie_gate"]`, and appends `&cookie-gate={S}` to its curl URL.
-2. `get_host_action` reads it back and points the browser at the exchange rather than the bare host
-   — `{host}/auth/gate?cookie-gate={S}&next=/` — in **both** the `redirect=false` JSON branch (what
-   the frontend actually uses) and the `RedirectResponse` branch. The frontend assigns the returned
-   url to a tab and needs no change.
-3. Ordering already holds: `workspace-ready` arms, then `get-host` links.
-
-Health needs no special handling on the launch path: `_workspace_ready_op` probes health *before* it
-logs in, so the gate is not armed yet. It runs once, on cold create — E2B's edge auto-resumes a
-paused sandbox without the hub in the path.
+1. The hub mints `S = secrets.token_urlsafe(32)` once per machine, stores it on the node row, and
+   arms the box with `flow auth set-cookie-gate` at launch; its loopback curls present it as the
+   `X-Cookie-Gate` header.
+2. `service_endpoint/<id>/open` (reached directly, or through `compute_node/<id>/open/<door>`)
+   asks the policy whether THIS caller may enter THIS row (`open-system` / `open-admin` /
+   `open-app`), then redirects the browser to the door with a ticket: the box's own `/auth/gate`
+   when the box publishes its ports, the hub's audience host otherwise. `S` is in neither URL.
+3. The hub's relay keeps presenting `S` as the header and names the caller it vouches for as
+   `X-Flowpad-Caller`, signed with `S`. The box's `X-Flowpad-User` to a service is only ever one
+   of those, or the caller a grant names.
+4. On an `access_changed` signal the hub posts `/auth/revoke` to every running box that publishes
+   its ports; one it cannot reach is re-armed with a fresh secret instead, which ends every grant.
 
 ## Known limitations
 
-- **The link is the password.** The secret in the link *is* the gate secret — there is no separate
-  burn-on-use token. A leaked `get-host` URL grants access until the instance dies. This is still an
-  improvement (the link carries real entropy instead of being guessable off an e2b hostname) but it
-  is the same shape as the problem it replaces. A one-shot token in the link is the upgrade path and
-  needs no change to the gate itself: it already accepts a param and trades it for the cookie.
-- **No revocation, no audit.** Once a browser holds the cookie it is good until the secret rotates or
-  the instance dies. Hub logout does not reach it.
+- **Per-user revocation reaches a direct box only while it is running and reachable.** A paused box
+  has no sessions; a running one the hub cannot reach is rotated wholesale.
 - **Fail-open on an unreadable secret.** A corrupt sod, or a keychain handoff that has not happened
   yet under `FLOWPAD_DESKTOP=1`, resolves to "not gated". Fail-closed would brick a desktop install
   over a keychain race. Worth revisiting if the gate ever protects something other than a public
   sandbox URL.
 - **Rotation is in-process only.** The cache assumes a single writer. If the sod is rewritten out of
   band the running process serves the old secret until restart or `reset_cache()`.
-- **Docker compute workers break on a gated instance.** `flow compute worker` dials
-  `ws://host.docker.internal:{port}/api/v1/compute/ws` with no cookie-gate. No overlap today —
-  Docker compute and E2B workspaces are different flavors — but if they ever meet, thread the secret
-  into `/etc/flowpad/machine.env` and send it as `X-Cookie-Gate`.
+- **Enrolled machines (`flow connect`, incl. `flow connect --docker`) talk to the hub, not to a
+  gated desktop instance**, so the gate never sits between the hub and a machine's worker.
 - **Traffic still reaches the app.** It serves Forbidden rather than rejecting at the edge.
+- **A dev server that binds every interface on an e2b box is public.** Flowpad launches servers with
+  `HOST=127.0.0.1` and the templates bind loopback, so the audience door is the only way in; an app
+  author who binds `0.0.0.0` themselves opens their own port.

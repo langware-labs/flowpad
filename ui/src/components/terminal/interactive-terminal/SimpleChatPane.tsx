@@ -1,21 +1,49 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, toplog } from '@sdk';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
+import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/useObservedTurn';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
-import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
+import { useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { AgentIntroMessage, useAgentIntro } from '@src/components/agents/AgentIntroMessage';
+import { useViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
+import { LinkScope } from '@src/components/links/LinkHandlersContext';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
 interface SimpleChatPaneProps {
   /** The interactive tab's live PTY AgenticProcess. */
   process: AgenticProcess;
   className?: string;
+  /**
+   * A moment (ISO time) to show instead of the latest turn: the pane opens scrolled to the
+   * message nearest it — a timeline event opening its process.
+   */
+  focusAt?: string | null;
+}
+
+/** The message group whose time is nearest *at*, or null. */
+function nearestGroup(groups: readonly TurnGroup[], at: string | null | undefined): number | null {
+  if (!at) return null;
+  const target = Date.parse(at);
+  let best: number | null = null;
+  let bestGap = Infinity;
+  groups.forEach((g, i) => {
+    if (g.kind !== 'message' || !g.flowData.timestamp) return;
+    const gap = Math.abs(Date.parse(g.flowData.timestamp) - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = i;
+    }
+  });
+  return best;
 }
 
 /**
@@ -32,16 +60,52 @@ interface SimpleChatPaneProps {
  * never resets the terminal: the xterm stays mounted underneath, this pane
  * overlays it.
  */
-export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
+export function SimpleChatPane({ process, className, focusAt = null }: SimpleChatPaneProps) {
   // Idempotent — the tab's trace-gutter hook usually got here first.
+  // Its settling is also the chat's cold `tab_switch` ready point: the history
+  // is in the stream, and the next frame paints it. (A warm return to a mounted
+  // pane is logged by InteractiveTerminal, which owns the activation; a failed
+  // load resolves too, and is logged by useHistoryLoadAlert.)
+  // Whether the first history load has settled. Until it has, an empty stream
+  // means "not loaded yet", not "nothing said": a cold chat (first open since the
+  // app loaded) took up to 2 s to load and showed "Start a conversation" meanwhile.
+  const [historySettled, setHistorySettled] = useState(process.historyLoaded);
   useEffect(() => {
-    void process.loadHistory().catch((err) => {
-      console.error('[SimpleChatPane] loadHistory failed', err);
-    });
+    let stale = false;
+    setHistorySettled(process.historyLoaded);
+    const started = performance.now();
+    void process
+      .loadHistory()
+      .finally(() => {
+        if (!stale) setHistorySettled(true);
+      })
+      .then(() => {
+        if (!process.historyLoaded || !toplog.isOn('tab_switch')) return;
+        requestAnimationFrame(() => {
+          if (!claimTabSwitchReady()) return;
+          toplog.log(
+            'tab_switch',
+            `ready ${sinceTabSwitch()} kind=chat mode=cold proc=${process.id.slice(0, 8)} history_ms=${Math.round(performance.now() - started)}`,
+          );
+        });
+      })
+      .catch((err) => {
+        console.error('[SimpleChatPane] loadHistory failed', err);
+      });
+    return () => {
+      stale = true;
+    };
   }, [process.id]);
 
+  // Render a turn this pane did not start — typed into the xterm, or already
+  // running when the user switched to Standard. Opens only while such a turn is
+  // live; costs nothing otherwise.
+  useObservedTurn(process);
+
   // A browser reload can remount this pane while a backend turn is still in
-  // flight — converge with the transcript once when that turn completes.
+  // flight — converge with the transcript once when that turn completes. Still
+  // the floor under the observation above: it also covers a turn that started
+  // before this pane mounted.
   useTurnCompletionReconcile(process);
 
   const items = useAgenticProcessStream(process);
@@ -49,38 +113,107 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // so the memoized rows below only re-render the trailing group (QA D10).
   const turnGroups = useTurnGroups(items);
   const activity = useTurnActivity(process);
+  // Skin layer: this pane also serves a HEADLESS process in Advanced/Dev (see
+  // `showSimpleChat` in InteractiveTerminal), so "the chat pane is mounted"
+  // does NOT imply Standard. The per-turn file chips are a Standard affordance,
+  // so the mode is read explicitly.
+  const viewMode = useViewMode();
+  // The Agent this process runs AS — signs assistant turns and owns the intro
+  // row (skin-gated inside `useAgentIntro`, same rule as the file chips).
+  const launchingAgent = useLaunchingAgent(process.deployment_id);
+  const intro = useAgentIntro(launchingAgent);
+  const hasRows = turnGroups.length > 0 || !!intro;
+
+  // "Start a conversation" flashes on a chat that was already showing messages,
+  // seen on returning to a chat tab after a few minutes away. Warm switches show
+  // no history reload, so the cause is unknown: say whenever this pane paints the
+  // empty state, whether it had rows before, and what the process looked like then.
+  const hadRowsRef = useRef(false);
+  useEffect(() => {
+    if (hasRows) {
+      hadRowsRef.current = true;
+      return;
+    }
+    if (!historySettled) return;
+    // First paint empty is a fresh mount (cold load, or a second copy of the pane);
+    // empty after rows is the stream itself emptying under a mounted pane.
+    const sink = hadRowsRef.current ? 'chat_empty_after_rows' : 'chat_empty_on_mount';
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=${sink} proc=${process.id.slice(0, 8)} ` +
+        `stream=${process.flowDataStream.items.length} history_loaded=${String(process.historyLoaded)} ` +
+        `status=${process.status ?? '-'} worker=${process.workerStatus ?? '-'} pty_mode=${String(process.pty_mode)} ` +
+        `visible=${String(process.visible)}`,
+    );
+  }, [hasRows, historySettled, process]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
+  const anchorIndex = useMemo(() => nearestGroup(turnGroups, focusAt), [turnGroups, focusAt]);
+  const paneRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    scrollRef.current?.scrollToBottom();
-  }, [turnGroups.length, activity.active]);
+    if (anchorIndex === null) scrollRef.current?.follow();
+  }, [turnGroups.length, activity.active, anchorIndex]);
+  // Focused: open at the moment asked for, once per moment — a live turn appending below must not
+  // yank the reader back to it.
+  useEffect(() => {
+    if (anchorIndex === null) return;
+    paneRef.current?.querySelector('[data-chat-anchor]')?.scrollIntoView({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per focused moment
+  }, [focusAt, anchorIndex !== null]);
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
-      <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
-        {turnGroups.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <MessageSquare className="h-6 w-6" />
+    <div
+      ref={paneRef}
+      className={cn('flex h-full min-h-0 flex-col bg-background', className)}
+      data-testid="simple-chat-pane"
+    >
+      <LinkScope process={process}>
+        <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
+          {!hasRows ? (
+            // A turn can be in flight with nothing rendered yet — the pane mounted
+            // mid-turn, before any row landed. The empty state must still carry
+            // the activity line, or a working agent reads as an idle session
+            // inviting a first message.
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <MessageSquare className="h-6 w-6" />
+              </div>
+              {activity.active ? (
+                <ChatActivityLine process={process} />
+              ) : !historySettled ? (
+                // Still loading: no invitation to start what may be a long chat.
+                <p className="text-sm" data-testid="simple-chat-loading">
+                  <Trans>Loading conversation…</Trans>
+                </p>
+              ) : (
+                <div>
+                  <p className="text-[15px] font-medium text-foreground">
+                    <Trans>Start a conversation</Trans>
+                  </p>
+                  <p className="mt-1 text-sm">
+                    <Trans>Send a message below and the agent will get to work.</Trans>
+                  </p>
+                </div>
+              )}
             </div>
-            <div>
-              <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
-              <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
+          ) : (
+            <div className="w-full px-4 py-3">
+              <AgentIntroMessage agent={launchingAgent} />
+              <TurnGroupsList
+                groups={turnGroups}
+                worker={process.worker_type ?? undefined}
+                agent={launchingAgent}
+                showTurnFiles={viewMode === ViewMode.Standard}
+                process={process}
+                turnActive={activity.active}
+                anchorIndex={anchorIndex}
+              />
+              <ChatActivityLine process={process} />
             </div>
-          </div>
-        ) : (
-          <div className="w-full px-4 py-3">
-            <TurnGroupsList groups={turnGroups} worker={process.worker_type ?? undefined} />
-            <ChatActivityLine
-              process={process}
-              active={activity.active}
-              startedAt={activity.startedAt}
-              status={activity.status}
-            />
-          </div>
-        )}
-      </AutoScrollContainer>
-      <PlanInteractionBar items={items} />
+          )}
+        </AutoScrollContainer>
+        <PlanInteractionBar items={items} />
+      </LinkScope>
     </div>
   );
 }

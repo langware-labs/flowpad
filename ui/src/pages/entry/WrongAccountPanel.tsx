@@ -2,7 +2,22 @@ import { cloudManager, navigator as sdkNavigator } from '@sdk';
 import React from 'react';
 import './message-landing.css';
 
+/**
+ * Which of the two refusals this is.
+ *
+ * The hub sends both to `/wrong_account`, and for one of them the name is a lie.
+ * `members/accept` redirects here on an email MISMATCH — a genuinely wrong
+ * account. `wrong_account_page_for_navigation` redirects here when a caller who
+ * IS signed in holds no role on the thing they followed a link to, which is the
+ * ordinary state of someone who was invited a minute ago and has not accepted
+ * yet. Telling that person to sign in with a different account sends them to fix
+ * something that is not broken; three separate staging sessions were lost to it.
+ */
+export type WrongAccountReason = 'wrong-account' | 'no-access';
+
 interface WrongAccountPanelProps {
+  /** Defaults to the historical message. See {@link WrongAccountReason}. */
+  reason?: WrongAccountReason;
   /** Where to return after re-authenticating with the correct account.
    *  Defaults to the current URL (used by MessageLanding); the dedicated
    *  wrong-account route passes the server-provided invitation-accept URL so
@@ -26,7 +41,12 @@ interface WrongAccountPanelProps {
  * Routed through cloudManager.logout(returnTo) — the one seam that owns the
  * hub auth URLs.
  */
-const WrongAccountPanel: React.FC<WrongAccountPanelProps> = ({ callbackUrl, onBeforeSignIn }) => {
+const WrongAccountPanel: React.FC<WrongAccountPanelProps> = ({
+  reason = 'wrong-account',
+  callbackUrl,
+  onBeforeSignIn,
+}) => {
+  const noAccess = reason === 'no-access';
   const handleSignIn = () => {
     onBeforeSignIn?.();
     const loginUrl = sdkNavigator.getLoginWithCallbackUrl(callbackUrl ?? window.location.href);
@@ -55,12 +75,16 @@ const WrongAccountPanel: React.FC<WrongAccountPanelProps> = ({ callbackUrl, onBe
         }}
       >
         <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
-        <h2 style={{ margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>Wrong account</h2>
+        <h2 style={{ margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>
+          {noAccess ? 'You do not have access to this yet' : 'Wrong account'}
+        </h2>
         <p style={{ margin: '0 0 28px', fontSize: 15, color: '#444', lineHeight: 1.6 }}>
-          This invitation was sent to a different email address. Please sign in with the correct account to view it.
+          {noAccess
+            ? 'If someone just invited you, open the invitation and accept it first. If you signed in with a different account than the one it was sent to, sign in again below.'
+            : 'This invitation was sent to a different email address. Please sign in with the correct account to view it.'}
         </p>
         <button className="nl-btn" style={{ display: 'inline-block', marginTop: 0 }} onClick={handleSignIn}>
-          Sign in with the correct account
+          {noAccess ? 'Sign in with a different account' : 'Sign in with the correct account'}
         </button>
       </div>
     </div>

@@ -14,7 +14,6 @@ from flow_sdk.db.drivers.sqlite.connection import LinksSchema
 from flow_sdk.wiki.store import AsyncLinkStore
 from flow_sdk.wiki.types import WikiLink
 
-
 pytestmark = pytest.mark.asyncio
 
 

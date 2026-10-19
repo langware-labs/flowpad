@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "jira",
+  "title": "Jira",
+  "icon_name": "Atlassian",
+  "description": "The issues one JQL query matches on a Jira Cloud site, as a table: key, status, assignee and the rest, one row per issue.",
+  "kind": "datasource.record.jira",
+  "auth": {
+    "credential": "jira",
+    "vars": {
+      "email": "JIRA_EMAIL",
+      "api_token": "JIRA_API_TOKEN"
+    }
+  },
+  "config": {
+    "site": {
+      "type": "text",
+      "label": "Site",
+      "placeholder": "https://acme.atlassian.net",
+      "hint": "Your Jira Cloud site's address. Watching several sites? Add one source per site."
+    },
+    "jql": {
+      "type": "text",
+      "label": "JQL",
+      "placeholder": "project = PROJ order by updated DESC",
+      "hint": "Which issues to read. Defaults to every issue the account can see, most recently updated first."
+    }
+  }
+}

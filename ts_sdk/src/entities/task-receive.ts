@@ -1,6 +1,7 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { GitOrigin } from '../models/GitOrigin';
+import type { PullKind } from './git-workdir';
 
 export interface FindProjectResult {
   found: boolean;
@@ -9,15 +10,22 @@ export interface FindProjectResult {
   known_projects: Array<{ name: string; path: string }>;
 }
 
+/** A task-repo pull — the `GitRepo` pull outcome, so a conflict is handled like the footer's Pull. */
 export interface PullResult {
   success: boolean;
-  conflicts: boolean;
+  kind: PullKind;
+  branch: string | null;
+  message: string;
+  local_path: string | null;
   error: string | null;
 }
 
 export interface CloneResult {
   success: boolean;
-  conflicts: boolean;
+  /** Present when the target existed and was pulled instead of cloned. */
+  kind?: PullKind;
+  branch?: string | null;
+  message?: string;
   error: string | null;
   cloned_path: string | null;
 }
@@ -45,7 +53,9 @@ export async function pullForTask(
     ...(fallback?.gitOrigin ? { git_origin: fallback.gitOrigin } : {}),
   };
   const res = await dataManager.callAction<undefined, PullResult>(action);
-  return res ?? { success: false, conflicts: false, error: 'Unknown error' };
+  return (
+    res ?? { success: false, kind: 'generic', branch: null, message: '', local_path: null, error: 'Unknown error' }
+  );
 }
 
 export async function cloneForTask(
@@ -59,5 +69,5 @@ export async function cloneForTask(
     ...(fallback?.gitOrigin ? { git_origin: fallback.gitOrigin } : {}),
   };
   const res = await dataManager.callAction<undefined, CloneResult>(action);
-  return res ?? { success: false, conflicts: false, error: 'Unknown error', cloned_path: null };
+  return res ?? { success: false, error: 'Unknown error', cloned_path: null };
 }

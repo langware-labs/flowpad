@@ -1,10 +1,10 @@
-import { Agent, ComputeNode, TypeId, EntityEnv, EnvVarType, apiClient, GRAPH_API_PREFIX } from '@sdk';
+import { SubAgent, ComputeNode, TypeId, EntityEnv, EnvVarType, apiClient, GRAPH_API_PREFIX } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 describe('Env Vars API', () => {
   const info = getTestSignupInfo();
-  let agent: Agent;
+  let agent: SubAgent;
   let entityTypeId: TypeId;
   let entityEnv: EntityEnv;
   const validEnvVar = {
@@ -23,9 +23,9 @@ describe('Env Vars API', () => {
 
   beforeEach(async (context: any) => {
     await apiTestSetup(info, context.task.name);
-    agent = new Agent({ name: `test-agent-${Date.now()}` });
+    agent = new SubAgent({ name: `test-agent-${Date.now()}` });
     await agent.save();
-    entityTypeId = new TypeId(Agent.type, agent.typeId.id);
+    entityTypeId = new TypeId(SubAgent.type, agent.typeId.id);
     entityEnv = new EntityEnv(entityTypeId);
   });
 
@@ -44,7 +44,7 @@ describe('Env Vars API', () => {
     // dir + any live source file); a plain graph DELETE would leave an
     // orphan shadow dir behind per test.
     await apiClient.delete(
-      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/${Agent.type}/${agent.typeId.id}`,
+      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/${SubAgent.type}/${agent.typeId.id}`,
     );
   });
 

@@ -13,7 +13,13 @@ function realConsoleErrors(errors: string[]): string[] {
 test.describe('Code editor loads without console errors (FLOWPAD-1669)', () => {
   test('code editor dock loads without unexpected console errors', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 
     const errors: string[] = [];
     page.on('console', (msg) => {

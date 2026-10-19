@@ -21,11 +21,15 @@ import {
   AssetRoutingMethod,
   DEFAULT_WIKI_SPACE,
   editorForType,
-  isAssetEditor,
-  isAssetRoutingMethod,
   LOCAL_COMPUTE_NODE,
   WIKI_FRAGMENT_PARAM,
 } from './asset-doc-types';
+import {
+  assetWikiValue,
+  normalizeAssetVfsPath,
+  parseAssetDocPointer,
+  serializeAssetDocPointer,
+} from './asset-doc-pointer-grammar';
 
 export class AssetDocPointer {
   private constructor(
@@ -51,14 +55,14 @@ export class AssetDocPointer {
     computeNode: TypeId = LOCAL_COMPUTE_NODE,
     options?: Record<string, string>,
   ): AssetDocPointer {
-    const parsed = VFSPath.parse(pathOrVpath);
-    const absVfs = parsed.isAbsolute
-      ? parsed.absVfsPath
-      : VFSPath.fromMachinePath(
-          pathOrVpath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(pathOrVpath) ? pathOrVpath : `/${pathOrVpath}`,
-          computeNode,
-        ).absVfsPath;
-    return new AssetDocPointer(AssetMode.EDITOR, absVfs, options, editor, AssetRoutingMethod.VFS);
+    const vfsPath = normalizeAssetVfsPath(pathOrVpath, computeNode);
+    return new AssetDocPointer(
+      AssetMode.EDITOR,
+      vfsPath.absVfsPath,
+      options,
+      editor,
+      AssetRoutingMethod.VFS,
+    );
   }
 
   /** Address an entity-backed asset by its own TypeId (the preferred, stable form). */
@@ -94,32 +98,21 @@ export class AssetDocPointer {
     fragment?: string,
   ): AssetDocPointer {
     const opts = fragment ? { ...(options ?? {}), [WIKI_FRAGMENT_PARAM]: fragment } : options;
-    return new AssetDocPointer(AssetMode.WIKI, `${space}/${name}`, opts);
+    return new AssetDocPointer(AssetMode.WIKI, assetWikiValue(name, space), opts);
   }
 
   // ── parse ─────────────────────────────────────────────────────────────────
 
   /** Parse the pointer portion of a ViewType.ASSETS DockPointer. Throws on malformed input. */
   static parse(assetsPointer: string | undefined): AssetDocPointer {
-    const parts = (assetsPointer ?? '').split('/');
-    const mode = parts[0];
-
-    if (mode === AssetMode.WIKI) {
-      const space = parts[1] ?? '';
-      const name = parts.slice(2).join('/');
-      return new AssetDocPointer(AssetMode.WIKI, `${space}/${name}`, undefined);
-    }
-
-    if (mode === AssetMode.EDITOR) {
-      const editor = parts[1] ?? '';
-      const method = parts[2] ?? '';
-      const value = parts.slice(3).join('/');
-      if (!isAssetEditor(editor)) throw new AssetPointerError(`unknown editor "${editor}"`);
-      if (!isAssetRoutingMethod(method)) throw new AssetPointerError(`unknown routing method "${method}"`);
-      return new AssetDocPointer(AssetMode.EDITOR, value, undefined, editor, method);
-    }
-
-    throw new AssetPointerError(`unknown mode "${mode}"`);
+    const parsed = parseAssetDocPointer(assetsPointer);
+    return new AssetDocPointer(
+      parsed.mode,
+      parsed.value,
+      undefined,
+      parsed.editor,
+      parsed.method,
+    );
   }
 
   // ── wiki accessors ──────────────────────────────────────────────────────────
@@ -135,8 +128,7 @@ export class AssetDocPointer {
   // ── serialize ───────────────────────────────────────────────────────────────
 
   toPointer(): string {
-    if (this.mode === AssetMode.WIKI) return `${AssetMode.WIKI}/${this.value}`;
-    return `${AssetMode.EDITOR}/${this.editor}/${this.method}/${this.value}`;
+    return serializeAssetDocPointer(this);
   }
 
   toDockPointer(layout?: Layout): DockPointer {

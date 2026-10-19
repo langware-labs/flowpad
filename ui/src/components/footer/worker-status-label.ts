@@ -1,4 +1,4 @@
-import { WorkerStatus, WORKER_STATUS_LABEL } from '@sdk';
+import { WorkerStatus, WORKER_STATUS_LABEL, workerStatusText } from '@sdk';
 
 /**
  * @param raw the lowercase string form of WorkerStatus, as stored on the
@@ -11,11 +11,11 @@ import { WorkerStatus, WORKER_STATUS_LABEL } from '@sdk';
  * this file no longer keeps its own map, so the footer and the status indicator
  * can never drift.
  */
-export function workerStatusLabel(
-  raw: string | undefined,
-  pending: boolean,
-): string {
+export function workerStatusLabel(raw: string | undefined, pending: boolean, detail?: string | null): string {
   if (pending) return WORKER_STATUS_LABEL[WorkerStatus.IDLE];
   if (!raw) return WORKER_STATUS_LABEL[WorkerStatus.WORKING];
+  // ``detail`` carries the CLI's own sentence behind a bare ERROR; it wins over
+  // the one-word label whenever the backend managed to recover one.
+  if (detail?.trim()) return workerStatusText(raw, detail);
   return WORKER_STATUS_LABEL[raw as WorkerStatus] ?? WORKER_STATUS_LABEL[WorkerStatus.WORKING];
 }

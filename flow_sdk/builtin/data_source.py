@@ -1,0 +1,2537 @@
+"""DataSource — a configured source we sync from: files, records or messages (its driver's family).
+
+The filesystem indexer walks roots; this walks a remote API. One DataSource owns
+the relationship with one remote account or feed set: which driver, what it needs
+to run, how often, and how far back.
+
+**Not project-scoped in phase 1.** When that changes, note that ``Entity``'s
+scope resolution reads the current *request* context and a scheduler tick has
+none — so it will have to be a persisted field, set explicitly by whoever
+creates the source, not inferred at save time.
+
+**"MAY require a connector"** is ``required_capabilities`` plus
+``capability_available`` — the same gate ``Journey.gate_open`` uses. An empty
+list polls unconditionally, which is what makes "may" real rather than
+aspirational, and is exactly the phase-1 (credential-free) path.
+"""
+from __future__ import annotations
+
+import logging
+from contextvars import ContextVar
+from datetime import datetime, timedelta, timezone
+from math import ceil
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from pydantic import computed_field, field_validator, model_validator
+
+from flow_sdk._compat import StrEnum
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing, persist_policy
+from flow_sdk.builtin.source_item import MessageSpec
+from flow_sdk.core import Entity
+from flow_sdk.core import action as core_action
+from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE
+from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
+from flow_sdk.core.setup.skip_mark import SetupSkippable
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.ingest.driver_runtime import SendOutcome
+from flow_sdk.ingest.health import SourceHealth
+from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
+from flow_sdk.schema.data_spec.setup_stage_spec import NEED_CONNECTION, NEED_SETUP, SetupNeedSpec
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
+from flow_sdk.schema.types import EntityType
+from flow_sdk.secrets.store import SecretStoreRef
+from flow_sdk.utils.serialization import iso_to_utc
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.conversation import Conversation  # noqa: F401
+    from flow_sdk.connections import ConnectionRequirements
+    from flow_sdk.secrets.requirements import SecretRequirements
+
+logger = logging.getLogger(__name__)
+
+#: How much of an item body `recent_items` shows; the rest is at `full_record_path`.
+PREVIEW_CHARS = 500
+
+#: The heartbeat ticks once a minute, and every provider floor we care about is
+#: at least that. A source may ask for less frequent polling, never more.
+MIN_POLL_INTERVAL_SECONDS = 60
+
+
+class DataSourceNotFound(NameNotFound):
+    """No data source has that name."""
+
+    message = "no data source named {name!r}"
+
+
+class DataSourceAmbiguous(NameAmbiguous):
+    """Several data source instances share the name; ``candidates`` are their typeids."""
+
+    plural = "data sources"
+
+
+def _outcome_dict(outcome: SendOutcome) -> dict:
+    """A send outcome on the wire: the id the channel assigned, whether it was only drafted, and
+    whether the local copy was recorded (a SENT but unrecorded message must never be re-sent)."""
+    return {
+        "external_id": outcome.external_id,
+        "status": str(outcome.status),
+        "recorded": outcome.recorded,
+        "artifact_id": outcome.artifact_id,
+    }
+
+
+def _normalize_message_id(value: object) -> str:
+    """Comparable form of an RFC message id from a send or received header."""
+    normalized = "".join(str(value or "").split()).casefold()
+    if len(normalized) >= 2 and normalized[0] == "<" and normalized[-1] == ">":
+        return normalized[1:-1]
+    return normalized
+
+
+class SourceStatus(StrEnum):
+    """Where a source is in its life — a SEPARATE axis from ``health``.
+
+    Status answers "should this be running"; health answers "is it working".
+    Collapsing them is how a source ends up reading OK while nobody has finished
+    setting it up, or reading broken because a human paused it.
+
+    This replaces the old ``enabled`` boolean, which could only say two of these
+    four things. A source awaiting a setup step the user must perform — inviting
+    a bot to a Slack channel — is not disabled (nobody turned it off) and not
+    active (it would fetch nothing); it is SETUP, and that state has to be
+    representable or the UI has to lie about one of them.
+    """
+
+    #: Created, not yet evaluated. Transient: the first save resolves it.
+    NEW = "new"
+    #: Waiting on a human. `setup_detail` says what for.
+    SETUP = "setup"
+    #: Polling.
+    ACTIVE = "active"
+    #: Paused by a person. Only a person moves it out.
+    DISABLED = "disabled"
+
+
+def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
+    """``(datetime, None)`` or ``(None, problem)`` for a replay's ``since``.
+
+    A module function rather than inline parsing because it is the one place a
+    bad date must be rejected LOUDLY. Silently treating an unparseable date as
+    "no date" would turn a bounded replay into a full one — deleting every
+    record when the operator asked for a week's worth.
+
+    A naive datetime is read as UTC, matching every other timestamp on this
+    entity (``is_due``, ``window_floor``).
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None, None
+    parsed = iso_to_utc(raw)
+    if parsed is None:
+        return None, f"since is not an ISO-8601 datetime: {raw!r}"
+    return parsed, None
+
+
+#: What a data source that arrived as a file waits for.
+#: Set by ``save_runtime``: the one suppressed save whose runtime fields are the news.
+_RUNTIME_WRITE: "ContextVar[bool]" = ContextVar("_data_source_runtime_write", default=False)
+RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verify."
+#: Why a source's own Set up cannot start: the setup tree is a project's.
+NO_SETUP_PROJECT = "This source belongs to no project, so there is no setup to run for it — press Verify."
+
+
+class DataSource(SetupSkippable, Entity):
+    type: str = APIField(default=EntityType.DATA_SOURCE.value)
+
+    # A file asset, so it OWNS its path: ``<scope>/agentic-assets/data_source/<name>/``. Declaring it is
+    # what enrolls the class in ``Entity.asset_owner_classes()``. PRIVATE: the path is this machine's.
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+
+    webhook_delivery: WebhookDelivery = APIField(default=WebhookDelivery.HUB)
+
+    # ── identity / ontology ──
+    name: str = APIField(default="")
+    kind: str = APIField(default="", description="Ontology kind, e.g. datasource.feed.rss", persist=Persist.FALSE)
+    provider: str = APIField(default="", description="Driver registry key: rss | hackernews")
+    account_key: str = APIField(default="", description="The remote account/feed-set identity", persist=Persist.FALSE)
+    # The user-facing CHANNEL — gmail | slack | jira. Deliberately NOT
+    # `provider`, which is the driver/transport key and is literally "agent"
+    # for the harness-backed sources. One channel may have several transports
+    # (a harness Gmail source and an API one), and threading + the message
+    # badge must key on the channel so both resolve to the same thread.
+    channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira", persist=Persist.FALSE)
+    # The addresses/handles that are ME on this source. A record authored by
+    # one of them is mine, and the stream inbox projection must attribute it to the
+    # local user — otherwise my own Sent mail counts as unread mail from a
+    # stranger, because both unread formulas gate on the sender.
+    #
+    # A list, not a single value: one mailbox commonly answers to several
+    # addresses (aliases, a group address, plus-addressing). Separate from
+    # `account_key`, which names the remote account this source serves. That is
+    # descriptive only — ids are uuid4 and several sources may serve one
+    # account, so nothing dedupes on it and correcting it is a plain edit.
+    account_identities: list[str] = APIField(
+        default_factory=list, description="Addresses that identify the local user on this source", persist=Persist.FALSE,
+    )
+
+    # ── gating ──
+    required_capabilities: list[str] = APIField(
+        default_factory=list, description="Capability kinds that must be AVAILABLE to poll"
+    )
+
+    # ── driver config — provider-opaque, the subsystem never reads inside ──
+    config: dict = APIField(default_factory=dict)
+
+    # ── origin — WHERE this source's bytes come from ──
+    #
+    # A typed `FSOrigin` (a `LocalOrigin` at the watched folder / the checkout /
+    # the download cache; a `GitOrigin` for a repository that has to be cloned),
+    # stamped by the driver's `origin_for` on every save. Reflection reads it —
+    # never a provider-specific config key — so the engine holds one fact about
+    # where a tree begins, and a `GitOrigin` materializes through the same
+    # `FSOriginDriver` bundles and projects use. PRIVATE: a path on this machine.
+    origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+
+    # ── ownership ──
+    #
+    # Whose source this is: the local user's, or an Agent's. A message source
+    # projects into ITS OWNER'S stream inbox and speaks with its owner's voice, so the
+    # owner is a key the stream inbox engine reads — which is why it is a field and
+    # not `config["agent_id"]`, the provider-opaque bag the engine promises not
+    # to open (the same argument that pulled `reflect` out of it, below).
+    # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
+    # is the ONE reader and resolves those (config.agent_id → that agent, else
+    # the local user), so nothing depends on a backfill having run. PRIVATE: an
+    # owner is a fact about this machine, never a thing that travels.
+    owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
+    #: The one place (a Deployment id) that answers this source for its owning agent.
+    #: A fact of the SOURCE — it is in ``data_source.json`` — so every machine that
+    #: holds the file agrees which of them answers (``agent_serve.answers_here``).
+    #: Unset: every place holding it answers, as before places existed.
+    answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
+
+    #: Who may drive the owning agent through this line (``agent_serve.admits``); empty admits nobody unless
+    #: the driver is ``open_inbound`` or ``open_to_all`` is set. Third parties' addresses: PRIVATE, row-only — never in the shareable
+    #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
+    allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Explicit public inbound access; private machine policy, never published with the source.
+    open_to_all: bool = APIField(default=False, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+
+    # ── reflection — HOW the payload becomes locally present ──
+    #
+    # Deliberately NOT inside `config`: `config` is provider-opaque and the
+    # subsystem never reads inside it, but this is read by `sync_source` to pick
+    # a destination. A setting the engine must read cannot live in the bag the
+    # engine promises not to open.
+    #
+    # Defaults to `record`, so every shipped driver keeps taking exactly the
+    # path it takes today.
+    reflect: str = APIField(
+        default=ReflectMode.RECORD.value,
+        description="record | none | copy | symlink",
+    )
+    #: The directory reflected assets land under — the `copy`/`symlink` target,
+    #: and the clone target for a `GitOrigin`. Empty for `record` and `none`.
+    #: An absolute path, set explicitly by whoever configures the source — NOT
+    #: resolved from request context, because the heartbeat tick that polls
+    #: this row has none (the same trap this module's docstring flags for
+    #: project scoping).
+    reflect_into: str = APIField(default="")
+    #: Keep the local copy out of git: before the first placement into ``reflect_into`` the engine
+    #: adds it to the ``.gitignore`` beside it, and refuses a target git already tracks. Default on:
+    #: what a source reflects is someone's data, not the project's code.
+    gitignored: bool = APIField(default=True, description="Keep the local copy out of git")
+    #: Pull only. The source never writes to its remote, and asks for no permission that writes.
+    read_only: bool = APIField(default=False, description="Never write back to the remote")
+    #: The dataset this source's records are mirrored into after every sync -- ``{dataset, map, by?}``,
+    #: a dataset folder of the source's project and a ``Dataset.mirror`` map. Its rows' outside-owned
+    #: fields then write back through this source (``flow_sdk.datasets.projection``).
+    mirror: Optional[dict] = APIField(default=None, description="Mirror records into a dataset: {dataset, map, by?}")
+
+    # ── lifecycle ──
+    status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
+    #: What SETUP is waiting for, in the user's words. Empty in every other
+    #: state. The card renders this verbatim, so it is a sentence, not a code.
+    setup_detail: str = APIField(default="", persist=Persist.FALSE)
+    #: The same as data: what SETUP waits on (``SetupNeedSpec``), set by ``verify``. Empty in every other state.
+    setup_needs: list[SetupNeedSpec] = APIField(default_factory=list, persist=Persist.FALSE)
+    #: When the last verify ran, whatever its verdict.
+    verified_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
+
+    # ── sync policy ──
+    poll_interval_seconds: int = APIField(default=300, ge=MIN_POLL_INTERVAL_SECONDS)
+    window_days: int = APIField(default=7, ge=1, description="The 'since last pull' floor")
+    #: A thread quiet this long is over: the next message on it starts a new thread (a new
+    #: conversation), on top of the driver's own split (a chat, a topic, a call). None = never.
+    thread_timeout_seconds: Optional[int] = APIField(default=None, ge=1, description="Seconds of quiet after which a thread ends")
+    next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
+    last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
+
+    last_attempted_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
+
+    # ── position: the source's opaque cursor, advanced only after a page is written ──
+    cursor: Optional[str] = APIField(default=None, persist=Persist.FALSE)
+    #: A reflecting source's diff bookkeeping (path → digest), carried verbatim between passes.
+    manifest: dict = APIField(default_factory=dict, persist=Persist.FALSE)
+    high_water: Optional[str] = APIField(default=None, persist=Persist.FALSE, description="ISO-8601: the newest record seen")
+    consecutive_failures: int = APIField(default=0, persist=Persist.FALSE)
+
+    # ── health of the last pass ──
+    health: str = APIField(default=SourceHealth.NEVER_SYNCED.value, persist=Persist.FALSE)
+    error_code: Optional[str] = APIField(default=None, persist=Persist.FALSE)
+    error_detail: Optional[str] = APIField(default=None, persist=Persist.FALSE)
+
+    # ── what this instance reads with (`set_secret_store` / `set_connection`) ──
+    # Saved on the row, not held by the process: the heartbeat's sync, a webhook and an outbound
+    # send receive only the row, and must read with what a person bound. Two instances of one
+    # source type (two Drives, different folders) each keep their own. PRIVATE: a path, a prefix,
+    # an account — facts about this machine.
+    #: The store the manifest's names load from; unbound is the default store, then the process
+    #: environment.
+    secret_store: Optional[SecretStoreRef] = APIField(default=None, sharing=Sharing.PRIVATE)
+    #: The provider of the account this source acts as; unbound is the manifest's ``auth.connector``.
+    connection: str = APIField(default="", sharing=Sharing.PRIVATE)
+    #: Skipped in its project's setup on THIS machine (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE.
+    setup_skipped: Optional[SetupSkipSpec] = APIField(default=None, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+
+    _api_visible: ClassVar[bool] = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _allowlist_off_config(cls, data):
+        """``allowed_senders`` lands on the row, never in the shareable ``config`` — however a form or a
+        caller passed it. A row written before the rename carries ``inbound_allowed_senders``."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if "inbound_allowed_senders" in data:
+            legacy = data.pop("inbound_allowed_senders")
+            data.setdefault("allowed_senders", legacy)
+        config = data.get("config")
+        if isinstance(config, dict) and "allowed_senders" in config:
+            config = dict(config)
+            moved = config.pop("allowed_senders")
+            data["config"] = config
+            if not data.get("allowed_senders"):
+                data["allowed_senders"] = moved
+        if isinstance(data.get("allowed_senders"), (list, tuple)):
+            data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
+        return data
+
+    @field_validator("mirror", mode="before")
+    @classmethod
+    def _mirror(cls, value: Any) -> Any:
+        from flow_sdk.datasets.projection import check_mirror  # noqa: PLC0415
+
+        return check_mirror(value)
+
+    @field_validator("owner", mode="before")
+    @classmethod
+    def _owner_entity(cls, owner):
+        """``owner`` takes the entity itself (an ``Agent``) as well as its ``TypeId``."""
+        if owner is not None and not isinstance(owner, (str, dict, TypeId)) and getattr(owner, "typeid", None) is not None:
+            return owner.typeid
+        return owner
+
+    @model_validator(mode="before")
+    @classmethod
+    def _adopt_legacy_enabled(cls, data):
+        """Rows written before `status` existed carry `enabled` instead.
+
+        Without this they would load with the default status (NEW) and a source
+        someone deliberately paused would quietly come back — the one migration
+        outcome that is worse than an error.
+        """
+        if not isinstance(data, dict) or data.get("status"):
+            return data
+        if "enabled" in data:
+            data = dict(data)
+            legacy = data.pop("enabled")
+            data["status"] = (
+                SourceStatus.ACTIVE.value if legacy else SourceStatus.DISABLED.value
+            )
+        return data
+
+    @property
+    def enabled(self) -> bool:
+        """Read-compat for callers that still ask the old question.
+
+        Not a field any more — ACTIVE is the only state that polls, so this is
+        derived rather than stored. Kept because a boolean reads better than a
+        string comparison at a call site that only cares whether it runs.
+        """
+        return self.status == SourceStatus.ACTIVE.value
+
+    def poll_refusal(self) -> str:
+        """Why this source may not be polled, or ``""`` when it may.
+
+        The ONE copy of the "is polling this source allowed at all" gate.
+        ``is_due``, ``request_poll`` and the poller's attention fast lane all
+        ask the same question; hand-copies drift the moment a new status or
+        health state lands. NEW and SETUP have not finished being configured
+        and DISABLED is a person's decision — none of them touch health.
+        ``config_error`` needs a human; polling it every minute would burn
+        quota to re-learn something we already know.
+
+        Answers the SENTENCE, not a boolean. Every caller that refuses has to
+        tell somebody why, and a bare yes/no leaves each of them to invent its
+        own wording: ``request_poll`` used to answer "attention never wakes a
+        parked or non-active source", which is four different reasons wearing
+        one coat and tells the reader nothing about which applied. One author
+        for the sentence, so the pill, the log line and the API payload cannot
+        disagree.
+        """
+        if self.status == SourceStatus.NEW.value:
+            return "this source has not been evaluated yet"
+        if self.status == SourceStatus.SETUP.value:
+            return self.setup_detail or "this source is waiting on a setup step"
+        if self.status == SourceStatus.DISABLED.value:
+            return "this source is disabled"
+        if self.health == SourceHealth.CONFIG_ERROR.value:
+            return "this source is parked on a configuration error"
+        return ""
+
+    def setup_owed(self) -> str:
+        """What this source still owes before it can run, or ``""`` when it owes nothing.
+
+        A source owes a setup when it is parked in SETUP, or is NEW with a driver that has a check of
+        its own (the poller's next tick parks it there). A NEW source of any other driver turns
+        active on that tick by itself, and DISABLED is a person's decision: neither is something to
+        set up, so neither may hold up the project the source belongs to. The driver is asked only
+        when it is loaded — ``step`` loads it first.
+        """
+        if self.status == SourceStatus.SETUP.value:
+            return self.setup_detail or "not verified"
+        driver = self._driver()
+        if self.status == SourceStatus.NEW.value and driver is not None and driver.has_setup:
+            return "not verified"
+        return ""
+
+    # ── the access pattern: declare → get and check → bind ──────────────────
+    @classmethod
+    async def get(cls, name: str) -> "DataSource":
+        """The data source named ``name``. Raises :class:`DataSourceNotFound`, or
+        :class:`DataSourceAmbiguous` when several instances share the name."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        rows = await cls.get_all({"name": name})
+        if not rows:
+            raise DataSourceNotFound(name)
+        if len(rows) > 1:
+            raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
+        # An authored source's folder loads on first use; the accessors below read its manifest.
+        await DataDriver.find(rows[0].provider or "")
+        return rows[0]
+
+    def _auth(self):
+        stype = self._driver()
+        manifest = getattr(stype, "manifest", None) if stype is not None else None
+        return getattr(manifest, "auth", None)
+
+    @property
+    def credentials(self) -> "SecretRequirements":
+        """The names this source loads from a store — its manifest's ``auth.env``, ``auth.secrets`` keys, or
+        the ``auth.vars`` of the credential it reads."""
+        from flow_sdk.secrets.requirements import SecretRequirements  # noqa: PLC0415
+
+        auth = self._auth()
+        return SecretRequirements((list(auth.env) or list(auth.secrets) or list(auth.vars.values())) if auth is not None else [])
+
+    @property
+    def connections(self) -> "ConnectionRequirements":
+        """The provider this source acts as, and the scopes it needs — its manifest's ``auth.connector``."""
+        from flow_sdk.connections import ConnectionRequirements  # noqa: PLC0415
+        from flow_sdk.permissions import write_scopes_of_driver  # noqa: PLC0415
+
+        auth = self._auth()
+        wanted = {auth.connector: list(auth.scopes)} if auth is not None and auth.connector else {}
+        if not self.read_only:
+            # Writing back takes more than reading: the driver's ``writes`` permissions, on the same connection.
+            for connector, scopes in write_scopes_of_driver(self.provider or "").items():
+                wanted[connector] = list(dict.fromkeys([*wanted.get(connector, []), *scopes]))
+        return ConnectionRequirements(wanted)
+
+    async def set_secret_store(self, store) -> None:
+        """Bind the store this source loads its names from, and save it; ``None`` unbinds."""
+        self.secret_store = store.ref if store is not None else None
+        await self.save()
+
+    async def set_connection(self, connection) -> None:
+        """Bind the account this source acts as (a ``Connection`` or its provider), and save it;
+        ``None`` unbinds. Refuses a provider the source does not declare."""
+        self.connection = self.connections.bind(connection, who=self.name or self.provider)
+        await self.save()
+
+    async def open(self, *, persona: bool = False):
+        """This source for reading, with what is bound loaded in — ``async with await source.open() as live``
+        (``live.pages()``, ``live.items(**narrow)``, ``live.source``)."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.ingest.session import SourceSession  # noqa: PLC0415
+
+        stype = await DataDriver.find(self.provider or "")
+        if stype is None:
+            raise LookupError(f"no data source type {self.provider!r}")
+        return SourceSession(self, await stype.open(self, persona=persona))
+
+    # ── the asset: where the file lands, and what may touch it ─────────────────
+    async def _resolve_scope_project(self):
+        """The project whose ``agentic-assets/data_source/`` holds this source.
+
+        A project-scoped request; the row's own project; its owning agent's project; and, for code
+        running outside any request (a script, a block), the working directory's project. None lands
+        it in the user scope — a mailbox source the heartbeat creates has no project to belong to.
+        """
+        scoped = await super()._resolve_scope_project()
+        if scoped is not None or self.exist_in_db:
+            return scoped  # placement happens once, at create; a poll's save never asks again
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
+
+        if getattr(self, "project_id", None):
+            return await Project.get_by_id(str(self.project_id))
+        agent = await owning_agent(self)
+        if agent is not None and getattr(agent, "project_id", None):
+            # A shipped agent's project is the SDK's own read-only tree: its channels land in the user
+            # scope, never as new files inside the installed package.
+            from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
+
+            return await owner_project(self)
+        if get_current_request_info() is None:
+            from flow_sdk import context  # noqa: PLC0415
+
+            return await context.current_project()
+        return None
+
+    async def save_runtime(self) -> None:
+        """Persist what the engine learned while running — never the file.
+
+        The poller holds a row for a whole poll, and a person may edit ``data_source.json`` meanwhile:
+        a full save of the stale row would put the old config back. So this re-reads the row, copies
+        only ``RUNTIME_FIELDS`` onto it and saves the database row alone.
+        """
+        if not self.exist_in_db:
+            await self.save()
+            return
+        token, runtime = _SUPPRESS_STORE.set(True), _RUNTIME_WRITE.set(True)
+        try:
+            fresh = await type(self).get_by_id(str(self.id))
+            if fresh is None:
+                return
+            moved = fresh.status != self.status
+            for name in RUNTIME_FIELDS:
+                setattr(fresh, name, getattr(self, name))
+            await fresh.save()
+        finally:
+            _RUNTIME_WRITE.reset(runtime)
+            _SUPPRESS_STORE.reset(token)
+        if moved:
+            # Its project's load verdict was checked against the old status (``core/setup/load.forget``).
+            from flow_sdk.core.setup.load import forget  # noqa: PLC0415
+
+            project = await self.setup_project()
+            if project is not None:
+                forget(project.id)
+
+    async def _existing_account(self) -> "Optional[DataSource]":
+        """The source this owner already has on the same account, if any — one source per (driver,
+        account, owner) on this machine: the same mailbox polled twice ingests every message twice. The
+        owner stays in the key — a user and an agent may each watch the same account. A source that is
+        PART of its account (``account_part``: one group of a number) is a twin only of the same part."""
+        driver = self._driver()
+        key = getattr(driver, "identity_config_key", "") if driver is not None else ""
+        value = (self.config or {}).get(key) if key else None
+        if isinstance(value, dict):  # a picked choice (`{id, name}`) names its account by id
+            value = value.get("id")
+        if not isinstance(value, str) or not value.strip():
+            return None
+        existing = await type(self).find_for_account(
+            self.provider, key, value, owner=self.owner, part=driver.cls.account_part(self.config or {})
+        )
+        return existing if existing is not None and str(existing.id) != str(self.id) else None
+
+    async def _adopt(self, existing: "DataSource", *args, **kwargs):
+        """Save onto the source this owner already has on the account instead of minting a twin: every
+        field the caller SET (name, config, allowlist, cadence — or an identity it just stamped) is written
+        to that row; what it left alone — cursor, health — stays the row's. ``self`` then IS that row."""
+        for name in self.model_fields_set - _NOT_ADOPTED:
+            value = getattr(self, name)
+            if name == "config":
+                value = {**(existing.config or {}), **(value or {})}
+            setattr(existing, name, value)
+        result = await existing.save(*args, **kwargs)
+        for name in type(existing).model_fields:
+            object.__setattr__(self, name, getattr(existing, name))
+        return result
+
+    @classmethod
+    async def find_for_account(
+        cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None, part: str = "",
+    ) -> "Optional[DataSource]":
+        """The source of ``provider`` whose ``config[key]`` names ``value``.
+
+        The canonical natural-key lookup (same shape as
+        ``SourceItem.find_existing``): callers wanting connect-or-reuse
+        semantics ask HERE instead of re-scanning ``get_all`` and filtering by
+        hand — the id policy's whole point is that identity is a lookup.
+        ``key`` is normally the driver's ``identity_config_key``.
+
+        An empty ``key`` is a driver that names its account itself (a bot's getMe):
+        ``value`` then matches the row's ``account_key`` or a discovered identity.
+
+        ``owner`` narrows to that owner's source, so the same account can be
+        watched by the local user AND by an Agent without either reusing the
+        other's row. Omitted, it is the pre-owner lookup. Resolved through
+        ``owner_of`` rather than the column, so a legacy row that only carries
+        ``config.agent_id`` still answers.
+
+        ``part`` is which PART of the account the source is (``account_part``: one group of a number); the
+        default, ``""``, is the account itself — so no caller is handed a group's source for its number's.
+        """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
+
+        driver = DataDriver.loaded(provider)
+        part_of = driver.cls.account_part if driver is not None else (lambda _config: "")
+
+        value = str(value or "").strip()
+        for row in await cls.get_all({"provider": provider}):
+            candidates = [(row.config or {}).get(key)] if key else [row.account_key, *(row.account_identities or [])]
+            if not any(str(c or "").strip() == value for c in candidates):
+                continue
+            if part_of(row.config or {}) != part:
+                continue
+            if owner is not None and await owner_of(row) != owner:
+                continue
+            return row
+        return None
+
+    @classmethod
+    async def find_owned(cls, owner: "TypeId", *, channel: Optional[str] = None) -> "list[DataSource]":
+        """Every source ``owner`` holds — optionally only those on ``channel``.
+
+        The indexed filter first; then the rows written before ``owner`` existed
+        (``owner`` absent), which ``owner_of`` resolves the same way every other
+        reader does. The two are disjoint, so no row is counted twice.
+        """
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
+
+        rows = list(await cls.get_all({"owner": str(owner)}))
+        legacy = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"]))
+        )
+        for row in legacy:
+            if await owner_of(row) == owner:
+                rows.append(row)
+        if channel is not None:
+            rows = [r for r in rows if (r.channel or "").strip() == channel]
+        return rows
+
+    def reply_spec(self, item, *, body: str, files=(), quote: bool = True) -> MessageSpec:
+        """The reply to ``item``, in THIS channel's shape.
+
+        The one constructor a caller should reach for, because picking the class
+        by hand is picking the addressing rule by hand: ``EmailMessageSpec``
+        addresses the author, ``SlackMessageSpec`` addresses the channel, and a
+        caller that guesses wrong on a Slack source sends the reply as a DM to
+        the person instead of posting it where everyone is reading. The driver
+        already knows which rule is its own (``outbound_spec``); ask it.
+
+        Synchronous because every ``reply_to`` is a pure constructor — no I/O,
+        so this is safe to call anywhere the item is in hand.
+        """
+        driver = self._driver()
+        if driver is None:
+            raise RuntimeError(f"no driver for {self.provider}")
+        spec = driver.outbound_spec(self).reply_to(item, body=body, files=files)
+        return spec if quote else spec.model_copy(update={"quote": False})
+
+    async def start(self, *, to: str, body: str, subject: str = "") -> "Conversation":
+        """Open a conversation with *to* on this line — send the email, place the call, write the first chat
+        message — and answer the Conversation it is. Its ``address`` is *to*, so it can be continued
+        (``Conversation.send``) before anyone answers."""
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import conversation_of  # noqa: PLC0415
+
+        driver = self._driver()
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"the {self.provider} driver cannot send")
+        outcome = await driver.send(self, thread_key="", to=to, text=body, subject=subject)
+        item = await SourceItem.get_one({"data_source_id": str(self.id), "external_id": outcome.external_id}) if outcome.external_id else None
+        conversation_id = await conversation_of(item, source=self) if item is not None else None
+        if not conversation_id:
+            raise RuntimeError(f"the {self.provider} message to {to} was {outcome.status.value} but not recorded here")
+        return await Conversation.get_one({"id": conversation_id})
+
+    async def send(self, spec: MessageSpec) -> SendOutcome:
+        """Deliver one outbound message through this source's driver.
+
+        Message-shape validation belongs here rather than on each workflow
+        surface: a direct SDK caller and ``blocks.StreamInbox`` must reject the same
+        unsupported attachment or recipient shape before provider I/O begins.
+        """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
+
+        if len(spec.to) != 1:
+            raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
+
+        driver = DataDriver.loaded(self.provider)
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"the {self.provider} driver cannot send")
+        return await driver.send(
+            self,
+            thread_key=spec.thread_key,
+            to=spec.to[0],
+            text=spec.body,
+            subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
+            in_reply_to=spec.reply_to_external_id,
+            # Checked against the channel's own limits before any provider I/O (``resolve_files``).
+            files=tuple(f.to_item() for f in spec.files),
+            quote=spec.quote,
+        )
+
+    async def expect_reply(self, sent: SendOutcome) -> SourceItemSpec:
+        """Sync until this source contains a reply to ``sent``.
+
+        The caller owns the outer deadline. This method deliberately carries
+        no second timeout, retry budget, or sleep that could disagree with it.
+        Existing rows are checked before the first provider call so an already
+        ingested reply returns without needless network I/O.
+        """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
+
+        expected = _normalize_message_id(sent.external_id)
+        if not expected:
+            raise ValueError("cannot expect a reply to a send with no external_id")
+        driver = DataDriver.loaded(self.provider)
+
+        while True:
+            items = await SourceItem.get_all({"data_source_id": self.id})
+            for item in items:
+                if _normalize_message_id(item.reply_to_external_id) == expected:
+                    return SourceItemSpec.model_validate(
+                        {key: getattr(item, key) for key in SourceItemSpec.model_fields}
+                    )
+            if driver is not None and driver.finds_replies:
+                reply = await driver.wait_for_reply(self, str(sent.external_id))
+                await ingest_items([reply])
+                return reply
+            else:
+                await sync_source(self, now=datetime.now(timezone.utc))
+
+    def is_due(self, now: Optional[datetime] = None) -> bool:
+        now = now or datetime.now(timezone.utc)
+        if self.poll_refusal():
+            return False
+        if self.next_poll_at is None:
+            return True
+        due = self.next_poll_at
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        return due <= now
+
+    def window_floor(self, now: Optional[datetime] = None) -> datetime:
+        now = now or datetime.now(timezone.utc)
+        return now - timedelta(days=self.window_days)
+
+    def schedule_next(self, now: Optional[datetime] = None) -> datetime:
+        """Advance ``next_poll_at`` by one interval. THE cadence arithmetic —
+        the poller sets it before I/O as a crash guard and the sync loop sets it
+        after; both call here so the two can never disagree.
+
+        The stamp is QUANTIZED to the minute grid the heartbeat ticks on.
+        ``now + interval`` carries this dispatch's millisecond jitter, and the
+        next tick's own jitter is independent — so whenever the tick fired a
+        few ms earlier than the stamp, the poll silently waited a whole extra
+        minute (RCA-proven both directions by moving ``next_poll_at`` across a
+        tick boundary: due :00−30s → the boundary tick polled; due :00+0.5s →
+        it skipped and polled a minute late). Flooring to the minute makes an
+        interval of one tick period mean "every tick", never a coin flip.
+        """
+        now = now or datetime.now(timezone.utc)
+        due = now + timedelta(seconds=self.poll_interval_seconds)
+        # The grid is the heartbeat tick — the same once-a-minute cadence
+        # MIN_POLL_INTERVAL_SECONDS documents. If the tick period ever
+        # changes, this floor must change with it.
+        self.next_poll_at = due.replace(second=0, microsecond=0)
+        return self.next_poll_at
+
+    async def capabilities_ready(self) -> bool:
+        """Every declared capability is AVAILABLE. Empty list ⇒ always ready."""
+        if not self.required_capabilities:
+            return True
+        from flow_sdk.core.capabilities import capability_available  # noqa: PLC0415
+
+        for kind in self.required_capabilities:
+            if await capability_available(kind) is not True:
+                return False
+        return True
+
+    # ── operator controls ─────────────────────────────────────────────────────
+    #
+    # Three primitives, because "reset" is genuinely three different intents and
+    # conflating them produces surprises:
+    #
+    #   poll_now       — go now, keep everything we know
+    #   reset          — forget our position, keep the records
+    #   purge_items    — forget the records
+    #
+    # `reset` ALONE looks broken, and that is not a bug in the action:
+    # re-ingestion resolves each record by its natural key and the digest gate
+    # suppresses a row whose content has not moved, so re-reading the same window
+    # finds the same rows and the same digests and writes nothing.
+    #
+    # `replay` is the composite the UI actually offers, because "re-fetch this"
+    # is one intent that needs two of the primitives (plus a window widening when
+    # it is date-bounded). The primitives stay public: they are separately
+    # meaningful, and a caller that wants exactly one should not have to reach
+    # for a verb that does two.
+
+    @core_action.post(action_name="poll_now")
+    async def poll_now_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/poll_now — make this source due.
+
+        Also the ONLY un-latch for ``config_error``: ``is_due`` refuses a source
+        in that state, so without clearing health here a source that hit a
+        transient misconfiguration would never poll again.
+
+        Not synchronous — the poller runs off the once-a-minute heartbeat, so
+        this means "on the next tick", within 60s. Deliberately not sped up.
+        """
+        return ApiSuccessResponse(data=await self.poll_now())
+
+    async def poll_now(self) -> dict:
+        """Make this source due on the next tick — the verb under ``poll_now_action``.
+
+        Thin route, real verb: the pattern ``replay``/``replay_action`` set, so an
+        in-process caller never reaches through an HTTP handler to use it.
+        """
+        await self._make_due()
+        await self.save_runtime()
+        return {
+            "status": "due", "health": self.health, "source_status": self.status,
+            "detail": "queued for the next heartbeat tick (≤60s)",
+        }
+
+    def note_attention(self) -> Optional[int]:
+        """Someone is waiting on this source — arm its fast lane. The cadence armed, or None.
+
+        THE demand signal, for every kind of waiter: a viewer (``request_poll``)
+        and an agent serving the source both renew the same short lease, and the
+        poller's attention loop does the polling — a waiter never polls a
+        provider itself. A driver that tolerates it declares
+        ``attention_poll_seconds`` (telegram: 5s); one that declares nothing stays
+        on its ``poll_interval_seconds``. A source that may not be polled at all
+        (``poll_refusal``: parked, disabled, not set up) is never armed.
+        """
+        if self.poll_refusal():
+            return None
+        driver = self._driver()
+        cadence = getattr(driver, "attention_poll_seconds", None) if driver else None
+        if cadence:
+            from flow_sdk.ingest.poller import note_attention  # noqa: PLC0415
+
+            note_attention(str(self.id), cadence)
+        return cadence or None
+
+    @classmethod
+    async def nudge(cls, provider: str) -> int:
+        """Every healthy source of ``provider`` polls on the next tick — the hub said something waits for
+        them. The same gates as ``request_poll`` (a parked or disabled source stays put). How many woke."""
+        from flow_sdk.ingest.poller import wake_attention_lane  # noqa: PLC0415
+
+        woke = 0
+        for row in await cls.get_all({"provider": provider}) or []:
+            if row.poll_refusal():
+                continue
+            if row.next_poll_at is not None:
+                row.next_poll_at = None
+                await row.save_runtime()
+            row.note_attention()
+            woke += 1
+        if woke:
+            wake_attention_lane()
+        return woke
+
+    @core_action.post(action_name="request_poll")
+    async def request_poll_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/request_poll — attention.
+
+        A viewer is looking at this source's output RIGHT NOW; poll on the
+        next heartbeat tick. The UI fires this on an interval while a
+        conversation backed by the source is selected — the request stream IS
+        the liveness signal, so there is no active/idle state to store,
+        round-trip, or decay: when the viewer goes away the requests stop and
+        the standing ``poll_interval_seconds`` cadence resumes by itself.
+
+        Deliberately NOT ``poll_now``: that verb is the one un-latch for
+        ``config_error``, and an auto-firing viewer must never resurrect a
+        parked source (burning quota to re-learn a broken credential) or wake
+        a DISABLED one — a human decision outranks a mounted view. Ignored,
+        loudly in the payload, for anything that is not a healthy ACTIVE
+        source. Idempotent: an already-due source is left due.
+        """
+        refusal = self.poll_refusal()
+        if refusal:
+            return ApiSuccessResponse(data={
+                "status": "ignored", "health": self.health, "source_status": self.status,
+                "detail": refusal,
+            })
+        if self.next_poll_at is not None:
+            self.next_poll_at = None
+            await self.save_runtime()
+        cadence = self.note_attention()
+        return ApiSuccessResponse(data={
+            "status": "due", "health": self.health, "source_status": self.status,
+            "attention_seconds": cadence,
+            "detail": (
+                f"fast lane armed — polling every {cadence}s while watched"
+                if cadence else "queued for the next heartbeat tick (≤60s)"
+            ),
+        })
+
+    @core_action.post(action_name="reset")
+    async def reset_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/reset — forget position.
+
+        Clears the cursor and the reflection manifest, so the next poll re-reads the whole window.
+        """
+        await self.reset()
+        return ApiSuccessResponse(data={
+            "status": "reset",
+            "detail": "position cleared; existing records still gate on content digest — "
+                      "pair with purge_items for a visible re-fetch",
+        })
+
+    async def reset(self) -> None:
+        """Forget this source's position and make it due."""
+        self._forget_position()
+        self.next_poll_at = None
+        await self.save_runtime()
+
+    @core_action.post(action_name="purge_items")
+    async def purge_items_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/purge_items — drop the records.
+
+        Safe to pair with a re-poll: re-ingestion rebuilds an equivalent row per
+        record. NOT the *same* row — the rebuilt rows are new entities with new
+        ids, so anything holding a SourceItem id across a purge is holding a
+        dangling reference. It also discards local state (``read`` / ``starred``),
+        which is the cost operators actually feel.
+        """
+        removed = await self.purge_items()
+        return ApiSuccessResponse(data={"status": "purged", "removed": removed})
+
+    async def purge_items(self) -> int:
+        """Drop this source's records. Returns how many went."""
+        return await self.purge_records_of(self.id)
+
+    @core_action.post(action_name="replay")
+    async def replay_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/replay — re-fetch, optionally from a date.
+
+        Body: ``{"since": "<ISO-8601>"}`` (optional).
+
+        The composite verb, because "re-fetch this" is ONE intent that needs two
+        primitives: dropping the records AND clearing the cursor position.
+        Either alone is invisible — clearing position re-reads a window whose
+        records are already present and digest-identical, and dropping records
+        without clearing position means the next poll never re-reads them.
+
+        With ``since`` it also widens ``window_days`` to cover the date, because
+        the window floor is what the driver filters on: asking to replay from six
+        weeks ago against a 7-day window would silently return nothing. Widen
+        only — shrinking here would quietly reduce what every *future* poll sees,
+        which is a different decision than the one being made.
+
+        Not synchronous: like ``poll_now`` this makes the source due, and the
+        heartbeat picks it up within 60s. No wait, no retry, no backoff.
+
+        Declares no parameters, deliberately. This module carries
+        ``from __future__ import annotations`` and the dispatcher resolves an
+        annotated request by IDENTITY (``param.annotation is Request``,
+        server/routes/graph.py) — under postponed evaluation the annotation is
+        the *string* ``'Request'``, no match is found, and the action 400s with
+        "Missing required argument: request" while every direct-call test still
+        passes. The body comes from ``get_current_request_info`` instead, and
+        the work lives in ``replay`` so callers (and tests) can drive it
+        without a request at all.
+        """
+        body = await self._body()
+        raw_since = str(body.get("since") or "").strip()
+
+        since, problem = parse_since(raw_since)
+        if problem:
+            return ApiFailResponse(message=problem)
+
+        return ApiSuccessResponse(data=await self.replay(since=since))
+
+    async def replay(self, *, since: Optional[datetime] = None) -> dict:
+        """The replay body — see ``replay_action`` for what it means and why."""
+        removed = await self.purge_records_of(self.id, since=since)
+        self._forget_position()
+
+        widened = False
+        if since is not None:
+            needed = max(1, ceil((datetime.now(timezone.utc) - since).total_seconds() / 86400))
+            if needed > self.window_days:
+                self.window_days = needed
+                widened = True
+
+        # A parked source would otherwise accept the replay and then never poll
+        # to act on it.
+        await self._make_due()
+        await self.save()
+
+        return {
+            "status": "replaying",
+            "removed": removed,
+            "since": since.isoformat() if since else None,
+            "window_days": self.window_days,
+            "window_widened": widened,
+            "detail": "queued for the next heartbeat tick (≤60s)",
+        }
+
+    # ── deletion cascades, on BOTH paths ──────────────────────────────────────
+    #
+    # Nothing cascades on its own: the records (only ``purge_items``
+    # removes those). Deleting just this row leaves both orphaned, keyed to an id
+    # that no longer resolves — invisible until someone counts rows.
+    #
+    # It has to be hooked on EVERY path, because they do not share one: the HTTP
+    # route calls the CLASSMETHOD `delete_by_id` and never constructs the
+    # instance (so an instance-only override silently does nothing over the wire
+    # while direct-call tests pass — the trap `_close_orphan_tabs_for` documents
+    # in `Entity.delete_by_id`), while in-process callers say `delete()` and
+    # `destroy()` reaches the record rather than `delete()`. One body, three
+    # thin hooks.
+
+    @classmethod
+    async def purge_records_of(
+        cls, source_id: str, *, since: Optional[datetime] = None
+    ) -> int:
+        """Drop a source's records; with ``since``, only those at/after it.
+
+        Undated records are KEPT by a bounded replay. ``occurred_at`` is the
+        ordering key and a row without one cannot be shown to fall inside the
+        window — deleting it on a "since yesterday" replay would silently drop
+        data the operator never asked about. That falls out of the query: a
+        `>=` comparison never matches a missing value, and ISO-8601 strings
+        order lexicographically, so the filter is pushed into SQL rather than
+        loading every row to re-parse its date in Python.
+        """
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        if since is None:
+            doomed = await SourceItem.get_all({"data_source_id": source_id})
+        else:
+            doomed = await SourceItem.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[
+                    ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", source_id]),
+                    ExpressionNode(op=QueryOp.GE, operands=["occurred_at", since.isoformat()]),
+                ]))
+            )
+        for item in doomed:
+            await item.destroy()
+        if doomed:
+            # The stream inbox side of the purge. Under the reference model the
+            # projected FlowMessages hold no body of their own — leaving them
+            # behind would fill the stream inbox with blank rows, so the cascade is
+            # mandatory, not hygiene.
+            from flow_sdk.stream_inbox.projection import remove_projection_for_items  # noqa: PLC0415
+
+            await remove_projection_for_items([i.id for i in doomed])
+        return len(doomed)
+
+    @classmethod
+    async def delete_children_of(cls, source_id: str) -> None:
+        """Every row keyed to this source — the records and the consumer positions."""
+        from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
+        from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
+
+        await cls.purge_records_of(source_id)
+        await ConsumerPosition.delete_for(source_id)
+        await SourceChange.delete_for(source_id)
+
+    @classmethod
+    async def delete_by_id(cls, eid: str):
+        """The path `DELETE /api/v1/graph/data_source/{id}` takes."""
+        row = await cls.get_by_id(str(eid))
+        if row is not None:
+            await row.release_hub_claims()
+        await cls.delete_children_of(str(eid))
+        result = await super().delete_by_id(eid)
+        remove_source_folder(getattr(row, "asset_ref", None))
+        return result
+
+    async def save(self, *args, **kwargs):
+        """Resolve NEW on the way in, so a source is never stuck un-runnable.
+
+        NEW is transient by design: it means "nobody has decided yet". The
+        decision is the driver's — one that declares `verify` has a setup step a
+        human must complete (Slack's bot invite), so it starts in SETUP; one that
+        does not is ready the moment it is configured, so it starts ACTIVE. That
+        keeps a plain RSS feed from demanding a Verify click it has no use for.
+
+        Also stamps ``owner`` on the way in when nothing set it: the local user,
+        or the agent a legacy ``config.agent_id`` names. One choke-point rather
+        than one per constructor, so the UI create path and every block get it
+        without knowing it exists.
+        """
+        # Read before the local user is stamped in for a file that names nobody: a file that names
+        # its owner is what tells one authored here from one that arrived.
+        names_owner = self.owner is not None
+        if self.owner is None:
+            from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
+
+            self.owner = await owner_of(self)
+        if _SUPPRESS_STORE.get():
+            # A row written WITHOUT writing its file: the indexer reading a data_source.json, a share
+            # being received, or ``save_runtime``. A file holds no status, so whatever a first read
+            # carries (the indexer stamps ``active``) is not a decision — the owner it names is.
+            if not self.exist_in_db:
+                if await self._authored_here(names_owner):
+                    # The create rules, when the driver is ALREADY loaded: importing source code inside the
+                    # indexer's per-record sync deadlocks on the import lock (see ``DataDriver.sends``). One
+                    # not loaded yet stays NEW, and the poller's next tick settles it (``resolve_new``) —
+                    # deciding here without the class would skip the setup step of a driver that owes one.
+                    self.setup_detail = ""
+                    if self._driver() is not None:
+                        self._apply_create_rules()
+                    else:
+                        self.status = SourceStatus.NEW.value
+                else:
+                    # It arrived (cloned, shared, copied): wait for this machine's own connection.
+                    self.status = SourceStatus.SETUP.value
+                    self.setup_detail = RECEIVED_SETUP_DETAIL
+            elif not _RUNTIME_WRITE.get():
+                # A re-read file carries no runtime facts, only the indexer's defaults: keep the row's.
+                stored = await type(self).get_by_id(str(self.id))
+                for name in RUNTIME_FIELDS if stored is not None else ():
+                    setattr(self, name, getattr(stored, name))
+            return await super().save(*args, **kwargs)
+        if not self.exist_in_db:
+            existing = await self._existing_account()
+            if existing is not None:
+                return await self._adopt(existing, *args, **kwargs)
+        if not self.exist_in_db or self.status == SourceStatus.NEW.value:
+            # An authored source's folder loads on first use, so the create rules can ask its class. The
+            # poller's per-tick re-save of an existing row never pays for the lookup.
+            from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+            await DataDriver.find(self.provider or "")
+            if self.status == SourceStatus.NEW.value:
+                self._apply_create_rules()
+        driver = self._driver()
+        if driver is not None and driver.config_cls is not None:
+            self._type_config(driver.config_cls)
+        # The reflect rule reads the driver's row; `_needs_spec` keeps the poller's per-tick re-save free of it.
+        self._coerce_reflect(await self._spec() if self._needs_spec() else None)
+        if not (self.channel or "").strip():
+            # Stamp the channel at CREATE, not first poll: the credential probe keys on it (Verify on
+            # a fresh source probed nothing) and the UI badges by it. `sync_source` keeps re-stamping
+            # every poll; a type that answers empty (a file source, an agent transport with no
+            # connector yet) stamps nothing here.
+            stype = self._driver()
+            if stype is not None:
+                try:
+                    stamped = str(stype.channel_for(self) or "").strip()
+                except Exception:  # noqa: BLE001 — a probe must never fail a save
+                    stamped = ""
+                if stamped:
+                    self.channel = stamped
+        self._stamp_origin()
+        created = not self.exist_in_db
+        saved = await super().save(*args, **kwargs)
+        if created:
+            await self._declare_connections()
+        return saved
+
+    async def resolve_new(self) -> None:
+        """Settle a row the indexer left NEW because its driver was not loaded: load it, decide, save
+        the row alone. Called by the poller's tick, where importing a driver is legal. A no-op for a
+        row that is no longer NEW."""
+        if self.status != SourceStatus.NEW.value:
+            return
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        await DataDriver.find(self.provider or "")
+        self._apply_create_rules()
+        await self.save_runtime()
+
+    def _apply_create_rules(self) -> None:
+        """Where a new source starts: the loaded driver decides.
+
+        A driver that owes a setup step starts in SETUP; any other starts ACTIVE — an UNKNOWN provider
+        included, deliberately: leaving it in NEW would park it silently, while ACTIVE lets the poller
+        reach ``sync_source``, which reports what is wrong (``unknown_provider``, a missing credential)
+        as a config_error the card can explain. Callers load the driver first (``DataDriver.find``).
+        """
+        stype = self._driver()
+        if stype is not None and stype.has_setup:
+            self.status = SourceStatus.SETUP.value
+            need = _declared_sign_in(stype)
+            if need is not None and not self.setup_needs:
+                # What it reads through is known before anything is verified: say it now, so the strip names
+                # the sign-in from the first moment, not "Setup required" until someone presses Verify.
+                self.setup_needs = [need]
+                self.setup_detail = self.setup_detail or need.detail
+            if not self.setup_detail:
+                self.setup_detail = "Finish setup, then press Verify."
+        else:
+            self.status = SourceStatus.ACTIVE.value
+
+    async def _authored_here(self, names_owner: bool) -> bool:
+        """Whether a source FILE with no row yet was written by one of this machine's own authors.
+
+        ``self.owner`` is already ``owner_of(self)`` — the explicit owner, else the agent a legacy
+        ``config.agent_id`` names, else the local user stamped in for a file that names nobody. An
+        agent owner is ours when it has a row here; a user owner is ours only when the file NAMED
+        the local user (``names_owner``), not when the stamp put them there. Anything else arrived
+        from elsewhere. The lookup is on the owner's id — never on where the file sits — so a cloned
+        project that also carries its agent reads as authored here and starts by the create rules:
+        its first poll then fails LOUDLY on this machine's credentials (a ``config_error`` with the
+        provider's own words), which beats a silent park.
+        """
+        from flow_sdk.stream_inbox.projection import default_owner, is_agent_owner, owning_agent  # noqa: PLC0415
+
+        if is_agent_owner(self.owner):
+            return await owning_agent(self) is not None
+        return names_owner and str(self.owner) == str(await default_owner())
+
+    async def _declare_connections(self) -> None:
+        """A connection this source acts through IS a credential of its project (``kind: oauth``): declared at
+        create, covering the scopes this source needs — so the project's setup lists it like any credential.
+        Never fails a save: setup's own collect declares whatever this missed."""
+        if not self.project_id:
+            return
+        try:
+            from flow_sdk.builtin import credential_service  # noqa: PLC0415
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            needs = self.connections
+            wanted = {provider: needs.scopes(provider) for provider in needs.names()}
+            if not wanted:
+                return
+            project = await Project.get_by_id(str(self.project_id))
+            if project is None:
+                return
+            for provider, scopes in wanted.items():
+                await credential_service.declare_oauth(project, provider, list(scopes))
+        except Exception:  # noqa: BLE001 — a declaration is setup's to retry, never a reason to lose a source
+            logger.warning("data source %s: its connections were not declared", self.name, exc_info=True)
+
+    def _needs_spec(self) -> bool:
+        """True when any save-time rule below still has a question for the spec.
+
+        A saved row whose reflect mode is settled has nothing to ask, which is
+        the poller's case on every tick.
+        """
+        driver = self._driver()
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.is_object
+        return stuck or not self.exist_in_db
+
+    async def _spec(self) -> "Optional[object]":
+        """The provider's definition row, or None when it cannot be resolved —
+        an unresolvable spec changes nothing about any of the three rules."""
+        from flow_sdk.builtin.data_driver import DataDriver
+
+        try:
+            return await DataDriver.get_one({"name": self.provider})
+        except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
+            return None
+
+    def _type_config(self, config_cls) -> None:
+        """The driver's ``Config`` applied on save. A create is validated whole — a field it lacks or
+        a value off its rule is a ``ValueError`` naming it, which the create route maps to a 400. An
+        existing row only has what it typed shaped (a string where a list is declared); a rule added
+        later must not turn the poller's re-save into an exception nobody reads."""
+        if not isinstance(self.config, dict):
+            return
+        if "agent_id" in self.config and "agent_id" not in config_cls.model_fields:
+            # The legacy spelling of the owner, already read into ``owner`` above; not this driver's config.
+            self.config = {k: v for k, v in self.config.items() if k != "agent_id"}
+        if self.exist_in_db:
+            if any(isinstance(v, str) for v in self.config.values()):
+                self.config = {**self.config, **config_cls.draft(self.config)}
+            return
+        self.config = config_cls.validated(self.config).model_dump(mode="json", exclude_unset=True)
+
+    def _coerce_reflect(self, spec) -> None:
+        """``reflect`` must be a mode the spec offers, or the source ingests
+        nothing: the folder driver returns file refs, and with the row-level
+        default ``record`` there is no reflector to place them — the poll
+        parks on ``reflect_mode`` (``sync.py``) rather than silently dropping
+        them, but the API caller who never sent ``reflect`` did not ask for a
+        parked source. The dialog can only pick from the spec's list; this
+        applies the same list to the API and an agent, and picks the head
+        (the spec's declared default) when the value is not on it.
+
+        Looked up at CREATE, plus on a tree-backed driver still sitting on
+        ``record`` — that is the one combination that cannot be right, so a
+        row minted before this rule heals on its next save, while a correct
+        source never pays a spec read on the poller's per-tick re-save.
+        """
+        driver = self._driver()
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.is_object
+        if self.exist_in_db and not stuck:
+            return
+        modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
+        if not modes or self.reflect in modes:
+            return
+        logger.warning(
+            "[data_source] %s: reflect=%r is not offered by the %r spec (%s); using %r",
+            self.id, self.reflect, self.provider, ", ".join(modes), modes[0],
+        )
+        self.reflect = modes[0]
+
+    def _stamp_origin(self) -> None:
+        """``origin`` follows ``config`` on every save — the driver derives it
+        (`origin_for`), pure path arithmetic; a driver with no tree leaves it
+        unset, and an unknown provider changes nothing."""
+        driver = self._driver()
+        if driver is None or not driver.is_object:
+            return
+        try:
+            self.origin = driver.origin_for(self)
+        except Exception:  # noqa: BLE001 — a bad root is the driver's verify verdict, not a save failure
+            logger.debug("[data_source] origin_for failed for %s", self.id, exc_info=True)
+
+    @core_action.post(action_name="choices")
+    async def choices_action(cls) -> ApiResponse:
+        """POST /api/v1/graph/data_source/choices — the picker's data.
+
+        Body: ``{"provider": str, "field": str, "config": dict}``, read off the request
+        context rather than a declared parameter — the dispatcher resolves an annotated
+        `request` by identity, and this module's postponed annotations make that a
+        string, so a declared one would 400 on every call while direct-call tests passed.
+        Class-level, with no entity id, because the picker's whole job is to fill a form
+        for a source that does not exist yet.
+
+        POST rather than GET though it reads nothing: the in-progress config travels with
+        the call, and a draft config is exactly where a secret lives — ``telegram``'s
+        ``bot_token`` is a config field. That must never reach a URL or an access log.
+        """
+        body = await cls._body()
+        provider = str(body.get("provider") or "").strip()
+        field = str(body.get("field") or "").strip()
+        if not provider or not field:
+            return ApiFailResponse(message="provider and field are required")
+        picks = await cls.choices_for(provider, field, body.get("config") or {})
+        if picks is None:
+            return ApiFailResponse(
+                message=f"{provider!r} has no config field {field!r} that offers choices"
+            )
+        return ApiSuccessResponse(data=picks)
+
+    @classmethod
+    async def choices_for(cls, provider: str, field: str, config: Optional[dict] = None):
+        """What *provider* can offer for its *field* — a ``ChoiceSet``, or ``None``.
+
+        ``None`` means the question itself was wrong: no such provider, or a field its
+        manifest never marked ``choices``. The form only asks about fields the manifest
+        marked, so that is a caller bug and says so loudly; answering with an empty list
+        would bury it as "nothing to pick".
+
+        Everything a USER can hit answers with a ChoiceSet instead — an empty ``items``
+        and one sentence — because every one of those failures means the same thing to
+        the person filling the form: type it instead. That is why this catches
+        ``SourceError`` centrally rather than asking each driver to.
+        """
+        from flow_sdk.builtin.data_driver import DataDriver
+        from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
+        from flow_sdk.sources import errors as contract  # noqa: PLC0415
+
+        spec = await DataDriver.get_one({"name": provider})
+        field_spec = (spec.config or {}).get(field) if spec is not None else None
+        if field_spec is None or not field_spec.choices:
+            return None
+
+        stype = DataDriver.loaded(provider)
+        if stype is None or not stype.offers_choices:
+            # The shipped-manifest test catches this pairing at CI. At runtime — a spec
+            # authored outside this repo — it still must not be a dead end.
+            logger.warning("[ingest] %s declares choices on %r but its driver offers none", provider, field)
+            return ChoiceSet(detail="This provider can't list options here — type the value directly.")
+
+        draft = cls(provider=provider, config=stype.coerce_config(dict(config or {})))
+        try:
+            return ChoiceSet(items=await stype.choices(draft, field))
+        except contract.SourceError as exc:
+            return ChoiceSet(detail=str(exc))
+        except SourceError as exc:
+            # `detail`, not `str(exc)`: the latter prefixes the machine code
+            # ("no_project: Set 'GCP project'…"), and this sentence is rendered verbatim
+            # under the field for a person to act on.
+            return ChoiceSet(detail=exc.detail or str(exc))
+        except Exception as exc:  # noqa: BLE001 — a driver must not 500 the picker
+            logger.warning("choices failed for %s.%s: %s", provider, field, exc, exc_info=True)
+            return ChoiceSet(detail=f"could not list: {exc}")
+
+    # ── the verbs the CLI, the TS SDK and the UI share ────────────────────────
+    # Thin routes over real verbs, the `replay`/`replay_action` shape: bodies come from the request
+    # info (see `replay_action` on why an action declares no parameters).
+
+    @staticmethod
+    async def _body() -> dict:
+        request_info = get_current_request_info()
+        return dict(await request_info.get_post_data() or {}) if request_info else {}
+
+    @core_action.post(action_name="send")
+    async def send_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/send — one message into the channel.
+
+        Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?}``. ``to`` is what the channel
+        addresses (a chat, a channel id, an address); the source class reads it (``message_for``)."""
+        body = await self._body()
+        try:
+            return ApiSuccessResponse(data=await self.send_text(
+                to=str(body.get("to") or ""), text=str(body.get("text") or ""), thread_key=str(body.get("thread_key") or ""),
+                subject=str(body.get("subject") or ""), in_reply_to=str(body.get("in_reply_to") or ""),
+            ))
+        except (ValueError, RuntimeError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc))
+
+    async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        driver = await DataDriver.find(self.provider or "")
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"{self.provider} cannot send")
+        if not (text or "").strip():
+            raise ValueError("text is required")
+        outcome = await driver.send(self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
+        return _outcome_dict(outcome)
+
+    @core_action.post(action_name="reply")
+    async def reply_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/reply — answer one of this source's items.
+
+        Body: ``{"item_id", "text"}``. Who the reply goes to is the channel's rule (``reply_spec``)."""
+        body = await self._body()
+        try:
+            return ApiSuccessResponse(data=await self.reply_to_item(str(body.get("item_id") or ""), str(body.get("text") or "")))
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except (ValueError, RuntimeError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc))
+
+    async def reply_to_item(self, item_id: str, text: str) -> dict:
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        item = await SourceItem.get_one({"id": item_id, "data_source_id": self.id}) if item_id else None
+        if item is None:
+            raise LookupError(f"no item {item_id!r} on this source")
+        if not (text or "").strip():
+            raise ValueError("text is required")
+        return _outcome_dict(await self.send(self.reply_spec(item, body=text)))
+
+    @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
+    @property
+    def files_root(self) -> Optional[str]:
+        """Where this file source's files are on this machine — what its page browses: the folder it places
+        them in (``copy``/``symlink``: ``reflect_into``), else its own tree (a local folder, or the cache it
+        downloads into). None for a record source, or one that names no folder yet. PRIVATE: this machine's path."""
+        from flow_sdk.ingest.reflect import target_root  # noqa: PLC0415
+
+        driver = self._driver()
+        if driver is None or not driver.is_object:
+            return None
+        root = target_root(self) if self.reflect in (ReflectMode.COPY.value, ReflectMode.SYMLINK.value) else driver.tree_root(self)
+        return str(root) if root is not None else None
+
+    # ── write back: one record of the outside system, through the driver ───────
+    async def _item_origin(self, item_id: str):
+        """The origin (where it lives in the outside system) of one of THIS source's records."""
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.sources.values.origin import CloudOrigin  # noqa: PLC0415
+
+        item = await SourceItem.get_one({"id": item_id, "data_source_id": self.id}) if item_id else None
+        if item is None:
+            raise LookupError(f"no item {item_id!r} on this source")
+        return CloudOrigin(kind=item.origin_kind, namespace=item.origin_namespace, key=item.origin_key)
+
+    async def _mutable(self, verb: str):
+        """This source opened for a write the driver's contract names (``sources.protocols.Mutable``):
+        refused before any I/O when the row is ``read_only`` or the driver cannot."""
+        from flow_sdk.sources.protocols import Mutable  # noqa: PLC0415
+
+        if self.read_only:
+            raise PermissionError(f"this source is read-only: it does not {verb} in {self.provider}")
+        live = await self.open()
+        if not isinstance(live.source, Mutable):
+            raise NotImplementedError(f"the {self.provider} driver cannot {verb} a record")
+        return live
+
+    async def _record(self, written: Any, status: str) -> dict:
+        """Keep what the outside system answered a write with, at once -- as a sent message is: the
+        record here is current without waiting for the next sync, whose echo lands on the same row
+        (same origin). Answers ``{item_id, origin, status}``, plus ``warnings`` (``[str]``) when the
+        driver made the record but not all of it (``SourceItemSpec.warnings``)."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
+
+        report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
+        answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
+        if written.warnings:
+            answer["warnings"] = list(written.warnings)
+        return answer
+
+    async def create_item(self, data: dict) -> dict:
+        """Make one record IN THE OUTSIDE SYSTEM through the driver (as ``update_item``). ``data`` is the
+        record shape the driver's ``create`` names; the record it answers is kept here at once.
+        ``PermissionError`` a read-only source · ``NotImplementedError`` a driver without ``create``
+        · ``ValueError`` data that is not the driver's record shape."""
+        from typing import get_type_hints  # noqa: PLC0415
+
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.sources.values.items import RecordData  # noqa: PLC0415
+
+        if not isinstance(data, dict) or not data:
+            raise ValueError("data: a non-empty object is required")
+        async with await self._mutable("create") as live:
+            try:   # the shape the driver's own `create(data: ...)` names
+                shape = get_type_hints(type(live.source).create).get("data", RecordData)
+            except Exception:  # noqa: BLE001 -- an annotation that does not resolve: the base record
+                shape = RecordData
+            shape = shape if isinstance(shape, type) and hasattr(shape, "model_validate") else RecordData
+            try:
+                record = shape.model_validate(data)
+            except ValidationError as exc:
+                raise ValueError(f"data is not a {shape.__name__}: {exc.errors()[0]['msg']}") from None
+            written = await live.source.create(record)
+        return await self._record(written, "created")
+
+    async def update_item(self, item_id: str, changes: dict) -> dict:
+        """Change one record IN THE OUTSIDE SYSTEM -- the record ``item_id`` (a ``SourceItem`` of this
+        source) -- through the driver, with the credential the source already holds: how a field the
+        app owns goes back to a system of record (a deal's tags to the CRM). ``changes`` are the
+        outside system's own fields. The record the driver answers is kept here at once.
+        ``LookupError`` no such item · ``PermissionError`` a read-only source · ``NotImplementedError``
+        a driver without ``update``."""
+        if not isinstance(changes, dict) or not changes:
+            raise ValueError("changes: a non-empty object is required")
+        origin = await self._item_origin(item_id)
+        async with await self._mutable("update") as live:
+            written = await live.source.update(origin, dict(changes))
+        return await self._record(written, "updated")
+
+    async def delete_item(self, item_id: str) -> dict:
+        """Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as ``update_item``), and the
+        record kept here with it."""
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        origin = await self._item_origin(item_id)
+        async with await self._mutable("delete") as live:
+            await live.source.delete(origin)
+        kept = await SourceItem.get_one({"id": item_id, "data_source_id": self.id})
+        if kept is not None:
+            await kept.delete()
+        return {"item_id": item_id, "origin": origin.model_dump(mode="json"), "status": "deleted"}
+
+    async def _write_back(self, write: Any) -> ApiResponse:
+        try:
+            return ApiSuccessResponse(data=await write())
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except PermissionError as exc:
+            return ApiFailResponse(message=str(exc), status_code=403)
+        except (ValueError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+    @core_action.post(action_name="create_item")
+    async def create_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/create_item — make one record in the outside system.
+
+        Body: ``{"data"}``. 403 a read-only source · 400 a driver that cannot, or data it refuses."""
+        body = await self._body()
+        return await self._write_back(lambda: self.create_item(body.get("data")))
+
+    @core_action.post(action_name="update_item")
+    async def update_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/update_item — change one record in the outside system.
+
+        Body: ``{"item_id", "changes"}``. 404 no such item · 403 a read-only source · 400 a driver
+        that cannot, or no changes."""
+        body = await self._body()
+        return await self._write_back(lambda: self.update_item(str(body.get("item_id") or ""), body.get("changes")))
+
+    @core_action.post(action_name="delete_item")
+    async def delete_item_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/delete_item — remove one record from the outside system.
+
+        Body: ``{"item_id"}``."""
+        body = await self._body()
+        return await self._write_back(lambda: self.delete_item(str(body.get("item_id") or "")))
+
+    @core_action.post(action_name="items")
+    async def items_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
+
+        Body: ``{"limit"?}`` (default 20). Item bodies are ``PREVIEW_CHARS``-character previews;
+        ``body_truncated`` and ``full_body_length`` describe that preview, not storage.
+        ``name`` is complete, including original ellipses and newlines. GET each item's
+        ``full_record_path`` on this worker's local instance for its complete stored body;
+        use instance discovery and the cookie-gated transport (see ``flow source items --help``),
+        not the hub or a host from legacy CLI configuration."""
+        body = await self._body()
+        return ApiSuccessResponse(data={"items": await self.recent_items(int(body.get("limit") or 20))})
+
+    async def recent_items(self, limit: int = 20) -> list[dict]:
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        rows = await SourceItem.get_all(QueryFilter(
+            match=ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)]),
+            order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
+            limit=max(limit, 0),
+        )) or []
+        fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
+        items = []
+        for row in rows:
+            body = str(getattr(row, "body", "") or "")
+            items.append({
+                **{field: getattr(row, field, None) for field in fields},
+                "body": body[:PREVIEW_CHARS], "body_truncated": len(body) > PREVIEW_CHARS, "full_body_length": len(body),
+                "full_record_path": f"/api/v1/graph/source_item/{row.id}",
+            })
+        return items
+
+    @core_action.post(action_name="sync")
+    async def sync_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
+        this waits for the cycle: it is what a person or an agent runs to see a source work. Like
+        ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
+        credential means to try again.
+
+        A source that is not runnable — waiting on a setup step, or paused by a person — is not fetched: the
+        answer says why (``poll_refusal``, the one author of that sentence) with ``ran: false``. Whatever the
+        family (messages, files, records), a person's Pull answers the same way."""
+        await self._make_due()
+        await self.save_runtime()
+        if self.status in (SourceStatus.SETUP.value, SourceStatus.DISABLED.value):
+            return ApiSuccessResponse(data={
+                "ran": False, "created": 0, "updated": 0, "unchanged": 0, "removed": 0,
+                "health": self.health, "status": self.status, "error_detail": None, "detail": self.poll_refusal(),
+            })
+        report = await self.sync()
+        # The cycle writes health through its own row handle; read what it left.
+        refreshed = await type(self).get_one({"id": self.id}) or self
+        return ApiSuccessResponse(data={
+            "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
+            "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
+            "ran": True, "detail": "",
+        })
+
+    @core_action.post(action_name="set_enabled")
+    async def set_enabled_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
+        enabled = bool((await self._body()).get("enabled", True))
+        self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
+        await self.save_runtime()
+        return ApiSuccessResponse(data={"status": self.status})
+
+    @core_action.get(action_name="setup_stages")
+    async def setup_stages_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/setup_stages — :meth:`setup_stages`."""
+        return ApiSuccessResponse(data=[s.model_dump(mode="json") for s in await self.setup_stages()])
+
+    async def setup_stages(self) -> list:
+        """The setup wizards this source's driver declares (``setup_wizards``), each as it stands for
+        THIS source: ``done`` / ``pending`` / ``locked``. How far setup got is read off each wizard's run
+        for the source; whether it still holds is the row's: a source in setup (its verify — the button,
+        or a push-only source's poll — found it not set up) has its last stage, the one that proves it,
+        pending again, with why."""
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+        from flow_sdk.core.wizard.stages import stage_states  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.setup_stage_spec import STAGE_DONE, STAGE_PENDING  # noqa: PLC0415
+
+        driver = await driver_of(self.provider)  # an authored driver loads on first use
+        states = await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+        if states and states[-1].state == STAGE_DONE and self.status == SourceStatus.SETUP.value:
+            states[-1] = states[-1].model_copy(update={"state": STAGE_PENDING, "detail": self.setup_detail or ""})
+        return states
+
+    @core_action.post(action_name="setup")
+    async def setup_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/setup — set THIS source up: its node of its project's setup
+        tree (what its driver needs — a connection, credential values — then its stages, or Verify). The
+        questions come to the app; answers at once with the run's address, which a screen claims."""
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+
+        project = await self.setup_project()
+        if project is None:
+            return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
+        # The app's Connect button signs the person in; the run only checks a connection (``connect_here``).
+        run = await start_setup(project, root=str(self.typeid), connect_here=False)
+        return ApiSuccessResponse(data={"run": run})
+
+    @core_action.get(action_name="setup-run")
+    async def setup_run_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/setup-run — whether this source's setup is running, and its
+        tree so far. A source no project holds has no run: ``{run: "", running: false, tree: null}``."""
+        from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
+
+        project = await self.setup_project()
+        if project is None:
+            return ApiSuccessResponse(data={"run": "", "running": False, "tree": None})
+        return ApiSuccessResponse(data=setup_run(str(project.id), str(self.typeid)))
+
+    async def setup_project(self):
+        """The project whose setup tree holds this source's node: the one that owns its file (the row's
+        own project, else the project its folder sits under), else its owning agent's. ``None`` for a
+        source in the user scope."""
+        from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+
+        return await owning_project(self) or await self._own_project()
+
+    # ── routing: which place a hub webhook claim hands this channel's messages to ──────────────────────
+
+    async def _hub_route(self) -> Optional[dict]:
+        """The hub claim that delivers to THIS channel, or None. The hub is the only place claims live, so this
+        is always the current answer."""
+        return next(iter(_claims_for(await _hub_claims(), str(self.id))), None)
+
+    async def route_places(self) -> list[dict]:
+        """Where this channel's messages can go: this computer, and each cloud placement of the agent that
+        owns it (a box that holds the same channel, by id)."""
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+        places = [{"key": "this", "label": "This computer"}]
+        owner = str(self.owner or "")
+        if owner.startswith("agent-"):
+            agent = await Agent.get_by_id(owner.split("-", 1)[1])
+            for deployment in (await agent.deployments() if agent is not None else []):
+                node = deployment.compute_node_id  # a property: the machine it runs on, or None
+                if deployment.is_local or not node:
+                    continue
+                label = f"{deployment.environment or 'production'} · {deployment.target.provider}"
+                places.append({"key": str(deployment.id), "label": label, "node_typeid": f"compute_node-{node}"})
+        return places
+
+    def _node_target(self, place: str, places: list[dict]) -> Optional[dict]:
+        """The hub delivery target for the cloud place ``place`` (a deployment id) of this channel, or None."""
+        chosen = next((p for p in places if p["key"] == place and p.get("node_typeid")), None)
+        if chosen is None:
+            return None
+        return {"kind": "node", "node_typeid": chosen["node_typeid"], "data_source_id": str(self.id)}
+
+    @core_action.get(action_name="route")
+    async def route_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/route — the hub webhook that delivers to this channel (its URL,
+        whom it claims, where it delivers, how deliveries went) and the places it can be pointed at."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        claims, places = await asyncio.gather(_hub_claims(), self.route_places())
+        # The first claim is the one "Delivered to" switches; any more deliver the same messages elsewhere too.
+        claim, *rest = _claims_for(claims, str(self.id)) or [None]
+        instance = instance_uid()
+        current = (_place_of(claim, places, instance) or {}).get("key", "") if claim is not None else ""
+        also = [
+            {**place, "claim_id": str(c.get("id") or "")} for c in rest if (place := _place_of(c, places, instance))
+        ]
+        return ApiSuccessResponse(data={"claim": claim, "places": places, "current": current, "also": also})
+
+    @core_action.get(action_name="channels")
+    async def channels_action(cls) -> ApiResponse:
+        """GET /api/v1/graph/data_source/channels — every MessageChannel and where it is routed.
+
+        A MessageChannel is a message source (a DataSource on a channel whose driver sends and receives). Each one
+        here comes with the hub claim that delivers to it, if any — ``routed`` says where that claim hands its
+        messages (``this`` computer, another ``instance``, a ``node``, ``nowhere`` yet), ``unclaimed`` when the
+        source receives only through the hub (its driver says ``delivered_by_hub``) and has no claim — it needs
+        Connect — or ``polls`` when the source fetches its own — and who answers it (``answered_by``: ``agent``,
+        ``deployment`` or ``nobody``). The caller's hub claims whose channel is not on this instance are listed too,
+        with no source."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
+
+        # Only a sending driver's rows can be a channel: ask for those providers, never every source.
+        senders = [name for name, driver in DRIVERS.items() if driver.sends]
+        claims, *per_provider = await asyncio.gather(
+            _hub_claims(), *(DataSource.get_all({"provider": name}) for name in senders)
+        )
+        sources = [row for rows in per_provider for row in rows or []]
+        instance = instance_uid()
+        by_channel: dict[str, list[dict]] = {}
+        for c in claims:
+            by_channel.setdefault(str((c.get("target") or {}).get("data_source_id") or ""), []).append(c)
+        rows: list[dict] = []
+        for source in sources or []:
+            if not is_message_source(source):
+                continue
+            driver = DataDriver.loaded(source.provider)
+            by_hub = bool(getattr(getattr(driver, "cls", None), "delivered_by_hub", False))
+            # One row per place it is delivered to (a channel with no claim: one row).
+            for claim in by_channel.pop(str(source.id), None) or [None]:
+                rows.append(_channel_row(claim, instance, source, by_hub=by_hub))
+        # The caller's claims whose channel is not here (the vendor's root is nobody's channel).
+        rows += [
+            _channel_row(c, instance)
+            for group in by_channel.values()
+            for c in group
+            if (c.get("claim") or {}).get("kind") != "root"
+        ]
+        return ApiSuccessResponse(data={"channels": rows})
+
+    @core_action.post(action_name="set_route")
+    async def set_route_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/set_route ``{"place": "this" | <deployment id>}`` — point the hub
+        claim that delivers to this channel at another place. Its URL never changes, and the vendor is not
+        touched: the next message goes to the new place."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        place = str((await self._body()).get("place") or "")
+        claim = await self._hub_route()
+        if claim is None:
+            return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
+        if place == "this":
+            target = {"kind": "desktop", "instance_id": instance_uid(), "data_source_id": str(self.id)}
+        else:
+            target = self._node_target(place, await self.route_places())
+            if target is None:
+                return ApiFailResponse(message="no such place for this channel", status_code=404)
+        moved = await hub_post("webhook", {"target": target}, str(claim.get("id")), "set_target")
+        if not moved:
+            return ApiFailResponse(message="the hub did not take the new place", status_code=502)
+        return ApiSuccessResponse(data={"claim": moved, "current": place})
+
+    @core_action.post(action_name="probe_reach")
+    async def probe_reach_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/probe_reach — ask the hub whether the claim that delivers to this
+        channel is active and its place is live (the hub's ``probe`` ``reach`` phase), with this instance's own
+        hub sign-in: a page testing the route needs no hub key of its own."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        claim = await self._hub_route()
+        if claim is None:
+            return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
+        answer = await hub_post("webhook", {"phase": "reach"}, str(claim.get("id")), "probe")
+        if not answer:
+            return ApiFailResponse(message="the hub did not answer the reach probe", status_code=502)
+        return ApiSuccessResponse(data=answer)
+
+    @core_action.post(action_name="add_route")
+    async def add_route_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/add_route ``{"place": <deployment id>}`` — ALSO deliver this channel's
+        messages to one of its agent's cloud placements: a second hub claim for the same proven sender (the first
+        is its proof), targeted at that machine's copy of this channel. Each place answers on its own."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        place = str((await self._body()).get("place") or "")
+        claims, places = await asyncio.gather(_hub_claims(), self.route_places())
+        claim = next(iter(_claims_for(claims, str(self.id))), None)
+        key = str(((claim or {}).get("claim") or {}).get("key") or "")
+        if claim is None or not key:
+            return ApiFailResponse(message="connect this channel first — its claim is the proof", status_code=404)
+        target = self._node_target(place, places)
+        if target is None:
+            return ApiFailResponse(message="no such place for this channel", status_code=404)
+        # The same kind as the proven claim: a linked person (user) or a number of one's own (account).
+        kind = str((claim.get("claim") or {}).get("kind") or "user")
+        body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": kind, "key": key}, "target": target}
+        added = await hub_post("webhook", body, None, "chain")
+        if not added:
+            return ApiFailResponse(message="the hub did not take the new place", status_code=502)
+        return ApiSuccessResponse(data={"claim": added, "place": place})
+
+    @core_action.post(action_name="step")
+    async def step_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "values"?}`` — :meth:`step`. The
+        answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        values = body.get("values") if isinstance(body.get("values"), dict) else {}
+        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), values=values)
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
+    async def step(self, name: str, *, check: bool = False, values: Optional[dict] = None):
+        """Run the setup step ``name`` this source's driver declares (``flow_sdk/sources/setup_steps.py``),
+        or the generic ``public-webhook``. ``check`` only asks whether it already holds. What the step
+        learned (a ``SourceUpdateSpec``) is stored here — config, allowed senders, credential values — and
+        the answer goes back without the secrets. Never raises for an outcome."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.sources import setup_steps as steps  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_steps  # noqa: PLC0415
+
+        driver = await DataDriver.find(self.provider or "")
+        if driver is None:
+            return ReturnedValue.not_found(f"no data driver {self.provider!r}")
+        try:
+            if name == steps.PUBLIC_WEBHOOK:
+                answer = await self._public_webhook(driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery))
+            elif name == steps.VERIFY:
+                answer = await self._verify_step(check=check)
+            elif name == steps.ANSWERED:
+                answer = await self._answered_step(check=check)
+            elif name == steps.FIRST_TURN:
+                answer = await self._first_turn_step(
+                    check=check, wait=float((values or {}).get("wait") or 0),
+                    external_id=str((values or {}).get("external_id") or ""),
+                    since=str((values or {}).get("since") or ""),
+                )
+            else:
+                method = setup_steps(driver.cls).get(name)
+                if method is None:
+                    return ReturnedValue.not_found(f"{self.provider} has no setup step {name!r}")
+                live = await self._open_for_setup(driver)
+                answer = await getattr(live, method)(check=check, values={k: str(v) for k, v in (values or {}).items()})
+        except Exception as exc:  # noqa: BLE001 — a step that raises is a sentence for the person, not a 500
+            logger.warning("setup step %s of %s failed: %s", name, self.id, exc, exc_info=True)
+            return ReturnedValue.not_yet(f"{name}: {exc}")
+        update = answer.value
+        if isinstance(update, dict) and set(update) <= set(SourceUpdateSpec.model_fields):
+            update = SourceUpdateSpec.model_validate(update)
+        if isinstance(update, SourceUpdateSpec):
+            if answer.ok and not check:
+                await self._keep(driver, update)
+                if self.status == SourceStatus.SETUP.value:
+                    await self.verify()  # what it kept may finish setup: live without a Verify press
+            answer = answer.model_copy(update={"value": update.model_copy(update={"secrets": {}}).model_dump()})
+        return answer
+
+    async def _verify_step(self, *, check: bool):
+        """The driver's own verify, as a step: ``check`` reads the status, the call re-runs it (and makes
+        the source active when it passes)."""
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        if check:
+            owed = self.setup_owed()
+            return ReturnedValue.not_yet(owed) if owed else ReturnedValue.satisfied(self.status)
+        verdict = await self.verify() or {}
+        detail = str(verdict.get("detail") or "")
+        return ReturnedValue.satisfied(detail or "verified") if verdict.get("ready") else ReturnedValue.not_yet(detail)
+
+    async def _answered_step(self, *, check: bool):
+        """Someone answers what arrives: the owning agent has a local deployment serving on this computer
+        (``Agent.run_locally``, which a call here starts when none is)."""
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
+
+        agent = await owning_agent(self)
+        if agent is None:
+            return ReturnedValue.not_applicable("this source belongs to a person, not an agent")
+        serving = [d for d in await agent.deployments() if d.target.provider == "local" and d.serving]
+        if serving:
+            return ReturnedValue.satisfied(f"{agent.name} answers here", ran=False)
+        if check:
+            return ReturnedValue.not_yet(f"{agent.name} is not running on this computer")
+        await agent.run_locally()
+        return ReturnedValue.satisfied(f"{agent.name} now answers here")
+
+    async def _first_turn_step(self, *, check: bool, wait: float, external_id: str = "", since: str = ""):
+        """Prove inbound plus our recorded reply in its conversation, optionally pinned to an external id.
+        A recorded outbound proves provider acceptance, not a recipient's delivery/read receipt.
+        Without ``check``, the existing human-typing wait applies."""
+        import asyncio  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import FirstTurnProofSpec  # noqa: PLC0415
+
+        allowed = {"".join(ch for ch in s if ch.isalnum()) for s in (self.allowed_senders or [])}
+
+        after = iso_to_utc(since) if since else None
+        if since and after is None:
+            return ReturnedValue.not_yet("since must be an ISO-8601 timestamp")
+
+        async def talked():
+            rows = await SourceItem.get_all({"data_source_id": str(self.id)}) or []
+            incoming = []
+            for row in rows:
+                if row.sent_by_us or (external_id and row.external_id != external_id):
+                    continue
+                occurred = iso_to_utc(row.occurred_at or "")
+                if after is not None and (occurred is None or occurred < after):
+                    continue
+                author = "".join(ch for ch in str(row.author_external_id or "") if ch.isalnum())
+                if self.open_to_all or not allowed or author in allowed:
+                    incoming.append(row)
+            for reply in rows:
+                if not reply.sent_by_us:
+                    continue
+                for first in incoming:
+                    same_thread = bool(first.thread_key) and first.thread_key == reply.thread_key
+                    correlated = reply.reply_to_external_id == first.external_id if reply.reply_to_external_id else same_thread
+                    if correlated and (reply.occurred_at or "") >= (first.occurred_at or ""):
+                        return FirstTurnProofSpec(incoming_external_id=first.external_id, reply_external_id=reply.external_id), True
+            return None, bool(incoming)
+
+        deadline = time.monotonic() + (0 if check else max(0.0, wait))
+        while True:
+            proof, received = await talked()
+            if proof:
+                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check, value=proof)
+            if time.monotonic() >= deadline:
+                return ReturnedValue.not_yet(
+                    "Message received; waiting for the agent reply." if received
+                    else "Send a message from your phone to try the agent.",
+                )
+            # A wait on a person, polled at a human pace: the person is typing on their phone.
+            await asyncio.sleep(2.0)
+
+    async def _open_for_setup(self, driver):
+        """This source, opened as far as its setup allows: with its credential when it resolves, else
+        without one — the step that stores the credential runs before there is one to read."""
+        from flow_sdk.sources.credentials import ResolvedSecrets  # noqa: PLC0415
+
+        try:
+            return await driver.open(self)
+        except Exception:  # noqa: BLE001 — no credential yet is the normal first step
+            return await driver.open(self, credentials=ResolvedSecrets())
+
+    async def _keep(self, driver, update) -> None:
+        """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
+        if (update.config or update.allowed_senders is not None or update.open_to_all is not None
+                or update.owner or update.webhook_delivery is not None):
+            if update.webhook_delivery is not None:
+                self.webhook_delivery = update.webhook_delivery
+            if update.config:
+                self.config = {**(self.config or {}), **update.config}
+            if update.allowed_senders is not None:
+                self.allowed_senders = list(update.allowed_senders)
+            if update.open_to_all is not None:
+                self.open_to_all = update.open_to_all
+            if update.owner:
+                self.owner = TypeId._pydantic_validate(update.owner)
+            await self.save()
+        if update.secrets:
+            from flow_sdk.builtin.credential_service import set_credential_by_name  # noqa: PLC0415
+
+            auth = driver.auth
+            if auth is None or not auth.credential:
+                raise ValueError(f"{self.provider} names no credential to keep {sorted(update.secrets)} in")
+            unknown = set(update.secrets) - set(auth.vars)
+            if unknown:
+                raise ValueError(f"{self.provider}'s credential has no {sorted(unknown)}")
+            project = await self._own_project()
+            await set_credential_by_name(
+                auth.credential, {auth.vars[key]: value for key, value in update.secrets.items()},
+                project_id=str(project.id) if project is not None else None,
+            )
+
+    async def _own_project(self):
+        """Where what this source's setup learns is kept: the SAME project its credentials are read from
+        (``owner_project`` — the owning agent's; None, the user scope, for a user-owned row). It used
+        ``_resolve_scope_project``, which answers PLACEMENT and is None for a saved row outside a
+        project-scoped request: a step's secrets were written to the user scope while the source read its
+        owner's project, so a step that ran still failed its own check."""
+        from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
+
+        return await owner_project(self)
+
+    async def _public_webhook(self, driver, *, check: bool, delivery: str = "hub"):
+        """The generic step for a driver that takes pushes (its ``webhook`` block): a stable public URL for
+        THIS desktop, held by the hub (``webhook/create_for_desktop``) and delivered over its socket, stored
+        as the driver's URL variable. A config ``verify_token`` (made here when the driver declares one and it
+        is empty) lets the hub answer the provider's handshake itself."""
+        import secrets  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec  # noqa: PLC0415
+
+        hook = driver.webhook
+        if hook is None:
+            return ReturnedValue.not_applicable(f"{self.provider} takes no pushes")
+        try:
+            held = (await driver.credentials_for(self)).values.get(hook.url_var)
+        except Exception:  # noqa: BLE001 — no credential declared yet: nothing held
+            held = None
+        from flow_sdk.sources.setup_steps import SetupShown  # noqa: PLC0415
+
+        delivery = WebhookDelivery(delivery)
+        if delivery is WebhookDelivery.DIRECT:
+            from flow_sdk.server.webhook_listener import callback_base_url  # noqa: PLC0415
+
+            if not callable(getattr(driver.cls, "webhook_authentic", None)):
+                return ReturnedValue.not_applicable("direct delivery requires a driver signature verifier")
+            base = await callback_base_url(start=not check)
+            if base is None:
+                return ReturnedValue.not_yet("direct webhook listener is not running")
+            callback = base + WEBHOOK_ROUTE.format(name=self.provider) + f"?source_id={self.id}"
+            current = held.get_secret_value() if held is not None else ""
+            if check and current != callback:
+                return ReturnedValue.not_yet("direct webhook callback is not configured")
+            config = {}
+            if not (self.config or {}).get("verify_token") and "verify_token" in (driver.config or {}):
+                config["verify_token"] = secrets.token_urlsafe(24)
+            return ReturnedValue.satisfied(
+                "direct webhook is ready", ran=not check,
+                value=SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: callback},
+                                       shown=SetupShown(link=callback, connected=True)),
+            )
+        if check:
+            if self.webhook_delivery != delivery:
+                return ReturnedValue.not_yet("this source uses a different webhook delivery")
+            declared = await self._declared_claim(driver, dict(self.config or {}))
+            kind = str((declared or {}).get("kind") or "account")
+            if kind != "account":
+                # A part of an account (a group) has no URL of its own: done once the hub routes THAT part here.
+                wanted = {"kind": kind, "key": declared["key"]}
+                routed = any(c.get("claim") == wanted for c in _claims_for(await _hub_claims(), str(self.id)))
+                return ReturnedValue.satisfied(f"the hub routes this {kind} here") if routed else ReturnedValue.not_yet(f"the hub does not route this {kind} here yet")
+            return ReturnedValue.satisfied("a public URL is set") if held else ReturnedValue.not_yet("no public URL yet")
+        config: dict = {}
+        token = str((self.config or {}).get("verify_token") or "")
+        if not token and "verify_token" in (driver.config or {}):
+            token = config["verify_token"] = secrets.token_urlsafe(24)
+        claim = await self._hub_claim(driver, {**(self.config or {}), **config})
+        if claim is not None and claim["parent"] is None:
+            return ReturnedValue.not_yet(f"claim the {claim['claim']['kind']}'s account on the hub first — set up its own source")
+        if claim is not None and claim["claim"]["kind"] != "account":
+            # A part of an account (a group) rides the account's URL: the hub routes it here by its claim, so
+            # there is no URL of its own to keep — the account's stays where it is.
+            data = await hub_post("webhook", claim, None, "chain")
+            if not data or not data.get("id"):
+                return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
+            kind, key = claim["claim"]["kind"], claim["claim"]["key"]
+            return ReturnedValue.satisfied(f"the hub routes this {kind} ({key}) here", value=SourceUpdateSpec(config=config, webhook_delivery=delivery))
+        if claim is not None:
+            # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
+            # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
+            # instance -- never to every desktop of the person.
+            data = await hub_post("webhook", claim, None, "chain")
+            if not data or not data.get("url"):
+                return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
+            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
+            return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
+        body = {
+            "name": f"{self.provider}-{self.id}",
+            "default_path": WEBHOOK_ROUTE.format(name=self.provider),
+            "filters": {"methods": list(hook.methods), "required_headers": list(hook.required_headers)},
+            **({"verify_token": token} if token else {}),
+        }
+        data = await hub_post("webhook", body, None, "create_for_desktop")
+        if not data or not data.get("url"):
+            return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
+        update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
+        return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
+
+    async def _declared_claim(self, driver, config: dict) -> Optional[dict]:
+        """What the driver declares as its hub claim (``hub_claim``) given this source's secrets, or None."""
+        declare = getattr(driver.cls, "hub_claim", None)
+        if declare is None:
+            return None
+        try:
+            values = (await driver.credentials_for(self)).values
+        except Exception:  # noqa: BLE001 — no credential yet: nothing to claim with
+            return None
+        secrets = {k: v.get_secret_value() for k, v in values.items() if v is not None and v.get_secret_value()}
+        return declare(config, secrets) or None
+
+    async def _hub_claim(self, driver, config: dict) -> Optional[dict]:
+        """The chain request for a driver that declares its account as a hub claim (``hub_claim``), or None.
+
+        A declared claim with ``kind`` and ``under`` (``{kind, key}``) is a claim chained under one of the
+        person's own claims — a group under its number's account: its ``parent`` is that claim's id (the one
+        delivering to this instance when there are several places), or ``None`` while it is not claimed yet."""
+        claim = await self._declared_claim(driver, config)
+        if not claim:
+            return None
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        instance = instance_uid()
+        parent: Optional[str] = f"@{claim['provider']}"
+        under = claim.get("under")
+        if isinstance(under, dict):
+            held = sorted(
+                (c for c in await _hub_claims()
+                 if c.get("provider") == claim["provider"] and c.get("status", "active") == "active"
+                 and (c.get("claim") or {}).get("kind") == under.get("kind") and (c.get("claim") or {}).get("key") == under.get("key")),
+                # The claim the vendor's deliveries reach first: one routed HERE, then one routed anywhere at all
+                # (a claim left with no target delivers nothing, so a part chained under it would never be reached).
+                key=lambda c: _parent_rank(c, instance),
+            )
+            parent = str(held[0]["id"]) if held and held[0].get("id") else None
+        return {
+            "parent": parent,
+            "claim": {"kind": str(claim.get("kind") or "account"), "key": claim["key"]},
+            "proof": claim.get("proof") or {},
+            "target": {"kind": "desktop", "instance_id": instance, "data_source_id": str(self.id)},
+        }
+
+    @core_action.post(action_name="verify")
+    async def verify_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/verify — the route over ``verify``.
+
+        Thin on purpose, the way ``replay_action`` is thin over ``replay``: the
+        verb belongs to the source, and a caller in-process should not have to
+        reach through an HTTP handler — or unwrap an ``ApiResponse`` — to use it.
+        """
+        verdict = await self.verify()
+        if verdict is None:
+            return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
+        return ApiSuccessResponse(data=verdict)
+
+    async def verify(self) -> Optional[dict]:
+        """Is this source's setup finished? ``None`` when no driver is registered.
+
+        Two layers, in this order, because they fail for different reasons and
+        the fix is different:
+
+        1. **The connection.** The standard OAuth probe — a real call to the
+           provider with the stored token. A dead or revoked token has to be
+           reported as that, not as "the bot is not in your channels".
+        2. **The setup.** The driver's own check. For Slack that is per-channel
+           readability, and every configured channel must pass: a source that
+           silently ingests three of five channels looks like it is working.
+
+        Moves the source to ACTIVE only when both pass. Nothing here polls or
+        waits — it is one round trip per layer.
+        """
+        driver = self._driver()
+        if driver is None:
+            return None
+
+        need = await self._verify_connection(driver)
+        if need is not None:
+            self.status = SourceStatus.SETUP.value
+            self.setup_detail = need.detail
+            self.setup_needs = [need]
+            self.verified_at = datetime.now(timezone.utc)
+            await self.save_runtime()
+            return {
+                "ready": False, "layer": "connection", "detail": need.detail,
+                "status": self.status, "needs": [need.model_dump()],
+            }
+
+        verdict = await self._verify_setup(driver)
+        if isinstance(verdict, Exception):
+            # The provider did not answer: that says nothing about the setup, so the status stands.
+            return {"ready": False, "layer": "setup", "transient": True, "status": self.status,
+                    "detail": f"could not check — {verdict}"}
+        self.verified_at = datetime.now(timezone.utc)
+        if verdict.ready:
+            self.status = SourceStatus.ACTIVE.value
+            self.setup_detail = ""
+            self.setup_needs = []
+            # Due on the next tick rather than after a full interval (the user just finished setting it up
+            # and is watching), and no longer parked on what this verdict just disproved.
+            await self._make_due()
+        else:
+            self.status = SourceStatus.SETUP.value
+            self.setup_detail = verdict.detail
+            self.setup_needs = [SetupNeedSpec(kind=NEED_SETUP, detail=verdict.detail)]
+        await self.save_runtime()
+        return {
+            "ready": verdict.ready,
+            "layer": "setup",
+            "detail": verdict.detail,
+            "pending": list(verdict.pending),
+            "status": self.status,
+        }
+
+    async def sync(self):
+        """Run one sync cycle now, returning an ``IngestReport``.
+
+        Never raises — a failure is recorded as health, not thrown.
+
+        Do not confuse this with ``poll_now``, which only marks the source due.
+        """
+        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
+
+        return await sync_source(self)
+
+    def _driver(self):
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        return DataDriver.loaded(self.provider)
+
+    async def _verify_connection(self, driver) -> Optional[SetupNeedSpec]:
+        """None when the connection this source reads through works; otherwise what it needs.
+
+        Uses the same probe the Connections "Test" button runs, so the two can
+        never disagree about whether a provider is reachable. The provider probed is
+        the account this source acts as (``connection``), else its driver's
+        ``auth.connector`` — never ``channel``, which names where messages go, not
+        whose token reads them. A Flow channel on ``slack`` reaches the person through
+        the hub's own app and declares no connector, so it has nothing to probe.
+        """
+        manifest = getattr(driver, "manifest", None)
+        connector = manifest.auth.connector if manifest is not None and manifest.auth is not None else ""
+        provider = str(self.connection or connector or "")
+        if not connector or not provider:
+            return None
+        from flow_sdk.core.oauth.provider_probe import get_probe  # noqa: PLC0415
+
+        if get_probe(provider) is None:
+            return None  # no probe defined — not a failure, just unverifiable
+        return await connection_need(provider)
+
+    async def _verify_setup(self, stype):
+        """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself
+        when the failure is a known transient one (the provider did not answer): not knowing is not "not set up". An
+        unrecognised exception stays a verdict — a driver's bug must not read as an outage."""
+        from flow_sdk.ingest.health import SourceError as IngestError  # noqa: PLC0415
+        from flow_sdk.sources.errors import is_transient  # noqa: PLC0415
+        from flow_sdk.sources.protocols import Verdict  # noqa: PLC0415
+
+        try:
+            return await stype.verify(self)
+        except Exception as exc:  # noqa: BLE001 — a source must not 500 the button
+            logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
+            if is_transient(exc) or (isinstance(exc, IngestError) and exc.health == SourceHealth.TRANSIENT_ERROR):
+                return exc
+            return Verdict(ready=False, detail=f"could not verify: {exc}")
+
+    async def teardown(self) -> str:
+        """Undo what this source set up at its provider (the driver's ``Source.teardown``). Best effort: a
+        source that cannot open or undo is reported by the error's class, never raised -- a delete must not be
+        blocked by a provider that is down."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.sources.base import Source  # noqa: PLC0415
+
+        try:
+            driver = await DataDriver.find(self.provider or "")
+            if driver is None or getattr(driver.cls, "teardown", Source.teardown) is Source.teardown:
+                return ""  # nothing to undo: no source is opened for it
+            async with await self.open() as live:
+                return await live.source.teardown() or ""
+        except Exception as exc:  # noqa: BLE001 — reported, never raised
+            return f"not undone: {type(exc).__name__}"
+
+    async def release_hub_claims(self) -> str:
+        """Drop the hub claims that deliver to this channel. Left behind, a deleted channel's claim kept
+        taking its number's messages (and probes) on the hub, and this app refused them as a dead channel.
+        Best effort like ``teardown``: a hub that is down never blocks a delete."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+
+        try:
+            for claim in _claims_for(await _hub_claims(), str(self.id)):
+                await hub_delete("webhook", str(claim.get("id")))
+            return ""
+        except Exception as exc:  # noqa: BLE001 — reported, never raised
+            return f"hub claim not released: {type(exc).__name__}"
+
+    async def delete(self):
+        """The verb in-process callers actually use."""
+        await self.teardown()
+        await self.release_hub_claims()
+        await self.delete_children_of(self.id)
+        await super().delete()
+        remove_source_folder(self.asset_ref)
+
+    # ── shared bodies — the actions above are thin wrappers over these ────────
+
+    async def _make_due(self) -> None:
+        """Make this source due on the next tick, clearing the ``config_error`` latch ``is_due`` refuses."""
+        self.next_poll_at = None
+        if self.health == SourceHealth.CONFIG_ERROR.value:
+            self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
+                else SourceHealth.OK.value
+            self.consecutive_failures = 0
+        self.error_code = None
+        self.error_detail = None
+
+    def _forget_position(self) -> None:
+        self.cursor = None
+        self.manifest = {}
+        self.high_water = None
+
+
+#: What the engine writes while a source runs: never in ``data_source.json``, only on the row
+#: (``save_runtime``). Everything else on the row is authored and lives in the file.
+RUNTIME_FIELDS: tuple[str, ...] = tuple(
+    name for name, field in DataSource.model_fields.items()
+    if name in DataSource.__annotations__  # this type's own, not the Entity base's
+    and persist_policy(field) == Persist.FALSE
+    and name not in DataSource.projected_fields  # the setup skip mark: its own writer, kept through every save
+)
+
+
+#: What a person authors on a source — the fields of ``data_source.json`` — by their row names.
+#: What construction sets on every row, so it says nothing about what the caller meant: never written onto
+#: an adopted row.
+_NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
+
+
+
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+    """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
+    return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
+                         detail=detail or f"Needs {title} sign-in")
+
+
+def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
+    """The sign-in a driver reads through (its ``auth.connector``), as the need a new source starts with."""
+    manifest = getattr(driver, "manifest", None)
+    connector = manifest.auth.connector if manifest is not None and manifest.auth is not None else ""
+    if not connector:
+        return None
+    from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+
+
+async def connection_need(provider: str) -> Optional[SetupNeedSpec]:
+    """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
+    otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
+    from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_probe import connection_answer  # noqa: PLC0415
+
+    data = await connection_answer(provider)
+    if data.get("ok") is not False:
+        return None
+    code = str(data.get("code") or "")
+    state = "missing" if code == "missing_token" else (code or "refused")
+    title = await _provider_title(provider)
+    detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
+    return _sign_in_need(provider, title, state, detail)
+
+
+def remove_source_folder(asset_ref: Optional[str]) -> None:
+    """Delete a removed source's folder; left behind, the next index brings the source back."""
+    from flow_sdk.assets.folder import remove_asset_files  # noqa: PLC0415
+
+    remove_asset_files(EntityType.DATA_SOURCE.value, asset_ref)
+
+
+async def migrate_list_configs() -> int:
+    """Split every source whose config still lists N containers into one source per entry. One time:
+    a source reads one stream now. The original goes, with what it ingested; each new source re-reads
+    its window. A driver names its retired list key (``Config.retired_list``); a config that cannot
+    split stays, and its missing single field parks it with ``config.<field> is required``.
+    Returns how many sources were split."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+    split = 0
+    retiring = [driver for _, driver in DRIVERS.items() if driver.config_cls is not None and driver.config_cls.retired_list]
+    rows = [(driver, row) for driver in retiring for row in await DataSource.get_all({"provider": driver.provider})]
+    for driver, row in rows:
+        parts = driver.config_cls.split(row.config or {})
+        if not parts:
+            continue
+        if len(parts) == 1:  # one entry: the same source, under the single key
+            row.config = parts[0][1]
+            await row.save()
+            split += 1
+            continue
+        authored = {
+            name: getattr(row, name) for name in DataSourceSpec.model_fields
+            if name not in ("name", "provider", "config") and getattr(row, name, None) is not None
+        }
+        try:
+            for label, config in parts:
+                await driver.create_source(
+                    config, name=f"{row.name} {label}".strip(), project_id=row.project_id, scope=row.scope,
+                    account_key=row.account_key, **authored,
+                ).save()
+        except Exception:  # noqa: BLE001 — the fallback is the park, never a failed boot
+            logger.warning("could not split data source %s", row.id, exc_info=True)
+            continue
+        await row.delete()
+        split += 1
+    return split
+
+
+async def prune_fileless_data_sources() -> int:
+    """Remove every configured source that has no ``data_source.json``, with what it ingested.
+
+    A data source is an asset: the file is the truth and the row is its index. Rows written before
+    sources were files have no file to be re-indexed from, so they go — through the cascade, so no
+    record, cursor or projected message is left pointing at a source that is gone. Also takes rows a
+    development build wrote under ``data_driver``, the type string the definition now owns.
+    Idempotent: after the first run every row has a file and this reads a handful of rows.
+    """
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+
+    no_file = ExpressionNode(op=QueryOp.IS_NULL, operands=["asset_ref"])
+    removed = 0
+    for type_name in (EntityType.DATA_SOURCE.value, "data_driver"):
+        for record in await get_db_driver().get_all(QueryFilter(type=type_name, match=no_file)):
+            if type_name != EntityType.DATA_SOURCE.value:  # a data_source row's cascade is its type's orphan hook
+                await DataSource.delete_children_of(str(record.id))
+            removed += bool(await remove_orphan_row(str(record.id), type_name))
+    return removed
+
+
+async def _hub_claims() -> list[dict]:
+    """Every hub webhook claim of the signed-in person (``webhook/mine``) — empty when the hub is unreachable."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+    mine = await hub_get("webhook", None, "mine") or {}
+    rows = mine.get("webhooks") if isinstance(mine, dict) else None
+    return [r for r in rows or [] if isinstance(r, dict)]
+
+
+def _claims_for(claims: list[dict], source_id: str) -> list[dict]:
+    """The claims that deliver to the channel ``source_id`` (one per place it is delivered to), oldest first."""
+    found = [c for c in claims if str((c.get("target") or {}).get("data_source_id") or "") == source_id]
+    return sorted(found, key=lambda c: (float(c.get("proven_at") or 0), str(c.get("id") or "")))
+
+
+def _place_of(claim: dict, places: list[dict], instance: str) -> Optional[dict]:
+    """The route place ``claim`` delivers to (``this`` computer, or the cloud place whose node it targets), or None
+    when it is none of them (another computer, nowhere yet)."""
+    if _routed(claim, instance) == "this":
+        return next((p for p in places if p["key"] == "this"), None)
+    node = str((claim.get("target") or {}).get("node_typeid") or "")
+    return next((p for p in places if node and p.get("node_typeid") == node), None)
+
+
+def answered_by(source) -> str:
+    """Who answers a message source's messages: a ``deployment`` (it has an answer place), an ``agent``
+    (an Agent owns it), or ``nobody`` (a person's own channel — they read and answer it themselves)."""
+    owner = str(getattr(source, "owner", "") or "")  # a TypeId on the row
+    return "deployment" if getattr(source, "answer_place", None) else "agent" if owner.startswith("agent-") else "nobody"
+
+
+def _channel_row(claim: Optional[dict], instance: str, source=None, *, by_hub: bool = False) -> dict:
+    """One MessageChannel row: the source here (if any), the claim that delivers to it, and who answers it."""
+    return {
+        "source_id": str(getattr(source, "id", "") or ""),
+        "name": str((source.name or source.provider) if source is not None else (claim or {}).get("name") or ""),
+        "provider": str(getattr(source, "provider", "") or ""),
+        "channel": str(getattr(source, "channel", "") or (claim or {}).get("provider") or ""),
+        "claim": claim,
+        "routed": _routed(claim, instance, by_hub=by_hub),
+        "answered_by": "" if source is None else answered_by(source),
+    }
+
+
+def _parent_rank(claim: dict, instance: str) -> tuple:
+    """Which of several claims a part (a group) chains under: the one the vendor's deliveries reach first — routed
+    HERE, then routed anywhere at all (a claim left with no target delivers nothing, so a part under it would never
+    be reached) — then the oldest."""
+    routed = _routed(claim, instance)
+    return routed != "this", routed in ("nowhere", "polls"), float(claim.get("proven_at") or 0), str(claim.get("id") or "")
+
+
+def _routed(claim: Optional[dict], instance: str, *, by_hub: bool = False) -> str:
+    """Where a claim hands its messages, from this instance's point of view."""
+    if claim is None:
+        return "unclaimed" if by_hub else "polls"
+    target = claim.get("target") or {}
+    kind = target.get("kind")
+    if kind == "desktop":
+        return "this" if target.get("instance_id") == instance else "instance"
+    if kind == "node":
+        return "node"
+    return "nowhere"

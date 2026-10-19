@@ -1,15 +1,15 @@
-import { Agent } from '@sdk';
+import { SubAgent } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { QueryRequest } from '@sdk';
 
 const agentQuery = new QueryRequest({
-  type: Agent.type,
+  type: SubAgent.type,
   scope: [],
   name: 'useAgents:all',
 });
 
-/** All Agent definition entities (harness .claude/agents/*.md) from the SDK cache. */
+/** All SubAgent definition entities (harness .claude/agents/*.md) from the SDK cache. */
 export function useAgents() {
-  const { data: agents = [], isLoading } = useEntitiesQuery<Agent>(agentQuery);
+  const { data: agents = [], isLoading } = useEntitiesQuery<SubAgent>(agentQuery);
   return { agents, isLoading };
 }

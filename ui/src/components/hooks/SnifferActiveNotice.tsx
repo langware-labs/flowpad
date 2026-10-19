@@ -16,10 +16,10 @@ import { notify } from '@src/notifications';
  * opening anything. `notify` dedupes on id, so re-emitting is inert.
  */
 export function SnifferActiveNotice() {
-  const { isBootstrapping, snifferInstalled } = useContext();
+  const { snifferReady, snifferInstalled } = useContext();
 
   useEffect(() => {
-    if (isBootstrapping) return;
+    if (!snifferReady) return;
     if (!snifferInstalled) {
       notify.dismiss(SNIFFER_ACTIVE_WARNING.id);
       return;
@@ -32,7 +32,7 @@ export function SnifferActiveNotice() {
       durationMs: null,
       actions: [{ label: 'Disable', command: 'sniffer.disable' }],
     });
-  }, [isBootstrapping, snifferInstalled]);
+  }, [snifferReady, snifferInstalled]);
 
   return null;
 }

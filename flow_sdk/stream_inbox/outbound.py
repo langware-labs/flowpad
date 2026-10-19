@@ -1,0 +1,328 @@
+"""Reply into the cloud thread a conversation caches.
+
+The inverse of ``flow_sdk/stream_inbox/projection.py`` and deliberately much smaller,
+because it does not write anything itself. It resolves *where* to send and hands
+the driver the message; the driver's send records the sent copy through the
+ordinary ingest chokepoint (marked ``sent_by_us``), the projector turns it into a
+FlowMessage, and it sorts into the conversation by its own timestamp. There is no
+outbound write path to keep in step with the inbound one.
+
+**Dispatch is fire-and-forget by design.** An agent turn is tens of seconds; a
+conversation must stay usable while one runs. What the caller gets back is "this
+was accepted", never "this was delivered" — the second only becomes true when
+the message appears.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass, replace
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+#: How far back to look for the message that names the channel. Every message
+#: in a source-backed conversation shares one, so the newest few always answer
+#: — and an unbounded load would deserialize a whole mailbox thread to read one
+#: field. The same "put the gate in the query" rule the projector follows.
+RECENT_WINDOW = 25
+
+#: Strong references to running sends. A bare `create_task` can be collected
+#: mid-flight, which would silently drop a send the user believes was accepted.
+#: Same idiom as `_RECEPTION_SETUP_TASKS` / `_PENDING_RUNS` elsewhere.
+_INFLIGHT: "set[asyncio.Task]" = set()
+
+
+async def settle() -> None:
+    """Wait for every reply accepted so far to finish sending and recording — a shutdown's (or a
+    test's) barrier."""
+    while _INFLIGHT:
+        await asyncio.gather(*list(_INFLIGHT), return_exceptions=True)
+
+
+class ChannelSendUnavailable(Exception):
+    """This conversation cannot be replied to through a channel."""
+
+
+@dataclass(frozen=True)
+class ReplyTarget:
+    """Where a reply goes, and what carries it."""
+
+    driver: Any
+    source: Any
+    channel: str
+    to: str
+    thread_key: str
+    subject: str
+    #: The provider's id for the message being replied to. Some transports
+    #: thread on this rather than on `thread_key`.
+    in_reply_to: str
+
+
+async def resolve_reply_target(conversation_id: str, *, source_id: str | None = None) -> ReplyTarget:
+    """Everything a send needs, or raise saying which part is missing.
+
+    Resolution deliberately reads the SOURCE ITEM for the thread handle rather
+    than ``MessageThread.thread_key``: the latter falls back to a normalized
+    subject when a provider gives no native handle, and the two are
+    indistinguishable once stored. An empty ``SourceItem.thread_key`` is the
+    only honest signal that we have no addressable thread.
+    """
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    # Newest-first and bounded: the DB does the ordering, and one page is
+    # always enough because every message here shares a channel.
+    recent = await FlowMessage.get_all(
+        {
+            "match": {"conversation_id": conversation_id},
+            "order_by": {"created_date": "desc"},
+            "limit": RECENT_WINDOW,
+        }
+    )
+    channel_messages = [m for m in recent if m.origin and m.origin.kind]
+    if source_id is not None:
+        channel_messages = [
+            message
+            for message in channel_messages
+            if message.origin_local and message.origin_local.data_source_id == source_id
+        ]
+    if not channel_messages:
+        raise ChannelSendUnavailable("this conversation did not come from a channel")
+
+    # Reply to the last person who wrote to US, not simply to the last message.
+    # Our own sent copies are ingested back into the thread, so the newest
+    # message is frequently our own — and addressing that one mails the reply
+    # to ourselves. We write as two identities — our user (local or cloud id: a reply
+    # sent through the hub mirror comes back with the cloud one) and an Agent on its own
+    # source — and `_sender_for` typed which at projection time, so this is an exact
+    # test. A message naming nobody is not ours: that would read a thread of strangers
+    # as a thread of us.
+    self_ids = await User.self_ids()
+    target = next((m for m in channel_messages if not (m.sender and m.sender.authored_by(self_ids))), None)
+    if target is None:
+        # Every message here is ours — a conversation we started and nobody answered yet. It is
+        # addressed by who it is WITH (`Conversation.address`, stamped from our first message's
+        # recipients), never by a guess: without an address there is nobody to write to.
+        return await _started_target(conversation_id, channel_messages[0])
+
+    # Defensive reads end here: these are typed entities.
+    origin = target.origin
+    # The row pointers live on the PRIVATE half. A message RECEIVED from another
+    # machine has none — its `origin` crossed the wire, its `origin_local` did
+    # not — which is a different condition from a local record that was deleted,
+    # and has to read as one.
+    local = target.origin_local
+    if local is None:
+        raise ChannelSendUnavailable("this message was shared from another machine")
+
+    source, item = await asyncio.gather(
+        DataSource.get_one({"id": local.data_source_id}),
+        SourceItem.get_one({"id": local.source_item_id}),
+    )
+    if source is None:
+        raise ChannelSendUnavailable("the data source this arrived through is gone")
+    if source_id is not None and source.id != source_id:
+        raise ChannelSendUnavailable("this conversation does not belong to that Agent stream inbox")
+    if item is None:
+        # Distinct from "no sender address" below — collapsing the two made a
+        # missing record report as a missing address.
+        raise ChannelSendUnavailable("the record this arrived through is gone")
+    return _reply_target(source, item, origin.kind)
+
+
+async def _target_for_item(item, source=None) -> ReplyTarget:
+    """The reply to one known inbound record — the turn that answers it quotes IT, not whatever
+    arrived last (a burst of messages each got a reply quoting the final one). ``source`` is the
+    row ``item`` arrived through when the caller already holds it; otherwise it is read."""
+    if source is None:
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        source = await DataSource.get_one({"id": item.data_source_id})
+    if source is None:
+        raise ChannelSendUnavailable("the data source this arrived through is gone")
+    return _reply_target(source, item, str(getattr(source, "channel", "") or source.provider))
+
+
+async def _started_target(conversation_id: str, newest) -> ReplyTarget:
+    """The target of a conversation only we have written in: its address, on its thread."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    conversation = await Conversation.get_one({"id": conversation_id})
+    address = list(getattr(conversation, "address", None) or [])
+    local = newest.origin_local
+    if local is None:
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
+    source, item = await asyncio.gather(
+        DataSource.get_one({"id": local.data_source_id}),
+        SourceItem.get_one({"id": local.source_item_id}),
+    )
+    if source is None:
+        raise ChannelSendUnavailable("the data source this arrived through is gone")
+    driver = _sending_driver(source, newest.origin.kind)
+    if not address:
+        # A channel whose threads are addressed by themselves (a task's thread is the task) answers its
+        # own message on the thread — never safe for a channel that writes to people: an email reply to
+        # our own message would mail ourselves.
+        if getattr(getattr(driver, "cls", None), "addressed_by_thread", False) and item is not None:
+            return _reply_target(source, item, newest.origin.kind)
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
+    return ReplyTarget(
+        driver=driver, source=source, channel=newest.origin.kind, to=address[0],
+        thread_key=str(getattr(item, "thread_key", "") or ""), subject=str(getattr(item, "name", "") or ""), in_reply_to="",
+    )
+
+
+def _sending_driver(source, channel: str):
+    """*source*'s driver, when it can send; else why not."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(source.provider)
+    if driver is None or not driver.sends:
+        raise ChannelSendUnavailable(f"the {channel} transport cannot send")
+    return driver
+
+
+def _reply_target(source, item, channel: str) -> ReplyTarget:
+    driver = _sending_driver(source, channel)
+
+    # ASK the channel who a reply is addressed to; do not assume. `outbound_spec`
+    # is the one seam that answers it — `DataSource.reply_spec` is the same
+    # question asked from the SDK side — and each spec's `reply_to` implements
+    # its own rule as a pure constructor. The driver is already in hand here, so
+    # this asks it directly rather than round-tripping through the entity.
+    # Hand-rolling the email answer here is what addressed a Slack reply to the
+    # author's user id, which Slack delivers as a DM instead of posting it in
+    # the channel.
+    spec = driver.outbound_spec(source).reply_to(item, body="")
+    to = (spec.to[0] if spec.to else "").strip()
+    if not to:
+        # Nowhere to send. Better to refuse than to spawn a worker that will
+        # guess a recipient.
+        raise ChannelSendUnavailable("the message being replied to carries no sender address")
+
+    return ReplyTarget(
+        driver=driver,
+        source=source,
+        channel=channel,
+        to=to,
+        thread_key=spec.thread_key,
+        subject=item.name or "",
+        in_reply_to=spec.reply_to_external_id,
+    )
+
+
+async def quoting(target: ReplyTarget, reply_to) -> ReplyTarget:
+    """*target* answering one chosen message (a FlowMessage, or its id) instead of the newest. Only
+    the reference changes: WHO the reply goes to and on which thread stays the target's — quoting our
+    own message on email must still mail the other person."""
+    from flow_sdk.stream_inbox.reactions import source_item_of  # noqa: PLC0415
+
+    item = await source_item_of(reply_to)
+    if item is None or not item.external_id:
+        raise ChannelSendUnavailable("the message to reply to did not come through this channel")
+    if str(item.data_source_id) != str(target.source.id):
+        raise ChannelSendUnavailable("the message to reply to is on another channel")
+    return replace(target, in_reply_to=item.external_id)
+
+
+def outgoing_files(target: ReplyTarget, files) -> tuple:
+    """*files* (paths or ``MessageFile``s) as the contract's local files, checked against the channel
+    — a refusal names the file and the limit, before anything is sent."""
+    from flow_sdk.builtin.source_item import MessageFile  # noqa: PLC0415
+    from flow_sdk.sources.files import resolve_files  # noqa: PLC0415
+
+    items = tuple(MessageFile.model_validate(f).to_item() for f in files or ())
+    if not items:
+        return ()
+    driver = target.driver
+    return resolve_files(items, driver.cls.files, title=driver.display_title)
+
+
+async def dispatch_channel_reply(
+    conversation_id: str,
+    *,
+    text: str,
+    source_id: str | None = None,
+    item=None,
+    source=None,
+    reply_to=None,
+    files=(),
+):
+    """Accept a reply and start it. Returns once DISPATCHED. ``item`` is the message this answers;
+    without it the reply answers the newest message someone else wrote. ``source`` is ``item``'s
+    already-loaded row, when the caller holds one.
+
+    ``reply_to`` (a FlowMessage or its id) quotes that message; without it a person's reply does not
+    quote — a channel whose replies only thread keeps its reference either way. ``files`` are checked
+    here, so a refusal reaches the caller rather than the log."""
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+    try:
+        target = await (
+            _target_for_item(item, source)
+            if item is not None
+            else resolve_reply_target(conversation_id, source_id=source_id)
+        )
+        if reply_to:
+            target = await quoting(target, reply_to)
+        outgoing = outgoing_files(target, files)
+    except (ChannelSendUnavailable, ValueError) as exc:
+        return ApiFailResponse(message=str(exc))
+    quote = bool(reply_to) or item is not None
+
+    task = asyncio.create_task(
+        _run_send(conversation_id, target, text, files=outgoing, quote=quote),
+        name=f"channel_send_{conversation_id[:8]}",
+    )
+    _INFLIGHT.add(task)
+    task.add_done_callback(_INFLIGHT.discard)
+
+    return ApiSuccessResponse(data={"accepted": True, "channel": target.channel, "to": target.to})
+
+
+async def send_to(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True):
+    """*text* (and *files*, the contract's local files) into the conversation, where *target* says —
+    the one outbound send. Answers the ``SendOutcome``."""
+    return await target.driver.send(
+        target.source,
+        thread_key=target.thread_key,
+        to=target.to,
+        text=text,
+        subject=target.subject,
+        conversation_id=conversation_id,
+        in_reply_to=target.in_reply_to,
+        files=files,
+        quote=quote,
+    )
+
+
+async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True) -> None:
+    """The background half. Never raises — a failed reply must not take down
+    the request that started it, and the worker's own record is the trail."""
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_reply_failed  # noqa: PLC0415
+
+    try:
+        outcome = await send_to(conversation_id, target, text, files=files, quote=quote)
+        logger.info(
+            "[channel-send] %s → %s %s (id=%s, artifact=%s)",
+            target.channel,
+            target.to,
+            outcome.status.value,
+            outcome.external_id or "?",
+            outcome.artifact_id or "-",
+        )
+    except LaunchError as exc:
+        logger.error("[channel-send] %s → %s failed: %s", target.channel, target.to, exc.as_dict())
+        emit_reply_failed(target.source, conversation_id, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[channel-send] %s → %s failed", target.channel, target.to)
+        # A refusal carries the far end's own words (``HubError.reason``: "WhatsApp refused: …").
+        emit_reply_failed(target.source, conversation_id, str(getattr(exc, "reason", "") or exc))
+

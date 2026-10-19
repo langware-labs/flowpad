@@ -147,11 +147,11 @@ async def test_git_origin_asset_body_round_trips_through_live_hub(
 
     received_skill = await Skill.get_one({"id": skill_id})
     assert received_skill is not None, "receiver did not materialize the shared skill"
-    git_origin = received_skill.git_origin
-    assert git_origin and git_origin.get("rel_path") == REL_PATH
-    assert git_origin.get("owner") == "Acme"
-    assert git_origin.get("name") == "HubGit"
-    assert git_origin.get("branch") == "feature/share"
+    origin = received_skill.origin
+    assert origin is not None and origin.rel_path == REL_PATH
+    assert origin.owner == "Acme"
+    assert origin.name == "HubGit"
+    assert origin.branch == "feature/share"
 
 
 async def test_git_origin_markdown_body_round_trips_through_live_hub_and_search(
@@ -252,8 +252,8 @@ async def test_git_origin_markdown_body_round_trips_through_live_hub_and_search(
     received_doc = await Docs.get_one({"id": doc_id})
     assert received_doc is not None, "receiver did not materialize the shared markdown doc"
     assert Path(received_doc.asset_ref).resolve() == expected.resolve()
-    assert received_doc.git_origin and received_doc.git_origin.get("rel_path") == rel_path
-    assert received_doc.git_origin.get("provider") == "file"
+    assert received_doc.origin is not None and received_doc.origin.rel_path == rel_path
+    assert received_doc.origin.provider == "file"
     assert token in expected.read_text(encoding="utf-8")
 
     results = await Entity.search(token, record_type=EntityType.MARKDOWN.value)

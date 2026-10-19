@@ -13,9 +13,12 @@ The FSM is driven entirely by the WS lifecycle (see server/routes/websocket.py):
 Output fan-out (pty_actions.on_pty_output) delivers to ``attached_connections``
 only. The frontend declares intent once on open and otherwise just renders.
 
-Two bounded reapers prevent leaks (``cleanup_expired_sessions``): a PtyState with
-no attached connections for > TTL is closed; a parked connection that does not
-reconnect within a grace is dropped from ``detached_connections``.
+Two bounded reapers exist (``cleanup_expired_sessions``): a PtyState with no
+attached connections for > TTL is closed; a parked connection that does not
+reconnect within a grace is dropped from ``detached_connections``. Only the
+second runs in production — server startup schedules ``start_cleanup_task()``
+with no TTL, so the loop is ``reap_parked_connections`` alone and no PTY is ever
+closed by it (``server/app.py::_start_pty_parked_reaper``).
 """
 
 import asyncio
@@ -53,6 +56,9 @@ class PtyState(BaseModel):
     last_attached_at: float = Field(default_factory=time.time)
     last_detached_at: Optional[float] = None
     shell_id: Optional[str] = None
+    #: Kept alive whoever watches: a process that must outlive its viewers (a deployment's loop) is
+    #: never reaped as an orphan or evicted at the cap (``pin``).
+    pinned: bool = False
     name: Optional[str] = None  # Display name for the session
     terminal_id: Optional[str] = None
     last_seq_received: Optional[int] = None
@@ -61,6 +67,14 @@ class PtyState(BaseModel):
     # readiness scans only frames after this boundary so a pre-restart banner
     # or trust screen cannot authorize input into the new process.
     generation_start_seq: int = 0
+    # Seq at which this generation's composer was first confirmed ready.
+    # Readiness is a property of the GENERATION ("this TUI booted past its
+    # interstitials"), so it is latched once rather than re-derived from a
+    # trailing slice of screen traffic on every turn — the vendor repaints its
+    # ready-marker only on a full composer redraw, which a working session can
+    # easily leave megabytes behind. Stale by construction after a respawn:
+    # ``generation_start_seq`` advances past it, and the comparison fails.
+    composer_ready_seq: Optional[int] = None
     compute_node_id: Optional[str] = None
     cols: int = 80
     rows: int = 24
@@ -98,6 +112,31 @@ class PtyState(BaseModel):
     def is_attached(self) -> bool:
         """Check if any client is attached"""
         return len(self.attached_connections) > 0
+
+
+def _signal_session_queues(session: "PtyState") -> None:
+    """Put the ``None`` close sentinel on every queue this session feeds.
+
+    Both lists, deliberately: ``output()`` iterators read ``output_queues``
+    while ``wait_for_composer_ready`` registers on ``sequenced_output_queues``,
+    and a waiter on either one hangs if only the other is signalled.
+
+    Mirrors ``PtyState._signal_output_queues`` but takes the session directly,
+    because the caller has already popped it out of ``states``.
+    """
+    if not (session.output_queues or session.sequenced_output_queues):
+        return
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return
+    if loop.is_closed():
+        return
+    for q in list(session.output_queues) + list(session.sequenced_output_queues):
+        try:
+            asyncio.run_coroutine_threadsafe(q.put(None), loop)
+        except Exception:  # noqa: BLE001 - a doomed queue must not block teardown
+            logger.debug("[PtyRegistry] close sentinel not delivered to a queue", exc_info=True)
 
 
 class PtyRegistry:
@@ -312,6 +351,14 @@ class PtyRegistry:
                     f"(attached={len(state.attached_connections)})"
                 )
 
+    def pin(self, shell_id: str) -> bool:
+        """Keep *shell_id*'s PTY alive whoever watches it; whether one is live to pin."""
+        found = False
+        for key, state in self.states.items():
+            if key[2] == shell_id:
+                state.pinned = found = True
+        return found
+
     async def close_session(self, pty_key: PtyKey) -> None:
         """Close and remove PTY session.
 
@@ -322,6 +369,20 @@ class PtyRegistry:
         if not session:
             logger.warning(f"PTY session not found for close: pty_key={pty_key}")
             return
+
+        # Release every waiter BEFORE the teardown below, or a consumer blocked
+        # on ``q.get()`` never wakes: the session is already out of ``states``,
+        # so nothing will ever put to those queues again. ``wait_for_composer_ready``
+        # is the one that bites — its documented "returns False when the PTY
+        # closes" contract silently became "hangs forever", and a gated first
+        # prompt stalled instead of falling through to blind delivery.
+        #
+        # It belongs HERE rather than in ``PtyState.close()`` because close() is
+        # only one of the ways a session dies. ``close_for_connection`` (last
+        # connection drops), ``close_all_sessions`` (factory reset), the TTL
+        # reaper and ``pty_actions``' evict path all reach this method directly
+        # and bypassed the signalling entirely.
+        _signal_session_queues(session)
 
         compute_node_id, provider_node_id, shell_id = pty_key
 
@@ -355,6 +416,24 @@ class PtyRegistry:
 
         logger.info(f"PTY session closed: pty_key={pty_key} total_sessions={len(self.states)}")
 
+    async def close_all_sessions(self) -> int:
+        """Close every live PTY tracked by this backend.
+
+        Factory reset must run this while the current ComputeNode rows still
+        exist: ``close_session`` resolves each row to the provider that owns the
+        OS child. Clearing the registry without going through that provider
+        would orphan the worker processes.
+
+        Returns:
+            Number of sessions present when teardown began.
+        """
+        pty_keys = list(self.states)
+        for pty_key in pty_keys:
+            await self.close_session(pty_key)
+        if pty_keys:
+            logger.info("[PtyRegistry] Closed all sessions: count=%d", len(pty_keys))
+        return len(pty_keys)
+
     def is_expired(self, session: PtyState, ttl_seconds: int) -> bool:
         """Check if session has been detached for longer than TTL.
 
@@ -365,8 +444,8 @@ class PtyRegistry:
         Returns:
             True if session is expired, False otherwise
         """
-        if session.last_detached_at is None:
-            return False  # Currently attached
+        if session.pinned or session.last_detached_at is None:
+            return False  # Pinned, or currently attached
 
         elapsed = time.time() - session.last_detached_at
         return elapsed > ttl_seconds
@@ -392,22 +471,14 @@ class PtyRegistry:
             Number of sessions closed
         """
         expired_count = 0
-        expired_keys = []
-
-        now = time.time()
-        for pty_key, session in self.states.items():
-            if self.is_expired(session, ttl_seconds):
-                expired_keys.append(pty_key)
-                continue
-            # Reap stale parked subscriptions on still-live PtyStates.
-            stale = [cid for cid, since in session.detached_connections.items() if now - since > detach_grace_seconds]
-            for cid in stale:
-                session.detached_connections.pop(cid, None)
-                logger.info(f"[PtyRegistry] Reaped stale parked connection {cid} from {pty_key}")
+        expired_keys = [pty_key for pty_key, session in self.states.items() if self.is_expired(session, ttl_seconds)]
 
         for pty_key in expired_keys:
             await self.close_session(pty_key)
             expired_count += 1
+
+        # Reap stale parked subscriptions on the PtyStates still live.
+        self.reap_parked_connections(detach_grace_seconds)
 
         if expired_count > 0:
             logger.info(
@@ -416,30 +487,74 @@ class PtyRegistry:
 
         return expired_count
 
-    async def start_cleanup_task(self, interval_seconds: int = 120, ttl_seconds: int = 900) -> None:
-        """Start background cleanup task.
+    def reap_parked_connections(self, detach_grace_seconds: int = 900) -> int:
+        """Drop parked ids that did not reconnect within the grace. Never touches a PTY.
+
+        A page reload mints a new connection id (``ConnectionManager.id`` is per
+        page load), so the id it parked on every shell it watched can never come
+        back — only this reaper removes it. Synchronous on purpose: no ``await``,
+        so it cannot interleave with ``on_ws_disconnect`` / ``close_session``.
+
+        Returns:
+            Number of parked ids dropped
+        """
+        now = time.time()
+        reaped = 0
+        for pty_key, session in self.states.items():
+            stale = [cid for cid, since in session.detached_connections.items() if now - since > detach_grace_seconds]
+            if not stale:
+                continue
+            # Rebuild rather than pop: a dict keeps its table after pop, so the
+            # bytes would stay even once the entries are gone.
+            session.detached_connections = {
+                cid: since for cid, since in session.detached_connections.items() if cid not in stale
+            }
+            reaped += len(stale)
+            logger.info(f"[PtyRegistry] Reaped {len(stale)} stale parked connection(s) from {pty_key}")
+        return reaped
+
+    async def start_cleanup_task(
+        self,
+        interval_seconds: int = 120,
+        ttl_seconds: int | None = None,
+        detach_grace_seconds: int = 900,
+    ) -> None:
+        """Start the background reaper loop.
+
+        With ``ttl_seconds=None`` (the default, what server startup uses) the loop
+        runs only ``reap_parked_connections`` — it never closes a PTY. Passing a
+        TTL also arms the orphan close (``cleanup_expired_sessions``), which is a
+        product decision that has not been taken: an unpinned agent shell whose
+        viewer left would be killed 15 minutes later.
 
         Args:
-            interval_seconds: Cleanup interval in seconds (default: 2 minutes)
-            ttl_seconds: Session TTL in seconds (default: 15 minutes)
+            interval_seconds: Sweep interval in seconds (default: 2 minutes)
+            ttl_seconds: Orphan TTL in seconds, or None to leave the orphan close off
+            detach_grace_seconds: How long a parked id survives without reconnecting (default: 15 minutes)
         """
         if self._cleanup_task and not self._cleanup_task.done():
             logger.warning("[PtyRegistry] Cleanup task already running")
             return
 
         async def cleanup_loop():
-            logger.info(f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s)")
+            logger.info(
+                f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s, "
+                f"detach grace: {detach_grace_seconds}s)"
+            )
             while True:
                 try:
                     await asyncio.sleep(interval_seconds)
-                    await self.cleanup_expired_sessions(ttl_seconds)
+                    if ttl_seconds is None:
+                        self.reap_parked_connections(detach_grace_seconds)
+                    else:
+                        await self.cleanup_expired_sessions(ttl_seconds, detach_grace_seconds)
                 except asyncio.CancelledError:
                     logger.info("[PtyRegistry] Cleanup task cancelled")
                     break
                 except Exception as e:
                     logger.error(f"[PtyRegistry] Error in cleanup task: {e}", exc_info=True)
 
-        self._cleanup_task = asyncio.create_task(cleanup_loop())
+        self._cleanup_task = asyncio.create_task(cleanup_loop(), name="pty-parked-reaper")
         logger.info("[PtyRegistry] Cleanup task started")
 
     async def stop_cleanup_task(self) -> None:

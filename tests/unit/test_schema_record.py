@@ -1,50 +1,12 @@
-"""Unit tests for SchemaRegistry — pure, no server needed."""
+"""Unit tests for the index-run log — pure, no server needed."""
 
 from __future__ import annotations
 
 import json
 from unittest import mock
 
-from flow_sdk.fs_store.schema_registry import (
-    IndexRequest,
-    IndexResult,
-    ScanResult,
-    SchemaRegistry,
-    _append_jsonl,
-)
-
-# ---------------------------------------------------------------------------
-# Dataclass field tests
-# ---------------------------------------------------------------------------
-
-
-def test_scan_result_fields():
-    sr = ScanResult(type_name="skill", count=3, total_bytes=1024, scan_ms=12.5)
-    assert sr.type_name == "skill"
-    assert sr.count == 3
-    assert sr.total_bytes == 1024
-    assert sr.scan_ms == 12.5
-    assert sr.last_scan_at is None
-
-
-def test_index_result_fields():
-    ir = IndexResult(type_name="bookmark", indexed=5, skipped=1, duration_ms=88.0)
-    assert ir.type_name == "bookmark"
-    assert ir.indexed == 5
-    assert ir.skipped == 1
-    assert ir.duration_ms == 88.0
-    assert ir.last_index_at is None
-
-
-def test_index_request_defaults():
-    req = IndexRequest()
-    assert req.actions == ["scan", "index"]
-    assert req.types is None
-    assert req.start_time is None
-    assert req.end_time is None
-    assert req.trigger == "manual"
-    assert req.limit_per_type is None
-
+from flow_sdk.fs_store.indexer import index_log
+from flow_sdk.fs_store.indexer.index_log import _append_jsonl
 
 # ---------------------------------------------------------------------------
 # append_scan / append_index + log file tests
@@ -52,8 +14,8 @@ def test_index_request_defaults():
 
 
 def test_append_scan_writes_global_log(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_scan(
+    with mock.patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_scan(
             trigger="test",
             duration_ms=10.0,
             total_records=5,
@@ -69,8 +31,8 @@ def test_append_scan_writes_global_log(tmp_path):
 
 
 def test_append_scan_writes_per_type_log(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_scan(
+    with mock.patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_scan(
             trigger="test",
             duration_ms=5.0,
             total_records=2,
@@ -88,9 +50,9 @@ def test_append_scan_writes_per_type_log(tmp_path):
 def test_append_index_writes_both_logs(tmp_path):
     """append_index now writes per-type only — global timestamp is derived
     in get_index_status as max(per_type[i].last_indexed_at) (see
-    SchemaRegistry.append_index docstring)."""
-    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_index(
+    index_log.append_index docstring)."""
+    with mock.patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_index(
             trigger="test",
             duration_ms=20.0,
             total_indexed=3,
@@ -106,21 +68,21 @@ def test_append_index_writes_both_logs(tmp_path):
 
 
 def test_get_last_scan_at_none_when_missing(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        result = SchemaRegistry.get_last_scan_at("nonexistent_type")
+    with mock.patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        result = index_log.get_last_scan_at("nonexistent_type")
     assert result is None
 
 
 def test_get_last_index_at_returns_timestamp(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRegistry.append_index(
+    with mock.patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path):
+        ts = index_log.append_index(
             trigger="t",
             duration_ms=1.0,
             total_indexed=1,
             types=[],
             type_name="skill",
         )
-        result = SchemaRegistry.get_last_index_at("skill")
+        result = index_log.get_last_index_at("skill")
     assert result == ts
 
 

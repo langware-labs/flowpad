@@ -1,15 +1,12 @@
 import { DiffEditor, Monaco } from '@monaco-editor/react';
-import { shikiToMonaco } from '@shikijs/monaco';
 import gitDiffParser, { Change, File as DiffFile, Hunk } from 'gitdiff-parser';
 import { GitBranch, HardDrive } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { createHighlighter, Highlighter } from 'shiki';
+import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { Trans } from '@lingui/react/macro';
 
-let shikiHighlighter: Highlighter | null = null;
-let themeLoadingPromise: Promise<void> | null = null;
 
 interface DiffContentProps {
   diffString: string;
@@ -29,18 +26,14 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
     const editorInstances = editorInstancesRef.current;
     return () => {
       editorInstances.forEach((ed) => {
-        try { ed.dispose(); } catch { /* ignore */ }
+        try {
+          ed.dispose();
+        } catch {
+          /* ignore */
+        }
       });
       editorInstances.clear();
     };
-  }, []);
-
-  useEffect(() => {
-    if (!themeLoadingPromise) {
-      themeLoadingPromise = createHighlighter({ themes: ['dark-plus', 'light-plus'], langs: ['text'] })
-        .then((h) => { shikiHighlighter = h; })
-        .catch(() => { themeLoadingPromise = null; });
-    }
   }, []);
 
   const handleEditorDidMount = useCallback(
@@ -68,14 +61,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
       diffEditor.getOriginalEditor().onDidContentSizeChange(fit);
       fit();
 
-      async function setup() {
-        if (themeLoadingPromise) await themeLoadingPromise;
-        if (!shikiHighlighter) return;
-        monaco.languages.register({ id: 'text' });
-        shikiToMonaco(shikiHighlighter, monaco);
-        monaco.editor.setTheme(resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus');
-      }
-      void setup();
+      void ensureShikiMonaco(monaco, 'text').then(() => monaco.editor.setTheme(monacoTheme(resolvedTheme)));
     },
     [resolvedTheme],
   );
@@ -105,16 +91,18 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
       return (
         <div key={editorKey} className="border-t last:border-t-0">
           <div className="bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
-            Hunk {hunkIndex + 1}: Lines {hunk.oldStart}–{hunk.oldStart + hunk.oldLines - 1} →{' '}
-            {hunk.newStart}–{hunk.newStart + hunk.newLines - 1}
+            Hunk {hunkIndex + 1}: Lines {hunk.oldStart}–{hunk.oldStart + hunk.oldLines - 1} → {hunk.newStart}–
+            {hunk.newStart + hunk.newLines - 1}
           </div>
           <DiffEditor
             height={`${height}px`}
             language="text"
             original={original}
             modified={modified}
-            onMount={(ed, monaco) => { void handleEditorDidMount(ed, monaco, editorKey); }}
-            theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
+            onMount={(ed, monaco) => {
+              void handleEditorDidMount(ed, monaco, editorKey);
+            }}
+            theme={monacoTheme(resolvedTheme)}
             options={{
               renderSideBySide: sideBySide,
               readOnly: true,
@@ -141,26 +129,39 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
     (fileDiff: DiffFile, fileIndex: number) => {
       const getFilePath = () => {
         switch (fileDiff.type) {
-          case 'add': return `(+) ${fileDiff.newPath}`;
-          case 'delete': return `(-) ${fileDiff.oldPath}`;
-          case 'rename': return `${fileDiff.oldPath} → ${fileDiff.newPath}`;
-          case 'copy': return `${fileDiff.oldPath} → copy → ${fileDiff.newPath}`;
-          default: return fileDiff.newPath;
+          case 'add':
+            return `(+) ${fileDiff.newPath}`;
+          case 'delete':
+            return `(-) ${fileDiff.oldPath}`;
+          case 'rename':
+            return `${fileDiff.oldPath} → ${fileDiff.newPath}`;
+          case 'copy':
+            return `${fileDiff.oldPath} → copy → ${fileDiff.newPath}`;
+          default:
+            return fileDiff.newPath;
         }
       };
       return (
         <div key={fileIndex} className="overflow-hidden rounded-lg border">
           <div className="border-b bg-muted px-4 py-2 text-sm font-medium">{getFilePath()}</div>
           <div className="grid grid-cols-2 border-b bg-muted/40">
-            <div className="flex items-center gap-1.5 border-r px-4 py-1.5">
+            <div className="flex items-center gap-1.5 border-e px-4 py-1.5">
               <GitBranch className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>HEAD</Trans></span>
-              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— before</Trans></span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Trans>HEAD</Trans>
+              </span>
+              <span className="ms-1 text-xs text-muted-foreground/60">
+                <Trans>— before</Trans>
+              </span>
             </div>
             <div className="flex items-center gap-1.5 px-4 py-1.5">
               <HardDrive className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>Working Tree</Trans></span>
-              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— current</Trans></span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Trans>Working Tree</Trans>
+              </span>
+              <span className="ms-1 text-xs text-muted-foreground/60">
+                <Trans>— current</Trans>
+              </span>
             </div>
           </div>
           <div className="space-y-2">
@@ -174,7 +175,11 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
 
   const parsedDiff: DiffFile[] = useMemo(() => {
     if (!diffString) return [];
-    try { return gitDiffParser.parse(diffString); } catch { return []; }
+    try {
+      return gitDiffParser.parse(diffString);
+    } catch {
+      return [];
+    }
   }, [diffString]);
 
   if (parsedDiff.length === 0) {
@@ -186,8 +191,6 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
   }
 
   return (
-    <div className="space-y-4 p-4">
-      {parsedDiff.map((fileDiff, fileIndex) => renderFile(fileDiff, fileIndex))}
-    </div>
+    <div className="space-y-4 p-4">{parsedDiff.map((fileDiff, fileIndex) => renderFile(fileDiff, fileIndex))}</div>
   );
 };

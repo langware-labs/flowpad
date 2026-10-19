@@ -1,4 +1,6 @@
-import { dataContext, type Task, VFSPath } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { dataContext, type Task, TaskKind, VFSPath } from '@sdk';
+import { isTaskArchived } from '@src/components/task-bar/constants';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { SkillsScope } from '@src/components/assets/editor/skill/skillEditorUtils';
@@ -12,7 +14,69 @@ export const TaskStatus = {
   TO_DO: 'to_do',
   IN_PROGRESS: 'in_progress',
   DONE: 'done',
+  // A delegated task's lifecycle — written by the task ledger (flow_sdk/tasks), never by a click.
+  SUBMITTED: 'submitted',
+  WORKING: 'working',
+  INPUT_REQUIRED: 'input_required',
+  FAILED: 'failed',
+  CANCELED: 'canceled',
 } as const;
+
+/** The three buckets every task surface shows (New / In progress / Done). */
+export type TaskStatusFamily = typeof TaskStatus.TO_DO | typeof TaskStatus.IN_PROGRESS | typeof TaskStatus.DONE;
+
+/** Where each status sits on the three-bucket board — mirrors `STATUS_FAMILY` in
+ *  `flow_sdk/schema/data_spec/task_spec.py`. */
+const STATUS_FAMILY: Record<string, TaskStatusFamily> = {
+  [TaskStatus.TO_DO]: TaskStatus.TO_DO,
+  [TaskStatus.SUBMITTED]: TaskStatus.TO_DO,
+  [TaskStatus.IN_PROGRESS]: TaskStatus.IN_PROGRESS,
+  [TaskStatus.WORKING]: TaskStatus.IN_PROGRESS,
+  [TaskStatus.INPUT_REQUIRED]: TaskStatus.IN_PROGRESS,
+  [TaskStatus.DONE]: TaskStatus.DONE,
+  [TaskStatus.FAILED]: TaskStatus.DONE,
+  [TaskStatus.CANCELED]: TaskStatus.DONE,
+};
+
+/** The bucket a status belongs to; an unknown (or legacy `open`) one reads as New. */
+export function statusFamily(status?: string | null): TaskStatusFamily {
+  return STATUS_FAMILY[status ?? ''] ?? TaskStatus.TO_DO;
+}
+
+/** Still to do: not in the Done bucket (Done / Failed / Canceled) and not archived. */
+export function isOpenTask(task: Pick<Task, 'status' | 'archived_at'>): boolean {
+  return statusFamily(task.status) !== TaskStatus.DONE && !isTaskArchived(task);
+}
+
+/** Who owns a task, as the task page names it: a group task's group, else its assignee. */
+export function taskOwner(task: Pick<Task, 'kind' | 'group_name' | 'assignee'>): string | null {
+  return (task.kind === TaskKind.GROUP && task.group_name) || task.assignee || null;
+}
+
+/** Newest first — by when the task was created. */
+export function byNewestTask(a: Pick<Task, 'created_date'>, b: Pick<Task, 'created_date'>): number {
+  return new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime();
+}
+
+/** The bucket statuses — what a person sets by hand. */
+export const STATUS_FAMILIES: readonly TaskStatusFamily[] = [TaskStatus.TO_DO, TaskStatus.IN_PROGRESS, TaskStatus.DONE];
+
+/** Every stored status, in lifecycle order — what a filter offers. */
+export const ALL_TASK_STATUSES: readonly string[] = [
+  TaskStatus.TO_DO,
+  TaskStatus.SUBMITTED,
+  TaskStatus.IN_PROGRESS,
+  TaskStatus.WORKING,
+  TaskStatus.INPUT_REQUIRED,
+  TaskStatus.DONE,
+  TaskStatus.FAILED,
+  TaskStatus.CANCELED,
+];
+
+/** A delegated task: the ledger owns its status (a subagent or an agent is its owner). */
+export function isDelegatedTask(task: Pick<Task, 'owner'> | null | undefined): boolean {
+  return !!task?.owner;
+}
 
 export const TaskType = {
   TASK: 'Task',
@@ -115,10 +179,10 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
 
   // SKILL.md -- explicit path or derived from output_dir + folder_name
   if (typeof skillPath === 'string') {
-    artifacts.push({ path: skillPath, label: 'SKILL.md', skillDockPath });
+    artifacts.push({ path: skillPath, label: t`SKILL.md`, skillDockPath });
   } else if (typeof outputDir === 'string' && typeof effectiveFolder === 'string' && effectiveFolder) {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/${effectiveFolder}/SKILL.md`, label: 'SKILL.md', skillDockPath });
+    artifacts.push({ path: `${normalized}/${effectiveFolder}/SKILL.md`, label: t`SKILL.md`, skillDockPath });
   }
 
   // analysis report (analysis.html) — in references subfolder
@@ -126,24 +190,24 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
     artifacts.push({ path: analysisPath, label: analysisPath.split('/').pop() || 'analysis' });
   } else if (typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/analysis.html`, label: 'analysis.html' });
+    artifacts.push({ path: `${normalized}/analysis.html`, label: t`analysis.html` });
   }
 
   // analysis.json — in references subfolder
   if (typeof analysisJsonPath === 'string') {
-    artifacts.push({ path: analysisJsonPath, label: 'analysis.json' });
+    artifacts.push({ path: analysisJsonPath, label: t`analysis.json` });
   } else if (typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/analysis.json`, label: 'analysis.json' });
+    artifacts.push({ path: `${normalized}/analysis.json`, label: t`analysis.json` });
   }
 
   // classification.json for classification tasks
   const classificationPath = task.classification_path;
   if (typeof classificationPath === 'string') {
-    artifacts.push({ path: classificationPath, label: 'classification.json' });
+    artifacts.push({ path: classificationPath, label: t`classification.json` });
   } else if (task.task_type === TaskType.CLASSIFICATION && typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/classification.json`, label: 'classification.json' });
+    artifacts.push({ path: `${normalized}/classification.json`, label: t`classification.json` });
   }
 
   // Generic artifacts from task.artifacts array

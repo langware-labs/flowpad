@@ -1,15 +1,16 @@
-"""Sharing into an EXISTING conversation must NOT mint a new invitation.
+"""Messages in an EXISTING conversation must not disturb its assignment.
 
 This is the regression guard for the duplicate-conversation / per-message email
-bug: once alice has shared a conversation with bob (one invitation), every
+bug: once Alice has shared a conversation with Bob (one durable membership), every
 further message into that SAME conversation — including ones that carry a shared
 asset — routes through ``add_message`` only. ``add_message`` never calls
-``share()`` / ``members`` / ``Invitation``, so the invitation count for the
-conversation must stay at exactly 1.
+``share()`` / ``members`` / ``Invitation``, so Bob's membership must stay singular
+and approved and the conversation must not reappear as pending.
 
 Mirrors the harness in ``test_share_with_recipients.py`` (env-mode alice login
 via fixtures; bob driven over raw HTTP from the cycle env, with a repo fallback).
 """
+
 from __future__ import annotations
 
 import os
@@ -20,6 +21,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.hub_tests._assignment import assert_auto_assigned
 
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
@@ -38,21 +40,24 @@ def _read_env_local(repo: Path) -> dict[str, str]:
     return out
 
 
-async def _count_invitations(hub_base_url: str, headers_b: dict, bob_email: str) -> int:
-    """How many invitations bob currently has for the (any) conversation."""
+async def _member_rows(hub_base_url: str, headers_b: dict, conv_id: str, bob_id: str) -> list[dict]:
+    """Return Bob's membership rows for one conversation."""
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers_b)
+        r = await h.get(
+            f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members",
+            headers=headers_b,
+        )
         r.raise_for_status()
-        pending = r.json()["data"] or []
-    return len([inv for inv in pending if inv.get("recipient_email") == bob_email])
+        members = r.json().get("data") or []
+    return [m for m in members if isinstance(m, dict) and m.get("user_id") == bob_id]
 
 
 @pytest.mark.asyncio
-async def test_message_into_existing_conversation_sends_no_new_invite(
+async def test_message_into_existing_conversation_preserves_assignment(
     hub_base_url, hub_login_payload, isolated_hub_keyring
 ):
-    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
+    from tests.hub_tests._local_login import login_as
 
     # login_as persists BOTH halves (token + user record); a token-only write is
     # a half-logged-in state that share() rejects.
@@ -69,24 +74,30 @@ async def test_message_into_existing_conversation_sends_no_new_invite(
         r.raise_for_status()
         bob_data = r.json()["data"]
         bob_token = bob_data.get("api_key") or bob_data["token"]
+        bob_id = (bob_data.get("user") or {})["id"]
     headers_b = {"Authorization": f"Bearer {bob_token}", "Content-Type": "application/json"}
 
-    # Baseline: invitations bob already has (other tests may have left some).
-    base = await _count_invitations(hub_base_url, headers_b, bob_email)
-
-    # First contact: share creates exactly ONE new invitation.
+    # First contact grants exactly one durable member assignment.
     title = f"share-existing-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     conv = Conversation(title=title)
     await conv.share(recipients=[bob_email])
-    after_share = await _count_invitations(hub_base_url, headers_b, bob_email)
-    assert after_share == base + 1, f"share should add exactly one invite ({base} → {after_share})"
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="conversation",
+        entity_id=conv.id,
+        user_id=bob_id,
+        expected_role="member",
+    )
+    after_share = await _member_rows(hub_base_url, headers_b, conv.id, bob_id)
+    assert len(after_share) == 1, f"share should grant exactly one Bob membership: {after_share}"
 
-    # Now send several messages into the SAME conversation. None may mint an
-    # invitation — this is the converged-share invariant (re-share threads in).
+    # Messages into the SAME conversation may not duplicate or mutate membership.
     await conv.add_message("first reply")
     await conv.add_message("second reply")
-    after_msgs = await _count_invitations(hub_base_url, headers_b, bob_email)
-    assert after_msgs == after_share, (
-        f"messages into an existing conversation must not mint invites "
-        f"({after_share} → {after_msgs})"
-    )
+    after_msgs = await _member_rows(hub_base_url, headers_b, conv.id, bob_id)
+    assert len(after_msgs) == 1, f"messages duplicated Bob's membership: {after_msgs}"
+    assert (after_msgs[0].get("role"), after_msgs[0].get("status")) == (
+        after_share[0].get("role"),
+        after_share[0].get("status"),
+    ), f"messages into an existing conversation changed Bob's assignment ({after_share} → {after_msgs})"

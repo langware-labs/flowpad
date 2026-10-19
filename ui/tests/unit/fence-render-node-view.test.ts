@@ -106,9 +106,12 @@ describe('fence NodeView fallback', () => {
 
 describe('fence NodeView with a renderer', () => {
   function stubRenderer(impl?: (code: string, host: HTMLElement) => void | Promise<void>) {
-    const render = vi.fn(impl ?? ((code: string, host: HTMLElement) => {
-      host.textContent = `rendered:${code}`;
-    }));
+    const render = vi.fn(
+      impl ??
+        ((code: string, host: HTMLElement) => {
+          host.textContent = `rendered:${code}`;
+        }),
+    );
     registerFenceRenderer({ language: 'stub', tabLabel: 'Preview', render });
     return render;
   }
@@ -132,6 +135,22 @@ describe('fence NodeView with a renderer', () => {
     expect(preview.textContent).toContain('rendered:hello');
     // contentDOM must exist even while hidden — ProseMirror maps positions through it.
     expect(source.querySelector('code')?.textContent).toBe('hello');
+  });
+
+  it('keeps Code as the editable ProseMirror source in an editable host', async () => {
+    stubRenderer();
+    const v = mount(para('intro'), fence('stub', 'hello'));
+    await settle();
+
+    const fencePos = v.state.doc.firstChild!.nodeSize;
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, fencePos + 1)));
+    v.dispatch(v.state.tr.insertText('Y', fencePos + 1));
+
+    const source = block(v)!.querySelector('.fence-render-source') as HTMLElement;
+    expect(v.dom.getAttribute('contenteditable')).toBe('true');
+    expect(source.hidden).toBe(false);
+    expect(source.querySelector('code')?.textContent).toBe('Yhello');
+    expect(v.state.doc.nodeAt(fencePos)?.textContent).toBe('Yhello');
   });
 
   it('passes the source text and a block id to the renderer', async () => {
@@ -194,7 +213,10 @@ describe('fence NodeView with a renderer', () => {
     await new Promise((resolve) => setTimeout(resolve, 250)); // past the render debounce
 
     const el = block(v)!;
-    expect(el.querySelector('[data-testid="fence-render-error"]')?.textContent).toBe('Parse error on line 2');
+    const feedback = el.querySelector('.fence-render-feedback') as HTMLElement;
+    expect(el.dataset.mode).toBe('code');
+    expect(feedback.hidden).toBe(false);
+    expect(feedback.querySelector('[data-testid="fence-render-error"]')?.textContent).toBe('Parse error on line 2');
     expect(el.querySelector('.fence-render-preview')?.textContent).toContain('rendered:good');
   });
 
@@ -308,6 +330,7 @@ describe('fence NodeView with a renderer', () => {
 
       const fencePos = view.state.doc.firstChild!.nodeSize;
       expect(view.state.doc.nodeAt(fencePos)!.textContent).toBe('before');
+      expect(view.dom.getAttribute('contenteditable')).toBe('false');
     });
 
     it('tells the renderer whether the host is editable', async () => {

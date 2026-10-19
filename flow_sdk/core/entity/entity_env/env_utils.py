@@ -1,6 +1,6 @@
 """Utility functions for environment variable handling."""
 
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_env.env_types import EnvVarType
 
 

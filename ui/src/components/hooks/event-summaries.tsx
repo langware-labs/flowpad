@@ -58,7 +58,7 @@ function parseMcpToolName(toolName: string): { server: string; fn: string } | nu
   return { server: parts[1], fn: parts.slice(2).join('__') };
 }
 
-export const CHIP = 'mr-1 shrink-0 text-[10px]';
+export const CHIP = 'me-1 shrink-0 text-[10px]';
 
 function ToolNameChips({ toolName }: { toolName: string }) {
   const mcp = parseMcpToolName(toolName);
@@ -483,7 +483,7 @@ function CwdChip({ event }: EventPartProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="ml-auto max-w-[180px] shrink-0 truncate text-[10px] text-muted-foreground">{short}</span>
+        <span className="ms-auto max-w-[180px] shrink-0 truncate text-[10px] text-muted-foreground">{short}</span>
       </TooltipTrigger>
       <TooltipContent side="top">{cwd}</TooltipContent>
     </Tooltip>

@@ -1,4 +1,4 @@
-import { LabelInfo, OntologyNames } from '../models/LabelInfo';
+import { LabelInfo } from '../models/LabelInfo';
 import { Ontology } from '../models/Ontology';
 
 /**

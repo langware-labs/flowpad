@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import type { ConversationMessage } from '@sdk/entities/conversation';
+import { MemoryRouter } from 'react-router';
 import { MessageBubble } from '@src/components/conversation/MessageBubble';
 
 /**
@@ -28,7 +29,7 @@ describe('MessageBubble — multi-line body preserves newlines', () => {
 
   it('renders the message body in a whitespace-preserving container', () => {
     const content = 'first line\nsecond line\nthird line';
-    const { container } = render(<MessageBubble message={makeMessage(content)} senderName="Alice" />);
+    const { container } = render(<MemoryRouter><MessageBubble message={makeMessage(content)} senderName="Alice" /></MemoryRouter>);
 
     // The element that directly holds the message body text.
     const bodyEl = Array.from(container.querySelectorAll('div')).find(

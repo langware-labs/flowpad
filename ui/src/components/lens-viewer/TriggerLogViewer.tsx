@@ -2,20 +2,10 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { cn } from '@src/lib/utils';
-import { ActionInfo, dataManager } from '@sdk';
+import { Trigger, type TriggerLogRow } from '@sdk';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-interface TriggerLogEntry {
-  id: string;
-  ts: string;
-  hook_event: string;
-  trigger: boolean;
-  reason: string;
-  is_test: boolean;
-  rule_name: string;
-  actions: string[];
-}
 
 function timeAgo(iso: string): string {
   return formatTimeAgo(iso) || 'just now';
@@ -26,20 +16,15 @@ interface Props {
 }
 
 export function TriggerLogViewer({ triggerId }: Props) {
-  const [entries, setEntries] = useState<TriggerLogEntry[]>([]);
+  const [entries, setEntries] = useState<TriggerLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggeredOnly, setTriggeredOnly] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchEntries = useCallback(async () => {
     try {
-      const action = new ActionInfo('log', 'trigger', triggerId, 'GET');
-      action.queryParameters = {
-        limit: '500',
-        ...(triggeredOnly ? { triggered_only: 'true' } : {}),
-      };
-      const data = await dataManager.callAction<undefined, TriggerLogEntry[]>(action);
-      if (Array.isArray(data)) setEntries(data);
+      const data = await Trigger.log(triggerId, { limit: 500, triggeredOnly });
+      setEntries(data);
     } catch {
       // ignore
     } finally {
@@ -50,8 +35,12 @@ export function TriggerLogViewer({ triggerId }: Props) {
   useEffect(() => {
     setLoading(true);
     void fetchEntries();
-    intervalRef.current = setInterval(() => { void fetchEntries(); }, 5000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    intervalRef.current = setInterval(() => {
+      void fetchEntries();
+    }, 5000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [fetchEntries]);
 
   const ruleName = entries[0]?.rule_name || triggerId;
@@ -62,9 +51,11 @@ export function TriggerLogViewer({ triggerId }: Props) {
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <span className="font-mono text-sm font-medium">{ruleName}</span>
         <span className="text-xs text-muted-foreground">trigger log</span>
-        <Badge variant="secondary" className="text-[10px]">{entries.length}</Badge>
+        <Badge variant="secondary" className="text-[10px]">
+          {entries.length}
+        </Badge>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           {/* Filter toggle */}
           <div className="flex rounded border">
             <button
@@ -86,7 +77,15 @@ export function TriggerLogViewer({ triggerId }: Props) {
               Activations only
             </button>
           </div>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setLoading(true); void fetchEntries(); }}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => {
+              setLoading(true);
+              void fetchEntries();
+            }}
+          >
             <RefreshCw className="h-3 w-3" />
           </Button>
         </div>
@@ -114,10 +113,12 @@ export function TriggerLogViewer({ triggerId }: Props) {
               </Badge>
 
               {/* Triggered badge */}
-              <span className={cn(
-                'flex-shrink-0 text-[10px] font-medium',
-                entry.trigger ? 'text-green-500' : 'text-muted-foreground',
-              )}>
+              <span
+                className={cn(
+                  'flex-shrink-0 text-[10px] font-medium',
+                  entry.trigger ? 'text-green-500' : 'text-muted-foreground',
+                )}
+              >
                 {entry.trigger ? '✓' : '–'}
               </span>
 
@@ -127,17 +128,22 @@ export function TriggerLogViewer({ triggerId }: Props) {
               </span>
 
               {/* Actions */}
-              {entry.actions.length > 0 && (
+              {(entry.actions ?? []).length > 0 && (
                 <div className="flex gap-1">
-                  {entry.actions.map((a, i) => (
-                    <Badge key={i} variant="secondary" className="h-4 px-1 text-[9px]">{a}</Badge>
+                  {(entry.actions ?? []).map((a, i) => (
+                    <Badge key={i} variant="secondary" className="h-4 px-1 text-[9px]">
+                      {a}
+                    </Badge>
                   ))}
                 </div>
               )}
 
               {/* Test badge */}
               {entry.is_test && (
-                <Badge variant="outline" className="h-4 flex-shrink-0 border-orange-400 px-1 text-[9px] text-orange-500">
+                <Badge
+                  variant="outline"
+                  className="h-4 flex-shrink-0 border-orange-400 px-1 text-[9px] text-orange-500"
+                >
                   test
                 </Badge>
               )}

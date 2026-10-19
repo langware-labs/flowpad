@@ -5,7 +5,7 @@ Regression guard for the cloud-login gate added to
 handler used to fire ``hub_get(CONVERSATION)`` + ``hub_get(INVITATION,
 pending)`` unconditionally; the hub answered 401, which surfaced as a
 "Cloud Request Failed" warning and fed the hub-error suppression window
-("Hub errors suppressed" toast) on every idle inbox/home view.
+("Hub errors suppressed" toast) on every idle stream inbox/home view.
 
 The gate (``flow_sdk.cli.auth.hub_login.hub_auth_available``) short-circuits
 to a local-only response with ``auth_required=True`` before the hub calls.

@@ -20,9 +20,28 @@ export interface GitStatusFile {
 export interface GitStatus {
   error: string | null;
   branch: string | null;
+  /** Configured tracking branch; null does not imply the remote branch is absent. */
+  upstream: string | null;
+  /** Same-name origin branch known locally and available to track. */
+  upstreamCandidate?: string | null;
   ahead: number;
   behind: number;
   files: GitStatusFile[];
+  /** Set while the tree is stuck mid-conflict — the UI offers Resolve off it. */
+  conflict: GitConflict | null;
+  /** Fetch URL of the branch's remote (origin without an upstream); credentials stripped. */
+  remoteUrl: string | null;
+  /** https browser form of `remoteUrl`, null when the remote isn't a web host. */
+  remoteWebUrl: string | null;
+}
+
+/** What a conflicted tree is stopped in; null with paths = only a pull's autostash clashed. */
+export type ConflictOperation = 'rebase' | 'merge';
+
+/** A working tree left mid-conflict — mirror of `GitConflict` in git_repo.py. */
+export interface GitConflict {
+  paths: string[];
+  operation: ConflictOperation | null;
 }
 
 export interface GitFileDiff {
@@ -72,11 +91,38 @@ export type PushKind =
 
 export interface GitPushResult {
   ok: boolean;
-  conflict: boolean;
-  nothing: boolean;
   kind: PushKind;
   branch: string | null;
   message: string;
+  /** Set only when `kind === 'conflict'`: the paths git left unmerged. */
+  conflicted: string[];
+  /** A commit was made by this push. */
+  committed: boolean;
+  sha: string | null;
+  warning: string | null;
+}
+
+/** Typed pull outcome — mirror of `PullKind` in git_repo.py. */
+export type PullKind =
+  | 'pulled'
+  | 'nothing'
+  | 'conflict'
+  | 'permission'
+  | 'no_remote'
+  | 'network'
+  | 'no_repo'
+  | 'generic';
+
+export interface GitPullResult {
+  ok: boolean;
+  kind: PullKind;
+  branch: string | null;
+  message: string;
+  /** Set only when `kind === 'conflict'`: the paths git left unmerged. */
+  conflicted: string[];
+  /** Set after a successful pull refreshed this local project's asset index. */
+  projectId?: string | null;
+  refreshError?: string | null;
 }
 
 /**
@@ -122,14 +168,30 @@ export class GitWorkdir {
   // Read probes
   // ------------------------------------------------------------------
 
-  /** Full git status (branch, ahead/behind, per-file staged/insertions/deletions). */
-  async getStatus(): Promise<GitStatus> {
-    return this._call<GitStatus>('status');
+  /**
+   * Working-tree status, or files changed by `revision` against its first parent. Per-file
+   * insertions/deletions are filled only with `lineCounts: true` — they cost a
+   * worktree-wide numstat pass, so only a surface that shows them asks.
+   */
+  async getStatus(options: { lineCounts?: boolean; revision?: string } = {}): Promise<GitStatus> {
+    return this._call<GitStatus>('status', {
+      ...(options.lineCounts ? { lineCounts: 'true' } : {}),
+      ...(options.revision ? { revision: options.revision } : {}),
+    });
+  }
+
+  async setUpstream(branch: string): Promise<GitStatus> {
+    return this._post<GitStatus>('set-upstream', { branch });
   }
 
   /** Repo-relative paths touched by commits ahead of @{u} (empty when no upstream). */
   async unpushedFiles(): Promise<string[]> {
     return (await this._call<{ files: string[] }>('unpushed-files')).files ?? [];
+  }
+
+  /** Commits ahead of @{u}, newest first — the list behind `GitStatus.ahead` (empty when no upstream). */
+  async unpushedCommits(): Promise<GitRevision[]> {
+    return (await this._call<{ commits: GitRevision[] }>('unpushed-commits')).commits ?? [];
   }
 
   /** Current branch name, or null if detached / not a git repo. */
@@ -161,9 +223,9 @@ export class GitWorkdir {
   // Diffs / revisions
   // ------------------------------------------------------------------
 
-  /** Unified diff of a file's pending change (untracked `?` shows the whole file). */
-  async fileDiff(file: string, status: string): Promise<GitFileDiff> {
-    return this._call<GitFileDiff>('diff', { file, status });
+  /** File diff: pending changes by default, or a commit against its first parent. */
+  async fileDiff(file: string, status: string, revision?: string): Promise<GitFileDiff> {
+    return this._call<GitFileDiff>('diff', { file, status, ...(revision ? { revision } : {}) });
   }
 
   /** Unified diff of an asset's pending changes plus its changed-file list. */
@@ -200,9 +262,26 @@ export class GitWorkdir {
     return this._post<GitRestoreResult>('init');
   }
 
-  /** Greedy "non-tech" publish: stage-all → commit → pull --rebase → push. */
+  /**
+   * Greedy "non-tech" publish: stage-all → commit → pull --rebase → push. A
+   * conflict — or a tree still stuck in one — answers `kind: 'conflict'`.
+   */
   async push(): Promise<GitPushResult> {
     return this._post<GitPushResult>('push');
+  }
+
+  /**
+   * Fetch the upstream's remote, then the status — the one call that refreshes
+   * `behind` (`getStatus` never touches the network). A failed fetch still
+   * answers, with `behind` as of the previous fetch.
+   */
+  async fetch(): Promise<GitStatus> {
+    return this._post<GitStatus>('fetch');
+  }
+
+  /** Bring the upstream's commits in: `pull --rebase --autostash`. */
+  async pull(): Promise<GitPullResult> {
+    return this._post<GitPullResult>('pull');
   }
 
   /** Check out an asset at a past revision (working-tree mutation). */

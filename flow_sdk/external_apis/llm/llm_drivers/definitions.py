@@ -1,7 +1,8 @@
-from flow_sdk._compat import StrEnum
 from typing import List, Literal
 
 from pydantic import BaseModel
+
+from flow_sdk._compat import StrEnum
 
 
 class LLMProvider(StrEnum):

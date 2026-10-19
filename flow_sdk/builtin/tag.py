@@ -86,14 +86,14 @@ class Tag(Entity):
         return await super().save(owner=owner, notify=notify)
 
     @classmethod
-    def allocate_id(cls, data: dict) -> str:
+    def _row_id_policy(cls, data: dict) -> str:
         """Name-derived uuid5 — the same name always mints the same id.
 
         A caller-supplied id never overrides the natural key. Hub/materialized
         copies converge on the same deterministic id; a nameless construction
         falls back to uuid4 (and is rejected later by field validation).
         """
-        from flow_sdk.fs_store.identifier import mint_uuid
+        from flow_sdk.api.api_types.identifier import mint_uuid
 
         name = data.get("name") or ""
         if name:
@@ -124,14 +124,52 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("node.disconnected", "Node disconnected", "The cloud connection dropped"),
     ("agent", "Agent events", "Agentic-process lifecycle events"),
     ("agent.status", "Agent status", "An agentic process changed status"),
-    ("flow", "Flow lifecycle", "Agentic-flow run boundary events"),
-    ("flow.started", "Flow started", "A flow run started"),
-    ("flow.step.done", "Flow step done", "A flow node finished"),
-    ("flow.output", "Flow output", "A flow produced an output"),
-    ("flow.waiting", "Flow waiting", "A flow run is waiting (guided step)"),
-    ("flow.done", "Flow done", "A flow run completed"),
-    ("flow.failed", "Flow failed", "A flow run failed"),
-    ("app", "App events", "Frontend-emitted events (app tier)"),
+    ("agent.run", "Agent run", "Lifecycle of one agent run, targeted at its compute node"),
+    ("agent.run.requested", "Agent run requested", "A run was asked for on a compute node"),
+    ("agent.run.started", "Agent run started", "The run's process was spawned"),
+    ("agent.run.failed", "Agent run failed", "The run could not be dispatched or spawned"),
+    (
+        "agent.launch_failed",
+        "Agent launch failed",
+        "A worker could not be spawned (code names why; health says whether to retry)",
+    ),
+    ("graph_workflow", "Graph workflow lifecycle", "Graph-workflow run boundary events"),
+    ("graph_workflow.started", "Graph workflow started", "A graph-workflow run started"),
+    ("graph_workflow.step.done", "Graph workflow step done", "A graph-workflow node finished"),
+    ("graph_workflow.output", "Graph workflow output", "A graph workflow produced an output"),
+    ("graph_workflow.waiting", "Graph workflow waiting", "A graph-workflow run is waiting (guided step)"),
+    ("graph_workflow.done", "Graph workflow done", "A graph-workflow run completed"),
+    ("graph_workflow.failed", "Graph workflow failed", "A graph-workflow run failed"),
+    (
+        "graph_workflow.run.event",
+        "Graph workflow run event",
+        "One beat of a run's internal stream (kind: run_start | event | run_end)",
+    ),
+    (
+        "graph_workflow.node.status",
+        "Graph workflow node status",
+        "A scheduler transition for one node (queued | merged | started | finished | failed | waiting)",
+    ),
+    (
+        "app",
+        "App events",
+        "App-tier events — frontend-emitted, plus the backend lifecycle signals addressed to the app",
+    ),
+    (
+        "app.ready",
+        "App ready",
+        "The backend finished starting, the first bootstrap was served, and the system content "
+        "index has landed. Emitted once per boot; a subscriber that wants it only the first time "
+        "ever says so with a fire_once trigger.",
+    ),
+    (
+        "app.tab.ready",
+        "UI tab ready",
+        "A UI tab mounted and finished a route load — its first browser_context frame — and the "
+        "system content index has landed. Emitted once per tab connection, so a reload, a new window "
+        "or an app restart each emit it again: a subscriber that must run on every load subscribes "
+        "here; one that wants it only the first time ever says so with a fire_once trigger.",
+    ),
     ("app.ui", "UI interactions", "Clicks on tag-tagged UI elements"),
     ("app.route.loaded", "Route loaded", "A dock navigation completed"),
     ("app.page.signal", "Page signal", "A sandboxed page posted a journey signal"),
@@ -140,9 +178,11 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("app.entity.deleted", "Entity deleted (app)", "App-tier mirror of entity.deleted"),
     ("app.journey.act.done", "Journey act done", "A journey act completed"),
     ("app.journey.act.failed", "Journey act failed", "A journey act failed"),
+    ("ingest", "Ingestion events", "Data-source ingestion (ingest.<provider>.<layer>.<verb>)"),
     # ── kind ontology ──
     ("application", "Applications", "Deployable application compositions"),
     ("application.web", "Web application", "A web app (folder or checkout that serves)"),
+    ("application.web.editor", "Asset editor", "A web app nested in an asset, which edits that asset"),
     ("workload", "Workloads", "Running compute shapes"),
     ("workload.service", "Service", "A long-running service"),
     ("workload.service.http", "HTTP service", "A long-running HTTP service"),
@@ -158,9 +198,11 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("content.file.text", "Text file", "A text file artifact"),
     ("content.data", "Data", "A structured-data artifact"),
     ("content.web.page", "Web page", "A static web page artifact"),
+    ("content.feed.item", "Feed item", "One entry ingested from a feed or API data source"),
+    ("datasource", "Data sources", "External systems of record synced from (datasource.<modality>.<provider>)"),
+    ("datasource.feed.rss", "RSS/Atom feed", "A syndication feed polled on a schedule"),
+    ("datasource.api.hackernews", "Hacker News", "The Hacker News Firebase API"),
     ("gcp", "GCP", "Provider-minted GCP resource kinds (gcp.<service>.<resource>)"),
-    ("local", "Local runtime", "Locally-hosted runtime placements"),
-    ("local.runtime.web", "Local web runtime", "A locally-served web app deployment"),
 )
 
 # System-owned first segments — the our-world / user-world boundary, DERIVED

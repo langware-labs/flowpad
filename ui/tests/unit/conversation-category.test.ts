@@ -59,14 +59,22 @@ describe('conversationFacets', () => {
     expect(f).toEqual({ kind: 'direct', isInvitation: false, isArchived: false, isUnread: false });
   });
 
-  it('unread latest message → unread', () => {
+  it('hub runtime (no is_unread on the row): an unread latest message → unread', () => {
     const f = conversationFacets(makeInputs({ latestRead: false }));
     expect(f.isUnread).toBe(true);
   });
 
-  it('community kind → community facet set', () => {
-    const f = conversationFacets(makeInputs({ kind: ConversationKind.COMMUNITY, latestRead: false }));
-    expect(f.kind).toBe('community');
+  it("the backend's is_unread wins over the latest message", () => {
+    const stamped = (isUnread: boolean) =>
+      conversationFacets({ ...makeInputs({ latestRead: !isUnread }), conv: { is_unread: !isUnread } as unknown as Conversation });
+    // The latest message says one thing, the stamped flag the other: the row renders the flag.
+    expect(stamped(true).isUnread).toBe(false);
+    expect(stamped(false).isUnread).toBe(true);
+  });
+
+  it('helpdesk kind → helpdesk facet set', () => {
+    const f = conversationFacets(makeInputs({ kind: ConversationKind.HELPDESK, latestRead: false }));
+    expect(f.kind).toBe('helpdesk');
   });
 
   it('archived_at after the latest pointer ts → archived', () => {
@@ -120,9 +128,9 @@ describe('conversationFacets', () => {
     expect(f.isInvitation).toBe(false);
   });
 
-  it('orthogonal axes co-occur: a row can be invitation + community + archived at once', () => {
+  it('orthogonal axes co-occur: a row can be invitation + helpdesk + archived at once', () => {
     const f = conversationFacets(makeInputs({
-      kind: ConversationKind.COMMUNITY,
+      kind: ConversationKind.HELPDESK,
       archived_at: '2026-06-10T12:00:00Z',
       latestPtrTs: '2026-06-10T11:00:00Z',
       firstKind: FlowMessageKind.INVITATION,
@@ -131,7 +139,7 @@ describe('conversationFacets', () => {
       viewerEmail: 'me@x.test',
     }));
     expect(f.isInvitation).toBe(true);
-    expect(f.kind).toBe('community');
+    expect(f.kind).toBe('helpdesk');
     expect(f.isArchived).toBe(true);
   });
 });

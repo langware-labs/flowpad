@@ -106,6 +106,36 @@ async def test_terminate_worker_sigkill_fallback():
 # ---------------------------------------------------------------------------
 
 
+def test_session_sweep_skips_a_process_that_exits_mid_read():
+    """The argv sweep reads every process's cmdline. On macOS a process exiting
+    between the table walk and the read makes psutil's ``proc_cmdline`` raise
+    ``SystemError`` (an exception set inside the C call) — not the
+    AccessDenied/ZombieProcess that ``process_iter(attrs)`` absorbs. That one
+    vanishing stranger failed the whole sweep, so ``exit`` (and every Restart)
+    answered 500 under load. A process whose argv cannot be read is not ours to
+    match: skip it, keep sweeping."""
+    session_id = "11111111-2222-4333-8444-555555555555"
+
+    vanishing = _fake_psutil_proc(101)
+    vanishing.cmdline.side_effect = SystemError("<built-in function proc_cmdline> returned a result with an exception set")
+    worker = _fake_psutil_proc(102)
+    worker.cmdline.return_value = ["claude", "--session-id", session_id]
+    stranger = _fake_psutil_proc(103)
+    stranger.cmdline.return_value = ["bash"]
+
+    def process_iter(attrs=None):
+        # psutil's own prefetch: ``attrs`` reads each one through ``as_dict``, which
+        # absorbs only AccessDenied/ZombieProcess — anything else escapes the iterator.
+        for proc in (vanishing, worker, stranger):
+            if attrs:
+                proc.info = {"pid": proc.pid, "cmdline": proc.cmdline()}
+            yield proc
+
+    shell = Shell.model_construct(worker_pid=None)
+    with patch("flow_sdk.builtin.shell.psutil.process_iter", side_effect=process_iter):
+        assert shell._session_worker_procs(session_id, set()) == [worker]
+
+
 @pytest.mark.asyncio
 async def test_process_exit_keeps_shell():
     """process.exit() preserves shell entity — calls stop(), NOT close()."""
@@ -199,7 +229,14 @@ async def test_start_pty_reloads_process_inside_open_lock_and_applies_session_ov
 
     assert result is expected
     assert calls == [(fresh, "resume", True, True, "session-override")]
-    assert stale.session_id is None
+    # The launch ran on ``fresh``; the caller's object must MIRROR what was
+    # launched. This previously asserted ``stale.session_id is None`` — that the
+    # caller stayed untouched — which is precisely the staleness that made
+    # ``transcript_path`` (None without a session id) unresolvable for any
+    # in-process caller. ``_LAUNCH_OUTPUT_FIELDS`` now copies the launch outputs
+    # back, so the override the worker actually used is visible here too.
+    assert stale.session_id == "session-override"
+    assert stale.shell_id == fresh.shell_id
 
 
 @pytest.mark.asyncio
@@ -455,12 +492,12 @@ async def test_open_gate_retry_clears_latch():
 @pytest.mark.asyncio
 async def test_open_missing_fork_source_fails_before_shell_spawn():
     """A vanished fork parent must not degrade into ``--resume <new-id>``."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
     from flow_sdk.responses.response import ApiFailResponse
 
     source_id = "missing-fork-source"
     process = AgenticProcess.fork(source_id, workdir="/project", visible=True)
-    cmd = ClaudeCliOptions(
+    cmd = ClaudeAgentOptions(
         workdir="/project",
         session_id=process.session_id,
         resume=True,

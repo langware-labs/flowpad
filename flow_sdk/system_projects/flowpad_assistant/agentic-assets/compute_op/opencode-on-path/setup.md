@@ -1,0 +1,1 @@
+Install OpenCode with its install script (the same commands the OpenCode CLI capability uses). It installs into its own folder, `~/.opencode/bin`, and needs no Node.js. OpenCode ships no Windows installer that needs nothing preinstalled, so there is no Windows command here.

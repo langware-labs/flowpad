@@ -10,6 +10,7 @@ Wrapper location:
 """
 
 import os
+import shutil
 import stat
 import sys
 from pathlib import Path
@@ -67,6 +68,7 @@ exit 0
 def get_wrapper_path() -> Path:
     """Return the OS-specific wrapper script path under the per-instance flow_home."""
     from flow_sdk.instance_settings import get_instance_settings
+
     flow_dir = get_instance_settings().flow_home
     if sys.platform == "win32":
         return flow_dir / "flowpad_runner.ps1"
@@ -93,6 +95,42 @@ def ensure_wrapper() -> Path:
         wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     return wrapper_path
+
+
+def get_installed_flow_invocation() -> tuple[str, list[str]]:
+    """Return the current installation's Flow CLI as raw executable argv.
+
+    Process-scoped hooks use this non-writing seam so they cannot resolve an
+    older ``flow`` later through the worker's PATH or materialize a global
+    wrapper. The entrypoint beside this Python interpreter is the matching
+    install; PATH is only a fallback for environments without that entrypoint.
+    """
+    entrypoint_name = "flow.exe" if sys.platform == "win32" else "flow"
+    adjacent = Path(sys.executable).parent / entrypoint_name
+    resolved = _absolute_executable(adjacent)
+    if resolved is None:
+        discovered = shutil.which("flow")
+        resolved = _absolute_executable(discovered) if discovered else None
+    if resolved is None:
+        raise FileNotFoundError("Flow CLI executable not found beside the current Python interpreter or on PATH")
+
+    if sys.platform == "win32" and resolved.lower().endswith((".cmd", ".bat")):
+        comspec = os.environ.get("COMSPEC") or shutil.which("cmd.exe")
+        resolved_comspec = _absolute_executable(comspec) if comspec else None
+        if resolved_comspec is None:
+            raise FileNotFoundError("Windows COMSPEC executable not found for Flow CLI batch entrypoint")
+        return resolved_comspec, ["/d", "/s", "/c", resolved]
+    return resolved, []
+
+
+def _absolute_executable(path: str | Path) -> str | None:
+    """Resolve one existing executable without searching or writing."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        return None
+    if sys.platform != "win32" and not os.access(candidate, os.X_OK):
+        return None
+    return str(candidate.resolve())
 
 
 def wrap_command(flow_args: str) -> str:

@@ -1,0 +1,1 @@
+Install the Codex CLI with OpenAI's standalone installer (the same commands the Codex CLI capability uses). It fetches a signed binary into `~/.local/bin` (`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` on Windows) and needs nothing preinstalled — no Node.js, no npm.

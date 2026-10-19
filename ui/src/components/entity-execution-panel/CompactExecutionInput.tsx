@@ -1,13 +1,26 @@
 import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
+import {
+  AttachFilesButton,
+  PickedFileList,
+  useAnnotatedImagePaste,
+  usePickedFiles,
+} from '@src/components/conversation/FileAttachmentPicker';
 import { Send, Square } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { caretOnFirstLine, caretOnLastLine, type InputHistory } from '@src/hooks/use-input-history';
 import { PromptHistoryList } from './PromptHistoryList';
+import { readDraft, writeDraft } from './composer-drafts';
+
+/** Lets the owner push text into the composer the user is typing in. */
+export interface CompactExecutionInputHandle {
+  /** Replace the selection at the caret with `text` (native editing: undoable). */
+  insertAtCaret: (text: string) => void;
+}
 
 interface CompactExecutionInputProps {
-  onSend: (text: string) => void | Promise<void>;
+  onSend: (text: string, files?: File[]) => void | Promise<void>;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -27,9 +40,18 @@ interface CompactExecutionInputProps {
    * Handle pasted image files (upload to the process input dir, open the Files
    * side tab, etc). Returns one reference line per uploaded image — these are
    * inserted into the composer at the caret so they ride along with the next
-   * send, mirroring the PTY paste behaviour. Omit to leave paste as plain text.
+   * send, mirroring the PTY paste behaviour; a caption typed in the annotator
+   * comes back as a trailing line. `initialCaption` is the text that came on the
+   * clipboard with the image. Omit to leave paste as plain text.
    */
-  onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
+  onPasteImages?: (files: File[], options?: { initialCaption?: string }) => Promise<string[] | void> | string[] | void;
+  /**
+   * Opt-in attachments mode: a "+" picker button, drag-and-drop onto the
+   * composer, and file chips. Picked files are held locally and handed to
+   * onSend — the owner uploads them (there may be no process yet to upload
+   * into) and rides the reference lines along with the prompt.
+   */
+  allowAttachments?: boolean;
   /**
    * Prompt-history navigation (ArrowUp/Down at the first/last line browses;
    * a list of past prompts renders under the textarea while browsing when
@@ -44,13 +66,33 @@ interface CompactExecutionInputProps {
    * sees where the prompt went. Skipped under prefers-reduced-motion.
    */
   animateEnqueue?: boolean;
+  /**
+   * Keep the unsent draft across unmount/remount and across a reload, for the
+   * lifetime of this browser tab (see `composer-drafts.ts`). On by default:
+   * navigating away from a half-typed prompt and losing it is never the wanted
+   * behaviour. Pass false for a composer that must always open empty.
+   */
+  saveDraft?: boolean;
+  /**
+   * Which conversation the draft belongs to — a process id, or a surface
+   * identity for a panel that may not have a process yet. Without it there is
+   * nothing to tell two composers apart, so persistence stays inert rather
+   * than risk one chat's draft appearing in another.
+   */
+  draftScope?: string;
+  handleRef?: Ref<CompactExecutionInputHandle>;
 }
 
 /**
  * Textarea + send/stop input for the chat surfaces. Deliberately minimal — no
- * uploads, tools panel, codebase connectors, or login flows. Enter sends;
- * Shift+Enter inserts a newline; Cmd/Ctrl+Enter also sends; Escape stops the
- * in-flight turn. While `running`, a Stop button appears and sends enqueue.
+ * tools panel, codebase connectors, or login flows; file attachments are
+ * opt-in via `allowAttachments`. Enter sends; Shift+Enter inserts a newline;
+ * Cmd/Ctrl+Enter also sends; Escape stops the in-flight turn. While
+ * `running`, a Stop button appears and sends enqueue.
+ *
+ * The composer owns its draft: given a `draftScope` it stores the text as it is
+ * typed and restores it on mount, so navigating away and returning — or
+ * reloading the tab — does not lose an unsent prompt.
  */
 export function CompactExecutionInput({
   onSend,
@@ -62,15 +104,70 @@ export function CompactExecutionInput({
   onStop,
   bare = false,
   onPasteImages,
+  allowAttachments = false,
   leadingSlot,
   onShiftTab,
   history,
   animateEnqueue = false,
+  saveDraft = true,
+  draftScope,
+  handleRef,
 }: CompactExecutionInputProps) {
   const { t } = useLingui();
-  const [value, setValue] = useState('');
+  const scope = saveDraft ? draftScope : undefined;
+  const [value, setValue] = useState(() => readDraft(scope));
   const taRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // insertText goes through the textarea's own editing path: it replaces the
+  // selection, fires `input` (so the controlled value updates) and stays on the
+  // undo stack.
+  useImperativeHandle(
+    handleRef,
+    () => ({
+      insertAtCaret: (text: string) => {
+        const node = taRef.current;
+        if (!node || node.disabled) return;
+        node.focus();
+        document.execCommand('insertText', false, text);
+      },
+    }),
+    [],
+  );
+
+  // Persist as the text changes, NOT on unmount: a reload runs no React
+  // cleanup, so a draft saved only on the way out would survive navigation and
+  // still be lost to F5 — the case this exists for. Keeping it in one effect
+  // also leaves all five setValue call sites (typing, paste splice, history
+  // browsing) untouched.
+  //
+  // The scope-swap frame renders the NEW scope with the OLD value, so it must
+  // adopt rather than write — otherwise one conversation's text lands under
+  // another's key. The outgoing text is already stored: it was written when it
+  // was typed.
+  //
+  // One exception, and it is why the check is `undefined` and not "changed":
+  // a scope arriving from undefined is this composer's own identity RESOLVING
+  // (the owning panel looks its process up asynchronously), not a move to
+  // another conversation. The text on screen belongs to this chat, so it is
+  // carried over instead of being wiped by an empty stored draft. Any
+  // defined -> defined change IS a real switch and adopts.
+  const prevScope = useRef(scope);
+  useEffect(() => {
+    if (prevScope.current !== scope) {
+      const identityResolved = prevScope.current === undefined;
+      prevScope.current = scope;
+      if (identityResolved && value !== '') {
+        writeDraft(scope, value);
+        return;
+      }
+      setValue(readDraft(scope));
+      return;
+    }
+    writeDraft(scope, value);
+  }, [scope, value]);
+
+  const picker = usePickedFiles({ enabled: allowAttachments, disabled });
 
   // Autosize the textarea up to ~200px. Keep overflow hidden until the content
   // genuinely exceeds the cap — otherwise the border-box border leaves a ~2px
@@ -133,28 +230,46 @@ export function CompactExecutionInput({
     });
   }, []);
 
+  // A files-only send is valid — the ref lines ARE the prompt (files can only
+  // be non-empty when allowAttachments is on; every add path is gated).
+  const canSend = !!value.trim() || picker.files.length > 0;
+
   const send = useCallback(async () => {
+    if (!canSend || disabled) return;
     const text = value.trim();
-    if (!text || disabled) return;
+    const files = picker.files;
     setValue('');
+    picker.clear();
     history?.exitBrowsing();
-    if (running && animateEnqueue) runEnqueueAnimation(text);
-    await onSend(text);
-  }, [value, disabled, onSend, history, running, animateEnqueue, runEnqueueAnimation]);
+    if (running && animateEnqueue && text) runEnqueueAnimation(text);
+    await onSend(text, files);
+  }, [canSend, value, picker, disabled, onSend, history, running, animateEnqueue, runEnqueueAnimation]);
+
+  // With no owner hook but attachments on (no process to upload into yet),
+  // pasted images take the shared path: annotate, then chips sent with the text.
+  const pasteAsChips = useAnnotatedImagePaste(picker.addFiles, {
+    enabled: allowAttachments && !disabled,
+    setText: setValue,
+  });
 
   // Image paste: hand the image files to the owner (upload + open Files tab),
   // then splice the returned reference line(s) into the textarea at the caret.
   // Non-image pastes fall through to the browser's default text paste.
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (!onPasteImages || disabled) return;
+      if (!onPasteImages) {
+        pasteAsChips(e);
+        return;
+      }
+      if (disabled) return;
       const images = imageFilesFromClipboardData(e.clipboardData, new Date(), { prefix: 'screenshot' });
       if (images.length === 0) return;
       e.preventDefault();
       const ta = e.currentTarget;
       const start = ta.selectionStart ?? value.length;
       const end = ta.selectionEnd ?? start;
-      void Promise.resolve(onPasteImages(images)).then((refs) => {
+      const initialCaption = e.clipboardData.getData('text/plain');
+      void Promise.resolve(onPasteImages(images, { initialCaption })).then((refs) => {
         const insert = refs && refs.length > 0 ? refs.join('\n') : null;
         if (insert !== null) {
           setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);
@@ -171,7 +286,7 @@ export function CompactExecutionInput({
         });
       });
     },
-    [onPasteImages, disabled, value],
+    [onPasteImages, pasteAsChips, disabled, value],
   );
 
   const handleKeyDown = useCallback(
@@ -224,8 +339,20 @@ export function CompactExecutionInput({
   return (
     <div
       ref={rootRef}
-      className={cn('flex flex-shrink-0 flex-col gap-1.5', !bare && 'border-t bg-background px-3 py-2.5', className)}
+      {...picker.dragProps}
+      className={cn(
+        'flex flex-shrink-0 flex-col gap-1.5',
+        !bare && 'border-t bg-background px-3 py-2.5',
+        picker.dragging && 'rounded-xl ring-1 ring-primary',
+        className,
+      )}
     >
+      <PickedFileList
+        files={picker.files}
+        rejected={picker.rejected}
+        disabled={disabled}
+        onRemoveAt={picker.removeAt}
+      />
       <textarea
         ref={taRef}
         value={value}
@@ -248,26 +375,35 @@ export function CompactExecutionInput({
       )}
       <div className="flex min-h-8 items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5" data-queue-chip-anchor>
+          {allowAttachments && (
+            <AttachFilesButton
+              inputId={picker.inputId}
+              onFiles={picker.addFiles}
+              disabled={disabled}
+              title={t`Attach files`}
+              testId="entity-execution-attach"
+            />
+          )}
           {leadingSlot}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           {statusSlot}
           {/* While running, Send stays available for non-empty drafts (it
               enqueues); Stop sits beside it. */}
-          {(!showStop || value.trim()) && (
+          {(!showStop || canSend) && (
             <button
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
                 void send();
               }}
-              disabled={disabled || !value.trim()}
+              disabled={disabled || !canSend}
               title={showStop ? t`Queue message` : t`Send`}
               aria-label={showStop ? t`Queue message` : t`Send message`}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
               data-testid="entity-execution-send"
             >
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-3.5 w-3.5 rtl:-scale-x-100" />
             </button>
           )}
           {showStop && (

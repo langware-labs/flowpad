@@ -1,9 +1,10 @@
 /**
  * Registry of fence languages that render as something other than code.
  *
- * A renderer turns the fence's source text into DOM. It never touches the
- * document — the NodeView that hosts it is render-only, so markdown output is
- * byte-identical whether or not a language is registered here.
+ * A renderer turns the fence's source text into DOM. It can request an ordinary
+ * document edit through the host context, but the NodeView owns that write so
+ * the source remains a normal code block and Markdown serialization is
+ * unchanged.
  */
 
 import type { FenceHostServices } from './host-services';

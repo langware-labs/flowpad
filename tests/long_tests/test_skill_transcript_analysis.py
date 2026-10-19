@@ -20,8 +20,8 @@ Requires:
   - the worker's CLI on PATH and authenticated (real ``$HOME`` — this module is
     in ``_REAL_HOME_TEST_MODULES`` in conftest so the CLI inherits credentials).
 
-LLM compliance is non-deterministic; an Anthropic/worker API timeout is
-downgraded to a skip by the conftest report hook.
+LLM compliance is non-deterministic. Worker API timeouts remain failures
+under the existing test deadline.
 """
 
 import asyncio
@@ -34,13 +34,14 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.transcript_analyzer import EntryKind
+from tests.long_tests._model_tier import small_model_for
 from tests.long_tests._transcript_helpers import (
     ANALYZER_WORKER_KEY,
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
     safe_exit,
 )
-from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -49,15 +50,6 @@ pytestmark = [
         reason="Skipping long tests when DEEP_TESTING is disabled",
     ),
 ]
-
-
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    """Run one capability discovery sweep so the drivers can resolve their CLI
-    binaries (the server does this at boot; tests must trigger it explicitly)."""
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
 
 
 # ── workers under test ───────────────────────────────────────────────────────
@@ -121,6 +113,17 @@ def _install_for_codex(skill_name: str, skills_parent: Path) -> Path | None:
     return dest
 
 
+def _mirror_for_copilot(skill_name: str, skills_parent: Path) -> None:
+    """Copilot loads only ``.github/skills`` from an ``--add-dir`` mount (``copilot
+    --help``; ``CopilotDriver.skills_root``), never ``.claude/skills``; mirror ours.
+
+    Without it the skill tool answers "not available" and the agent reads SKILL.md
+    by hand — which the skip below then mislabelled as LLM non-compliance.
+    """
+    src = skills_parent / ".claude" / "skills" / skill_name
+    shutil.copytree(src, skills_parent / ".github" / "skills" / skill_name)
+
+
 def _skill_call_entries(transcript, skill_name: str) -> list:
     """Official skill entries for ``skill_name`` from the analyzer.
 
@@ -129,11 +132,7 @@ def _skill_call_entries(transcript, skill_name: str) -> list:
     ``SKILL.md`` file-load), so this is worker-agnostic: filter the dedicated
     kind and match the skill name.
     """
-    return [
-        e
-        for e in transcript.filter(kind=EntryKind.SKILL_CALL)
-        if getattr(e, "skill_name", "") == skill_name
-    ]
+    return [e for e in transcript.filter(kind=EntryKind.SKILL_CALL) if getattr(e, "skill_name", "") == skill_name]
 
 
 @pytest.mark.asyncio
@@ -141,8 +140,12 @@ def _skill_call_entries(transcript, skill_name: str) -> list:
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
 async def test_skill_usage_visible_in_transcript(
-    worker_type, cli_name, temp_skill, tmp_path, _workers_discovered,
-    local_project, local_compute_node,
+    worker_type,
+    cli_name,
+    temp_skill,
+    tmp_path,
+    local_project,
+    local_compute_node,
 ):
     if shutil.which(cli_name) is None:
         pytest.skip(f"{cli_name} CLI not installed")
@@ -154,6 +157,8 @@ async def test_skill_usage_visible_in_transcript(
         codex_installed = _install_for_codex(skill_name, skills_parent)
         if codex_installed is None:
             pytest.skip("cannot stage skill into ~/.codex/skills")
+    if worker_type is WorkerType.COPILOT:
+        _mirror_for_copilot(skill_name, skills_parent)
 
     # prompt() resolves the process by id server-side — an unsaved instance
     # fails with "not found in database" (which the old `getattr(result, "ok",
@@ -162,14 +167,12 @@ async def test_skill_usage_visible_in_transcript(
         worker_type=worker_type,
         workdir=str(tmp_path),
         additional_dirs=[str(skills_parent)],
-        # Cheapest model the worker can resolve (Copilot stays unset — its auto
-        # mode already picks its small tier). Assertions are model-agnostic.
+        # Persist sm for every worker; native Copilot resolves it to vendor auto.
+        # Assertions are model-agnostic.
         cli_config=({"model": m} if (m := small_model_for(worker_type)) else {}),
         visible=False,
     ).save()
-    instruction = (
-        f"Run the {skill_name} skill now and follow its instructions exactly."
-    )
+    instruction = f"Run the {skill_name} skill now and follow its instructions exactly."
     try:
         # Headless prompt is fire-and-forget; the worker streams its turn into a
         # JSONL transcript in the background and assigns process.session_id.
@@ -183,7 +186,7 @@ async def test_skill_usage_visible_in_transcript(
             deadline_s=90,
         )
         if transcript is None:
-            pytest.skip(f"{cli_name} produced no usable transcript within 90s — infra/LLM latency")
+            fail_no_transcript(90, cli_name)
 
         # The analyzer normalizes every worker's skill shape onto SkillCallEntry,
         # so the assertion is identical across claude / codex / copilot.
@@ -204,9 +207,7 @@ async def test_skill_usage_visible_in_transcript(
             # differently-named skill — emitting nothing for OUR name to normalize.
             # That is LLM non-compliance, downgraded to a skip exactly like the
             # latency case above (never a flaky-marker, never a weakened assertion).
-            regressed_skill_tooluse = list(
-                transcript.filter(kind=EntryKind.TOOL_USE, tool_name="skill")
-            )
+            regressed_skill_tooluse = list(transcript.filter(kind=EntryKind.TOOL_USE, tool_name="skill"))
             if not regressed_skill_tooluse:
                 pytest.skip(
                     f"{cli_name} produced a transcript but did not surface a native "

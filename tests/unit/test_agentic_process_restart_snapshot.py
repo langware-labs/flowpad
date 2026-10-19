@@ -20,7 +20,7 @@ inside ``_restart_snapshot``.
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 
@@ -81,8 +81,8 @@ def test_every_worker_type_member_is_snapshot_stable(form_a, form_b):
 
 
 def test_codex_snapshot_treats_null_and_missing_optional_cli_keys_the_same():
-    """Persisted cli_config may omit null fields present in CodexCliOptions JSON."""
-    cli_config_with_nulls = CodexCliOptions(
+    """Persisted cli_config may omit null fields present in CodexAgentOptions JSON."""
+    cli_config_with_nulls = CodexAgentOptions(
         workdir=None,
         session_id=None,
         model=None,
@@ -204,5 +204,74 @@ async def test_restart_required_flips_on_config_change_and_clears_on_revert():
 
     # Revert it → snapshot matches the running worker's hash again → flag clears.
     p.workdir = "/repo/original"
+    await p.save()
+    assert p.restart_required is False
+
+
+def test_llm_endpoint_moves_the_restart_hash():
+    """Changing which budget a process spends must bounce a live PTY worker.
+
+    The endpoint is baked into the worker's spawn env, so a running worker keeps spending the one it
+    started with no matter what the field says — exactly the contract ``mcp_servers`` documents. The
+    headless path needs no restart (each turn re-spawns and re-resolves auth), but the hash is the
+    same one both paths consult, and flagging a restart nobody needs is the safe direction.
+    """
+    ENDPOINT = "llm_endpoint-11111111-2222-4333-8444-555555555555"
+    unset = AgenticProcess(worker_type="claude_code")
+    bound = AgenticProcess(worker_type="claude_code", llm_endpoint_typeid=ENDPOINT)
+    assert unset._restart_snapshot() != bound._restart_snapshot()
+
+    same = AgenticProcess(worker_type="claude_code", llm_endpoint_typeid=ENDPOINT)
+    assert bound._restart_snapshot() == same._restart_snapshot(), "the same endpoint must not churn the hash"
+
+    other = AgenticProcess(
+        worker_type="claude_code", llm_endpoint_typeid="llm_endpoint-22222222-2222-4333-8444-555555555555"
+    )
+    assert bound._restart_snapshot() != other._restart_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_adding_a_folder_to_a_running_pty_worker_asks_for_a_restart(tmp_path, monkeypatch):
+    """The Assets board's "+ Folder…" goes through the ``add-dir`` action. A live PTY
+    worker was launched with its ``--add-dir`` set, so a new folder only reaches it
+    after a restart — the action must light ``restart_required`` (the toolbar's
+    Restart glow), and removing the folder again must put it out."""
+    import flow_sdk.builtin.agentic_process.agentic_process as module
+
+    async def no_index(_path):  # the one-shot indexer scan is not under test
+        return None
+
+    monkeypatch.setattr(module, "_index_additional_dir", no_index)
+    extra = str(tmp_path / "extra")
+    p = AgenticProcess(worker_type="claude_code", pty_mode=True, status=ProcessStatus.RUNNING.value, workdir=str(tmp_path))
+    p.last_started_hash = p._restart_snapshot()
+    await p.save()
+    assert p.restart_required is False
+
+    await p.add_dir(extra)
+    assert p.additional_dirs == [extra]
+    assert p.restart_required is True
+
+    await p.remove_dir(extra)
+    assert p.restart_required is False
+
+
+@pytest.mark.asyncio
+async def test_opening_the_input_folder_after_launch_never_asks_for_a_restart(tmp_path, monkeypatch):
+    """The terminal resolves the process's input folder (the ``input-dir`` GET creates it) as soon
+    as a live process is on screen. ``resolved_add_dirs`` mounts that folder once it exists, so if
+    it first appeared AFTER the launch snapshot, the very next save saw a new ``--add-dir`` and lit
+    the Restart glow on a process nobody had touched — and reverting a real change could never put
+    it out. Like the process-assets mount, it is a derived path: its presence is not launch intent."""
+    from flow_sdk.builtin.agentic_process.process_io import input_dir
+
+    monkeypatch.setattr(AgenticProcess, "_record_dir", lambda self: tmp_path / "record")
+    p = AgenticProcess(worker_type="claude_code", pty_mode=True, status=ProcessStatus.RUNNING.value, workdir=str(tmp_path))
+
+    p.last_started_hash = p._restart_snapshot()
+    await p.save()
+    assert p.restart_required is False
+
+    input_dir(p).mkdir(parents=True, exist_ok=True)  # what the input-dir GET does on screen
     await p.save()
     assert p.restart_required is False

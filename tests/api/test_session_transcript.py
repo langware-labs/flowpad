@@ -1,7 +1,14 @@
 """Tests for the session-transcript endpoint on ComputeNode."""
 
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pytest
 from httpx import AsyncClient
+
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.instance_settings import get_instance_settings
 
 
 @pytest.mark.asyncio
@@ -28,39 +35,36 @@ async def test_session_transcript_nonexistent_returns_empty(bootstrapped_client:
 
 @pytest.mark.asyncio
 async def test_session_transcript_excludes_raw_json(bootstrapped_client: AsyncClient):
-    """If entries exist, raw_json field should NOT appear in response."""
-    # This test requires a real session JSONL to exist.
-    # In CI without real sessions, the endpoint returns [] which is still valid.
-    # When run locally with real Claude sessions, it validates raw_json exclusion.
-    import pathlib
-
-    projects_dir = pathlib.Path.home() / ".claude" / "projects"
-    if not projects_dir.is_dir():
-        pytest.skip("No ~/.claude/projects directory")
-
-    # Find any existing session
-    session_id = None
-    for project_dir in projects_dir.iterdir():
-        if not project_dir.is_dir():
-            continue
-        for jsonl_file in project_dir.glob("*.jsonl"):
-            session_id = jsonl_file.stem
-            break
-        if session_id:
-            break
-
-    if not session_id:
-        pytest.skip("No Claude sessions found")
-
-    resp = await bootstrapped_client.get(
-        "/api/v1/graph/compute_node/@local/session-transcript",
-        params={"session_id": session_id},
-    )
+    """A populated transcript retains its entry fields and excludes raw_json."""
+    session_id = mint_uuid()
+    entry_id = mint_uuid()
+    timestamp = "2026-05-07T00:00:00.000Z"
+    message = {"role": "user", "content": "Transcript response fixture"}
+    raw = {
+        "type": "user",
+        "sessionId": session_id,
+        "uuid": entry_id,
+        "timestamp": timestamp,
+        "message": message,
+        "raw_json": {"fixture": "must be excluded"},
+    }
+    projects_dir = get_instance_settings().claude_projects_dir
+    projects_dir.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix="e2etest-transcript-", dir=projects_dir) as folder:
+        raw["cwd"] = folder
+        jsonl_file = Path(folder) / f"{session_id}.jsonl"
+        jsonl_file.write_text(json.dumps(raw) + "\n", encoding="utf-8")
+        resp = await bootstrapped_client.get(
+            "/api/v1/graph/compute_node/@local/session-transcript",
+            params={"session_id": session_id},
+        )
+    assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "SUCCESS"
-    if body["data"]:
-        for entry in body["data"]:
-            assert "raw_json" not in entry, "raw_json should be excluded by default"
-            assert "entry_type" in entry
-            assert "entry_uuid" in entry or "id" in entry
-            assert "timestamp" in entry
+    assert len(body["data"]) == 1
+    entry = body["data"][0]
+    assert "raw_json" not in entry, "raw_json should be excluded by default"
+    assert entry["entry_type"] == "user"
+    assert entry["entry_uuid"] == entry_id
+    assert entry["timestamp"] == timestamp
+    assert entry["message"] == message

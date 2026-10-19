@@ -1,14 +1,9 @@
 import { FlowData } from '@sdk';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useLingui } from '@lingui/react/macro';
 import { Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
@@ -38,8 +33,9 @@ export function MetaMessageChip({
   const content = flowData.content ?? '';
   const skillDir = parseSkillDir(content);
   const skillName = structuredName ?? (skillDir ? basename(skillDir) : null);
-  const label = skillName ? t`Using skill: ${skillName}` : t`System note`;
+  const label = skillName ? t`Using skill: ${skillName}` : (parseTaskNotificationSummary(content) ?? t`System note`);
   const [open, setOpen] = useState(false);
+  const links = useLinkHandlers();
   const { openSkill, opening } = useOpenSkill();
 
   const openEditor = async () => {
@@ -75,8 +71,8 @@ export function MetaMessageChip({
                 {label}
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1 text-[14px] leading-7">
-              <MarkdownView value={skillBody(content)} compact />
+            <div className="min-h-0 flex-1 overflow-y-auto pe-1 text-[14px] leading-7">
+              <MarkdownView value={skillBody(content)} compact links={links} />
             </div>
             <DialogFooter>
               <Button
@@ -95,6 +91,17 @@ export function MetaMessageChip({
       )}
     </div>
   );
+}
+
+/**
+ * A finished background task is reported to the agent as a `<task-notification>` envelope (task id,
+ * output file, status, ...). Its `<summary>` is the one line meant for a person — "Background command
+ * "wait" completed (exit code 0)" — so the chip says that instead of the generic "System note".
+ */
+export function parseTaskNotificationSummary(content: string): string | null {
+  if (!content.trimStart().startsWith('<task-notification>')) return null;
+  const summary = content.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim();
+  return summary || null;
 }
 
 /** Skill injections carry "Base directory for this skill: …/skills/<name>". */

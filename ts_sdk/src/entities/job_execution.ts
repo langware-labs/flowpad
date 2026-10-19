@@ -1,21 +1,15 @@
 import { APIEntity, registerEntity, dataManager } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { JobExecutionStatus, JobRunnerType } from './jobs_enum';
+import { IJobExecution } from './job_execution-types';
+export type * from './job_execution-types';
 
-export interface IJobExecution extends IEntity {
-  job_id: string;
-  status: JobExecutionStatus;
-  started_at?: Date | null;
-  completed_at?: Date | null;
-  duration_seconds?: number | null;
-  exit_code?: string | null;
-  error_message?: string | null;
-  returned_value?: any;
-  job_execution_provider_id?: string | null;
-  job_provider_type?: JobRunnerType | null;
-  params?: Record<string, any> | null;
-}
+// `implements IJobExecution` only checks the class; it contributes no members, so every
+// field declared solely on IJobExecution read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface JobExecution extends EntityMerge<IJobExecution> {}
 
 @registerEntity
 export class JobExecution extends APIEntity<JobExecution> implements IJobExecution {

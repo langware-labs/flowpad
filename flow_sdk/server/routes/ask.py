@@ -1,0 +1,195 @@
+"""The question an op put to a person, and the answer coming back.
+
+A pending question is not an entity — it lives for at most the span of one
+bounded wait and is never written down — so it gets its own three routes rather
+than actions on a row that would have to be addressed alongside it. The window
+opens knowing one thing, the question id, and these routes are what it can do
+with it.
+
+The answer is validated HERE, against the shape the op declared, so a person who
+typed the wrong thing gets a correctable 422 instead of an op that failed on
+their behalf. Only a value that satisfies the declaration ever reaches the
+waiting rung.
+"""
+
+from typing import Any, Optional
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
+from flow_sdk.core.compute_op.ask import (
+    AssistRefused,
+    ask_person,
+    assist,
+    held_items,
+    open_questions,
+    pending,
+    seen,
+    serve_here,
+)
+from flow_sdk.core.compute_op.ask import answer as deliver_answer
+from flow_sdk.core.compute_op.ask import cancel as decline
+from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
+
+router = APIRouter(prefix="/api/v1/ask")
+
+# Mounting these routes is what makes this process the one answers reach, so a
+# question asked here is held here; everyone else asks through ``POST /``.
+serve_here()
+
+
+def _fail(message: str, status_code: int) -> JSONResponse:
+    """A failure that is a real HTTP status, carrying the standard envelope.
+
+    ``ApiFailResponse`` is a pydantic MODEL: returned from a plain router it
+    serializes as 200 with a FAIL body, because only the entity-action
+    dispatcher reads its ``status_code``. A 422 arriving as a 200 is a 422 the
+    browser never handles.
+    """
+    return JSONResponse(status_code=status_code, content={"status": "FAIL", "message": message, "data": None})
+
+
+class AnswerRequest(BaseModel):
+    """What the person typed. ``value`` may be any JSON the shape accepts."""
+
+    value: Any = None
+
+
+class AskRequest(BaseModel):
+    """A question from a process that is not this one — ``ask_through_backend``."""
+
+    op: str
+    prompt: str
+    shape: Any = None
+    #: Already the op's shortest deadline; this route waits exactly that long.
+    #: ``None`` is an ``until_answered`` op's: no deadline.
+    timeout: Optional[float]
+    label: str
+    detail: str = ""
+    submit_label: str = ""
+    cancel_label: str = ""
+    #: The answer is a secret: the window masks it.
+    secret: bool = False
+    #: The answer is a file's content: the window offers a file picker and a paste box.
+    file: bool = False
+    #: Closes by itself when its goal holds: the window offers no Send.
+    auto: bool = False
+    #: Several ways to answer, of which the person picks one (``AskOp.choices``).
+    choices: list[AskChoiceSpec] = []
+    #: Several questions asked as one (``Question.items``).
+    items: list[AskItemSpec] = []
+    #: The Wizard entity this question is a step of, when it is one.
+    wizard_id: str = ""
+    #: How a person finds the value (the op's ``setup.md``).
+    guide: str = ""
+    #: AI Assist: the agent that can answer instead, how long it gets, and where it works.
+    assist_agent: str = ""
+    setup_timeout: float = 0.0
+    workdir: str = ""
+    #: Start the assist as soon as the question is raised — a terminal whose person left it empty.
+    assist_now: bool = False
+
+
+@router.post("")
+async def ask_for_another_process(body: AskRequest):
+    """Raise the question here, wait the caller's bounded time, answer with the
+    ``AskResult``. The answer routes below resolve it like any local question."""
+    said = await ask_person(
+        body.op,
+        body.prompt,
+        body.shape,
+        timeout=body.timeout,
+        label=body.label,
+        detail=body.detail,
+        submit_label=body.submit_label,
+        cancel_label=body.cancel_label,
+        secret=body.secret,
+        file=body.file,
+        auto=body.auto,
+        choices=body.choices,
+        items=body.items,
+        wizard_id=body.wizard_id,
+        guide=body.guide,
+        assist_agent=body.assist_agent,
+        setup_timeout=body.setup_timeout,
+        workdir=body.workdir,
+        assist_now=body.assist_now,
+    )
+    return ApiSuccessResponse(data=said.model_dump(mode="json"))
+
+
+@router.get("")
+async def list_questions():
+    """Every question waiting right now. Usually none, at most a handful."""
+    return ApiSuccessResponse(data={"questions": [q.to_payload() for q in open_questions()]})
+
+
+@router.get("/{question_id}")
+async def read_question(question_id: str):
+    """One question, or 404 once it is settled.
+
+    A 404 is the normal end state, not an error: the op timed out, or somebody
+    else answered. The window shows that rather than a spinner nobody will
+    resolve.
+    """
+    question = pending(question_id)
+    if question is None:
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data=question.to_payload())
+
+
+@router.post("/{question_id}/answer")
+async def answer_question(question_id: str, body: AnswerRequest):
+    """Deliver an answer, once it satisfies the shape the op declared."""
+    question = pending(question_id)
+    if question is None:
+        return _fail("that question is no longer waiting", 404)
+
+    value: Optional[Any] = body.value
+    if question.items:
+        try:
+            value = held_items(question.items, value)
+        except DeclaredShapeError as mismatch:
+            return _fail(str(mismatch), 422)
+    elif question.shape is not None:
+        try:
+            value = to_declared(value, question.shape)
+        except DeclaredShapeError as mismatch:
+            # 422, not 400: the request is well formed, the VALUE is not what
+            # was asked for — and the person can fix it without reloading.
+            return _fail(str(mismatch), 422)
+
+    if not deliver_answer(question_id, value):
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data={"answered": question_id})
+
+
+@router.post("/{question_id}/cancel")
+async def cancel_question(question_id: str):
+    """Decline. The op hears "no value", not "something broke"."""
+    if not decline(question_id):
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data={"cancelled": question_id})
+
+
+@router.post("/{question_id}/seen")
+async def question_seen(question_id: str):
+    """A screen is showing the question: it waits as long as someone has it open (``ask.seen``)."""
+    if not seen(question_id):
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data={"seen": question_id})
+
+
+@router.post("/{question_id}/assist")
+async def assist_question(question_id: str):
+    """AI Assist: the question's agent follows its guide and answers it. The question stays open —
+    the person can still answer — and now waits the setup's own span. 409 when it cannot start."""
+    try:
+        state = assist(question_id)
+    except AssistRefused as refused:
+        status = 404 if pending(question_id) is None else 409
+        return _fail(str(refused), status)
+    return ApiSuccessResponse(data=state)

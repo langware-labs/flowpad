@@ -1,4 +1,4 @@
-import { APIEntity, DataManager, registerEntity } from '@sdk';
+import { APIEntity, DataManager, FlowMessage, registerEntity } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 class CollisionCacheEntity extends APIEntity<CollisionCacheEntity> {
@@ -38,5 +38,33 @@ describe('asset occurrence cache projection', () => {
       '/repo/primary.md',
       '/repo/copy-a.md',
     ]);
+  });
+
+  it('clears a message\'s missing attachments once its body downloads', () => {
+    // The pre-download payload lists every entity as missing; the post-unpack
+    // UPDATE lists none. Merging by index kept the old entry beside
+    // body_downloaded=true, which the bubble reads as "pulled, but arrived short".
+    const manager = new DataManager<FlowMessage>();
+    const id = '161f1f5e-8e4a-49d0-a268-d40b44d1e050';
+    manager.updateEntityFromJson<FlowMessage>({
+      type: FlowMessage.type,
+      id,
+      body_status: 'uploading',
+      body_downloaded: false,
+      body_missing_attachments: [
+        { attachment_type: 'type_id', data: 'flowpad_diagnosis-a4c10701-8366-4f6b-badf-21c8273a3016' },
+      ],
+    });
+
+    const downloaded = manager.updateEntityFromJson<FlowMessage>({
+      type: FlowMessage.type,
+      id,
+      body_status: 'ready',
+      body_downloaded: true,
+      body_missing_attachments: [],
+    });
+
+    expect(downloaded.body_downloaded).toBe(true);
+    expect(downloaded.body_missing_attachments).toEqual([]);
   });
 });

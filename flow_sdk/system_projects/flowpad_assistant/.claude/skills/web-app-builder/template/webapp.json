@@ -1,0 +1,31 @@
+{
+  "name": "app",
+  "title": "App",
+  "description": "Next.js frontend + FastAPI backend + Supabase. The frontend dev server is the app, the backend is its `api` service; `setup.py` installs both halves.",
+  "build": ".",
+  "mounts": [
+    {
+      "audience": "app",
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "cd frontend && npx next dev --hostname 127.0.0.1 --port {port}",
+        "health": "/",
+        "install_cmd": "python3 setup.py",
+        "install_check": "frontend/node_modules"
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "api",
+      "protocol": {
+        "spec_kind": "api.rest"
+      },
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "cd backend && .venv/bin/uvicorn main:app --host 127.0.0.1 --port {port}",
+        "health": "/api/health"
+      }
+    }
+  ]
+}

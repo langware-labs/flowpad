@@ -1,26 +1,127 @@
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
-import { useAllProjects } from '@src/hooks/use-all-projects';
-import { dataContext, type ProjectListItem, Project, PrefKey } from '@sdk';
+import { dataContext, type ProjectListItem, Project, PrefKey, PageId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { canonicalPath } from '@src/components/project-selector';
+import { useProjectListSource } from './use-project-list-source';
 import { normalizePath, useProjectOpener } from './use-open-project';
-import { SectionHairlineTitle } from '@src/components/terminal/ProjectsCounterChip';
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { SectionHairlineTitle } from '@src/components/terminal/project-list-menu';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 import { useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
-import { Check, FolderOpen, FolderPlus, Loader2, Search } from 'lucide-react';
+import { Check, FolderOpen, FolderPlus, Info, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { AdvancedOnly } from '@src/components/view-mode';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /** Free-text match against a project's display name or cwd. `q` must already be
  *  trimmed + lowercased. */
 const matchesProjectQuery = (project: ProjectListItem, q: string): boolean =>
   getProjectDisplayName(project).toLowerCase().includes(q) || (project.cwd ?? '').toLowerCase().includes(q);
+
+/** Abbreviate the host home directory to `~` for the compact path subscript;
+ *  the full path stays on the tooltip and in the details popover. */
+function tildePath(path: string): string {
+  const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
+  if (!home) return path;
+  const h = canonicalPath(home);
+  const p = canonicalPath(path);
+  if (p === h) return '~';
+  return p.toLowerCase().startsWith(`${h.toLowerCase()}/`) ? `~${p.slice(h.length)}` : path;
+}
+
+function formatWhen(ms: number | null | undefined): string | null {
+  if (ms == null || Number.isNaN(ms)) return null;
+  return new Date(ms).toLocaleString();
+}
+
+/** Every field the project list knows about one project, behind the row's info icon. */
+function ProjectDetailsPopover({
+  project,
+  tabCount,
+  onOpenStatus,
+}: {
+  project: ProjectListItem;
+  tabCount?: number;
+  onOpenStatus: () => void;
+}) {
+  const { t } = useLingui();
+  const name = getProjectDisplayName(project);
+  const workers = project.worker_types?.length
+    ? project.worker_types.join(', ')
+    : [project.claude && 'claude', project.codex && 'codex', project.copilot && 'copilot'].filter(Boolean).join(', ');
+  const sessionParts = [
+    project.claude_session_count ? `Claude ${project.claude_session_count}` : null,
+    project.codex_session_count ? `Codex ${project.codex_session_count}` : null,
+    project.copilot_session_count ? `Copilot ${project.copilot_session_count}` : null,
+  ].filter(Boolean);
+  const rows: Array<[string, React.ReactNode, boolean?]> = [
+    [t`Name`, name],
+    [t`Path`, project.cwd, true],
+    [t`Project id`, project.id, true],
+    [t`Record id`, project.record_project_id, true],
+    [t`Claude dir`, project.encoded_name, true],
+    [t`Open tabs`, tabCount],
+    [t`Sessions`, `${project.session_count}${sessionParts.length ? ` (${sessionParts.join(' · ')})` : ''}`],
+    [t`Workers`, workers || null],
+    [t`Last opened`, formatWhen(project.last_active_at)],
+    [t`Modified`, project.modified_at ? formatWhen(Date.parse(project.modified_at)) : null],
+    [t`System`, project.hidden ? t`Yes` : null],
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          onClick={(e) => e.stopPropagation()}
+          title={t`Project details`}
+          aria-label={t`Details for ${name}`}
+          data-testid={`switch-project-info-${project.id}`}
+          className="shrink-0 px-2 py-1.5 text-muted-foreground hover:text-foreground"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" className="w-80 p-3 text-xs" data-testid="switch-project-details">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+          {rows
+            .filter(([, value]) => value !== null && value !== undefined && value !== '')
+            .map(([label, value, mono]) => (
+              <React.Fragment key={label}>
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className={`break-all ${mono ? 'font-mono text-[11px]' : ''}`} dir={mono ? 'ltr' : undefined}>
+                  {value}
+                </dd>
+              </React.Fragment>
+            ))}
+        </dl>
+        <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+          {project.cwd && (
+            <CopyButton
+              value={project.cwd}
+              title={t`Copy project path`}
+              iconClassName="h-3.5 w-3.5"
+              copiedIconClassName="text-green-500"
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            />
+          )}
+          <Button variant="ghost" size="sm" className="ms-auto h-7 text-xs" onClick={onOpenStatus}>
+            <Trans>Status & cleanup</Trans>
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // CompactProjectSelectDialog — the project picker
@@ -70,7 +171,9 @@ function CompactProjectSelectDialog({
   remoteProjectName,
 }: CompactProjectSelectDialogProps) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
   const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const q = search.trim().toLowerCase();
 
   const title = trigger === 'map' ? t`Map remote project` : trigger === 'gate' ? t`Pick a project` : t`Switch Project`;
@@ -83,8 +186,8 @@ function CompactProjectSelectDialog({
         ? t`Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions.`
         : null;
 
-  // Active projects = the ones that own open tabs — the SAME source the tab
-  // strip's projects chip renders, so both surfaces always agree.
+  // Active projects = the ones that own open tabs — the SAME source the nav
+  // bar's project chip renders, so both surfaces always agree.
   const { buckets } = useTabProjectBuckets();
   const tabCountByProjectId = useMemo(() => new Map(buckets.map((b) => [b.projectId, b.tabCount])), [buckets]);
 
@@ -113,37 +216,81 @@ function CompactProjectSelectDialog({
 
   // One row shape for both sections; active rows carry the chip's tab-count badge.
   const renderRow = (project: ProjectListItem, tabCount?: number) => {
-    const projectPath = normalizePath(project.cwd || project.name || '');
+    // Mount path only, never `name` — matches `currentProjectPath` above, so
+    // a cwd-less row simply never reads as current instead of matching by name.
+    const projectPath = normalizePath(project.cwd || '');
     const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
     return (
-      <button
+      // A row, not a button: the info icon is a second control, and a button
+      // inside a button is invalid markup whose clicks would open the project
+      // instead of the lens.
+      <div
         key={project.id}
-        onClick={() => onProjectClick(project)}
-        disabled={!!openingProjectId || isSubmitting}
-        title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+        className={`flex w-full items-center transition-colors hover:bg-accent/50 ${isCurrent ? 'bg-accent/30' : ''}`}
       >
-        {isOpening ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-        ) : isCurrent ? (
-          <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-        ) : (
-          <div className="h-3.5 w-3.5 shrink-0" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-medium">{getProjectDisplayName(project)}</span>
-        {tabCount !== undefined && (
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-            {tabCount}
+        <button
+          onClick={() => onProjectClick(project)}
+          disabled={!!openingProjectId || isSubmitting}
+          data-testid={`switch-project-row-${project.id}`}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1 ps-3 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isOpening ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+          ) : isCurrent ? (
+            <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+          ) : (
+            <div className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+            {project.cwd && (
+              <span
+                className="truncate text-[10px] leading-tight text-muted-foreground"
+                title={project.cwd}
+                data-testid={`switch-project-path-${project.id}`}
+                dir="ltr"
+              >
+                {tildePath(project.cwd)}
+              </span>
+            )}
           </span>
-        )}
-      </button>
+          {tabCount !== undefined && (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+              {tabCount}
+            </span>
+          )}
+        </button>
+        <AdvancedOnly reserve={false}>
+          <ProjectDetailsPopover
+            project={project}
+            tabCount={tabCount}
+            onOpenStatus={() => {
+              onOpenChange(false);
+              navigation.openLens('projects', 'cleanup', project.id);
+            }}
+          />
+        </AdvancedOnly>
+      </div>
     );
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-sm">
+      <DialogContent
+        className="max-h-[80vh] overflow-hidden sm:max-w-sm"
+        onKeyDown={(e) => {
+          // Type-to-search: a printable key typed anywhere in the dialog goes into the search box.
+          const input = searchInputRef.current;
+          if (!input || e.target === input) return;
+          if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+          const tag = (e.target as HTMLElement).tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+          e.preventDefault();
+          setSearch((s) => s + e.key);
+          input.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-base">{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -154,10 +301,11 @@ function CompactProjectSelectDialog({
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
                 placeholder={t`Search projects…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-sm"
+                className="h-8 ps-8 text-sm"
               />
             </div>
           )}
@@ -165,7 +313,7 @@ function CompactProjectSelectDialog({
           <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
             {isLoadingProjects ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 <Trans>Loading…</Trans>
               </div>
             ) : filtered.length === 0 ? (
@@ -197,16 +345,22 @@ function CompactProjectSelectDialog({
           )}
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 gap-1.5"
-              onClick={onOpenFolder}
-              disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              <Trans>Open Folder</Trans>
-            </Button>
+            {/* Native host folder picker — nothing to point at on a hub-only
+                server, whose files live on the git-backed VFS. Same gate as the
+                home-surface `ProjectActionsRow`, so the two can't disagree
+                about which affordances a hub offers. */}
+            {!isHubOnly() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-1.5"
+                onClick={onOpenFolder}
+                disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                <Trans>Open Folder</Trans>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -345,7 +499,7 @@ function NewProjectDialog({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 <Trans>Creating...</Trans>
               </>
             ) : (
@@ -416,12 +570,18 @@ export function OpenProjectComponent({
 
   const resolvedTrigger = trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch');
 
-  const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useAllProjects({
+  // A hub-only server lists the projects the HUB says you can reach — a member
+  // with no compute node of their own has no machine scan to read them from.
+  const hub = isHubOnly();
+  const { navigation } = useDockNavigation();
+  // New projects go in the ACTIVE workspace's folder; the list shows its projects.
+  const { root: defaultWorkspacePath, scopeId } = useActiveWorkspace();
+  const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useProjectListSource({
     enabled: open,
     includeSystem: showSystem,
+    workspace: scopeId,
   });
 
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   useEffect(() => {
     if (!open) {
@@ -432,15 +592,29 @@ export function OpenProjectComponent({
     }
   }, [open]);
 
+  // Mount path only, never `name` — a Project's name is not a location.
   const currentProjectPath = useMemo(
-    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
+    () => normalizePath(currentProject?.fs_storage_mount_path || ''),
     [currentProject],
   );
 
   const handleProjectClick = useCallback(
     async (project: ProjectListItem) => {
-      const path = normalizePath(project.cwd || project.name || '');
-      if (!path) return;
+      // A hub project has no folder: its address is its id, so the click is a
+      // plain navigation to its page on the hub and the loader does the rest.
+      if (hub) {
+        onProjectChanged?.();
+        navigation.openDock(DockPointer.forProject(project.id).withPage(PageId.HUB));
+        onOpenChange(false);
+        return;
+      }
+      // `cwd` is the only openable location; see `isOpenableProjectPath` for
+      // what falling back to `name` here used to mint.
+      const path = normalizePath(project.cwd || '');
+      if (!path) {
+        setError(t`This project has no folder on disk and can't be opened.`);
+        return;
+      }
 
       setOpeningProjectId(project.id);
       setError(null);
@@ -453,7 +627,7 @@ export function OpenProjectComponent({
         setOpeningProjectId(null);
       }
     },
-    [ensureProjectAndSetContext, onOpenChange, t],
+    [hub, navigation, onProjectChanged, ensureProjectAndSetContext, onOpenChange, t],
   );
 
   const handleOpenFolder = useCallback(async () => {
@@ -473,7 +647,7 @@ export function OpenProjectComponent({
     } finally {
       setIsSubmitting(false);
     }
-  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, t]);
+  }, [pickFolder, defaultWorkspacePath, ensureProjectAndSetContext, onOpenChange, t]);
 
   // NewProjectDialog calls this after validation
   const handleCreate = useCallback(

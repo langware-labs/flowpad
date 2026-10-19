@@ -18,14 +18,8 @@
  * entity wins over the embedded one).
  */
 
-import {
-  ContextEntitiesEnum,
-  dataContext,
-  dataManager,
-  Project,
-  Task,
-  TypeId,
-} from '@sdk';
+import { t } from '@lingui/core/macro';
+import { ContextEntitiesEnum, dataContext, dataManager, Project, Task, TypeId } from '@sdk';
 import { DockLoadError } from './dock-load-error';
 import { loadConversation } from './load-conversation';
 
@@ -40,8 +34,10 @@ export class TaskLoadError extends Error {
 }
 
 function taskLoadStatus(error: unknown): number | undefined {
-  return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
-    ?? (error as { status?: number } | null)?.status;
+  return (
+    (error as { response?: { status?: number }; status?: number } | null)?.response?.status ??
+    (error as { status?: number } | null)?.status
+  );
 }
 
 async function applyTaskContext(taskId: string, task: Task): Promise<void> {
@@ -59,19 +55,14 @@ async function applyTaskContext(taskId: string, task: Task): Promise<void> {
       new TypeId(Project.type, projectId),
     );
     // Warm the cache so any `useEntity(Project, …)` consumer hits immediately.
-    const project = await dataManager
-      .getByTypeId<Project>(new TypeId(Project.type, projectId))
-      .catch(() => null);
+    const project = await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId)).catch(() => null);
     dataContext.setWorkdir(projectRoot ?? project?.fs_storage_mount_path ?? null);
   } else {
     // Task has no mapped project (receiver pre-mapping). Drop the global
     // active project to null — the StatusBar will render the red
     // "Select Project" pill. The mapping gate pops the picker when the user
     // takes an action that needs cwd (Open Claude Code, Approve & Execute).
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      null,
-    );
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
     dataContext.setWorkdir(projectRoot ?? null);
   }
 }
@@ -117,8 +108,7 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
   //   <taskId>/conversation/<convId>
   const parts = pointer.split('/').filter(Boolean);
   const taskId = parts[0] ?? '';
-  const conversationId =
-    parts.length >= 3 && parts[1] === 'conversation' ? parts[2] : null;
+  const conversationId = parts.length >= 3 && parts[1] === 'conversation' ? parts[2] : null;
   if (!taskId) return;
 
   let task: Task;
@@ -132,8 +122,8 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
         'soft',
         {
           action: 'render_error',
-          title: 'Task unavailable',
-          message: 'Could not load this task. Try again in a moment.',
+          title: t`Task unavailable`,
+          message: t`Could not load this task. Try again in a moment.`,
           retryable: true,
         },
         'tasks',
@@ -145,8 +135,8 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
       'hard',
       {
         action: 'render_error',
-        title: 'Task not found',
-        message: 'This task no longer exists or is unavailable.',
+        title: t`Task not found`,
+        message: t`This task no longer exists or is unavailable.`,
       },
       'tasks',
       e,

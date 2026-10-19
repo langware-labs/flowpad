@@ -1,0 +1,1705 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import {
+  Archive,
+  Inbox as InboxIcon,
+  Mail,
+  MailOpen,
+  MailPlus,
+  RefreshCw,
+  Search,
+  SquarePen,
+  Trash2,
+  UsersRound,
+  X,
+  Zap,
+} from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
+import { notify } from '@src/notifications';
+import { pullNow } from '@src/components/data-sources/source-parts';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
+import {
+  Conversation,
+  FlowMessage,
+  Invitation,
+  QueryRequest,
+  TypeId,
+  acceptInvitation,
+  archiveAllConversations,
+  archiveConversation,
+  declineInvitation,
+  deleteArchivedConversations,
+  deleteConversation,
+  dismissConversation,
+  fetchConversations,
+  isInvitationGoneError,
+  leaveConversation,
+  unarchiveConversation,
+  conversationRowMessageIds,
+  latestPointer,
+  isProcessFailed,
+  isProcessLive,
+  type AgenticProcess,
+} from '@sdk';
+import { useAuth, useCloudStatus } from '@sdk/react/hooks';
+import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { Button } from '@src/components/ui/button';
+import { cn } from '@src/lib/utils';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
+import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
+import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
+import {
+  type ChannelAttribution,
+  SourceChip,
+  sourceForOrigin,
+  useChannelAttribution,
+} from '@src/components/conversation/channel-attribution';
+import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from './AttachedChannelsBar';
+import { ChannelAttentionBar } from './ChannelAttentionBar';
+import {
+  attentionAmong,
+  channelKeyOf,
+  channelsOwnerFor,
+  type ConversationScope,
+  conversationsByIdsRequest,
+  conversationsPageRequest,
+  STREAM_INBOX_PAGE_SIZE,
+  type StreamInboxViewMode,
+} from './channel-owner';
+import { StreamInboxPager } from './StreamInboxPager';
+import { useContext } from '@src/hooks/useContext';
+import {
+  conversationFacets,
+  actionsFor,
+  compareConversationsByRecency,
+  isViewer,
+} from '@src/components/conversation/conversation-category';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
+import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
+import { MembershipInvitations } from './MembershipInvitations';
+import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
+import { RowActions } from '@src/components/conversation/RowActions';
+import { attachmentSummary } from '@src/components/conversation/useAttachments';
+
+type RowDeleteAction =
+  | { kind: 'invitation'; invitationId: string; conversationId: string }
+  | { kind: 'owner'; conversationId: string }
+  | { kind: 'leave'; conversationId: string }
+  | { kind: 'local'; conversationId: string };
+
+// ── Time formatter (Gmail-style) ────────────────────────────────────────────
+// today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
+function formatGmailTime(iso?: string | Date | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString();
+}
+
+// ── Conversation list row (Gmail thread row) ────────────────────────────────
+// Single line: [sender(s)] [subject — snippet…] [time]
+// Click anywhere on the row opens the conversation via its dockPointer.
+
+// ── Column filters ──────────────────────────────────────────────────────────
+// One filter per row column, typed into the header line above that column:
+// From narrows on the sender names, Subject on the subject + preview text,
+// Date on the conversation's last activity. Local, like the channel filter.
+type DateWindow = 'any' | 'today' | '7d' | '30d';
+
+export interface ColumnFilter {
+  from: string;
+  subject: string;
+  date: DateWindow;
+}
+
+const NO_COLUMN_FILTER: ColumnFilter = { from: '', subject: '', date: 'any' };
+
+function isColumnFilterActive(f: ColumnFilter): boolean {
+  return f.from.trim() !== '' || f.subject.trim() !== '' || f.date !== 'any';
+}
+
+function windowStart(date: DateWindow): number | null {
+  if (date === 'any') return null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (date === '7d') d.setDate(d.getDate() - 6);
+  if (date === '30d') d.setDate(d.getDate() - 29);
+  return d.getTime();
+}
+
+export function matchesColumnFilter(
+  f: ColumnFilter,
+  row: { senders: string; subjectLine: string; updated?: string | Date | null },
+): boolean {
+  const from = f.from.trim().toLowerCase();
+  if (from && !row.senders.toLowerCase().includes(from)) return false;
+  const subject = f.subject.trim().toLowerCase();
+  if (subject && !row.subjectLine.toLowerCase().includes(subject)) return false;
+  const start = windowStart(f.date);
+  if (start !== null) {
+    const ts = row.updated ? new Date(row.updated).getTime() : NaN;
+    if (Number.isNaN(ts) || ts < start) return false;
+  }
+  return true;
+}
+
+interface ConversationListRowProps {
+  /** The newest session an automation started on a message of this conversation. */
+  automationMark?: AgenticProcess;
+  conv: Conversation;
+  isFocused: boolean;
+  /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
+   *  server-side; row auto-revives when a FlowMessage newer than the stamp
+   *  arrives. */
+  onArchive: (convId: string) => void;
+  /** Conversation-level unarchive — clears ``archived_at`` so the row returns
+   *  to the stream inbox. */
+  onUnarchive: (convId: string) => void;
+  onToggleRead: (messageId: string, isRead: boolean) => void;
+  /** Whether this row is currently ticked for a bulk (multi-select) action.
+   *  Optional so the row can render standalone (e.g. in tests) without the
+   *  multi-select host wiring. */
+  selected?: boolean;
+  /** Toggle this row's membership in the multi-select set. Optional — see
+   *  ``selected``. */
+  onToggleSelect?: (convId: string) => void;
+  /** True while the stream inbox is in multi-select mode (≥1 row ticked, toolbar
+   *  showing). In this mode a body click toggles selection instead of opening
+   *  the conversation — so the user can build up / trim the set without
+   *  navigating away. Clearing the selection restores open-on-click. */
+  selectMode?: boolean;
+  /** Caller resolves the appropriate dialog/action mode based on the row's
+   *  role + the current cloud user id. */
+  onRequestDelete: (action: RowDeleteAction) => void;
+  /** Used by the row to figure out whether the local user is the hub-side
+   *  owner of the conversation. */
+  cloudUserId: string | null;
+  /** Reports whether this row will actually render so the parent can decide
+   *  whether to show the "No conversations" empty state. */
+  onVisibilityChange: (convId: string, visible: boolean) => void;
+  /** Set while the list is narrowed to some channels: does this message's source pass? */
+  channelMatch?: (message: FlowMessage) => boolean;
+  /** Set while a header column filter is engaged. */
+  columnFilter?: ColumnFilter;
+  /** The list resolves attribution once and hands each row its answer. */
+  attributionFor: (
+    origin: FlowMessage['origin'],
+    channelSpec?: Conversation['channel_spec'],
+  ) => ChannelAttribution | null;
+  refSetter: (el: HTMLDivElement | null) => void;
+  agentId?: string;
+  /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
+   *  navigates. Omitted: the conversation view, scoped to `agentId`. */
+  onOpenConversation?: (conversationId: string) => void;
+}
+
+export function ConversationListRow({
+  conv,
+  isFocused,
+  onArchive,
+  onUnarchive,
+  onToggleRead,
+  selected,
+  onToggleSelect,
+  selectMode,
+  onRequestDelete,
+  cloudUserId,
+  onVisibilityChange,
+  channelMatch,
+  columnFilter,
+  attributionFor,
+  refSetter,
+  agentId,
+  onOpenConversation,
+  automationMark,
+}: ConversationListRowProps) {
+  const { navigation } = useDockNavigation();
+
+  // For invitation rows the first message IS the only message; for regular
+  // rows we want the latest message preview but still need to peek at the
+  // first to detect ``kind === 'invitation'``.
+  const pointers = conv.conversationMessageIds ?? [];
+  const firstPtr = pointers[0];
+  // Newest by ts, not last-appended — an ingested mailbox backfills
+  // newest-first, so the last pointer there is the OLDEST mail.
+  const lastPtr = latestPointer(pointers);
+  const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
+  const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
+  const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
+  const { data: resolvedLatest } = useEntity<FlowMessage>(latestTypeId);
+  // A row IS its conversation; its preview loading never hides it. When a new message moves the
+  // latest pointer, the row keeps the message it last showed until the new one resolves — only a
+  // row that has never shown one waits hidden (`inLoadingState`).
+  const shownLatest = useRef<{ convId: string; message: FlowMessage } | null>(null);
+  if (resolvedLatest) shownLatest.current = { convId: conv.id ?? '', message: resolvedLatest };
+  const latestMessage =
+    resolvedLatest ?? (latestTypeId && shownLatest.current?.convId === (conv.id ?? '') ? shownLatest.current.message : undefined);
+
+  const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
+  const invitationId = invitationTypeId?.id ?? null;
+  const { data: invitation } = useEntity<Invitation>(invitationTypeId);
+
+  // An invitation row (Accept CTA) is shown ONLY to the *recipient* of a
+  // still-pending invitation — mirrors RecentConversationsStrip. The first
+  // message stays ``kind === 'invitation'`` forever, so it can't drive this
+  // on its own: the sender (and everyone post-accept) must see a normal row.
+  const { cloudUser, currentUser } = useAuth();
+  const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
+  const localUserId = currentUser?.id ?? null;
+  const [accepting, setAccepting] = useState(false);
+
+  // Single source of truth for the row's category (invitation / help desk /
+  // archived / unread / active). Replaces the previously-scattered booleans and
+  // is shared with RecentConversationsStrip. Viewer-relative facts (invitation,
+  // unread) are resolved against the local user here. ``archived`` compares the
+  // pointer ts (not the FlowMessage) so it doesn't race the async FM fetch.
+  const facets = conversationFacets({
+    conv,
+    firstMessage,
+    latestMessage,
+    latestPtrTs: lastPtr?.ts ?? null,
+    invitation,
+    viewer: { email: myEmail, cloudUserId, localUserId },
+  });
+  const attribution = attributionFor(latestMessage?.origin, conv.channel_spec);
+  // Alias kept so the existing invitation-row rendering reads cleanly below.
+  const isInvitationRow = facets.isInvitation;
+
+  // Trash does different things depending on ownership — say which one
+  // up-front so the tooltip distinguishes it from the (reversible) Archive.
+  const { t } = useLingui();
+  const deleteLabel = !conv.remote
+    ? t`Delete — removes permanently`
+    : cloudUserId && conv.created_by === cloudUserId
+      ? t`Delete for everyone — permanent`
+      : t`Leave conversation`;
+
+  // Which rows a view holds is the page query's answer (`viewMatch`, search by id); a row only hides
+  // itself while it cannot render: ``inLoadingState`` keeps one whose FlowMessage hasn't landed from
+  // rendering blank.
+  //
+  // Invitation rows are exempt: invitation-ness is driven by the FIRST message
+  // (``facets.isInvitation`` ⇐ ``firstMessage``), which IS materialized, and the
+  // Accept CTA renders entirely from it. Gating on ``latestMessage`` wrongly hid a
+  // valid pending-invitation row whenever a LATER message's FlowMessage entity was
+  // unresolved locally (e.g. a pre-accept git-artifact share message that doesn't
+  // materialize on the recipient) — the row, its testid, and the Accept button
+  // must still render. See RCA debug_log.md #14 (receiver artifact-materialization
+  // is a separate follow-up). Preview text may still show a loading affordance.
+  const inLoadingState = !isInvitationRow && !!lastPtr && !latestMessage;
+  let isHidden = inLoadingState;
+  // The channel filter narrows on the latest message's source; a row whose
+  // message is not loaded yet cannot claim a channel, so it waits hidden.
+  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
+
+  // Gmail-style sender column: comma-joined names of everyone who has
+  // participated in the thread, with the latest sender first so the most
+  // recent author is the lead name. Deduped case-insensitively.
+  // Falls back to ``Unknown`` when neither the latest message nor any
+  // participant has a name; invitation rows always render the canonical
+  // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
+  // MUST run before the `isHidden` early return so the hook order stays
+  // stable across visibility flips (Rules of Hooks).
+  const participantNames = useMemo(() => {
+    if (isInvitationRow) {
+      const inviter = (firstMessage?.sender_name || '').trim();
+      return [inviter || t`Invitation`];
+    }
+    // The viewer's own name goes last: the column is short, and the others are who the thread is with.
+    const others: string[] = [];
+    const own: string[] = [];
+    const seen = new Set<string>();
+    const pushName = (raw: string | null | undefined, mine: boolean) => {
+      const trimmed = (raw || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      (mine ? own : others).push(trimmed);
+      seen.add(key);
+    };
+    const viewer = { email: myEmail, cloudUserId, localUserId };
+    const sentByMe = (m: FlowMessage | null | undefined) => !!m && authoredBy(senderOf(m), [cloudUserId, localUserId]);
+    pushName(latestMessage?.sender_name, sentByMe(latestMessage));
+    if (conv.isChannel) {
+      // A channel's people are on the channel, not on the Flowpad roster: whoever opened it (the person,
+      // usually) beside whoever spoke last (often the answering agent).
+      pushName(firstMessage?.sender_name, sentByMe(firstMessage));
+    } else {
+      for (const p of conv.members ?? []) {
+        const email = (p?.email || '').trim().toLowerCase();
+        pushName(
+          p?.name || (p?.email ? p.email.split('@')[0] : ''),
+          isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail),
+        );
+      }
+    }
+    const names = [...others, ...own];
+    return names.length > 0 ? names : [t`Unknown`];
+  }, [
+    isInvitationRow,
+    firstMessage,
+    latestMessage,
+    conv.isChannel,
+    conv.members,
+    cloudUserId,
+    localUserId,
+    myEmail,
+    t,
+  ]);
+
+  const senderLabel = participantNames.join(', ');
+  // The stream inbox subject is the conversation's own user-set / hub-synced title
+  // (NewConversationDialog at creation; carried in the bundle on cross-user
+  // send). A task that happens to sit in the conversation's shared context is
+  // there to drive cwd/project_root and the task-gated chips — it is NOT a
+  // title source, so it must not feed the subject. Fall back to the email-style
+  // "(no subject)" placeholder only when there's no title. The snippet (latest
+  // message preview) still renders after it.
+  const subject = isInvitationRow ? t`You've been invited to a conversation` : conv.title?.trim() || t`(no subject)`;
+  // ``FlowMessage.text`` is typed string but older rows in the local DB can
+  // hold non-string payloads (object-shaped values from earlier schema
+  // iterations); ``?.replace`` would TypeError on those. Coerce first.
+  const snippetMessage = isInvitationRow ? firstMessage : latestMessage;
+  // A message with no text is named by what it carries.
+  const snippet = String(snippetMessage?.text || attachmentSummary(snippetMessage) || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Column filters match what the row shows, so they run on the rendered text.
+  if (!isHidden && columnFilter) {
+    isHidden = !matchesColumnFilter(columnFilter, {
+      senders: senderLabel,
+      subjectLine: `${subject} ${snippet}`,
+      updated: conv.updated_date,
+    });
+  }
+
+  const convId = conv.id ?? '';
+  // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
+  // updated before the browser paints — otherwise a row that ends up visible
+  // could briefly co-render with the "No conversations" empty state on the
+  // first frame.
+  useLayoutEffect(() => {
+    if (!convId) return;
+    onVisibilityChange(convId, !isHidden);
+    return () => onVisibilityChange(convId, false);
+  }, [convId, isHidden, onVisibilityChange]);
+
+  if (isHidden) return null;
+
+  const count = pointers.length;
+  const time = formatGmailTime(conv.updated_date);
+  const ago = formatTimeAgo(conv.updated_date);
+  const isUnread = facets.isUnread;
+
+  const handleClick = () => {
+    // Multi-select mode: a body click toggles this row's selection instead of
+    // opening it, so the user can build up / trim the bulk set without being
+    // navigated away (and losing the selection). Applies to every row kind,
+    // including invitations — the checkbox is shown for them too. Clearing the
+    // selection (X / clear-all) restores open-on-click below.
+    if (selectMode) {
+      if (convId) onToggleSelect?.(convId);
+      return;
+    }
+    if (isInvitationRow) return; // primary action is Accept
+    if (!conv.id) return;
+    // URL-first: the click ONLY navigates. The Gmail-style auto-mark-read
+    // moved to the mounted ConversationView (open-to-read effect), so direct
+    // links, banner clicks, and Stream Inbox clicks all behave identically and the
+    // backend reconciles StreamInboxManager.unread after the mutation.
+    if (onOpenConversation) onOpenConversation(conv.id);
+    else navigation.openDock(DockPointer.forConversation(conv.id, { agentId }));
+  };
+
+  const handleAccept = async () => {
+    if (!invitationId) return;
+    setAccepting(true);
+    try {
+      await acceptInvitation({ invitation_id: invitationId });
+    } catch (e) {
+      if (isInvitationGoneError(e)) {
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
+      } else {
+        console.error('[StreamInboxView] acceptInvitation failed', e);
+      }
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  return (
+    <div
+      ref={refSetter}
+      data-testid="stream-inbox-conversation-row"
+      data-conversation-id={conv.id ?? ''}
+      data-focused={isFocused ? 'true' : 'false'}
+      data-unread={isUnread ? 'true' : 'false'}
+      data-ended={conv.ended_at ? 'true' : 'false'}
+      data-kind={isInvitationRow ? 'invitation' : 'user'}
+      onClick={handleClick}
+      data-selected={selected ? 'true' : 'false'}
+      className={`group relative flex h-9 ${
+        isInvitationRow && !selectMode ? 'cursor-default' : 'cursor-pointer'
+      } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
+        selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-s-violet-500/60' : ''} ${conv.ended_at ? 'opacity-60' : ''}`}
+    >
+      {/* Multi-select tick. Stops propagation so ticking a row never opens it.
+          Always visible per line with a readable border — a dimmed one (/30 at
+          50% opacity) vanished on the dark rows; brightens on hover, fills when ticked. */}
+      <span onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-center">
+        <Checkbox
+          checked={!!selected}
+          onCheckedChange={() => convId && onToggleSelect?.(convId)}
+          aria-label={t`Select conversation`}
+          data-testid="stream-inbox-row-select"
+          className="h-3.5 w-3.5 border-muted-foreground transition-colors hover:border-foreground data-[state=checked]:border-primary"
+        />
+      </span>
+      <span
+        data-testid="stream-inbox-row-sender"
+        // ``title`` doubles as the trim-overflow tooltip. Browsers only show
+        // the native tooltip when the user hovers, so always setting it is
+        // cheap; when the visible label already shows the full list, the
+        // hover-text repeats it harmlessly.
+        title={senderLabel}
+        className={`flex ${FROM_WIDTH_CLASS} shrink-0 items-center gap-1 ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+      >
+        {isInvitationRow && <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />}
+        <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
+        {!isInvitationRow && count > 1 && (
+          <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">
+        {/* Channel conversations carry exactly one compact source chip; hub
+            rows have no origin and render none — absence means "ours". A
+            source-backed ticket wears the source chip alone: the kind chip is
+            for the requester's side, where no source exists. */}
+        <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
+        {automationMark && (
+          // An automation ran on a message in here: ⚡ + who. Opens that session; the row opens the conversation.
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigation.openDock(DockPointer.forProcessRuns({ run: automationMark.id }));
+            }}
+            className={cn(
+              'me-1 inline-flex items-center',
+              COMPACT,
+              isProcessLive(automationMark.status)
+                ? 'border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                : isProcessFailed(automationMark.status)
+                  ? 'border-dashed border-border text-muted-foreground'
+                  : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+            )}
+            title={automationMark.name ?? undefined}
+            data-testid="stream-inbox-row-automation"
+            data-status={String(automationMark.status ?? '')}
+          >
+            <Zap className="h-2.5 w-2.5" aria-hidden />
+            {automationMark.name}
+          </button>
+        )}
+        <SourceChip attribution={attribution} className="me-1" />
+        <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
+        {snippet && (
+          <>
+            <span className="mx-1 text-muted-foreground">—</span>
+            <span className="text-muted-foreground">{snippet}</span>
+          </>
+        )}
+      </span>
+      <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
+        {time}
+        {ago && <span className="ms-1.5 text-muted-foreground/70">· {ago}</span>}
+      </span>
+      <RowActions
+        specs={actionsFor(facets, {
+          invitationId,
+          accepting,
+          deleteLabel,
+          onAccept: () => void handleAccept(),
+          onDecline: () => {
+            if (conv.id && invitationId) {
+              onRequestDelete({ kind: 'invitation', invitationId, conversationId: conv.id });
+            }
+          },
+          onToggleRead: () => latestMessage?.id && onToggleRead(latestMessage.id, isUnread),
+          onArchive: () => conv.id && onArchive(conv.id),
+          onUnarchive: () => conv.id && onUnarchive(conv.id),
+          onDelete: () => {
+            if (!conv.id) return;
+            if (!conv.remote) {
+              onRequestDelete({ kind: 'local', conversationId: conv.id });
+            } else if (cloudUserId && conv.created_by === cloudUserId) {
+              onRequestDelete({ kind: 'owner', conversationId: conv.id });
+            } else {
+              onRequestDelete({ kind: 'leave', conversationId: conv.id });
+            }
+          },
+        })}
+      />
+    </div>
+  );
+}
+
+const columnInputClass =
+  'h-7 shrink-0 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring';
+
+// The From column's width is one CSS variable on the list, so dragging the spacer resizes the
+// header filter and every row without re-rendering a row.
+const FROM_WIDTH_VAR = '--stream-inbox-from-width';
+const FROM_WIDTH_CLASS = 'w-[var(--stream-inbox-from-width)]';
+const FROM_WIDTH_KEY = 'flowpad.stream-inbox.from-width';
+const FROM_WIDTH_DEFAULT = 176;
+const FROM_WIDTH_MIN = 96;
+const FROM_WIDTH_MAX = 640;
+
+function readFromWidth(): number {
+  try {
+    const stored = Number(window.localStorage.getItem(FROM_WIDTH_KEY));
+    if (stored >= FROM_WIDTH_MIN && stored <= FROM_WIDTH_MAX) return stored;
+  } catch {
+    // Storage is unavailable (private window): the default width stands.
+  }
+  return FROM_WIDTH_DEFAULT;
+}
+
+// ── StreamInboxView ───────────────────────────────────────────────────────────────
+
+export function StreamInboxView({
+  agentId,
+  sourceId,
+  embedded = false,
+  onOpenConversation,
+}: {
+  agentId?: string;
+  onOpenConversation?: (conversationId: string) => void;
+  /** One data source's conversations only (a source's page) — the same live list, backend-filtered. */
+  sourceId?: string;
+  /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
+   *  membership invitations — those belong to an owner's stream inbox, not to one source. */
+  embedded?: boolean;
+} = {}) {
+  const { t } = useLingui();
+  const [fetching, setFetching] = useState(false);
+  // 'all' (default) shows active conversations; 'archived' shows only
+  // rows whose ``archived_at`` is set and not yet revived by newer activity.
+  // "Delete all" is gated behind the 'archived' view — a destructive op only
+  // exposed once the user has explicitly archived rows.
+  const [viewMode, setViewMode] = useState<StreamInboxViewMode>('all');
+  // Set of conv ids whose row currently chose to render. Driven by row-level
+  // `onVisibilityChange` callbacks so the header badge and empty-state both
+  // reflect exactly what the user sees (rows hide themselves when their latest
+  // FlowMessage is archived or hasn't materialised yet).
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
+  // Rendered pending membership-invite rows (reported by MembershipInvitations)
+  // — only gates the empty state; the unread NUMBER is backend-owned.
+  const [membershipPendingCount, setMembershipPendingCount] = useState(0);
+  const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const { cloudUser } = useAuth();
+  // Whose channels the header line shows: the agent's on an agent stream inbox, else
+  // the local user's — absent until that typeid is known, so no empty bar flashes.
+  // `localUser.id`, not `userTypeId`: that alias resolves to the `@local` pointer,
+  // and rows carry the user's real id.
+  const { localUser } = useContext();
+  const localUserId = localUser?.id;
+  // The channel filter: source ids the list is narrowed to. Local like the text
+  // search, and empty means everything.
+  const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
+  const { rows: ownerChannels, specFor, offers: channelOffers, loading: channelsLoading } = useAttachedChannels(channelsOwner);
+  const { attributionFor: attributionForOrigin } = useChannelAttribution();
+  const attributionFor = useCallback(
+    (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) =>
+      attributionForOrigin(origin, null, channelSpec),
+    [attributionForOrigin],
+  );
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  // The picked channels that are not listening: the strip above the list explains each one.
+  const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
+  const channelMatch = useMemo(
+    () =>
+      channelFilter.size
+        ? (m: FlowMessage) => {
+            const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
+            return !!source && channelFilter.has(channelKeyOf(source));
+          }
+        : undefined,
+    [channelFilter, ownerChannels],
+  );
+  const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
+  const [fromWidth, setFromWidth] = useState(readFromWidth);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const commitFromWidth = useCallback((width: number) => {
+    setFromWidth(width);
+    try {
+      window.localStorage.setItem(FROM_WIDTH_KEY, String(width));
+    } catch {
+      // Storage is unavailable: the width holds for this visit only.
+    }
+  }, []);
+  // A drag paints through the CSS variable alone; state and storage are written once, on release.
+  const startFromResize = useCallback(
+    (e: ReactPointerEvent<HTMLSpanElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      // In a right-to-left layout the column grows as the pointer moves left.
+      const sign = getComputedStyle(e.currentTarget).direction === 'rtl' ? -1 : 1;
+      let width = fromWidth;
+      const onMove = (ev: PointerEvent) => {
+        const next = fromWidth + sign * (ev.clientX - startX);
+        width = Math.round(Math.min(FROM_WIDTH_MAX, Math.max(FROM_WIDTH_MIN, next)));
+        listRef.current?.style.setProperty(FROM_WIDTH_VAR, `${width}px`);
+      };
+      const onEnd = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+        commitFromWidth(width);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onEnd);
+      window.addEventListener('pointercancel', onEnd);
+    },
+    [fromWidth, commitFromWidth],
+  );
+  const columnFilterActive = isColumnFilterActive(columnFilter);
+  const setColumn = useCallback(
+    <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
+      setColumnFilter((cur) => ({ ...cur, [key]: value })),
+    [],
+  );
+  const cloudUserId = cloudUser?.id ?? null;
+  const { connection } = useCloudStatus();
+  const hubReachable = connection.status === 'connected' || connection.status === 'verified';
+
+  // Bulk-delete + per-row-delete dialog state.
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [showNewContactsGroup, setShowNewContactsGroup] = useState(false);
+  const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
+  // Multi-select: ids of rows ticked for a bulk mark-read/unread/archive/delete.
+  // Constrained to currently-visible rows when actions run, so a stale id left
+  // over from a view switch can never act on a hidden conversation.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selDeleteOpen, setSelDeleteOpen] = useState(false);
+
+  // Text search over message bodies — server-side, via the `stream-inbox-search`
+  // action rather than a `$LIKE` entity query: under the reference model a
+  // channel message's body lives on its SourceItem (the FlowMessage row stores
+  // `text: ""`), so the backend searches BOTH residences and hands back
+  // conversation ids. Debounced per keystroke; the previous result is held
+  // while the next request is in flight so the list doesn't blank.
+  const [searchQuery, setSearchQuery] = useState('');
+  const needle = searchQuery.trim();
+  const searchActive = needle !== '';
+  const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!searchActive) return;
+    let stale = false;
+    const timer = setTimeout(() => {
+      void searchStreamInbox(needle, agentId).then((ids) => {
+        if (!stale) setMatchIds(ids);
+      });
+    }, 200);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [agentId, needle, searchActive]);
+
+  // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
+  // user's never load each other's rows. Owned-by strings, not TypeId instances, key the memo:
+  // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
+  // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
+  // than the dock URL's `before`. A body search lists its hits instead.
+  const { navigation, currentDock } = useDockNavigation();
+  const pageBefore = currentDock?.pageBefore ?? null;
+  const ownerKey = channelsOwner?.toString() ?? '';
+  const scope = useMemo<ConversationScope | null>(
+    () => (sourceId ? { sourceId } : channelsOwner ? { owner: channelsOwner } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
+    [ownerKey, sourceId],
+  );
+  const request = useMemo(() => {
+    if (!scope) return null;
+    if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);
+    return conversationsPageRequest(scope, viewMode, pageBefore);
+  }, [scope, searchActive, matchIds, viewMode, pageBefore]);
+  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
+  const {
+    data: conversations = [],
+    refetch,
+    isLoading,
+    isSuccess,
+  } = useEntitiesQuery<Conversation>(request ?? idleRequest, { enabled: request !== null });
+
+  // Only the FIRST load gets the full-screen "Loading…" state. Every
+  // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
+  // back to true while KEEPING the previous ``data`` — so gating the row list
+  // on raw ``isLoading`` blanks the whole list to the spinner and back on every
+  // refetch, which is the on-open flicker. Once we've loaded successfully once,
+  // a background refetch keeps the existing rows on screen.
+  const hasLoadedOnce = useRef(false);
+  if (isSuccess) hasLoadedOnce.current = true;
+  const initialLoading = (isLoading || request === null) && !hasLoadedOnce.current;
+
+
+  const sorted = useMemo(() => {
+    // Sorted here too: a live push appends a newly matching row without re-sorting or trimming
+    // the page, so the page is cut back to its size after the sort.
+    const list = [...conversations];
+    list.sort(compareConversationsByRecency);
+    return list.slice(0, STREAM_INBOX_PAGE_SIZE);
+  }, [conversations]);
+
+  // ── Batch-hydrate the per-row first+latest FlowMessages (X2) ────────────────
+  // Each ``ConversationListRow`` resolves its first + latest FlowMessage by id
+  // to render the sender/snippet/unread cues. Left to itself every row would
+  // fire its own ``getByTypeId`` GET (N+1 — 73 GETs for 73 conversations). We
+  // instead collect every first+latest pointer id across the *visible* list and
+  // warm the DataManager cache with ONE ``$IN`` query; the rows' ``useEntity``
+  // calls then hit ``getByTypeIdFromCache`` and issue no network at all. The
+  // single ``watchQuery`` subscription replaces the would-be per-row watches.
+  const flowMessageIds = useMemo(() => conversationRowMessageIds(sorted), [sorted]);
+  // The same batch also yields the messages here, to discover which first-messages
+  // carry an invitation context — those ids drive a SECOND batch ``$IN`` so the
+  // per-row ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
+  const batchedMessages = useEntityBatch<FlowMessage>(FlowMessage.type, flowMessageIds);
+  // The sessions automations started on the visible conversations' messages — one query, the newest per row.
+  const conversationIds = useMemo(() => sorted.map((c) => c.id ?? '').filter(Boolean), [sorted]);
+  const automationMarks = useConversationAutomationMarks(conversationIds);
+  const invitationIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const msg of batchedMessages) {
+      const tid = msg.firstContextOfType?.('invitation');
+      if (tid?.id) ids.add(tid.id);
+    }
+    return [...ids];
+  }, [batchedMessages]);
+
+  const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
+    setVisibleIds((prev) => {
+      const has = prev.has(convId);
+      if (visible === has) return prev;
+      const next = new Set(prev);
+      if (visible) next.add(convId);
+      else next.delete(convId);
+      return next;
+    });
+  }, []);
+
+  const visibleCount = visibleIds.size;
+
+  // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
+  // the entity channel) — no client-side recount here anymore.
+
+  // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
+  // A channel waiting on setup or paused is not read; it says so on its own strip.
+  const handleRefresh = useCallback(async () => {
+    setFetching(true);
+    try {
+      const runnable = ownerChannels.filter((source) => source.status === 'active' || source.status === 'new');
+      const answers = await Promise.all(
+        runnable.map(async (source) => ({ name: source.name || source.provider, ...(await pullNow(source)) })),
+      );
+      await fetchConversations(agentId);
+      void refetch();
+      if (answers.length) {
+        const line = answers.map((a) => `${a.name}: ${a.text}`).join(' · ');
+        if (answers.every((a) => a.ok)) notify.success({ title: t`Checked for new messages`, message: line });
+        else notify.error({ title: t`Some channels could not be checked`, message: line });
+      }
+    } finally {
+      setFetching(false);
+    }
+  }, [agentId, refetch, ownerChannels, t]);
+
+  const handleArchive = useCallback(
+    async (convId: string) => {
+      await archiveConversation({ conversation_id: convId, ...(agentId ? { agent_id: agentId } : {}) });
+      void refetch();
+    },
+    [agentId, refetch],
+  );
+
+  const handleUnarchive = useCallback(
+    async (convId: string) => {
+      await unarchiveConversation({ conversation_id: convId, ...(agentId ? { agent_id: agentId } : {}) });
+      void refetch();
+    },
+    [agentId, refetch],
+  );
+
+  const handleToggleRead = useCallback(
+    async (id: string, isRead: boolean) => {
+      await updateMessage(id, { is_read: isRead }, agentId);
+      void refetch();
+    },
+    [agentId, refetch],
+  );
+
+  const handleMarkAllRead = useCallback(async () => {
+    // No optimistic zero: the backend reconciles StreamInboxManager.unread after the
+    // bulk update (pending invitations legitimately keep it > 0).
+    await bulkUpdateMessages({ is_read: true }, agentId);
+    void refetch();
+  }, [agentId, refetch]);
+
+  const handleArchiveAll = useCallback(async () => {
+    // Conversation-level archive — O(threads), not O(messages). Includes
+    // empties (zero-message conversations) since archive is now a property
+    // of the conversation itself, independent of FlowMessage state.
+    await archiveAllConversations(agentId);
+    void refetch();
+  }, [agentId, refetch]);
+
+  // Compute the bulk-delete bucket breakdown from the archived
+  // conversations on this page. Drives the BulkConfirmDialog summary and the
+  // hub-reachability gate. Mirrors the server-side classification in
+  // ``handle_conversation_delete_archived``.
+  const archivedConvs = useMemo(() => conversations.filter((c) => c.archived_at), [conversations]);
+  // Classify a conversation by the user's relationship to it — drives both the
+  // bulk-delete confirm summary and the hub-reachability gate. Shared by the
+  // "Delete all archived" flow and the multi-select "Delete" flow.
+  const seemsInvitationConv = useCallback((c: Conversation) => {
+    const pointers = c.conversationMessageIds ?? [];
+    // We don't have the FM entity loaded for convs the user never opened, so
+    // heuristic: invitation-kind conversations carry the canonical title and at
+    // least one pointer. The server's classifier is the source of truth; here
+    // we just give the user a reasonable preview.
+    return !!pointers[0] && (c.title || '').toLowerCase() === 'invitation';
+  }, []);
+  const bucketsFor = useCallback(
+    (convs: Conversation[]) => {
+      let ownerCount = 0;
+      let nonOwnerCount = 0;
+      let invitationCount = 0;
+      let localCount = 0;
+      for (const c of convs) {
+        if (seemsInvitationConv(c)) {
+          invitationCount += 1;
+        } else if (!c.remote) {
+          localCount += 1;
+        } else if (cloudUserId && c.created_by === cloudUserId) {
+          ownerCount += 1;
+        } else {
+          nonOwnerCount += 1;
+        }
+      }
+      return { ownerCount, nonOwnerCount, invitationCount, localCount };
+    },
+    [cloudUserId, seemsInvitationConv],
+  );
+  const buckets = useMemo(() => bucketsFor(archivedConvs), [bucketsFor, archivedConvs]);
+  const needsHub = buckets.ownerCount + buckets.nonOwnerCount + buckets.invitationCount > 0;
+
+  // ── Multi-select derived state ─────────────────────────────────────────────
+  // Only visible rows can be acted on — a selected id left behind by a view
+  // switch or a row that hid itself is ignored.
+  const selectedConvs = useMemo(
+    () => sorted.filter((c) => c.id && selectedIds.has(c.id) && visibleIds.has(c.id)),
+    [sorted, selectedIds, visibleIds],
+  );
+  const selectedCount = selectedConvs.length;
+  const selectedBuckets = useMemo(() => bucketsFor(selectedConvs), [bucketsFor, selectedConvs]);
+  const selectedNeedsHub =
+    selectedBuckets.ownerCount + selectedBuckets.nonOwnerCount + selectedBuckets.invitationCount > 0;
+  const allVisibleSelected = visibleCount > 0 && [...visibleIds].every((id) => selectedIds.has(id));
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const toggleSelect = useCallback((convId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(convId)) next.delete(convId);
+      else next.add(convId);
+      return next;
+    });
+  }, []);
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allSel = visibleIds.size > 0 && [...visibleIds].every((id) => prev.has(id));
+      return allSel ? new Set() : new Set(visibleIds);
+    });
+  }, [visibleIds]);
+
+  // FlowMessage id of a conversation's latest message — the read/unread flag
+  // lives on the message, so bulk read toggles patch the last pointer's FM.
+  const latestMessageId = (c: Conversation): string | null => {
+    return latestPointer(c.conversationMessageIds)?.id ?? null;
+  };
+
+  const handleBulkMarkRead = useCallback(
+    async (isRead: boolean) => {
+      const ids = selectedConvs.map(latestMessageId).filter((id): id is string => !!id);
+      await Promise.all(ids.map((id) => updateMessage(id, { is_read: isRead }, agentId)));
+      clearSelection();
+      void refetch();
+    },
+    [agentId, selectedConvs, clearSelection, refetch],
+  );
+
+  const handleBulkArchive = useCallback(async () => {
+    await Promise.all(
+      selectedConvs.map((c) =>
+        c.id
+          ? archiveConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) })
+          : Promise.resolve(),
+      ),
+    );
+    clearSelection();
+    void refetch();
+  }, [agentId, selectedConvs, clearSelection, refetch]);
+
+  const handleBulkDelete = useCallback(() => {
+    if (selectedConvs.length === 0) return;
+    if (selectedNeedsHub && !hubReachable) {
+      notify.error({
+        title: t`Cloud disconnected`,
+        message: t`Reconnect to the cloud to delete shared conversations.`,
+      });
+      return;
+    }
+    setSelDeleteOpen(true);
+  }, [selectedConvs.length, selectedNeedsHub, hubReachable, t]);
+
+  const runBulkDeleteSelected = useCallback(async () => {
+    // No single server endpoint for an arbitrary set, so loop per conversation
+    // using the same per-row classification the row's trash button applies.
+    const convs = selectedConvs;
+    let ok = 0;
+    const failed: string[] = [];
+    for (const c of convs) {
+      if (!c.id) continue;
+      try {
+        if (seemsInvitationConv(c)) {
+          // Hide without notifying the inviter — the selection UI has no place
+          // to surface the decline-vs-dismiss choice the per-row dialog offers.
+          await dismissConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
+        } else if (!c.remote) {
+          await deleteConversation({ conversation_id: c.id, mode: 'local', ...(agentId ? { agent_id: agentId } : {}) });
+        } else if (cloudUserId && c.created_by === cloudUserId) {
+          await deleteConversation({
+            conversation_id: c.id,
+            mode: 'delete_for_all',
+            ...(agentId ? { agent_id: agentId } : {}),
+          });
+        } else {
+          await leaveConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
+        }
+        ok += 1;
+      } catch {
+        failed.push(c.id.slice(0, 8));
+      }
+    }
+    if (failed.length === 0) {
+      notify.success({ title: ok === 1 ? t`Deleted 1 conversation` : t`Deleted ${ok} conversations` });
+    } else {
+      notify.error({
+        title: t`Deleted ${ok}, ${failed.length} failed`,
+        message: failed.slice(0, 3).join(', '),
+      });
+    }
+    clearSelection();
+    void refetch();
+  }, [agentId, selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch, t]);
+
+  const handleDeleteArchived = useCallback(() => {
+    if (archivedConvs.length === 0) return;
+    if (needsHub && !hubReachable) {
+      notify.error({
+        title: t`Cloud disconnected`,
+        message: t`Reconnect to the cloud to delete shared conversations.`,
+      });
+      return;
+    }
+    setBulkDialogOpen(true);
+  }, [archivedConvs.length, hubReachable, needsHub, t]);
+
+  const runBulkDelete = useCallback(async () => {
+    try {
+      const res = await deleteArchivedConversations(agentId);
+      const ok = res.deleted?.length ?? 0;
+      const failed = res.failed ?? [];
+      if (failed.length === 0) {
+        notify.success({ title: ok === 1 ? t`Deleted 1 conversation` : t`Deleted ${ok} conversations` });
+      } else {
+        const firstFew = failed
+          .slice(0, 3)
+          .map((f) => `${f.id.slice(0, 8)}: ${f.reason}`)
+          .join('\n');
+        notify.error({
+          title: t`Deleted ${ok}, ${failed.length} failed`,
+          message: firstFew,
+        });
+      }
+    } catch (e) {
+      notify.error({
+        title: t`Delete all failed`,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      void refetch();
+    }
+  }, [agentId, refetch, t]);
+
+  const handleRowDelete = useCallback(
+    (action: RowDeleteAction) => {
+      if (action.kind !== 'local' && !hubReachable) {
+        notify.error({
+          title: t`Cloud disconnected`,
+          message: t`Reconnect to the cloud to delete this conversation.`,
+        });
+        return;
+      }
+      setRowDelete(action);
+    },
+    [hubReachable, t],
+  );
+
+  const confirmRowDelete = useCallback(async () => {
+    if (!rowDelete) return;
+    try {
+      if (rowDelete.kind === 'invitation') {
+        await declineInvitation({ invitation_id: rowDelete.invitationId });
+        notify.success({ title: t`Invitation declined` });
+      } else if (rowDelete.kind === 'owner') {
+        await deleteConversation({
+          conversation_id: rowDelete.conversationId,
+          mode: 'delete_for_all',
+          ...(agentId ? { agent_id: agentId } : {}),
+        });
+        notify.success({ title: t`Conversation deleted` });
+      } else if (rowDelete.kind === 'leave') {
+        await leaveConversation({
+          conversation_id: rowDelete.conversationId,
+          ...(agentId ? { agent_id: agentId } : {}),
+        });
+        notify.success({ title: t`Left conversation` });
+      } else {
+        await deleteConversation({
+          conversation_id: rowDelete.conversationId,
+          mode: 'local',
+          ...(agentId ? { agent_id: agentId } : {}),
+        });
+        notify.success({ title: t`Conversation deleted` });
+      }
+    } catch (e) {
+      notify.error({
+        title: t`Delete failed`,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      void refetch();
+    }
+  }, [agentId, refetch, rowDelete, t]);
+
+  const dismissInvitationRow = useCallback(
+    async (action: RowDeleteAction) => {
+      if (action.kind !== 'invitation') return;
+      try {
+        await dismissConversation({
+          conversation_id: action.conversationId,
+          ...(agentId ? { agent_id: agentId } : {}),
+        });
+        notify.success({ title: t`Invitation dismissed` });
+      } catch (e) {
+        notify.error({
+          title: t`Dismiss failed`,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      } finally {
+        void refetch();
+      }
+    },
+    [agentId, refetch, t],
+  );
+
+  const setView = useCallback((next: StreamInboxViewMode) => {
+    setViewMode((cur) => {
+      if (cur === next) return cur;
+      // Visible-ids tracks the previous mode's rows; reset so the count
+      // badge doesn't flash stale during the swap. Selection is per-view, so
+      // drop it too — carrying ticks across modes would act on hidden rows.
+      setVisibleIds(new Set());
+      setSelectedIds(new Set());
+      return next;
+    });
+    // A page is a page of ONE view: another view starts at now.
+    if (currentDock?.pageBefore) navigation.openDock(currentDock.withPageBefore(null));
+  }, [currentDock, navigation]);
+
+  const inArchivedView = viewMode === 'archived';
+  const inUnreadView = viewMode === 'unread';
+  // Segmented view pill — All | Unread | Archived. Active mode is filled,
+  // inactive is ghost. Count badge sits inside the active pill so it
+  // reflects exactly what the user is looking at.
+  const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
+    const active = viewMode === mode;
+    return (
+      <button
+        type="button"
+        onClick={() => setView(mode)}
+        className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
+          active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+        }`}
+        data-testid={`stream-inbox-view-${mode}`}
+        aria-pressed={active}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+        {active && visibleCount > 0 && (
+          // Fixed min-width + tabular figures: the badge keeps the same box up
+          // to three digits, so a growing count doesn't reflow the search input
+          // and the buttons to its right.
+          <span className="inline-block min-w-[30px] rounded bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground">
+            {visibleCount}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  // List mode
+  return (
+    <div className="relative flex h-full flex-col">
+      {!cloudUser && (
+        <LoginRequiredOverlay
+          description={t`Sign in to your Flowpad Cloud account to view your stream inbox and conversations.`}
+        />
+      )}
+      <div className="flex shrink-0 items-center border-b px-3 py-1.5">
+        {/* Selection mode takes over the whole toolbar: the view pills, search and
+            New buttons act on the list, not on the ticked rows, so they step aside
+            until the selection is closed (X). */}
+        {selectedCount > 0 ? (
+          <div className="flex flex-1 items-center gap-1" data-testid="stream-inbox-selection-bar">
+            <span className="me-1 text-xs text-muted-foreground" data-testid="stream-inbox-selection-count">
+              <Trans>{selectedCount} selected</Trans>
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleBulkMarkRead(true)}
+              data-testid="stream-inbox-selection-mark-read"
+            >
+              <MailOpen className="me-1 h-3.5 w-3.5" />
+              <Trans>Read</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleBulkMarkRead(false)}
+              data-testid="stream-inbox-selection-mark-unread"
+            >
+              <Mail className="me-1 h-3.5 w-3.5" />
+              <Trans>Unread</Trans>
+            </Button>
+            {!inArchivedView && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => void handleBulkArchive()}
+                data-testid="stream-inbox-selection-archive"
+              >
+                <Archive className="me-1 h-3.5 w-3.5" />
+                <Trans>Archive</Trans>
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => void handleBulkDelete()}
+              data-testid="stream-inbox-selection-delete"
+            >
+              <Trash2 className="me-1 h-3.5 w-3.5" />
+              <Trans>Delete</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ms-auto h-7 w-7"
+              onClick={clearSelection}
+              title={t`Clear selection`}
+              data-testid="stream-inbox-selection-clear"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
+            <div className="flex flex-1 items-center">
+              <div
+                className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
+                role="tablist"
+                aria-label={t`Stream inbox view`}
+                data-testid="stream-inbox-view-bar"
+              >
+                {renderViewPill('all', t`All`, InboxIcon)}
+                {renderViewPill('unread', t`Unread`, MailPlus)}
+                {renderViewPill('archived', t`Archived`, Archive)}
+              </div>
+              {/* Text search — filters the list below to conversations whose
+                  messages contain the query, spanning archived rows. */}
+              <div className="relative ms-2 flex items-center">
+                <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t`Search messages`}
+                  className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  data-testid="stream-inbox-search-input"
+                  aria-label={t`Search messages`}
+                />
+                {searchActive && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    aria-label={t`Clear search`}
+                    data-testid="stream-inbox-search-clear"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* CENTER — new conversation / new contacts group */}
+            {!agentId && !embedded && (
+              <div className="flex shrink-0 items-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setShowNewConversation(true)}
+                  data-testid="stream-inbox-new-conversation-button"
+                  title={t`Start a new conversation`}
+                >
+                  <SquarePen className="me-1 h-3.5 w-3.5" />
+                  <Trans>New</Trans>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setShowNewContactsGroup(true)}
+                  data-testid="stream-inbox-new-contacts-group-button"
+                  title={t`Create a contacts group — add its members to any conversation in one click`}
+                >
+                  <UsersRound className="me-1 h-3.5 w-3.5" />
+                  <Trans>New group</Trans>
+                </Button>
+                <ProjectUploadMessageButton />
+              </div>
+            )}
+            {/* RIGHT — actions for the current view */}
+            <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
+              <>
+                {!inArchivedView && !embedded && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => void handleMarkAllRead()}
+                    disabled={isLoading || visibleCount === 0}
+                  >
+                    <Trans>Mark all read</Trans>
+                  </Button>
+                )}
+                {/* Archive all archives every conversation regardless of read state;
+                hide it in the Archived view where it makes no sense. */}
+                {!inArchivedView && !inUnreadView && !embedded && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => void handleArchiveAll()}
+                    disabled={isLoading || visibleCount === 0}
+                    data-testid="stream-inbox-archive-all-button"
+                  >
+                    <Trans>Archive all</Trans>
+                  </Button>
+                )}
+                {inArchivedView && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => void handleDeleteArchived()}
+                    disabled={isLoading || visibleCount === 0}
+                    data-testid="stream-inbox-delete-archived-button"
+                  >
+                    <Trash2 className="me-1 h-3.5 w-3.5" />
+                    <Trans>Delete all</Trans>
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => void handleRefresh()}
+                  // A press before the channels load would read none of them, silently.
+                  disabled={fetching || channelsLoading}
+                  title={t`Check for new messages`}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+                </Button>
+              </>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto"
+        style={{ [FROM_WIDTH_VAR]: `${fromWidth}px` } as CSSProperties}
+      >
+        {/* The header line: select-all, then one filter per row column (From over
+            the sender, Subject over the subject line, Date over the time), then the
+            owner's attached channels on the right. Rendered even with no
+            conversations — the channels are how one gets some, and a filter that
+            matched nothing must stay on screen to be cleared. The cells share the
+            row's px-3 / gap-3 / w-44 so each filter sits over its column. */}
+        {!initialLoading && (
+          <div
+            className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
+            data-testid="stream-inbox-select-all-row"
+          >
+            <span className="flex w-3.5 shrink-0 items-center">
+              {visibleCount > 0 && (
+                <Checkbox
+                  checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label={t`Select all conversations`}
+                  title={t`Select all`}
+                  data-testid="stream-inbox-select-all"
+                  className="h-3.5 w-3.5"
+                />
+              )}
+            </span>
+            <input
+              type="text"
+              value={columnFilter.from}
+              onChange={(e) => setColumn('from', e.target.value)}
+              placeholder={t`From`}
+              aria-label={t`Filter by sender`}
+              className={`${columnInputClass} ${FROM_WIDTH_CLASS}`}
+              data-testid="stream-inbox-filter-from"
+            />
+            {/* The spacer between From and Subject: drag to trade room between the names and the subject.
+                Sits in the gap (negative margins) so the columns keep their alignment with the rows. */}
+            <span
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t`Resize the From column`}
+              title={t`Drag to resize`}
+              onPointerDown={startFromResize}
+              onDoubleClick={() => commitFromWidth(FROM_WIDTH_DEFAULT)}
+              className="group/spacer -mx-3 flex h-7 w-3 shrink-0 cursor-col-resize touch-none items-center justify-center"
+              data-testid="stream-inbox-from-spacer"
+            >
+              <span className="h-4 w-px bg-border transition-colors group-hover/spacer:bg-foreground" />
+            </span>
+            <input
+              type="text"
+              value={columnFilter.subject}
+              onChange={(e) => setColumn('subject', e.target.value)}
+              placeholder={t`Subject`}
+              aria-label={t`Filter by subject`}
+              className={`${columnInputClass} min-w-0 flex-1`}
+              data-testid="stream-inbox-filter-subject"
+            />
+            <select
+              value={columnFilter.date}
+              onChange={(e) => setColumn('date', e.target.value as DateWindow)}
+              aria-label={t`Filter by date`}
+              className={columnInputClass}
+              data-testid="stream-inbox-filter-date"
+            >
+              <option value="any">{t`Any time`}</option>
+              <option value="today">{t`Today`}</option>
+              <option value="7d">{t`Last 7 days`}</option>
+              <option value="30d">{t`Last 30 days`}</option>
+            </select>
+            {columnFilterActive && (
+              <button
+                type="button"
+                onClick={() => setColumnFilter(NO_COLUMN_FILTER)}
+                className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                title={t`Clear filters`}
+                aria-label={t`Clear filters`}
+                data-testid="stream-inbox-filter-clear"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {channelsOwner && !embedded && (
+              <AttachedChannelsBar
+                owner={channelsOwner}
+                rows={ownerChannels}
+                offers={channelOffers}
+                specFor={specFor}
+                selected={channelFilter}
+                onSelectedChange={setChannelFilter}
+                className="shrink-0"
+              />
+            )}
+          </div>
+        )}
+
+        {!initialLoading && !embedded && <ChannelAttentionBar items={attention} specFor={specFor} />}
+
+        {initialLoading && (
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </div>
+        )}
+
+        {!initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
+          <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
+            <span className="text-sm">
+              {searchActive || columnFilterActive
+                ? t`No matching conversations`
+                : inArchivedView
+                  ? t`No archived conversations`
+                  : inUnreadView
+                    ? t`No unread conversations`
+                    : channelFilter.size > 0
+                      ? t`No messages from this channel yet`
+                      : t`No conversations`}
+            </span>
+            {/* An owner with no channel connected: the empty list is where connecting one is offered. */}
+            {channelsOwner && !embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
+              <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+            )}
+            {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
+              <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
+                <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+                <Trans>Check for new messages</Trans>
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!agentId && !embedded && !inArchivedView && !initialLoading && (
+          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
+        )}
+
+        {/* Start the row batches in the layout phase so the rows' own reads wait
+            for them instead of each firing a GET (see EntityBatchHydrator). */}
+        <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
+        {!initialLoading &&
+          sorted.map((conv) => (
+            <ConversationListRow
+              key={conv.id ?? ''}
+              conv={conv}
+              isFocused={false}
+              onArchive={(convId) => void handleArchive(convId)}
+              onUnarchive={(convId) => void handleUnarchive(convId)}
+              onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
+              selected={!!conv.id && selectedIds.has(conv.id)}
+              onToggleSelect={toggleSelect}
+              selectMode={selectedCount > 0}
+              onRequestDelete={handleRowDelete}
+              cloudUserId={cloudUserId}
+              onVisibilityChange={handleRowVisibility}
+              channelMatch={channelMatch}
+              columnFilter={columnFilterActive ? columnFilter : undefined}
+              attributionFor={attributionFor}
+              refSetter={(el) => {
+                if (conv.id) rowRefs.current.set(conv.id, el);
+              }}
+              agentId={agentId}
+              onOpenConversation={onOpenConversation}
+              automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
+            />
+          ))}
+        {!initialLoading && !searchActive && scope && (
+          <StreamInboxPager scope={scope} view={viewMode} rows={sorted} />
+        )}
+      </div>
+
+      {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}
+
+      {!agentId && <CreateContactsGroupDialog open={showNewContactsGroup} onOpenChange={setShowNewContactsGroup} />}
+
+      <BulkConfirmDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        title={t`Delete archived conversations`}
+        intro={
+          needsHub ? t`This sends a cloud action per conversation:` : t`These conversations exist only on this device.`
+        }
+        buckets={[
+          {
+            label: t`You own — delete for everyone`,
+            count: buckets.ownerCount,
+            tone: 'destructive',
+            description: t`Removed for all participants`,
+          },
+          {
+            label: t`You will leave`,
+            count: buckets.nonOwnerCount,
+            description: t`Removed for you; other members keep it`,
+          },
+          {
+            label: t`Invitations — decline`,
+            count: buckets.invitationCount,
+            description: t`Notifies the inviter`,
+          },
+          {
+            label: t`Local only — permanent`,
+            count: buckets.localCount,
+            tone: 'destructive',
+            description: t`Never synced to cloud`,
+          },
+        ]}
+        confirmLabel={t`Delete all`}
+        onConfirm={() => void runBulkDelete()}
+      />
+
+      <BulkConfirmDialog
+        open={selDeleteOpen}
+        onOpenChange={setSelDeleteOpen}
+        title={selectedCount === 1 ? t`Delete 1 conversation` : t`Delete ${selectedCount} conversations`}
+        intro={
+          selectedNeedsHub
+            ? t`This sends a cloud action per conversation:`
+            : t`These conversations exist only on this device.`
+        }
+        buckets={[
+          {
+            label: t`You own — delete for everyone`,
+            count: selectedBuckets.ownerCount,
+            tone: 'destructive',
+            description: t`Removed for all participants`,
+          },
+          {
+            label: t`You will leave`,
+            count: selectedBuckets.nonOwnerCount,
+            description: t`Removed for you; other members keep it`,
+          },
+          {
+            label: t`Invitations — dismiss`,
+            count: selectedBuckets.invitationCount,
+            description: t`Hidden from your stream inbox`,
+          },
+          {
+            label: t`Local only — permanent`,
+            count: selectedBuckets.localCount,
+            tone: 'destructive',
+            description: t`Never synced to cloud`,
+          },
+        ]}
+        confirmLabel={t`Delete`}
+        onConfirm={() => void runBulkDeleteSelected()}
+      />
+
+      {rowDelete?.kind === 'invitation' && (
+        <BulkConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title={t`Invitation`}
+          intro={t`Pick what to do with this invitation.`}
+          buckets={[
+            {
+              label: t`Decline (notifies the inviter)`,
+              count: 1,
+              tone: 'destructive',
+              description: t`Removes it everywhere`,
+            },
+          ]}
+          confirmLabel={t`Decline`}
+          cancelLabel={t`Cancel`}
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+          onCancel={() => {
+            // Offer the "dismiss" path explicitly so the user can hide the
+            // row without notifying the inviter. We fire it from the cancel
+            // handler so the dialog is closed first.
+            void dismissInvitationRow(rowDelete);
+          }}
+        />
+      )}
+
+      {rowDelete?.kind === 'owner' && (
+        <BulkConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title={t`Delete this conversation`}
+          intro={t`You own this conversation — pick how you want to leave.`}
+          buckets={[
+            {
+              label: t`Delete for everyone`,
+              count: 1,
+              tone: 'destructive',
+              description: t`Removed for all participants on the cloud`,
+            },
+          ]}
+          confirmLabel={t`Delete for everyone`}
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+        />
+      )}
+
+      {rowDelete?.kind === 'leave' && (
+        <ConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title={t`Leave this conversation?`}
+          description={t`You'll be removed from the participant list. Other members keep the conversation.`}
+          confirmLabel={t`Leave`}
+          variant="destructive"
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+        />
+      )}
+
+      {rowDelete?.kind === 'local' && (
+        <ConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title={t`Permanently delete?`}
+          description={t`This conversation is local-only. It will be removed from this device.`}
+          confirmLabel={t`Delete`}
+          variant="destructive"
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,16 @@
+{
+  "name": "dummyauth",
+  "title": "Dummy Auth (test only)",
+  "description": "A fake OAuth provider used only by the connection-sharing tests. Never install this on a hub that real users touch.",
+  "category": "oauth",
+  "updated_date": "2026-08-05T00:00:00Z",
+  "version": "0.0.1",
+  "funcs": [
+    {
+      "name": "dummyauth_auth",
+      "title": "Dummy Auth",
+      "description": "Authenticate with the dummy provider",
+      "capability": "oauth"
+    }
+  ]
+}

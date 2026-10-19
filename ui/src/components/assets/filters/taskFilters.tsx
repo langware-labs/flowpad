@@ -1,5 +1,7 @@
 import React from 'react';
 import { Trans } from '@lingui/react/macro';
+import { statusLabel } from '@src/components/task-bar/constants';
+import { ALL_TASK_STATUSES } from '@src/components/task-bar/task-utils';
 import { registerFilters, FilterState } from './filterRegistry';
 
 const TaskFilters: React.FC<{ filters: FilterState; onChange: (f: FilterState) => void }> = ({ filters, onChange }) => (
@@ -11,15 +13,11 @@ const TaskFilters: React.FC<{ filters: FilterState; onChange: (f: FilterState) =
     <option value="">
       <Trans>All statuses</Trans>
     </option>
-    <option value="to_do">
-      <Trans>New</Trans>
-    </option>
-    <option value="in_progress">
-      <Trans>In Progress</Trans>
-    </option>
-    <option value="done">
-      <Trans>Done</Trans>
-    </option>
+    {ALL_TASK_STATUSES.map((status) => (
+      <option key={status} value={status}>
+        {statusLabel(status)}
+      </option>
+    ))}
   </select>
 );
 

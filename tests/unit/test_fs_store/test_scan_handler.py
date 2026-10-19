@@ -7,6 +7,7 @@ event emission, and scan_log writes.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import pytest
@@ -19,10 +20,10 @@ from flow_sdk.fs_store.indexer import (
     FSIndexer,
     IndexProgressTable,
     TypeProgressRow,
+    index_log,
     reset_shared_indexer,
 )
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 class FakeQueryParams:
@@ -105,6 +106,20 @@ async def test_scan_handler_aggregate_shape(captured_progress):
         assert "count" in t
         assert "total_bytes" in t
         assert "avg_bytes" in t
+
+    # Per-type `scan_ms` must be MEASURED, not a placeholder. The field was
+    # assigned the literal 0.0 at both bucket-construction sites
+    # (fs_records_actions.py `bucket["scan_ms"] = 0.0`), so every row reported
+    # 0.0 while the aggregate reported the real number — measured on a live
+    # backend: aggregate scan_ms=3442.3 with 35/35 rows at 0.0. Presence-only
+    # assertions (`"scan_ms" in data`) cannot catch a dead field, which is why
+    # this went unnoticed.
+    scanned = [t for t in data["types"] if t["count"] > 0]
+    if scanned and data["scan_ms"] > 0:
+        assert sum(t["scan_ms"] for t in scanned) > 0.0, (
+            f"all {len(scanned)} scanned type rows report scan_ms=0.0 while the "
+            f"aggregate reports {data['scan_ms']}ms — per-type timing is a placeholder"
+        )
 
 
 # do not increase timeout without approval
@@ -246,7 +261,7 @@ async def test_typed_scan_projects_and_diffs_only_terminal_type(
         staticmethod(discover),
     )
 
-    def append_scan(cls, **kwargs):
+    def append_scan(**kwargs):
         captured["scan_log"] = kwargs
         captured["activity_alive"] = (
             handler._activity is not None and not handler._activity.is_complete
@@ -257,7 +272,7 @@ async def test_typed_scan_projects_and_diffs_only_terminal_type(
         )
         return "now"
 
-    monkeypatch.setattr(SchemaRegistry, "append_scan", classmethod(append_scan))
+    monkeypatch.setattr(index_log, "append_scan", append_scan)
 
     response = await handler._handle_fs_records_scan(
         FakeRequestInfo({"type": "skill", "user": None, "projects": None})
@@ -300,22 +315,22 @@ def test_typed_non_indexable_scan_is_projected_but_not_diffed(
         "_discover_records_dir_ids",
         staticmethod(discover),
     )
-    monkeypatch.setattr(
-        SchemaRegistry,
-        "append_scan",
-        classmethod(lambda cls, **kwargs: "now"),
-    )
+    monkeypatch.setattr(index_log, "append_scan", lambda **kwargs: "now")
 
     response = handler._project_fs_records_scan(
         nodes=[FSRef(folder, record_type=RecordType.FOLDER)],
         filter_type="folder",
         types_filter=[RecordType.FOLDER],
         trigger="test",
-        scan_ms=1.0,
+        walk_ms=1.0,
+        started_at=time.perf_counter(),
         scope_explicit=False,
     )
 
     assert response.data["type"] == "folder"
+    # `scan_ms` is the WHOLE request, `walk_ms` only the walk's share — the split
+    # that stopped a 34s scan from advertising itself as 0.5s.
+    assert response.data["walk_ms"] == 1.0
     assert response.data["count"] == 1
     assert response.data["records"][0]["id"] == str(folder)
     assert response.data["min_bytes"] == folder.stat().st_size

@@ -23,11 +23,46 @@ import os
 
 import pytest
 import pytest_asyncio
-
 from httpx import ASGITransport, AsyncClient
-from flow_sdk.server.app import app
+
 from flow_sdk.builtin.user import User
 from flow_sdk.responses.response import ApiResponse
+from flow_sdk.server.app import app
+from tests.utils.harness_installed import declare_harnesses_installed
+
+
+async def _seed_usable_worker_source(worker_type: str):
+    """Set test capability state without copying worker credentials."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    capability = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    assert capability is not None
+    previous_login = capability.login_state, capability.login_message
+    capability.login_state = DeviceLoginState.AUTHENTICATED
+    capability.login_message = "test source"
+    await capability.save(notify=False)
+    return capability, previous_login
+
+
+@pytest_asyncio.fixture
+async def usable_claude_source(monkeypatch):
+    """Give Claude lifecycle tests a usable cached device source: installed and signed in."""
+    declare_harnesses_installed(monkeypatch)
+    await _seed_usable_worker_source("claude")
+
+
+@pytest_asyncio.fixture
+async def usable_codex_source(monkeypatch):
+    """Give Codex lifecycle tests a usable source (installed and signed in), restoring it afterward."""
+    declare_harnesses_installed(monkeypatch)
+    capability, previous_login = await _seed_usable_worker_source("codex")
+    try:
+        yield
+    finally:
+        capability.login_state, capability.login_message = previous_login
+        await capability.save(notify=False)
 
 
 def _invalidate_caches():
@@ -49,7 +84,7 @@ def _invalidate_caches():
         pass
     try:
         from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
-        invalidate_bootstrap_cache()
+        invalidate_bootstrap_cache(reset_local_entities=True)
     except Exception:
         pass
 
@@ -81,7 +116,7 @@ async def _rebind_session_db_driver():
     loop before each test keeps every read/write on the single session-owned
     driver.
     """
-    import tests.conftest as _root_cf
+    import tests.pytest_plugin as _root_cf
     driver = getattr(_root_cf, "_test_db_driver", None)
     if driver is not None:
         import flow_sdk.db.drivers.db_driver as _ddm
@@ -120,6 +155,22 @@ def _restore_records_root():
     _reset()
     yield
     _reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_questions():
+    """Leave the pending-question registry as we found it.
+
+    ``ask._PENDING`` is module state. A test that opens a question and never
+    settles it makes the NEXT test's ``open_questions()[0]`` that orphan — it
+    answers the wrong question and then waits out its own deadline for an answer
+    that already went elsewhere. Alphabetical ordering used to hide this.
+    """
+    from flow_sdk.core.compute_op import ask
+
+    ask._PENDING.clear()
+    yield
+    ask._PENDING.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -165,6 +216,7 @@ def clean_db():
     # an asyncio.run() with a fresh loop is acceptable: there is nothing on
     # the old loop that needs to outlive this call.
     import asyncio
+
     import flow_sdk.db.drivers.db_driver as db_driver_mod
     driver = db_driver_mod._driver_instances.get("sqlite")
     if driver is not None:
@@ -291,3 +343,90 @@ async def get_agentic_process(client, pid: str) -> dict:
 def default_compute_node_id(bootstrap_payload: dict) -> str:
     """``default_compute_node.id`` from the unwrapped ``bootstrap_payload``."""
     return bootstrap_payload["default_compute_node"]["id"]
+
+
+# ---------------------------------------------------------------------------
+# Task assignment / group fan-out: the faked hub boundary, shared by
+# ``test_task_assign_action`` (one shared task, one editor invite) and
+# ``test_group_task_action`` (the N-member fan-out).
+# ---------------------------------------------------------------------------
+class _FakeCreds:
+    api_key = "test-key"
+    user = {"email": "owner@x.com"}
+
+
+@pytest.fixture
+def _blob_storage(tmp_path):
+    """Task.description is a blob → get_one's expand_blobs needs embedded
+    storage. The in-process ASGI harness has no request-scoped storage
+    (middleware wiring is intentionally disabled), so install the same dev
+    storage fallback production falls back to (test_flow_message_actions
+    pattern)."""
+    import shutil
+
+    from flow_sdk.config import default_service_config
+    from flow_sdk.request_context import methods as _ctx
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
+
+    blob_root = tmp_path / "task_blobs"
+    blob_root.mkdir(parents=True, exist_ok=True)
+    prev_dev = default_service_config.development
+    default_service_config.development = True
+    _ctx.set_default_test_storage_fallback(LocalStorageDriver(str(blob_root)))
+    try:
+        yield
+    finally:
+        _ctx.set_default_test_storage_fallback(None)
+        default_service_config.development = prev_dev
+        shutil.rmtree(blob_root, ignore_errors=True)
+
+
+@pytest.fixture
+def hub_faked(_blob_storage, monkeypatch):
+    """Fake every hub touchpoint the group-task actions use."""
+    posts: list[tuple[str, dict]] = []
+    puts: list[tuple[str, dict]] = []
+    created_children: list[tuple[str, str]] = []
+
+    async def fake_share(self, *, recursive=False):
+        self.remote = True
+        return self
+
+    async def fake_create_child(self, child):
+        created_children.append((self.id, child.id))
+        child.remote = True
+        return child
+
+    # Record hub writes as the (path, payload) the real transport would issue,
+    # so assertions keep reading like the wire contract.
+    async def fake_hub_post(entity_type, payload, entity_id=None, action=None, *a, **k):
+        etype = getattr(entity_type, "value", entity_type)
+        posts.append((f"/graph/{etype}/{entity_id}/{action}", payload))
+        return {}
+
+    async def fake_hub_request(method, entity_type, entity_id=None, action=None, *a, payload=None, **k):
+        assert method == "POST", f"unexpected hub {method}"
+        return await fake_hub_post(entity_type, payload, entity_id, action)
+
+    async def fake_hub_put(entity_type, entity_id, payload, *a, **k):
+        etype = getattr(entity_type, "value", entity_type)
+        puts.append((f"/graph/{etype}/{entity_id}", payload))
+        return {}
+
+    import flow_sdk.app.actions.group_task_action as gta
+    import flow_sdk.app.actions.task_assign_action as taa
+    import flow_sdk.cli.auth.credentials as creds_mod
+    import flow_sdk.cli.auth.hub_login as login_mod
+    from flow_sdk.builtin.task import Task
+
+    monkeypatch.setattr(creds_mod, "load_credentials", lambda *a, **k: _FakeCreds())
+    monkeypatch.setattr(login_mod, "is_logged_in", lambda: True)
+    # BOTH modules: the group fan-out reaches the hub through the primitive's
+    # ``ensure_task_on_hub`` / ``push_hub_fields`` (hub_request) as well as its own hub_post.
+    monkeypatch.setattr(gta, "hub_post", fake_hub_post)
+    monkeypatch.setattr(taa, "hub_request", fake_hub_request)
+    monkeypatch.setattr(taa, "hub_put", fake_hub_put)
+    monkeypatch.setattr(taa, "_local_mode_share_blocked", lambda: False)
+    monkeypatch.setattr(Task, "share", fake_share)
+    monkeypatch.setattr(Task, "create_child", fake_create_child)
+    return {"posts": posts, "puts": puts, "children": created_children}

@@ -190,6 +190,11 @@ class _Storage:
     def get_storage_path(self, vfs_path):
         return str(self.root / vfs_path)
 
+    async def upload(self, source, vfs_path='/'):
+        target = self.root / vfs_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read())
+
 
 def _patch_hub_get(monkeypatch, payload):
     import flow_sdk.utils.hub as hub
@@ -217,7 +222,7 @@ def _patch_entity_lookup(monkeypatch, entity):
 async def test_cache_miss_fills_from_hub_for_any_remote_entity(monkeypatch, tmp_path):
     """The generalized fallback: no longer flow_message-only."""
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, b"file-bytes")
     _patch_entity_lookup(monkeypatch, _entity(remote=True))
@@ -234,7 +239,7 @@ async def test_cache_miss_fills_from_hub_for_any_remote_entity(monkeypatch, tmp_
 @pytest.mark.asyncio
 async def test_cache_miss_does_not_hit_hub_for_local_only_entity(monkeypatch, tmp_path):
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, b"file-bytes")
     _patch_entity_lookup(monkeypatch, _entity(remote=False))
@@ -249,7 +254,7 @@ async def test_cache_miss_does_not_hit_hub_for_local_only_entity(monkeypatch, tm
 async def test_cache_miss_returns_false_when_hub_has_nothing(monkeypatch, tmp_path):
     """Hub 404 → False, so the caller 404s exactly as it did before."""
     from flow_sdk.actions.fs.fs_actions import fetch_remote_entity_file
-    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
 
     _patch_hub_get(monkeypatch, None)
     _patch_entity_lookup(monkeypatch, _entity(remote=True))
@@ -322,3 +327,196 @@ async def test_share_push_reads_via_entity_relative_path(monkeypatch, tmp_path):
 
     assert pushed == 1, "the file must be pushed (a directory is skipped)"
     assert sent == [("abc123", "a1.md", b"payload")]
+
+
+class _RecordBackedEntity:
+    remote = True
+
+    def __init__(self, *, entity_type: str, record):
+        self.id = str(uuid.uuid4())
+        self.typeid = f"{entity_type}-{self.id}"
+        self._entity_type = entity_type
+        self._record = record
+
+    def get_type(self):
+        return self._entity_type
+
+    async def get_record(self):
+        return self._record
+
+
+class _FileBackedEntity(_RecordBackedEntity):
+    type: str = "probe_file_backed"
+
+
+class _FolderBackedEntity(_RecordBackedEntity):
+    type: str = "probe_folder_backed"
+
+
+def _register_hub_layout_probes() -> None:
+    """Hub layout is ``TypeInfo``'s shape — the same facts the disk serializer
+    reads — so the probes declare it there."""
+    from flow_sdk.assets.layout import Folder
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+
+    SchemaRegistry.register(TypeInfo(type_name="probe_file_backed", hub_main_file="document.md"))
+    SchemaRegistry.register(TypeInfo(type_name="probe_folder_backed", shape=Folder(main="SKILL.md"), hub_main_file="SKILL.md"))
+
+
+_register_hub_layout_probes()
+
+
+@pytest.mark.asyncio
+async def test_share_push_publishes_markdown_under_canonical_hub_name(monkeypatch, tmp_path):
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    source = tmp_path / "sender-name.md"
+    source.write_bytes(b"# Wiki doc")
+    record = SimpleNamespace(main_ref=SimpleNamespace(path=str(source)), asset_ref=SimpleNamespace(path=str(source)))
+    entity = _FileBackedEntity(entity_type="markdown", record=record)
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((entity_id, filename, content, sub_path))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+
+    assert await push_entity_files_to_hub(entity) == 1
+    assert sent == [(entity.id, "document.md", b"# Wiki doc", "upload")]
+
+
+@pytest.mark.asyncio
+async def test_share_push_recursively_preserves_skill_folder_paths(monkeypatch, tmp_path):
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    skill_root = tmp_path / "my-skill"
+    nested = skill_root / "references"
+    nested.mkdir(parents=True)
+    (skill_root / "SKILL.md").write_bytes(b"# Skill")
+    (nested / "guide.md").write_bytes(b"guide")
+    record = SimpleNamespace(
+        main_ref=SimpleNamespace(path=str(skill_root / "SKILL.md")),
+        asset_ref=SimpleNamespace(path=str(skill_root)),
+    )
+    entity = _FolderBackedEntity(entity_type="skill", record=record)
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((filename, content, sub_path))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+
+    assert await push_entity_files_to_hub(entity) == 2
+    assert sent == [
+        ("SKILL.md", b"# Skill", "upload"),
+        ("guide.md", b"guide", "upload/references"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_share_push_does_not_publish_symlinks_outside_skill(monkeypatch, tmp_path):
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    skill_root = tmp_path / "my-skill"
+    skill_root.mkdir()
+    (skill_root / "SKILL.md").write_bytes(b"# Skill")
+    outside = tmp_path / "private.txt"
+    outside.write_bytes(b"secret")
+    (skill_root / "private-link.txt").symlink_to(outside)
+    record = SimpleNamespace(
+        main_ref=SimpleNamespace(path=str(skill_root / "SKILL.md")),
+        asset_ref=SimpleNamespace(path=str(skill_root)),
+    )
+    entity = _FolderBackedEntity(entity_type="skill", record=record)
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append(filename)
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+
+    assert await push_entity_files_to_hub(entity) == 1
+    assert sent == ["SKILL.md"]
+
+
+@pytest.mark.asyncio
+async def test_create_child_pushes_existing_record_bytes_after_hub_create(monkeypatch):
+    import flow_sdk.actions.fs.fs_actions as fs_actions
+    import flow_sdk.cli.auth.credentials as credentials
+    import flow_sdk.cloud_client.client as cloud_client
+    from flow_sdk.builtin.claude_memory_entities import Docs
+    from flow_sdk.builtin.project import Project
+
+    posted = []
+    pushed = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, path, body):
+            posted.append((path, body))
+
+    async def _fake_push(entity):
+        pushed.append(entity)
+        return 1
+
+    monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="key"))
+    monkeypatch.setattr(cloud_client, "FlowpadClient", _Client)
+    monkeypatch.setattr(cloud_client.ApiConfig, "from_env", classmethod(lambda cls: SimpleNamespace()))
+    monkeypatch.setattr(fs_actions, "push_entity_files_to_hub", _fake_push)
+
+    project = Project(id=str(uuid.uuid4()), name="Shared", remote=True)
+    child = Docs(id=str(uuid.uuid4()), name="Guide", remote=False)
+
+    result = await project.create_child(child)
+
+    assert result is child
+    assert child.remote is True
+    assert len(posted) == 1
+    assert pushed == [child]
+
+
+@pytest.mark.asyncio
+async def test_share_push_sends_task_attachments_from_its_folder(monkeypatch, tmp_path):
+    """A task keeps its files in its folder (``files_in_asset_folder``): the
+    share-time push sends ``attachments/**`` with their paths, never the task's
+    own documents (``task.md`` is fields; ``spec.md`` stays home)."""
+    import flow_sdk.actions.fs.fs_actions as fsa
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    folder = tmp_path / "agentic-assets" / "task" / "help"
+    (folder / "attachments").mkdir(parents=True)
+    (folder / "task.md").write_bytes(b"---\ntitle: help\n---\n")
+    (folder / "spec.md").write_bytes(b"plan")
+    (folder / "attachments" / "shot.png").write_bytes(b"png")
+
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((filename, content, sub_path))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    class _EmptyEmbedded:  # nothing left in the old embedded store
+        async def list_dir(self, _root):
+            return []
+
+    monkeypatch.setattr(fsa, "get_entity_storage", lambda _tid: _EmptyEmbedded())
+
+    entity = SimpleNamespace(
+        id=str(uuid.uuid4()), remote=True, asset_ref=str(folder), get_type=lambda: "task"
+    )
+    entity.typeid = f"task-{entity.id}"
+
+    assert await push_entity_files_to_hub(entity) == 1
+    assert sent == [("shot.png", b"png", "upload/attachments")]

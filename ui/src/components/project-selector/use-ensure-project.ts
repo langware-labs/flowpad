@@ -1,10 +1,33 @@
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project } from '@sdk';
+import { newProjectLocale, stampNewProjectLocale } from '@src/contexts/locale-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useCallback } from 'react';
+import { withHomePage } from '@src/project-home-page/home-page-state';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+}
+
+/**
+ * True when `path` names a LOCATION, so a path-keyed ensure may act on it.
+ *
+ * A bare NAME must never reach one: `Project`'s validator roots a slash-free
+ * name at `<workspace>/<name>`, minting a stray project at a folder the user
+ * never chose — and the next PTY spawn (`os.makedirs(cwd)`) re-creates that
+ * folder, so deleting it never sticks. One separator is enough to tell the two
+ * apart: the New Project dialogs build VFS-relative paths from
+ * `desktop_info.paths.workspace` (`Users/alice/Flowpad workspace/...`, no
+ * leading slash), which the validator maps to the OS root, so requiring an
+ * absolute path here would reject legitimate creation. Hub projects are pure
+ * entities with no folder at all, so there anything goes.
+ */
+export function isOpenableProjectPath(path: string): boolean {
+  return isHubOnly() || path.includes('/');
 }
 
 /** Make `project` the active project context — current-project pointer,
@@ -39,20 +62,21 @@ export function useEnsureProject() {
     async (rawPath: string, options?: { select?: boolean }): Promise<Project> => {
       if (!dataContext.someone) throw new Error('You must be logged in');
       const normalized = rawPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
-      if (!normalized) throw new Error('Please provide a valid project path');
+      if (!normalized || !isOpenableProjectPath(normalized)) {
+        throw new Error('Please provide a valid project path');
+      }
       const pathKey = canonicalPath(normalized);
 
-      const freshProjects = await Project.query(
-        new QueryRequest({ type: Project.type, query: null, scope: [], name: 'ensure-project-dedup' }),
-      );
+      const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
       let target = freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path ?? '') === pathKey) ?? null;
       if (!target) {
-        target = await new Project({ name: normalized }).save([dataContext.someone]);
+        target = await new Project({ name: normalized, locale: newProjectLocale() }).save([dataContext.someone]);
       }
       await target.setupForDesktop();
       if (options?.select === false) return target;
       await selectProjectContext(target);
-      navigation.openDock(DockPointer.forProject(target.id));
+      // Launching the project: land on its home page when it names one.
+      navigation.openDock(withHomePage(DockPointer.forProject(target.id)));
       return target;
     },
     [navigation],
@@ -72,9 +96,36 @@ export function useSelectExistingProject(): ProjectLanding {
   return useCallback(
     async (project: Project): Promise<void> => {
       await selectProjectContext(project);
-      navigation.openDock(DockPointer.forProject(project.id));
+      // Launching the project (a pick, or a shared project just set up): land
+      // on its home page when it names one.
+      navigation.openDock(withHomePage(DockPointer.forProject(project.id)));
     },
     [navigation],
+  );
+}
+
+/**
+ * The sibling of `useCloneGitProjectAndOpen` for a project that ALREADY EXISTS
+ * locally as a row with no files — the shape a hub membership grant leaves
+ * behind. It materializes that row's own Git origin in place, so the recipient
+ * keeps the shared project id, and lands exactly where a fresh clone does.
+ *
+ * Deliberately WITHOUT the clone path's other two steps. `setup-from-git` does
+ * the desktop wiring server-side, so repeating it here only produced a failed
+ * save; and the locale seed belongs to a project you CREATE — a received
+ * project's language is the sender's property, not a blank to fill in.
+ */
+export function useInstallSharedProjectAndOpen(landing?: ProjectLanding) {
+  const selectExisting = useSelectExistingProject();
+  const land = landing ?? selectExisting;
+
+  return useCallback(
+    async (project: Project): Promise<Project> => {
+      const installed = await project.setupFromGitOrigin();
+      await land(installed);
+      return installed;
+    },
+    [land],
   );
 }
 
@@ -90,20 +141,40 @@ export function useSelectExistingProject(): ProjectLanding {
  * pass a stable (memoized) callback. Returns the raw result; each caller maps
  * it to its own UI (form banner vs. step machine).
  */
+/**
+ * Clone a git repo into a fresh, desktop-wired Project — `useCloneGitProjectAndOpen` without
+ * the landing, for callers that decide where to go themselves (a launch link's setup).
+ * `workspaceId` picks the workspace folder (undefined → the default one).
+ */
+export async function cloneGitProject(
+  computeNodeId: string,
+  url: string,
+  opts?: { targetName?: string; branch?: string; workspaceId?: string },
+): Promise<Awaited<ReturnType<typeof Project.createFromGitUrl>>> {
+  const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch, opts?.workspaceId);
+  if (result.kind === 'ok') {
+    // The backend minted this row, so the constructor-side seed the local
+    // create paths use isn't available — stamp it here, BEFORE a caller lands
+    // on the project and `applyProjectLocale` reads it.
+    await stampNewProjectLocale(result.project);
+    await result.project.setupForDesktop();
+  }
+  return result;
+}
+
 export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
   const selectExisting = useSelectExistingProject();
   const land = landing ?? selectExisting;
+  // The clone lands in the active workspace's folder (undefined → the default one).
+  const { scopeId: workspaceId } = useActiveWorkspace();
 
   return useCallback(
     async (computeNodeId: string, url: string, opts?: { targetName?: string; branch?: string }) => {
-      const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch);
-      if (result.kind === 'ok') {
-        await result.project.setupForDesktop();
-        await land(result.project);
-      }
+      const result = await cloneGitProject(computeNodeId, url, { ...opts, workspaceId });
+      if (result.kind === 'ok') await land(result.project);
       return result;
     },
-    [land],
+    [land, workspaceId],
   );
 }
 
@@ -114,8 +185,20 @@ export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
  * result contract it decodes so a new `kind` is handled in one place rather
  * than in every dialog that hosts the form.
  */
+/**
+ * The clone-dialog's submit, for whichever runtime is serving the app.
+ *
+ * **Desk** clones onto the local compute node — the path this hook has always
+ * taken. **Hub** has no compute node (its bootstrap ships no
+ * `default_compute_node`) and no local filesystem, so a clone there targets an
+ * E2B sandbox instead: `launch({sandboxProject})` has the HUB clone the repo — with
+ * the user's token, which is why private repos work at all — and copy the tree
+ * into the box, which materializes it into an indexed Project. Same pipeline
+ * `InstallLanding` uses; nothing new on either side.
+ */
 export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined, landing?: ProjectLanding) {
   const cloneAndOpen = useCloneGitProjectAndOpen(landing);
+  const { launch } = useSandboxes();
 
   return useCallback(
     async (
@@ -123,6 +206,18 @@ export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined
       acceptSuggested?: string,
       branch?: string,
     ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
+      if (isHubOnly()) {
+        const gitOrigin = gitOriginFromUrl(url, branch ?? '');
+        if (!gitOrigin) throw new Error('Not a recognisable git URL');
+        // The repo name is the box-side folder/project name. A fresh sandbox
+        // can't collide, but a re-used one can — the launch pipeline asks the
+        // box before it clones, and reports the clash the same way the desk
+        // path does so the dialog's existing banner handles both.
+        const name = acceptSuggested || gitOrigin.name;
+        await launch({ name, sandboxProject: { name, gitOrigin } });
+        return { ok: true };
+      }
+
       if (!computeNodeId) throw new Error('No compute node available');
       const result = await cloneAndOpen(computeNodeId, url, { targetName: acceptSuggested, branch });
       if (result.kind === 'ok') return { ok: true };
@@ -131,6 +226,6 @@ export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined
       }
       throw new Error(result.message);
     },
-    [cloneAndOpen, computeNodeId],
+    [cloneAndOpen, computeNodeId, launch],
   );
 }

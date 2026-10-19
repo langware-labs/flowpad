@@ -1,20 +1,16 @@
-import { dataManager, TypeId } from '@sdk';
+import { dataManager } from '../../../APIEntity';
+import { TypeId } from '../../../models/TypeId';
+import { releaseWhenWatched } from '../../../process/watch-lease';
 import { useEffect } from 'react';
 
 export function useWatch(typeId: TypeId | null, enabled: boolean = true) {
   useEffect(() => {
     if (!enabled || !typeId) return;
 
-    let unwatch: () => Promise<void>;
-
-    const setupWatch = async () => {
-      unwatch = await dataManager.watch(typeId);
-    };
-
-    void setupWatch();
+    const watching = dataManager.watch(typeId);
 
     return () => {
-      if (unwatch) setTimeout(() => void unwatch(), 100);
+      setTimeout(() => releaseWhenWatched(watching), 100);
     };
   }, [enabled, typeId]);
 }

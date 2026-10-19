@@ -11,8 +11,8 @@ test.describe('home submit opens a shell session', () => {
     await dismissSetupModal(page);
     await gotoLanding(page);
 
-    // submitFromLanding fills + submits and waits for the /dock/shell/ navigation.
+    // submitFromLanding fills + submits and waits for the session's Vibe tab.
     await submitFromLanding(page, 'hi');
-    expect(page.url()).toContain('/dock/shell/');
+    expect(page.url()).toContain('/dock/vibe/agentic_process-');
   });
 });

@@ -354,6 +354,28 @@ html.light .xterm .xterm-fg-188:not([class*='xterm-bg-']) {
   direction: ltr;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * Keep a row one bidi paragraph (everywhere else — macOS/Linux).
+ * Off Windows, PTY apps emit RTL text in LOGICAL order and the browser's bidi
+ * algorithm is what turns the row right-to-left. But the DOM renderer injects
+ * `<terminal> .xterm-rows span { display: inline-block }` at runtime
+ * (DomRenderer.ts), and a row is split into one span per style/letter-spacing
+ * run — in practice one per word, because Hebrew's glyph advance differs from
+ * the ASCII cell advance. `inline-block` makes each of those an ATOMIC inline:
+ * bidi then reorders only WITHIN each box and lays the boxes out in paragraph
+ * order, so every word is individually correct while the sentence still runs
+ * left-to-right. Restoring non-atomic inlines puts the whole row back in one
+ * bidi paragraph. Measured no-ops: cell x-positions, cell background height
+ * and row stacking are byte-identical either way.
+ * `!important` is required — the injected selector has the same specificity
+ * and its <style> is appended inside the screen element, so it wins on order.
+ * Harmless on the Windows contract above: bidi-override already pins glyphs
+ * to buffer order regardless of how the spans are boxed.
+ * ──────────────────────────────────────────────────────────────────────── */
+.xterm .xterm-rows span {
+  display: inline !important;
+}
+
 /* Arrows */
 .xterm .xterm-scrollable-element > .scrollbar > .scra {
   cursor: pointer;

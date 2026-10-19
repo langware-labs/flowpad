@@ -17,8 +17,8 @@ _full_schema_cache: Optional[List[Dict[str, Any]]] = None
 _entity_schema_map_cache: Optional[Dict[str, Dict[str, Any]]] = None
 # Memoized assembled payload list keyed by ``include_schema`` — the per-type
 # ``info.to_dict()`` assembly over ~150 types costs ~225ms, identical every
-# call (the type registry is static after startup). Warmed at server-module
-# import so the first (cold) bootstrap reads it instead of building it inline.
+# call (the type registry is static after startup). Warmed after all startup
+# registrations so the first bootstrap reads it instead of building it inline.
 _all_type_payloads_cache: Dict[bool, List[Dict[str, Any]]] = {}
 
 
@@ -229,6 +229,13 @@ def invalidate_schema_cache() -> None:
     _full_schema_cache = None
     _entity_schema_map_cache = None
     _all_type_payloads_cache.clear()
+
+
+# An entity class that binds to its type AFTER these memos were assembled
+# (lazily imported entity modules — ``Trigger`` via the server's trigger
+# subsystem) would otherwise leave that type's payload at ``schema: None``
+# for the life of the process.
+SchemaRegistry.on_entity_bound(invalidate_schema_cache)
 
 
 def _entity_schema_map(allow_cache: bool = True) -> Dict[str, Dict[str, Any]]:

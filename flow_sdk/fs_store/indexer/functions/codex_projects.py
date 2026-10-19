@@ -14,13 +14,9 @@ merges the flags onto the existing row.
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 
-try:
-    import tomllib as _tomllib  # type: ignore[import-not-found]
-except ImportError:
-    import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
+import tomllib as _tomllib
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -28,11 +24,6 @@ from flow_sdk.fs_store.path_utils import is_valid_project_cwd
 from flow_sdk.fs_store.record_types import RecordType
 
 # ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
-
-
-def _codex_project_id(cwd: str) -> str:
-    """Deterministic uuid5 id for a codex project keyed on canonical cwd."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"codex_project:{cwd}"))
 
 
 def _read_codex_projects_from_config(

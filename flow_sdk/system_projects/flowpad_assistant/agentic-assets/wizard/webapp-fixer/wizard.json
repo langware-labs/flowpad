@@ -1,0 +1,8 @@
+{
+  "name": "webapp-fixer",
+  "description": "Repairs the web app in the Flowpad display when it fails to load — a dead dev server, an HTTP error, a blank page, or JavaScript errors.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wrench",
+  "agent": "webapp-fixer"
+}

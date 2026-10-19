@@ -181,6 +181,10 @@ test.describe('Wiki link layer', () => {
       await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}`);
       await expect(page.getByTestId('editor-mode-chip-view')).toBeVisible();
       await page.evaluate(() => window.setView('advanced'));
+      // The `review` and `markdown` chips are power-user modes: since host tabs
+      // (71e9272c6) they follow the developer switch (`useIsAdvanced() ===
+      // useIsDev()`), not the view mode. Flip it through the app's own switch.
+      await page.evaluate(() => window.setDev(true));
       await page.getByTestId('editor-mode-chip-editor').click();
 
       const wikiButton = page.getByTestId('wiki-toolbar-add-link');

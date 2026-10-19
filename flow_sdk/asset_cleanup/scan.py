@@ -1,9 +1,12 @@
-"""Scan-root discovery for the asset-cleanup flow.
+"""Deterministic input discovery for the asset-cleanup flow.
 
 A scan root is a directory whose ``.claude/skills`` / ``.claude/agents``
 children the ``asset_cleanup`` agent inventories. The default set is the user
 home plus the fs mount of every project active within the recency window.
+Python owns asset inventory so an external model classifies a bounded input
+instead of deciding which parts of a root to traverse.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,6 +30,7 @@ async def collect_scan_roots(hours: int = 24, projects: list | None = None) -> l
     """
     if projects is None:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
         projects = await Project.get_all()
 
     roots: list[Path] = [Path(get_instance_settings().user_home)]
@@ -55,6 +59,7 @@ async def collect_project_inventory(projects: list | None = None) -> list[dict]:
     """
     if projects is None:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
         projects = await Project.get_all()
 
     home = str(Path(get_instance_settings().user_home))
@@ -66,13 +71,15 @@ async def collect_project_inventory(projects: list | None = None) -> list[dict]:
         # Never offer the home dir or the @local singleton for cleanup.
         if getattr(project, "uname", None) == "local" or str(Path(mount)) == home:
             continue
-        out.append({
-            "id": project.id,
-            "name": project.name,
-            "path": str(Path(mount)),
-            "last_session_at": project.last_session_at,
-            "session_count": project.session_count,
-        })
+        out.append(
+            {
+                "id": project.id,
+                "name": project.name,
+                "path": str(Path(mount)),
+                "last_session_at": project.last_session_at,
+                "session_count": project.session_count,
+            }
+        )
     return out
 
 

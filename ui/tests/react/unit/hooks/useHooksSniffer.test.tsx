@@ -2,15 +2,29 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AgentHook, dataContext, FlowData, snifferManager } from '@sdk';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
 import { unitTestSetup } from '../../../utils/test-utils';
 import { v4 as uuid } from 'uuid';
 
+const { useProjectList } = vi.hoisted(() => ({
+  useProjectList: vi.fn(() => ({
+    projects: [],
+    totalCount: 0,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
+}));
+
+vi.mock('@src/hooks/use-claude-projects', () => ({
+  useProjectList,
+}));
+
 // ── MockAgentHook — skips HTTP watch so tests stay unit-level ────────────────
 class MockAgentHook extends AgentHook {
-  override async watch() {
-    return async () => {};
+  override watch() {
+    return Promise.resolve(() => Promise.resolve());
   }
 }
 
@@ -77,6 +91,7 @@ function pushHookOp(hook: AgentHook, eventName: string) {
 let mockHook: MockAgentHook;
 
 beforeEach(async () => {
+  useProjectList.mockClear();
   await unitTestSetup();
 
   mockHook = new MockAgentHook({ id: uuid(), name: 'test-hook' });
@@ -94,6 +109,20 @@ afterEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('useHooksSniffer stream lifecycle', () => {
+  it('defers project-history discovery until an enabled sniffer event needs cwd mapping', async () => {
+    renderHook(() => useHooksSniffer(), { wrapper: makeWrapper() });
+
+    expect(useProjectList).toHaveBeenLastCalledWith({ enabled: false });
+
+    pushAgentHook(mockHook, 'PreToolUse', {
+      hook_data: { session_id: 'sess-project', cwd: '/tmp/sniffer-project' },
+    });
+
+    await waitFor(() => {
+      expect(useProjectList).toHaveBeenLastCalledWith({ enabled: true });
+    });
+  });
+
   it('emit: pushing a FlowData item produces a SnifferEvent', async () => {
     const { result } = renderHook(() => useHooksSniffer(), { wrapper: makeWrapper() });
 

@@ -1,14 +1,45 @@
-import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
-import type { IEntity } from '../IEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models/ActionInfo';
+import type { CloudDeployProvider } from './agent';
+import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
+import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
+import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
+import {
+  type EndpointSubkind,
+  type HealthCheck,
+  type HealthState,
+  type IServiceEndpoint,
+  ServiceEndpoint,
+  type ServiceBackend,
+  type ServiceProtocol,
+  worstHealth,
+} from './service-endpoint';
 
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
 export type DeploymentObservationKind = 'cost' | 'size' | 'activity';
 export type ObservationCoverage = 'available' | 'unavailable' | 'unattributed' | 'stale';
+
+/** Who a box logs in as for a deployment: nobody, the placed agent itself, or its owner. */
+export type DeploymentIdentity = 'none' | 'agent' | 'user';
+
+/**
+ * Providers that place a resource on a ComputeNode, so `origin.external_id`
+ * names that node. An inventoried `gcp` resource is not node-backed — its
+ * `external_id` is the provider's own resource name.
+ */
+export const NODE_PROVIDERS: ReadonlySet<string> = new Set([
+  'local',
+  'local_machine',
+  'e2b',
+  'docker',
+  'gcp_vm',
+  'user_machine',
+]);
 
 /** Provider-normalized signal; unavailable data is represented explicitly, never as zero. */
 export interface DeploymentObservation {
@@ -29,12 +60,20 @@ export interface DeploymentTarget {
   location?: string | null;
 }
 
-/** Secret-free identity of the observed provider resource. */
-export interface ExternalResourceRef {
-  full_resource_name: string;
-  asset_type: string;
-  parent_full_resource_name?: string | null;
-  provider_uid?: string | null;
+/**
+ * Where this record's truth lives — the cloud resource being placed.
+ *
+ * Not a `CloudOrigin` (a record identity has a key from birth): a placement exists
+ * before it is placed, so `external_id` stays empty until a node is allocated. Twin of
+ * `PlacementOrigin` in `flow_sdk/builtin/deployment.py`. `external_id` is the ComputeNode
+ * typeid for a node-backed placement, or the provider's own resource name for an
+ * inventoried one.
+ */
+export interface PlacementOrigin {
+  kind: string;
+  provider: string;
+  external_id: string;
+  url?: string;
 }
 
 export interface DeploymentStatus {
@@ -44,46 +83,168 @@ export interface DeploymentStatus {
   message?: string | null;
 }
 
+/** One service a deployment declares it exposes. Twin of `EndpointDeclaration`. */
+export interface EndpointDeclaration {
+  name: string;
+  subkind: EndpointSubkind;
+  protocol: ServiceProtocol;
+  backend?: ServiceBackend | null;
+  check?: HealthCheck | null;
+}
+
 export interface IDeployment extends Omit<IEntity, 'status'> {
   name: string;
-  kind: string;
+  /** Every service this deployment declares it exposes; its endpoint rows serve the declaration. */
+  exposes?: EndpointDeclaration[];
+  /** Who the box logs in as for this placement. What it places is its PARENT (`elementType`). */
+  identity?: DeploymentIdentity;
   artifact_id?: string | null;
   artifact_link_source?: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  resource?: ExternalResourceRef | null;
+  origin?: PlacementOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   source_revision?: string | null;
   project_id?: string | null;
+  /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
+  environment?: string;
+  llm_endpoint_typeid?: string;
+}
+
+// `implements IDeployment` only checks the class; it contributes no members, so every
+// field declared solely on IDeployment read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Deployment extends EntityMerge<IDeployment> {}
+
+/** One thing that happened on a deployment — mirror of `deployment.timeline_event`. */
+export interface TimelineEvent {
+  at: string;
+  kind: 'message_in' | 'reply_sent' | 'turn_started' | 'turn_failed' | 'refused';
+  who: string;
+  text: string;
+  channel: string;
+  data_source_id: string;
+  process_id: string;
+  conversation_id: string;
+  message_id: string;
+}
+
+/** A page of a deployment's timeline, newest first — mirror of `deployment.timeline`. */
+export interface DeploymentTimeline {
+  deployment_id: string;
+  events: TimelineEvent[];
+  before: string | null;
 }
 
 /**
- * Deployment is the desired/observed placement plane for an Artifact or an
- * independently discovered provider resource.
+ * One conversation a deployment holds — a chat, a mail thread, a whole phone call — mirror of
+ * `deployment.thread`. `status`: `live` (a call is on the line), `working` (the agent is mid-turn),
+ * `ended` (a call that is over), `idle`.
  */
+export interface DeploymentThread {
+  conversation_id: string;
+  title: string;
+  who: string;
+  channel: string;
+  data_source_id: string;
+  process_id: string;
+  status: 'live' | 'working' | 'ended' | 'idle';
+  started_at: string | null;
+  last_at: string | null;
+  last_text: string;
+  messages: number;
+  turns: number;
+}
+
+/** A local deployment's process — mirror of `deployment.process`: the file it runs, its terminal. */
+export interface DeploymentProcess {
+  deployment_id: string;
+  /** The Shell whose terminal runs it; empty before its first start. */
+  shell_id: string;
+  file: string;
+  command: string;
+  /** The loop's pid while it runs, else null. */
+  pid: number | null;
+  serving: boolean;
+}
+
+/** The text of the file a local deployment runs — mirror of `deployment.code`. */
+export interface DeploymentCode {
+  file: string;
+  text: string;
+}
+
+/** The tag a deployment's process emits when its timeline moved (relayed to the app). */
+export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
+
+/**
+ * Deployment is THE placement record: this thing runs on that machine.
+ *
+ * Two axes, each declared once — `kind` says WHAT is placed (`runtime.agent`,
+ * `runtime.web`, `compute.node`), `target.provider` says WHERE (`local`, `e2b`,
+ * `gcp`). The row is parented to the deployed element and holds the same id on
+ * the hub and here, so a cloud placement is adopted rather than re-minted.
+ */
+
+/** One value the hub holds for a cloud placement. Names only; `ts` is epoch seconds. */
+export interface DeploymentSecretRow {
+  name: string;
+  written?: number;
+  placed?: { ts: number; event: 'placed' | 'unplaced' | string; detail?: string };
+}
+
+/** A connection a cloud placement's machine may use (`Deployment.authorize`). */
+export interface DeploymentAuthorizationRow {
+  provider: string;
+  permissions: string[];
+  ts?: number;
+}
+
+export interface DeploymentSecretsInventory {
+  secrets: DeploymentSecretRow[];
+  authorizations: DeploymentAuthorizationRow[];
+}
+
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
 
+  /**
+   * The cloud compute providers a deployment may be placed on — the hub's list (`deployment/providers`,
+   * relayed by the desktop), in the hub's order. Throws when the hub cannot be asked (409: signed out).
+   * Cached through `LazyAsset.DeployProviders`.
+   */
+  static async providers(): Promise<CloudDeployProvider[]> {
+    const rows = await dataManager.callAction<undefined, string[]>(
+      new ActionInfo('providers', Deployment.type, null, 'GET'),
+    );
+    return Array.isArray(rows) ? rows.filter(isNonEmptyString) : [];
+  }
+
   name: string;
-  kind: string;
+  identity: DeploymentIdentity;
+  exposes: EndpointDeclaration[];
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  resource: ExternalResourceRef | null;
+  origin: PlacementOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   source_revision: string | null;
   project_id: string | null;
+  environment: string;
+  /** Its own token allocation on the hub (an `llm_endpoint` typeid); '' = its agent spends its owner's default. */
+  llm_endpoint_typeid: string;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
     const deployment = entity as Partial<IDeployment>;
     this.name = deployment.name ?? '';
-    if (!deployment.kind) throw new Error('Invalid Deployment structure: kind is required');
-    this.kind = normalizeKind(deployment.kind);
+    this.identity = deployment.identity ?? 'user';
+    this.exposes = deployment.exposes ?? [];
     this.artifact_id = deployment.artifact_id ?? null;
     this.artifact_link_source = deployment.artifact_link_source ?? null;
     this.target = {
@@ -91,12 +252,12 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       scope: deployment.target?.scope ?? '',
       location: deployment.target?.location ?? null,
     };
-    this.resource = deployment.resource
+    this.origin = deployment.origin
       ? {
-          full_resource_name: deployment.resource.full_resource_name,
-          asset_type: deployment.resource.asset_type,
-          parent_full_resource_name: deployment.resource.parent_full_resource_name ?? null,
-          provider_uid: deployment.resource.provider_uid ?? null,
+          kind: deployment.origin.kind ?? '',
+          provider: deployment.origin.provider ?? '',
+          external_id: deployment.origin.external_id ?? '',
+          url: deployment.origin.url ?? '',
         }
       : null;
     this.status = {
@@ -109,6 +270,8 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.observations = normalizeObservations(deployment.observations);
     this.source_revision = deployment.source_revision ?? null;
     this.project_id = deployment.project_id ?? null;
+    this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
+    this.llm_endpoint_typeid = deployment.llm_endpoint_typeid ?? '';
     this.validateStructure();
   }
 
@@ -117,6 +280,134 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       focus: `${Deployment.type}-${this.id}`,
       selected: `${Deployment.type}-${this.id}`,
     });
+  }
+
+  /** What this places — its parent's type (`agent`, `project`, `compute_node`, …), or null. */
+  get elementType(): string | null {
+    const parent = this.parent_type_id;
+    if (!parent || !isTypeId(parent)) return null;
+    return new TypeId(parent).type;
+  }
+
+  /** The Agent this places, or null when the deployed element is something else. */
+  get agentTypeId(): TypeId | null {
+    const parent = this.parent_type_id;
+    if (!parent || !isTypeId(parent)) return null;
+    const typeId = new TypeId(parent);
+    return typeId.type === 'agent' ? typeId : null;
+  }
+
+  /** The id of the machine this runs on, or null when there is none or the stored id is not a typeid. */
+  get computeNodeId(): string | null {
+    const typeId = this.computeNodeTypeId;
+    if (!typeId || !isTypeId(typeId)) return null;
+    const parsed = new TypeId(typeId);
+    return parsed.type === 'compute_node' ? parsed.id : null;
+  }
+
+  /** The machine this runs on, or null when the placement is not node-backed. */
+  get computeNodeTypeId(): string | null {
+    if (!NODE_PROVIDERS.has(this.target.provider)) return null;
+    return this.origin?.external_id || null;
+  }
+
+  /**
+   * Stop the machine, keep the row.
+   *
+   * Terminate is a pause: this row carries the placement's cost and activity
+   * observations, and deleting it throws away the only record of what the box
+   * cost. Deleting a Deployment destroys a real cloud resource, which is why
+   * that path warns and this one does not.
+   */
+  async pause(): Promise<Deployment> {
+    return new Deployment((await this.post('pause')) as IDeployment);
+  }
+
+  /** Start a paused machine again. */
+  async resume(): Promise<Deployment> {
+    return new Deployment((await this.post('resume')) as IDeployment);
+  }
+
+  /** Bring a cloud machine to the published definition (the hub re-clones and re-indexes it). */
+  async update(): Promise<Record<string, unknown>> {
+    return ((await this.post('update')) ?? {}) as Record<string, unknown>;
+  }
+
+  /** What the hub holds for this cloud placement — each value's name, last write and last placement
+   *  on its machine, and the connections its machine may use. Names only. */
+  async secretsInventory(): Promise<DeploymentSecretsInventory> {
+    const data = await this.get<Partial<DeploymentSecretsInventory> | null>('secrets');
+    return { secrets: data?.secrets ?? [], authorizations: data?.authorizations ?? [] };
+  }
+
+  /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token
+   *  when it needs one; your refresh token never leaves the hub. */
+  async authorize(provider: string, permissions: string[] = []): Promise<void> {
+    await this.post('authorize', { provider, permissions });
+  }
+
+  /** Take `provider` back: the machine's next token ask is refused. */
+  async revoke(provider: string): Promise<void> {
+    await this.post('authorize', { provider, revoke: true });
+  }
+
+  /** As healthy as its least healthy service, by each endpoint's last check. Derived, never stored. */
+  async health(): Promise<HealthState> {
+    return worstHealth((await this.endpoints()).map((e) => e.health?.state ?? 'unknown'));
+  }
+
+  /** What this placement serves — for a cloud placement, as the hub has it now (held here at the hub's ids). */
+  async endpoints(): Promise<ServiceEndpoint[]> {
+    const data = await this.get<{ endpoints?: IServiceEndpoint[] } | null>('endpoints');
+    return (data?.endpoints ?? []).map((row) => new ServiceEndpoint(row));
+  }
+
+  /**
+   * What reached this deployment, what it ran and what it answered — newest first
+   * (`GET deployment/<id>/timeline`); `conversation` narrows it to one thread, `before` pages back.
+   */
+  async timeline(
+    opts: { limit?: number; before?: string | null; conversation?: string | null } = {},
+  ): Promise<DeploymentTimeline> {
+    const params = new URLSearchParams();
+    if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.before) params.set('before', opts.before);
+    if (opts.conversation) params.set('conversation', opts.conversation);
+    const qs = params.toString();
+    const data = await this.get<DeploymentTimeline | null>(`timeline${qs ? `?${qs}` : ''}`);
+    return data ?? { deployment_id: this.id, events: [], before: null };
+  }
+
+  /** A local deployment's process: its file, its terminal, its pid (`GET deployment/<id>/process`). */
+  async process(): Promise<DeploymentProcess | null> {
+    return this.get<DeploymentProcess | null>('process');
+  }
+
+  /** The Python file a local deployment runs (`GET deployment/<id>/code`). */
+  async code(): Promise<DeploymentCode | null> {
+    return this.get<DeploymentCode | null>('code');
+  }
+
+  /** Write the file; it runs from the next (re)start (`POST deployment/<id>/save_code`). */
+  async saveCode(text: string): Promise<DeploymentCode> {
+    return (await this.post('save_code', { text })) as DeploymentCode;
+  }
+
+  /** Stop the loop; the app runs the file again at once, in the same terminal (`POST deployment/<id>/restart`). */
+  async restart(): Promise<DeploymentProcess> {
+    return (await this.post('restart')) as DeploymentProcess;
+  }
+
+  /** The conversations it holds, the active ones first (`GET deployment/<id>/threads`). */
+  async threads(): Promise<DeploymentThread[]> {
+    const data = await this.get<{ threads?: DeploymentThread[] } | null>('threads');
+    return data?.threads ?? [];
+  }
+
+  /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */
+  async runs<T = Record<string, unknown>>(limit: number): Promise<T[]> {
+    const data = await this.get<{ runs?: T[] } | null>(`runs?limit=${encodeURIComponent(String(limit))}`);
+    return data?.runs ?? [];
   }
 
   private validateStructure(): void {

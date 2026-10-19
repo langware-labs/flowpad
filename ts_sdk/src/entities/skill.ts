@@ -2,7 +2,7 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
+import { mainFileForType } from '../models/asset-editor';
 
 /**
  * Skill entity — backed by a SkillRecord on disk (~/.claude/skills/<name>/).
@@ -15,6 +15,13 @@ export class Skill extends APIEntity<Skill> {
   static type: string = 'skill';
   static override icon = 'Sparkles';
 
+  /** The skill's identity — its folder name. Non-null and never absent: the
+   *  backend declares `name: str = APIField(default="")`, and every caller
+   *  indexes skills by it. Narrower than the base `name?: string | null`.
+   *  Assigned in the constructor like every other field here — a bare field
+   *  declaration would re-DEFINE it as `''` after `super()` copied the wire
+   *  value (the app compiles with `useDefineForClassFields: true`). */
+  name: string = '';
   description: string = '';
   asset_ref?: string;
   scope?: string;
@@ -23,6 +30,7 @@ export class Skill extends APIEntity<Skill> {
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
+    this.name = entity.name ?? '';
     this.description = entity.description ?? '';
     this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;
@@ -40,27 +48,27 @@ export class Skill extends APIEntity<Skill> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('skill') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
-    // asset_ref is the skill FOLDER by contract (main_file_is_asset_ref=False),
-    // so append the main file. Guard the case where a producer (e.g. a direct
-    // `flow record index <SKILL.md>`) left asset_ref pointing at the file itself
-    // — appending again would request `.../SKILL.md/SKILL.md` and 404.
+    // asset_ref is the skill FOLDER, so append the main file. Guard the case
+    // where a producer (e.g. a direct `flow record index <SKILL.md>`) left
+    // asset_ref pointing at the file itself — appending again would request
+    // `.../SKILL.md/SKILL.md` and 404.
     const base = this.asset_ref.replace(/\/$/, '');
-    const mdPath = base.endsWith('/SKILL.md') ? base : `${base}/SKILL.md`;
+    // The inner file name is the registry's `shape.main` for `skill`; the
+    // literal is only the fallback for an unbound registry (hub / unit tests).
+    const main = mainFileForType(Skill.type, 'SKILL.md') as string;
+    const mdPath = base.endsWith(`/${main}`) ? base : `${base}/${main}`;
     return new FrontMatterFsRef(mdPath, typeId);
   }
 
@@ -69,18 +77,14 @@ export class Skill extends APIEntity<Skill> {
     return skill.save();
   }
 
-  /**
-   * Create a skill scoped to the given project. If `project` is null, creates in the user's
-   * home (~/.claude/skills/<name>/). `folderVfsPath` is reserved for future fine-grained
-   * placement; the server derives the path from project scope today.
-   */
+  /** Create in the selected scope, optionally at an exact authorized folder. */
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Skill> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const skill = new Skill({ name: name.trim() });
-    return skill.save(scopeIds);
+    return skill.save(scopeIds, destination);
   }
 }

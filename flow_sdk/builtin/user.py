@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 from fastapi import HTTPException
 from pydantic import field_validator
 
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
@@ -31,6 +31,32 @@ def normalize_email(email: str | None) -> str | None:
     """
     normalized = (email or "").strip().lower()
     return normalized or None
+
+
+def recipient_user_id(value: object) -> str | None:
+    """A hub user id fit to address an invitation with, or ``None``.
+
+    Accepts a bare id, a ``"user-<uuid>"`` typeid string, or a ``TypeId``.
+    Parsed by hand rather than through ``TypeId`` because a naked UUID would
+    otherwise parse as a type name, not an id. Must be a real UUID or it's
+    dropped, not passed through.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    if isinstance(value, TypeId):
+        value = str(value)
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    user_prefix = f"{EntityType.USER.value}-"
+    if candidate.startswith(user_prefix):
+        candidate = candidate[len(user_prefix) :]
+    # Anything left that is not a bare UUID (a "project-<id>" typeid, a name) is
+    # not something this path may address.
+    return candidate if is_valid_uuid(candidate) else None
 
 
 def hash_password(salt: str, password: str) -> str:
@@ -64,8 +90,11 @@ class User(Entity):
     # not on the shared Organization entity. Defaults to "member".
     organization_id: str | None = APIField(None)
     organization_role: str = APIField(default="member")
-    salt_: str | None = None
-    hashed_password_: str | None = None
+    # Credentials never leave this machine. They were bare pydantic defaults —
+    # no policy at all — which resolved to SHARED, i.e. they would have ridden a
+    # User share to the hub.
+    salt_: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
+    hashed_password_: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
     _unique: ClassVar[list[str]] = ["email"]
 
     @field_validator("email", mode="before")
@@ -275,7 +304,7 @@ class User(Entity):
                 return await existing.save()
             return existing
 
-        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         contact = cls(
             id=mint_uuid(key=f"contact:{user_id or email}"),

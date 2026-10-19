@@ -8,7 +8,11 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal
+
+# ``typing_extensions``, not ``typing``: pydantic refuses ``typing.TypedDict`` on Python < 3.12, and the
+# box this file is copied to runs the installed tool's interpreter, which may be 3.11.
+from typing_extensions import TypedDict
 
 import anyio
 from fastmcp import Context

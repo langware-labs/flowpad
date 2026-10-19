@@ -40,7 +40,7 @@ All in `flow_sdk/builtin/worker_status.py` unless noted. The frozensets are kept
 - **`classify_execution_mode(*, status, worker_status, visible, pid_alive=None)`** (~:119) — classifies a *live* worker into an `ExecutionMode`, or `None` if the process isn't live (`status ∉ {running, starting}`). Truth table (first match wins): `worker_status ∈ _ERROR_STATUSES` → `ERROR`; `visible and not pid_alive` (dead PTY) → `ERROR`; `visible` → `INTERACTIVE`; else → `BACKGROUND`. `EXTERNAL` is never returned here (OS-scan only).
 - **`get_worker_mode(process)`** (status_predicates.py ~:60) — `INTERACTIVE` if `process.visible` else `CLI`.
 - **`is_ready_for_input(process, worker_status=None)`** (status_predicates.py ~:72) — the single canonical "can the caller send a new prompt?" gate: `status == RUNNING AND worker_status ∈ {idle, complete, interrupted}`. When `worker_status is None` (transcript not yet discovered) it falls back to `not _turn_in_flight`. Pass a pre-resolved `worker_status` to avoid a second tail-read.
-- **`ApiErrorTimeoutError(TimeoutError)`** (~:394) — raised by `stream_transcript` when it times out *while the process is in `API_ERROR`*, i.e. the Anthropic API returned repeated errors (e.g. 529) and Claude was still retrying. Infra issue, not a logic failure — tests should skip, not fail.
+- **`ApiErrorTimeoutError(TimeoutError)`** (~:394) — raised by `stream_transcript` when it times out *while the process is in `API_ERROR`*, i.e. the Anthropic API returned repeated errors (e.g. 529) and Claude was still retrying. Tests retain the failure and its `API_ERROR` context for diagnosis (the old timeout→skip hook is gone).
 
 ### `_tail_status` — the deriving function
 

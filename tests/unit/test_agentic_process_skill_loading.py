@@ -8,18 +8,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.process_assets import ProcessAssets
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
+
+# The "nothing to say → write-free" and exact-text contracts below assume no shipped
+# system-prompt layers; those are covered by tests/unit/system_prompt_matrix.
+pytestmark = pytest.mark.usefixtures("no_shipped_layers")
 
 
 def _proc(worker_type: WorkerType) -> AgenticProcess:
     return AgenticProcess(worker_type=worker_type, workdir="/tmp/wd")
 
 
-def test_skills_root_claude_and_copilot_use_mounted_claude_skills(monkeypatch):
+def test_skills_root_is_per_vendor_under_the_mounted_assets_dir():
+    """Each vendor reads its OWN dot-dir. Copilot's is ``.github/skills`` — from
+    its own ``--add-dir`` help text ("load its .github/skills and .github/agents
+    as trusted configuration"); pointing it at claude's ``.claude/skills``
+    dropped every embedded skill somewhere copilot never looks."""
     assets = Path("/tmp/assets")
-    for wt in (WorkerType.CLAUDE_CODE, WorkerType.COPILOT):
-        assert _proc(wt)._skills_root(assets) == assets / ".claude" / "skills"
+    assert _proc(WorkerType.CLAUDE_CODE).asset_workspace._skills_root(assets) == assets / ".claude" / "skills"
+    assert _proc(WorkerType.COPILOT).asset_workspace._skills_root(assets) == assets / ".github" / "skills"
+    assert _proc(WorkerType.OPENCODE).asset_workspace._skills_root(assets) == assets / ".opencode" / "skills"
 
 
 def test_skills_root_codex_uses_codex_home(monkeypatch, tmp_path):
@@ -29,7 +43,7 @@ def test_skills_root_codex_uses_codex_home(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "flow_sdk.instance_settings.get_instance_settings", lambda: _Settings()
     )
-    root = _proc(WorkerType.CODEX)._skills_root(Path("/tmp/assets"))
+    root = _proc(WorkerType.CODEX).asset_workspace._skills_root(Path("/tmp/assets"))
     assert root == tmp_path / ".codex" / "skills"
 
 
@@ -38,7 +52,7 @@ def _patch_action(monkeypatch, captured: dict) -> None:
         captured["ref"] = asset_ref
         return None
 
-    monkeypatch.setattr(AgenticProcess, "load_embedded_skill_action", _fake)
+    monkeypatch.setattr(ProcessAssets, "load_embedded_skill_action", _fake)
 
 
 async def test_load_skill_resolves_str_path(monkeypatch):
@@ -82,3 +96,164 @@ async def test_load_skill_unresolvable_returns_fail():
 
     result = await proc.load_skill(_Empty())
     assert getattr(result, "ok", True) is False or getattr(result, "status", "") != "SUCCESS"
+
+
+# ---------------------------------------------------------------------------
+# Delivery: laying the files down is only half of "the worker can see it".
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_save(monkeypatch):
+    async def save(entity, *args, **kwargs):
+        return entity
+
+    monkeypatch.setattr(AgenticProcess, "save", save)
+
+
+@pytest.fixture
+def records_root(tmp_path):
+    original = get_default_records_root()
+    set_default_records_root(tmp_path / "records")
+    yield
+    set_default_records_root(original)
+
+
+def _skill_folder(tmp_path: Path, name: str = "probe-skill") -> Path:
+    folder = tmp_path / "src" / name
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: A probe skill.\n---\n\n# {name}\n"
+    )
+    return folder
+
+
+async def test_load_embedded_skill_registers_the_ref(no_save, records_root, tmp_path):
+    """The symlink alone is invisible: without a ref, every delivery predicate
+    reads False on the next request's fresh entity and the assets dir is never
+    mounted."""
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    result = await proc.load_embedded_skill_action(asset_ref=str(_skill_folder(tmp_path)))
+
+    assert result.data["ok"] is True
+    assert Path(result.data["link"]).is_symlink()
+    refs = [str(r) for r in proc.embedded_asset_refs]
+    assert len(refs) == 1 and refs[0].startswith("skill-")
+    # The whole point of the ref: the assets dir now reaches the worker.
+    assert str(proc.asset_workspace._process_assets_path()) in proc.resolved_add_dirs
+
+
+async def test_load_embedded_skill_is_idempotent(no_save, records_root, tmp_path):
+    """Re-loading the same folder must converge, not grow the list — the id comes
+    from the identity carrier, never a fresh uuid per call."""
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    folder = str(_skill_folder(tmp_path))
+    await proc.load_embedded_skill_action(asset_ref=folder)
+    await proc.load_embedded_skill_action(asset_ref=folder)
+
+    assert len(proc.embedded_asset_refs) == 1
+
+
+async def test_detach_removes_a_symlinked_skill(no_save, records_root, tmp_path):
+    """rmtree raises on a symlink, so detach has to unlink it — and must never
+    recurse into the user's real skill folder."""
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    folder = _skill_folder(tmp_path)
+    result = await proc.load_embedded_skill_action(asset_ref=str(folder))
+    link = Path(result.data["link"])
+
+    await proc.asset_workspace._unmaterialize_entity(proc.embedded_asset_refs[0], proc.asset_workspace._process_assets_path())
+
+    assert not link.is_symlink()
+    assert (folder / "SKILL.md").exists(), "the source skill must survive a detach"
+
+
+async def test_assets_are_prepared_without_any_instruction_text(no_save, records_root, tmp_path):
+    """A process can have skills and nothing to say. Gating the MOUNT on the
+    instruction TEXT is what starved opencode's config and copilot's custom
+    instruction dirs whenever a process had a skill but no persona."""
+    proc = _proc(WorkerType.OPENCODE)
+    await proc.load_embedded_skill_action(asset_ref=str(_skill_folder(tmp_path)))
+
+    assets = await proc.asset_workspace._prepare_system_instruction_assets()
+
+    assert assets is not None, "assets with no instruction text must still be delivered"
+    assert assets.assets_dir == proc.asset_workspace._process_assets_path()
+    assert assets.instructions == ""
+    assert assets.claude_file is None
+    assert not (assets.assets_dir / "CLAUDE.md").exists()
+
+
+async def test_no_instruction_text_means_no_system_prompt_file(no_save, records_root, tmp_path):
+    """The mount applies; the system-prompt flag must not, or the worker is
+    pointed at a file that was never written."""
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    await proc.load_embedded_skill_action(asset_ref=str(_skill_folder(tmp_path)))
+    assets = await proc.asset_workspace._prepare_system_instruction_assets()
+
+    cmd = ClaudeAgentOptions()
+    cmd.apply_instruction_assets(assets)
+
+    assert cmd.system_prompt_file is None
+    assert str(assets.assets_dir) in cmd.add_dirs
+
+
+async def test_nothing_at_all_still_prepares_nothing(no_save, records_root):
+    """The other early return stays: a process with no assets and no text has
+    nothing to mount."""
+    assert await _proc(WorkerType.CLAUDE_CODE).asset_workspace._prepare_system_instruction_assets() is None
+
+
+def _mounted_project(tmp_path: Path) -> Path:
+    """A mounted folder that ships its skills the Claude way, as the Flowpad
+    Assistant project does: ``<dir>/.claude/skills/<name>/SKILL.md``."""
+    root = tmp_path / "assistant"
+    skill = root / ".claude" / "skills" / "probe-mounted-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: probe-mounted-skill\ndescription: A probe.\n---\n")
+    return root
+
+
+async def test_copilot_sees_the_skills_a_mounted_folder_ships_the_claude_way(no_save, records_root, tmp_path):
+    """Copilot loads a mounted folder's ``.github/skills`` only, so every skill the
+    Flowpad Assistant ships under ``.claude/skills`` was invisible to a copilot
+    worker — the persona told it to use `building-deliverables` and it had no
+    such skill. The launch links them into the process's own ``.github/skills``."""
+    proc = _proc(WorkerType.COPILOT)
+    mounted = _mounted_project(tmp_path)
+    proc.additional_dirs = [str(mounted)]
+    proc.instructions = "# persona"
+
+    prepared = await proc.asset_workspace.prepare_process_assets()
+
+    link = prepared.instruction_assets.assets_dir / ".github" / "skills" / "probe-mounted-skill"
+    assert link.is_symlink() and (link / "SKILL.md").exists()
+    assert link.resolve() == (mounted / ".claude" / "skills" / "probe-mounted-skill").resolve()
+
+
+async def test_claude_reads_a_mounted_folder_natively_so_nothing_is_linked(no_save, records_root, tmp_path):
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    proc.additional_dirs = [str(_mounted_project(tmp_path))]
+    proc.instructions = "# persona"
+
+    prepared = await proc.asset_workspace.prepare_process_assets()
+
+    assert not (prepared.instruction_assets.assets_dir / ".claude" / "skills" / "probe-mounted-skill").exists()
+
+
+@pytest.mark.parametrize('source_scope', ['workdir', 'additional_dir'])
+async def test_claude_launch_projects_shared_skills_into_native_process_mount(records_root, tmp_path, source_scope):
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    root = tmp_path / 'project'
+    skill = root / '.agents' / 'skills' / 'qa-shared-skill'
+    skill.mkdir(parents=True)
+    (skill / 'SKILL.md').write_text('---\nname: qa-shared-skill\ndescription: QA skill\n---\nUse this skill.')
+    if source_scope == 'workdir':
+        proc.workdir = str(root)
+    else:
+        proc.additional_dirs = [str(root)]
+    prepared = await proc.prepare_process_assets()
+    assert prepared.instruction_assets is not None
+    link = prepared.instruction_assets.assets_dir / '.claude' / 'skills' / skill.name
+    assert link.is_symlink() and link.resolve() == skill.resolve()
+    assert not (root / '.claude').exists()

@@ -133,3 +133,36 @@ async def observed_tags_route():
 
     observed = event_bus.observed_tags()
     return ApiSuccessResponse(data={"observed": observed, "count": len(observed)})
+
+
+@router.get("/api/v1/debug/recent_events")
+async def recent_events_route():
+    """The tail of FORWARDED envelopes, so the Signals feed paints on open.
+
+    The bus persists nothing (law 4) and its observation map stores tag NAMES
+    only, so without this a freshly-opened feed would sit empty until the next
+    event happened to fire. Bounded at ``RECENT_EVENTS_CAP``; scope is exactly
+    what the app is already allowed to see (``FORWARDED_TAG_PATTERNS``), so this
+    grants no visibility the live stream doesn't.
+
+    Standard ``ApiResponse`` envelope::
+
+        { "status": "SUCCESS", "data": {
+            "events": [ {<FlowEvent>}, ... ],   # oldest first
+            "count": <int>, "cap": <int>,
+            "patterns": ["graph_workflow.*", "ingest.*.sync.*"]
+        } }
+    """
+    from flow_sdk.tags.ws_forward import (
+        FORWARDED_TAG_PATTERNS,
+        RECENT_EVENTS_CAP,
+        recent_events,
+    )
+
+    events = recent_events()
+    return ApiSuccessResponse(data={
+        "events": events,
+        "count": len(events),
+        "cap": RECENT_EVENTS_CAP,
+        "patterns": list(FORWARDED_TAG_PATTERNS),
+    })

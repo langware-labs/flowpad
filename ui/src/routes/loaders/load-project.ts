@@ -8,6 +8,7 @@
  * typed failures become dock-load errors rendered inside the requested URL.
  */
 
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
   CollaborationRoom,
@@ -16,14 +17,13 @@ import {
   dataManager,
   Project,
   Shell,
+  tabManager,
+  tabTargetKey,
   TypeId,
 } from '@sdk';
-import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
-import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
-import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { redirect } from 'react-router';
-import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
+import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
@@ -31,8 +31,10 @@ import { DockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 
 function errorStatus(error: unknown): number | undefined {
-  return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
-    ?? (error as { status?: number } | null)?.status;
+  return (
+    (error as { response?: { status?: number }; status?: number } | null)?.response?.status ??
+    (error as { status?: number } | null)?.status
+  );
 }
 
 function hasProjectTabSegment(pointer: string | undefined): boolean {
@@ -60,8 +62,8 @@ function throwProjectRouteError(cause: unknown): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Project not found',
-        message: "This project doesn't exist or is no longer available.",
+        title: t`Project not found`,
+        message: t`This project doesn't exist or is no longer available.`,
       },
       'project',
       cause,
@@ -72,8 +74,8 @@ function throwProjectRouteError(cause: unknown): never {
     'soft',
     {
       action: 'render_error',
-      title: 'Project unavailable',
-      message: 'Could not load this project. Try again in a moment.',
+      title: t`Project unavailable`,
+      message: t`Could not load this project. Try again in a moment.`,
       retryable: true,
     },
     'project',
@@ -89,8 +91,8 @@ function throwRoomLoadError(cause: unknown, roomId: string): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Room not found',
-        message: 'This collaboration room no longer exists or is unavailable.',
+        title: t`Room not found`,
+        message: t`This collaboration room no longer exists or is unavailable.`,
       },
       'project',
       cause,
@@ -101,8 +103,8 @@ function throwRoomLoadError(cause: unknown, roomId: string): never {
     'soft',
     {
       action: 'render_error',
-      title: 'Room unavailable',
-      message: `Could not load collaboration room ${roomId.slice(0, 8)}. Try again in a moment.`,
+      title: t`Room unavailable`,
+      message: t`Could not load collaboration room ${roomId.slice(0, 8)}. Try again in a moment.`,
       retryable: true,
     },
     'project',
@@ -117,35 +119,20 @@ function throwShellTabLoadError(error: ShellLoadError): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Shell not found',
-        message: 'This terminal no longer exists.',
+        title: t`Shell not found`,
+        message: t`This terminal no longer exists.`,
       },
       'project',
       error,
     );
   }
-  if (error.kind === 'error_status') {
-    throw new DockLoadError(
-      'shell_error_status',
-      'hard',
-      {
-        action: 'render_error',
-        title: 'Shell unavailable',
-        message: error.errorMessage ?? 'Shell error',
-      },
-      'project',
-      error,
-    );
-  }
-  const { title, description } = describeProcessStartError(error.cause ?? error);
   throw new DockLoadError(
-    'shell_start_failed',
-    'soft',
+    'shell_error_status',
+    'hard',
     {
       action: 'render_error',
-      title,
-      message: description,
-      retryable: true,
+      title: t`Shell unavailable`,
+      message: error.errorMessage ?? 'Shell error',
     },
     'project',
     error,
@@ -178,15 +165,12 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
   if (!project) {
     throw new ProjectLoadError('not_found', projectTypeId.id);
   }
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProjectTypeId,
-    projectTypeId,
-  );
-  // Per-project view-mode memory: apply the project's remembered mode (or stamp
-  // the current one onto a project that has none). After the context write, so
-  // dataContext.project is this project before any recording. Synchronous apart
-  // from fire-and-forget saves — the loader stays fast.
-  applyProjectViewMode(project);
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, projectTypeId);
+  // The project's LANGUAGE is deliberately not applied here: it hangs off the
+  // context write above instead (`locale-context`'s CONTEXT_CHANGED
+  // subscription), because a project also becomes current through paths that
+  // never reach this loader — the boot-time `default_project` a sandbox opens
+  // on, the pickers, the entity loaders. Wiring it here covered one of them.
   return project;
 }
 
@@ -210,8 +194,7 @@ export async function loadProjectRoute(
   pointer: string | undefined,
   opts: { viewMode?: string | null } = {},
 ): Promise<void> {
-  const { projectTypeId, roomId, tabTypeId, conversationId } =
-    DockPointer.parseProjectPointer(pointer);
+  const { projectTypeId, roomId, tabTypeId, conversationId } = DockPointer.parseProjectPointer(pointer);
   const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
   const hasTabSegment = hasProjectTabSegment(pointer);
   if (!projectTypeId) {
@@ -237,7 +220,9 @@ export async function loadProjectRoute(
     throwProjectRouteError(cause);
   }
 
-  if (project?.fs_storage_mount_path) {
+  // Only while this route's project is still current: a newer navigation may
+  // have superseded it while it loaded, and its folder must not win.
+  if (project?.fs_storage_mount_path && dataContext.project?.id === project.id) {
     dataContext.setWorkdir(project.fs_storage_mount_path);
   }
 
@@ -247,19 +232,14 @@ export async function loadProjectRoute(
   }
 
   if (!conversationId && !roomId && assetSubPointer) {
-    await loadAssetRoute(assetSubPointer);
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      projectTypeId,
-    );
+    // The URL names this project: the asset opens as its guest, never switching it.
+    await loadAssetRoute(assetSubPointer, { keepProject: true });
   }
 
   if (roomId) {
     let room: CollaborationRoom | null = null;
     try {
-      room = await dataManager.getByTypeId<CollaborationRoom>(
-        new TypeId(CollaborationRoom.type, roomId),
-      );
+      room = await dataManager.getByTypeId<CollaborationRoom>(new TypeId(CollaborationRoom.type, roomId));
     } catch (cause) {
       throwRoomLoadError(cause, roomId);
     }
@@ -274,8 +254,8 @@ export async function loadProjectRoute(
       'hard',
       {
         action: 'render_error',
-        title: 'Unsupported tab',
-        message: 'This project tab URL is malformed.',
+        title: t`Unsupported tab`,
+        message: t`This project tab URL is malformed.`,
       },
       'project',
     );
@@ -288,7 +268,7 @@ export async function loadProjectRoute(
       // Room membership lives on the backing shell (`collaboration_room_id`),
       // which isn't denormalized on the Tab — resolve it from cache: a shell tab's
       // own shell, a process tab's linked shell.
-      const allTabs = await getTerminalTabsSnapshot('all');
+      const allTabs = await tabManager.getTerminalTabsSnapshot('all');
       const tabs = allTabs.filter((t) => {
         const shellId =
           t.target_type === AgenticProcess.type
@@ -297,7 +277,7 @@ export async function loadProjectRoute(
         const shell = shellId ? Shell.getByIdFromCache<Shell>(shellId) : null;
         return shell?.collaboration_room_id === roomId;
       });
-      const tab = resolveNextTab(tabs);
+      const tab = tabManager.resolveNext(tabs);
       if (tab) {
         // The room-tab segment is the target TypeId string (shell-<id> /
         // agentic_process-<id>) — exactly `tabTargetKey`.
@@ -336,8 +316,8 @@ export async function loadProjectRoute(
     'hard',
     {
       action: 'render_error',
-      title: 'Unsupported tab',
-      message: `Project tabs cannot load ${tabTypeId.type}.`,
+      title: t`Unsupported tab`,
+      message: t`Project tabs cannot load ${tabTypeId.type}.`,
     },
     'project',
   );

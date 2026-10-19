@@ -40,10 +40,11 @@ import {
   type TabRow,
 } from '@sdk';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
+import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
+import { tabManager } from '@sdk';
+import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -98,6 +99,8 @@ function processPayload(processId: string, shellId: string | null = null) {
     project_id: PROJECT_ID,
     workdir: '/tmp/flowpad-project',
     shell_id: shellId,
+    pty_mode: true,
+    visible: true,
     worker_type: 'claude',
     auto_rename: false,
   };
@@ -118,9 +121,9 @@ function shellPayload(shellId: string, processId: string) {
 }
 
 // Only the tab strip is rendered — NOT the terminal panel. The select-stamp
-// under test happens in the route loader (load-process.ts), which runs on
-// navigation regardless of whether the heavy xterm/chat panel mounts. Skipping
-// the panel keeps the harness off jsdom-unsupported terminal/canvas paths.
+// under test happens in the identity-only route loader (load-process.ts), while
+// process `open` belongs to the mounted terminal panel. Skipping the panel both
+// keeps this harness off xterm and proves recency does not depend on PTY start.
 function TerminalWorkspace() {
   const location = useLocation();
   const UnifiedTabStrip = UnifiedTabStripComponent;
@@ -190,9 +193,10 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
     }
 
     window.localStorage.clear();
+    setViewMode(ViewMode.Advanced);
     await dataManager.clearCache();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     seedCapabilities();
     seedConnectedWebSocket();
     releaseNewProcessOpen = null;
@@ -326,10 +330,11 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
-    resetTabLifecycleForTests();
+    tabManager.adoptGlobal([]);
+    resetTabContentLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    setViewMode(ViewMode.Vibe);
     // Reset the shared dataContext the loader mutated (active shell/target +
     // current project) so a following loader-integration test in the SAME worker
     // doesn't inherit this test's active terminal target — cross-test
@@ -365,16 +370,15 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
     await user.click(await screen.findByTestId('opener-menu-row-claude'));
 
     const expectedPath = `/dock/shell/agentic_process-${NEW_PROCESS_ID}`;
-    await waitFor(() => expect(window.location.pathname).toBe(expectedPath));
-
-    // Let the process `open` complete so the loader runs to the select-stamp.
-    await waitFor(() => expect(releaseNewProcessOpen).toEqual(expect.any(Function)));
-    releaseNewProcessOpen?.();
+    await waitFor(() => expect(screen.getByTestId('router-location')).toHaveTextContent(expectedPath));
 
     // The process tab materialized in the strip — the select path has run.
     await waitFor(() => {
       expect(screen.getByTestId(`tab-${processDock(NEW_PROCESS_ID).tabHash}`)).toBeInTheDocument();
     });
+    // No panel mounted means no runtime start; route identity + recency still
+    // completed. This protects the loader/view ownership boundary too.
+    expect(releaseNewProcessOpen).toBeNull();
 
     // The crux: selecting the process tab must have stamped recency on the TAB
     // entity (an `activate` to the Tab). Today the loader only activates the

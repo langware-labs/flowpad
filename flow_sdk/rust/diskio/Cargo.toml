@@ -1,0 +1,26 @@
+[package]
+name = "flowpad_diskio"
+version = "0.1.0"
+edition = "2021"
+description = "Flowpad disk-I/O kernel: the stage-1 scan child (tree walk + declared scan) over NDJSON"
+license = "MIT"
+
+# A crate of its own (docs/data-management/diskio.md, decision 4): never part of
+# the keychain crate in ../, whose signing identity is bound to a keychain ACL.
+[workspace]
+
+[[bin]]
+name = "flowpad-diskio-scan"
+path = "src/main.rs"
+
+[dependencies]
+regex = "1"
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

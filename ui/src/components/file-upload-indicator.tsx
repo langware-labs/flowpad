@@ -102,7 +102,11 @@ function FileItem({ fileItem, onRemove }: { fileItem: FileUploadItem; onRemove?:
 
       {fileItem.isUploading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
 
-      <button className="ml-1 text-muted-foreground hover:text-destructive" onClick={handleRemove} title={t`Remove file`}>
+      <button
+        className="ms-1 text-muted-foreground hover:text-destructive"
+        onClick={handleRemove}
+        title={t`Remove file`}
+      >
         <X className="h-3 w-3" />
       </button>
     </div>

@@ -16,8 +16,6 @@ NOT executed by the standard pytest suite. Run manually:
 
 from __future__ import annotations
 
-import hashlib
-import os
 import re
 from pathlib import Path
 
@@ -32,23 +30,63 @@ pytestmark = [
     )
 ]
 
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
+from tests.long_tests._transcript_helpers import assert_prompt_ok
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
+# Model tier: md, not the default sm — see the TIER POLICY in
+# tests/long_tests/_model_tier.py. Measured here: sm is FLAKY (1 fail / 2 pass;
+# the failure a fast ~56s exit with index.md files missing, no timeout), md is
+# 3/3 and faster (131-146s vs 181s).
+#
+# Budgets: 30s->300s/600s and 28s->240s, approved 2026-09-07. MEASURED, not
+# guessed — a cold build is ~140s (149 transcript entries) and `incremental`
+# runs that loop twice; observed cold 100-162s, incremental 178-255s, so the
+# budgets are ~1.5x the worst run. The old 28s was NEVER met and was never
+# measured; it read green for months only because a conftest hook relabelled
+# every long-test TimeoutError as "skipped: Anthropic API issue" (removed in
+# a51406a87). Ruled out by measurement: skill growth (the 2026-05-23 original
+# measures 137.2s vs today's 139.8s) and the per-folder renderer (0.8s x3).
+# These are upper bounds on a HANG — stream_transcript returns as soon as the
+# worker goes idle, so a passing run is not slowed.
 
-def _xfail_if_codex(worker_id: str) -> None:
-    """xfail on the known codex driver gap (NOT a timeout/latency issue).
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
-    FLAGGED (senior-dev-review): the interactive-PTY first prompt is dropped (no
-    rollout jsonl) and the headless path can't locate the nvm codex binary under
-    the in-process long-test harness. See
-    ui/tests/manual_regression/_results/2026-07-05T08-16-53/flagged.md.
-    """
-    if worker_id == "codex":
-        pytest.xfail("codex driver gap — see cycle flagged.md; not a timeout/latency issue")
+# ── MODEL TIER ────────────────────────────────────────────────────────────────
+# md/sonnet, NOT the sm/haiku these inherit from ``make_process`` by default.
+# Driving the markdown_index skill end to end (plan.py -> summarise every stale
+# file -> assemble each folder leaf-first -> render) is a protocol-COMPLIANCE
+# task, and haiku follows it only intermittently: measured 1 fail / 2 pass, the
+# failure being a fast (~56s) exit with index.md files simply missing — the
+# agent stopped early rather than timing out. md is 3/3 green AND faster
+# (131-146s vs 181s), because it completes the protocol instead of meandering.
+# Same finding as test_docs_browse_skill's ambient-discovery row: a model too
+# small to follow the skill under test turns a product test into a coin flip.
+# Retries stay 0 — this is a tier fix, never a flake mask.
+
+# ── BUDGETS ───────────────────────────────────────────────────────────────────
+# Raised 30s->300s/600s and 28s->240s with explicit user approval, 2026-09-07.
+#
+# MEASURED, not guessed: these drive a real haiku agent through the
+# markdown_index skill — plan.py, one Read+Write per stale file, then 4-5 calls
+# per folder in strictly serial leaf-first order. A cold build costs ~140s
+# wall-clock (149 transcript entries); `incremental` runs that loop twice.
+# Observed spread: cold 100-162s, incremental 178-255s. The budgets are ~1.5x
+# the worst observed run.
+#
+# The old 28s was NEVER met — not a regression, never measured. It read green
+# for months only because a conftest hook relabelled every long-test
+# TimeoutError as "skipped: Anthropic API issue" (removed in a51406a87).
+# Ruled out by measurement, not argument: model tier (already sm/haiku), skill
+# growth (the 2026-05-23 original measures 137.2s vs today's 139.8s), and the
+# per-folder renderer subprocess (0.8s x3).
+#
+# These are upper bounds on a HANG — `stream_transcript` returns as soon as the
+# worker goes idle, so a passing run is not slowed. NOT a flake mask: retries
+# stay 0. Re-measure before changing them again.
 
 
 def _seed_docs(root: Path) -> None:
@@ -81,13 +119,6 @@ def _read_frontmatter(path: Path) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _vault_cache_dir(vault_root: Path) -> Path:
-    override = os.environ.get("FLOWPAD_MARKDOWN_INDEX_CACHE_ROOT")
-    base = Path(override).expanduser() if override else Path.home() / ".flowpad" / "cache" / "markdown_index"
-    digest = hashlib.sha256(str(vault_root.resolve()).encode("utf-8")).hexdigest()[:16]
-    return base / digest
-
-
 def _rebuild_instruction(vault_root: Path, markdown_index_typeid: str) -> str:
     return "\n".join([
         f"Rebuild MarkdownIndex `{markdown_index_typeid}`.",
@@ -100,16 +131,32 @@ def _rebuild_instruction(vault_root: Path, markdown_index_typeid: str) -> str:
     ])
 
 
+
+@pytest.fixture
+async def docs_root(tmp_path_factory):
+    """``<fresh dir>/docs``: beside ``local_project``'s folder, never inside it.
+
+    The rebuild prompt materializes a Project for its workdir; projects do not nest, and
+    under ``tmp_path`` (the ``local`` project) the prompt was refused and the test only
+    learned it 240s later, as a transcript that never appeared. Names are unique too, so
+    the "docs" project is deleted after each test.
+    """
+    from flow_sdk.builtin.project import Project
+
+    root = tmp_path_factory.mktemp("vault") / "docs"
+    yield root
+    project = await Project.find_by_cwd(str(root))
+    if project is not None:
+        await project.delete()
+
 @pytest.mark.asyncio
-# do not increase timeout without approval
-@pytest.mark.timeout(30)
+# Budget: see BUDGETS at the top of this file.
+@pytest.mark.timeout(300)
 async def test_markdown_index_cold_build(
-    make_process, local_project, local_compute_node, tmp_path, worker_id,
+    make_process, local_project, local_compute_node, docs_root, worker_id,
 ):
     """Cold build: every folder gets an index.md with valid frontmatter."""
-    _xfail_if_codex(worker_id)
     assert local_compute_node is not None
-    docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
 
     from flow_sdk.builtin.markdown_index import MarkdownIndex
@@ -131,13 +178,17 @@ async def test_markdown_index_cold_build(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
+        cli_config={"model": ModelTier.MD.value},
     )
-    assert is_ready_for_input(process) is False
+    # Never launched, so readiness is the transport's: a fresh PTY process waits for
+    # its worker, a fresh headless one (deepagents is headless-only) takes the first
+    # prompt at once — see ``is_ready_from_busy``.
+    assert is_ready_for_input(process) is (process.pty_mode is False)
 
-    await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    assert_prompt_ok(await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
 
-    # do not increase timeout without approval
-    async for entry in process.stream_transcript(timeout=28):
+    # 240s: ~1.7x the measured ~140s cold build (see the note on the marker).
+    async for entry in process.stream_transcript(timeout=240):
         t = entry.get("type", "?")
         print(f"  [{t}]")
 
@@ -152,9 +203,16 @@ async def test_markdown_index_cold_build(
         assert fm.get("type") == "markdown_index", f"wrong type in frontmatter at {idx}: {fm.get('type')}"
         assert fm.get("inputs_hash"), f"empty inputs_hash at {idx}"
 
-    # Cache directory must be populated under the per-vault path, NOT inside docs.
-    cache = _vault_cache_dir(docs_root)
-    summaries = cache / "file_summaries"
+    # Summary cache must be populated in the PER-ENTITY dir under flowpad's
+    # records-data root, NOT inside the user's docs tree. Resolved through the
+    # product's own helper so the test can never drift from the path the skill
+    # writes to (SKILL.md: "per-entity ... never invent your own path"). The
+    # test used to hard-code a per-VAULT ~/.flowpad/cache/<sha256> path that the
+    # product abandoned in 6f640ab2d (2026-05-30); the mismatch went unnoticed
+    # because the 28s budget killed the test before this line was ever reached.
+    from flow_sdk.fs_store.operations.markdown_index import file_summaries_dir
+
+    summaries = file_summaries_dir(root_index.id)
     assert summaries.exists(), f"cache dir not populated at {summaries}"
     cached = list(summaries.glob("*.summary.md"))
     assert cached, "no per-file summaries cached"
@@ -169,15 +227,14 @@ async def test_markdown_index_cold_build(
 
 
 @pytest.mark.asyncio
-# do not increase timeout without approval
-@pytest.mark.timeout(30)
+# Budget: see BUDGETS at the top of this file. This test runs the agent TWICE
+# (cold build, then warm incremental), hence double the process cap.
+@pytest.mark.timeout(600)
 async def test_markdown_index_incremental(
-    make_process, local_project, local_compute_node, tmp_path, worker_id,
+    make_process, local_project, local_compute_node, docs_root, worker_id,
 ):
     """Edit one file → only the chain from leaf to root rebuilds."""
-    _xfail_if_codex(worker_id)
     assert local_compute_node is not None
-    docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
 
     from flow_sdk.builtin.markdown_index import MarkdownIndex
@@ -199,9 +256,10 @@ async def test_markdown_index_incremental(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
+        cli_config={"model": ModelTier.MD.value},
     )
-    await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
-    async for _ in process.stream_transcript(timeout=28):
+    assert_prompt_ok(await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
+    async for _ in process.stream_transcript(timeout=240):
         pass
 
     # Capture pre-state for siblings that should NOT change on the second run.
@@ -223,9 +281,10 @@ async def test_markdown_index_incremental(
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
+        cli_config={"model": ModelTier.MD.value},
     )
-    await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
-    async for _ in process2.stream_transcript(timeout=28):
+    assert_prompt_ok(await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
+    async for _ in process2.stream_transcript(timeout=240):
         pass
 
     auth_index_after = _read_frontmatter(docs_root / "auth" / "index.md")

@@ -5,12 +5,8 @@ Ported from FlowPad: flowpad/hub/tests/api/test_basic_crud.py
 """
 
 import json
-from typing import Any, List
-
-import pytest
 
 from flow_sdk.builtin.team import Team
-from flow_sdk.builtin.user import User
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
 

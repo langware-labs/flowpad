@@ -34,7 +34,6 @@ async def test_projection_uses_primary_and_exposes_all_occurrences(
         EntityType.MARKDOWN,
         "markdown",
         "system_resource_claude_markdown",
-        stored={},
     )
 
     assert len(items) == 1

@@ -5,7 +5,12 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   window.electronAPI.onStartupStatus((message) => {
     const el = document.getElementById('status-text');
     if (el) {
-      el.innerHTML = message + '<span class="dots"></span>';
+      // textContent, not innerHTML: the message now carries raw `uv tool
+      // install` progress lines, which must render as text, never as markup.
+      el.textContent = message;
+      const dots = document.createElement('span');
+      dots.className = 'dots';
+      el.appendChild(dots);
     }
   });
 }
@@ -132,6 +137,13 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   const upgradeEl = document.getElementById('upgrade-cmd');
   const diagnoseEl = document.getElementById('diagnose-cmd');
   const quitBtn = document.getElementById('quit-btn');
+  const retryBtn = document.getElementById('retry-btn');
+  const repairBtn = document.getElementById('repair-btn');
+  const updateBtn = document.getElementById('update-btn');
+  const exportBtn = document.getElementById('export-logs');
+  const recoveryNote = document.getElementById('recovery-note');
+  const spinner = document.querySelector('.spinner');
+  const statusEl = document.getElementById('status-text');
 
   function wireCopy(buttonId, getText) {
     const button = document.getElementById(buttonId);
@@ -152,6 +164,125 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     });
   }
 
+  // "Copy error details": the whole message the panel shows, plus where the logs are, so a
+  // user can paste it into a support message instead of photographing the screen.
+  const logPathEl = document.getElementById('error-logpath');
+  const copyDetailsBtn = document.getElementById('copy-details');
+  if (copyDetailsBtn) {
+    copyDetailsBtn.addEventListener('click', async () => {
+      const text = [
+        detailEl && detailEl.textContent,
+        logPathEl && !logPathEl.hidden ? logPathEl.textContent : '',
+      ].filter(Boolean).join('\n\n');
+      try {
+        await api.copyToClipboard(text);
+        copyDetailsBtn.textContent = 'Copied';
+        setTimeout(() => { copyDetailsBtn.textContent = 'Copy error details'; }, 1500);
+      } catch {
+        /* ignore copy failures */
+      }
+    });
+  }
+  const openLogsBtn = document.getElementById('open-logs');
+  if (openLogsBtn && api.openLogsFolder) {
+    openLogsBtn.addEventListener('click', () => { api.openLogsFolder().catch(() => {}); });
+  }
+
+  // "Send Report": the click already commits the upload — the popup only asks whether an
+  // email rides along. Every way out of it (Send, ×, Esc) closes it into the same upload;
+  // an empty email uploads anonymously. On a failed upload, "Export logs" is the way out.
+  const shareBtn = document.getElementById('share-logs');
+  const shareModal = document.getElementById('share-modal');
+  const shareClose = document.getElementById('share-close');
+  const shareEmail = document.getElementById('share-email');
+  const shareSend = document.getElementById('share-send');
+  const shareStatus = document.getElementById('share-status');
+  const shareIdle = shareStatus ? shareStatus.textContent : '';
+  if (shareBtn && api.shareLogs) {
+    let uploading = false;
+    let sent = false;
+    const sendLogs = async () => {
+      if (uploading || sent) return;
+      uploading = true;
+      const email = shareEmail ? shareEmail.value.trim() : '';
+      if (shareModal) shareModal.hidden = true;
+      shareBtn.disabled = true;
+      if (shareStatus) {
+        shareStatus.className = 'error-share-note';
+        shareStatus.textContent = 'Uploading the logs to the Flowpad team…';
+      }
+      try {
+        const r = await api.shareLogs(detailEl ? detailEl.textContent : '', email);
+        if (shareStatus) {
+          shareStatus.className = 'error-share-note ' + (r && r.ok ? 'ok' : 'fail');
+          shareStatus.textContent = r && r.ok
+            ? `Logs sent to the Flowpad team. Reference ID: ${r.submissionId}` + (email ? ` — we can reply to ${email}.` : '')
+            : `Couldn’t upload the logs${r && r.error ? `: ${r.error}` : ''}. Use “Export logs” to save the zip and send it to the team yourself.`;
+        }
+        if (r && r.ok) {
+          sent = true; // one upload per run: the button stays disabled after a success
+        } else if (exportBtn) {
+          exportBtn.hidden = false;
+        }
+      } catch (e) {
+        if (shareStatus) {
+          shareStatus.className = 'error-share-note fail';
+          shareStatus.textContent = `Couldn’t upload the logs: ${e && e.message ? e.message : e}`;
+        }
+        if (exportBtn) exportBtn.hidden = false;
+      } finally {
+        uploading = false;
+        shareBtn.disabled = sent; // a failed upload re-arms the button for a retry
+      }
+    };
+    shareBtn.addEventListener('click', () => {
+      if (!shareModal) { sendLogs(); return; }
+      shareModal.hidden = false;
+      if (shareEmail) shareEmail.focus();
+    });
+    if (shareSend) shareSend.addEventListener('click', sendLogs);
+    if (shareClose) shareClose.addEventListener('click', sendLogs);
+    if (shareEmail) shareEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendLogs(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && shareModal && !shareModal.hidden) sendLogs();
+    });
+  }
+  // A new error re-arms the note (a retry that fails again shows the default text).
+  const resetShareNote = () => { if (shareStatus) { shareStatus.className = 'error-share-note'; shareStatus.textContent = shareIdle; } };
+
+  // "Export logs": the same zip as "Send Report", saved where the user chooses (no mail client needed).
+  if (exportBtn && api.exportLogs) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      exportBtn.textContent = 'Exporting…';
+      try {
+        const r = await api.exportLogs(detailEl ? detailEl.textContent : '');
+        if (shareStatus && !(r && r.canceled)) {
+          shareStatus.className = 'error-share-note ' + (r && r.ok ? 'ok' : 'fail');
+          shareStatus.textContent = r && r.ok
+            ? `Logs saved to ${r.zipPath}. Send that file to the FlowPad team.`
+            : `Couldn’t export the logs${r && r.error ? `: ${r.error}` : ''}. Use “Open logs folder” and copy the newest files by hand.`;
+        }
+      } catch (e) {
+        if (shareStatus) { shareStatus.className = 'error-share-note fail'; shareStatus.textContent = `Couldn’t export the logs: ${e && e.message ? e.message : e}`; }
+      } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = 'Export logs';
+      }
+    });
+  }
+
+  // "Update FlowPad to X": the desktop updater downloads and verifies the release, then the app restarts
+  // into the installer. Main streams the download into the status line.
+  if (updateBtn && api.updateDesktopRecovery) {
+    updateBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Downloading the FlowPad update';
+      api.updateDesktopRecovery();
+    });
+  }
+
   wireCopy('copy-upgrade', () => upgradeEl.textContent);
   wireCopy('copy-diagnose', () => diagnoseEl.textContent);
 
@@ -159,14 +290,46 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     quitBtn.addEventListener('click', () => api.quitApp());
   }
 
+  // Retry: back to the loading view, main re-runs the install/start and
+  // streams its progress into the status line as on first launch.
+  if (retryBtn && api.retryStartup) {
+    retryBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Retrying';
+      api.retryStartup();
+    });
+  }
+
+  // Repair: the user's explicit go-ahead for the runtime repair. Back to the loading view; main
+  // streams each step ("downloading Python 3.11.9 from python.org — 40%") into the status line.
+  if (repairBtn && api.repairRuntime) {
+    repairBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Repairing the FlowPad runtime';
+      api.repairRuntime();
+    });
+  }
+
   api.onStartupError((data) => {
     if (!data) return;
     if (detailEl) detailEl.textContent = data.detail || '';
+    resetShareNote();
+    if (logPathEl) {
+      logPathEl.hidden = !data.logPath;
+      logPathEl.textContent = data.logPath ? `Logs: ${data.logPath}` : '';
+    }
     if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
     if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
+    if (retryBtn) { retryBtn.hidden = !data.retryable; retryBtn.textContent = data.retryLabel || 'Retry'; }
+    if (repairBtn) repairBtn.hidden = !data.repairable;
+    if (updateBtn) { updateBtn.hidden = !data.updateVersion; updateBtn.textContent = data.updateVersion ? `Update FlowPad to ${data.updateVersion}` : 'Update FlowPad'; }
+    if (exportBtn) exportBtn.hidden = !data.exportable;
+    if (recoveryNote) { recoveryNote.hidden = !data.retryWarning; recoveryNote.textContent = data.retryWarning || ''; }
+    document.querySelectorAll('.error-step').forEach((el) => { el.hidden = !!data.policyBlocked; });
     if (overlay) overlay.classList.add('visible');
     // Stop the spinner/status from animating behind the overlay.
-    const spinner = document.querySelector('.spinner');
     if (spinner) spinner.style.display = 'none';
   });
 })();

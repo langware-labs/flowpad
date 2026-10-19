@@ -38,11 +38,26 @@ from flow_sdk.transcript_analyzer import EntryKind
 from tests.long_tests._transcript_helpers import (
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
     safe_exit,
 )
 from tests.test_settings import test_service_config
 
 SKILL_NAME = "docs-browse"
+
+# Model tier is per test — see the TIER POLICY in tests/long_tests/_model_tier.py.
+#   deep_chain[sm] — NUDGED (the prompt names the index and says to walk it): a
+#                    mechanical walk, passes cheaply at sm.
+#   ambient[md]    — UN-NUDGED: the model must reach for docs-browse on its own.
+#                    Measured, same vault, only the tier changed:
+#                      sm -> skill_calls=[], no index.md read  = FAIL (3/3)
+#                      md -> skill_calls=['docs-browse']       = PASS (3/3)
+# The skill is discoverable at BOTH tiers (assistant_enabled=True, the assistant
+# root is in resolved_add_dirs, and test_skill_transcript_analysis observes real
+# SKILL_CALLs at sm) — haiku simply answers by grep.
+
+#: Poll budget inside the approved 120s pytest cap, leaving margin for asserts.
+_DEADLINE_S = 110
 _REPO_DOCS = Path(__file__).parents[2] / "docs"
 
 pytestmark = [
@@ -51,14 +66,6 @@ pytestmark = [
         reason="Skipping long tests when DEEP_TESTING is disabled",
     ),
 ]
-
-
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    """One capability-discovery sweep so the driver can resolve the CLI binary."""
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
-
-    await ensure_discovered()
 
 
 # ── corpus seeding ────────────────────────────────────────────────────────────
@@ -133,7 +140,7 @@ class BrowseSetup(NamedTuple):
 
 @pytest.fixture
 async def browse_setup(
-    tmp_path, _workers_discovered, local_project, local_compute_node
+    request, tmp_path_factory, local_project, local_compute_node
 ):
     """Seeded vault + indexed chain + a saved STANDARD process, torn down after.
 
@@ -143,19 +150,27 @@ async def browse_setup(
     database" on an unsaved instance."""
     if shutil.which("claude") is None:
         pytest.skip("claude CLI not installed")
-    vault, deep, nonce = _seed_from_repo_docs(tmp_path)
+    # Beside, not inside, ``local_project``'s folder (``tmp_path``): projects do not nest, and
+    # the prompt materializes one for the vault.
+    vault, deep, nonce = _seed_from_repo_docs(tmp_path_factory.mktemp("vault"))
     _build_index(vault)
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=str(vault),
-        # Small tier → haiku for claude: cheapest/fastest for the index walk.
-        cli_config={"model": ModelTier.SM.value},
+        cli_config={"model": request.param.value},
         visible=False,
     ).save()
     try:
         yield BrowseSetup(process, vault, deep, nonce)
     finally:
         await asyncio.shield(safe_exit(process))
+        # The prompt materializes a Project named after the workdir ("docs"); names are
+        # unique, so leaving it refuses the next param's process with a 500.
+        from flow_sdk.builtin.project import Project
+
+        project = await Project.find_by_cwd(str(vault))
+        if project is not None:
+            await project.delete()
 
 
 # ── transcript predicates ─────────────────────────────────────────────────────
@@ -189,7 +204,7 @@ def _answer_text(transcript) -> str:
 async def _await(process, predicate):
     # Fill the approved 120s test budget (leave margin for asserts/cleanup);
     # the pytest timeout cap itself is untouched.
-    return await await_transcript(process, "claude", predicate, deadline_s=110)
+    return await await_transcript(process, "claude", predicate, deadline_s=_DEADLINE_S)
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -198,6 +213,7 @@ async def _await(process, predicate):
 @pytest.mark.asyncio
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
+@pytest.mark.parametrize("browse_setup", [ModelTier.SM], indirect=True)
 async def test_docs_browse_deep_chain(browse_setup):
     """Nudged: the worker must walk THREE index levels (root → runbooks →
     deploy) and read the deep target, answering with the nonce'd canary."""
@@ -216,7 +232,7 @@ async def test_docs_browse_deep_chain(browse_setup):
 
     transcript = await _await(process, done)
     if transcript is None:
-        pytest.skip("no usable transcript within the deadline — infra/LLM latency")
+        fail_no_transcript(_DEADLINE_S)
 
     index_reads = _file_reads(transcript, lambda p: p.name == "index.md")
     vault_resolved = vault.resolve()
@@ -240,6 +256,7 @@ async def test_docs_browse_deep_chain(browse_setup):
 @pytest.mark.asyncio
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
+@pytest.mark.parametrize("browse_setup", [ModelTier.MD], indirect=True)
 async def test_docs_browse_ambient_discovery(browse_setup):
     """Un-nudged: the prompt names neither the skill nor the index. The worker
     should reach for docs-browse (or at least the index chain) on its own."""
@@ -255,17 +272,19 @@ async def test_docs_browse_ambient_discovery(browse_setup):
 
     transcript = await _await(process, done)
     if transcript is None:
-        pytest.skip("no usable transcript within the deadline — infra/LLM latency")
+        fail_no_transcript(_DEADLINE_S)
 
     used_skill = bool(_skill_calls(transcript))
     used_index = bool(_file_reads(transcript, lambda p: p.name == "index.md"))
-    if not used_skill and not used_index:
-        # LLM non-compliance (answered by grep/luck), not a product bug —
-        # same downgrade idiom as test_skill_transcript_analysis.
-        pytest.skip(
-            "agent answered without the docs index or the docs-browse "
-            "skill — LLM non-compliance"
-        )
+    # THE SUBJECT OF THIS TEST. "The agent navigated via the docs index" is the
+    # property under test, so an agent that answered by grep/luck is the exact
+    # failure this file exists to catch — never a skip. Skipping here left the
+    # test unable to fail for ANY input: pass or skip were its only outcomes,
+    # which is indistinguishable from having no test at all.
+    assert used_skill or used_index, (
+        "agent answered without reading the docs index or invoking the "
+        "docs-browse skill — ambient discovery did not happen"
+    )
     assert f"RGP-{nonce}" in _answer_text(transcript), (
         "index-driven run failed to surface the canary — retrieval broke"
     )

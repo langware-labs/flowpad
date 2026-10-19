@@ -1,4 +1,6 @@
-import { Project, TypeId, type GitOrigin } from '@sdk';
+import { Project } from '../../entities/project';
+import { type GitOrigin } from '../../models/GitOrigin';
+import { TypeId } from '../../models/TypeId';
 import { useCallback, useMemo } from 'react';
 import { useEntity } from './entity-hooks';
 import { useContext } from './useContext';

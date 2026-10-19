@@ -15,22 +15,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.asset_occurrences import (
-    asset_occurrence_dicts,
-    resolve_asset_collisions,
-    stored_asset_occurrences,
-)
-from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.asset_occurrences import asset_occurrence_dicts
 from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.indexer.index_function import (
+    preload_owners,
+    resolve_collisions,
+    resolve_ref_identity,
+)
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
-from flow_sdk.utils.git import git_asset_introduction
 
 SYSTEM_RESOURCE_PREFIX = "system_resource_claude_"
 
@@ -43,7 +41,7 @@ RESOURCE_TYPE_TO_ENTITY: dict[str, EntityType] = {
     "skill": EntityType.SKILL,
     "plugin": EntityType.PLUGIN,
     "command": EntityType.COMMAND,
-    "agent": EntityType.AGENT,
+    "subagent": EntityType.SUBAGENT,
     "todo_file": EntityType.TODO_FILE,
     "mcp_server": EntityType.MCP_SERVER,
     "claude_md": EntityType.CLAUDE_MD,
@@ -89,10 +87,7 @@ def _normalize(d: dict, simple: str, full: str) -> dict:
     return d
 
 
-async def _project_nodes(
-    nodes, entity_type: EntityType, simple: str, full: str,
-    stored=None,
-) -> list[dict]:
+async def _project_nodes(nodes, entity_type: EntityType, simple: str, full: str) -> list[dict]:
     """Project the terminal FSRefs of one type into deduped, normalized dicts."""
     info = SchemaRegistry.get(str(entity_type))
     from_disk = info.from_disk_fn if info else None
@@ -102,49 +97,28 @@ async def _project_nodes(
     out: list[dict] = []
     seen: set[str] = set()
     resolved: list[tuple[Any, str, str]] = []
+
+    # The SAME pipeline the walk runs (``index_function``): rows first — who
+    # already owns each path, or a source whose capsule was wiped mints a fresh
+    # id and forks its entity — then one identity per ref, then collision
+    # resolution against the stored occurrences. One fetch feeds all three.
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+    preload = await preload_owners(get_db_driver(), [et])
     for n in nodes:
         if n.record_type is None or str(n.record_type) != et:
             continue
         try:
-            rid = info.extract_id(n) or info.mint_id(n)
-            resolved.append((n, rid, canonical_posix_path(str(n._path))))
+            rid, canon = resolve_ref_identity(info, n, preload)
+            resolved.append((n, rid, canon))
         except Exception:
             continue
 
-    if stored is None:
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    def _live_identity(candidate):
+        _node, rid, path = candidate
+        return et, rid, path
 
-        driver = get_db_driver()
-        rows = (
-            await driver.list_entity_sources_by_type(et)
-            if hasattr(driver, "list_entity_sources_by_type")
-            else {}
-        )
-        stored = stored_asset_occurrences(et, rows)
-
-    def _resolve_projection():
-        def _identity(candidate):
-            if not isinstance(candidate, str):
-                _node, rid, path = candidate
-                return et, rid, path
-            try:
-                ref = FSRef(candidate, record_type=RecordType(et))
-                rid = info.extract_id(ref)
-            except Exception:
-                return None
-            if not rid:
-                return None
-            return et, rid, canonical_posix_path(candidate)
-
-        return resolve_asset_collisions(
-            resolved,
-            stored,
-            _identity,
-            git_asset_introduction,
-            datetime.now(timezone.utc),
-        )
-
-    decisions = await asyncio.to_thread(_resolve_projection)
+    decisions = await asyncio.to_thread(resolve_collisions, resolved, preload.occurrences, _live_identity)
     decision_by_id = {item.entity_id: item for item in decisions}
     duplicates = {
         (item.entity_id, path)
@@ -192,13 +166,7 @@ async def _walk_type_records(
     nodes = await idx.scan(
         IndexerOptions(types=[RecordType(str(entity_type))], roots=scoped_roots)
     )
-    from flow_sdk.db import get_db_driver  # noqa: PLC0415
-    driver = get_db_driver()
-    stored = {}
-    if hasattr(driver, "list_entity_sources_by_type"):
-        rows = await driver.list_entity_sources_by_type(str(entity_type))
-        stored = stored_asset_occurrences(str(entity_type), rows)
-    return await _project_nodes(nodes, entity_type, simple, full, stored=stored)
+    return await _project_nodes(nodes, entity_type, simple, full)
 
 
 def _in_window(modified_at: str | None, start: str | None, end: str | None) -> bool:
@@ -304,7 +272,7 @@ _PROJECT_TYPES: dict[str, tuple[str, EntityType]] = {
     "hooks": ("hook", EntityType.CLAUDE_HOOK),
     "mcp_servers": ("mcp_server", EntityType.MCP_SERVER),
     "commands": ("command", EntityType.COMMAND),
-    "agents": ("agent", EntityType.AGENT),
+    "agents": ("subagent", EntityType.SUBAGENT),
     "skills": ("skill", EntityType.SKILL),
     "claude_md": ("claude_md", EntityType.CLAUDE_MD),
 }
@@ -312,10 +280,8 @@ _PROJECT_TYPES: dict[str, tuple[str, EntityType]] = {
 
 def _project_sessions(encoded_name: str, jsonls: list[Path], limit: int) -> list[dict]:
     """Sessions for one encoded project (mirrors the old get_sessions_for_project)."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-        claude_session_meta_dict,
-        extract_claude_session_from_path,
-    )
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_session_meta_dict
 
     sessions: list[dict] = []
     jsonls = sorted(jsonls, key=lambda p: p.stat().st_mtime, reverse=True)
@@ -349,12 +315,10 @@ async def scan_project_from_indexer(
     include_sessions: bool = True,
 ) -> dict:
     """Serve ``scan-project`` — one project's resources via an indexer sub-walk."""
+    from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
     from flow_sdk.builtin.project import Project
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions._claude_projects import (
-        _claude_projects_dir,
-        decode_claude_project_dir,
-    )
+    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
     from flow_sdk.fs_store.scope import Scope
 
     project_dir = _claude_projects_dir() / project_encoded_name

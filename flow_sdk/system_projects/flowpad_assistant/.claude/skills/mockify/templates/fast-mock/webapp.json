@@ -1,0 +1,6 @@
+{
+  "name": "mock-SLUG",
+  "title": "Mock — TITLE",
+  "description": "A clickable journey mock (mockify). Its journey and feedback live in the project's mocks / mock-feedback datasets.",
+  "build": "."
+}

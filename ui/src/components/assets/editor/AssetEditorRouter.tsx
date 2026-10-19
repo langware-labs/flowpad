@@ -1,29 +1,84 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
+import {
+  AssetSetup,
+  ComputeOp,
+  Agent,
+  SubAgent,
+  AgentTrace,
+  APIEntity,
+  AssetCleanupReport,
+  Credential,
+  dataManager,
+  Deck,
+  DeckTemplate,
+  DynamicWorkflow,
+  FSRef,
+  Journey,
+  Mcp,
+  Skill,
+  Spreadsheet,
+  Task,
+  TypeId,
+  UsageReport,
+  VFSPath,
+  Chart,
+  Wizard,
+  type AnyEntity,
+} from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { isFolderShape, type TypeShape } from '@sdk/FlowSync/schema';
 import { lazy, Suspense, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
+import {
+  AssetEditor,
+  AssetRoutingMethod,
+  editorForType,
+  isFileOnlyEditor,
+  isFilelessEditor,
+  primaryTypeForEditor,
+} from '@src/navigation/asset-doc-types';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
+import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
+import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
+import { MarkdownEditor, type WikiLinkTarget } from './markdown/MarkdownEditor';
+import { detectLanguage } from '@sdk';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
-import { AgentAssetEditor } from './agent/AgentAssetEditor';
+import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
+import { AgentChildView } from './agent-profile/AgentChildView';
+import { CredentialView } from '@src/components/credentials-view/CredentialView';
+import { useNestedHost } from './nested-host';
+import { useAssetReadOnly, useHostReadOnlyOccurrence, useReadOnlyOccurrenceType } from './read-only';
+import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { JourneyViewer } from '@src/journey/JourneyViewer';
-import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
+import { WizardViewer } from './wizard/WizardViewer';
+import { AssetSetupViewer } from './asset-setup/AssetSetupViewer';
+import { ComputeOpViewer } from './compute-op/ComputeOpViewer';
+import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
+import { DiagnosisRequestView } from './diagnosis-request/DiagnosisRequestView';
+import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
+import { ChartAssetEditor } from './chart/ChartAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
+import { GitShareFrame } from './GitShareBar';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { assetOccurrenceMainRef, ReadOnlyAssetPreview } from './ReadOnlyAssetPreview';
 
 const McpAppPreview = lazy(() =>
   import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
@@ -35,6 +90,12 @@ const SpreadsheetAssetEditor = lazy(() =>
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
   pointer: string;
+  /** Optional heading slug for a Wiki target rendered at its Wiki URL. */
+  fragment?: string;
+  /** Reflect entity-record reads to Hub while preserving the normal editor UI. */
+  hubReflect?: boolean;
+  /** Keep links inside Wiki-rendered documents on the same page and namespace. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /** True if `assetType` (a RecordType value) has an asset editor. */
@@ -48,10 +109,25 @@ function machinePathOf(value: string): string {
   return vfs.typeId ? vfs.machinePath : value;
 }
 
+/** Viewers that render a read-only occurrence (a path with no record behind it)
+ *  themselves; every other editor gets the registry main file projected read-only. */
+const READ_ONLY_OCCURRENCE_EDITORS: ReadonlySet<AssetEditor> = new Set([
+  AssetEditor.SKILL,
+  AssetEditor.SUBAGENT,
+  AssetEditor.MARKDOWN,
+  AssetEditor.MCP,
+  AssetEditor.DECK,
+]);
+
+function useIsNested(): boolean {
+  return useNestedHost() !== null;
+}
+
 function ConnectingFallback() {
+  usePrimaryContentPending(true);
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+      <RefreshCw className="me-2 h-4 w-4 animate-spin" />
       Connecting…
     </div>
   );
@@ -65,7 +141,14 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
+export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
+  const { currentDock, navigation } = useDockNavigation();
+  const readOnly = useAssetReadOnly();
+  const occurrenceType = useReadOnlyOccurrenceType();
+  const hostOccurrence = useHostReadOnlyOccurrence();
+  // The view nested in THIS editor — only the page's own editor has one; a router rendering the
+  // child itself (AgentChildView) must not see it again.
+  const nestedChild = useIsNested() ? null : (currentDock?.child ?? null);
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -77,12 +160,36 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   })();
 
   // Hooks must run unconditionally — resolve the typeid entity (null otherwise).
+  // `llm_endpoint` is excluded alongside `code` on purpose: it is entity-backed but has
+  // no LOCAL row (the type is a projection of hub state), so resolving it here would fire
+  // a GET this box always 404s. Its view reads the box listing instead.
   const typeId =
-    ptr && ptr.editor !== AssetEditor.CODE && ptr.method === AssetRoutingMethod.TYPEID
+    ptr &&
+    ptr.editor !== AssetEditor.CODE &&
+    ptr.editor !== AssetEditor.LLM_ENDPOINT &&
+    ptr.method === AssetRoutingMethod.TYPEID
       ? new TypeId(ptr.value)
       : null;
-  const { data: typeIdEntity, isLoading: entityLoading, isError: entityError, refetch: refetchEntity } = useEntity(typeId);
+  const {
+    data: typeIdEntity,
+    isLoading: entityLoading,
+    isError: entityError,
+    refetch: refetchEntity,
+  } = useEntity<AnyEntity>(typeId);
   const { computeNode, flow } = useAgentContext();
+  const {
+    data: entityRecord,
+    isLoading: recordLoading,
+    isError: recordError,
+    refetch: refetchRecord,
+  } = useQuery({
+    queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
+    queryFn: () => typeIdEntity!.record({ hubReflect }),
+    // A fileless asset has no record refs to read: its view renders from the row.
+    enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID && !isFilelessEditor(ptr?.editor),
+  });
+
+  usePrimaryContentPending(!!typeId && (entityLoading || recordLoading));
 
   // Derive the FSRef + the record type for this asset in ONE unconditional memo
   // (must run before the early returns to keep hook order stable). The FSRef is
@@ -91,43 +198,75 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   // churn the identity of every downstream hook keyed on it (useEntityByPath via
   // EntityResolutionGate, useAssetRevisionStatus, the editors' content load),
   // which a backend-scan WS flood turns into a per-frame reload (the "flicker").
-  const assetRef = (typeIdEntity as { asset_ref?: string } | null)?.asset_ref ?? null;
+  const mainRef = entityRecord?.mainRef ?? null;
   const computeNodeKey = computeNode?.typeId?.toString() ?? null;
-  const derived = useMemo<{ fsRef: FSRef; assetType: string } | null>(() => {
+
+  // vfs route: the pointer carries a PATH and an editor, never a record type.
+  // The BACKEND names the type (`GET /assets/resolve?path=…` via
+  // `useEntityByPath`); this component only renders what it is told. The
+  // FSRef is memoized on the pointer string so the resolve query key is stable.
+  // File-only editors (code/html/media) have no entity and never resolve.
+  const vfsResolveRef = useMemo<FSRef | null>(() => {
+    if (!ptr || !ptr.editor) return null;
+    if (isFileOnlyEditor(ptr.editor) && !readOnly) return null;
+    if (ptr.method !== AssetRoutingMethod.VFS) return null;
+    return vfsOccurrenceRef(ptr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointer, readOnly]);
+  const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(
+    null,
+    hostOccurrence || (readOnly && occurrenceType) ? null : vfsResolveRef,
+  );
+
+  const derived = useMemo<{ fsRef: FSRef; assetType: string; mainFileRef: FSRef } | null>(() => {
     if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
     if (ptr.method === AssetRoutingMethod.TYPEID) {
-      // Build the FSRef from the entity's canonical asset_ref (the path the
-      // editors' EntityResolutionGate matches on — the folder for skill/whiteboard,
-      // the .md for agent/markdown). Editors derive their own inner doc.
-      if (!assetRef || !computeNode?.typeId) return null;
+      // The entity owns its content layout. record/refs carries both the path
+      // and the filesystem authority, so this works for local mounts and Hub
+      // entity storage without a compute-node or sender-local asset_ref.
+      if (!mainRef) return null;
       return {
-        fsRef: new FSRef(assetRef.replace(/^\//, ''), computeNode.typeId),
+        fsRef: recordContentRef(mainRef, isFolderShape(dataManager.getTypeInfo(typeId!.type)?.shape)),
         assetType: typeId!.type,
+        mainFileRef: mainRef,
       };
     }
-    const vfs = VFSPath.parse(ptr.value);
-    if (!vfs.typeId) return null;
-    return {
-      fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
-      // vfs lost the precise record type; fall back to the editor's primary type.
-      assetType: (EDITOR_TYPES[ptr.editor][0] as string | undefined) ?? ptr.editor,
-    };
+    if (!vfsResolveRef) return null;
+    // The record type is the backend's answer for this path. Until it lands
+    // (or when the path is not an asset) the registry's declared type for
+    // the editor stands in — the registry's word, never a client-side table;
+    // an empty registry (hub) leaves the editor name, which is only a label.
+    const assetType = vfsResolvedType ?? primaryTypeForEditor(ptr.editor) ?? ptr.editor;
+    return vfsEditorTarget(vfsResolveRef, assetType, dataManager.getTypeInfo(assetType)?.shape);
     // ptr/typeId are derived deterministically from `pointer`; keying on the
     // stable strings keeps the memo from re-minting the FSRef every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointer, assetRef, computeNodeKey]);
+  }, [pointer, mainRef, computeNodeKey, vfsResolveRef, vfsResolvedType]);
 
   if (!ptr || !ptr.editor) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Invalid asset pointer
-      </div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Invalid asset pointer</div>
     );
+  }
+
+  // Custom domain forms may save a row or launch work. Read-only occurrence
+  // routes instead project the registry-declared file, without an Entity gate.
+  // The viewers in READ_ONLY_OCCURRENCE_EDITORS render the occurrence themselves.
+  if (
+    readOnly &&
+    vfsResolveRef &&
+    ptr.method === AssetRoutingMethod.VFS &&
+    !READ_ONLY_OCCURRENCE_EDITORS.has(ptr.editor) &&
+    (!isFileOnlyEditor(ptr.editor) || ptr.editor === AssetEditor.CODE)
+  ) {
+    const type = occurrenceType ?? vfsResolvedType ?? primaryTypeForEditor(ptr.editor);
+    const shape = type ? dataManager.getTypeInfo(type)?.shape : undefined;
+    return <ReadOnlyAssetPreview fsRef={assetOccurrenceMainRef(vfsResolveRef, shape)} />;
   }
 
   // code: file-only, no entity. CodeEditor parses the compute-node-rooted path.
   if (ptr.editor === AssetEditor.CODE) {
-    return <CodeEditor activePath={ptr.value} />;
+    return <CodeEditor activePath={ptr.value} readOnly={readOnly} />;
   }
 
   // File-only display viewers: no entity, no EntityResolutionGate. HtmlPreview
@@ -152,9 +291,25 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     // PdfViewer parses both the vpath and plain-path forms itself, like MediaViewer.
     return <PdfViewer path={ptr.value} />;
   }
+  if (ptr.editor === AssetEditor.ARCHIVE) {
+    // A .zip is browsed as its extracted folder (a temp copy), never as text.
+    return <ArchivePreview path={ptr.value} />;
+  }
+  if (ptr.editor === AssetEditor.VALUE) {
+    // One value of a kind (`*.value.json`), drawn by that kind's data viewer.
+    return <ValueViewer path={ptr.value} />;
+  }
+  // Entity-backed but file-less: an LLM budget has no FSRef to derive, so it returns here
+  // rather than falling through to the record/mainRef machinery below.
+  if (ptr.editor === AssetEditor.LLM_ENDPOINT) {
+    return <LlmEndpointAssetView value={ptr.value} />;
+  }
+  if (ptr.editor === AssetEditor.DIAGNOSIS_REQUEST) {
+    return <DiagnosisRequestView value={ptr.value} />;
+  }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
-  // fetch error / resolved-but-no-asset_ref — e.g. a tab pointing at a
+  // fetch error / resolved-but-no-main-ref — e.g. a tab pointing at a
   // markdown that was never materialized) is terminal, not "still
   // connecting". Surface the shared missing-asset card instead of spinning
   // forever — the `!derived` guard below otherwise conflates this with the
@@ -163,200 +318,353 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     typeId &&
     ptr.method === AssetRoutingMethod.TYPEID &&
     !entityLoading &&
-    (entityError || !assetRef)
+    !recordLoading &&
+    (entityError || recordError || !mainRef)
   ) {
     // owns_main_ref types (task/spec) re-render their backing file from the
     // default body on save, so an orphaned row (no asset_ref / file gone — e.g.
     // a task created before this checkout was a folder asset) can self-heal
     // with one save. Offer that; hand-edited types (markdown/skill) get retry
     // only, since rebuilding from a template would clobber user content.
-    const ownsMainRef = !!dataManager
-      .getAllTypeInfos?.()
-      .find((t) => t.type_name === typeId.type)?.owns_main_ref;
-    const orphan = typeIdEntity as APIEntity<never> | null;
+    const ownsMainRef = !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeId.type)?.owns_main_ref;
+    const orphan = typeIdEntity as AnyEntity | null;
     return (
       <MissingAssetCard
         typeLabel={typeId.type}
         fsRef={new FSRef(typeId.toString(), computeNode?.typeId ?? typeId)}
-        onRetry={() => void refetchEntity()}
+        onRetry={() => {
+          void refetchEntity();
+          void refetchRecord();
+        }}
         entity={typeIdEntity ?? null}
-        onRebuild={
-          ownsMainRef && orphan
-            ? () => void orphan.save().then(() => refetchEntity())
-            : undefined
-        }
+        onRebuild={ownsMainRef && orphan ? () => void orphan.save().then(() => refetchEntity()) : undefined}
       />
     );
   }
 
   if (!derived) return <ConnectingFallback />;
-  const { fsRef, assetType } = derived;
+  const { fsRef, assetType, mainFileRef } = derived;
+  const documentRef = assetOccurrenceMainRef(fsRef, dataManager.getTypeInfo(assetType)?.shape);
+  const renderDocument =
+    ptr.method === AssetRoutingMethod.VFS && detectLanguage(documentRef.path) === 'markdown'
+      ? (ref: FSRef) => <MarkdownEditor fsRef={ref} chatTarget={null} wikiLinkTarget={wikiLinkTarget} />
+      : undefined;
 
-  switch (ptr.editor) {
-    case AssetEditor.SKILL:
-      return (
-        <EntityResolutionGate<Skill>
-          type={Skill.type}
-          fsRef={fsRef}
-          typeLabel="skill"
-          render={(skill) => (
-            <AssetCollisionProvider entity={skill}>
-              <SkillAssetEditor fsRef={fsRef!} skill={skill} />
-            </AssetCollisionProvider>
-          )}
-        />
-      );
-    case AssetEditor.TASK:
-      return (
-        <EntityResolutionGate<Task>
-          type={Task.type}
-          fsRef={fsRef}
-          typeLabel="task"
-          render={(task) => (
-            <AssetCollisionShell entity={task}>
-              <TaskAssetEditor fsRef={fsRef!} task={task} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.AGENT:
-      return (
-        <EntityResolutionGate<Agent>
-          type={Agent.type}
-          fsRef={fsRef}
-          typeLabel="agent"
-          render={(agent) => (
-            <AssetCollisionProvider entity={agent}>
-              <AgentAssetEditor fsRef={fsRef!} agent={agent} />
-            </AssetCollisionProvider>
-          )}
-        />
-      );
-    case AssetEditor.WHITEBOARD:
-      return (
-        <EntityResolutionGate<Whiteboard>
-          type={Whiteboard.type}
-          fsRef={fsRef}
-          typeLabel="whiteboard"
-          render={(whiteboard) => (
-            <AssetCollisionShell entity={whiteboard}>
-              <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.DECK_TEMPLATE:
-      return (
-        <EntityResolutionGate<DeckTemplate>
-          type={DeckTemplate.type}
-          fsRef={fsRef}
-          typeLabel="deck template"
-          render={(deckTemplate) => (
-            <AssetCollisionShell entity={deckTemplate}>
-              <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.DECK:
-      return (
-        <EntityResolutionGate<Deck>
-          type={Deck.type}
-          fsRef={fsRef}
-          typeLabel="deck"
-          render={(deck) => (
-            <AssetCollisionShell entity={deck}>
-              <DeckViewer fsRef={fsRef} deck={deck} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.JOURNEY:
-      return (
-        <EntityResolutionGate<Journey>
-          type={Journey.type}
-          fsRef={fsRef}
-          typeLabel="journey"
-          render={(journey) => <JourneyViewer journey={journey} />}
-        />
-      );
-    case AssetEditor.SPREADSHEET:
-      return (
-        <EntityResolutionGate<Spreadsheet>
-          type={Spreadsheet.type}
-          fsRef={fsRef}
-          typeLabel="spreadsheet"
-          render={(spreadsheet) => (
-            <AssetCollisionShell entity={spreadsheet}>
-              <Suspense fallback={<ConnectingFallback />}>
-                <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
-              </Suspense>
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.AGENT_TRACE:
-      return (
-        <EntityResolutionGate<AgentTrace>
-          type={AgentTrace.type}
-          fsRef={fsRef}
-          typeLabel="agent trace"
-          render={(trace) => (
-            <AssetCollisionShell entity={trace}>
-              <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.DYNAMIC_WORKFLOW:
-      return (
-        <EntityResolutionGate<DynamicWorkflow>
-          type={DynamicWorkflow.type}
-          fsRef={fsRef}
-          typeLabel="dynamic workflow"
-          render={(workflow) => (
-            <AssetCollisionShell entity={workflow}>
-              <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.USAGE_REPORT:
-      return (
-        <EntityResolutionGate<UsageReport>
-          type={UsageReport.type}
-          fsRef={fsRef}
-          typeLabel="usage report"
-          render={(report) => (
-            <AssetCollisionShell entity={report}>
-              <UsageReportAssetEditor fsRef={fsRef!} report={report} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.ASSET_CLEANUP_REPORT:
-      return (
-        <EntityResolutionGate<AssetCleanupReport>
-          type={AssetCleanupReport.type}
-          fsRef={fsRef}
-          typeLabel="asset cleanup report"
-          render={(report) => (
-            <AssetCollisionShell entity={report}>
-              <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />
-            </AssetCollisionShell>
-          )}
-        />
-      );
-    case AssetEditor.MARKDOWN:
-      // Markdown family (markdown, claude_md, claude_memory, claude_rules,
-      // command, plan) is intentionally NOT gated — a raw file may have no
-      // first-class entity; PlainMarkdownAssetEditor tolerates entity=null.
-      return <PlainMarkdownAssetEditor fsRef={fsRef} assetType={assetType} />;
-    default:
-      return (
-        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          No editor for: {ptr.editor}
-        </div>
-      );
+  const editorBody = ((): React.ReactNode => {
+    switch (ptr.editor) {
+      case AssetEditor.SKILL:
+        return (
+          <EntityResolutionGate<Skill>
+            type={Skill.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="skill"
+            resolvedEntity={typeIdEntity as Skill | undefined}
+            render={(skill) => (
+              <AssetCollisionProvider entity={skill}>
+                <SkillAssetEditor fsRef={fsRef} skill={skill} wikiLinkTarget={wikiLinkTarget} />
+              </AssetCollisionProvider>
+            )}
+          />
+        );
+      case AssetEditor.TASK:
+        return (
+          <EntityResolutionGate<Task>
+            type={Task.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="task"
+            resolvedEntity={typeIdEntity as Task | undefined}
+            render={(task) => (
+              <AssetCollisionShell entity={task}>
+                <TaskAssetEditor fsRef={fsRef} task={task} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.SUBAGENT:
+        return (
+          <EntityResolutionGate<SubAgent>
+            type={SubAgent.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="sub-agent"
+            resolvedEntity={typeIdEntity as SubAgent | undefined}
+            render={(subagent) => (
+              <AssetCollisionProvider entity={subagent}>
+                <SubAgentAssetEditor fsRef={fsRef} agent={subagent} wikiLinkTarget={wikiLinkTarget} />
+              </AssetCollisionProvider>
+            )}
+          />
+        );
+      case AssetEditor.AGENT:
+        return (
+          <EntityResolutionGate<Agent>
+            type={Agent.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="agent"
+            resolvedEntity={typeIdEntity as Agent | undefined}
+            render={(agent) =>
+              // A resource opened from the agent's menu replaces its body, in the agent's tab.
+              nestedChild ? (
+                <AgentChildView agent={agent} section={nestedChild.section} typeIdString={nestedChild.typeId} />
+              ) : (
+                <AssetCollisionShell entity={agent}>
+                  <AgentProfileEditor agent={agent} mainRef={mainFileRef} />
+                </AssetCollisionShell>
+              )
+            }
+          />
+        );
+      case AssetEditor.CHART:
+        return (
+          <EntityResolutionGate<Chart>
+            type={Chart.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="chart"
+            resolvedEntity={typeIdEntity as Chart | undefined}
+            render={(chart) => (
+              <AssetCollisionShell entity={chart}>
+                <ChartAssetEditor fsRef={fsRef} chart={chart} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.DECK_TEMPLATE:
+        return (
+          <EntityResolutionGate<DeckTemplate>
+            type={DeckTemplate.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="deck template"
+            resolvedEntity={typeIdEntity as DeckTemplate | undefined}
+            render={(deckTemplate) => (
+              <AssetCollisionShell entity={deckTemplate}>
+                <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.DECK:
+        // The presenter only reads the folder, so a read-only occurrence (a received
+        // deck under review) renders with no record, like McpViewer by path.
+        if (readOnly && ptr.method === AssetRoutingMethod.VFS) return <DeckViewer fsRef={fsRef} />;
+        return (
+          <EntityResolutionGate<Deck>
+            type={Deck.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="deck"
+            resolvedEntity={typeIdEntity as Deck | undefined}
+            render={(deck) => (
+              <AssetCollisionShell entity={deck}>
+                <DeckViewer fsRef={fsRef} deck={deck} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.JOURNEY:
+        return (
+          <EntityResolutionGate<Journey>
+            type={Journey.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="journey"
+            resolvedEntity={typeIdEntity as Journey | undefined}
+            render={(journey) => <JourneyViewer journey={journey} />}
+          />
+        );
+      case AssetEditor.WIZARD:
+        return (
+          <EntityResolutionGate<Wizard>
+            type={Wizard.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="wizard"
+            resolvedEntity={typeIdEntity as Wizard | undefined}
+            render={(wizard) => <WizardViewer fsRef={fsRef} wizard={wizard} />}
+          />
+        );
+      case AssetEditor.ASSET_SETUP:
+        return (
+          <EntityResolutionGate<AssetSetup>
+            type={AssetSetup.type}
+            fsRef={fsRef}
+            typeLabel="setup"
+            resolvedEntity={typeIdEntity as AssetSetup | undefined}
+            render={(setup) => <AssetSetupViewer fsRef={fsRef} setup={setup} />}
+          />
+        );
+      case AssetEditor.COMPUTE_OP:
+        return (
+          <EntityResolutionGate<ComputeOp>
+            type={ComputeOp.type}
+            fsRef={fsRef}
+            typeLabel="compute op"
+            resolvedEntity={typeIdEntity as ComputeOp | undefined}
+            render={(op) => <ComputeOpViewer fsRef={fsRef} op={op} />}
+          />
+        );
+      case AssetEditor.MCP:
+        // A path identifies an occurrence; its JSON can render before indexing.
+        // Entity actions are available only on the explicit identity route, where
+        // the loaded record owns the selected file.
+        if (ptr.method === AssetRoutingMethod.VFS) return <McpViewer fsRef={fsRef} />;
+        return (
+          <EntityResolutionGate<Mcp>
+            type={Mcp.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="MCP server"
+            resolvedEntity={typeIdEntity as Mcp | undefined}
+            render={(mcp) => <McpViewer fsRef={fsRef} mcp={mcp} />}
+          />
+        );
+      case AssetEditor.SPREADSHEET:
+        return (
+          <EntityResolutionGate<Spreadsheet>
+            type={Spreadsheet.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="spreadsheet"
+            resolvedEntity={typeIdEntity as Spreadsheet | undefined}
+            render={(spreadsheet) => (
+              <AssetCollisionShell entity={spreadsheet}>
+                <Suspense fallback={<ConnectingFallback />}>
+                  <SpreadsheetAssetEditor fsRef={fsRef} spreadsheet={spreadsheet} />
+                </Suspense>
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.AGENT_TRACE:
+        return (
+          <EntityResolutionGate<AgentTrace>
+            type={AgentTrace.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="agent trace"
+            resolvedEntity={typeIdEntity as AgentTrace | undefined}
+            render={(trace) => (
+              <AssetCollisionShell entity={trace}>
+                <AgentTraceAssetEditor fsRef={fsRef} trace={trace} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.DYNAMIC_WORKFLOW:
+        return (
+          <EntityResolutionGate<DynamicWorkflow>
+            type={DynamicWorkflow.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="dynamic workflow"
+            resolvedEntity={typeIdEntity as DynamicWorkflow | undefined}
+            render={(workflow) => (
+              <AssetCollisionShell entity={workflow}>
+                <DynamicWorkflowAssetEditor fsRef={fsRef} workflow={workflow} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.USAGE_REPORT:
+        return (
+          <EntityResolutionGate<UsageReport>
+            type={UsageReport.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="usage report"
+            resolvedEntity={typeIdEntity as UsageReport | undefined}
+            render={(report) => (
+              <AssetCollisionShell entity={report}>
+                <UsageReportAssetEditor fsRef={fsRef} report={report} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.ASSET_CLEANUP_REPORT:
+        return (
+          <EntityResolutionGate<AssetCleanupReport>
+            type={AssetCleanupReport.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="asset cleanup report"
+            resolvedEntity={typeIdEntity as AssetCleanupReport | undefined}
+            render={(report) => (
+              <AssetCollisionShell entity={report}>
+                <AssetCleanupReportAssetEditor fsRef={fsRef} report={report} />
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.CREDENTIAL:
+        // The same view an agent nests for its credential: what it declares,
+        // where the values live, which are set. A delete lands on the type list.
+        return (
+          <EntityResolutionGate<Credential>
+            type={Credential.type}
+            fsRef={fsRef}
+            typeLabel="credential"
+            resolvedEntity={typeIdEntity as Credential | undefined}
+            render={(credential) => (
+              <CredentialView
+                typeid={credential.typeId.toString()}
+                onGone={() => navigation.openDock(DockPointer.forAssetList(Credential.type))}
+              />
+            )}
+          />
+        );
+      case AssetEditor.MARKDOWN:
+        // Markdown family (markdown, claude_md, claude_memory, claude_rules,
+        // command, plan) is intentionally NOT gated — a raw file may have no
+        // first-class entity; PlainMarkdownAssetEditor tolerates entity=null.
+        return (
+          <PlainMarkdownAssetEditor
+            fsRef={fsRef}
+            assetType={assetType}
+            resolvedEntity={typeIdEntity as APIEntity<AnyEntity> | undefined}
+            fragment={fragment}
+            wikiLinkTarget={wikiLinkTarget}
+          />
+        );
+      default:
+        return (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            No editor for: {ptr.editor}
+          </div>
+        );
+    }
+  })();
+  // A received git share says which version it is, and offers the sender's
+  // newer one / sending edits back — above any editor, whatever its type.
+  return <GitShareFrame entity={typeIdEntity ?? null}>{editorBody}</GitShareFrame>;
+}
+/** Resolve the content root from the backend type registry's layout contract.
+ * Folder-backed records expose a primary file, but their editor owns its
+ * sibling files too, so the editor receives that file's containing folder. */
+export function recordContentRef(mainRef: FSRef, folderBacked: boolean): FSRef {
+  if (folderBacked && mainRef.refType !== 'folder') {
+    return mainRef.parent;
   }
+  return mainRef;
+}
+
+/** The occurrence a vfs pointer addresses, on its compute node. */
+export function vfsOccurrenceRef(ptr: AssetDocPointer): FSRef | null {
+  const vfs = VFSPath.parse(ptr.value);
+  return vfs.typeId ? new FSRef(vfs.entitySubPath, vfs.typeId) : null;
+}
+
+/** The editor refs for a vfs pointer. record/refs is TYPEID-only, so `mainRef`
+ * is null on this route: editors that read or write the main file (agent.json)
+ * use `mainFileRef`, never `mainRef`. A pointer names either that file or, for
+ * a folder-shaped type, the asset's folder — the registry's `main` resolves it. */
+export function vfsEditorTarget(
+  ref: FSRef,
+  assetType: string,
+  shape: TypeShape | null | undefined,
+): { fsRef: FSRef; assetType: string; mainFileRef: FSRef } {
+  return { fsRef: ref, assetType, mainFileRef: assetOccurrenceMainRef(ref, shape) };
 }

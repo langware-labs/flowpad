@@ -39,11 +39,12 @@ POLL_S = 0.05
 # unset (script run, no conftest) → the actual home.
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 CLAUDE_BIN = (
-    os.environ.get("CLAUDE_BIN")
-    or shutil.which("claude")
-    or os.path.join(_REAL_HOME, ".local", "bin", "claude")
+    os.environ.get("CLAUDE_BIN") or shutil.which("claude") or os.path.join(_REAL_HOME, ".local", "bin", "claude")
 )
-_CLAUDE_ENV = {"HOME": _REAL_HOME}  # overlay so claude uses real config, not the sandbox
+_CLAUDE_ENV = {
+    "HOME": _REAL_HOME,
+    "USERPROFILE": _REAL_HOME,
+}  # overlay so claude uses real config, not the sandbox
 
 
 def _transcript_has(cid: str, marker: str) -> bool:
@@ -61,6 +62,8 @@ def _transcript_has(cid: str, marker: str) -> bool:
         except OSError:
             pass
     return False
+
+
 # Strip ANSI/VT so a needle survives a TUI's redraws.
 _ANSI = re.compile(rb"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[\]P^_].*?(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
@@ -81,8 +84,13 @@ async def _prep_claude_resume(provider, node_id, workdir):
     cid = str(uuid.uuid4())
     seed = uuid.uuid4().hex
     await provider.get_or_create_pty_session(
-        node_id, seed, lambda d: None, rows=40, cols=120,
-        working_dir=workdir, spawn_args=[*_CLAUDE_ARGV, "--session-id", cid],
+        node_id,
+        seed,
+        lambda d: None,
+        rows=40,
+        cols=120,
+        working_dir=workdir,
+        spawn_args=[*_CLAUDE_ARGV, "--session-id", cid],
         extra_env=_CLAUDE_ENV,
     )
     await asyncio.sleep(8.0)
@@ -98,8 +106,8 @@ async def _prep_claude_resume(provider, node_id, workdir):
 #         "transcript" → marker in the session JSONL (claude — the REAL submit
 #         signal the worker uses, valid for injected input).
 TARGETS: dict[str, dict] = {
-    "shell":         {"prep": _prep_shell,         "detect": "buffer",     "min_occ": 2, "ready": 0.5, "budget": 5.0},
-    "claude":        {"prep": _prep_claude,        "detect": "transcript", "min_occ": 1, "ready": 8.0, "budget": 12.0},
+    "shell": {"prep": _prep_shell, "detect": "buffer", "min_occ": 2, "ready": 0.5, "budget": 5.0},
+    "claude": {"prep": _prep_claude, "detect": "transcript", "min_occ": 1, "ready": 8.0, "budget": 12.0},
     "claude-resume": {"prep": _prep_claude_resume, "detect": "transcript", "min_occ": 1, "ready": 8.0, "budget": 12.0},
 }
 
@@ -128,8 +136,14 @@ async def _hammer(target: str, iterations: int = ITERATIONS) -> list[dict]:
     sid = uuid.uuid4().hex
     buf = bytearray()
     await provider.get_or_create_pty_session(
-        node_id, sid, buf.extend, rows=40, cols=120, working_dir=workdir,
-        spawn_args=prep["spawn"], extra_env=_CLAUDE_ENV if is_claude else None,
+        node_id,
+        sid,
+        buf.extend,
+        rows=40,
+        cols=120,
+        working_dir=workdir,
+        spawn_args=prep["spawn"],
+        extra_env=_CLAUDE_ENV if is_claude else None,
     )
     await asyncio.sleep(spec["ready"])
 

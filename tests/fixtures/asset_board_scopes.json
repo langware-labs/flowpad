@@ -1,0 +1,16 @@
+{
+  "comment": "Which Assets-board scope toggle each backend AssetSource falls under. Asserted by tests/unit/test_asset_board_scopes.py (every flow_sdk AssetSource has a row, and a real on-disk world yields each source) and ui/tests/unit/asset-manager-board.test.tsx (assetBoardScope agrees row by row). A new AssetSource fails the Python side until it is given a scope here, and then the UI side until board-scope.ts maps it.",
+  "scopes": ["project", "dirs", "user", "assistant", "worker"],
+  "default_shown": ["project", "dirs"],
+  "by_source": {
+    "project_dir": "project",
+    "workdir": "project",
+    "embedded": "project",
+    "inline": "project",
+    "additional_dir": "dirs",
+    "context_dir": "dirs",
+    "user_dir": "user",
+    "system": "assistant",
+    "external": "worker"
+  }
+}

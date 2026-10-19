@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'react';
-import { Paperclip, X, File } from 'lucide-react';
+import { useCallback, useEffect, useId, useState } from 'react';
+import { Paperclip, Plus, X, File } from 'lucide-react';
 import { cn } from '@src/lib/utils';
-import { isImageFile } from '@src/utils/clipboard-image';
+import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 
 interface FileAttachmentPickerProps {
@@ -21,15 +22,7 @@ function formatSize(bytes: number): string {
  * (mirrors the composer's PendingFileChip) so an attached image reads as an
  * image, not a nameless binary; everything else shows a small file icon.
  */
-export function PickedFileRow({
-  file,
-  disabled,
-  onRemove,
-}: {
-  file: File;
-  disabled?: boolean;
-  onRemove: () => void;
-}) {
+export function PickedFileRow({ file, disabled, onRemove }: { file: File; disabled?: boolean; onRemove: () => void }) {
   const image = isImageFile(file);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -111,6 +104,187 @@ export function rejectedFilesNotice(rejectedNames: string[]): string | null {
   return rejectedNames.length === 1
     ? `"${rejectedNames[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
     : `${rejectedNames.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${rejectedNames.join(', ')}.`;
+}
+
+/**
+ * The stateful half of the shared attach semantics: a size-guarded, deduped
+ * picked-file selection plus drag-and-drop wiring. Composers render their own
+ * trigger (`AttachFilesButton`) and chip list (`PickedFileList`) around it.
+ * When `enabled` is false the hook is inert: `dragProps` is undefined and no
+ * files can be added.
+ */
+export function usePickedFiles({ enabled, disabled }: { enabled: boolean; disabled?: boolean }) {
+  const inputId = useId();
+  const [picked, setPicked] = useState<{ files: File[]; rejected: string | null }>({ files: [], rejected: null });
+  const [dragging, setDragging] = useState(false);
+
+  // One functional update over one state object — successive adds (e.g. a drop
+  // landing while a paste's annotator resolves) merge into the latest
+  // selection, and the rejection notice is derived in the same pure step.
+  const addFiles = useCallback((incoming: FileList | File[] | null) => {
+    setPicked((prev) => {
+      const merged = mergePickedFiles(prev.files, incoming);
+      return { files: merged.files, rejected: rejectedFilesNotice(merged.rejectedNames) };
+    });
+  }, []);
+
+  const removeAt = useCallback((index: number) => {
+    setPicked((prev) => ({ ...prev, files: prev.files.filter((_, i) => i !== index) }));
+  }, []);
+
+  const clear = useCallback(() => {
+    setPicked({ files: [], rejected: null });
+    setDragging(false);
+  }, []);
+
+  const dragProps =
+    enabled && !disabled
+      ? {
+          onDragOver: (e: React.DragEvent) => {
+            e.preventDefault();
+            setDragging(true);
+          },
+          onDragLeave: () => setDragging(false),
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            setDragging(false);
+            addFiles(e.dataTransfer.files);
+          },
+        }
+      : undefined;
+
+  return { inputId, files: picked.files, rejected: picked.rejected, dragging, addFiles, removeAt, clear, dragProps };
+}
+
+/** `text` added to a composer's `prev` value on a line of its own. */
+function appendLine(prev: string, text: string): string {
+  if (!prev) return text;
+  return prev.endsWith('\n') ? `${prev}${text}` : `${prev}\n${text}`;
+}
+
+/**
+ * The one image-paste path for composers that hold files until send: pasted
+ * images go through the annotator (a cancelled image is dropped) and the
+ * survivors become picked-file chips. Text that came on the clipboard with the
+ * image prefills the annotator's caption, and the caption the user confirms is
+ * appended, on its own line, to the composer's text through `setText` (a state
+ * setter). Returns a paste handler that claims the event only when the
+ * clipboard carries images; text pastes fall through.
+ */
+export function useAnnotatedImagePaste(
+  addFiles: (files: File[]) => void,
+  { enabled, setText }: { enabled: boolean; setText?: (update: (prev: string) => string) => void },
+): (e: React.ClipboardEvent) => boolean {
+  return useCallback(
+    (e: React.ClipboardEvent) => {
+      if (!enabled) return false;
+      const images = imageFilesFromClipboardData(e.clipboardData, new Date(), { prefix: 'screenshot' });
+      if (!images.length) return false;
+      e.preventDefault();
+      const initialCaption = e.clipboardData.getData('text/plain');
+      void annotateImageFiles(images, { initialCaption }).then(({ files, caption }) => {
+        if (!files.length) return;
+        addFiles(files);
+        if (caption) setText?.((prev) => appendLine(prev, caption));
+      });
+      return true;
+    },
+    [addFiles, enabled, setText],
+  );
+}
+
+/**
+ * For a dialog that keeps its own `files` state (rendered by a controlled
+ * `FileAttachmentPicker`): `addFiles` merges picked files in through
+ * `mergePickedFiles`, and `handlePaste` routes clipboard images through the
+ * annotator into the same list (see `useAnnotatedImagePaste`).
+ */
+export function useFileStateAttach(
+  setFiles: React.Dispatch<React.SetStateAction<File[]>>,
+  paste: Parameters<typeof useAnnotatedImagePaste>[1],
+) {
+  const addFiles = useCallback(
+    (picked: FileList | File[] | null) => setFiles((prev) => mergePickedFiles(prev, picked).files),
+    [setFiles],
+  );
+  const handlePaste = useAnnotatedImagePaste(addFiles, paste);
+  return { addFiles, handlePaste };
+}
+
+/**
+ * The "+" attach trigger: a `<label htmlFor>` over a hidden file input, so a
+ * real native click opens the OS picker reliably — even inside a Radix Dialog
+ * portal where a synthetic onClick sometimes doesn't reach the input.
+ */
+export function AttachFilesButton({
+  inputId,
+  onFiles,
+  disabled,
+  title,
+  testId,
+}: {
+  inputId: string;
+  onFiles: (files: FileList | null) => void;
+  disabled?: boolean;
+  title: string;
+  testId: string;
+}) {
+  return (
+    <>
+      <label
+        htmlFor={inputId}
+        title={title}
+        className={cn(
+          'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+          disabled && 'pointer-events-none opacity-50',
+        )}
+        data-testid={testId}
+      >
+        <Plus className="h-4 w-4" />
+      </label>
+      <input
+        id={inputId}
+        type="file"
+        multiple
+        className="sr-only"
+        disabled={disabled}
+        onChange={(e) => onFiles(e.target.files)}
+        onClick={(e) => ((e.target as HTMLInputElement).value = '')}
+        data-testid={`${testId}-input`}
+      />
+    </>
+  );
+}
+
+/** Picked-file chips + the size-rejection notice. Renders nothing when empty. */
+export function PickedFileList({
+  files,
+  rejected,
+  disabled,
+  onRemoveAt,
+  className,
+}: {
+  files: File[];
+  rejected: string | null;
+  disabled?: boolean;
+  onRemoveAt: (index: number) => void;
+  className?: string;
+}) {
+  if (!files.length && !rejected) return null;
+  return (
+    <>
+      {files.length > 0 && (
+        <ul className={cn('flex flex-wrap gap-1.5 text-start', className)}>
+          {/* name+size is unique (mergePickedFiles dedupes on it); no index in
+              the key so removal doesn't remount later chips' object URLs. */}
+          {files.map((f, i) => (
+            <PickedFileRow key={`${f.name}-${f.size}`} file={f} disabled={disabled} onRemove={() => onRemoveAt(i)} />
+          ))}
+        </ul>
+      )}
+      {rejected && <p className={cn('text-start text-[11px] text-destructive', className)}>{rejected}</p>}
+    </>
+  );
 }
 
 export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachmentPickerProps) {

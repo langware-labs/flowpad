@@ -22,21 +22,18 @@ Public helpers used outside the indexer:
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 from typing import Iterator
 
+from flow_sdk.assets.types.codex_sessions import _iter_head_json, extract_codex_session_from_path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions._codex_session_stats import (
     _get_codex_session_batch_stats,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
-
-_HEAD_LINES = 64
 
 # Fields the lazy stats parser populates on the record. Used by
 # ensure_codex_session_stats() to mirror dict→attrs.
@@ -63,6 +60,9 @@ def codex_sessions_fn(
         if not sessions_root.is_dir():
             continue
         for jsonl in sessions_root.rglob("rollout-*.jsonl"):
+            # Sub-agent threads are not sessions — see rollout_thread_source.
+            if is_subagent_rollout(jsonl):
+                continue
             out.append(
                 FSRef(
                     jsonl,
@@ -73,154 +73,62 @@ def codex_sessions_fn(
     return out
 
 
-def _iter_head_json(path: Path) -> Iterator[dict]:
-    """Yield parsed JSON envelopes from the first _HEAD_LINES JSONL lines."""
-    with open(path, encoding="utf-8") as fh:
-        for _, line in zip(range(_HEAD_LINES), fh):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
 
 
-def _extract_thread_id(filename: str) -> str | None:
-    """Pull the thread_id off a Codex rollout filename.
 
-    Filename pattern: ``rollout-<ISO-timestamp>-<thread_id>.jsonl``. The
-    thread_id is a UUID — last 5 hyphen-separated groups of the stem.
+
+
+
+def thread_source_of(payload: dict) -> str:
+    """``thread_source`` of a parsed ``session_meta`` payload (see ``rollout_thread_source``)."""
+    declared = payload.get("thread_source")
+    if declared:
+        return str(declared)
+    # Older rollouts predate ``thread_source`` but still carry the spawn edge,
+    # which is equally conclusive.
+    source = payload.get("source")
+    spawned = bool(payload.get("parent_thread_id")) or (isinstance(source, dict) and "subagent" in source)
+    return "subagent" if spawned else ""
+
+
+def rollout_thread_source(path: str | Path) -> str:
+    """``session_meta.thread_source`` for a rollout — ``"subagent"`` for a
+    thread Codex spawned under a parent, ``"user"`` for a top-level session,
+    ``""`` when the header does not say.
+
+    A sub-agent rollout lives in the same directory, under the same
+    ``rollout-<ts>-<thread_id>.jsonl`` name, as a real session, so the header is
+    the only thing that separates them. Codex refuses ``resume`` on a sub-agent
+    ("cannot resume an unloaded multi-agent v2 sub-agent through its parent"),
+    so anything that offers sessions for resume must consult this first.
     """
-    stem = filename
-    if stem.endswith(".jsonl"):
-        stem = stem[: -len(".jsonl")]
-    if not stem.startswith("rollout-"):
-        return None
-    parts = stem[len("rollout-"):].split("-")
-    if len(parts) < 5:
-        return None
-    return "-".join(parts[-5:])
-
-
-def codex_session_identity_key(ref: FSRef | Path) -> str:
-    """Stable, filesystem-safe **UUID** id = session_meta payload.id (the
-    thread_id). The thread_id is already a UUID so it's kept as-is; any
-    non-conforming fallback is hashed with the same ``f"{type}:{key}"`` formula
-    ``Entity.allocate_id`` uses, so it matches the DB id."""
-    path = Path(getattr(ref, "_path", ref))
-    key = None
     try:
-        for raw in _iter_head_json(path):
-            if raw.get("type") == "session_meta":
-                payload = raw.get("payload") or {}
-                if payload.get("id"):
-                    key = str(payload["id"])
-                    break
-            if raw.get("type") == "thread.started" and raw.get("thread_id"):
-                key = str(raw["thread_id"])
-                break
-    except OSError:
+        for raw in _iter_head_json(Path(path)):
+            if (raw.get("type") or "") == "session_meta":
+                return thread_source_of(raw.get("payload") or {})
+    except (OSError, json.JSONDecodeError):
         pass
-    if key is None:
-        key = _extract_thread_id(path.name) or path.stem
-    return key
+    return ""
 
 
-def codex_session_id_from_file(ref: FSRef | Path) -> str | None:
-    key = codex_session_identity_key(ref)
-    return key if is_valid_entity_id(key) else None
+def is_subagent_rollout(path: str | Path) -> bool:
+    """True when this rollout is a Codex sub-agent thread, not a session."""
+    return rollout_thread_source(path) == "subagent"
 
 
-def codex_session_stable_key(ref: FSRef | Path) -> str:
-    return f"{RecordType.CODEX_SESSION}:{codex_session_identity_key(ref)}"
 
 
-def codex_session_id(ref: FSRef) -> str:
-    existing = codex_session_id_from_file(ref)
-    return existing or mint_uuid(codex_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
-def extract_codex_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a rollout JSONL into a Record (head fields only — stats lazy)."""
-    return [extract_codex_session_from_path(ref._path, resolved_id=resolved_id)]
 
 
-def extract_codex_session_from_path(
-    path: str | Path,
-    *,
-    include_content: bool = True,
-    resolved_id: str | None = None,
-) -> FSRecord:
-    """Build a Record from a rollout JSONL path.
-
-    Envelope fields (session_id / cwd / version / originator) are read from the
-    first few lines only. The searchable ``content`` (extractive transcript
-    text for FTS) requires a full-transcript parse via ``worker_summary_log`` —
-    gated by the indexer's skip-fresh check, so it only runs when the rollout
-    has changed. Stats are not populated here — call
-    ``ensure_codex_session_stats(rec)`` to lazy-load them.
-
-    Listing callers that hit many rollouts per request (e.g. worker history)
-    must pass ``include_content=False`` — they have no skip-fresh gate, and the
-    full ``worker_summary_log`` parse per file starves the server (the parsed
-    ``content`` is unused by those callers). Mirrors
-    ``extract_claude_session_from_path``.
-
-    Replaces ``CodexSessionRecord.from_jsonl``.
-    """
-    p = Path(path)
-    session_id = _extract_thread_id(p.name) or p.stem
-    cwd = ""
-    version = ""
-    originator = ""
-
-    try:
-        for raw in _iter_head_json(p):
-            rtype = raw.get("type") or ""
-            if rtype == "session_meta":
-                payload = raw.get("payload") or {}
-                if payload.get("id"):
-                    session_id = str(payload["id"])
-                if not cwd and payload.get("cwd"):
-                    cwd = str(payload["cwd"])
-                if not version and payload.get("cli_version"):
-                    version = str(payload["cli_version"])
-                if not originator and payload.get("originator"):
-                    originator = str(payload["originator"])
-            elif rtype == "thread.started" and raw.get("thread_id"):
-                session_id = str(raw["thread_id"])
-    except OSError:
-        pass
-
-    # Extractive transcript text for full-text search (worker-generic). Skipped
-    # for listing callers (include_content=False) — the full-transcript parse is
-    # the dominant cost and they don't read `content`.
-    content = ""
-    if include_content:
-        from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
-        content = worker_summary_log(p, "codex")
-
-    rec = FSRecord(
-        type=RecordType.CODEX_SESSION,
-        id=resolved_id or session_id,
-        name=session_id,
-        session_id=session_id,
-        cwd=cwd,
-        version=version,
-        originator=originator,
-        jsonl_path=str(p),
-        worker_type="codex",
-        source_file=str(p),
-        path=str(p),
-        content=content,
-    )
-    # Read-only marker — rollouts are owned by Codex.
-    object.__setattr__(rec, "_asset_ref", FSRef(p, read_only=True))
-    return rec
 
 
-def ensure_codex_session_stats(rec: Record) -> FSRecord:
+
+
+
+
+def ensure_codex_session_stats(rec: FSRecord) -> FSRecord:
     """Populate lazy stat fields onto the record. Idempotent.
 
     Replaces the ``_CodexSessionStatsProp`` descriptor: instead of triggering
@@ -269,6 +177,15 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
     Codex stores rollouts as ``rollout-<ts>-<thread_id>.jsonl`` so a suffix
     scan is O(N) over rollout files. Pass ``date_path="YYYY/MM/DD"`` for an
     O(1) lookup when the date is known.
+
+    Like ``get_claude_session``, this is a path/envelope resolver, never a
+    content reader: it extracts with ``include_content=False`` so it never runs
+    the full ``worker_summary_log`` transcript parse. Its only caller
+    (``_resolve_session_record``, behind ``terminals/get_by_worker_id``) reads
+    ``cwd``/``name``/existence and never touches ``.content``, while the parse
+    it was paying for dominated the call — 205ms with it, 10ms without, on a
+    256KB rollout. A caller that genuinely wants ``content`` should reach for
+    ``extract_codex_session_from_path`` directly.
     """
     sessions_root = get_instance_settings().codex_sessions_dir
     if not sessions_root.is_dir():
@@ -280,15 +197,22 @@ def get_codex_session(uid: str, date_path: str | None = None) -> FSRecord | None
         if day.is_dir():
             for p in day.glob("rollout-*.jsonl"):
                 if p.name.endswith(suffix):
+                    if is_subagent_rollout(p):
+                        return None
                     try:
-                        return extract_codex_session_from_path(p)
+                        return extract_codex_session_from_path(p, include_content=False)
                     except (json.JSONDecodeError, OSError):
                         return None
 
     for p in sessions_root.rglob("rollout-*.jsonl"):
         if p.name.endswith(suffix):
+            # A sub-agent thread is not resumable: handing its id to
+            # ``codex resume`` exits 1 and the start latch retries forever.
+            # A miss is the correct answer here, exactly like an unknown id.
+            if is_subagent_rollout(p):
+                return None
             try:
-                return extract_codex_session_from_path(p)
+                return extract_codex_session_from_path(p, include_content=False)
             except (json.JSONDecodeError, OSError):
                 continue
     return None

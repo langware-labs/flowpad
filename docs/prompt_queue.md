@@ -25,7 +25,7 @@ Design principles:
 ## On-disk format
 
 Two files next to each other in the process record folder
-(`…/records/agentic_process/agentic_process-@<id>/`):
+(`…/records/agentic_process/<id>/`):
 
 `prompt_queue.json` — current state. Atomic writes (temp + `os.replace`);
 reads never raise (missing/corrupt → default `{"enabled": true, "entries": []}`).
@@ -103,7 +103,10 @@ triggers (each -> _schedule_queue_drain(source), fire-and-forget):
              AND the HTTP streaming turn's _run_turn finally (complete,
              crash, AND cancel-prompt all land there). This edge is what
              advances the queue for chat-surface turns: their enqueue-edge
-             drain bails not_ready mid-turn.
+             drain bails not_ready mid-turn. A worker that outlives its turn
+             (parked on background work) also fires it at each turn's `idle`
+             (`WorkerTurns.end`), so a prompt queued during the turn is
+             delivered then, not when the background work finally ends.
 
 _schedule_queue_drain short-circuits when the queue file doesn't exist
 (nothing was ever enqueued) so the per-turn-end trigger costs one stat for
@@ -116,7 +119,10 @@ _maybe_drain_queue(source):              [serialized by _QUEUE_LOCKS[id]]
   _queue_ready(resolved)?  -> no: log drain_check(not_ready), stop
   pop head                 (persists removal BEFORE injecting)
   log inject, notify_updated, release lock
-  prompt(head)             -> stdin (live PTY) or a new headless turn
+  prompt(head)             -> stdin (live PTY), the stdin of a headless worker
+                              PARKED on background work (same process, answered in
+                              about a second — `_deliver_to_parked_worker`), or a
+                              new headless turn
   log injected | error
 ```
 

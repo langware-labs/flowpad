@@ -1,7 +1,10 @@
 import type { AgenticProcess } from '@sdk';
-import { Shell } from '@sdk';
 
-const TYPEID_RX = /^[a-z][a-z0-9_-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// `[45]` for the version nibble, matching the entity-id policy (ids are UUID v4
+// or v5 — CLAUDE.md) and the SDK's own shape source (`ts_sdk/src/models/TypeId.ts`
+// `uuidRegex`). Pinning `4` here let a v5-shaped `skill-<uuid>` through as a
+// "label", which is exactly the address-as-a-name case these rules reject.
+const TYPEID_RX = /^[a-z][a-z0-9_-]*-[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** Strip the decoration PTY tools interleave with the real OSC title —
  *  spinner frames (Braille/box glyphs), emoji/icons, rotation arrows, ANSI
@@ -24,11 +27,18 @@ export function cleanTitle(name: string | null | undefined): string {
   );
 }
 
+/** Legacy name filter for plain-shell and other tab rename paths.
+ *  AgenticProcess explicit renames deliberately bypass this filter: a user
+ *  may choose an identifier-shaped name, and the backend pins that choice. */
+export function isTypeIdLikeName(name: string | null | undefined): boolean {
+  return TYPEID_RX.test(cleanTitle(name));
+}
+
 export function allowRename(name: string | null | undefined): boolean {
   const n = cleanTitle(name);
   if (!n) return false;
   if (!/\p{L}/u.test(n)) return false; // must carry a real letter in some script
-  if (TYPEID_RX.test(n)) return false;
+  if (isTypeIdLikeName(n)) return false; // `cleanTitle` is idempotent, so re-cleaning is free
   if (n.includes('Claude Code')) return false;
   return true;
 }
@@ -67,24 +77,4 @@ export function nextTerminalName(sessions: { name: string }[]): string {
   let n = 1;
   while (usedNumbers.has(n)) n++;
   return `Tab ${n}`;
-}
-
-function isCodexProcess(process?: AgenticProcess | null): boolean {
-  return process?.worker_type?.trim().toLowerCase() === 'codex';
-}
-
-function isCopilotProcess(process?: AgenticProcess | null): boolean {
-  return process?.worker_type?.trim().toLowerCase() === 'copilot';
-}
-
-/** PTY OSC title auto-save rule: a plain shell always auto-titles; a process
- *  auto-titles unless it is Codex/Copilot (they emit unstable titles). The Tab
- *  body renders from `TabRow` + the panel's live entity, so the rule keys on the
- *  target type + that entity, not a `TerminalTab`. */
-export function shouldAutoSaveTitleForTarget(
-  targetType: string | null | undefined,
-  process?: AgenticProcess | null,
-): boolean {
-  if (!process) return targetType === Shell.type;
-  return !isCodexProcess(process) && !isCopilotProcess(process);
 }

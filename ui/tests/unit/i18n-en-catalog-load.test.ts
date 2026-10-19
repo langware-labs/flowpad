@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * → the `import('../locales/en-US/messages.po')` is skipped and the en-US
  * catalog stays empty. In production builds Lingui strips the inline source
  * fallback, so every English string renders as its raw hash id
- * (e.g. "Gp4Yi6" instead of "Inbox") — what the user saw in the Electron app.
+ * (e.g. "ywdg1o" instead of "Stream Inbox") — what the user saw in the Electron app.
  *
  * This drives the REAL bootstrap (i18n-init → initLocale) and the REAL .po
  * catalog import — no mocks of the code under test.
@@ -27,17 +27,17 @@ describe('en-US locale catalog loading (regression)', () => {
     localStorage.setItem('locale', 'en-US');
   });
 
-  it('loads the en-US catalog so the "Inbox" id resolves to English, not its hash', async () => {
+  it('loads the en-US catalog so the "Stream Inbox" id resolves to English, not its hash', async () => {
     // Real startup order: i18n-init pre-activates en-US (empty catalog), then
     // initLocale() should load + activate the real en-US catalog.
     await import('@src/i18n-init');
     const { initLocale } = await import('@src/contexts/locale-context');
     await initLocale();
 
-    // "Gp4Yi6" is the compiled Lingui id for the source string "Inbox"
-    // (confirmed in the built catalog: "Gp4Yi6":["Inbox"]). With the catalog
-    // loaded this resolves to "Inbox"; with the bug it returns the id itself.
-    expect(i18n._({ id: 'Gp4Yi6' })).toBe('Inbox');
+    // "ywdg1o" is the compiled Lingui id for the source string "Stream Inbox"
+    // (confirmed in the built catalog: "ywdg1o":["Stream Inbox"]). With the catalog
+    // loaded this resolves to "Stream Inbox"; with the bug it returns the id itself.
+    expect(i18n._({ id: 'ywdg1o' })).toBe('Stream Inbox');
     // Durable assertion independent of the specific hash: the active en-US
     // catalog must be non-empty.
     expect(Object.keys(i18n.messages).length).toBeGreaterThan(0);

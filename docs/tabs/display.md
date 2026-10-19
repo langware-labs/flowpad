@@ -5,11 +5,30 @@ id: 166a48fd-0c92-4201-aaf6-f4f56863a8ca
 # Vibe Display surface
 
 The **Display** is the right-hand pane of vibe mode: a persistent, always-present
-surface that shows whatever the agent chose to present via `flow show`. It is
-**not** the process's terminal tab — in vibe mode the process itself is the
-left-side chat, so the process has no separate shell tab. The Display is a
-first-class `Tab` addressed by its own URL (`/dock/display/agentic_process-<id>`),
-backed by an ordered **display stack** on the process entity.
+surface that shows whatever the agent chose to present via `flow show`.
+
+**The Display is an ADDRESS.** A `flow show` navigates; the route renders the
+target; the URL names the deliverable:
+
+```
+/dock/project/<P>/process/agentic_process-<id>/display/<tail>?viewMode=vibe&activeDisplay=1
+```
+
+That is what makes it reload-, Back-, share- and popout-safe — none of which are
+display features, they are URL features the display used to opt out of by holding
+its target in React state. The ordered **display stack** on the process entity
+remains, but as HISTORY (the popover) and as the seed for restore, not as the live
+pin.
+
+The process still has exactly ONE tab. Shown in Vibe it is the **Vibe host tab**
+(`/dock/vibe/agentic_process-<id>`), which folds onto the process's shell identity
+(`/dock/shell/agentic_process-<id>`), so it is the same row either way. The display
+address is a CHILD of it — see §3.
+
+`flow show` is mode-agnostic: it names one address, and the presentation adapts.
+Vibe pins the target in this pane; every other mode has no display pane, so the
+target is minted as an ordinary top-level tab placed right after the process that
+showed it (`ui/src/hooks/use-show-target-listener.ts`) — see [§5](#5-show-outside-vibe).
 
 ```
 ┌──────────────────────────────┬───────────────────────────────────────┐
@@ -30,11 +49,11 @@ The agent's `flow show` targets accumulate on
 a JSON list — no new APIField, `context_data` is already persisted + broadcast.
 
 - Each entry is a resolved display **target** flattened, plus a server timestamp:
-  `{kind, typeid?, type?, id?, path?, port?, shown_at}` (ISO 8601 UTC). Newest last.
+  `{kind, typeid?, type?, id?, path?, endpoint_id?, route?, shown_at}` (ISO 8601 UTC). Newest last.
 - `context_data["last_shown"]` mirrors the **newest target** (no `shown_at`) for
   back-compat readers (standard-mode viewer).
 - Capped at `DISPLAY_STACK_CAP = 50`; a **consecutive identical target** refreshes
-  its `shown_at` instead of duplicating (`_same_display_target` / `_append_display_entry`).
+  its `shown_at` instead of duplicating (`display_context.same_display_target` / `_append_display_entry`).
 
 ### `on_show` (the single writer)
 
@@ -75,8 +94,10 @@ POSTs to `/api/v1/graph/agentic_process/<id>/show` → `_http_show` →
    `proc.onShow(handler)` subscribes. **No replay** — a display that mounts after
    the show never sees this event.
 2. **Entity update** — `on_show`'s `save()` broadcasts the whole `context_data`.
-   This is the **replay** path: a late-mounting display restores `last_shown` /
-   the newest stack entry, and the history list stays fresh.
+   This keeps the history popover fresh, and it is what the loader reads to RESTORE
+   on a cold landing (§3). It is no longer replayed into the pane on every mount:
+   three delivery channels plus a mount-time freshness baseline collapsed into one
+   navigation once the display became an address.
 
 ### Array-reactivity guard (critical)
 
@@ -93,30 +114,113 @@ typed `DisplayEntry[] = ShowTarget & { shown_at }`).
 
 ## 3. Routing & mount
 
-The Display is a normal dock view — no `router.tsx` change (the `dock/:viewType/*`
-route is generic).
+### The active display is one replaceable tab
 
-| Piece | Location | Role |
-|-------|----------|------|
-| `ViewType.DISPLAY = 'display'` | `ts_sdk/src/utils/ui/view-types.ts` | the view id |
-| `VIEWER_REGISTRY[DISPLAY]` | `ui/src/types/ViewType.ts` | `title: 'Display'`, `Monitor` icon, `canAddAsTab: false` |
-| `DockPointer.forDisplay(procId)` | `ui/src/navigation/DockPointer.ts` | `/dock/display/agentic_process-<id>` — reuses the shell pointer grammar so `targetTypeId`/`tabHash` resolve the process for free |
-| loader case | `ui/src/routes/loaders/load-dock-pointer.ts` | `ViewType.DISPLAY` → `loadAgenticProcessRoute` (same as the process route) |
+The display's address is the target's own dock, carrying two URL options:
+`host` (which workspace is showing it) and `activeDisplay=1` (that this is the
+AGENT's pin, not a child the user opened). The pair inverts the usual identity
+rule — normally the pointer is identity and the host is presentation context —
+so `tabHash` becomes:
 
-### Mode-canonical URL — one surface per mode
+```
+workspaceActive|agentic_process-<id>
+```
 
-Each view mode has ONE canonical process-surface URL family, owned by
-**`processSurfaceViewType(vibe)`** (`ui/src/navigation/process-dock-canonicalization.ts`):
+Constant per workspace while the pointer varies. The backend reconciles by that
+hash, finds the same row, and rewrites its stored pointer in place
+(`ensure_tab`'s repoint clause), so a chatty agent produces **one chip that
+re-points**, not one chip per show. Two consequences worth knowing:
 
-- **vibe** → `ViewType.DISPLAY` → `/dock/display/<proc>` (the Display pane)
-- **standard** → `ViewType.SHELL` → `/dock/shell/<proc>` (the terminal dock)
+* The stored JSON keeps the REAL `viewType`/`pointer` (plus `workspaceContent`),
+  because the backend's adoptable-child check and project reaper both read the raw
+  pointer, not the hash.
+* `ensure_tab`'s normal rule is to backfill `name`/`icon_key` only when null ("a
+  null name was never a user rename"). This is the one row whose target legitimately
+  changes, so it is the one row exempted — scoped to the `workspaceActive|`
+  namespace — or the chip would freeze on the first target's label.
 
-`canonicalProcessDockPath` redirects cross-mode / legacy URLs (pre-display bookmarks,
-history entries, a mode toggle while parked on the other family) to the current
-mode's family. The main loader (`ui/src/routes/loaders/main-loader.ts`) throws
-`redirect()` on a non-null result, so the session/tab machinery only ever sees one
-URL family per mode. `NavigationActions.openShellProcess` consumes the same
-`processSurfaceViewType` pairing, so nav and redirect can't drift.
+**Never spell the hash with the word `display`.** The legacy-display reaper
+pre-filters on a raw `"display" in pointer` substring before parsing; that spelling
+would pay a JSON parse per tab per list read and sit one comparison from a sweep it
+has nothing to do with.
+
+**Promotion** ("open in tab") is the same address minus `activeDisplay`: ordinary
+identity, its own durable row, and the replaceable one is left alone.
+
+### Restore is a reload behavior
+
+`restoreDisplayRedirect` (`ui/src/routes/loaders/load-shell.ts`) redirects a
+landing on a Vibe process URL (`/dock/vibe/<process>`, whose address states the mode
+— the effective mode is not settled at loader time) to the display it left off on,
+`replace()`, **unconditionally, every time** — there is no once-per-session memory
+any more. `NavigationActions.openDock`'s same-URL no-op is what stops it looping.
+
+An earlier version required the workspace's active-display Tab row to be visible,
+as a record that the user still HAS a display. It does not work: the row is minted
+when a live client navigates, so on the cold landing this exists for — a reload, a
+bookmark, a `flow show` that arrived while nothing was watching — there is no row yet
+and the redirect never fired.
+
+**A show is a navigation, so it is asynchronous.** Reloading in the same breath as a
+`flow show` reloads the PREVIOUS address — the display no longer re-derives itself
+from `last_shown` on every mount, which is what used to hide that race.
+
+### Every app is an address
+
+There is no pane-pinned case left. A bare dev server is registered as a route of
+its placement's `app` proxy the moment it is shown (`flow show webapp --port N`), so
+it is addressed like any app — `ViewType.APP`,
+`/dock/app/service_endpoint-<uuid>?route=port-N` (the proxy, and the mount on it;
+`route` is an option, so two servers of one placement re-point the same tab). An app
+built from source is addressed by its artifact, `/dock/app/artifact-<uuid>`, and a
+webapp asset by its definition, `/dock/app/micro_app-<uuid>`:
+
+* the **artifact** is the pointer, because `_app_payload` derives the route shown
+  from the artifact's routes. A dev server that dies or a build that lands
+  changes what you see without changing where you are; a port in the address would
+  make a dead server the app's identity.
+* **`?runtime=dev|served`** is the user's PREFERENCE, not a fact —
+  `useAppDisplay` validates it against what is actually available, so a bookmark
+  pinned to a dev server that is gone degrades to `served` rather than rendering an
+  empty frame. It rides in options, so flipping it re-points the same tab.
+* the view is named `app`, never `artifact`: `artifact` is a real `EntityType`, and
+  a ViewType whose string shadows one mints entity targets from a bare-id pointer.
+  `tests/unit/test_dock_address_contract.py` pins that set deliberately.
+* `flow show app <artifact-id>` is the CLI verb. `_http_show` accepts `artifact_id`
+  now; before, the only producer of a `kind:"app"` payload was artifact
+  REGISTRATION, so an agent could not re-show an app it had built earlier except by
+  its port.
+
+A project whose home page is a web app opens here too, pinned to the project
+(`docs/navigation/project-home-page.md`). The project scope, like `runtime`, addresses the
+viewer, not the app: the app dock never passes it through (`ui/src/navigation/app-dock.ts`).
+
+### One process, one tab — the Vibe HOST dock
+
+A process is shown at one of two addresses: `/dock/shell/agentic_process-<id>`
+(chat / terminal, mode in `?viewMode`) or the **Vibe host tab**
+`/dock/vibe/agentic_process-<id>`, whose address implies Vibe. They are ONE `Tab`
+identity: the Vibe dock's `tabHash` folds onto `shell|agentic_process-<id>`, and
+`ensure_tab` re-points the stored pointer between the two (that flip is not a
+target change, so the label is not refreshed). `DockPointer.withViewMode` is the one
+place that maps between them — the view toggle, every opener and the loader
+redirects all go through it — and an old `?viewMode=vibe` process URL canonicalizes
+to the Vibe dock in one redirect (`canonicalVibeHostPath`). Vibe is a HOST tab type:
+see [Tab Management → Host tabs](../tab-management.md#host-tabs-nested-tabs-one-level-deep).
+
+An earlier model gave vibe its own `/dock/display/...` family backed by a second
+`Tab` row; it was collapsed. Those rows are reaped server-side, and
+`canonicalProcessDockPath` (`ui/src/navigation/process-dock-canonicalization.ts`)
+redirects any surviving display URL — a pre-collapse bookmark, a history entry, a
+popped-out `/win` window — to the shell form with its search string (including
+`viewMode` and scope keys) preserved verbatim, which the composed
+`canonicalVibeHostPath` then lands on the Vibe dock. The function is pure; the main
+loader (`ui/src/routes/loaders/main-loader.ts`) throws `redirect()` on a non-null
+result.
+
+Do not reintroduce `ViewType.DISPLAY`, `DockPointer.forDisplay`, or any process
+address whose `tabHash` is NOT the shell identity — a second identity is what
+minted the second tab. `ViewType.VIBE` is safe precisely because it folds.
 
 ---
 
@@ -127,41 +231,91 @@ URL family per mode. `NavigationActions.openShellProcess` consumes the same
 
 ### `useVibeWorkspaceSession` (`use-vibe-workspace-session.ts`)
 
-Resolves `{ displayTab, displayDock, processId, onDisplayUrl }` from the current URL:
+Resolves `{ processTab, processDock, processId, onProcessUrl }` from the current URL:
 
-- **Case 1 — the display URL**: `viewType === DISPLAY` (or `SHELL`, tolerated) with
-  an `agentic_process-<id>` pointer → `onDisplayUrl: true`; the display shows the
-  agent's pin.
-- **Case 2 — a child URL**: any tab whose `parent_tab_id` is the display tab (opened
+- **Case 1 — the process URL**: `/dock/shell/agentic_process-<id>` →
+  `onProcessUrl: true`; the display shows the agent's pin.
+- **Case 2 — a child URL**: any tab whose `parent_tab_id` is the process tab (opened
   from inside the workspace) → the display shows that child's `ContentPanel`.
+
+`processTab` may be null briefly on the process URL before the row lands in the
+store — it is needed to parent new children and drive the strip, not to render.
+
+A standalone asset with no session shows the shared `VibeNoProcessPane`, also
+used by the home workspace. Its **Start new chat** action uses the existing Vibe
+launcher and navigates to the same asset with the new process as its URL host.
+The editor stays mounted; the loader binds the session. Opening a file alone
+does not create or resume a session, and a named host still loading does not
+offer a second session.
 
 ### Layout (`vibe-workspace.tsx`)
 
 A horizontal `ResizablePanelGroup`:
 
 - **Left** — `EntityExecutionPanel` bound to the process (`ProcessKind.Chat`, headless
-  transport). This *is* the process; there is no process tab.
+  transport). This *is* the process; the workspace is laid over the process's own tab.
 - **Right** — `WorkspaceChildStrip` (top) + the display element (below).
 
 `WorkspaceChildStrip` (`workspace-child-strip.tsx`) renders the Display as a **fixed,
-square `Monitor` header** — deliberately not tab-shaped (solid right border, no chip)
-to signal "not a tab" — with the child `TabStrip` (tabs filtered by `parent_tab_id`)
-starting to its right. Clicking the header `openDock(displayDock)`.
+non-closable `Monitor` chip** — mirroring the hub micro-app's fixed "Active" tab —
+with the child `TabStrip` (tabs filtered by `parent_tab_id`) starting to its right.
+Clicking it `openDock(processDock)`. The children are ordinary `Tab` rows, but the
+standard global strip shows only TOP-LEVEL tabs (`topLevelTabsForProject`) and, on a
+child's URL, lights its parent's chip (`displayAncestorForDockKey`); this strip is
+the workspace-local view of the children, so the component stays dumb —
+`parent_tab_id` is minted by the opener context at the tab chokepoint. Closing the
+Vibe tab closes its children (backend `Tab.close` cascade).
 
-### Display precedence (`displayEl`)
+### Display precedence
 
-What renders in the display area, in order:
-1. **Empty state** — nothing shown and no stream focus: **starter-prompt chips**
-   (`STARTER_PROMPTS`); clicking one submits it to the chat (`activeProcess.prompt`).
-2. **`shown`** — the agent's `flow show` pin (`webapp` → `PersistentIframe`; `entity`
-   → `AssetEditorRouter`; `vfs` → file viewer), wrapped in `DisplayToolbar`.
-3. **`focus`** — the last involuntary per-write focus off the process stream
-   (`useVibeFocus`): editor / diff.
-4. **`preview`** — the artifact-driven `WebappViewer` fallback.
+The URL is the first tier now, so most of the old ladder is gone:
 
-`shown` is restored on mount from `context_data.last_shown` (or the newest stack
-entry) and advanced live by `proc.onShow` (which also bumps `showNonce`, the
-same-port iframe cache-buster).
+1. **The URL** — on a child/display address, `ContentPanel minimalChrome` renders the
+   target under a `DisplayToolbar` (promote, annotate, history).
+2. **`focus`** — the last involuntary per-write focus off the process stream
+   (`useVibeFocus`): diff. Stream-derived and changing many times per turn, so it is
+   deliberately NOT a URL — it would spam navigation.
+3. **starter chips** — the starter prompts when there is nothing on the URL and no
+   stream focus. (The artifact-driven `WebappViewer` fallback is gone: every app
+   is an address now, see §3.) The history popover stays
+   mounted whenever the stack is non-empty: it is workspace chrome, not viewer chrome,
+   so stepping back to the Display home must not lose the way back into the stack.
+
+`showNonce` and `refreshStamp` remain component state and reach the body through
+`ContentPanel`'s `contentEpoch` key. They cannot be URL state: a re-show of the SAME
+target is a no-op navigation, yet the file behind it may have been rebuilt, and the
+iframe registry keys by `src`. A nonce in the URL would make every re-show a distinct
+address, re-introducing the history churn `replaceDock` exists to avoid.
+
+---
+
+## 5. `show` outside vibe
+
+`ui/src/hooks/use-show-target-listener.ts` is the non-vibe half of the same verb.
+There is no display pane in chat/terminal/dev mode, so the shown target becomes
+what it would have been had the user opened it: a top-level tab, placed
+immediately after the process that showed it.
+
+**It never navigates**, and that is the load-bearing decision. A show is the agent
+saying "this is ready", not "drop what you are doing"; navigating would yank a
+user who is mid-task in another tab. The destination tab glows for two seconds,
+and the Shown chip on the process's bottom ribbon (beside Open Plan) keeps a
+persistent list of everything the run has shown (`display_stack`), newest first.
+The shared `TabStrip` starts the glow after the chip mounts; a later live show
+of the same target restarts it. This cue is local and expires, so old shows do
+not light up when switching projects later. Three problems fall away with
+the navigation: a background agent cannot interrupt anyone, `on_show`'s broadcast
+to EVERY client (browser tabs, `/win` popouts, the desktop shell) becomes
+idempotent — minting one deterministic row N times is still one row and zero
+navigations — and there is no race with a route loader.
+
+**Freshness gate (`isFreshShow`).** A tab is durable, so a show stamped before
+this client mounted is already represented — its tab exists, or the user closed it
+deliberately — and acting on it would undo that close on every reload. Only a show
+newer than `mountedAt` is news. Note the gate is per-*show-entry*, not a
+"first observation sets a baseline" flag: this listener serves every process, so a
+baseline consumed by whichever unrelated process updated first let every stale
+target sail through and closed tabs came back on reload.
 
 ### History popover
 
@@ -183,8 +337,21 @@ live Display). The Display pane keeps showing the latest.
   `useEntity(process.typeId)` re-renders on the `context_data` broadcast, and
   `displayStack = reactiveProcess.data?.displayStack`. It is **not** a hand-appended
   local mirror (that would drift from the authoritative server timestamps).
-- The **`shown` pin** uses the `onShow` event (needed for the iframe cache-bust nonce
-  and to outrank stream focus) plus mount-time restore.
+- The **`shown` pin** is gone for addressable targets; what survives is a `showNonce`
+  bumped on every show. It has two jobs, and both are load-bearing:
+  1. **Render trigger.** The SDK mutates cached entities IN PLACE, so a new
+     `display_stack` arrives behind a referentially identical object and React never
+     re-renders. The old pane got this for free (every show called `setShown`);
+     navigating alone does not, and the history popover would sit frozen.
+  2. **Cache-buster.** A re-show of the SAME target is a no-op navigation, yet the
+     file behind it may have been rebuilt, and the iframe registry keys by `src`.
+     It reaches the body through `ContentPanel`'s `contentEpoch`.
+- `DisplayChrome.latestShown` closes a narrower gap: the stack rides the
+  entity-update broadcast, which can land while a show's navigation is tearing down
+  and rebuilding the workspace subscription. The event that drove the navigation
+  carries the very entry that went missing, so it is appended — at most one, only
+  when the server's newest differs, so the next authoritative read supersedes it
+  rather than growing a parallel history that drifts from `shown_at`.
 
 ---
 
@@ -197,7 +364,12 @@ live Display). The Display pane keeps showing the latest.
 | Target resolution | `flow_sdk/core/display_target.py` |
 | SDK types, `displayStack`, `onShow`, deepAssign guard | `ts_sdk/src/process/agentic-process.ts` |
 | ViewType + registry | `ts_sdk/src/utils/ui/view-types.ts`, `ui/src/types/ViewType.ts` |
-| `forDisplay` pointer | `ui/src/navigation/DockPointer.ts` |
+| Active-display grammar + identity | `ui/src/navigation/DockPointer.ts` (`ACTIVE_DISPLAY_PARAM`, `tabHash`) |
+| Workspace chrome (history / promote / annotate) | `ui/src/pages/flow-page/display-chrome.tsx` |
+| App dock address | `flow_sdk/core/dock_address.py` (`ViewType.APP`), `ui/src/pages/flow-page/app-display-viewer.tsx` |
+| The one show→navigate path | `ui/src/navigation/open-active-display.ts` |
+| Restore redirect | `ui/src/routes/loaders/load-shell.ts` (`restoreDisplayRedirect`) |
+| Artifact-addressed app viewer | `ui/src/pages/flow-page/app-display-viewer.tsx` |
 | Mode→surface pairing + URL canonicalization | `ui/src/navigation/process-dock-canonicalization.ts` |
 | Loader dispatch + redirect | `ui/src/routes/loaders/load-dock-pointer.ts`, `ui/src/routes/loaders/main-loader.ts` |
 | Nav | `ui/src/navigation/NavigationActions.ts` (`openShellProcess`) |
@@ -210,6 +382,10 @@ live Display). The Display pane keeps showing the latest.
 ## Tests
 
 - Backend: `tests/api/test_agentic_process_actions.py` — append / dedupe / union / `last_shown`.
-- Frontend: `ui/tests/unit/display-view.test.ts` (`forDisplay`, registry),
-  `display-stack-reactivity.test.ts` (the deepAssign wholesale-replace guard),
-  `display-history-button.test.tsx` (newest-first render + `openDock`).
+- Frontend: `ui/tests/unit/navigation/active-display-identity.test.ts` (the
+  host-keyed hash, promotion, the no-host guard), `navigation/vibe-display-restore.test.ts`
+  (the redirect guards), `display-stack-reactivity.test.ts` (the deepAssign
+  wholesale-replace guard), `display-history-button.test.tsx`,
+  `vibe_display_open_in_tab.test.tsx`.
+- Backend: `tests/unit/test_tab_entity.py` — the active-display row re-points, keeps
+  its label in step, dodges the legacy-display reaper, and stays an adoptable child.

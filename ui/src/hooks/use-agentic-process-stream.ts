@@ -15,10 +15,25 @@
  * only re-emits when items actually changed (length or per-item identity).
  */
 
-import { AgenticProcess, FlowData } from '@sdk';
-import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { AgenticProcess, FlowData, FlowElementTypes } from '@sdk';
+import { useHistoryLoadAlert } from '@src/hooks/use-history-load-alert';
+import { retireObservedEchoes } from '@src/hooks/retire-observed-echoes';
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 
 export function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
+  // Every surface that renders the stream comes through here, so this is the one
+  // place that sees "the stream is empty" — including the case where it is empty
+  // because the replay was DROPPED rather than because nothing was said. Raising
+  // the alert here covers each of those surfaces once, instead of asking every
+  // caller to remember to wire it (FLOWPAD-2038). `notify` dedupes per process,
+  // so several surfaces observing the same process still yield one toast.
+  useHistoryLoadAlert(process);
+
+  // `rawRef` mirrors the stream for the change check; `snapshotRef` is what
+  // surfaces render — the same rows minus the optimistic user echoes a live
+  // observation has superseded (see `retireObservedEchoes`: Copilot's stdout
+  // echoes the user turn, so without this its message rendered twice mid-turn).
+  const rawRef = useRef<FlowData[]>([]);
   const snapshotRef = useRef<FlowData[]>([]);
 
   const subscribe = useCallback((cb: () => void) => {
@@ -35,18 +50,27 @@ export function useAgenticProcessStream(process: AgenticProcess | null): FlowDat
 
   const getSnapshot = useCallback(() => {
     if (!process) {
+      if (rawRef.current.length !== 0) rawRef.current = [];
       if (snapshotRef.current.length !== 0) snapshotRef.current = [];
       return snapshotRef.current;
     }
     const items = process.flowDataStream.items as FlowData[];
     if (
-      items.length !== snapshotRef.current.length ||
-      items.some((v, i) => v !== snapshotRef.current[i])
+      items.length !== rawRef.current.length ||
+      items.some((v, i) => v !== rawRef.current[i])
     ) {
-      snapshotRef.current = [...items];
+      rawRef.current = [...items];
+      // Arrival order, not the timestamp-sorted `items`: see retireObservedEchoes.
+      snapshotRef.current = retireObservedEchoes(rawRef.current, process.flowDataStream.ownItems);
     }
     return snapshotRef.current;
   }, [process]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** How many tools a process has called so far — the "steps" a running agent shows. */
+export function useProcessToolCount(process: AgenticProcess | null): number {
+  const items = useAgenticProcessStream(process);
+  return useMemo(() => items.filter((fd) => fd.elementType === FlowElementTypes.TOOL_CALL).length, [items]);
 }

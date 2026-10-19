@@ -1,0 +1,12 @@
+{
+  "name": "Search setup on Windows",
+  "description": "On Windows, offers to install a small Microsoft component that search needs, if it's missing. It always asks first.",
+  "tag": {
+    "on": "rag.runtime.missing"
+  },
+  "actions": [
+    {
+      "run_wizard": ""
+    }
+  ]
+}

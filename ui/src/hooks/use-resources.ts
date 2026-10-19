@@ -5,7 +5,7 @@
  */
 
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { type SystemProfileItem } from '@sdk';
+import { type SystemProfileEntry, type SystemProfileItem } from '@sdk';
 import { useCallback, useEffect, useState } from 'react';
 import { notify } from '@src/notifications';
 import { type ScanParams, type TimeWindow, useResourceManager } from '../store/resource-manager';
@@ -64,7 +64,11 @@ interface UseResourcesResult<T> {
  * useEffect(() => { refresh(); }, [someCondition]);
  * ```
  */
-export function useResources<T extends SystemProfileItem = SystemProfileItem>(
+// Constraint is the UNION, not the item type: `sessions` is one of the resource
+// types this fetches, and claude-session records have no `scope` and nullable
+// timestamps — which `SystemProfileEntry` exists to express. The DEFAULT stays
+// `SystemProfileItem` so untyped callers infer exactly what they did before.
+export function useResources<T extends SystemProfileEntry = SystemProfileItem>(
   resourceType: string,
   options: UseResourcesOptions = {},
 ): UseResourcesResult<T> {

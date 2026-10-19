@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 
 
 def test_asset_dir_loads_text_bytes_files_and_dirs(tmp_path):
@@ -44,3 +44,43 @@ def test_asset_dir_requires_one_source(tmp_path):
         assets.load_asset("missing.md")
     with pytest.raises(ValueError):
         assets.load_asset("too-many.md", content="x", source=tmp_path)
+
+
+def test_asset_dir_subdir_and_remove_stay_inside_owned_root(tmp_path):
+    assets = AssetDir(tmp_path / "assets")
+    plugin = assets.subdir(".flowpad/plugins/claude")
+    plugin.load_asset("marker", content="owned")
+
+    assert plugin.os_path == tmp_path / "assets" / ".flowpad" / "plugins" / "claude"
+    assets.remove(".flowpad/plugins/claude")
+    assert not plugin.os_path.exists()
+
+
+def test_asset_dir_subdir_rejects_symlink_escape(tmp_path):
+    assets = AssetDir(tmp_path / "assets")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    assets.os_path.mkdir()
+    (assets.os_path / "linked").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError):
+        assets.subdir("linked/created/plugin")
+    assert not (outside / "created").exists()
+
+
+def test_missing_source_preserves_destination(tmp_path):
+    from flow_sdk.assets.directory import AssetDir
+    directory = AssetDir(tmp_path)
+    directory.load_asset("skill", content="keep")
+    with pytest.raises(FileNotFoundError):
+        directory.load_asset("skill", source=tmp_path / "missing")
+    assert (tmp_path / "skill").read_text() == "keep"
+
+
+def test_source_inside_destination_cannot_be_deleted(tmp_path):
+    from flow_sdk.assets.directory import AssetDir
+    directory = AssetDir(tmp_path)
+    directory.load_asset("skill/body", content="keep")
+    with pytest.raises(ValueError, match="overlap"):
+        directory.load_asset("skill", source=tmp_path / "skill/body")
+    assert (tmp_path / "skill/body").read_text() == "keep"

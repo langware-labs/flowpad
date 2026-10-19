@@ -1,48 +1,258 @@
-import { ConnectionStatus, TypeId, type OAuthConnection, type OAuthDetachResult } from '@sdk';
-import { CheckCircle } from 'lucide-react';
+import { i18n } from '@lingui/core';
+import {
+  ConnectionKind,
+  ConnectionState,
+  ConnectionStatus,
+  type Credential,
+  FSRef,
+  TypeId,
+  type OAuthConnection,
+  type OAuthDetachResult,
+  type OAuthFlowKind,
+  type OAuthTestResult,
+  type Project,
+  credentialsService,
+} from '@sdk';
+import { Check, CircleHelp, Loader2, MoreHorizontal, RefreshCw, Trash2, X } from 'lucide-react';
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
+// The grant/placement split lives with the hook that derives it; the SDK root
+// does not re-export react-only modules.
+import { GrantStatus } from '@sdk/react/hooks';
+import { cn } from '@src/lib/utils';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
+import { FlowIcon } from '@sdk/react/FlowIcon';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { Badge } from './ui/badge';
+import { MoreOnHover } from './connections-manager/more-on-hover';
+import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { TooltipProvider } from './ui/tooltip';
+import { ConfirmDialog } from './ui/confirm-dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-interface ConnectionsManagerProps {
-  connections?: OAuthConnection[];
+import { UsageCell } from './connections-manager/usage-cell';
+import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
+import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
+import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
+import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
+import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
+import { methodForOAuthFlow, SignInMethodIcon } from './connections-manager/sign-in-method';
+import { STATE_VISUAL } from './connections-manager/connection-state-visual';
+import { useConnections } from '@src/hooks/use-connections';
+import { useRefreshStatusOnArrival } from '@src/components/status/use-status-record';
+import { openLlmSources } from './llm-sources/llm-sources-pointer';
+import { openInbound } from './inbound/inbound-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import {
+  buildCredentialRows,
+  buildDetectedGroups,
+  type CredentialRow,
+  type DetectedGroup,
+} from './credentials-view/credential-rows';
+import { CREDENTIAL_DEPLOYMENT_OPTION, credentialDeploymentId, useCredentials } from './credentials/use-credentials';
+import { CredentialDialog } from './credentials/CredentialDialog';
+import { DetectedKeys, type DetectedKeyDetails } from './credentials/DetectedKeys';
+import {
+  customDraft,
+  editDraft,
+  templateDraft,
+  valuesDraft,
+  type CredentialDraft,
+} from './credentials/credential-draft';
+import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
+import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
+import { Plus, Webhook } from 'lucide-react';
+import { useProjects } from '@src/hooks/use-projects';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+
+export interface ConnectionsManagerProps {
+  /**
+   * The project an OAuth token attaches to. Connect and disconnect are
+   * disabled without one — a token has to be granted TO something.
+   */
+  projectTypeId?: TypeId;
+  /**
+   * The selected project, when the host already resolved it. The user's own
+   * credentials show without one; the project's credentials need it.
+   */
+  project?: Project | null;
+  className?: string;
+  /** Render the "OAuth Connections" heading. */
+  header?: boolean;
   onConnectionConnect?: (connectionId: string) => void;
   onConnectionDisconnect?: (connectionId: string, detachResult?: OAuthDetachResult) => void;
-  currentProject?: TypeId;
+  /**
+   * The credential the URL names (its typeid) — highlighted and scrolled into view. Derived from the dock
+   * by the host, never set by a click here (URL-first).
+   */
+  selectedTypeid?: string;
 }
 
 // Extended OAuth connection type that includes providerName for internal use
+/**
+ * How many columns the Connections table has — Provider · Sign-in · Access
+ * requested · Status · Used by · Actions.
+ *
+ * Exported because several files render rows into this one `<TableBody>` and each
+ * needs it for a full-width row. Deliberately not counting them here: a comment
+ * that counts is a comment that goes stale the next time one is added.
+ */
+export const CONNECTIONS_COLUMN_COUNT = 6;
+
 interface ExtendedOAuthConnection extends OAuthConnection {
   providerName: string;
+  kind?: OAuthFlowKind;
+  scopes?: string[];
+  icon?: string;
+  /** The project's oauth credential for this provider, when it declares one — the row IS that credential. */
+  credential?: CredentialRow;
 }
 
+/** The Status column answers ONE question: is my account connected to this
+ *  provider? That is the grant, and it is the only thing that means anything
+ *  when no project is selected. Which projects may USE the credential is a
+ *  different question, answered by the Used-by column — conflating the two is
+ *  how a held credential used to render as the baffling "Ready to connect",
+ *  which reads like "not connected" to everyone who isn't holding the data
+ *  model in their head.
+ *
+ *  The dot is NOT here: it comes from `STATE_VISUAL` through `GRANT_STATE`
+ *  below, so a re-colour lands on every row of the table at once. What is
+ *  left is the colour of the WORD, which only these rows vary. */
+const GRANT_TEXT: Record<GrantStatus, string> = {
+  [GrantStatus.NONE]: 'text-muted-foreground',
+  // Healthy reads in plain text, like every other row: the dot carries the
+  // state, and colour in the WORD is kept for the states that need you.
+  [GrantStatus.HELD]: '',
+  // Held but dead. Red rather than amber: amber would say "one click from
+  // working", and this needs the whole grant again.
+  [GrantStatus.NEEDS_REAUTH]: 'text-red-600 dark:text-red-500',
+};
+
+/** A grant, in the table's one vocabulary (`STATE_VISUAL`). */
+const GRANT_STATE: Record<GrantStatus, ConnectionState> = {
+  [GrantStatus.NONE]: ConnectionState.Disconnected,
+  [GrantStatus.HELD]: ConnectionState.Connected,
+  [GrantStatus.NEEDS_REAUTH]: ConnectionState.NeedsReauth,
+};
+
+/** How many scopes to show before collapsing the rest into a count. A dozen
+ *  chips would bury the row it belongs to. */
+//: One chip plus a count, never a stack. Four chips wrapped a row to four lines
+//: and pushed Status and Actions out of the viewport on a provider like Slack;
+//: the full list is a hover away and was never scannable as chips anyway.
+const SCOPES_SHOWN = 1;
+
+/** The scopes cell: one chip, a count, and the rest a hover away.
+ *
+ *  The reveal itself is `MoreOnHover` — shared with the credential cell next
+ *  door, which had the same dead `title` attribute.
+ */
+function ScopeChips({ scopes }: { scopes: string[] }) {
+  const shown = scopes.slice(0, SCOPES_SHOWN);
+  const hidden = scopes.length - shown.length;
+  return (
+    <MoreOnHover lines={scopes}>
+      <div className="flex items-center gap-1">
+        {shown.map((scope) => (
+          <Badge
+            key={scope}
+            variant="secondary"
+            className="max-w-[220px] truncate rounded px-1.5 py-px font-mono text-[11px] font-normal text-muted-foreground"
+          >
+            {scope}
+          </Badge>
+        ))}
+        {!!hidden && (
+          <span className="shrink-0 cursor-help text-[11px] text-muted-foreground/70 underline decoration-dotted underline-offset-2">
+            +{hidden}
+          </span>
+        )}
+      </div>
+    </MoreOnHover>
+  );
+}
+
+/** Stable fallback for a provider with no placements. */
+const NO_PROJECTS: Project[] = [];
+
+/** The provider glyph.
+ *
+ *  `icon` arrives in two unrelated shapes: a lucide export name from the local
+ *  registry ("Github", "Sparkles") and a path from the hub
+ *  ("public/github-icon.svg"). Everything used to go into `<img src>`, so the
+ *  lucide names 404'd and `onError` hid them — which is why no provider had an
+ *  icon at all. A monogram is the last resort so the column is never empty. */
+/** The last probe's verdict, as a dot.
+ *
+ *  Three states, because `ok` has three: passed, rejected, and never asked. The
+ *  third must not look like the first — a tick for "no test exists" would be a
+ *  claim the code cannot back. Absent until a test has run. */
+const ProbeVerdict: React.FC<{ result?: OAuthTestResult }> = ({ result }) => {
+  if (!result) return null;
+  if (result.ok === true) return <Check className="h-3 w-3 text-green-600 dark:text-green-500" />;
+  if (result.ok === false) return <X className="h-3 w-3 text-destructive" />;
+  return <CircleHelp className="h-3 w-3 text-muted-foreground/70" />;
+};
+
+/** The remote-icon case, isolated so its failure state lives where it is used
+ *  and a changed `icon` remounts it via `key` instead of an effect that resets. */
+/**
+ * A colour this SURFACE gives a shared glyph.
+ *
+ * Anthropic's clay and OpenAI's teal are not properties of the mark — the
+ * terminal strip tints the very same glyph orange and emerald to mean the
+ * running vendor. `provider-marks.tsx` made that argument and then had to wrap
+ * a component per brand to act on it; the colour is a prop now, so the table is
+ * two lines and the glyph stays shared.
+ */
+const SURFACE_TINT: Record<string, string> = {
+  anthropic: '#D97757',
+  openai: '#10A37F',
+};
+
+const ProviderGlyph: React.FC<{ icon?: string; name: string; providerName: string }> = ({
+  icon,
+  name,
+  providerName,
+}) => {
+  const monogram = (
+    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-muted text-[10px] font-semibold uppercase text-muted-foreground">
+      {name.slice(0, 1)}
+    </span>
+  );
+
+  // The whole ladder, as nested fallbacks: the provider's own identity first
+  // (`anthropic`, `googledrive` — aliases the packs resolve), then whatever the
+  // backend published, then the monogram. The hub publishes paths relative to
+  // ITS static root, so many of those 404 — and a broken image falls through to
+  // the monogram rather than leaving the cell empty, which would read as "this
+  // provider has no icon".
+  const key = (providerName || '').trim().toLowerCase();
+  return (
+    <FlowIcon
+      icon={providerName}
+      className="h-4 w-4 shrink-0"
+      color={SURFACE_TINT[key] ?? SURFACE_TINT[key.replace(/[-_]key$/, '')]}
+      fallback={<FlowIcon icon={icon} className="h-4 w-4 shrink-0 text-muted-foreground" fallback={monogram} />}
+    />
+  );
+};
+
 export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
+  projectTypeId,
+  project,
+  className,
+  header = true,
   onConnectionConnect,
   onConnectionDisconnect,
-  currentProject,
+  selectedTypeid,
 }) => {
   const { t } = useLingui();
-  const [connectionTimestamps, setConnectionTimestamps] = React.useState<Record<string, Date>>(() => {
-    // Load from localStorage on initialization
-    try {
-      const saved = localStorage.getItem('oauth-connection-timestamps');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Convert string dates back to Date objects
-        const result: Record<string, Date> = {};
-        for (const [key, value] of Object.entries(parsed)) {
-          result[key] = new Date(value as string);
-        }
-        return result;
-      }
-      return {};
-    } catch {
-      return {};
-    }
-  });
+  const { timestamps: connectionTimestamps, record, forget } = useConnectionTimestamps();
 
   // Handle OAuth authentication success (auth completed, auto-attached)
   const handleOAuthAuthSuccess = React.useCallback(
@@ -55,81 +265,310 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // Handle OAuth attach success (connection is now fully connected)
   const handleOAuthAttachSuccess = React.useCallback(
     (connectionId: string) => {
-      const now = new Date();
-      // Set the connection timestamp
-      setConnectionTimestamps((prev) => ({
-        ...prev,
-        [connectionId]: now,
-      }));
-
+      record(connectionId);
       onConnectionConnect?.(connectionId);
     },
-    [onConnectionConnect],
+    [onConnectionConnect, record],
   );
 
   // Handle OAuth connection disconnect
   const handleOAuthDisconnect = React.useCallback(
     (connectionId: string, detachResult?: OAuthDetachResult) => {
-      setConnectionTimestamps((prev) => {
-        const newTimestamps = { ...prev };
-        delete newTimestamps[connectionId];
-        return newTimestamps;
-      });
-
-      // Call the parent callback
+      forget(connectionId);
       onConnectionDisconnect?.(connectionId, detachResult);
     },
-    [onConnectionDisconnect],
+    [onConnectionDisconnect, forget],
   );
 
   const {
     connectingConnectionId,
     availableProviders,
     connectionStatuses: providerStatuses,
+    grantStatuses,
+    userTable,
     connect,
     attach,
     detach,
+    disconnect,
+    testConnection,
   } = useOAuthConnection({
-    currentProject,
+    projectTypeId,
     onConnectionDisconnect: handleOAuthDisconnect,
     onOAuthAuthSuccess: handleOAuthAuthSuccess, // OAuth auth completed (status: AVAILABLE)
     onAttachSuccess: handleOAuthAttachSuccess, // Attach completed (status: CONNECTED)
   });
 
-  // Create connections from available providers with their statuses
+
+
+  // "Where is this used?" — one env-table fetch per project, answering for every
+  // row at once. Gated above a threshold so a large workspace doesn't fan out on
+  // arrival; the delete dialog force-enables it, because blast radius must never
+  // be guessed.
+  /**
+   * The harness logins, from the ONE consolidated `connections` read.
+   *
+   * The rows used to resolve themselves, which cost a funding read plus a probe
+   * per harness — five requests — and, worse, kept a second definition of
+   * "signed in" in the browser. Only the harness rows are taken from this list
+   * so far: the credential rows below need member-level state (declared,
+   * adoptable, which line of `.env.local`) that a `ConnectionSpec` does not
+   * carry, and the OAuth rows need the grant-vs-placement split that its single
+   * `state` field collapses.
+   */
+  const { connections: consolidated } = useConnections(projectTypeId);
+  // This screen is where a person comes to find out whether they are signed in,
+  // so it is the screen that asks. The rows read "Not checked" until something
+  // does.
+  useRefreshStatusOnArrival();
+  const harnessRows = React.useMemo(
+    () => (consolidated ?? []).filter((row) => row.kind === ConnectionKind.Harness),
+    [consolidated],
+  );
+
+  const { projects } = useProjects();
+
+  // The credential half of the table: the user's credentials always, and the
+  // selected project's when there is one. Status is value-free.
+  const selectedProject = project ?? null;
+  const { navigation, currentDock } = useDockNavigation();
+  // URL-first: the deployment rides in the dock's options, so a reload or a
+  // shared link lands on the same values. This computer is the absent option.
+  const credentialDeployment = credentialDeploymentId(currentDock);
+  const {
+    status: credentialStatus,
+    templates: credentialTemplates,
+    refresh: refreshCredentials,
+  } = useCredentials(selectedProject?.id ?? null, credentialDeployment);
+  const showCredentialDeployment = (next: string) => {
+    if (!currentDock) return;
+    const row = (credentialStatus.deployments ?? []).find((candidate) => candidate.id === next);
+    navigation.openDock(currentDock.withOption(CREDENTIAL_DEPLOYMENT_OPTION, row?.this_computer ? null : next));
+  };
+  const allCredentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
+  // An oauth credential is drawn with its connection's row (grant, approval, attach, disconnect); the API-key
+  // rows below are the rest.
+  const credentialRows = React.useMemo(() => allCredentialRows.filter((r) => r.kind !== 'oauth'), [allCredentialRows]);
+  const oauthCredentials = React.useMemo(
+    () => new Map(allCredentialRows.filter((r) => r.kind === 'oauth' && r.provider).map((r) => [r.provider!, r])),
+    [allCredentialRows],
+  );
+
+  // The OAuth rows: every grant held, and every provider a credential here declares (an oauth credential the
+  // project needs is listed before it is connected — with Connect). A grant nobody holds and nothing declares
+  // is the add dialog's (`addableProviders`), never a row.
   const allConnections: ExtendedOAuthConnection[] = React.useMemo(() => {
-    return availableProviders.map((provider) => ({
-      id: provider.name.toLowerCase(),
-      provider: provider.display_name,
-      providerName: provider.name, // Keep the actual provider name for API calls
-      status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
-      connectedAt: connectionTimestamps[provider.name.toLowerCase()],
-    }));
-  }, [availableProviders, providerStatuses, connectionTimestamps]);
+    return availableProviders
+      .filter(
+        (provider) =>
+          (grantStatuses[provider.name] ?? GrantStatus.NONE) !== GrantStatus.NONE ||
+          oauthCredentials.has(provider.name.toLowerCase()),
+      )
+      .map((provider) => ({
+        id: provider.name.toLowerCase(),
+        provider: provider.display_name,
+        providerName: provider.name, // Keep the actual provider name for API calls
+        status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
+        connectedAt: connectionTimestamps[provider.name.toLowerCase()],
+        kind: provider.kind,
+        scopes: provider.scopes,
+        icon: provider.icon,
+        credential: oauthCredentials.get(provider.name.toLowerCase()),
+      }));
+  }, [availableProviders, providerStatuses, connectionTimestamps, grantStatuses, oauthCredentials]);
 
-  const handleConnect = async (connectionId: string) => {
-    const connection = allConnections.find((conn) => conn.id === connectionId);
-    if (!connection) return;
-    // Check if we have a current project
-    if (!currentProject) {
-      console.error('[ConnectionsManager] ERROR - No current project available for OAuth connection');
-      alert(t`No current project available. Please create a project first before connecting OAuth providers.`);
-      return;
+  // URL-first selection: the row the dock names is scrolled into view once, when it is first on screen — not
+  // again on every refetch that changes the lists.
+  const selectedRef = React.useRef<HTMLTableRowElement | null>(null);
+  const scrolledTo = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (!selectedRef.current || scrolledTo.current === selectedTypeid) return;
+    scrolledTo.current = selectedTypeid;
+    selectedRef.current.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [selectedTypeid, allConnections.length, credentialRows.length]);
+  const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus, true), [credentialStatus]);
+  const defaultScope = selectedProject ? 'project' : 'user';
+
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [credentialDraft, setCredentialDraft] = React.useState<{ seq: number; draft: CredentialDraft } | null>(null);
+  // Each open gets a fresh form (a new key), so no state carries over from the last one.
+  // Status is re-read on open: a `.env.local` tracked or fixed in git since the
+  // last fetch must be reflected before the user types a value.
+  const openDraft = (draft: CredentialDraft) => {
+    void refreshCredentials();
+    setCredentialDraft((prev) => ({ seq: (prev?.seq ?? 0) + 1, draft }));
+  };
+  const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
+
+  /** What Delete will actually do, said before it happens: its values go from
+   *  every store they were saved to — the vault and every `.env*` file. */
+  const credentialDeleteDescription = React.useMemo(() => {
+    const row = pendingDeleteCredential;
+    if (!row) return '';
+    const where = row.scope === 'user' ? t`every project` : t`this project`;
+    if (row.store === 'vault') {
+      return t`${row.title} is removed from ${where}, and its values are deleted from the vault.`;
     }
+    const names = row.vars.map((v) => v.envVar).join(', ');
+    return t`${row.title} is removed from ${where}, and ${names} are deleted from every .env file they were saved to.`;
+  }, [pendingDeleteCredential, t]);
 
+  const [usageForced, setUsageForced] = React.useState(false);
+  const usageEnabled = usageForced || (projects?.length ?? 0) <= USAGE_EAGER_LIMIT;
+  const { usage, isLoading: usageLoading } = useCredentialUsage({ projects, userTable, enabled: usageEnabled });
+  // Which project row inside a usage popover is mid-attach/detach.
+  const [togglingProjectId, setTogglingProjectId] = React.useState<string | null>(null);
+  // The connection awaiting a delete confirmation (null = dialog closed).
+  const [pendingDelete, setPendingDelete] = React.useState<ExtendedOAuthConnection | null>(null);
+
+  // Last probe result per connection. Deliberately NOT persisted: it is a
+  // point-in-time answer about a token that can be revoked a second later, and a
+  // remembered tick would outlive its truth.
+  const [testResults, setTestResults] = React.useState<Record<string, OAuthTestResult>>({});
+  // Which rows have a test in flight. A set, not a map: the question is
+  // membership, and more than one row can be testing at once (each row's button
+  // disables only itself).
+  const [testing, setTesting] = React.useState<ReadonlySet<string>>(new Set());
+
+  // The word is the table's shared one (`STATE_VISUAL`, lazy descriptors, so
+  // extraction and locale switches both still work).
+  const statusLabel = (grant: GrantStatus): string => i18n._(STATE_VISUAL[GRANT_STATE[grant]].text);
+
+  const grantHint = (kind: OAuthFlowKind): string =>
+    kind === 'device'
+      ? t`You type a short code into the provider's site`
+      : kind === 'loopback'
+        ? t`Authorization code with PKCE, redirected back to this machine`
+        : t`Authorization code — you approve in the browser and come back`;
+
+  const handleTest = async (connection: ExtendedOAuthConnection) => {
+    setTesting((prev) => new Set(prev).add(connection.id));
     try {
-      const currentStatus = connection.status;
-      const providerName = connection.providerName || connection.provider.toLowerCase();
-
-      if (currentStatus === ConnectionStatus.DISCONNECTED) {
-        // No OAuth token exists, start full OAuth flow
-        await connect(connectionId, providerName);
+      const result = await testConnection(connection.providerName);
+      setTestResults((prev) => ({ ...prev, [connection.id]: result }));
+      if (result.ok === true) {
+        notify.success({
+          title: t`${connection.provider} is working`,
+          message: result.identity ? t`Authenticated as ${result.identity}` : t`The provider accepted the token.`,
+        });
+      } else if (result.ok === false) {
+        notify.error({
+          title: t`${connection.provider} test failed`,
+          message: result.detail || t`The provider rejected the stored token.`,
+        });
       } else {
-        // OAuth token exists (AVAILABLE/CONNECTED), just attach to current project
-        await attach(connectionId, providerName);
+        // Not a pass and not a failure — say which.
+        notify.info({
+          title: t`${connection.provider} not tested`,
+          message: result.detail || t`No connection test is defined for this provider.`,
+        });
       }
     } catch (error) {
-      console.error(`Failed to connect to ${connection.provider}:`, error);
+      setTestResults((prev) => ({ ...prev, [connection.id]: { ok: null, detail: 'error' } }));
+      notify.error({
+        title: t`${connection.provider} test failed`,
+        message: errorMessage(error, t`Could not run the connection test.`),
+      });
+    } finally {
+      setTesting((prev) => {
+        const next = new Set(prev);
+        next.delete(connection.id);
+        return next;
+      });
+    }
+  };
+
+  /** Grant — run the OAuth flow. Attaches the selected project on the way when
+   *  there is one; with none, it is a user-level grant and nothing more.
+   *
+   *  This used to refuse outright without a project ("an OAuth token is granted
+   *  to a project, not to the app"), which is only half true: the grant is
+   *  user-scoped on BOTH backends — neither `auth` handler reads a target
+   *  entity — and only the attach that follows needs a project. On the hub,
+   *  where a user can hold zero projects, that guard made every row a dead end. */
+  const handleConnect = async (connectionId: string, options: { reauthorize?: boolean } = {}) => {
+    // From the CATALOGUE, not the rendered rows: the table no longer holds
+    // unconnected providers, so the everyday first-time connect is exactly the
+    // case `allConnections` does not contain.
+    const provider = availableProviders.find((p) => p.name.toLowerCase() === connectionId);
+    if (!provider) return;
+    const displayName = provider.display_name || provider.name;
+
+    try {
+      await connect(connectionId, provider.name, undefined, options);
+    } catch (error) {
+      // Surfaced, not just logged: every failure here (a provider this instance
+      // cannot complete a flow for, a backend refusal) used to land in the
+      // console only, so the button looked like it did nothing.
+      notify.error({
+        title: t`${displayName} connection failed`,
+        message: errorMessage(error, t`Could not connect to ${displayName}.`),
+      });
+    }
+  };
+
+  /** Placement — give the selected project use of a credential already held. */
+  const handleAttach = async (connectionId: string) => {
+    const connection = allConnections.find((conn) => conn.id === connectionId);
+    if (!connection || !projectTypeId) return;
+    try {
+      await attach(connectionId, connection.providerName);
+    } catch (error) {
+      notify.error({
+        title: t`${connection.provider} connection failed`,
+        message: errorMessage(error, t`Could not give this project access to ${connection.provider}.`),
+      });
+    }
+  };
+
+  /** Attach/detach a project named by the usage popover — which is usually NOT
+   *  the selected one; that is the point of managing placement from there. */
+  const handleToggleProject = async (connection: ExtendedOAuthConnection, project: Project, nextAttached: boolean) => {
+    const providerName = connection.providerName;
+    setTogglingProjectId(project.id ?? null);
+    try {
+      if (nextAttached) {
+        await attach(connection.id, providerName, undefined, project.typeId);
+      } else {
+        await detach(connection.id, providerName, project.typeId);
+      }
+    } catch (error) {
+      notify.error({
+        title: nextAttached ? t`Could not give access` : t`Could not remove access`,
+        message: errorMessage(error, t`${connection.provider} could not be updated for this project.`),
+      });
+    } finally {
+      setTogglingProjectId(null);
+    }
+  };
+
+  /** What the confirmation says. Names the projects rather than counting them:
+   *  "3 projects" is a number, "Alpha, Beta and Gamma" is a decision. */
+  const deleteDescription = (connection: ExtendedOAuthConnection | null): string => {
+    if (!connection) return '';
+    const names = (usage[connection.providerName] ?? []).map((p) => p.displayName || p.name).filter(Boolean);
+    const provider = connection.provider;
+    if (names.length === 0) {
+      return t`The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use ${provider}.`;
+    }
+    const list = names.join(', ');
+    return t`${provider} is used by ${names.length} project(s): ${list}. Deleting removes access for all of them, and you'll have to sign in again.`;
+  };
+
+  /** Destroy the user's credential. Distinct from detach in kind, not degree —
+   *  every project that borrowed it loses access — so it is always confirmed. */
+  const handleDeleteCredential = async (connection: ExtendedOAuthConnection) => {
+    const providerName = connection.providerName;
+    try {
+      await disconnect(connection.id, providerName);
+      notify.success({
+        title: t`${connection.provider} deleted`,
+        message: t`The credential was removed from your account.`,
+      });
+    } catch (error) {
+      notify.error({
+        title: t`Could not delete ${connection.provider}`,
+        message: errorMessage(error, t`The credential could not be removed.`),
+      });
     }
   };
 
@@ -138,153 +577,518 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     if (!connection) return;
 
     try {
-      const providerName = connection.providerName || connection.provider.toLowerCase();
+      const providerName = connection.providerName;
       // Status 3: Detach from current project
       await detach(connectionId, providerName);
     } catch (error) {
-      console.error(`Failed to disconnect from ${connection.provider}:`, error);
-    }
-  };
-
-  const formatConnectionDate = (date?: Date) => {
-    if (!date) return t`Never connected`;
-
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    // Show relative time for recent connections
-    if (diffInSeconds < 60) {
-      return t`Just now`;
-    } else if (diffInSeconds < 3600) {
-      const minutes = Math.floor(diffInSeconds / 60);
-      return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-    } else if (diffInSeconds < 86400) {
-      const hours = Math.floor(diffInSeconds / 3600);
-      return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-    } else if (diffInSeconds < 604800) {
-      const days = Math.floor(diffInSeconds / 86400);
-      return `${days} day${days === 1 ? '' : 's'} ago`;
-    } else {
-      // Show full date for older connections
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
+      notify.error({
+        title: t`${connection.provider} disconnect failed`,
+        message: errorMessage(error, t`Could not disconnect from ${connection.provider}.`),
       });
     }
   };
 
+  // The catalogue is whatever the table is not already showing: the table lists
+  // what exists, the dialog lists what you could add. Memoized because this
+  // component re-renders on usage polling and grant-status changes, and a fresh
+  // array each time defeats the dialog's own memoization.
+  const addableSpecs = React.useMemo(() => {
+    const added = new Set(credentialRows.map((r) => r.name));
+    // An oauth template is a provider: it is added through the provider list below, never as values to type.
+    return credentialTemplates.filter(
+      (spec) => !added.has(String(spec.name ?? '')) && (spec as { kind?: string }).kind !== 'oauth',
+    );
+  }, [credentialRows, credentialTemplates]);
+  // The exact complement of the OAuth rows: neither held nor declared here.
+  const addableProviders = React.useMemo(
+    () =>
+      availableProviders.filter(
+        (p) =>
+          (grantStatuses[p.name] ?? GrantStatus.NONE) === GrantStatus.NONE &&
+          !oauthCredentials.has(p.name.toLowerCase()),
+      ),
+    [availableProviders, grantStatuses, oauthCredentials],
+  );
+
+  const pickProvider = (providerName: string) => {
+    setAddOpen(false);
+    void handleConnect(providerName.toLowerCase());
+  };
+
+  const pickCredential = (spec: Credential) => {
+    setAddOpen(false);
+    openDraft(templateDraft(spec, defaultScope));
+  };
+
+  const pickCustom = () => {
+    setAddOpen(false);
+    openDraft(customDraft(defaultScope));
+  };
+
+  const saveDetected = async (group: DetectedGroup, details: DetectedKeyDetails[]) => {
+    for (const { key, value, spec } of details) {
+      await credentialsService.save({
+        scope: group.scope,
+        project_id: group.projectId,
+        deployment_id: credentialDeployment ?? undefined,
+        auto_declare: true,
+        manifest: { name: '', vars: { [key]: spec ?? {} } },
+        values: value ? { [key]: value } : {},
+      });
+    }
+    await refreshCredentials();
+  };
+
   return (
-    <div className="flex h-full flex-col p-4">
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold"><Trans>OAuth Connections</Trans></h2>
+    // No frame of its own — the host supplies height and padding.
+    <div className={cn('flex min-h-0 flex-col', className)} data-testid="connections-manager">
+      {/* Same cap as the table, so Add connection lines up with the table's
+          right edge instead of floating at the far side of the dock. */}
+      <div className="mb-4 flex max-w-5xl items-center gap-3">
+        {header && (
+          <h2 className="text-xl font-semibold">
+            <Trans>Connections</Trans>
+          </h2>
+        )}
+        {/* The same square tile the catalogue it opens is made of, and the same
+            one project home's "New …" affordances use. A pill button here and
+            tiles behind it made one act look like two. */}
+        {/* Inbound routing: where the messages a number or bot sends end up (the hub's webhook chain). */}
+        <DesktopTile
+          className="ms-auto"
+          Icon={Webhook}
+          label={t`Inbound routing`}
+          onClick={() => openInbound(navigation)}
+          data-testid="connections-open-inbound"
+        />
+        <DesktopTile
+          Icon={Plus}
+          label={t`Add connection`}
+          onClick={() => setAddOpen(true)}
+          data-testid="add-connection-open"
+        />
       </div>
 
+      <AddConnectionDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        providers={addableProviders}
+        specs={addableSpecs}
+        onPickProvider={pickProvider}
+        onPickCredential={pickCredential}
+        onPickCustom={pickCustom}
+      />
+
+      {credentialDraft && (
+        <CredentialDialog
+          key={credentialDraft.seq}
+          draft={credentialDraft.draft}
+          projectId={selectedProject?.id ?? null}
+          status={credentialStatus}
+          onRefresh={refreshCredentials}
+          onClose={() => setCredentialDraft(null)}
+          onSaved={async (saved) => {
+            setCredentialDraft(null);
+            await refreshCredentials();
+            notify.success({ title: t`${saved.title} saved` });
+          }}
+        />
+      )}
+
       <div className="flex-1 overflow-auto">
-        <Table>
+        {/* Which deployment the credential rows show and write: this computer, or a
+            deployment (each keeps its own values, in its environment). Hidden until
+            there is another deployment. */}
+        {((credentialStatus.deployments ?? []).length > 1 || !!credentialDeployment) && (
+          <div className="mb-3 flex max-w-5xl items-center gap-2" data-testid="credential-deployment">
+            <span className="text-xs text-muted-foreground">
+              <Trans>Values for</Trans>
+            </span>
+            <Select value={credentialStatus.deployment_id} onValueChange={showCredentialDeployment}>
+              <SelectTrigger className="h-8 w-64 text-xs" data-testid="credential-deployment-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(credentialStatus.deployments ?? []).map((row) => (
+                  <SelectItem key={row.id} value={row.id} className="text-xs" data-testid={`credential-deployment-${row.id}`}>
+                    {row.this_computer ? t`This computer · ${row.environment}` : `${row.name} · ${row.environment}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {/* Capped: the columns are all short, so a full-width dock strands the
+            status and the button metres away from the provider they belong to. */}
+        <Table className="max-w-5xl">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[200px]"><Trans>Provider</Trans></TableHead>
-              <TableHead className="w-[250px]"><Trans>Status</Trans></TableHead>
-              <TableHead className="w-[150px]"><Trans>Actions</Trans></TableHead>
+              <TableHead className="w-[180px]">
+                <Trans>Provider</Trans>
+              </TableHead>
+              <TableHead className="w-[80px]">
+                <Trans>Sign-in</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Access requested</Trans>
+              </TableHead>
+              <TableHead className="w-[200px]">
+                <Trans>Status</Trans>
+              </TableHead>
+              <TableHead className="w-[180px]">
+                <Trans>Used by</Trans>
+              </TableHead>
+              <TableHead className="w-[210px] text-end">
+                <Trans>Actions</Trans>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
+            {/* FlowPad first: it is the account the app itself signs in with, so
+                it heads the list rather than sorting in among the providers you
+                added. Its own producer — see the component for why it cannot be
+                a synthetic `allConnections` entry. */}
+            <FlowpadConnectionRow />
+            {/* The harness logins sit with FlowPad: both are accounts this MACHINE
+                holds, above the project-scoped credential rows below. Navigation is
+                the HOST's, like every other row action here — a leaf reaching for the
+                router subscribes the whole table to every location change. */}
+            <HarnessConnectionRows
+              rows={harnessRows}
+              onDetails={(worker) => openLlmSources(navigation, worker)}
+            />
             {allConnections.map((connection) => {
+              // Grant vs placement: `grant` says whether the user holds the
+              // credential at all (answerable with no project); `status` says
+              // what the selected project sees.
+              const grant = grantStatuses[connection.providerName] ?? GrantStatus.NONE;
+              const held = grant !== GrantStatus.NONE;
+              const attachedProjects = usage[connection.providerName] ?? NO_PROJECTS;
+              const credential = connection.credential;
+              const selected = !!credential && credential.typeid === selectedTypeid;
               return (
-                <TableRow key={connection.id}>
-                  <TableCell className="w-[200px]">
-                    <div className="flex items-center gap-2 align-middle">
-                      {(() => {
-                        // Case-insensitive provider lookup
-                        const provider = availableProviders.find(
-                          (p) => p.name.toLowerCase() === connection.provider.toLowerCase(),
-                        );
-                        const iconUrl = provider?.icon;
-                        return iconUrl ? (
-                          <img
-                            src={iconUrl}
-                            alt={t`${connection.provider} icon`}
-                            className="h-5 w-5 flex-shrink-0"
-                            onError={(e) => {
-                              // Hide the image if it fails to load
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                          />
-                        ) : null;
-                      })()}
-                      <span className="align-middle">{connection.provider}</span>
+                <TableRow
+                  key={credential?.typeid ?? connection.id}
+                  ref={selected ? selectedRef : undefined}
+                  aria-current={selected ? 'true' : undefined}
+                  className={cn(selected && 'bg-primary/10 ring-1 ring-inset ring-primary/40')}
+                  data-testid={credential ? `connection-row-oauth-${credential.name}` : `connection-row-${connection.id}`}
+                  data-typeid={credential?.typeid}
+                >
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <ProviderGlyph
+                        icon={connection.icon}
+                        name={connection.provider}
+                        providerName={connection.providerName}
+                      />
+                      <span className="truncate">{connection.provider}</span>
+                      {credential && (
+                        <RequirementChip required={credential.required} testId={`connection-required-${connection.id}`} />
+                      )}
                     </div>
-                  </TableCell>
-                  <TableCell className="w-[250px]">
-                    <TooltipProvider>
-                      <div className="flex items-center gap-2">
-                        {connection.status === ConnectionStatus.CONNECTED ? (
-                          <>
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-green-600"><Trans>Connected</Trans></span>
-                            {connection.connectedAt && (
-                              <span className="text-gray-500">- {formatConnectionDate(connection.connectedAt)}</span>
-                            )}
-                          </>
-                        ) : connection.status === ConnectionStatus.AVAILABLE ? (
-                          <>
-                            <div className="h-4 w-4 rounded-full border-2 border-gray-400 flex items-center justify-center">
-                              <div className="h-2 w-2 rounded-full bg-gray-400" />
-                            </div>
-                            <span className="text-gray-500"><Trans>Ready to Connect</Trans></span>
-                          </>
-                        ) : (
-                          <>
-                            <div className="h-4 w-4 rounded-full border-2 border-gray-400 flex items-center justify-center">
-                              <div className="h-2 w-2 rounded-full bg-gray-400" />
-                            </div>
-                            <span className="text-gray-500"><Trans>Disconnected</Trans></span>
-                          </>
-                        )}
+                    {!!credential?.missingScopes.length && (
+                      <div className="mt-0.5 text-xs text-amber-600" data-testid={`connection-missing-scopes-${connection.id}`}>
+                        <Trans>Connected without {credential.missingScopes.join(', ')}: reconnect to grant them</Trans>
                       </div>
-                    </TooltipProvider>
+                    )}
                   </TableCell>
-                  <TableCell className="w-[150px]">
-                    <Button
-                      variant={connection.status === ConnectionStatus.CONNECTED ? 'outline' : 'default'}
-                      onClick={() => {
-                        if (connection.status === ConnectionStatus.CONNECTED) {
-                          void handleDisconnect(connection.id);
-                        } else {
-                          void handleConnect(connection.id);
-                        }
-                      }}
-                      disabled={connectingConnectionId === connection.id}
-                      className={
-                        connection.status === ConnectionStatus.CONNECTED
-                          ? 'text-blue-600 hover:text-blue-700 w-[110px]'
-                          : 'w-[110px]'
-                      }
-                    >
-                      {connectingConnectionId === connection.id
-                        ? t`Connecting...`
-                        : connection.status === ConnectionStatus.CONNECTED
-                          ? t`Disconnect`
-                          : t`Connect`}
-                    </Button>
+
+                  <TableCell data-testid={`connection-kind-${connection.id}`}>
+                    {connection.kind ? (
+                      <SignInMethodIcon
+                        method={methodForOAuthFlow(connection.kind)}
+                        lines={[grantHint(connection.kind)]}
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground/60">—</span>
+                    )}
+                  </TableCell>
+
+                  <TableCell data-testid={`connection-scopes-${connection.id}`}>
+                    {connection.scopes?.length ? (
+                      <ScopeChips scopes={connection.scopes} />
+                    ) : (
+                      // Not "no scopes" — the side that owns the flow did not
+                      // publish them. Saying "none" would be a lie.
+                      <span className="text-xs text-muted-foreground/60">
+                        <Trans>Shown at approval</Trans>
+                      </span>
+                    )}
+                  </TableCell>
+
+                  <TableCell>
+                    {(() => {
+                      const dot = STATE_VISUAL[GRANT_STATE[grant]].dot;
+                      const connecting = connectingConnectionId === connection.id;
+                      return (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span
+                            className={cn(
+                              'h-2 w-2 shrink-0 rounded-full',
+                              connecting ? 'animate-pulse bg-primary' : dot,
+                            )}
+                          />
+                          {/* The connect time is this BROWSER's memory, not a backend
+                              fact, so it is a hover detail rather than a bare date
+                              beside one row's status and not the next one's. */}
+                          <span
+                            className={cn('whitespace-nowrap', connecting ? 'text-muted-foreground' : GRANT_TEXT[grant])}
+                            title={
+                              !connecting && connection.connectedAt
+                                ? t`Connected in this browser ${formatTimeAgo(connection.connectedAt.toISOString())}`
+                                : undefined
+                            }
+                          >
+                            {connecting ? t`Waiting for approval…` : statusLabel(grant)}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </TableCell>
+
+                  <TableCell data-testid={`connection-usage-${connection.id}`}>
+                    {held ? (
+                      <UsageCell
+                        projects={projects ?? []}
+                        attached={attachedProjects}
+                        isLoading={usageLoading}
+                        isEnabled={usageEnabled}
+                        onEnable={() => setUsageForced(true)}
+                        busyProjectId={togglingProjectId}
+                        onToggle={(project, next) => void handleToggleProject(connection, project, next)}
+                      />
+                    ) : credential ? (
+                      // Not held yet: who declares it, the way a credential row says it.
+                      <span className="text-sm">
+                        {credential.scope === 'user' ? <Trans>All projects</Trans> : <Trans>This project</Trans>}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/60">—</span>
+                    )}
+                  </TableCell>
+
+                  <TableCell className="text-end">
+                    <div className="flex items-center justify-end gap-1">
+                      {/* A probe spends the token, so it runs as whoever is
+                          allowed to spend it — and the owner needs no grant to
+                          spend their own. Offered for any held credential: with
+                          a project selected the probe runs as that project (and
+                          the consent gate applies), without one it runs as the
+                          user. Both backends answer. */}
+                      {held && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleTest(connection)}
+                          disabled={testing.has(connection.id)}
+                          className="h-7 gap-1.5 text-muted-foreground hover:text-foreground"
+                          data-testid={`connection-test-${connection.id}`}
+                          title={t`Call ${connection.provider} with the stored token`}
+                        >
+                          {testing.has(connection.id) ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <ProbeVerdict result={testResults[connection.id]} />
+                          )}
+                          <Trans>Test</Trans>
+                        </Button>
+                      )}
+                      {/* Placement, scoped to the selected project. Cheap and
+                          reversible from the same row, so no confirmation. */}
+                      {held && projectTypeId && connection.status === ConnectionStatus.CONNECTED && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDisconnect(connection.id)}
+                          disabled={connectingConnectionId === connection.id}
+                          className="h-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          data-testid={`connection-detach-${connection.id}`}
+                        >
+                          <Trans>Remove from project</Trans>
+                        </Button>
+                      )}
+                      {held && projectTypeId && connection.status === ConnectionStatus.AVAILABLE && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleAttach(connection.id)}
+                          disabled={connectingConnectionId === connection.id}
+                          className="h-7"
+                          data-testid={`connection-attach-${connection.id}`}
+                        >
+                          <Trans>Add to project</Trans>
+                        </Button>
+                      )}
+                      {/* The grant itself. Offered when there is no usable
+                          credential — including NEEDS_REAUTH, where attaching
+                          would re-share a refused token and report success. */}
+                      {grant !== GrantStatus.HELD && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleConnect(connection.id)}
+                          disabled={connectingConnectionId === connection.id}
+                          className="h-7"
+                          data-testid={`connection-connect-${connection.id}`}
+                        >
+                          {connectingConnectionId === connection.id ? (
+                            <>
+                              <Loader2 className="me-1.5 h-3 w-3 animate-spin" />
+                              <Trans>Connecting</Trans>
+                            </>
+                          ) : grant === GrantStatus.NEEDS_REAUTH ? (
+                            <Trans>Reconnect</Trans>
+                          ) : (
+                            <Trans>Connect</Trans>
+                          )}
+                        </Button>
+                      )}
+                      {/* Destroying the credential is a different act from
+                          detaching, so it lives behind an overflow menu and a
+                          confirmation rather than next to the everyday buttons. */}
+                      {held && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              title={t`More`}
+                              data-testid={`connection-more-${connection.id}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {/* Re-authorize in place: the add dialog lists only
+                                providers not yet held, so without this a stale or
+                                revoked grant could only be renewed by deleting it. */}
+                            <DropdownMenuItem
+                              onSelect={() => void handleConnect(connection.id, { reauthorize: true })}
+                              data-testid={`connection-reconnect-${connection.id}`}
+                            >
+                              <RefreshCw className="me-2 h-3.5 w-3.5" />
+                              <Trans>Reconnect</Trans>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => {
+                                // Force the usage fan-out: the dialog must name
+                                // what breaks, and "unknown" is not an option.
+                                setUsageForced(true);
+                                setPendingDelete(connection);
+                              }}
+                              data-testid={`connection-delete-${connection.id}`}
+                            >
+                              <Trash2 className="me-2 h-3.5 w-3.5" />
+                              <Trans>Delete credential</Trans>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );
             })}
-            {allConnections.length === 0 && (
+            <CredentialConnectionRows
+              rows={credentialRows}
+              selectedTypeid={selectedTypeid}
+              selectedRef={selectedRef}
+              onSetValues={(row) => openDraft(valuesDraft(row.source))}
+              onEdit={(row) => openDraft(editDraft(row.source))}
+              onDelete={(row) => setPendingDeleteCredential(row)}
+              onOpenEnvFile={(path) => navigation.openFile(path)}
+              onRevealEnvFile={(path) =>
+                void new FSRef(path, new TypeId('compute_node', '@local')).open({ select: true }).catch((error) =>
+                  notify.error({ title: t`Could not reveal .env.local`, message: errorMessage(error, path) }),
+                )
+              }
+            />
+            {/* "Nothing yet" is about what YOU added. The FlowPad row is always
+                present — it is the app's own account, not a connection you chose
+                — so it must not be what suppresses this line. */}
+            {allConnections.length === 0 && credentialRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} className="text-center text-gray-500">
-                  <Trans>No OAuth connections found</Trans>
+                <TableCell colSpan={CONNECTIONS_COLUMN_COUNT} className="py-8 text-center text-sm text-muted-foreground">
+                  <Trans>No connections yet</Trans>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        <DetectedKeys groups={detectedGroups} onSave={saveDetected} />
       </div>
+
+      {/* Delete says what will actually happen, BEFORE it happens: every value
+          goes, from the vault and from each `.env*` file it was saved to. */}
+      <ConfirmDialog
+        open={!!pendingDeleteCredential}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteCredential(null);
+        }}
+        title={t`Delete ${pendingDeleteCredential?.title ?? ''}?`}
+        description={credentialDeleteDescription}
+        confirmLabel={t`Delete`}
+        variant="destructive"
+        onConfirm={() => {
+          const row = pendingDeleteCredential;
+          setPendingDeleteCredential(null);
+          if (!row) return;
+          void (async () => {
+            try {
+              const result = await credentialsService.remove(row.typeid);
+              await refreshCredentials();
+              // Report what the BACKEND did, not what the dialog predicted: a
+              // store that kept a value keeps the credential too, as the handle
+              // to retry.
+              if (!result.removed) {
+                const stuck = result.stores
+                  .filter((s) => s.error || s.kept.length)
+                  .map((s) => s.where)
+                  .join(', ');
+                notify.error({
+                  title: t`${row.title} was not fully deleted`,
+                  message: t`${result.kept.join(', ')} could not be removed from ${stuck}.`,
+                });
+                return;
+              }
+              notify.success({ title: t`${row.title} deleted` });
+            } catch (error) {
+              notify.error({
+                title: t`Could not delete ${row.title}`,
+                message: errorMessage(error, t`It may be only partly removed.`),
+              });
+            }
+          })();
+        }}
+      />
+
+      {/* Blast radius, by name. The count comes from the same usage map the
+          Used-by column reads, force-loaded when this dialog opens. */}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+            setUsageForced(false);
+          }
+        }}
+        title={t`Delete ${pendingDelete?.provider ?? ''} credential?`}
+        description={deleteDescription(pendingDelete)}
+        confirmLabel={t`Delete credential`}
+        variant="destructive"
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void handleDeleteCredential(target);
+        }}
+        onCancel={() => {
+          setPendingDelete(null);
+          setUsageForced(false);
+        }}
+      />
     </div>
   );
 };

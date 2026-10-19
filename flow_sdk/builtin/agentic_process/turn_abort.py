@@ -23,6 +23,15 @@ abort event the UI already understands from live codex rollouts
 worker-generic: claude/codex/copilot all share the same cancel choke point
 (``_http_cancel_prompt`` → ``worker.close_session()``) and the same gap.
 
+Scoping promise: a marker applies to exactly one session's replay. A marker
+stamped with a session id is filtered on it. A marker recorded WITHOUT a
+session id (cancel before the worker reported one) can only belong to the
+session that was live when it was written — unknowable retroactively — so the
+practical rule is chronological overlap: a sid-less marker is included only
+when it is not older than the replayed rollout's first frame
+(``history_start``). Otherwise it belongs to a rotated-away session and would
+insert a phantom "turn aborted" at index 0 of every future session forever.
+
 PTY-transport cancels (Ctrl-C into the live TUI) intentionally do NOT write a
 marker: the vendor TUI records its own durable abort (codex writes
 ``event_msg.turn_aborted`` into the rollout; claude pairs the interrupted tool
@@ -35,9 +44,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
+from flow_sdk.builtin.agentic_process._shared import _now_iso, _parse_iso_datetime
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -103,7 +113,7 @@ def record_turn_abort(
     """
     line = {
         "type": ABORT_MARKER_SUBTYPE,
-        "timestamp": _now_iso(),
+        "timestamp": _now_iso(timespec="milliseconds"),
         "session_id": session_id or "",
         "reason": reason,
     }
@@ -120,13 +130,21 @@ def load_abort_marker_frames(
     record_dir: Path,
     *,
     session_id: str | None = None,
+    history_start: datetime | None = None,
 ) -> list[FlowData]:
     """Read the sidecar and return one replay STATUS frame per abort marker.
 
     ``session_id`` filters out markers stamped for a *different* session than
     the one whose history is being composed (a rotated/fresh session must not
     inherit another session's aborts). Markers recorded without a session id
-    (a first-turn cancel before the worker reported one) are always included.
+    (a cancel before the worker reported one) are scoped chronologically
+    instead: they are included only when they overlap the replayed rollout —
+    i.e. they are not older than ``history_start`` (the replay's first frame,
+    see :func:`history_start_time`). A sid-less marker older than the replay
+    belongs to a rotated-away session and is excluded, so it cannot insert a
+    phantom abort at index 0 of every future session. With no
+    ``history_start`` (empty history, or a caller without one) sid-less
+    markers are included — nothing proves them foreign.
     """
     path = turn_events_path(Path(record_dir))
     if not path.exists():
@@ -148,8 +166,17 @@ def load_abort_marker_frames(
         if not isinstance(marker, dict) or marker.get("type") != ABORT_MARKER_SUBTYPE:
             continue
         marker_sid = str(marker.get("session_id") or "")
-        if marker_sid and session_id and marker_sid != session_id:
-            continue
+        if marker_sid:
+            if session_id and marker_sid != session_id:
+                continue
+        else:
+            marker_ts = _parse_iso_datetime(marker.get("timestamp"))
+            if (
+                history_start is not None
+                and marker_ts is not None
+                and marker_ts < history_start
+            ):
+                continue
         frames.append(
             abort_status_frame(
                 str(marker.get("reason") or "user_interrupt"),
@@ -158,6 +185,20 @@ def load_abort_marker_frames(
             )
         )
     return frames
+
+
+def history_start_time(history: list[FlowData]) -> datetime | None:
+    """Timestamp of the first replayed frame with a parseable ``created_time``.
+
+    The chronological lower bound of the replayed rollout — used to scope
+    sid-less abort markers (see :func:`load_abort_marker_frames`). ``None``
+    when the history is empty or carries no parseable timestamps.
+    """
+    for frame in history:
+        ts = _parse_iso_datetime(getattr(frame, "created_time", None))
+        if ts is not None:
+            return ts
+    return None
 
 
 def merge_abort_markers(history: list[FlowData], markers: list[FlowData]) -> list[FlowData]:
@@ -173,34 +214,14 @@ def merge_abort_markers(history: list[FlowData], markers: list[FlowData]) -> lis
         return history
     out = list(history)
     for marker in markers:
-        marker_ts = _parse_iso(marker.created_time)
+        marker_ts = _parse_iso_datetime(marker.created_time)
         index = len(out)
         if marker_ts is not None:
             for i, frame in enumerate(out):
-                frame_ts = _parse_iso(getattr(frame, "created_time", None))
+                frame_ts = _parse_iso_datetime(getattr(frame, "created_time", None))
                 if frame_ts is not None and frame_ts > marker_ts:
                     index = i
                     break
         out.insert(index, marker)
     return out
 
-
-# ── Internals ─────────────────────────────────────────────────────────────────
-
-
-def _now_iso() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
-
-
-def _parse_iso(value: object) -> datetime | None:
-    if not value or not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

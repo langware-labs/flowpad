@@ -48,17 +48,18 @@ A hub metadata refresh must never reset state that only *this* machine owns.
 `body_status`, `is_read`, `is_archived`, `received_at`, `is_draft`, and
 `prompt_auto_handled` as local. `body_status` is local because the
 download/delivery lifecycle is per-device — resetting it would re-trigger an
-already-completed body download. `prompt_auto_handled` is the receiver's
-"I already auto-ran this prompt" idempotency marker; the hub never learns of it,
-so it must survive every refresh.
+already-completed body download. `prompt_auto_handled` is the host's "I already
+consumed this prompt as a session turn" marker (see
+[`./live-sessions.md`](./live-sessions.md)); the hub never learns of it, so it
+must survive every refresh.
 
 `is_stale` (`flow_sdk/builtin/flow_message.py:340`) adds a *touch guard* on top
 of last-writer-wins: the hub re-stamps `updated_date` on bare touches (a body
 re-materialize, an unchanged re-emit), so a strictly-newer hub clock is
 confirmed against an actual content delta — it serializes local vs. merged
 candidate (excluding `_STALE_IGNORE_FIELDS`) and treats byte-identical payloads
-as **not** stale. This stops a pure touch from dragging the conversation's inbox
-recency forward.
+as **not** stale. This stops a pure touch from dragging the conversation's stream
+inbox recency forward.
 
 ### FlowMessageKind
 
@@ -73,26 +74,25 @@ recency forward.
 
 ## 2. Attachments
 
-An `Attachment` (`flow_sdk/builtin/flow_message.py:202`) is a small BaseModel: an
+An `Attachment` (`flow_sdk/builtin/flow_message.py:353`) is a small BaseModel: an
 `attachment_type` plus a single `data` string whose meaning depends on the type.
-`AttachmentType` (`flow_sdk/builtin/flow_message.py:18`) enumerates five:
+`AttachmentType` (`flow_sdk/builtin/flow_message.py:33`) enumerates four:
 
 ```
 AttachmentType   data is interpreted as                              body?
 --------------   ---------------------------------------------       -----
-TYPE_ID          "type-id" — ref to a LOCAL entity; pack_bundle      yes
+TYPE_ID          "type_id" — ref to a LOCAL entity; pack_bundle      yes
                  serializes it into the bundle's attachment subtree,
                  or records a git transfer declaration in git mode
 FILE             path relative to the .flowmsg VFS root              yes
-                 (stored at data/<filename>, FILE_VFS_PREFIX)        (:124)
-REPO             full repo path; the uuid5 is derived from it        no
+                 (stored at data/<filename>, FILE_VFS_PREFIX)        (:172)
 URL              a URL                                               no
 PROMPT           inline prompt TEXT, or VFS subpath prompt/<file>    inline=no
-                 (PROMPT_FILE_VFS_PREFIX, :125)                      file=yes
+                 (PROMPT_FILE_VFS_PREFIX, :173)                      file=yes
 ```
 
 So `data` is overloaded by type: a local entity reference (`TYPE_ID`), a VFS
-path under `data/` (`FILE`), a repo path that *derives* its uuid5 (`REPO`), a raw
+path under `data/` (`FILE`), a raw
 URL (`URL`), or — for `PROMPT` — either the literal prompt text (inline, no body)
 or a `prompt/<filename>` subpath (file-backed, needs body).
 
@@ -102,22 +102,29 @@ storage (`flow_sdk/builtin/flow_message.py:233`):
 - **`local_path`** — transient, **API-response only**, never stored in the DB. The
   model serializer (`flow_sdk/builtin/flow_message.py:370`) populates it at
   serialization time by resolving the VFS subpath through the message's embedded
-  storage, and **only when the bytes are actually on local disk**. The UI reads a
+  storage, and **only when the bytes are actually on local disk**. Embedded storage
+  is the message's record-data folder, `<records_data>/flow_message/<id>/embedded/`
+  (`get_entity_embedded_storage`), on both sender and receiver. It is never the OS
+  temp dir: that dir is shared by every instance on a machine and emptied by macOS at
+  boot, which is how every file attachment on prod once lost its bytes. Deleting
+  the message removes the folder, and the bytes with it. The UI reads a
   non-null `local_path` as "this file is downloaded": a receiver sees `null`
   until it pulls the bundle; the sender sees it set the moment the file is staged.
-- **`proposer_id` / `approved_by`** — the prompt-approval pair. `proposer_id` is
-  who suggested the prompt; `approved_by` is set when the other party approves it.
-  Because `approved_by` is nested inside `attachment` it can't be marked
-  `LOCAL_ONLY`, so `merge_hub_payload` (`flow_sdk/builtin/flow_message.py:313`)
-  re-applies the receiver's locally-approved value (keyed by `data`) over a hub
-  copy that lacks one — otherwise a refresh would revert approval and the prompt
-  would re-run on every sync.
+  A message projected from a channel (WhatsApp, Telegram, email — it has an `origin`) carries
+  its files as `FILE` attachments too, but the projection places their bytes in that same
+  storage itself (`stream_inbox/projection.py`, from the copy the source staged); there is no
+  bundle to pull, so a channel file with a `null` `local_path` is one whose link expired before
+  it could be copied, and the bubble says so rather than offering a download.
 - **`prompt_preview`** — an inline copy of a prompt-entity `TYPE_ID`'s text that
-  rides the **header** so receivers can preview (and execute) the prompt *before*
-  pulling the body bundle. NOTE: this field, plus `proposer_id`/`approved_by`,
-  must also exist on the hub's mirrored `Attachment` model — the hub silently
-  **drops unknown fields** on the round-trip, which would strip the receiver's
-  preview.
+  rides the **header** so receivers can preview the prompt *before* pulling the
+  body bundle. On a `remote_worker_session-<id>` carrier it holds the session
+  marker JSON instead (`session_start` on the opening prompt,
+  `live_session_event` on lifecycle lines — see
+  [`./live-sessions.md`](./live-sessions.md)). NOTE: this field must also exist
+  on the hub's mirrored `Attachment` model — the hub silently **drops unknown
+  fields** on the round-trip. There is no per-attachment approval stamp:
+  consent is a property of the session (the hub still mirrors the retired
+  `proposer_id`/`approved_by`; they arrive as nulls and are ignored).
 
 ### Structural self-pointers
 
@@ -131,7 +138,7 @@ out when counting/copying user-meaningful attachments.
 
 A message "has a body" iff at least one attachment needs packed bytes:
 `has_body()` (`flow_sdk/builtin/flow_message.py:470`) returns True for `FILE`,
-`TYPE_ID`, or a `PROMPT`-with-file; URL / REPO / inline-PROMPT are body-free. The
+`TYPE_ID`, or a `PROMPT`-with-file; URL / inline-PROMPT are body-free. The
 body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 (`flow_sdk/builtin/flow_message.py:112`), stored on the hub at
 `flow_message/<id>/fs/<BODY_FILENAME>`.
@@ -140,7 +147,7 @@ body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 **hub-enforced**:
 
 ```
-            (text-only / URL / REPO / inline-PROMPT)
+            (text-only / URL / inline-PROMPT)
         ┌───────────────────────────────────────────────┐
         │                                                │
         ▼                                                │
@@ -203,8 +210,8 @@ The body upload contract has two transfer modes:
   `GitOrigin` so the receiver can preserve repo-relative placement, but the bytes
   still ride inside the `.flowmsg`.
 - **`git`** — git-backed attachments are metadata-only on the body axis. The bundle
-  carries `git_origins.json`, `git_transfers.json`, and
-  `metadata/<type>-@<id>/metadata.json`; it does not carry the git-backed file
+  carries `fs_origins.json`, `git_transfers.json`, and
+  `metadata/<type>-<id>/metadata.json`; it does not carry the git-backed file
   bytes. On receive, the unpacker resolves a matching local checkout, pulls the
   branch when possible, or clones the remote, then indexes the entity from the
   real filesystem location. Existing local entities still use the normal
@@ -231,7 +238,7 @@ mints its proposed bundle id through `TypeInfo` after the path exists.
 `body_status == READY` — receivers must wait for the hub's body_status UPDATE
 first. It then reuses the standard `unpack_bundle` path, so every attachment kind
 (FILE, PROMPT-file, TYPE_ID, file-backed records) restores **identically** to the
-receive-on-inbox flow; file-backed assets land in the conversation's mapped
+receive-in-stream-inbox flow; file-backed assets land in the conversation's mapped
 project. In git mode this same path performs the git lifecycle first and then
 indexes from the checkout; there is no bundle-to-project copy phase for the
 git-backed bytes. It propagates `FlowMessageExistsError` (collision; re-invoke with
@@ -273,15 +280,20 @@ reached the hub.
 CREATED    local create        (model default; hub never stores it)
 SENT       hub on accept/persist (stamped on add_message, returned in the ACK)
 DELIVERED  recipient client pulled it  -> auto-ack mark_delivered
-RECEIVED   recipient READ it    -> mark_received, fanned to ALL participants
+RECEIVED   recipient READ it    -> mark_received, shared through auto-watch
 ```
 
 The receiver's bridge auto-acks delivery on inbound CREATE: it fires the
-`mark_delivered` action (`flow_sdk/cloud_client/hub_bridge.py:559`) — skipping
+`mark_delivered` action from `HubWsBridge._handle_flow_message_op` — skipping
 when the local user is the sender — which is the only signal that ticks the
-sender's UI from ✓ to ✓✓. The read receipt goes through the `mark_received`
-action (`flow_sdk/cloud_client/hub_bridge.py:829`); the hub fans the resulting
-UPDATE to every participant so all copies tick to ✓✓ blue.
+sender's UI from ✓ to ✓✓. Read receipts go through
+`HubWsBridge.mark_received`; the hub fans the resulting UPDATE through
+role-based auto-watch so accessible copies tick to ✓✓ blue.
+
+Both recipient acknowledgements are gated by the reporting installation's
+`preferences.notifications.share_message_status` preference. Disabling it
+does not hide receipt data other participants already shared and does not
+affect the sender's initial `SENT` acknowledgement.
 
 ### Inbound monotonicity guard
 
@@ -306,7 +318,7 @@ single **Download** button and rendered attachment chips.
 `_type_id_record_materialized(data)` (`flow_sdk/builtin/flow_message.py:164`) is a
 **sync disk probe** — disk is the source of truth. For a `TYPE_ID` attachment it
 checks for a materialized record folder
-(`<records_root>/<type>/<type>-@<id>/metadata.json`). Two carve-outs:
+(`<records_root>/<type>/<id>/metadata.json`). Two carve-outs:
 
 - **Structural / row-only types always count as present**
   (`_NON_MATERIALIZING_TYPE_IDS`, `flow_sdk/builtin/flow_message.py:149`):
@@ -325,21 +337,41 @@ checks for a materialized record folder
   NOT count as downloaded, or the bundle carrying the real body is never re-pulled
   and the entity renders blank.
 
-### Per-message: `_compute_body_downloaded`
+### Per-message: download completion and missing assets
 
-`_compute_body_downloaded(atts)` (`flow_sdk/builtin/flow_message.py:408`) is the
-message-level flag the serializer emits as `body_downloaded`
-(`flow_sdk/builtin/flow_message.py:405`). It returns False if there is no body,
-else True iff **every** renderable body attachment is on disk: FILE and
-PROMPT-file attachments need a resolved `local_path`; TYPE_ID attachments must
-pass `_type_id_record_materialized`. The UI switches the **whole message** between
-Download and chips off this one flag, so the transcript and the context panel
-share state.
+`FlowMessage._body_download_state()` owns the local availability checks for
+both API serialization and `is_body_downloaded()` (used by catch-up).
+Its transient fields are never persisted or accepted from the hub:
 
-`is_body_downloaded()` (`flow_sdk/builtin/flow_message.py:426`) is the disk-probe
-twin for backend callers (e.g. the catch-up loop deciding whether to re-pull a
-bundle) that need the same signal without paying for a full `model_dump` — keep
-the two in sync.
+- `body_downloaded`: the message has a body and either its bundle is unpacked
+  locally or all renderable attachments are already available locally. Bytes from
+  before the record-data move are carried over once, on upgrade to 0.2.175
+  (`migration_2026_09_embedded_storage_to_record_data`, which uses
+  `restore_attachment_file`). The sources are the unpacked bundle's copy
+  (`unpacked/attachment/files/<name>`), then the old OS-temp root. They are copied
+  before the next reboot empties that root, so every reader sees them, not only
+  the serializer.
+- `body_unpacked`: the extracted staging tree contains `flow_message.json` or
+  the legacy `header.json` envelope. A raw ZIP alone is insufficient.
+- `body_missing_attachments`: references (`attachment_type`, `data`) whose
+  content is unavailable locally. FILE and PROMPT-file attachments need actual
+  bytes; TYPE_ID attachments use `_type_id_attachment_present` to check staged
+  or materialized content. Structural references do not count as missing.
+
+A downloaded bundle with missing assets is a **partial download**. The transcript
+shows “Downloaded” with a warning icon whose tooltip lists the missing references
+and offers **Download again**. Download errors also offer that action. It calls
+the existing `download_body` action, fetching and unpacking a fresh hub bundle
+even when the message is already downloaded. The warning stays if the new bundle
+still lacks assets; a successful retry clears the previous download error.
+Available assets remain usable; missing assets have no Open action. The context
+panel uses the same state. Catch-up does not repeatedly fetch an already unpacked
+bundle just because its sender omitted assets. Before download, unavailable
+references are pending and do not show a missing-assets warning.
+
+Unpacking a body into an existing message in the same conversation is idempotent,
+including header-only bundles. Standalone imports and mismatched parents retain
+the existing overwrite conflict protection.
 
 ## 6. Reception phase model
 
@@ -402,11 +434,10 @@ the hub: share → accept → download → auto-installed MA + received row).
 ## Invariants (summary)
 
 - **Header is useful before the body.** `prompt_preview` and `local_path=null`
-  let the UI render and even execute a prompt pre-download; `body_downloaded`
-  gates the rest behind one Download button.
-- **Local state survives hub refresh.** `body_status`, read/archive,
-  `prompt_auto_handled`, and (via `merge_hub_payload`) attachment `approved_by`
-  are never reverted by a sync.
+  let the UI render a prompt pre-download; `body_downloaded` gates the rest
+  behind one Download button.
+- **Local state survives hub refresh.** `body_status`, read/archive and
+  `prompt_auto_handled` are never reverted by a sync.
 - **Status is monotonic, both directions.** `delivery_advances` guards the
   inbound bridge; the hub enforces `UPLOADING → READY` and never stores
   `PENDING_SEND`/`CREATED`.
@@ -419,4 +450,4 @@ the hub: share → accept → download → auto-installed MA + received row).
 See `./hub-fanout-and-loader.md` for the fan-out mechanics behind the
 `set_body_status` and `mark_received` UPDATEs, `./sharing-and-sync.md` for
 `clone_for_forward` provenance and bundle packaging, and
-`./conversation-model.md` for how `message_ids` projects these rows into an inbox.
+`./conversation-model.md` for how `message_ids` projects these rows into a stream inbox.

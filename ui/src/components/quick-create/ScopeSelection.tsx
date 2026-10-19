@@ -1,17 +1,14 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { Project } from '@sdk';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
-import { cn } from '@src/lib/utils';
-import { CircleSlash, FolderOpen, Layers, Pencil } from 'lucide-react';
+import { FolderOpen, Pencil } from 'lucide-react';
 import { useCallback } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 export type ScopeKind = 'user' | 'project' | 'folder';
-export type HarnessKind = 'all' | 'claude' | 'codex' | 'copilot' | 'none';
 
 export interface Scope {
   kind: ScopeKind;
@@ -21,11 +18,12 @@ export interface Scope {
   folderPath: string | null;
 }
 
-interface ScopeSelectionProps {
+export interface ScopeSelectionProps {
   scope: Scope;
   onScopeChange: (next: Scope) => void;
-  harness: HarnessKind;
-  onHarnessChange: (next: HarnessKind) => void;
+  mount: string;
+  mounts: string[];
+  onMountChange: (next: string) => void;
   /** Path text shown in the editable input. */
   path: string;
   onPathChange: (path: string) => void;
@@ -33,40 +31,47 @@ interface ScopeSelectionProps {
   onPickFolder: () => Promise<string | null>;
   /** Opens the project picker (currently OpenProjectComponent). */
   onOpenProjectPicker: () => void;
+  /** Scope chips available for this asset type. Omitted means all scopes. */
+  allowedScopes?: readonly ScopeKind[];
 }
 
-const SCOPE_OPTIONS: ScopeBarOption<ScopeKind>[] = [
-  { value: 'user', label: 'User' },
-  { value: 'project', label: 'Project' },
-  { value: 'folder', label: 'Folder' },
-];
-
-const HARNESS_OPTIONS: { value: HarnessKind; title: string; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: 'all', title: 'All harnesses', Icon: Layers },
-  { value: 'claude', title: 'Claude Code', Icon: ClaudeIcon },
-  { value: 'codex', title: 'Codex', Icon: CodexIcon },
-  { value: 'copilot', title: 'Copilot', Icon: CopilotIcon },
-  { value: 'none', title: 'None (project root)', Icon: CircleSlash },
+/* Both tables are module-level, so their wording is held as lazy `msg`
+ * descriptors and resolved with `t` inside the component — an eager macro out
+ * here would bind the language at import and never follow a locale switch.
+ * The harness NAMES (Claude Code, Codex, Copilot) stay literal: they are
+ * products, not words to translate. */
+const SCOPE_OPTIONS: { value: ScopeKind; label: MessageDescriptor }[] = [
+  { value: 'user', label: msg`User` },
+  { value: 'project', label: msg`Project` },
+  { value: 'folder', label: msg`Folder` },
 ];
 
 export function ScopeSelection({
   scope,
   onScopeChange,
-  harness,
-  onHarnessChange,
+  mount,
+  mounts,
+  onMountChange,
   path,
   onPathChange,
   onPickFolder,
   onOpenProjectPicker,
+  allowedScopes,
 }: ScopeSelectionProps) {
   const { t } = useLingui();
+  // Resolved here rather than in the table: `ScopeBar` wants plain strings, and
+  // resolving at render is what lets the chips re-label on a locale switch.
+  const scopeOptions: ScopeBarOption<ScopeKind>[] = (
+    allowedScopes ? SCOPE_OPTIONS.filter((option) => allowedScopes.includes(option.value)) : SCOPE_OPTIONS
+  ).map(({ value, label }) => ({ value, label: t(label) }));
 
   const handleScopeChange = useCallback(
     (next: ScopeKind) => {
       if (next === scope.kind) return;
+      if (allowedScopes && !allowedScopes.includes(next)) return;
       onScopeChange({ ...scope, kind: next });
     },
-    [scope, onScopeChange],
+    [allowedScopes, scope, onScopeChange],
   );
 
   const handleBrowseFolder = useCallback(async () => {
@@ -77,12 +82,11 @@ export function ScopeSelection({
   }, [onPickFolder, onScopeChange, scope]);
 
   const projectLabel = scope.project?.displayName ?? scope.project?.name ?? null;
-  const harnessDisabled = scope.kind === 'folder';
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <ScopeBar value={scope.kind} options={SCOPE_OPTIONS} onChange={handleScopeChange} />
+        <ScopeBar value={scope.kind} options={scopeOptions} onChange={handleScopeChange} />
         {scope.kind === 'project' && (
           <Button
             variant="outline"
@@ -110,35 +114,12 @@ export function ScopeSelection({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"><Trans>Harness path</Trans></span>
-        <div className="flex items-center gap-1" role="radiogroup" aria-label={t`Harness path`}>
-          {HARNESS_OPTIONS.map(({ value, title, Icon }) => {
-            const active = value === harness;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                aria-label={title}
-                title={title}
-                disabled={harnessDisabled}
-                onClick={() => onHarnessChange(value)}
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-                  active
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                  harnessDisabled && 'cursor-not-allowed opacity-50',
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {mounts.length > 1 && scope.kind !== 'folder' && (
+        <select aria-label={t`Asset folder`} value={mount} onChange={(e) => onMountChange(e.target.value)}
+          className="rounded border bg-background p-2 font-mono text-xs">
+          {mounts.map((path) => <option key={path} value={path}>{path}</option>)}
+        </select>
+      )}
 
       <Input
         value={path}

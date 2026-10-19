@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "name": "gmail",
+  "title": "Gmail",
+  "icon_name": "Gmail",
+  "description": "A Gmail mailbox read over IMAP and sent through SMTP — signed in with Google, or with an app password.",
+  "kind": "datasource.api.gmail",
+  "featured": true,
+  "auth": {
+    "credential": "gmail",
+    "vars": {
+      "GMAIL_ADDRESS": "GMAIL_ADDRESS",
+      "GMAIL_APP_PASSWORD": "GMAIL_APP_PASSWORD"
+    }
+  },
+  "config": {
+    "address": {
+      "type": "text",
+      "label": "Gmail address",
+      "placeholder": "you@gmail.com",
+      "account_key": true,
+      "hint": "Optional when the gmail credential's address is set. The sign-in or app password comes from the credential and is never stored on the source."
+    },
+    "imap_host": {
+      "type": "text",
+      "advanced": true,
+      "label": "IMAP host", "hint": "host[:port]; imap://host:port for a plain (non-TLS) connection"
+    },
+    "smtp_host": {
+      "type": "text",
+      "advanced": true,
+      "label": "SMTP host", "hint": "host[:port]; smtp://host:port for a plain (non-TLS) connection"
+    }
+  }
+}

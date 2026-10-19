@@ -172,3 +172,62 @@ async def test_activate_partially_mirrors_shell_recency_without_stale_clobber(
     disk = json.loads(FSRecord.load("shell", shell.id).metadata_ref._path.read_text())
     assert disk["status"] == ShellStatus.CLOSED.value
     assert disk["last_active_at"] == response.data["last_active_at"]
+
+
+@pytest.mark.asyncio
+async def test_a_stale_refresh_keeps_the_body_that_lives_only_in_the_asset(sync_db, tmp_records_root) -> None:
+    """An agent's system prompt is its markdown body: it lives in ``agent.md`` and never in the
+    shadow. A GET-time refresh that rebuilt the row from the shadow read the prompt back as ``""``,
+    so an agent answered as a generic assistant after the backend restarted."""
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.schema.type_info import register_all
+
+    register_all()
+    agent = Agent(name=f"refresh-body-{uuid.uuid4().hex[:6]}", system_prompt="KEEP THIS PROMPT")
+    await agent.save()
+    record = FSRecord.load("agent", agent.id).ensure_asset_ref()
+    assert record.asset_ref is not None, "precondition: the agent owns an agent.md"
+    assert "system_prompt" not in json.loads(record.metadata_ref._path.read_text())
+
+    main = Path(record.asset_ref.path)
+    _advance_directory_mtime(main)
+    for child in main.iterdir():
+        _advance_directory_mtime(child)
+    assert FSRecord.load("agent", agent.id).ensure_asset_ref().index_required is True, "precondition: stale"
+
+    assert await agent.check_and_refresh_record() is True
+    persisted = await Agent.get_by_id(agent.id)
+    assert persisted is not None and persisted.system_prompt == "KEEP THIS PROMPT"
+
+
+@pytest.mark.asyncio
+async def test_a_launch_uses_the_definition_as_it_is_on_disk_now(sync_db, tmp_records_root) -> None:
+    """The agent's folder is its definition. Editing ``agent.json`` / ``system_prompt.md``
+    by hand — or through agent-builder's improve loop — and opening a new chat launched
+    the row as it was at the last index: the old worker and the old prompt. Only a GET
+    refreshed a changed asset, so the one path that matters, a launch, never did.
+    ``Agent.fresh`` is what the launch entry points call on the agent they loaded."""
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.schema.type_info import register_all
+
+    register_all()
+    agent = Agent(name=f"launch-fresh-{uuid.uuid4().hex[:6]}", system_prompt="OLD PROMPT", worker_type="claude")
+    await agent.save()
+    folder = Path(FSRecord.load("agent", agent.id).ensure_asset_ref().asset_ref.path)
+    folder = folder if folder.is_dir() else folder.parent
+
+    spec = json.loads((folder / "agent.json").read_text())
+    spec["worker_type"] = "copilot"
+    (folder / "agent.json").write_text(json.dumps(spec))
+    (folder / "system_prompt.md").write_text("NEW PROMPT\n")
+    _advance_directory_mtime(folder)
+    for child in folder.iterdir():
+        _advance_directory_mtime(child)
+
+    # What the use/run actions and auto-launch do: load for launch, then launch.
+    loaded = await Agent.get_by_id(agent.id)
+    launched = await loaded.fresh()
+    process = await (await launched.local_deployment()).create_process()
+
+    assert "copilot" in str(process.worker_type)
+    assert "NEW PROMPT" in ((process.context_data or {}).get("instructions") or "")

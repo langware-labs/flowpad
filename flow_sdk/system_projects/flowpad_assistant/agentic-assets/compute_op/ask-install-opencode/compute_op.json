@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "id": "11c4ff34-c513-4cd7-a41f-3d32eb327fe3",
+  "name": "ask-install-opencode",
+  "label": "Install OpenCode?",
+  "description": "Asks the person whether to install OpenCode, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "OpenCode is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "status_check": "install:opencode",
+  "output_spec_kind": "confirm"
+}

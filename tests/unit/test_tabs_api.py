@@ -8,15 +8,20 @@ keeps only `tabs/close` (batched PTY/worker teardown). Membership flags
 Entity-level direct calls (no HTTP).
 """
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import BackgroundTasks
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.builtin.tab import Tab, tab_id_for
+from flow_sdk.builtin.tab import (
+    Tab,
+    _load_remote_targets,
+    _populate_tab_target_fields,
+    _serialize_row,
+)
 
 
 def _no_reap():
@@ -25,15 +30,28 @@ def _no_reap():
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
-async def test_last_active_at_iso_tolerant_epoch_ms():
+async def test_entity_activity_timestamps_are_iso_tolerant_epoch_ms():
     from datetime import datetime
 
     iso = "2026-06-11T10:00:00+00:00"
-    s = Shell(id=str(uuid.uuid4()), status="running", last_active_at=iso)
+    s = Shell(
+        id=str(uuid.uuid4()),
+        status="running",
+        last_active_at=iso,
+        last_edited_at=iso,
+    )
     assert isinstance(s.last_active_at, int)
-    assert s.last_active_at == int(datetime.fromisoformat(iso).timestamp() * 1000)
-    s2 = Shell(id=str(uuid.uuid4()), status="running", last_active_at=1781085600001)
+    expected = int(datetime.fromisoformat(iso).timestamp() * 1000)
+    assert s.last_active_at == expected
+    assert s.last_edited_at == expected
+    s2 = Shell(
+        id=str(uuid.uuid4()),
+        status="running",
+        last_active_at=1781085600001,
+        last_edited_at=1781085600002,
+    )
     assert s2.last_active_at == 1781085600001
+    assert s2.last_edited_at == 1781085600002
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -44,3 +62,80 @@ async def test_agentic_process_owns_tab_order_across_reload():
     reloaded = await AgenticProcess.get_by_id(ap.id)
     assert reloaded.tab_order == 5
     assert "_prev_tab_order" not in (reloaded.context_data or {})
+
+
+@pytest.mark.asyncio
+async def test_tab_target_remote_batches_once_per_type():
+    cloud = Docs(
+        id=str(uuid.uuid4()),
+        name=f"cloud_doc_{uuid.uuid4().hex[:6]}",
+        remote=True,
+    )
+    local = Docs(
+        id=str(uuid.uuid4()),
+        name=f"local_doc_{uuid.uuid4().hex[:6]}",
+        remote=False,
+    )
+    await cloud.save()
+    await local.save()
+    tabs = [
+        Tab(id=str(uuid.uuid4()), target_type="markdown", target_id=cloud.id),
+        Tab(id=str(uuid.uuid4()), target_type="markdown", target_id=local.id),
+        Tab(id=str(uuid.uuid4()), target_type="markdown", target_id=str(uuid.uuid4())),
+    ]
+
+    try:
+        with (
+            patch.object(Docs, "get_all", new=AsyncMock(wraps=Docs.get_all)) as get_all,
+            patch.object(
+                Docs,
+                "get_one",
+                new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
+            ),
+        ):
+            targets = await _load_remote_targets(tabs)
+        _populate_tab_target_fields(tabs, targets)
+
+        assert get_all.await_count == 1
+        assert [tab.target_remote for tab in tabs] == [True, False, False]
+        assert [_serialize_row(tab)["target_remote"] for tab in tabs] == [
+            True,
+            False,
+            False,
+        ]
+    finally:
+        await cloud.delete()
+        await local.delete()
+
+
+def test_tab_target_project_marks_a_guest_content_tab():
+    """The content target's own project rides the response (never saved), so the
+    chip can mark a guest tab; shell/process targets never carry one."""
+    own, other = str(uuid.uuid4()), str(uuid.uuid4())
+    doc_id, shell_id = str(uuid.uuid4()), str(uuid.uuid4())
+    guest = Tab(id=str(uuid.uuid4()), target_type="markdown", target_id=doc_id, project_id=own)
+    shell = Tab(id=str(uuid.uuid4()), target_type="shell", target_id=shell_id, project_id=own)
+    targets = {
+        ("markdown", doc_id): SimpleNamespace(project_id=other, remote=False),
+        ("shell", shell_id): SimpleNamespace(project_id=other, remote=False),
+    }
+    _populate_tab_target_fields([guest, shell], targets)
+    assert guest.target_project_id == other
+    assert shell.target_project_id is None
+    assert _serialize_row(guest)["target_project_id"] == other
+
+
+@pytest.mark.asyncio
+async def test_tab_target_remote_is_not_persisted():
+    tab = Tab(
+        id=str(uuid.uuid4()),
+        pointer=f"conversation|{uuid.uuid4()}",
+        target_remote=True,
+    )
+    await tab.save()
+    try:
+        reloaded = await Tab.get_by_id(tab.id)
+        assert reloaded is not None
+        assert reloaded.target_remote is False
+    finally:
+        await tab.delete()

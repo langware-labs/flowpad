@@ -1,18 +1,25 @@
 /**
  * Interactive tabs / project filtering — regression matrix.
- * Source: interactive_tabs_project_filtering_matrix.md (52 scenarios, 9 areas).
+ * Source: interactive_tabs_project_filtering_matrix.md (51 active scenarios,
+ * historical numbering retained, 9 areas).
  *
  * Fixtures are built via REST (project/shell/agentic_process) per the matrix's
- * "Setup helpers" block — no live SDK wait. The 5 tests the matrix explicitly
- * marks [skip:harness]/[skip:platform] (11, 31, 33, 34, 38) are test.skip with
- * the matrix's documented rationale; everything else is automated headlessly.
+ * "Setup helpers" block — no live SDK wait. Test 31 retains the matrix's sole
+ * wrong-platform skip; the former harness skips use the current modal,
+ * launcher-owned-instance, and independent-browser-context contracts.
  *
  * One test('...') per matrix `test N:` line. baseURL comes from VITE_PORT;
  * API requests use the same explicit instance-aware backend origin as the app.
  */
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
+import path from 'node:path';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
-import { dismissSetupModal, skipIfPtyExhausted } from './helpers';
+import { withViewMode } from '../_shared/view-mode';
+import { dismissSetupModal, openTabViaMenu, skipIfPtyExhausted } from './helpers';
 
 /**
  * Dismiss the "Cleaned invalid sessions … couldn't be restored" alertdialog and,
@@ -22,13 +29,158 @@ import { dismissSetupModal, skipIfPtyExhausted } from './helpers';
  * overlay intercepts clicks. Not an app bug — passes when PTYs are free.
  */
 async function dismissCleanedSessionsOrSkip(page: Page) {
-  const ok = page.getByRole('button', { name: 'OK' });
+  // `exact` is required: role-name matching is a case-insensitive substring
+  // match by default, and the Chats navigator's history rows are role=button
+  // too — a row whose title contains "ok" would be clicked instead, resuming an
+  // on-disk Claude session into a brand-new process that leaks into every
+  // later scenario.
+  const ok = page.getByRole('button', { name: 'OK', exact: true });
   if (await ok.isVisible({ timeout: 500 }).catch(() => false)) await ok.click().catch(() => {});
   await skipIfPtyExhausted(page);
 }
 
 const API = apiBase();
 const tabSel = '[data-testid^="tab-shell|"]';
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+
+interface OwnedInstance {
+  name: string;
+  /** Backend port from `.env.<name>.local`, already validated against launcher.json. */
+  backendPort: number;
+}
+
+/**
+ * Resolve the explicit disposable instance this restart matrix is allowed to
+ * own. Missing or stale ownership is a Phase 11 preflight failure, never a
+ * skip and never permission to restart a shared/default backend.
+ */
+function ownedInstance(): OwnedInstance {
+  const name = process.env.FLOW_INSTANCE?.trim() ?? '';
+  if (!name) {
+    throw new Error(
+      'Phase 11 restart preflight failed: FLOW_INSTANCE must name a live disposable instance_ctl instance.',
+    );
+  }
+
+  const envFile = path.join(REPO_ROOT, `.env.${name}.local`);
+  const launcherFile = path.join(
+    path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow')),
+    'instances',
+    name,
+    'launcher.json',
+  );
+  if (!existsSync(envFile) || !existsSync(launcherFile)) {
+    throw new Error(
+      `Phase 11 restart preflight failed: '${name}' has no matching env file and launcher registry.`,
+    );
+  }
+
+  const envText = readFileSync(envFile, 'utf8');
+  const envName = envText.match(/^FLOW_INSTANCE=(.+)$/m)?.[1]?.trim();
+  const backendPort = Number(envText.match(/^LOCAL_SERVER_PORT=(\d+)$/m)?.[1]);
+  const launcher = JSON.parse(readFileSync(launcherFile, 'utf8')) as {
+    name?: unknown;
+    backend_port?: unknown;
+    backend_pid?: unknown;
+    env_file?: unknown;
+  };
+  const backendPid = Number(launcher.backend_pid);
+  const launcherOwnsEnv =
+    typeof launcher.env_file === 'string' && path.resolve(launcher.env_file) === envFile;
+
+  let backendPidLive = false;
+  if (Number.isInteger(backendPid) && backendPid > 0) {
+    try {
+      process.kill(backendPid, 0);
+      backendPidLive = true;
+    } catch {
+      backendPidLive = false;
+    }
+  }
+
+  if (
+    envName !== name ||
+    launcher.name !== name ||
+    Number(launcher.backend_port) !== backendPort ||
+    !launcherOwnsEnv ||
+    !backendPidLive
+  ) {
+    throw new Error(
+      `Phase 11 restart preflight failed: '${name}' is not the matching live launcher-owned backend.`,
+    );
+  }
+  return { name, backendPort };
+}
+
+async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
+  // `launch` scans UPWARD for a free port, so a port the dying backend still
+  // holds moves the instance — and this suite pins `API` at import, turning one
+  // restart into `ECONNREFUSED` for every test after it. Preventing that needs a
+  // fast backend-only restart that PRESERVES the DB (kill-then-wait blows the
+  // 60s test budget; `reset --backend-only` wipes the DB this test is proving
+  // survives), so until one exists we detect the drift rather than avoid it.
+  execFileSync(path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh'), ['launch', instance.name], {
+    cwd: REPO_ROOT,
+    stdio: 'pipe',
+  });
+  // Re-run the same ownership preflight the suite opened with: it re-reads the
+  // env file and launcher.json and re-checks identity, PID liveness and port
+  // agreement. Only the comparison against the port we were PINNED to is new.
+  const relaunched = ownedInstance();
+  if (relaunched.backendPort !== instance.backendPort) {
+    throw new Error(
+      `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
+    );
+  }
+  // `launch` waits for the BACKEND only, but it restarts vite too. Reloading
+  // the moment it returns hit a dev server that was not listening yet, so
+  // `terminal-panels` never appeared and every later test talked to a backend
+  // the page had never reconnected to. Gate on the frontend answering — a
+  // readiness probe, not a budget: it returns the instant the server responds.
+  const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    try {
+      const r = await fetch(base, { method: 'GET' });
+      if (r.ok) return;
+    } catch {
+      /* not listening yet */
+    }
+    if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+/**
+ * A real folder a project can own. NOT under the OS temp dir: the backend's
+ * `is_valid_project_cwd` excludes temp descendants, so a temp-rooted project
+ * never surfaces as a switch target / current project the way a user's does.
+ * `~/.flowpad-qa-roots/<label>-<uuid>` is neither temp nor protected (a HOME
+ * descendant, outside flow_home) and never a user workspace.
+ *
+ * A test's own `rmSync` is not the last word: the backend can write
+ * `agentic-assets/project_manifest/` back into a deleted project's mount after
+ * it (7 roots came back over one --repeat-each=3 run), and a worker restarted
+ * after a failure forgets what its predecessor minted. So `afterAll` sweeps
+ * every `<label>-*` this suite mints, not just the paths this worker saw.
+ */
+const QA_ROOTS_DIR = path.join(homedir(), '.flowpad-qa-roots');
+const mintedRootLabels = new Set<string>();
+function disposableProjectRoot(label: string): string {
+  const root = path.join(QA_ROOTS_DIR, `${label}-${globalThis.crypto.randomUUID()}`);
+  mkdirSync(root, { recursive: true });
+  mintedRootLabels.add(label);
+  return root;
+}
+
+function removeMintedProjectRoots(): void {
+  if (!existsSync(QA_ROOTS_DIR)) return;
+  for (const entry of readdirSync(QA_ROOTS_DIR)) {
+    if ([...mintedRootLabels].some((label) => entry.startsWith(`${label}-`))) {
+      rmSync(path.join(QA_ROOTS_DIR, entry), { recursive: true, force: true });
+    }
+  }
+}
 
 async function api(): Promise<APIRequestContext> {
   return apiContext();
@@ -165,7 +317,7 @@ async function uniqueProject(rq: APIRequestContext, label: string): Promise<stri
 }
 
 async function gotoDockShell(page: Page) {
-  await page.goto('/dock/shell');
+  await page.goto(withViewMode('/dock/shell', 'advanced'));
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
   await dismissCleanedSessionsOrSkip(page);
 }
@@ -175,14 +327,15 @@ async function tabIds(page: Page): Promise<string[]> {
 }
 
 /**
- * Switch the active project via the projects-counter chip popover. The chip
- * stays mounted even when the current project has zero open tabs (it labels the
- * ambient current project + the counts of projects that still own tabs), so it
- * is the affordance the matrix uses to move OFF an emptied project.
+ * Switch the active project via the top-nav project chip's popover (the tab
+ * strip no longer carries its own chip). The chip stays mounted even when the
+ * current project has zero open tabs (it labels the ambient current project +
+ * the counts of projects that still own tabs), so it is the affordance the
+ * matrix uses to move OFF an emptied project.
  */
 async function openProjectsChipPopover(page: Page) {
-  await page.locator('[data-testid="projects-counter-chip"]').first().click();
-  const popover = page.locator('[data-testid="projects-counter-popover"]');
+  await page.locator('[data-testid="top-nav-project-list"]').first().click();
+  const popover = page.locator('[data-testid="top-nav-project-popover"]');
   await popover.waitFor({ state: 'visible', timeout: 10_000 });
   return popover;
 }
@@ -208,10 +361,21 @@ async function expectStripTabs(page: Page, ids: string[]) {
     .toBe(ids.length);
 }
 
-/** Click a left-rail icon button (Home or the Chats/shell view). */
-async function clickRail(page: Page, target: 'home' | 'chats') {
-  const glyph = target === 'home' ? 'lucide-house' : 'lucide-message-square';
-  await page.locator(`button[data-sidebar="menu-button"]:has(svg.${glyph})`).click();
+/**
+ * Wait until the settled URL is the app root.
+ *
+ * The home loader canonicalises the bare root to `/?viewMode=<mode>`
+ * (`home-loader.ts`, deliberate — the first history entry must state its mode,
+ * or Back re-resolves through the mutable preference), so a `/\/$/` regex never
+ * matches: the URL ends in the mode, not a slash. Match the PATHNAME instead.
+ */
+function waitForRootUrl(page: Page) {
+  return page.waitForURL((u) => u.pathname === '/', { timeout: 15_000 });
+}
+
+/** Go Home through the TOP-BAR control (the rail no longer carries Home). */
+async function clickHome(page: Page) {
+  await page.locator('[data-testid="top-nav-home"]').click();
 }
 
 /**
@@ -252,6 +416,10 @@ async function commonValidation(page: Page) {
 test.describe('Interactive tabs / project filtering matrix', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
+  });
+
+  test.afterAll(() => {
+    removeMintedProjectRoots();
   });
 
   // ---- A. Refresh & browse ----
@@ -299,7 +467,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
@@ -356,11 +524,12 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 3; i++) await createShell(rq, projectId);
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
+    const selected = (await tabIds(page))[1].replace('tab-shell|', '');
     await page.locator(tabSel).nth(1).click();
-    await page.waitForTimeout(400);
-    await clickRail(page, 'home');
-    await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await clickRail(page, 'chats');
+    await expect(page).toHaveURL(new RegExp(selected));
+    await clickHome(page);
+    await waitForRootUrl(page);
+    await page.goto('/dock/shell');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
     // Chats rail lands on bare /dock/shell (scope-seeded to the active project):
@@ -410,8 +579,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
     const targetUrl = `/dock/shell/shell-${ids[1]}`;
-    await clickRail(page, 'home');
-    await page.waitForURL(/\/$/, { timeout: 15_000 });
+    await clickHome(page);
+    await waitForRootUrl(page);
     await page.goto(targetUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
@@ -447,8 +616,34 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  test('test 11: Open Claude tab via history record [skip:harness]', async () => {
-    test.skip(true, 'harness: History modal is fed by disk-based ~/.claude/projects session log; REST cannot enroll a row. skip_challenge_required.');
+  test('test 11: Open the current session-history modal from the opener menu', async ({ page }) => {
+    const rq = await api();
+    const projectRoot = disposableProjectRoot('history-modal');
+    const projectName = `History-${Date.now()}`;
+    const projectId = await createProject(rq, projectName, projectRoot);
+    const shellId = await createShell(rq, projectId);
+
+    try {
+      await page.goto(withViewMode(`/dock/shell/shell-${shellId}`, 'advanced'));
+      await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
+      await dismissCleanedSessionsOrSkip(page);
+
+      // The history entry point is the opener toolbar — the nav-bar project chip
+      // popover is a pure project list.
+      await openTabViaMenu(page, 'history');
+
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByRole('heading', { name: 'Recent Sessions' })).toBeVisible();
+      await expect(dialog.locator('[data-testid="history-all-projects"]')).toBeVisible();
+      await expect(dialog.locator('[data-testid="history-refresh"]')).toBeVisible();
+      await expect(dialog.locator('[data-testid="history-search-toggle"]')).toBeVisible();
+    } finally {
+      await page.goto('/');
+      await closeShell(rq, shellId);
+      await rq.delete(`${API}/api/v1/graph/project/${projectId}`);
+      await rq.dispose();
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 
   test('test 12: Open shell-by-id whose project differs from current', async ({ page }) => {
@@ -605,7 +800,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const before = await tabIds(page);
     const secondTab = page.locator(`[data-testid="${before[1]}"]`);
     await secondTab.click();
-    await page.waitForTimeout(300);
+    // The click NAVIGATES (URL-first), and the strip re-renders on that
+    // navigation. Hovering into that re-render leaves Playwright waiting for an
+    // element to become stable that keeps being replaced — every failure of this
+    // test was `locator.hover: Test timeout of 60000ms exceeded`, never the
+    // close itself. A fixed 300 ms sleep only made that likely, not certain.
+    // Wait for the click to have LANDED instead: the address naming the tab we
+    // clicked. Not a bigger budget — a correct precondition, and one fewer sleep.
+    const secondPointer = before[1].replace('tab-shell|', '');
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toContain(secondPointer);
     await secondTab.hover();
     await secondTab.locator('button[aria-label="Close tab"]').click();
     await expect(secondTab).toHaveCount(0, { timeout: 15_000 });
@@ -643,24 +846,28 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  // ---- D. Projects count chips selection ----
+  // ---- D. Project chip selection (top nav bar) ----
 
-  test('test 21: Chip selects project, swaps tab strip + URL', async ({ page }) => {
+  test('test 21: Chip selects project, swaps tab strip, and lands on the project home', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
     const pa = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
     const pb = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
-    for (let i = 0; i < 2; i++) await createShell(rq, pa);
+    const aShells: string[] = [];
+    for (let i = 0; i < 2; i++) aShells.push(await createShell(rq, pa));
     for (let i = 0; i < 3; i++) await createShell(rq, pb);
-    await gotoDockShell(page);
+    // Land on a Proj-A shell explicitly: a bare /dock/shell resolves its own
+    // default tab, which may already be one of B's — then B has a last-active
+    // tab and the switch resumes it instead of landing on the project home.
+    await page.goto(`/dock/shell/shell-${aShells[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     // Select Proj-B explicitly.
-    await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B|proj-b/).first().click();
+    await switchToProjectViaChip(page, 'Proj-B');
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
-    await commonValidation(page);
+    await expect(page).toHaveURL(new RegExp(`/dock/project/${pb}(?:\\?|$)`));
+    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i);
+    await expect(page.locator('[data-testid="terminal-panels"]')).toHaveCount(0);
     await rq.dispose();
   });
 
@@ -676,7 +883,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('3', { timeout: 15_000 });
+    await expect(page.locator('[data-testid="top-nav-project-list"]').first()).toContainText('3', { timeout: 15_000 });
     await rq.dispose();
   });
 
@@ -684,21 +891,30 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const rq = await api();
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
-    await createShell(rq, projectId);
-    await gotoDockShell(page);
-    await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
+    const shellId = await createShell(rq, projectId);
+    const scopedShell = withViewMode(
+      `/dock/shell/shell-${shellId}?scope-mode=project&scope-activeProjectId=${projectId}`,
+      'advanced',
+    );
+    await page.goto(scopedShell);
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
+    await dismissCleanedSessionsOrSkip(page);
     const urlBefore = page.url();
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
-    const current = page.locator('[data-testid="projects-counter-popover"] [aria-current="true"]');
-    if (await current.count()) await current.first().click();
-    else await page.keyboard.press('Escape');
-    await page.waitForTimeout(1_000);
+    const popover = await openProjectsChipPopover(page);
+    const current = popover.locator('[aria-current="true"]');
+    await expect(current).toHaveCount(1);
+    await current.click();
+    await expect(popover).not.toBeVisible();
+    const urlAfter = new URL(page.url());
     expect(page.url()).toBe(urlBefore);
+    expect(urlAfter.pathname).toBe(`/dock/shell/shell-${shellId}`);
+    expect(urlAfter.searchParams.get('viewMode')).toBe('advanced');
+    expect(urlAfter.searchParams.get('scope-mode')).toBe('project');
+    expect(urlAfter.searchParams.get('scope-activeProjectId')).toBe(projectId);
     await rq.dispose();
   });
 
-  test('test 24: Popover ordering — current first, count desc, alpha tiebreak', async ({ page }) => {
+  test('test 24: Popover lists every open project in stable alphabetical order', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
     const a = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
@@ -714,14 +930,14 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.goto(`/dock/shell/shell-${bShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
-    const rows = await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-[ABCD]/).allTextContents();
+    const popover = await openProjectsChipPopover(page);
+    // Reuse the existing popover readiness budget for the last expected row:
+    // the shell-backed project buckets can arrive after the current-project row.
+    await popover.getByRole('button', { name: /Proj-D 1/ }).waitFor({ state: 'visible', timeout: 10_000 });
+    const rows = await popover.getByText(/Proj-[ABCD]/).allTextContents();
     const order = rows.map((t) => (t.match(/Proj-[ABCD]/) ?? [''])[0]).filter(Boolean);
-    // The popover lists every project with open tabs. (The earlier
-    // current-first/count-desc ranking was simplified to a stable alphabetical
-    // order; assert the full set is present in that deterministic order.)
-    expect([...new Set(order)].sort()).toEqual(['Proj-A', 'Proj-B', 'Proj-C', 'Proj-D']);
+    // Ranking is a stable alphabetical order across every project with open tabs.
+    expect([...new Set(order)]).toEqual(['Proj-A', 'Proj-B', 'Proj-C', 'Proj-D']);
     await rq.dispose();
   });
 
@@ -754,7 +970,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  test('test 26: Switching project auto-selects first tab by tab_order', async ({ page }) => {
+  test('test 26: Switching to a project with no known last tab lands on project home', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
     const a = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
@@ -767,17 +983,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.goto(`/dock/shell/shell-${aShells[1].id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
-    await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B/).first().click();
-    // The switch auto-selects Proj-B's FIRST tab in strip order (the strip is
-    // ordered by the Tab entity's tab_order, which is the authority — not the
-    // shell row's tab_order, which can diverge). Assert the URL lands on the
-    // first tab the strip actually renders, and that it is one of Proj-B's shells.
+    await switchToProjectViaChip(page, 'Proj-B');
+    // Direct REST tab fixtures have no last_active_at, so none is a known
+    // resume target. The current contract keeps the project's tabs available
+    // in the strip but lands on the project home until the user selects one.
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(2);
-    const firstTab = (await tabIds(page))[0].replace('tab-shell|shell-', '');
-    expect(bIds).toContain(firstTab);
-    await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`shell-${firstTab}`);
+    const visibleProjectShells = (await tabIds(page)).map((tab) => tab.replace('tab-shell|shell-', ''));
+    expect(new Set(visibleProjectShells)).toEqual(new Set(bIds));
+    await expect(page).toHaveURL(new RegExp(`/dock/project/${b}(?:\\?|$)`));
+    await expect(page.locator('[data-testid="terminal-panels"]')).toHaveCount(0);
     await rq.dispose();
   });
 
@@ -799,11 +1013,67 @@ test.describe('Interactive tabs / project filtering matrix', () => {
 
   // ---- E. Footer selections ----
 
-  test('test 28: Footer "Switch Project" modal switches end-to-end [skip:harness]', async () => {
-    test.skip(
-      true,
-      'harness: the footer "Switch Project" modal (OpenProjectComponent) lists projects from the host filesystem scan (list_projects_from_indexer over ~/.claude|~/.codex|~/.copilot — 96 real machine projects here), NOT the harness-created flowpad project entities. A synthetic REST project at a /tmp mount never appears in that picker, so the modal switch cannot be driven headlessly. The chip/popover switch path (test-controllable) is covered by tests 21/24/26. skip_challenge_required.',
+  test('test 28: Footer "Switch Project" modal switches end-to-end', async ({ page }) => {
+    const rq = await api();
+    const rootA = disposableProjectRoot('switch-modal-a');
+    const suffix = Date.now();
+    const nameA = `Modal-A-${suffix}`;
+    const projectA = await createProject(rq, nameA, rootA);
+    const shellA = await createShell(rq, projectA);
+    const beforeResponse = await rq.get(`${API}/api/v1/graph/project`);
+    expect(beforeResponse.status()).toBe(200);
+    const preexistingProjectIds = new Set<string>(
+      ((await beforeResponse.json()).data as Array<{ id: string }>).map((project) => project.id),
     );
+    let selectedProjectId: string | null = null;
+
+    try {
+      await page.goto(withViewMode(`/dock/shell/shell-${shellA}`, 'advanced'));
+      await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
+      await dismissCleanedSessionsOrSkip(page);
+
+      await page.getByRole('button', { name: 'Switch Project' }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByRole('heading', { name: 'Switch Project' })).toBeVisible();
+      await expect(dialog.locator('[data-testid="switch-project-active-title"]')).toBeVisible();
+      const recentTitle = dialog.locator('[data-testid="switch-project-recent-title"]');
+      await expect(recentTitle).toBeVisible();
+      // A row is a <div> holding the open button (plus the info control), so
+      // the first Recent row is the next sibling div's row button.
+      const targetRow = recentTitle.locator(
+        'xpath=following-sibling::div[1]//button[starts-with(@data-testid,"switch-project-row-")]',
+      );
+      await expect(targetRow).toBeVisible();
+      const targetId = (await targetRow.getAttribute('data-testid'))!.replace('switch-project-row-', '');
+      const targetName = (await targetRow.locator('span.font-medium').innerText()).trim();
+      expect(targetName).not.toBe('');
+      const targetCwd = ((await dialog.getByTestId(`switch-project-path-${targetId}`).getAttribute('title')) ?? '').trim();
+      expect(path.isAbsolute(targetCwd)).toBe(true);
+      const canonicalPath = (value: string) =>
+        value.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      expect(canonicalPath(targetCwd)).not.toBe(canonicalPath(rootA));
+
+      await targetRow.click();
+      await expect(page).toHaveURL(/\/dock\/project\/[0-9a-f-]+(?:\?|$)/);
+      const projectMatch = new URL(page.url()).pathname.match(/^\/dock\/project\/([0-9a-f-]+)$/);
+      expect(projectMatch).not.toBeNull();
+      selectedProjectId = projectMatch![1];
+      await expect(page.locator('[data-testid="footer"]')).toContainText(targetName);
+
+      const selectedResponse = await rq.get(`${API}/api/v1/graph/project/${selectedProjectId}`);
+      expect(selectedResponse.status()).toBe(200);
+      const selected = (await selectedResponse.json()).data as { fs_storage_mount_path?: string };
+      expect(canonicalPath(selected.fs_storage_mount_path ?? '')).toBe(canonicalPath(targetCwd));
+    } finally {
+      await page.goto('/');
+      await closeShell(rq, shellA);
+      if (selectedProjectId && !preexistingProjectIds.has(selectedProjectId)) {
+        await rq.delete(`${API}/api/v1/graph/project/${selectedProjectId}`);
+      }
+      await rq.delete(`${API}/api/v1/graph/project/${projectA}`);
+      await rq.dispose();
+      rmSync(rootA, { recursive: true, force: true });
+    }
   });
 
   test('test 29: Footer label fallback chain', async ({ page }) => {
@@ -853,21 +1123,55 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     test.skip(true, 'platform: OS file manager opens outside the browser; cannot verify headlessly. skip_challenge_required.');
   });
 
-  test('test 32: Footer repo/branch Git artifact [skip:removed]', async () => {
-    test.skip(
-      true,
-      'removed: project Git artifacts and footer repo/branch rendering were removed; git share provenance is represented by GitOrigin bundle metadata. skip_challenge_required.',
-    );
-  });
-
   // ---- F. Restart & CLI changes ----
 
-  test('test 33: Backend restart preserves tabs [skip:harness]', async () => {
-    test.skip(true, 'harness: restarting flow_sdk.server.run on the shared dev backend terminates other agents WS. Live only on isolated backend. skip_challenge_required.');
+  test('test 33: Backend restart preserves tabs on the launcher-owned instance', async ({ page }) => {
+    const instance = ownedInstance();
+    const rq = await api();
+    await resetDb(rq);
+    const projectA = await createProject(rq, 'Restart-A', '/tmp/regression/restart-a');
+    const projectB = await createProject(rq, 'Restart-B', '/tmp/regression/restart-b');
+    const shellA = [
+      await createShell(rq, projectA),
+      await createShell(rq, projectA),
+      await createShell(rq, projectA),
+    ];
+    const shellB = await createShell(rq, projectB);
+
+    await page.goto(withViewMode(`/dock/shell/shell-${shellA[0]}`, 'advanced'));
+    await expectStripTabs(page, shellA);
+
+    await restartOwnedInstance(instance);
+    await page.reload();
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
+    await dismissCleanedSessionsOrSkip(page);
+    await expectStripTabs(page, shellA);
+
+    await switchToProjectViaChip(page, 'Restart-B');
+    await expectStripTabs(page, [shellB]);
+    await expect(page.locator(`[data-testid="tab-shell|shell-${shellB}"]`)).toHaveCount(1);
+    await rq.dispose();
   });
 
-  test('test 34: Backend restart with an AgenticProcess in the strip [skip:harness]', async () => {
-    test.skip(true, 'harness: same shared-backend-restart limit as test 33. skip_challenge_required.');
+  test('test 34: Backend restart rebinds the AgenticProcess tab on the launcher-owned instance', async ({ page }) => {
+    const instance = ownedInstance();
+    const rq = await api();
+    await resetDb(rq);
+    const { projectId } = await bootstrapIds(rq);
+    const { id } = await createProcess(rq, projectId, 'claude_code');
+
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
+    const processTab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
+    await expect(processTab).toBeVisible();
+
+    await restartOwnedInstance(instance);
+    await page.reload();
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
+    await dismissCleanedSessionsOrSkip(page);
+    await expect(processTab).toHaveCount(1);
+    await expect(processTab).toHaveAttribute('data-active', 'true');
+    await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${id}`));
+    await rq.dispose();
   });
 
   test('test 35: External REST POST creates a new shell (CLI-equivalent)', async ({ page }) => {
@@ -915,19 +1219,54 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const ids = [await createShell(rq, projectId), await createShell(rq, projectId), await createShell(rq, projectId)];
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
-    // Close a non-active (last) shell externally — the backend hides its Tab
+    // Close a NON-active shell externally — the backend hides its Tab
     // (visible=false); the strip reflects it on the next load-time refetch.
-    await closeShell(rq, ids[2]);
+    // Bare /dock/shell picks its default among the seeded tabs without a
+    // creation-order guarantee, so read the active one off the URL instead of
+    // assuming the last-created shell is never it.
+    await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
+    const activeId = page.url().match(/shell-([0-9a-f-]+)/)![1];
+    const victim = ids.find((id) => id !== activeId)!;
+    await closeShell(rq, victim);
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
-    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(ids[2]);
+    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(victim);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBe(2);
     await rq.dispose();
   });
 
-  test('test 38: Two browser windows in sync [skip:harness]', async () => {
-    test.skip(true, 'harness: cross-window WS sync needs two independent sessions; MCP/shared Chrome cannot simulate. Covered by 35/36/37 REST-as-second-client. skip_challenge_required.');
+  test('test 38: Two independent browser contexts keep the tab strip in sync', async ({ page, browser }) => {
+    const rq = await api();
+    const projectRoot = disposableProjectRoot('two-browser-sync');
+    const projectId = await createProject(rq, `Two-Browser-${Date.now()}`, projectRoot);
+    const shells = [await createShell(rq, projectId), await createShell(rq, projectId)];
+    const secondContext = await browser.newContext();
+    const secondPage = await secondContext.newPage();
+    await dismissSetupModal(secondPage);
+
+    try {
+      const target = withViewMode(`/dock/shell/shell-${shells[0]}`, 'advanced');
+      await page.goto(target);
+      await secondPage.goto(target);
+      await expectStripTabs(page, shells);
+      await expectStripTabs(secondPage, shells);
+
+      const closingTab = page.locator(`[data-testid="tab-shell|shell-${shells[1]}"]`);
+      await closingTab.hover();
+      await closingTab.locator('button[aria-label="Close tab"]').click();
+
+      await expect(page.locator(`[data-testid="tab-shell|shell-${shells[1]}"]`)).toHaveCount(0);
+      await expect(secondPage.locator(`[data-testid="tab-shell|shell-${shells[1]}"]`)).toHaveCount(0);
+      await expect(secondPage.locator(`[data-testid="tab-shell|shell-${shells[0]}"]`)).toHaveCount(1);
+    } finally {
+      await secondContext.close();
+      await page.goto('/');
+      for (const shellId of shells) await closeShell(rq, shellId);
+      await rq.delete(`${API}/api/v1/graph/project/${projectId}`);
+      await rq.dispose();
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 
   // ---- G. Codex / Claude / terminal mix ----
@@ -1080,15 +1419,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const activeTab = before[1];
     const activeKey = activeTab.replace('tab-shell|', '');
     await page.locator(`[data-testid="${activeTab}"]`).click();
-    await page.waitForTimeout(400);
+    await expect(page).toHaveURL(new RegExp(activeKey));
     // Dock state is "preserved" across rail round-trips in that all tabs survive
     // and remain selectable. (Bare /dock/shell re-entry does not auto-restore the
     // exact prior selection — the rail carries no remembered pointer — so the tab
     // is re-activated by clicking it, as a user would. Idempotent across rounds.)
     for (let r = 0; r < 2; r++) {
-      await clickRail(page, 'home');
-      await page.waitForURL(/\/$/, { timeout: 15_000 });
-      await clickRail(page, 'chats');
+      await clickHome(page);
+      await waitForRootUrl(page);
+      await page.goto('/dock/shell');
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(await tabIds(page)).toEqual(before);
@@ -1108,9 +1447,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     const ids = await tabIds(page);
     const keys = ids.map((t) => t.replace('tab-shell|', ''));
-    for (const id of ids) {
+    for (let index = 0; index < ids.length; index += 1) {
+      const id = ids[index];
       await page.locator(`[data-testid="${id}"]`).click();
-      await page.waitForTimeout(400);
+      await expect(page).toHaveURL(new RegExp(keys[index]));
     }
     // Back twice: C -> B -> A
     await page.goBack();
@@ -1132,15 +1472,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 2; i++) await createShell(rq, projectId);
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
+    const target = (await tabIds(page))[1].replace('tab-shell|', '');
     await page.locator(tabSel).nth(1).click();
-    await page.waitForTimeout(400);
-    const target = page.url().match(/(shell|agentic_process)-[0-9a-f-]+/)![0];
-    await clickRail(page, 'home');
-    await page.waitForURL(/\/$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(new RegExp(target));
+    await clickHome(page);
+    await waitForRootUrl(page);
     await page.goBack();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(target);
     await page.goForward();
-    await expect.poll(async () => page.url(), { timeout: 15_000 }).toMatch(/\/$/);
+    await expect.poll(async () => new URL(page.url()).pathname, { timeout: 15_000 }).toBe('/');
     await page.goBack();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(target);
     await rq.dispose();
@@ -1163,14 +1503,14 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
-    await clickRail(page, 'home');
-    await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await clickRail(page, 'chats');
+    await clickHome(page);
+    await waitForRootUrl(page);
+    await page.goto('/dock/shell');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     await page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`).click();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`agentic_process-${id}`);
@@ -1208,10 +1548,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await dismissCleanedSessionsOrSkip(page);
     // Count = 2 even though Proj-C owns zero terminal tabs (the fix: the chip is
     // kind-agnostic, not terminal-only).
-    await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('2', { timeout: 15_000 });
-    await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    const popover = page.locator('[data-testid="projects-counter-popover"]');
-    await popover.waitFor({ state: 'visible', timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-project-list"]').first()).toContainText('2', { timeout: 15_000 });
+    const popover = await openProjectsChipPopover(page);
     // Proj-C is listed, with a per-project badge of 1 (its single content tab).
     const cRow = popover.getByRole('button', { name: /Proj-C/ });
     await expect(cRow).toBeVisible({ timeout: 10_000 });
@@ -1219,10 +1557,37 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  test('test 52: Selecting a content-only project switches the current project (footer parity) [skip:wip]', async () => {
-    test.skip(
-      true,
-      'wip-feature: selecting a project whose only open tab is a CONTENT tab (no terminal) from the projects-counter popover does not switch the current project — the footer stays on the prior project and the strip is not re-scoped. This "switch to a terminal-less project" behavior is part of the in-flight project-switching/loader refactor (load-shell.ts/load-next-process.ts, uncommitted) and is not present in current code; the popover switch for projects WITH terminal tabs is covered by tests 21/24/26. skip_challenge_required.',
-    );
+  test('test 52: Selecting a content-only project switches current project and footer', async ({ page }) => {
+    const rq = await api();
+    const rootA = disposableProjectRoot('content-switch-a');
+    const rootC = disposableProjectRoot('content-switch-c');
+    const suffix = Date.now();
+    const nameA = `Content-A-${suffix}`;
+    const nameC = `Content-C-${suffix}`;
+    const projectA = await createProject(rq, nameA, rootA);
+    const projectC = await createProject(rq, nameC, rootC);
+    const shellA = await createShell(rq, projectA);
+    const contentTab = await createContentTab(rq, projectC);
+
+    try {
+      await page.goto(withViewMode(`/dock/shell/shell-${shellA}`, 'advanced'));
+      await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
+      await dismissCleanedSessionsOrSkip(page);
+
+      await switchToProjectViaChip(page, nameC);
+
+      await expect(page).toHaveURL(new RegExp(`/dock/project/${projectC}(?:\\?|$)`));
+      await expect(page.locator('[data-testid="footer"]')).toContainText(nameC);
+      await expect(page.locator('[data-testid="terminal-panels"]')).toHaveCount(0);
+    } finally {
+      await page.goto('/');
+      await closeShell(rq, shellA);
+      await rq.delete(`${API}/api/v1/graph/tab/${contentTab}`);
+      await rq.delete(`${API}/api/v1/graph/project/${projectA}`);
+      await rq.delete(`${API}/api/v1/graph/project/${projectC}`);
+      await rq.dispose();
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootC, { recursive: true, force: true });
+    }
   });
 });

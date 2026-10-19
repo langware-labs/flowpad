@@ -9,21 +9,15 @@ import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
-import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
-import { AttachMenu } from '@src/components/conversation/AttachMenu';
-import { MAX_FILE_SIZE_BYTES } from '@src/components/conversation/constants';
+import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
+import { AttachMenu, AssetRefChips } from '@src/components/conversation/AttachMenu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { MessageSquarePlus, Pencil } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
+import { Loader2, MessageSquarePlus, Pencil } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -43,21 +37,39 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [initialMessage, setInitialMessage] = useState('');
   const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const { addFiles, handlePaste } = useFileStateAttach(setFiles, { enabled: !busy, setText: setInitialMessage });
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
 
+  // Reset the draft ONLY on the closed→open transition. Depending on the
+  // ``projects`` array here wiped the form mid-typing: every project-row
+  // update (the auto-indexer bumps it repeatedly on a fresh instance) yields a
+  // new array identity, re-ran the reset, and dropped the participant the
+  // user had just added — so Create stayed disabled with nothing to show why.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setParticipants([]);
-    setInitialMessage('');
-    setTitle('');
-    setFiles([]);
-    setAssetRefs([]);
-    setEditingName(false);
-    setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
-    resetDraft();
-  }, [open, ctx.project?.id, projects, resetDraft]);
+    if (open && !wasOpenRef.current) {
+      setParticipants([]);
+      setInitialMessage('');
+      setTitle('');
+      setFiles([]);
+      setAssetRefs([]);
+      setEditingName(false);
+      setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
+      resetDraft();
+    }
+    wasOpenRef.current = open;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- transition-gated; see above
+  }, [open]);
+
+  // The default project can arrive after the dialog opened; adopt it once,
+  // without touching anything the user typed.
+  useEffect(() => {
+    if (!open || projectId) return;
+    const fallback = ctx.project?.id ?? projects[0]?.id ?? '';
+    if (fallback) setProjectId(fallback);
+  }, [open, projectId, ctx.project?.id, projects]);
 
   useEffect(() => {
     const name = cloudUser?.name || cloudUser?.email || localUser?.name || '';
@@ -65,14 +77,10 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   }, [cloudUser?.email, cloudUser?.name, localUser?.name]);
 
   const isRemote = hasRemoteParticipant(participants);
-  const autofillTitle = useAutoTitle(open, participants);
-  const placeholderTitle = autofillTitle;
+  const projectName = projects.find((p) => p.id === projectId)?.displayName ?? null;
+  const autofillTitle = useAutoTitle(open, participants, projectName);
 
-  const canCreate =
-    !busy
-    && (isRemote || !!projectId)
-    && participants.length > 0
-    && !!initialMessage.trim();
+  const canCreate = !busy && (isRemote || !!projectId) && participants.length > 0 && !!initialMessage.trim();
 
   const handleCreate = async () => {
     if (!canCreate) return;
@@ -80,7 +88,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     const target: SendTarget = {
       kind: 'new',
       params: {
-        project_id: isRemote ? null : projectId,
+        project_id: projectId || null,
         participants,
         title: effectiveTitle,
       },
@@ -88,8 +96,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     const payload: ConversationSendPayload = {
       text: initialMessage.trim(),
       files: files.length > 0 ? files : undefined,
-      assetReferences:
-        assetRefs.length > 0 ? assetRefs.map((a) => a.typeid) : undefined,
+      assetReferences: assetRefs.length > 0 ? assetRefs.map((a) => a.typeid) : undefined,
     };
     const conversationId = await send(target, payload);
     if (conversationId) {
@@ -104,14 +111,16 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquarePlus className="h-5 w-5 text-primary" />
-            {placeholderTitle}
+            {autofillTitle}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
           {isRemote && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium"><Trans>From:</Trans></span>
+              <span className="font-medium">
+                <Trans>From:</Trans>
+              </span>
               {editingName ? (
                 <input
                   className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
@@ -135,7 +144,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                   <button
                     type="button"
                     onClick={() => setEditingName(true)}
-                    className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    className="text-muted-foreground/50 transition-colors hover:text-muted-foreground"
                     title={t`Edit sender name`}
                     disabled={busy}
                   >
@@ -192,6 +201,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               onChange={setParticipants}
               excludeUserId={cloudUser?.id ?? ctx.user?.id}
               enabled={open}
+              includeTeams
               testId="participant-input"
             />
           </div>
@@ -205,6 +215,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
+              onPaste={handlePaste}
               placeholder={isRemote ? t`Say hi…` : t`Type your first message…`}
               data-testid="initial-message-input"
             />
@@ -219,33 +230,33 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               <AttachMenu
                 assetRefs={assetRefs}
                 onAssetRefsChange={setAssetRefs}
-                onFilesPicked={(picked) => {
-                  if (!picked) return;
-                  const next = [...files];
-                  for (const f of Array.from(picked)) {
-                    if (f.size > MAX_FILE_SIZE_BYTES) continue;
-                    if (!next.some((x) => x.name === f.name && x.size === f.size)) {
-                      next.push(f);
-                    }
-                  }
-                  setFiles(next);
-                }}
+                onFilesPicked={addFiles}
                 disabled={busy}
+                hideAssetList
               />
             </div>
+            {/* Asset chips render below the label row, not inside it: inside a
+                flex row the chip list sizes to its content (min-width:auto),
+                so a long asset label pushes the row past the dialog edge
+                instead of truncating. */}
+            <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />
             <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
-            <Trans>Cancel</Trans>
-          </Button>
-          <Button onClick={() => void handleCreate()} disabled={!canCreate}>
-            {busy ? t`Creating…` : t`Create`}
-          </Button>
+        <div className="flex items-center gap-2 pt-2">
+          <SendProgressNotice busy={busy} hasAttachments={files.length > 0 || assetRefs.length > 0} />
+          <div className="ms-auto flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={busy}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button onClick={() => void handleCreate()} disabled={!canCreate} className="gap-1.5">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {busy ? t`Creating…` : t`Create`}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

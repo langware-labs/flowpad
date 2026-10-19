@@ -33,18 +33,32 @@ async def test_validate_no_key_configured(lm_api) -> None:
     assert result == {"valid": False, "message": "No key configured"}
 
 
-def test_validate_endpoint_table_covers_all_providers() -> None:
-    """Every provider must have a validation endpoint, or validate_lm_api KeyErrors
-    on a configured key."""
-    from flow_sdk.cli.auth.lm_api_keys import _VALIDATE_ENDPOINTS
+def test_validate_endpoint_resolver_covers_all_providers(lm_api) -> None:
+    """Every provider must resolve to a validation endpoint, or validate_lm_api
+    would fail on a configured key. FLOWPAD resolves only once the hub has bound
+    an endpoint (``None`` while unbound -- never a KeyError)."""
+    from flow_sdk.cli.auth.lm_api_keys import _VALIDATE_ENDPOINTS, _validate_endpoint
     from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+    from flow_sdk.instance_settings import llm_endpoint
 
+    llm_endpoint.reset_cache()
     for provider in LMApiProvider:
+        if provider is LMApiProvider.FLOWPAD:
+            assert _validate_endpoint(provider) is None
+            continue
         assert provider.value in _VALIDATE_ENDPOINTS, f"no validate endpoint for {provider.value}"
-        url, build_headers = _VALIDATE_ENDPOINTS[provider.value]
+        url, build_headers = _validate_endpoint(provider)
         assert url.startswith("https://")
         # The header builder must embed the key.
         assert any("SENTINEL" in v for v in build_headers("SENTINEL").values())
+
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke")
+    try:
+        url, build_headers = _validate_endpoint(LMApiProvider.FLOWPAD)
+        assert url.endswith("/api/v1/graph/llm_endpoint/ep1/invoke/v1/models")
+        assert build_headers("SENTINEL") == {"Authorization": "Bearer SENTINEL"}
+    finally:
+        llm_endpoint.clear_hub_llm_endpoint()
 
 
 async def test_validate_string_provider(lm_api) -> None:

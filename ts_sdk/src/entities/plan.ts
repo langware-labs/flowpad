@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 
 export interface IPlan extends IEntity {
@@ -10,6 +10,12 @@ export interface IPlan extends IEntity {
   parent_path?: string;
   vault_root?: string;
 }
+
+// `implements IPlan` only checks the class; it contributes no members, so every
+// field declared solely on IPlan read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Plan extends EntityMerge<IPlan> {}
 
 /**
  * Plan — a markdown plan document under ~/.claude/plans/.
@@ -39,6 +45,6 @@ export class Plan extends APIEntity<Plan> implements IPlan {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('plan') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 }

@@ -37,7 +37,7 @@ export function SessionEventsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] max-w-4xl overflow-hidden p-0">
         <DialogHeader className="border-b px-4 py-3">
-          <DialogTitle className="flex items-center gap-2 pr-6 text-sm">
+          <DialogTitle className="flex items-center gap-2 pe-6 text-sm">
             <Activity className="h-4 w-4 shrink-0 text-primary" />
             <span className="min-w-0 truncate">{sessionName}</span>
           </DialogTitle>

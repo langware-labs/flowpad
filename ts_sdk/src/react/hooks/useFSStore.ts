@@ -1,5 +1,5 @@
 import { useStore } from 'zustand';
-import { fsStore, type FSStoreState } from '@sdk';
+import { fsStore, type FSStoreState } from '../../stores/fsStore';
 
 /**
  * React hook wrapper for the vanilla fsStore from the SDK.

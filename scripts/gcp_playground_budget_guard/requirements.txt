@@ -1,0 +1,3 @@
+functions-framework>=3.0
+google-cloud-compute>=1.19
+google-cloud-billing>=1.13

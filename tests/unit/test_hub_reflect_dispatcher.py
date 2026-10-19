@@ -101,7 +101,7 @@ def test_should_reflect_false_when_logged_out(logged_out):
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
-    """GET action: hub_get is called with the right path; response replaces local members."""
+    """GET action: the hub is read at the right path; response replaces local members."""
     import flow_sdk.server.routes._hub_reflect as mod
 
     captured = {}
@@ -133,20 +133,22 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
         captured["et"] = entity_type
         captured["id"] = entity_id
         captured["action"] = action
+        captured["kwargs"] = kwargs
         return hub_payload
 
     async def fake_save(self_=None, **kwargs):
         captured["saved"] = True
         return None
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_get_or_raise", fake_hub_get)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
     a = _make_action(methods=("get",))
     e = _make_entity(remote=True, members=[{"user_id": "stale"}])
 
-    result = await mod.reflect_to_hub(a, e, {}, "get")
+    result = await mod.reflect_to_hub(a, e, {"require_authoritative": True}, "get")
 
+    assert "require_authoritative" not in captured["kwargs"]
     assert result == expected_normalized
     assert captured["id"] == e.id
     assert captured["action"] == "members"
@@ -157,27 +159,28 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_reflect_to_hub_raises_huberror_when_hub_get_returns_none(monkeypatch):
-    """``hub_get`` returns None on transport/HTTP failure — dispatcher must
-    surface this as HubError so the caller falls through to the local handler."""
+async def test_reflect_to_hub_get_keeps_the_hubs_status(monkeypatch):
+    """A failed reflected GET raises HubError carrying the hub's OWN status — a
+    refusal (403) and an outage (0) must stay distinguishable to the caller."""
     import flow_sdk.server.routes._hub_reflect as mod
 
-    async def fake_hub_get(*args, **kwargs):
-        return None
+    async def refused(*args, **kwargs):
+        raise HubError(403, "not an admin here")
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_get_or_raise", refused)
 
     a = _make_action(methods=("get",))
     e = _make_entity(remote=True)
 
-    with pytest.raises(HubError):
+    with pytest.raises(HubError) as raised:
         await mod.reflect_to_hub(a, e, {}, "get")
+    assert raised.value.status_code == 403
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
-    """REGRESSION LOCK for the "Cloud request rejected" inbox bug.
+    """REGRESSION LOCK for the "Cloud request rejected" stream inbox bug.
 
     ``members`` registers a GET (list) and a DELETE (remove) handler under one
     registry key; the DELETE ``Action`` overwrites the GET, so ``get_by_name``
@@ -186,7 +189,7 @@ async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
     a roster GET reflects as a hub DELETE with an empty body → hub 400 → toast.
 
     Here the matched Action declares ``methods=["delete"]`` (simulating the
-    overwrite) but the incoming request method is GET: reflect MUST call hub_get
+    overwrite) but the incoming request method is GET: reflect MUST read the hub
     and MUST NOT call hub_delete.
     """
     import flow_sdk.server.routes._hub_reflect as mod
@@ -204,7 +207,7 @@ async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
     async def fake_save(self_=None, **kwargs):
         return None
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_get_or_raise", fake_hub_get)
     monkeypatch.setattr(mod, "hub_delete", fake_hub_delete)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
@@ -321,7 +324,7 @@ def test_merge_hub_entity_skips_roster_and_unchanged_scalars(monkeypatch):
         e,
         {
             "title": "new",  # scalar, changed → applied
-            "message_status_visible": True,  # scalar, unchanged → skipped
+            "git_sharing_enabled": False,  # scalar, unchanged → skipped
             "members": [{"user_id": "hub"}],  # denylisted roster → skipped
             "not_a_field_xyz": "z",  # not an api field → skipped
         },
@@ -562,6 +565,50 @@ async def test_reflect_to_hub_put_members_denial_propagates(monkeypatch):
 
 
 @pytest.mark.asyncio
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+async def test_reflect_to_hub_put_keeps_the_parsed_action_and_sub_path(monkeypatch):
+    """``PUT agent/<id>/access/public/visitor`` must reach the hub at that same path.
+
+    Entered through the real path parser and action registry, as the graph route does:
+    the parser only keeps ``action``/``sub_path`` for a REGISTERED action, and an
+    unregistered one used to turn this PUT into an implicit ``update`` — a bare
+    ``PUT /agent/<id>`` writing ``{role}`` onto the agent row.
+    """
+    import flow_sdk.app.actions  # noqa: F401 — side-effect registration
+    import flow_sdk.server.routes._hub_reflect as mod
+    from flow_sdk.actions.action_registry import action, get_action_from_method
+    from flow_sdk.api.api_request import APIRequest
+    from flow_sdk.builtin.agent import Agent
+
+    agent_id = str(uuid.uuid4())
+    parsed = APIRequest.from_api_path(f"/api/v1/graph/agent/{agent_id}/access/public/visitor")
+    assert (parsed.action, parsed.sub_path) == ("access", "public/visitor")
+
+    captured = {}
+
+    async def fake_hub_put(entity_type, entity_id=None, payload=None, action=None, sub_path=None, **kwargs):
+        captured.update(et=entity_type.value, id=entity_id, payload=payload, action=action, sub_path=sub_path)
+        return {"audience": "visitor", "role": "anonymous_viewer"}
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+
+    a = action.get_by_name(parsed.action or get_action_from_method("PUT"), "agent")
+    e = Agent(id=agent_id, name="public", title="Public", remote=True)
+    result = await mod.reflect_to_hub(a, e, {"role": "anonymous_viewer"}, "PUT", parsed.sub_path)
+
+    assert captured == {
+        "et": "agent",
+        "id": agent_id,
+        "payload": {"role": "anonymous_viewer"},
+        "action": "access",
+        "sub_path": "public/visitor",
+    }
+    # A sub-pathed reply is the hub's own answer, not the agent row.
+    assert result == {"audience": "visitor", "role": "anonymous_viewer"}
+
+
+@pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_reflect_to_hub_skips_unknown_entity_type(monkeypatch):
     """Entities whose ``type`` isn't a builtin enum value have no hub
@@ -665,3 +712,62 @@ async def test_mirror_caches_roster_on_any_entity_type(monkeypatch):
     u = User(id="u-1")
     await mirror_hub_response_into_local(u, "members", [{"user_id": "x", "role": "member"}])
     assert u.members == [{"user_id": "x", "role": "member"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_mirror_learns_a_changed_roster_into_the_address_book(monkeypatch):
+    """A member's email that arrives via the roster mirror reaches their contact:
+    the conversation sync skips a roster it finds already stored, so the mirror
+    is the only place that sees it. An unchanged roster learns nothing."""
+    import flow_sdk.app.actions.flow_message_action as fma
+    from flow_sdk.server.routes._hub_reflect import mirror_hub_response_into_local
+
+    learned: list[list[dict]] = []
+
+    async def fake_learn(participants):
+        learned.append(list(participants))
+        return len(participants)
+
+    async def fake_save(self_=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(fma, "_learn_address_book", fake_learn)
+    monkeypatch.setattr(Conversation, "save", fake_save)
+    roster = [{"user_id": "u-bob", "name": "Bob", "email": "bob@example.com", "role": "member"}]
+    e = _make_entity(remote=True, members=[{"user_id": "u-bob", "name": "Bob"}])
+
+    await mirror_hub_response_into_local(e, "members", roster)
+    assert learned == [roster]
+
+    await mirror_hub_response_into_local(e, "members", roster)
+    assert learned == [roster]
+
+
+@pytest.mark.asyncio
+async def test_an_update_of_only_local_fields_stays_local_and_never_asks_the_hub(monkeypatch):
+    """The app saves the whole entity, so a save that changes nothing the hub holds still echoes
+    the hub's clocks in the client's spelling. A reader of a shared project had such a save
+    forwarded and refused (403), and lost the local write with it."""
+    import flow_sdk.server.routes._hub_reflect as mod
+    from flow_sdk.builtin.project import Project
+
+    async def refuse(*_args, **_kwargs):
+        raise AssertionError("a local-only change was sent to the hub")
+
+    monkeypatch.setattr(mod, "hub_put", refuse)
+    project = Project(id=str(uuid.uuid4()), name="shared with me", remote=True)
+    update = Action(
+        action_name="update", function_name="update", handler=lambda self: None, methods=["put"], types=["all"]
+    )
+
+    body = {
+        **project.model_dump(mode="json"),
+        "fetched_at": "2026-10-11T00:00:00Z",
+        "updated_date": "2026-10-11T00:00:00Z",
+    }
+    assert await mod.reflect_to_hub(update, project, body, "PUT") is mod.REFLECT_CONTINUE_LOCAL
+
+    # A field the hub does hold still goes there.
+    with pytest.raises(AssertionError, match="sent to the hub"):
+        await mod.reflect_to_hub(update, project, {**body, "name": "renamed"}, "PUT")

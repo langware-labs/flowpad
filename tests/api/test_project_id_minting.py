@@ -54,8 +54,9 @@ def _make_db_with_project(db_path, *, project_id: str, mount_path: str) -> None:
 
 def _point_db_path(monkeypatch, db_path) -> None:
     """Make ``get_instance_settings().db_path`` return ``db_path``."""
-    import flow_sdk.instance_settings as instance_settings
     from types import SimpleNamespace
+
+    import flow_sdk.instance_settings as instance_settings
 
     settings = SimpleNamespace(db_path=str(db_path))
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)
@@ -102,9 +103,7 @@ def test_codex_session_record_carries_cwd_for_stamping(tmp_path, monkeypatch):
     yields no project tab."""
     import json as _json
 
-    from flow_sdk.fs_store.indexer.functions.codex_sessions import (
-        extract_codex_session_from_path,
-    )
+    from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
 
     proj_dir = tmp_path / "work" / "repo"
     proj_dir.mkdir(parents=True)

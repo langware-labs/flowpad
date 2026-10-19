@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import webbrowser
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
@@ -28,6 +28,9 @@ from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, 
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
+
+if TYPE_CHECKING:
+    from flow_sdk.core.browser_profiles import ProfileChoice
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +49,10 @@ def _classify_hub(api_base_url: str | None) -> str:
     return "unsupported"
 
 
-async def cloud_login() -> dict[str, Any]:
+async def cloud_login(profile: ProfileChoice | None = None) -> dict[str, Any]:
     """Route by hub URL: flowpad.ai → browser/Auth0, localhost → env-mode creds, else error.
+
+    ``profile`` opens the browser sign-in in that browser profile instead of the system default.
 
     Returns ``{status: "logged_in", user}`` (local) or ``{status: "started", url}`` (cloud).
     Browser-mode result arrives later via OAuthMessage WS broadcast.
@@ -62,18 +67,29 @@ async def cloud_login() -> dict[str, Any]:
         kind = _classify_hub(hub_url)
 
         if kind == "cloud":
+            from flow_sdk.instance_settings.runtime import own_sandbox_id
+
+            sandbox_id = own_sandbox_id()
+            if sandbox_id:
+                from flow_sdk.cli.auth.sandbox_login import start_sandbox_login
+
+                return start_sandbox_login(sandbox_id)
             # Browser-mode: success/failure arrives later via the OAuth WS
             # callback. LOGGED_IN / LOGIN_FAILED are emitted from there
             # (_finalize_login on success, _broadcast_oauth_error on error).
-            return await _login_by_window(settings.cloud_login_timeout_seconds)
+            return await _login_by_window(settings.cloud_login_timeout_seconds, profile)
 
         if kind == "local":
-            if not (settings.cloud_user_email and settings.cloud_user_pass):
+            has_email = bool(settings.cloud_user_email)
+            has_password = bool(settings.cloud_user_pass)
+            if has_email != has_password:
                 raise ValueError(
-                    "Cloud is not configured. Set FLOWPAD_CLOUD_USER_EMAIL and "
-                    "FLOWPAD_CLOUD_USER_PASSWORD in .env.local and restart the app."
+                    "Local Hub login is partially configured. Set both "
+                    "FLOWPAD_CLOUD_USER_EMAIL and FLOWPAD_CLOUD_USER_PASSWORD, or neither."
                 )
-            return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+            if has_email and has_password:
+                return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+            return await _login_local()
 
         raise ValueError(f"Cloud sign-in isn't supported for this hub URL: {hub_url}")
     except Exception as exc:
@@ -87,26 +103,67 @@ async def _login_by_api(email: str, password: str) -> dict[str, Any]:
     return {"status": "logged_in", "user": login_data.user}
 
 
-async def _login_by_window(timeout: float) -> dict[str, Any]:
+async def _login_local() -> dict[str, Any]:
+    """Use the local Hub's no-popup test/development login."""
+    async with FlowpadClient(ApiConfig.from_env()) as client:
+        data = await client.post("/login/local", {})
+    login_data = LoginData.model_validate(data)
+    if not login_data.token or not login_data.user:
+        raise RuntimeError("Local Hub sign-in returned an unexpected response.")
+    await _finalize_login(login_data)
+    return {"status": "logged_in", "user": login_data.user}
+
+
+#: Which browser sign-in is the live one. Every attempt shares ONE "the callback arrived" event, and
+#: each starts its own timeout — so a second click (or the double-fire the dialog used to do) left
+#: the FIRST attempt's timer running, and when it expired it declared the NEWER attempt failed while
+#: the person was still signing in. Only the current attempt's timer may fail it; a cancel retires it.
+_window_attempt = 0
+
+
+async def _login_by_window(timeout: float, profile: ProfileChoice | None = None) -> dict[str, Any]:
     # Race window: the cloud could redirect-back before this function returns,
     # so reset the waiter state BEFORE opening the browser.
     from flow_sdk.server import state
 
+    global _window_attempt
+    _window_attempt += 1
     state.login_received.clear()
     state.login_result = None
-    asyncio.create_task(_wait_or_timeout(timeout))
+    asyncio.create_task(_wait_or_timeout(timeout, _window_attempt))
 
     url = get_login_url(desktop_login_callback_url())
-    await asyncio.to_thread(webbrowser.open, url)
+    if profile is None:
+        await asyncio.to_thread(webbrowser.open, url)
+    else:
+        from flow_sdk.core.browser_profiles import OpenInProfileRequest, open_in_profile
+
+        req = OpenInProfileRequest(browser=profile.browser, profile=profile.profile, url=url)
+        await asyncio.to_thread(open_in_profile, req)
     return {"status": "started", "url": url}
 
 
-async def _wait_or_timeout(timeout: float) -> None:
+async def _wait_or_timeout(timeout: float, attempt: int) -> None:
     from flow_sdk.server import state
 
     success = await asyncio.to_thread(state.login_received.wait, timeout)
-    if not success:
+    if not success and attempt == _window_attempt:
         await _broadcast_oauth_error(f"Login timed out after {int(timeout)}s — please try again")
+
+
+async def cancel_window_login() -> None:
+    """Give up on the browser sign-in in flight: its timer stays quiet and the status leaves
+    ``logging_in``, so the dialog stops waiting on a page the person closed or never saw.
+
+    A callback that still arrives afterwards (they finished in the browser after all) is honoured
+    as before — cancelling says "stop waiting", not "refuse this account".
+    """
+    from flow_sdk.cloud_client.auth_state import set_login_status
+    from flow_sdk.cloud_client.auth_status import HubLoginStatus
+
+    global _window_attempt
+    _window_attempt += 1
+    await set_login_status(HubLoginStatus.LOGGED_OUT)
 
 
 async def _post_cloud_login(email: str, password: str) -> LoginData:
@@ -239,12 +296,34 @@ async def _finalize_login(login_data: LoginData) -> None:
 
     await set_login_status(HubLoginStatus.LOGGED_IN, user=user_info)
 
+    # Logout tombstoned every hub conversation via ``clear_stream_inbox``. Release those
+    # now, before the pipe reopens and the catch-up below runs, so nothing this
+    # session pulls back is dropped against a tombstone the last session left.
+    # See ``HubWsBridge.release_session_conversation_suppressions`` for why that
+    # is safe, and why a genuine delete's tombstone survives it.
+    from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+
+    hub_ws_bridge.release_session_conversation_suppressions()
+
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        await hub_ws_manager.restart()
+        await hub_ws_manager.restart(wait_connected=True)
+        # The restart forgot who the hub named; ask again, as boot does, or a box signed in
+        # after startup is never signed in to FlowPad (``core.status.hub_status``).
+        if hub_ws_manager.is_connected:
+            await hub_ws_manager.verify_current_user()
     except Exception:
         pass
+
+    # Restarting the WS only opens the pipe for FUTURE frames — the hub fans out
+    # live and never replays, so anything addressed to this account while we were
+    # logged out (or logged in as someone else) is still missing locally. Pull the
+    # backlog now, exactly as startup does, so the stream inbox is correct the moment the
+    # user lands instead of after they find the manual refresh button.
+    from flow_sdk.stream_inbox.catchup import start_hub_catchup
+
+    start_hub_catchup("login")
 
 
 async def _broadcast_oauth(msg: OAuthMessage) -> None:
@@ -275,19 +354,26 @@ async def _broadcast_oauth_error(message: str) -> None:
 async def clear_cloud_credentials(reason: str | None = None) -> None:
     """Stop the hub WS, clear keyring + user JSON, broadcast LOGGED_OUT + DISCONNECTED.
 
-    Single owner used by ``/api/v1/cloud/logout``, ``/api/v1/cloud/logout_callback``,
-    the legacy ``flowpad_cloud/disconnect`` action handler, and
+    Single owner used by ``/api/v1/cloud/logout_callback`` and
     ``invalidate_hub_login`` (which forwards a non-empty reason).
+
+    Credentials ONLY. An EXPLICIT logout wants ``clear_user_data``, which adds
+    the local-data purge on top; this one stays purge-free precisely because
+    ``invalidate_hub_login`` calls it — an expired or hub-rejected token must
+    not cost the user their stream inbox.
     """
     from flow_sdk.cli.auth.credentials import clear_credentials
     from flow_sdk.cloud_client.auth_state import set_connection_status, set_login_status
     from flow_sdk.cloud_client.auth_status import HubConnectionStatus, HubLoginStatus
+    from flow_sdk.instance_settings.api_endpoint import invalidate_api_endpoint_listing
+    from flow_sdk.instance_settings.llm_endpoint import invalidate_endpoint_listing
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
+        # Signal only — this can run inside the WS task tree; see request_stop.
         hub_ws_manager.request_stop()
     except Exception:
         pass
@@ -300,6 +386,80 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     state.login_result = None
     state.login_received.clear()
     invalidate_bootstrap_cache()
+    # What the hub listed was what THAT login may call. Kept, a signed-out box would go on
+    # offering it -- the readers fall back to their last listing while signed out.
+    invalidate_api_endpoint_listing()
+    invalidate_endpoint_listing()
 
     await set_login_status(HubLoginStatus.LOGGED_OUT, reason=reason)
     await set_connection_status(HubConnectionStatus.DISCONNECTED)
+
+
+async def clear_user_data(reason: str | None = None) -> None:
+    """Drop the credentials AND the hub's copy of the stream inbox — a real purge,
+    not just a credential wipe.
+
+    The purge deliberately does NOT live inside ``clear_cloud_credentials``,
+    because ``invalidate_hub_login`` calls that one: a token expiring on
+    wake-from-sleep, or a hub hiccup rejecting a socket, must clear credentials
+    without destroying local data.
+
+    Two shapes of caller reach this, both cases where the outgoing person's data
+    must actually go, not just their session pointer: an explicit logout (no
+    reason — the person asked), and ``purge_outgoing_user_if_switching`` below
+    finding a DIFFERENT person's identity than whoever is currently signed in
+    on a shared sandbox (``reason=LogoutReason.SWITCHED_OUT``,
+    ``flow_sdk/cloud_client/auth_status.py``). ``reason`` rides the LOGGED_OUT broadcast
+    so the frontend can tell "you logged out" from "someone else just took this
+    machine" — the latter is the only case where it also drops the local entity
+    cache (``ts_sdk/src/services/cloud_login.ts``, ``_setLoggedOut``) and shows
+    ``SessionTakenOverOverlay`` instead of a quiet sign-out.
+
+    Credentials go first: they are the security-relevant half, and the purge is
+    best-effort on top. A row that refuses to delete must never be the reason
+    someone cannot log out.
+    """
+    from flow_sdk.stream_inbox.clear import clear_stream_inbox
+
+    await clear_cloud_credentials(reason=reason)
+    try:
+        await clear_stream_inbox()
+    except Exception:  # noqa: BLE001
+        logger.warning("logout: clearing local hub data failed", exc_info=True)
+
+
+async def purge_outgoing_user_if_switching(incoming_user: dict | None, *, caller: str) -> None:
+    """Shared switch-detection (FLOWPAD-2151) for every channel that can log a
+    DIFFERENT person into a shared sandbox: the browser flow
+    (``/auth/login_callback``, ``flow_sdk/server/routes/auth.py``) and the
+    reclaim flow (``complete_sandbox_login``, ``flow_sdk/cli/auth/
+    sandbox_login.py``) — the reclaim path bypassed this entirely until it
+    started calling this too: reclaiming a shared sandbox as someone ELSE
+    silently repainted the displaced person's tab with no purge and no
+    ``SessionTakenOverOverlay`` warning (proven live on prod compute_node
+    f41f5c42-a8fa-4934-8cda-9080f09d24bd, 2026-09-24).
+
+    A shared sandbox has exactly one logged-in identity for the whole
+    instance, so a DIFFERENT incoming person must purge whoever is currently
+    signed in — via ``clear_user_data`` above — before the new login
+    finalizes.
+
+    Checked strictly on an ALREADY-VALIDATED ``incoming_user`` — both callers
+    validate the api-key/token first: an unvalidated caller must never be
+    able to trigger a logout of whoever is signed in. ``caller`` is only for
+    the log line, to tell the two channels apart in the logs.
+    """
+    from flow_sdk.cli.app_config import get_user
+
+    current_user = get_user()
+    incoming_id = incoming_user.get("id") if isinstance(incoming_user, dict) else None
+    if current_user and incoming_id and current_user.get("id") != incoming_id:
+        from flow_sdk.cloud_client.auth_status import LogoutReason
+
+        logger.info(
+            "%s: switching logged-in user (%s -> %s), clearing previous session",
+            caller,
+            current_user.get("id"),
+            incoming_id,
+        )
+        await clear_user_data(reason=LogoutReason.SWITCHED_OUT)

@@ -91,11 +91,13 @@ export function useDocComments(docTypeId: string | null | undefined) {
   const updateComment = useCallback(
     async (commentEntity: Comment, text: string): Promise<void> => {
       if (!parentTypeId || !text.trim()) return;
+      if (text.trim() === commentEntity.raw_content) return;
       // Mutate + save through the same generic entity path `addComment` uses; a
       // saved remote comment's PUT reflects to the hub (store.save → Hub-Reflect),
       // so the edit syncs to every participant. No bespoke action.
       commentEntity.raw_content = text.trim();
       await commentEntity.save(parentTypeId);
+      commentEntity.markEdit();
       await refetch();
     },
     [parentTypeId, refetch],

@@ -1,7 +1,7 @@
 """Unit tests for Shell.is_alive / read / write and AgenticProcess interface.
 
 No mocks. Tests that need a live PTY create a Shell with a random compute_node_id
-and call shell.start() — no DB, no server, cross-platform.
+and call shell.start_pty() — no DB, no server, cross-platform.
 """
 
 import asyncio
@@ -40,7 +40,7 @@ async def test_shell_alive_after_start():
     """is_alive is True after start() starts a real OS PTY."""
     shell = make_shell()
     try:
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -52,7 +52,7 @@ async def test_shell_alive_after_start():
 async def test_shell_pty_kill_marks_not_alive():
     """get_pty().kill() kills the OS PTY — shell.is_alive is False afterwards."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     assert shell.is_alive is True
 
     pty = shell.compute_node.get_pty(shell.id)
@@ -116,11 +116,12 @@ async def test_proc_send_raises_when_no_shell():
 # Shell.write + read
 # ---------------------------------------------------------------------------
 
+@pytest.mark.long  # 5.52s
 @pytest.mark.asyncio
 async def test_shell_write_and_read():
     """start → write → read returns the echoed output."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
     assert shell.is_alive
 
     try:
@@ -133,11 +134,12 @@ async def test_shell_write_and_read():
             await pty.kill()
 
 
+@pytest.mark.long  # 6.25s
 @pytest.mark.asyncio
 async def test_shell_survives_kill_and_reopen():
     """kill() evicts in-memory state; start() spawns a fresh PTY on the same stream file."""
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
 
     try:
         await shell.write("echo hi")
@@ -147,7 +149,7 @@ async def test_shell_survives_kill_and_reopen():
         await pty.kill()
         assert not shell.is_alive
 
-        await shell.start()
+        await shell.start_pty()
         assert shell.is_alive
 
         await shell.write("echo hi_after_restart")
@@ -167,6 +169,7 @@ async def test_shell_survives_kill_and_reopen():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.long  # 1.28s
 @pytest.mark.asyncio
 async def test_concurrent_start_pty_on_dead_shell_creates_exactly_one_pty():
     """Two concurrent start_pty() on a shell whose PTY is dead must create EXACTLY
@@ -178,7 +181,7 @@ async def test_concurrent_start_pty_on_dead_shell_creates_exactly_one_pty():
     the direct "one PTY created" signal. Pre-fix both race to True.
     """
     shell = make_shell()
-    await shell.start()
+    await shell.start_pty()
 
     # Crash the PTY but leave the row RUNNING — the post-restart / dead-worker
     # state both recovery entry points contend on.

@@ -1,33 +1,73 @@
+import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
-import type { SearchResult } from '@src/hooks/use-record-search';
+import type { SearchRow } from '@src/hooks/search-row';
 import { DockPointer } from './DockPointer';
+import { subjectEditorPointer } from './subject-editor';
+import { openNewChat } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { AgenticProcess, Artifact, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
+import {
+  AgenticProcess,
+  Artifact,
+  Conversation,
+  dataContext,
+  dataManager,
+  editorForType,
+  isTypeId,
+  projectSchemas,
+  RecordType,
+  TypeId,
+} from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
 import { notify } from '@src/notifications';
+import type { SessionWorker } from '@src/hooks/use-transcript';
 
-export interface DockNavigationAction {
+/**
+ * An action as AUTHORED in the RECORD_TYPE_NAV table: `name` is a lazy lingui
+ * descriptor, because the table is module-level and an eager macro would bind
+ * the language at import time and never follow a locale switch.
+ */
+export interface DockNavigationActionSpec {
   icon: LucideIcon;
-  name: string;
+  name: MessageDescriptor;
   // Either a sync dock pointer OR an async action callback (not both)
-  dockPointer?: (result: SearchResult) => DockPointer;
-  action?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
+  dockPointer?: (result: SearchRow) => DockPointer;
+  action?: (result: SearchRow, navigation: NavigationActions) => void | Promise<void>;
 }
+
+/**
+ * An action as HANDED TO CONSUMERS by `getActionsForResult`, which resolves the
+ * descriptor. `name` is a plain string here, which is what the renderers put in
+ * the DOM — declaring it as the descriptor made every consumer a type error.
+ */
+export interface DockNavigationAction extends Omit<DockNavigationActionSpec, 'name'> {
+  name: string;
+}
+
+/** The fields an asset's target is found from — any row that names an asset carries them. */
+export type AssetRow = Pick<SearchRow, 'record_id' | 'record_type' | 'asset_ref'>;
 
 export interface RecordTypeNav {
   /** Sync primary click — produces a DockPointer directly */
-  dockPointer?: (result: SearchResult) => DockPointer | null;
+  dockPointer?: (result: SearchRow) => DockPointer | null;
+  /** Async pointer — the target is a URL, but finding it needs a lookup (a dataset's editor).
+   *  Preferred over `primaryAction`: every surface (record list, asset tree) can open it. */
+  resolvePointer?: (asset: AssetRow) => Promise<DockPointer | null>;
   /** Async primary click — use when navigation requires entity lookup */
-  primaryAction?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
+  primaryAction?: (result: SearchRow, navigation: NavigationActions) => void | Promise<void>;
+  /** Extra reachability check for imperative arms whose target fields are optional. */
+  isNavigable?: (result: SearchRow) => boolean;
   /** Optional sub-navigation chips shown on the card */
-  actions?: DockNavigationAction[];
+  actions?: DockNavigationActionSpec[];
 }
 
 /** Extract the Claude session UUID from a search result */
-function sessionIdFromResult(result: SearchResult): string {
+function sessionIdFromResult(result: SearchRow): string {
   // asset_ref: "/path/to/<uuid>.jsonl" — derive session UUID from filename
   if (result.asset_ref) {
     const filename = result.asset_ref.split('/').pop() ?? '';
@@ -44,7 +84,7 @@ function sessionIdFromResult(result: SearchResult): string {
  * thread_id is the last 5 hyphen-separated groups of the stem. We mirror the
  * backend ``_extract_thread_id`` helper here so the UI doesn't need to round-trip.
  */
-function codexThreadIdFromResult(result: SearchResult): string {
+function codexThreadIdFromResult(result: SearchRow): string {
   if (result.asset_ref) {
     const stem = (result.asset_ref.split('/').pop() ?? '').replace(/\.jsonl$/i, '');
     if (stem.startsWith('rollout-')) {
@@ -55,8 +95,6 @@ function codexThreadIdFromResult(result: SearchResult): string {
   // Fallback: record_id is the thread_id directly (set by CodexSessionRecord.getId).
   return result.record_id.replace(/^codex_session-/, '');
 }
-
-
 
 /**
  * The stable TypeId for a search result, or null when no usable id is present.
@@ -85,46 +123,87 @@ export function resultTypeId(
  * resolves by id with no path discovery — relocation-proof and instant. Falls
  * back to the vfs/path form only when no usable id is present.
  */
-function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | null {
+function assetEditorPointer(assetType: string, r: AssetRow): DockPointer | null {
   const tid = resultTypeId(r);
   if (tid) return DockPointer.forAssetEditorByTypeId(assetType, tid);
   return r.asset_ref ? DockPointer.forAssetEditor(assetType, r.asset_ref) : null;
+}
+
+/** Registry-backed fallback for entity types with an asset editor. Explicit
+ * navigation arms below still win; this keeps new editable asset types from
+ * becoming inert search/recent-activity rows just because this dispatcher was
+ * not updated in lockstep with the editor registry. */
+function registeredAssetPointer(result: AssetRow): DockPointer | null {
+  return editorForType(result.record_type) ? assetEditorPointer(result.record_type, result) : null;
+}
+
+/** A session row opened by reading its transcript file (no local process behind it). */
+function transcriptNav(worker: SessionWorker): RecordTypeNav {
+  return {
+    primaryAction: (r, navigation) => {
+      if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript(worker, r.asset_ref));
+    },
+  };
 }
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
-      { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
+      {
+        icon: Search,
+        name: msg`All skills`,
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }),
+      },
     ],
   },
   claude_hook: {
-    dockPointer: (r) => new DockPointer(ViewType.HOOKS, undefined, {
-      hookId: r.record_id,
-    }),
+    dockPointer: (r) =>
+      new DockPointer(ViewType.HOOKS, undefined, {
+        hookId: r.record_id,
+      }),
     actions: [
-      { icon: Search, name: 'All hooks', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
+      {
+        icon: Search,
+        name: msg`All hooks`,
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }),
+      },
     ],
   },
   agent: {
     dockPointer: (r) => assetEditorPointer('agent', r),
   },
   annotation: {
+    isNavigable: (r) => !!r.session_id,
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
+  // A dataset opens in the app that edits it: its own nested editor, else one matching its
+  // declared kind, else the generic dataset editor (`flow_sdk/builtin/faas/editors.py`). No editor at
+  // all falls back to the folder, like any asset without an editor.
+  dataset: {
+    resolvePointer: async (r) => (await subjectEditorPointer(`dataset-${r.record_id}`)) ?? registeredAssetPointer(r),
+  },
   bookmark: {
+    isNavigable: (r) => !!r.session_id,
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await AgenticProcess.getByWorkerId(sessionId);
         if (!p) {
-          notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
           return;
         }
         navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
@@ -135,16 +214,77 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => assetEditorPointer('command', r),
   },
   comment: {
+    isNavigable: (r) => !!r.session_id,
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
   [RecordType.MARKDOWN]: {
     dockPointer: (r) => assetEditorPointer(RecordType.MARKDOWN, r),
+  },
+  graph_workflow: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forGraphWorkflow(tid.id) : null;
+    },
+  },
+  // A schema opens on its project's schema tree, selected. The tree addresses a schema by its FULL
+  // kind (namespace included), which a row does not carry — so the project's schemas are asked for
+  // the one with this name. Outside a project it has no tree and opens as its folder.
+  data_schema: {
+    resolvePointer: async (asset) => {
+      const row = asset as SearchRow;
+      if (!row.project_id) return row.asset_ref ? DockPointer.forAssetEditor(row.record_type, row.asset_ref) : null;
+      const tree = await projectSchemas(row.project_id).catch(() => null);
+      const node = tree?.schemas.find((schema) => schema.name === row.name || schema.kind === row.name);
+      return DockPointer.forSchemaTree(row.project_id, node ? [node.kind] : []);
+    },
+  },
+  // A help desk opens as its project's portal.
+  helpdesk: {
+    dockPointer: (r) => (r.project_id ? DockPointer.forHelpdesk(r.project_id) : null),
+  },
+  graph_context: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forGraphContext(tid.id) : null;
+    },
+  },
+  trigger: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forAutomations({ trigger: tid.id }) : null;
+    },
+  },
+  conversation: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forConversation(tid.id) : null;
+    },
+  },
+  // A message opens inside its conversation (its containment pointer), scrolled to it.
+  flow_message: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      const parent = resultTypeId({ record_id: r.parent_type_id });
+      return tid && parent?.type === Conversation.type
+        ? DockPointer.forConversation(parent.id, { messageId: tid.id })
+        : null;
+    },
+  },
+  spec: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forSpec(tid.id) : null;
+    },
   },
   plan: {
     dockPointer: (r) => assetEditorPointer('plan', r),
@@ -169,9 +309,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forTasks(tid.id) : null;
     },
-    actions: [
-      { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
-    ],
+    actions: [{ icon: CheckSquare, name: msg`All tasks`, dockPointer: () => DockPointer.forTasks() }],
   },
   agentic_process: {
     dockPointer: (r) => {
@@ -184,19 +322,23 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       // "already registered with different entity"). Fall back to a
       // construction-free pointer when the process isn't cached.
       const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
-      if (cached) return cached.searchDockPointer;
+      // `searchDockPointer` is the SDK's plain `DockPointerData`; this table hands
+      // back the UI class, so re-seat its three fields rather than leaking the
+      // interface up through `Browseable.pointer`.
+      if (cached) {
+        const dp = cached.searchDockPointer;
+        return new DockPointer(dp.viewType, dp.pointer, dp.options);
+      }
       const sessionId = (r as any).session_id ?? undefined;
       return sessionId
         ? DockPointer.forLensTranscript('claude', sessionId)
-        : new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${tid.id}`);
+        : DockPointer.forSession(tid.id);
     },
   },
   project: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
-      return tid
-        ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
-        : null;
+      return tid ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id }) : null;
     },
   },
   artifact: {
@@ -208,14 +350,12 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const tid = resultTypeId(r);
       if (!tid) return;
-      const artifact = await dataManager
-        .getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id))
-        .catch(() => null);
+      const artifact = await dataManager.getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id)).catch(() => null);
       if (!artifact) {
-        notify.error({ title: 'App not found', message: 'This app is no longer available.' });
+        notify.error({ title: t`App not found`, message: t`This app is no longer available.` });
         return;
       }
-      await openArtifact(artifact, {
+      openArtifact(artifact, {
         navigation,
         currentProjectId: dataContext.project?.id ?? null,
       });
@@ -226,7 +366,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const threadId = codexThreadIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(threadId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${threadId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${threadId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -234,7 +377,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
           // expects URL-encoded absolute path. DockPointer.forLensTranscript
@@ -244,12 +387,19 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       },
     ],
   },
+  // OpenCode/DeepAgents keep sessions in a store: a row is a shared snapshot with no
+  // local process to resume, so opening it means reading its transcript.
+  opencode_session: transcriptNav('opencode'),
+  deepagents_session: transcriptNav('deepagents'),
   copilot_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = r.record_id.replace(/^copilot_session-/, '');
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -257,7 +407,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('copilot', r.asset_ref));
         },
@@ -269,7 +419,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -277,25 +430,20 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           navigation.openLens('claude', 'transcript', sessionIdFromResult(r));
         },
       },
       {
         icon: GitBranch,
-        name: 'Fork',
+        name: msg`Fork`,
         action: async (r, navigation) => {
           const sessionId = sessionIdFromResult(r);
           const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
           const cwd = record?.cwd ?? undefined;
-          const computeNode = dataContext.computeNode;
-          if (!computeNode) throw new Error('[Fork] No compute node');
-          const p = await computeNode.createProcess(
-            cwd ? { workdir: cwd } : {},
-            { visible: true, watchProcess: false },
-          );
-          void navigation.openShellProcess(p.id);
+          // Forking starts a new chat, so it opens in the user's chat mode.
+          void openNewChat(navigation, cwd ? { cwd } : {});
         },
       },
     ],
@@ -309,7 +457,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('workflow', r.asset_ref));
         },
@@ -319,35 +467,68 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
 };
 
 /** Returns the primary DockPointer for a result, or null if the type has no navigation */
-export function getDockPointerForResult(result: SearchResult): DockPointer | null {
-  return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result) ?? null;
+export function getDockPointerForResult(result: SearchRow): DockPointer | null {
+  return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result) ?? registeredAssetPointer(result);
 }
 
 /** Returns true if the result actually has a reachable target — not merely that
  * its type declares a navigation handler. A `dockPointer` that would resolve to
  * `null` (e.g. an asset with neither a typeid nor an asset_ref) is NOT navigable;
  * treating it as navigable is what made tiles look clickable yet do nothing. */
-export function isResultNavigable(result: SearchResult): boolean {
+export function isResultNavigable(result: SearchRow): boolean {
   const nav = RECORD_TYPE_NAV[result.record_type];
-  if (!nav) return false;
-  if (nav.primaryAction) return true;
-  if (nav.dockPointer) return nav.dockPointer(result) != null;
-  return false;
+  if (nav?.isNavigable && !nav.isNavigable(result)) return false;
+  if (nav?.primaryAction || nav?.resolvePointer) return true;
+  if (nav?.dockPointer?.(result)) return true;
+  return registeredAssetPointer(result) != null;
 }
 
-/** Navigate to a result — handles both sync dockPointer and async primaryAction */
-export async function navigateToResult(result: SearchResult, navigation: NavigationActions): Promise<void> {
+/**
+ * Where an asset opens when its type has a screen of its own and no asset editor (a graph
+ * workflow's canvas, a trigger in Automations, a schema on the schema tree); null otherwise.
+ * Asset trees ask this so a row opens what a search result opens, never the asset's raw folder.
+ * An editor-backed type keeps the pointer its row was built with.
+ */
+export function assetScreenPointer(asset: AssetRow): DockPointer | null {
+  if (editorForType(asset.record_type)) return null;
+  return RECORD_TYPE_NAV[asset.record_type]?.dockPointer?.(asset as SearchRow) ?? null;
+}
+
+/** Whether a type's assets open through a lookup (`assetTargetLookup`) — openable with no static editor. */
+export function opensThroughLookup(recordType: string): boolean {
+  return !!RECORD_TYPE_NAV[recordType]?.resolvePointer;
+}
+
+/**
+ * Where an asset opens when its type has to look the target up first (a dataset opens in its
+ * editor app, `RecordTypeNav.resolvePointer`); null for a type whose sync pointer stands. Asset
+ * rows (the Assets page, the asset trees) open through this so every surface lands alike.
+ */
+export function assetTargetLookup(asset: AssetRow): (() => Promise<DockPointer | null>) | null {
+  const resolve = RECORD_TYPE_NAV[asset.record_type]?.resolvePointer;
+  return resolve ? () => resolve(asset) : null;
+}
+
+/** Navigate to a result through its type's arm: primaryAction, resolvePointer, or the sync dockPointer */
+export async function navigateToResult(result: SearchRow, navigation: NavigationActions): Promise<void> {
   const nav = RECORD_TYPE_NAV[result.record_type];
-  if (!nav) return;
-  if (nav.primaryAction) {
+  if (nav?.isNavigable && !nav.isNavigable(result)) return;
+  if (nav?.primaryAction) {
     await nav.primaryAction(result, navigation);
-  } else if (nav.dockPointer) {
-    const dp = nav.dockPointer(result);
-    if (dp) navigation.openDock(dp);
+    return;
   }
+  const dock = nav?.resolvePointer ? await nav.resolvePointer(result) : getDockPointerForResult(result);
+  if (dock) navigation.openDock(dock);
 }
 
 /** Returns the action list for a result's record type */
-export function getActionsForResult(result: SearchResult): DockNavigationAction[] {
-  return RECORD_TYPE_NAV[result.record_type]?.actions ?? [];
+export function getActionsForResult(result: SearchRow): DockNavigationAction[] {
+  // Resolved HERE, at the one accessor, so `DockNavigationAction.name` stays a
+  // plain string for every consumer while the table itself holds lazy
+  // descriptors (it is module-level, so an eager macro would bind the language
+  // at import and never follow a locale switch).
+  return (RECORD_TYPE_NAV[result.record_type]?.actions ?? []).map((action) => ({
+    ...action,
+    name: i18n._(action.name),
+  }));
 }

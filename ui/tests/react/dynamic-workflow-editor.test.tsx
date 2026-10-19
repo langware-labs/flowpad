@@ -11,17 +11,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 vi.mock('@src/components/assets/editor/AssetEditorHeader', () => ({
   AssetEditorHeader: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
 }));
-vi.mock('@src/components/entity-actions/ShareButton', () => ({
-  ShareButton: ({ testId, onClick }: { testId?: string; onClick?: () => void }) => (
-    <button data-testid={testId} onClick={onClick}>share</button>
-  ),
-}));
-vi.mock('@src/components/share-to-conversation/ShareToConversationDialog', () => ({
-  ShareToConversationDialog: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="share-to-conversation-dialog" /> : null,
-}));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
-// The "runs of this entity" panel is the shared surface (Agent/Skill reuse it) —
+// The "runs of this entity" panel is the shared surface (SubAgent/Skill reuse it) —
 // mock it to record the props this editor mounts it with.
 const panelProps: Record<string, unknown> = {};
 vi.mock('@src/components/entity-execution-panel/EntityExecutionPanel', () => ({
@@ -37,23 +28,25 @@ import { DynamicWorkflowAssetEditor } from '@src/components/assets/editor/dynami
 function stubs(script: string) {
   const write = vi.fn().mockResolvedValue(undefined);
   const run = vi.fn().mockResolvedValue(undefined);
+  const markEdit = vi.fn();
   const fsRef = { path: '/p/.claude/workflows/demo.js', read: vi.fn().mockResolvedValue(script), write } as never;
   const workflow = {
-    id: 'dw1', type: 'dynamic_workflow', name: 'demo', description: 'a demo', run,
+    id: 'dw1', type: 'dynamic_workflow', name: 'demo', description: 'a demo', run, markEdit,
     typeId: { type: 'dynamic_workflow', id: 'dw1', toString: () => 'dynamic_workflow-dw1' },
   } as never;
-  return { fsRef, workflow, write, run };
+  return { fsRef, workflow, write, run, markEdit };
 }
 
 describe('DynamicWorkflowAssetEditor', () => {
   it('loads the script, saves edits, and runs', async () => {
-    const { fsRef, workflow, write, run } = stubs('export const meta = { name: "demo" }');
+    const { fsRef, workflow, write, run, markEdit } = stubs('export const meta = { name: "demo" }');
     render(<DynamicWorkflowAssetEditor fsRef={fsRef} workflow={workflow} />);
 
     const ta = await screen.findByTestId('dw-script');
     await waitFor(() => expect(ta.value).toContain('export const meta'));
 
     fireEvent.change(ta, { target: { value: 'return { ok: true }' } });
+    expect(markEdit).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId('dw-save'));
     await waitFor(() => expect(write).toHaveBeenCalledWith('return { ok: true }'));
 
@@ -62,9 +55,6 @@ describe('DynamicWorkflowAssetEditor', () => {
 
     fireEvent.click(screen.getByTestId('dw-run-headless'));
     await waitFor(() => expect(run).toHaveBeenCalledWith(undefined, { ptyMode: false }));
-
-    fireEvent.click(screen.getByTestId('dynamic-workflow-editor-share'));
-    expect(screen.getByTestId('share-to-conversation-dialog')).toBeTruthy();
   });
 
   it('mounts the shared runs panel keyed by the workflow typeId (Execution)', async () => {

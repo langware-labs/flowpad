@@ -1,169 +1,734 @@
+import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { QueryFilter, QueryRequest } from '../FlowSync/query';
+import { ActionInfo } from '../models/ActionInfo';
+import { TypeId } from '../models/TypeId';
+import type { GitOrigin } from '../models/GitOrigin';
+import type { HubRepoOrigin } from '../models/FSOrigin';
+import type { PromptResult } from '../models/ReturnedValue';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
-import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
-import { ComputeNodeSize } from './compute-node';
-import { ISiteConfig } from './siteconfig';
+import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+import type { IDeployment } from './deployment';
 
-export const DEFAULT_SEARCH_NUM_RESULTS = 1;
-export const DEFAULT_SEARCH_AND_FETCH_RESULTS_MAX_OUTPUT_TOKENS = 5000;
-export enum SearchMode {
-  FAST = 'fast',
-  DEEP = 'deep',
-}
+/** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
+export type CloudDeployProvider = string;
+import { DataSource, type IDataSource } from './data-source';
+import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
+import { Trigger } from './trigger';
 
-export enum CheckpointMode {
-  OFF = 'off',
-  APPROVE = 'approve',
-  AUTO = 'auto',
-}
+export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
-export enum WorkerType {
-  AUTO = 'auto',
-  PYDANTIC_AI = 'pydantic_ai',
-  CLAUDE_CODE = 'claude_code',
-  CODEX = 'codex',
-  COPILOT = 'copilot',
-  SIMPLE = 'simple',
-}
-
-/** How an agent asset is used. Mirrors backend `AgentKind`.
- *  - Harness (default): a normal sub-agent run by the CLI harness.
- *  - Vibe: a persona layered on top of the standard vibe agent (embedded after
- *    it, in created-date order, on vibe process start). */
-export const AgentKind = {
-  Harness: 'harness',
-  Vibe: 'vibe',
-} as const;
-export type AgentKind = (typeof AgentKind)[keyof typeof AgentKind];
-
-export type Model = 'anthropic/claude-sonnet-4.5' | 'openai/gpt-5';
-
-export interface ISearchConfig {
-  search_mode: SearchMode;
-  num_results: number;
-  max_output_tokens?: number;
-}
-
-export interface ILLMConfig {
-  model?: Model;
-}
-
-export interface IAgentConfig {
-  search: ISearchConfig;
-  llm?: ILLMConfig;
-  checkpoint_mode: CheckpointMode;
-  worker_type?: WorkerType;
-  planning_enabled?: boolean;
-  execution_enabled?: boolean;
-  machine_size?: ComputeNodeSize;
-}
-
-/** Shape of an AgentRecord fetched via fs-records (read-only, from disk). */
-export interface IAgentRecord {
-  id: string;
-  name: string;
-  type: string;
-  description?: string;
-  prompt?: string;
-  model?: string;
-  permission_mode?: string;
-  max_turns?: number;
-  tools?: string[];
-  path?: string;
-  kind?: AgentKind;
+/** `GET /agent/<id>/auto_launch_state`. */
+export interface AgentAutoLaunchState {
+  /** Already auto-launched in the agent's own project; `null` when it has no project. */
+  launched: boolean | null;
 }
 
 /**
- * Agent entity — backed by a filesystem AgentRecord (.md file).
+ * The launchable agent — identity (name / avatar / system prompt) plus the
+ * launch bundle, mirroring `flow_sdk/builtin/agent.py`.
  *
- * Navigation is entity-centric: searchDockPointer is derived from asset_ref,
- * the canonical on-disk path to the agent's .md file.
+ * NOT a `SubAgent`. That is the provider-owned `.claude/agents/<name>.md`
+ * prompt asset Claude Code reads directly; this is the thing that *deploys and
+ * runs*, and may delegate to SubAgents by name through `subagents`.
  *
- * Legacy cloud fields (site_config, agent_config, histogram, enabled) are kept
- * only for backward compatibility with legacy UI components.
+ * Registering this class is load-bearing, not cosmetic: `EntityFactory` drops
+ * rows whose constructor is missing (`FlowSync/store.ts` — "Skipping entity,
+ * constructor not found for type"), so without it every `agent` row fetched
+ * from the backend is silently discarded client-side.
+ *
+ * The entity projects agent.json (+ system_prompt.md) for actions and launching. File editors use the
+ * revision-checked FS document action to preserve unknown metadata and identity
+ * capsules. The backend refreshes this projection after a document write.
+ * `system_prompt` is the Markdown body; profile controls submit typed field patches.
  */
+/** One thing an agent needs (`agent.requirement`). Never a value. */
+export interface AgentRequirement {
+  kind: 'credential' | 'permission' | 'connection' | 'variable' | 'funding';
+  name: string;
+  vars: string[];
+  scopes: string[];
+  on: string;
+  why: string;
+  derived: boolean;
+  used_by: string[];
+}
+
+/** One requirement at one deployment: `verified` (checked), `declared` (present, unverifiable) or `missing`. */
+/**
+ * A cloud deployment's own token budget: a hub LLM endpoint drawn from `source` (one the caller administers),
+ * capped at `cost_usd_per_day`, allowing only `model` — which the deployed agent then runs.
+ */
+export interface AgentTokenAllocation {
+  source: string;
+  cost_usd_per_day?: number | null;
+  model: string;
+}
+
+/** How signed-out visitors run an agent: the hub's `VisitorDeployment` -- whether the owner allows it, and
+ *  optionally the LLM endpoint each visitor's budget is drawn from and what each visitor may spend of it.
+ *  With no `llm_source` the visitor brings their own token source. */
+export interface AgentVisitorDeployment {
+  allow_visitor_deployment: boolean;
+  llm_source?: string | null;
+  cap_usd?: number | null;
+}
+
+export interface AgentReadinessItem {
+  requirement: AgentRequirement;
+  status: 'verified' | 'declared' | 'missing';
+  where: string;
+  /** The variables a store must hold for it — empty for what a grant satisfies. */
+  vars: string[];
+  /** Which of `vars` the store lacks — what "use mine" copies. */
+  missing: string[];
+  /** The connection that grants it — what a cloud deployment's owner authorizes for its machine. */
+  connection: string;
+  fix: string;
+  /** The fix as a verb: `use_mine` (copy this computer's value), `authorize` (grant `connection`), or empty. */
+  remedy: '' | 'use_mine' | 'authorize';
+}
+
+export interface AgentReadiness {
+  agent_id: string;
+  deployment_id: string;
+  environment: string;
+  ready: boolean;
+  items: AgentReadinessItem[];
+}
+
+/** A planned cloud placement and its readiness (`POST agent/<id>/plan_deployment`). */
+export interface AgentPlannedDeployment {
+  deployment: IDeployment;
+  readiness: AgentReadiness;
+}
+
 @registerEntity
 export class Agent extends APIEntity<Agent> {
   static type: string = 'agent';
+
+  // ── identity / presentation ────────────────────────────────────────────
   name?: string;
   description?: string;
+  /** Emoji (`🩺`) or a lucide icon name — the same one-string contract
+   *  `IconPicker` stores and `AvatarValue` renders. */
+  avatar?: string | null;
+  /** Avatar circle background — a palette hex (`ColorPicker`). Unset = derived
+   *  from the agent's name. */
+  color?: string | null;
+  /** Who this agent is. Delivered to the worker via `context_data.instructions`;
+   *  on disk it is `system_prompt.md` beside `agent.json`. */
+  system_prompt?: string;
 
-  /** Absolute on-disk path to the agent .md file. */
-  asset_ref?: string;
+  // ── launch bundle ──────────────────────────────────────────────────────
+  /** The DRIVER short-id an agent.json declares: `claude` | `codex` | `copilot`.
+   *  Deliberately NOT the `AgentConfig.WorkerType` vocabulary (`claude_code`),
+   *  which is what `AgenticProcess.worker_type` stores. Feeding one where the
+   *  other belongs is a real, previously-shipped bug. */
+  worker_type?: string;
+  /** A tier (`sm`/`md`/`lg`) or a concrete model id. */
+  model?: string;
+  permission_mode?: string;
+  effort?: string;
+  /** Cloud box size (`sm`/`md`/`lg`) the hub deploys this agent onto. */
+  machine_size?: string;
+  max_turns?: number;
 
-  /** How the agent is used (mirror of backend `Agent.kind`). Defaults to
-   *  `harness`; `vibe` agents layer onto the standard vibe agent. */
-  kind?: AgentKind;
+  // `null`/undefined is NOT `[]` — an omitted list inherits everything the
+  // harness allows, an empty list revokes it. Never normalize one to the other.
+  tools?: string[] | null;
+  disallowed_tools?: string[] | null;
+  skills: string[];
+  mcp_servers: string[];
+  /** SubAgent NAMES this agent may delegate to. */
+  subagents: string[];
+  additional_dirs: string[];
+  load_flowpad_assistant: boolean;
+  /** Chief of Staff mode: answers fast and delegates long work to its subagents as tasks. */
+  chief_of_staff: boolean;
+  /** Vendor-specific launch keys the schema does not enumerate (e.g. Claude's
+   *  `chrome: true`). Nested by nature — which is why this type must never be
+   *  round-tripped through the markdown frontmatter editor. */
+  cli_options: Record<string, unknown>;
 
-  // Legacy cloud fields — kept for UI compat only
-  site_config?: ISiteConfig;
-  agent_config?: IAgentConfig;
-  histogram: Record<string, Record<string, number>>;
+  // ── lifecycle ──────────────────────────────────────────────────────────
   enabled: boolean;
+  /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
+  asset_ref?: string;
+  /** Where the hub keeps this agent's files. A published agent lives in its project's
+   *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
+   *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
+   *  provenance — absent on desktop rows and on agents never published. `/launch?agent=`
+   *  reads it to know which repository to launch. */
+  git_origin?: GitOrigin | HubRepoOrigin | null;
+
+  // ── presentation + project auto-launch ─────────────────────────────────
+  /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
+   *  Presentation only — never part of the transcript, never sent to the model. */
+  intro?: string;
+  /** Launch once, the first time the project this agent lives in is opened.
+   *  Oldest wins when several agents in a project set it; the rest are
+   *  cancelled with a warning. See `Agent.auto_launch_for` (backend). */
+  auto_launch: boolean;
+  /** The agent's auto prompt: the first turn of every new session opened as it
+   *  with `use(…, true)` — auto-launch included — delivered via
+   *  the prompt queue. Independent of `auto_launch`. */
+  auto_launch_prompt?: string;
+  /** What every new session as this agent opens with: a place (`Tab.pointer` JSON, a
+   *  file named inside the agent's project), a `navigate` compute op in the agent's
+   *  project that repairs it when it cannot be used yet (`{op}`), or a wizard
+   *  (`{wizard}`). The first place is the session's active display. Opened and
+   *  repaired by the backend (`Agent.use`); the frontend only renders them. */
+  auto_open?: ({ viewType: string; pointer: string } | { op: string } | { wizard: string })[] | null;
+  /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
+  places?: AgentPlaceSpecWire[] | null;
+  /** Deployment id of the one place that answers this agent's email. */
+  email_place?: string | null;
+  /** The agent's own phone number (agent.json `phone`) — declaration only. */
+  phone?: PhoneNumberWire | null;
 
   constructor(entity: Partial<Agent> = {}) {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
-    this.asset_ref = entity.asset_ref;
-    this.kind = entity.kind ?? AgentKind.Harness;
-    this.histogram = entity.histogram || {};
+    this.avatar = entity.avatar;
+    this.color = entity.color;
+    this.system_prompt = entity.system_prompt;
+
+    this.worker_type = entity.worker_type;
+    this.model = entity.model;
+    this.permission_mode = entity.permission_mode;
+    this.effort = entity.effort;
+    this.machine_size = entity.machine_size;
+    this.max_turns = entity.max_turns;
+
+    // Preserve the tri-state: absent stays absent, [] stays [].
+    this.tools = entity.tools;
+    this.disallowed_tools = entity.disallowed_tools;
+    this.skills = entity.skills || [];
+    this.mcp_servers = entity.mcp_servers || [];
+    this.subagents = entity.subagents || [];
+    this.additional_dirs = entity.additional_dirs || [];
+    this.load_flowpad_assistant = entity.load_flowpad_assistant ?? false;
+    this.chief_of_staff = entity.chief_of_staff ?? false;
+    this.cli_options = entity.cli_options || {};
+
     this.enabled = entity.enabled ?? true;
-    this.agent_config = entity.agent_config;
-    this.site_config = entity.site_config;
+    this.asset_ref = entity.asset_ref;
+    this.git_origin = entity.git_origin;
+
+    this.intro = entity.intro;
+    this.auto_launch = entity.auto_launch ?? false;
+    this.auto_launch_prompt = entity.auto_launch_prompt;
+    this.auto_open = entity.auto_open ?? null;
+    this.places = entity.places ?? null;
+    this.email_place = entity.email_place ?? null;
+    this.phone = entity.phone ?? null;
   }
 
-  /** Default open target: the asset editor (URL-first navigate target). */
+  /**
+   * An agent is addressed by its slug (`name`) but PRESENTED by its title — the
+   * chat identity row, the pinned asset row, lists. Falls back to the default
+   * chain (name → uname → …) when no title was authored.
+   */
+  override getDisplayName(): string | null {
+    return this.title?.trim() || null;
+  }
+
+  /** Default open target: the agent profile editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent') ?? super.dockPointer;
-  }
-
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent') ?? this.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.searchDockPointer;
+    return this.dockPointer;
   }
 
-  /** FrontMatterFsRef for the agent .md file. */
+  /** File accessor; structured edits use readDocument()/updateDocument(). */
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
-    if (!typeId || !this.asset_ref) return null;
-    return new FrontMatterFsRef(this.asset_ref, typeId);
+    const directory = this.bundleDirectory;
+    if (!typeId || !directory) return null;
+    return new FrontMatterFsRef(`${directory}/${mainFileForType(Agent.type, 'agent.json')}`, typeId);
+  }
+
+  /** Directory containing the portable Agent bundle: `asset_ref` (a row from
+   *  before the unification may still name the inner main file). */
+  get bundleDirectory(): string | null {
+    // `asset_ref` is stored natively (backslashes on Windows) but `FSRef.parent`
+    // splits on `/` only.
+    const normalized = this.asset_ref?.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!normalized) return null;
+    const main = mainFileForType(Agent.type, 'agent.json') as string;
+    if (normalized === main) return '.';
+    if (normalized.endsWith(`/${main}`)) return normalized.slice(0, -(main.length + 1)) || '/';
+    return normalized;
+  }
+
+  /** Resolved carrier path for the canonical portable avatar reference. */
+  get avatarAssetRef(): string | null {
+    const directory = this.bundleDirectory;
+    if (this.avatar !== AGENT_AVATAR_REF || !directory) return null;
+    if (directory === '/') return `/${AGENT_AVATAR_FILE}`;
+    return `${directory}/${AGENT_AVATAR_FILE}`;
   }
 
   /**
-   * Create an agent scoped to the given project (writes to
-   * <project>/.claude/agents/<name>.md when project is set, else home).
+   * Download URL of the uploaded avatar image, or null when the avatar is an
+   * emoji / icon name (render `avatar` through `AvatarValue` then). THE one
+   * predicate for "does this agent have a picture" — every surface that draws
+   * an agent avatar reads this, so they cannot disagree on it.
    */
+  get avatarImageUrl(): string | null {
+    if (this.avatar !== AGENT_AVATAR_REF) return null;
+    return this.doc?.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() ?? null;
+  }
+
+  /** The agents a rule on this machine may run: enabled, by name — what a picker offers
+   *  (`Agent.runnable_here` in Python). */
+  static async runnableHere(): Promise<Agent[]> {
+    const request = new QueryRequest({
+      type: Agent.type,
+      scope: [],
+      name: 'agents:runnable-here',
+      query: new QueryFilter({ match: { enabled: true } }),
+    });
+    const rows = await Agent.query(request, true);
+    return rows.sort((a, b) => (a.name || '').localeCompare(b.name || '') || String(a.id).localeCompare(String(b.id)));
+  }
+
+  /** Create in the selected scope, optionally at an exact authorized folder. */
   static async createInProject(
-    project: { typeId?: import('../models/TypeId').TypeId } | null,
+    project: { typeId?: TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Agent> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const agent = new Agent({ name: name.trim() });
-    return agent.save(scopeIds);
+    return agent.save(scopeIds, destination);
   }
 
   /**
-   * Set this agent's `kind` (e.g. mark/unmark as a vibe agent). Backed by the
-   * `set-kind` action, which rewrites the `.claude/agents/<name>.md` frontmatter
-   * server-side preserving every other field, then reindexes — do NOT use
-   * entity save/FrontMatterFsRef for this (they'd drop other frontmatter).
+   * Run this agent once, returning the process that records the run.
+   *
+   * An ActionInfo rather than a field write — this is a command, not CRUD
+   * (the `set-kind` action on SubAgent is the same pattern). The backend
+   * routes it to the compute node this agent's deployment places it on, so a
+   * remote deployment fails loudly here rather than quietly running on the
+   * server.
    */
-  async setKind(kind: AgentKind): Promise<void> {
-    await Agent.setKindById(this.id, kind);
+  async run(prompt: string): Promise<PromptResult> {
+    // The launch's own answer: `executor` names the process to navigate to;
+    // `exit_code` says whether the first turn was accepted (and, when not, why).
+    return (await this.post('run', { prompt })) as PromptResult;
   }
 
-  /** Set `kind` for an agent by id — for callers that only hold a picked
-   *  descriptor's id (e.g. the vibe-agents picker) rather than the entity. */
-  static async setKindById(id: string, kind: AgentKind): Promise<void> {
-    const action = new ActionInfo('set-kind', Agent.type, id, 'POST');
-    action.bodyParameters = { kind };
-    await dataManager.callAction(action);
+  /** Launch admission: OK means accepted; executor names the process to observe.
+   * Unlike the legacy run method, a held slot is returned as a FlowCall answer.
+   */
+  async launch(prompt: string): Promise<PromptResult> {
+    const action = new ActionInfo('run', Agent.type, this.id, 'POST');
+    action.bodyParameters = { prompt };
+    return dataManager.callFlowAction<PromptResult>(action);
   }
+
+  /**
+   * Add a scheduled run: a child trigger asset under this agent's folder that
+   * runs the agent headlessly with `prompt`. Indexed and armed before it
+   * returns, so the row it hands back is already live.
+   */
+  async addSchedule(fields: AgentScheduleFields & { name: string; expr: string; prompt: string }): Promise<Trigger> {
+    return new Trigger((await this.post('add_schedule', { ...fields })) as Partial<Trigger>);
+  }
+
+  /** Change one of this agent's schedules. Only the fields given change. */
+  async updateSchedule(triggerId: string, fields: AgentScheduleFields): Promise<Trigger> {
+    return new Trigger((await this.post('update_schedule', { trigger_id: triggerId, ...fields })) as Partial<Trigger>);
+  }
+
+  /** Remove one of this agent's schedules — its folder, row and job. */
+  async removeSchedule(triggerId: string): Promise<void> {
+    await this.post('remove_schedule', { trigger_id: triggerId });
+  }
+
+  /**
+   * Open a session AS this agent: a new, visible, headless Chat process built
+   * from the agent's local deployment, with no turn started.
+   * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
+   *
+   * `projectId` is the project the session should ACT IN, which is not always
+   * the project the agent lives in: an agent supplied by a help desk added
+   * as a dependency belongs to the desk's checkout, but the session has to
+   * open on the customer's project. Omit it and the backend falls back to the
+   * agent's own project.
+   *
+   * `autoPrompt` queues the agent's auto prompt as the first turn. It is
+   * queued, not sent: start it with `drainQueue()` (the UI's
+   * `prepareAgentSession` does, after the vibe embed) BEFORE sending your own
+   * prompt, or the auto prompt runs second.
+   */
+  async use(projectId?: string | null, autoPrompt = false): Promise<AgentUseResult> {
+    return (await this.post('use', {
+      project_id: projectId ?? null,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
+  }
+
+  /**
+   * Open a chat on one exact cloud Deployment of this Agent.
+   *
+   * The Hub validates that the placement belongs to this Agent and creates the
+   * real AgenticProcess on that machine. The returned process id is addressed
+   * through the ordinary AgenticProcess SDK; callers do not need a second
+   * remote-chat transport. `autoPrompt` as in `use` — honoured only for a
+   * placement on this machine.
+   */
+  async useDeployment(deploymentId: string, autoPrompt = false): Promise<AgentUseResult> {
+    return (await this.post('use', {
+      deployment_id: deploymentId,
+      ...autoPromptBody(autoPrompt),
+      ...launchSurfaceField(),
+    })) as AgentUseResult;
+  }
+
+  /**
+   * Give this agent a machine of its own in the cloud.
+   *
+   * Publishing to the hub is implicit — the backend does it before deploying,
+   * so there is no order for a caller to get wrong. It also holds the cloud
+   * credentials, which is why this goes through the local backend rather than
+   * the browser calling the hub.
+   *
+   * Slow by nature (create + boot + health on a real sandbox); callers should
+   * show progress rather than assume a snappy round trip.
+   *
+   * `environment` is the placement's credential environment — `production`
+   * when omitted. One cloud machine per environment.
+   */
+  /**
+   * Deploy to a cloud machine — on `provider` when given, else on the provider the hub chooses — or
+   * `provider: 'local'` — this computer.
+   */
+  /**
+   * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
+   * back to the owner's capped default; omitted leaves it as it is.
+   */
+  async deploy(
+    environment?: string,
+    provider?: 'local' | CloudDeployProvider,
+    tokenAllocation?: AgentTokenAllocation | null,
+  ): Promise<AgentDeployResult> {
+    const body = {
+      ...(environment ? { environment } : {}),
+      ...(provider ? { provider } : {}),
+      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+    };
+    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
+  }
+
+  /**
+   * The cloud placement this agent will have on `provider` (omitted: the one the hub chooses) in `environment`
+   * (default `production`), before it
+   * has a machine, and whether it is ready: each missing value can be filled ("use mine",
+   * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
+   * `deploy`, which is refused (409 `not_ready`) until it is.
+   */
+  async planDeployment(
+    environment?: string,
+    provider?: CloudDeployProvider,
+    tokenAllocation?: AgentTokenAllocation | null,
+  ): Promise<AgentPlannedDeployment> {
+    const body = {
+      ...(environment ? { environment } : {}),
+      ...(provider ? { provider } : {}),
+      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+    };
+    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
+  }
+
+  /**
+   * Allow (or stop) signed-out visitors running this agent, each in a sandbox of their own -- funded, when
+   * `setup.llm_source` is given, by a public child of it capped at `setup.cap_usd`:
+   * `POST agent/<id>/setup_visitor_deployment`. Hub-owned and owner-only, so it is reflected to the hub;
+   * allowing is refused (409) for an agent visitors could not run, (403) for a source the caller may not
+   * allocate from. Visitors reach it only through the agent's `visitor` audience (`PUBLIC_VIEWER_ROLE`).
+   */
+  async setupVisitorDeployment(setup: AgentVisitorDeployment): Promise<AgentVisitorDeployment> {
+    const info = new ActionInfo('setup_visitor_deployment', this.getType(), this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { ...setup };
+    return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
+  }
+
+  /** Every place this agent runs on — this computer first — with what each owns. */
+  async listPlaces(): Promise<AgentPlace[]> {
+    return (await this.get<AgentPlace[]>('places')) ?? [];
+  }
+
+  /** Set one launch override for one place; `null` resets it to the definition. */
+  async setPlaceOverride(deploymentId: string, field: AgentPlaceField, value: string | string[] | null): Promise<void> {
+    await this.post('set_place_override', { deployment_id: deploymentId, field, value });
+  }
+
+  /** Switch this agent on or off on one place; `null` follows the definition's `enabled`. */
+  async setPlaceEnabled(deploymentId: string, enabled: boolean | null): Promise<void> {
+    await this.post('set_place_enabled', { deployment_id: deploymentId, enabled });
+  }
+
+  /** Make one place the only one answering this agent's email. */
+  async setEmailPlace(deploymentId: string): Promise<void> {
+    await this.post('set_email_place', { deployment_id: deploymentId });
+  }
+
+  /** Whether this agent already auto-launched in its project (the once-only mark is set). */
+  async autoLaunchState(): Promise<AgentAutoLaunchState> {
+    return this.get<AgentAutoLaunchState>('auto_launch_state');
+  }
+
+  /** Clear the once-only mark, so the project's next open auto-launches this agent again. */
+  async resetAutoLaunch(): Promise<void> {
+    await this.post<void>('reset_auto_launch');
+  }
+
+  /** Published commit and the changes on this computer that aren't published. */
+  async versionState(): Promise<AgentVersionState> {
+    return this.get<AgentVersionState>('version');
+  }
+
+  /** Fire one of this agent's schedules on a CLOUD place, through the hub (`run_now`). */
+  async placeAction(deploymentId: string, op: 'run_now', triggerId: string): Promise<Record<string, unknown>> {
+    return ((await this.post('place_action', { deployment_id: deploymentId, op, trigger_id: triggerId })) ??
+      {}) as Record<string, unknown>;
+  }
+
+  /** Commit, push and register this agent on the hub. `force` republishes an agent already there. */
+  async publish(
+    options: { force?: boolean } = {},
+  ): Promise<{ agent_id: string; published: boolean; already_on_hub: boolean }> {
+    return this.post('publish', { force: !!options.force });
+  }
+
+  /**
+   * The Agent's mailbox and the local source polling it.
+   *
+   * An Agent HOLDS a mailbox; it is not one. These five are the whole of the
+   * Agent's mail surface — everything else about a mailbox (its allowlist, its
+   * lifecycle) belongs to `AgentMailbox`, which this hydrates.
+   */
+  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
+  async requirements(): Promise<AgentRequirement[]> {
+    return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];
+  }
+
+  /** Does that deployment (default: this computer) satisfy each requirement? Names only. */
+  async readiness(deploymentId?: string): Promise<AgentReadiness | null> {
+    const qs = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : '';
+    return this.get<AgentReadiness | null>(`readiness${qs}`);
+  }
+
+  async mailboxState(): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
+  }
+
+  /**
+   * Allocate the mailbox, or adopt the one this Agent already has.
+   *
+   * The single door, and idempotent: an address is billable and permanent, so
+   * asking twice never buys twice. It also wires the local source and turns both
+   * on — there is no separate "enable".
+   */
+  async allocateMailbox(options: MailboxAllocation = {}): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('allocate_mailbox', { ...options }));
+  }
+
+  /** Pause the mailbox. Reversible — the address and the cursor survive. */
+  async disableMailbox(): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('disable_mailbox'));
+  }
+
+  async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('configure_mailbox', { ...options }));
+  }
+
+  /** Release the address for good. Distinct from disabling, on purpose. */
+  async releaseMailbox(): Promise<{ agent_id: string; released: boolean }> {
+    return this.post<{ agent_id: string; released: boolean }>('release_mailbox');
+  }
+
+  async streamInboxScope(): Promise<AgentStreamInboxScope> {
+    return this.get<AgentStreamInboxScope>('stream_inbox_scope');
+  }
+}
+
+export interface MailboxConfiguration {
+  /** Who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
+  allowed_senders?: string[];
+  /** Standing read defaults, in the Hub's wire vocabulary. Hub-stored. */
+  filters?: Record<string, string>;
+  /** How often THIS machine polls. Local — not a fact about the mailbox. */
+  poll_interval_seconds?: number;
+}
+
+export interface MailboxAllocation {
+  allowed_senders?: string[];
+  display_name?: string;
+  username?: string;
+}
+
+interface AgentMailboxStateWire {
+  agent_id: string;
+  enabled: boolean;
+  mailbox: (Omit<Partial<IAgentMailbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
+  source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
+  /** Every message source the agent owns; the mailbox is one of them. */
+  sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
+}
+
+export interface AgentMailboxState {
+  agent_id: string;
+  enabled: boolean;
+  /** The mailbox channel's own row and source — kept for readers that predate
+   *  an agent holding more than one channel. */
+  mailbox: AgentMailbox | null;
+  source: DataSource | null;
+  /** Every message source the agent owns (the mailbox included). */
+  sources: DataSource[];
+}
+
+export interface AgentStreamInboxScope {
+  agent_id: string;
+  source_id: string | null;
+  conversation_ids: string[];
+  thread_ids: string[];
+  flow_message_ids: string[];
+}
+
+function entityId(value: { id?: string; typeid?: string } | null): string | undefined {
+  if (!value) return undefined;
+  return value.id ?? (value.typeid ? new TypeId(value.typeid).id : undefined);
+}
+
+function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxState {
+  const mailboxId = entityId(state.mailbox);
+  const sourceId = entityId(state.source);
+  return {
+    agent_id: state.agent_id,
+    enabled: state.enabled,
+    mailbox:
+      state.mailbox && mailboxId
+        ? new AgentMailbox({
+            ...state.mailbox,
+            id: mailboxId,
+            agent_typeid:
+              typeof state.mailbox.agent_typeid === 'string'
+                ? new TypeId(state.mailbox.agent_typeid)
+                : state.mailbox.agent_typeid,
+          })
+        : null,
+    source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,
+    sources: (state.sources ?? []).flatMap((row) => {
+      const id = entityId(row);
+      return id ? [new DataSource({ ...row, id })] : [];
+    }),
+  };
+}
+
+/**
+ * What `POST /agent/<id>/deploy` hands back.
+ *
+ * `deployment` is the placement ROW — the same entity, at the same id, that the
+ * local backend has already adopted by the time this resolves. Callers render
+ * the persisted Deployment rather than this response: it is a receipt, not the
+ * state. `agent_definition_error` is present when the box came up but
+ * `agent.json` failed to land — a live machine that is not yet the agent.
+ */
+export interface AgentDeployResult {
+  agent_id: string;
+  deployment?: IDeployment;
+  node_typeid?: string;
+  host_url?: string;
+  reused?: boolean;
+  agent_definition?: string;
+  agent_definition_error?: string;
+}
+
+/** What `POST /agent/<id>/use` hands back — the session opened as the agent.
+ *  Not a call answer: opening a session runs nothing, so it names the process. */
+export interface AgentUseResult {
+  process_id: string;
+  process_typeid: string;
+  deployment_id: string;
+}
+
+/** The body key for an opted-in `use` — absent unless asked, so the hub relay
+ *  and SDK callers that never drain keep a turn-less session. */
+function autoPromptBody(autoPrompt: boolean): { auto_prompt?: true } {
+  return autoPrompt ? { auto_prompt: true } : {};
+}
+
+/** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends
+ *  (`flow_sdk/builtin/agent_schedule.py`). Omitted fields are left as they are. */
+export interface AgentScheduleFields {
+  name?: string;
+  description?: string;
+  /** How `expr` is read: a crontab, an interval (`30s`/`5m`), or an ISO date. */
+  every?: 'cron' | 'interval' | 'date';
+  expr?: string;
+  /** IANA zone, e.g. `Asia/Jerusalem`. Empty = the backend machine's zone. */
+  timezone?: string;
+  /** The place (Deployment id) the schedule runs on. Empty = every machine (legacy). */
+  runs_on?: string;
+  prompt?: string;
+  enabled?: boolean;
+}
+
+/** The launch settings a place may override — `PLACE_OVERRIDABLE_FIELDS` in agent_spec.py. */
+export const AGENT_PLACE_FIELDS = ['worker_type', 'model', 'permission_mode', 'effort', 'mcp_servers'] as const;
+export type AgentPlaceField = (typeof AGENT_PLACE_FIELDS)[number];
+
+export interface AgentPlaceOverrides {
+  worker_type?: string;
+  model?: string;
+  permission_mode?: string;
+  effort?: string;
+  /** Server NAMES — names travel between machines, ids do not. */
+  mcp_servers?: string[];
+}
+
+export interface AgentPlaceSpecWire extends AgentPlaceOverrides {
+  deployment_id: string;
+}
+
+/** `PhoneNumberSpec` — digits only; the backend strips `+`, separators and one trunk `0`. */
+export interface PhoneNumberWire {
+  country_code: string;
+  number: string;
+}
+
+/** One place an agent runs on (`GET /agent/<id>/places`). */
+export interface AgentPlace {
+  /** The Deployment row, as wire data — wrap with `new Deployment(...)`. */
+  deployment: Record<string, unknown> & { id: string; name: string; kind: string };
+  is_local: boolean;
+  overrides: AgentPlaceOverrides;
+  schedule_count: number;
+  answers_email: boolean;
+  /** Published commits a cloud machine does not run yet; null when unknown or for this computer. */
+  behind: number | null;
+  /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
+  enabled: boolean;
+  /** When it last did something (ISO): its newest run here, else when a cloud machine was last seen. */
+  last_active?: string | null;
+}
+
+/** `GET /agent/<id>/version` — what this computer has that the published version lacks. */
+export interface AgentVersionState {
+  published: boolean;
+  published_commit: string;
+  has_repo: boolean;
+  pending_changes: number;
 }

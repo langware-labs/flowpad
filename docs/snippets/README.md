@@ -1,0 +1,71 @@
+---
+id: 3bc9a1e2-cebf-482f-a23b-2b689a7972d9
+---
+
+# Snippets — the dev onboarding shelf
+
+Short, runnable Python against the SDK. One file per category, every snippet
+pinned by a test so it cannot drift silently.
+
+| Category | What it shows | Pinned by |
+| --- | --- | --- |
+| [FlowCall](call-returns.md) | shared call outcomes, typed returned values, and composition | `tests/unit/test_call_returns_snippets.py` |
+| [FlowCall blocks](flowcall-blocks.md) | real call.py entries, typed whole-list inputs and outputs, Wizard-backed chains and explicit per-item maps | `tests/unit/test_flowcall_blocks_snippets.py` |
+| [Simple message block](message-block.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_block.py`, `tests/unit/test_message_block_snippet.py` |
+| [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder, operate it | `tests/unit/test_data_sources_snippets.py` (runs every fence), `tests/unit/test_ingest_write_route.py` |
+| [Project git share](project-git-share.md) | let project members clone and push the project's private GitHub repo through the hub, by role; install/connect steps; stop sharing | `tests/unit/test_project_git_share_snippets.py` (runs every fence), `ui/tests/unit/project-git-share-snippet.test.ts` (the TS fence) |
+| [Gmail source](gmail-source.md) | create an app-password Gmail source without persisting its password | `tests/unit/test_gmail_snippet.py` |
+| [Agent email](agent-email.md) | allocate an Agent mailbox, listen for mail, run the Agent and send a threaded reply | `tests/hub_tests/test_agent_email_conversation.py`, `tests/long_tests/test_blocks_email_workflow.py` |
+| [Workflows](workflows.md) | the plain-Python `blocks` surface: a stream inbox, an agent runner, a typed reply that acks, on email, Telegram and Slack; the same loop on every channel for a user or an agent | `tests/unit/test_workflows_snippets.py` (runs every loop), `tests/unit/test_blocks_email.py`, live `tests/long_tests/test_blocks_email_workflow.py` |
+| [Connections](connections.md) | list, connect and verify providers from a Python REPL or `flow connections` | `tests/unit/test_connections.py`, `tests/unit/test_connections_cli.py` |
+| [Secret stores](secret-stores.md) | load, save and validate named secrets; a credential's store per environment; bind a store and an account to a data source instance | `tests/unit/test_secrets/test_secret_stores_snippets.py` (runs every fence), `tests/unit/test_secrets/`, `tests/unit/test_connection_access.py` |
+| [Processes and agents](processes.md) | give a process or an agent an MCP server, launch it, read the answer; a typed folder in, a typed folder out (`run(input=…, output_spec=…)`) | `tests/unit/test_processes_snippets.py` (runs every section on the mock worker), `tests/long_tests/test_process_mcp_multi_vendor.py`, `tests/long_tests/test_process_typed_io_live.py` |
+| [Agent deployment](agent-deployment.md) | place an agent, start a session on a placement, read its runs, pause the machine, serve it your way (you pick the channels and route each message to an agent and session), and the same verbs from TypeScript and HTTP | `tests/unit/test_agent_deployment_snippets.py` (runs §1, §3, §4, §6), `tests/unit/agent/test_agent_deployment_contract.py`, `tests/unit/agent/test_agent_run_dispatch.py`, `tests/unit/test_deployed_agent_chat_demo.py` |
+| [Service endpoints](service-endpoints.md) | what a placement exposes: a protocol and a backend per service, the `service` proxy and `direct-url`, a webapp's declared endpoints, and a cloud deploy that exposes them | `tests/unit/test_service_endpoint_model.py`, `tests/api/test_service_endpoint_proxy.py`, `tests/api/test_webapp_endpoints.py` |
+| [Datasets](datasets.md) | define a dataset's row schemas as nested `data_schema` folders; read the shipped SmartNavigator eval set, append typed rows, relabel with several right answers, keep records by key (put, delete, rename, check), evaluate the navigator, open it in its editor | `tests/unit/test_datasets_snippets.py` (runs every Python fence), `tests/unit/test_data_spec/test_declared_kinds.py`, `tests/api/test_dataset_editors.py` |
+| [Relationship pickers](relationship-pickers.md) | TypeScript candidate-provider contract, dependent parent queries, search/pages and ordered references; example integration is illustrative | `ui/tests/unit/relationship-picker.test.ts` (control behavior) |
+| [Decisions](decisions.md) | ask a closed question of some state through the hub `APIEndpoint` marked `decision` (Jev): one decision, which endpoint answers, choice/score/yes_no, act only when sure, failures, TypeScript, the magic-line navigator, availability on LLM sources | `tests/unit/test_decision_snippets.py` (runs every Python fence), `ui/tests/unit/decision-snippet.test.ts` (the TS fence), live `tests/long_tests/test_decision_live.py` |
+| [LLM endpoints](llm-endpoints.md) | fund a call: a provider key, a hub budget or a device login; complete, embed, list, probe; run on a machine that never logged in (public endpoint) | `tests/unit/test_llm_endpoint_rows.py`, `tests/unit/test_llm_client.py`, `tests/long_tests/test_llm_endpoint_live.py`, `tests/long_tests/test_loginless_in_docker.py` |
+| [RAG](rag.md) | make a folder searchable, run a pass, ask it something, chunk and store on their own | `tests/unit/test_rag_snippets.py` (runs every snippet), `tests/unit/test_rag_indexing.py` |
+| [Activity](activity.md) | report progress on anything — count, nest, end it, read what is live, and the same verbs from TypeScript, the CLI and HTTP | `tests/unit/test_activity_snippets.py` (runs every fence), `tests/unit/test_activity_handle.py`, `tests/unit/test_activity_monitor.py` |
+| [Threads and replies](message-threads.md) | reply in a thread on Flowpad's own chat, read one thread, the same verbs on a data source channel, and the CLI | `tests/unit/test_message_threads_snippets.py` (runs every Python fence), `tests/api/test_native_threads.py`, `tests/cli/test_conversation_cmd.py` |
+| [An agent on a channel](agents-on-channels.md) | declare a channel's credential, put an agent on WhatsApp so the app answers, or run the answering loop yourself; proven in Docker | `tests/unit/test_agents_on_channels_snippets.py` (runs every fence), `tests/long_tests/test_whatsapp_agent_in_docker.py` |
+| [Pipes](pipes.md) | run a source cycle, mirror and follow a folder, react to a change, set cadence, one agent over several sources, keep a search index level, pages of N with one ack each | `tests/unit/test_pipes_snippets.py` (runs every fence) |
+| [Project dependencies](project-dependencies.md) | declare the folders a project expects in `flow.json` (git, hub project, local folder; required or optional), see what resolved, a process in one project reading a document from another, an agent from a dependency running in your project, share warnings, the same verbs in TypeScript, HTTP and `flow dep` | `tests/unit/test_project_dependencies_snippets.py` (runs every python fence), `ui/tests/unit/project-dependencies-snippet.test.ts` (the TS fence), `tests/unit/test_project_dependencies.py` (every case and corner) |
+| [Asset dependencies](asset-dependencies.md) | an asset names what it needs by id (`<type>-<uuid>` / `<kind>.id.<uuid>`) in its own `flow.json`; three layered folder sources where depending on the personal one brings team and company; a missing link named with the path it was needed on; where an id is looked up | `tests/unit/test_asset_dependencies_snippets.py` (runs every python fence), `tests/unit/test_asset_dependencies.py` (every case and corner) |
+| [Stream stream inbox automations](stream-inbox-automations.md) | when a message arrives · if a decision op says it is about X · then a wizard runs: the `trigger.json` with `if` and `then`, `Trigger.on_message`, the decision op asked without firing, the message state the decision and the agent share, the fire path and its rows, the agent step's input, a decision as a wizard step, the verbs the screens use, TypeScript | `tests/unit/test_stream_inbox_automations_snippets.py` (runs every Python fence), `tests/unit/automations/test_stream_inbox_gate.py` (the fire-path corners), `ui/tests/unit/stream-inbox-automations-snippet.test.ts` (the TS fence) |
+| [Scan and index](scan-and-index.md) | walk a tree the way the indexer does, scan a project (walk + asset discovery in one request), read documents, pull title and links, and the one switch between the Python and Rust backends | `tests/unit/test_scan_index_snippets.py` (runs every fence; the scan on both backends), `tests/unit/diskio/` (the conformance kit) |
+
+## Channel routing
+
+[Channel webhook routing](channel-webhook-routing.md) connects the official WhatsApp driver,
+hub account/user/group claims, source-ID delivery, deployment answering and diagnostics.
+Its group setup example is run by `tests/unit/test_agents_on_channels_snippets.py`.
+
+## Conventions
+
+* **No snippet requires manual service setup.** Most run directly in-process;
+  connection operations lease the selected standard service for their normal
+  HTTP actions and restore its initial up/down state. Long tests that pin live
+  legs run under the standard 30s cap and skip without credentials.
+* **The shipped sources load on first ask.** The first `DataDriver.loaded(provider)`
+  loads every shipped data source asset folder
+  (`agentic-assets/data_driver/<name>/source.py`), so a snippet imports nothing to
+  make `rss` or `slack` resolve, and an override it registers before or after that
+  first lookup is kept.
+* **Values travel as `DataSpec`.** What a driver emits is a
+  `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
+  agent returns is a `PromptResult` (see [FlowCall](call-returns.md)). They are frozen and refuse unknown keys. A
+  simple `MessageBlock` yields an ephemeral `MessageRequest`; the block owns
+  its one-shot reply correlation.
+* **Read before you believe.** A verb returning does not mean rows landed.
+  Count with `SourceItem.get_all({"data_source_id": ...})`.
+
+Adding a category: create `docs/snippets/<category>.md`, name the test that
+pins each snippet, add a row above. `tests/unit/test_snippets_are_pinned.py`
+walks the shelf and fails on a `python` fence whose section names no test —
+that is what keeps the next snippet from landing unpinned.
+
+One more rule the loops follow: **every `async for … in x.listen()` gives each
+item exactly one of `await item.ack()` or `await item.reply(...)`.** An item
+that gets neither is redelivered after a restart — at-least-once, by design.

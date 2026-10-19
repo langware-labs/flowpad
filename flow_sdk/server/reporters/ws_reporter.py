@@ -2,8 +2,10 @@
 WebSocket reporter - broadcasts hook events to connected clients.
 """
 
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from fastapi import WebSocket
+
 from .base import BaseReporter
 
 

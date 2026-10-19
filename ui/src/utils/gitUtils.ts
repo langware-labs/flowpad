@@ -12,7 +12,7 @@ import apiClient from '@sdk/client';
 /**
  * Stable, machine-independent identity for a GitOrigin — the same string on
  * every machine (unlike a local checkout path). Use it to key/dedup a git
- * attachment and to match one against a project's cloned context folders.
+ * attachment and to match one against a project's cloned git dependencies.
  * Returns null for an incomplete origin.
  *
  * Mirrors the backend `GitOrigin.key()` (`canonical_git_origin_repo_key` +
@@ -40,7 +40,7 @@ export function gitOriginKey(o: GitOrigin | null | undefined): string | null {
 
 /**
  * Resolve a git attachment's checkout root ON THIS MACHINE by matching its
- * origin against the project's git context folders (each carries a local
+ * origin against the project's git dependencies (`context_dir_infos`: each carries a local
  * `path` plus the linked Folder's `typeid`). Returns the local root, or null
  * when the repo isn't cloned here yet. The sender's absolute path never
  * travels — every machine resolves its own from the shared `git_origin`.

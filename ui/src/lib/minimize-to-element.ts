@@ -12,27 +12,54 @@
  * reduced-motion preference all degrade to doing nothing.
  */
 
+import { animateGlow } from './animate-glow';
+
 // Dedicated runtime anchors (not test ids — those may be renamed freely by
 // test refactors without anyone noticing the animation silently degrading).
 const PENDING_CHIP_SELECTOR = '[data-minimize-anchor="process-chip"]';
 const FOOTER_SELECTOR = '[data-minimize-anchor="footer"]';
+const BOOKMARKS_STAR_SELECTOR = '[data-minimize-anchor="bookmarks-star"]';
 
-// Arrival pulse — mirrors the `pending-glow-once` keyframes in
-// tailwind.config.ts, but run through WAAPI so we never touch `className` on
-// a React-managed target (the chip toggles that class itself via state; two
-// owners of one class fight on re-render).
-const GLOW_SOFT = '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)';
-const GLOW_STRONG = '0 0 0 2px hsl(var(--primary) / 0.85), 0 0 12px 2px hsl(var(--primary) / 0.65)';
-const GLOW_KEYFRAMES: Keyframe[] = [
-  { boxShadow: GLOW_SOFT, offset: 0 },
-  { boxShadow: GLOW_STRONG, offset: 0.25 },
-  { boxShadow: GLOW_STRONG, offset: 0.75 },
-  { boxShadow: GLOW_SOFT, offset: 1 },
-];
+/** The flight's timing, shared with maximize-from (the same flight played backwards). */
+export const GENIE_DURATION_MS = 450;
+export const GENIE_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
+/** Opacity at the small end. Never 0: an invisible ghost is a fade, not a flight. */
+export const GENIE_SMALL_OPACITY = 0.2;
+
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The transform that lays an element sitting at `box` over `onto`: centers
+ * matched, scaled to fit INSIDE `onto` (min ratio, never enlarged — a
+ * wide-but-short target like the footer must still shrink it, not inflate it).
+ *
+ * Minimize animates identity → this; maximize-from (a window zooming out of
+ * the icon that opened it) animates this → identity.
+ */
+export function genieTransform(box: Box, onto: Box): string {
+  const dx = onto.left + onto.width / 2 - (box.left + box.width / 2);
+  const dy = onto.top + onto.height / 2 - (box.top + box.height / 2);
+  const scale = Math.min(
+    Math.max(Math.min(onto.width / Math.max(1, box.width), onto.height / Math.max(1, box.height)), 0.04),
+    1,
+  );
+  return `translate(${dx}px, ${dy}px) scale(${scale})`;
+}
+
+interface FlightOptions {
+  /** Leave the source on screen — the flight POINTS at where it went, nothing moved. */
+  keepSource?: boolean;
+}
 
 export function animateMinimizeToElement(
   source: HTMLElement | null,
   target: HTMLElement | null,
+  { keepSource = false }: FlightOptions = {},
 ): void {
   if (!source || !target || typeof source.animate !== 'function') return;
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
@@ -59,29 +86,20 @@ export function animateMinimizeToElement(
   document.body.appendChild(ghost);
   // Hide the source so its own exit animation doesn't double-image with the
   // flight; the caller closes it right after, so it's about to unmount anyway.
-  source.style.visibility = 'hidden';
-
-  const dx = to.left + to.width / 2 - (from.left + from.width / 2);
-  const dy = to.top + to.height / 2 - (from.top + from.height / 2);
-  // Fit INSIDE the target: min ratio, never enlarged. A wide-but-short target
-  // (the footer fallback) must still shrink the ghost, not inflate it.
-  const scale = Math.min(
-    Math.max(Math.min(to.width / from.width, to.height / from.height), 0.04),
-    1,
-  );
+  if (!keepSource) source.style.visibility = 'hidden';
 
   const flight = ghost.animate(
     [
       { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-      { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: 0.2 },
+      { transform: genieTransform(from, to), opacity: GENIE_SMALL_OPACITY },
     ],
-    { duration: 450, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    { duration: GENIE_DURATION_MS, easing: GENIE_EASING },
   );
   const cleanup = () => ghost.remove();
   flight.oncancel = cleanup;
   flight.onfinish = () => {
     cleanup();
-    target.animate(GLOW_KEYFRAMES, { duration: 3000, easing: 'ease-in-out' });
+    animateGlow(target);
   };
 }
 
@@ -94,4 +112,18 @@ export function animateMinimizeToProcessChip(source: HTMLElement | null): void {
     document.querySelector<HTMLElement>(PENDING_CHIP_SELECTOR) ??
     document.querySelector<HTMLElement>(FOOTER_SELECTOR);
   animateMinimizeToElement(source, target);
+}
+
+/**
+ * "That is where it is now": the minimize flight and the landing glow, but
+ * nothing minimizes — the source stays where it is. A copy of it flies into
+ * `target`, so the user learns where the thing they just saved can be found.
+ */
+export function animatePointTo(source: HTMLElement | null, target: HTMLElement | null): void {
+  animateMinimizeToElement(source, target, { keepSource: true });
+}
+
+/** Point `source` at the navigation bar's bookmarks star — where a favorite lives. */
+export function animatePointToBookmarks(source: HTMLElement | null): void {
+  animatePointTo(source, document.querySelector<HTMLElement>(BOOKMARKS_STAR_SELECTOR));
 }

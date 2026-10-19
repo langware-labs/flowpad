@@ -6,7 +6,7 @@ from pydantic import Field
 
 from flow_sdk.config import default_service_config
 from flow_sdk.flowpad_types.enums import VISITOR_AUTH_ROLE
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.request_context.methods import get_current_request_info
@@ -19,7 +19,9 @@ class Visitor(Entity):
     type: str = APIField(default=BuiltinEntityType.VISITOR.value)
     ga_client_id: str | None = Field(default=None)
     utm_params: dict[str, str] | None = Field(default=None)  # Stores all utm_* query parameters
-    visitor_role: str = Field(default=VISITOR_AUTH_ROLE.value.lower())  # Use Field not APIField for security
+    # Not APIField, for security (stays off the API surface); PRIVATE so it
+    # matches the base declaration instead of silently widening it.
+    visitor_role: str = EntityField(default=VISITOR_AUTH_ROLE.value.lower(), sharing=Sharing.PRIVATE)
 
     @staticmethod
     def _get_ga_client_id(cookies: dict[str, str]) -> str | None:

@@ -23,7 +23,7 @@ async def sync_worldview(provider: InventoryProvider | None = None) -> WorldView
     try:
         snapshot = await inventory_provider.collect()
     except InventoryProviderError as exc:
-        report = await reconcile_provider_error(inventory_provider.name, str(exc))
+        report = reconcile_provider_error(inventory_provider.name, str(exc))
     else:
         report = await reconcile_snapshot(snapshot)
     return await build_worldview(sync_report=report)

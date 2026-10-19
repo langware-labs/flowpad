@@ -35,13 +35,14 @@ const EXTRA_LANGUAGES = [applescript, csv, http, mermaid, powershell, toml];
 /**
  * Language aliases: `[canonical, ...aliases]`.
  *
- * `interface` is our own rendered fence type (an API/function-signature
- * contract authored in YAML). It has no grammar of its own — pointing it at
- * yaml means the source half of the block is highlighted correctly whenever
- * the caret is inside it.
+ * `interface` (an API/function-signature contract) and `breadcrumb` (the tests
+ * a rules doc governs) are our own rendered fence types, both authored in
+ * YAML. Neither has a grammar of its own — pointing them at yaml means the
+ * source half of the block is highlighted correctly whenever the caret is
+ * inside it.
  */
 const LANGUAGE_ALIASES: Record<string, string[]> = {
-  yaml: ['interface'],
+  yaml: ['interface', 'breadcrumb'],
 };
 
 /** Passed to `prismConfig` — mutates the plugin's private refractor instance. */

@@ -28,7 +28,7 @@ def test_occurrences_are_local_only_and_duplicate_count_is_computed() -> None:
     assert "duplicate_count" not in entity.to_common_json()
     assert "asset_occurrences" not in entity._hub_body()
     assert "duplicate_count" not in entity._hub_body()
-    assert "asset_occurrences" in Entity.LOCAL_ONLY_FIELDS
+    assert "asset_occurrences" in Entity.fields_not_accepted_from_hub()
 
 
 @pytest.mark.asyncio

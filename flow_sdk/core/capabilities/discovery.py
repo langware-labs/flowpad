@@ -26,7 +26,9 @@ import logging
 import os
 import shutil
 import sys
+from pathlib import Path
 
+from flow_sdk.core.capabilities.env_probe import adopt_path
 from flow_sdk.core.capabilities.models import CapabilityValue
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,69 @@ _DISCOVERY_LOCK = asyncio.Lock()
 def get_capability_value(kind: str) -> CapabilityValue | None:
     """The last discovered value for ``kind`` (None = never discovered)."""
     return _VALUES.get(kind)
+
+
+def resolve_capability_value(kind: str) -> CapabilityValue | None:
+    """``kind``'s resolved value — swept, else PATH, else ``None``.
+
+    **Never runs a sweep**, and never awaits: this is what a spawn calls, and a
+    spawn must be immediate. A sweep costs seconds — an env-probe subprocess plus
+    ``registry.test()`` per capability so the UI's badges stay fresh — none of
+    which answers the only question here, "where is this binary".
+
+    Resolution order:
+
+    1. a swept value, if there is one. Authoritative — including a swept
+       ``value=None``, which is a real "looked, absent".
+    2. otherwise, for a CLI capability, ``shutil.which`` against this process's
+       PATH. A hit is recorded, so it is probed once and never again.
+
+    A miss is deliberately NOT recorded. The sweep resolves against a LOGIN-shell
+    PATH (see ``env_probe``) so a GUI-launched backend still sees nvm/homebrew;
+    this fallback only has the process PATH, so a miss here can be wrong.
+    Remembering a wrong "absent" would outlive the reason for it, and would also
+    remove the only way a CLI installed outside Flowpad is ever picked up. The
+    re-probe costs a ``which``.
+
+    Returns None for capabilities that are not a CLI lookup (Chrome, GitHub, the
+    ``harness`` reference) — those need a real sweep and never block a spawn.
+    """
+    existing = _VALUES.get(kind)
+    if existing is not None:
+        return existing
+
+    # Imported past the fast path: a memoized hit is then a single dict lookup,
+    # and this runs a few times per spawn.
+    from flow_sdk.core.capabilities.registry import CliCapabilityRunner, get_capability_registry
+
+    try:
+        runner = get_capability_registry().get(kind)
+    except KeyError:
+        return None
+    if not isinstance(runner, CliCapabilityRunner):
+        return None
+
+    # The runner knows how it is located: a binary on PATH, or a package in this environment —
+    # else where the vendor's installer put it, which no running process's PATH has yet.
+    resolved = runner.locate_on_process_path() or in_install_dirs(runner.executable)
+    if not resolved:
+        return None
+    value = runner.value_from_executable_path(resolved, source="this process's PATH")
+    set_capability_value(value)
+    return value
+
+
+def in_install_dirs(executable: str) -> str | None:
+    """*executable* in its vendor's declared install folders (``Vendor.install_bin_dirs``), else None."""
+    from flow_sdk.flowpad_types.vendors import install_bin_dirs_for  # noqa: PLC0415
+
+    dirs = [os.path.expandvars(os.path.expanduser(d)) for d in install_bin_dirs_for(executable)]
+    return shutil.which(executable, path=os.pathsep.join(dirs)) if dirs else None
+
+
+def has_discovered() -> bool:
+    """Whether the first full sweep has finished -- before it, an absent value is not an answer."""
+    return _DISCOVERED_ONCE.is_set()
 
 
 async def ensure_discovered() -> bool:
@@ -80,29 +145,44 @@ async def _run_env_probe(executables: list[str]) -> dict:
     """
     if executables:
         try:
+            # By FILE PATH, not `-m`: `-m` imports the parent packages first, and
+            # `flow_sdk.core` / `flow_sdk.core.capabilities` pull in the entity model and the
+            # registry -- the server stack this stdlib-only child exists to avoid. On Windows
+            # that import alone outran PROBE_TIMEOUT_SECONDS, so every sweep waited the full
+            # cap and fell back to the process PATH.
             proc = await asyncio.create_subprocess_exec(
                 sys.executable,
-                "-m",
-                "flow_sdk.core.capabilities.env_probe",
+                str(Path(__file__).with_name("env_probe.py")),
                 *executables,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                out, err = await asyncio.wait_for(
-                    proc.communicate(), timeout=PROBE_TIMEOUT_SECONDS
-                )
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=PROBE_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                raise RuntimeError(f"env probe exceeded {PROBE_TIMEOUT_SECONDS}s")
+                # The timeout fires on OUR clock, not on the child's liveness,
+                # so the child is often already reaped by now — and uvloop raises
+                # ProcessLookupError for a kill on a reaped process. Swallow it
+                # so the RuntimeError below is what reaches the caller.
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
+                raise RuntimeError(f"env probe exceeded {PROBE_TIMEOUT_SECONDS}s") from None
             if proc.returncode == 0:
                 return json.loads(out.decode("utf-8"))
-            raise RuntimeError(
-                f"env probe exited {proc.returncode}: {err.decode('utf-8', 'replace')[:200]}"
-            )
+            raise RuntimeError(f"env probe exited {proc.returncode}: {err.decode('utf-8', 'replace')[:200]}")
         except Exception as exc:
-            logger.warning("Capability env probe failed (%s) — falling back to process PATH", exc)
+            # Name the TYPE, never just str(exc). Several exceptions that land
+            # here — ProcessLookupError, NotImplementedError, CancelledError —
+            # carry an empty message, so this logged "failed ()" for a long time
+            # and nobody could tell what had gone wrong.
+            logger.warning(
+                "Capability env probe failed (%s: %s) — falling back to process PATH",
+                type(exc).__name__,
+                exc,
+            )
     return {
         "path": os.environ.get("PATH", ""),
         "executables": {exe: shutil.which(exe) for exe in executables},
@@ -145,6 +225,16 @@ async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityV
                 if isinstance(candidate, CliCapabilityRunner):
                     cli_executables.add(candidate.executable)
     probe = await _run_env_probe(sorted(cli_executables))
+    # A miss on the terminal PATH is not the last word: the vendor's installer may have put the
+    # binary in its own folder, which only a NEW login shell's rc would add.
+    found = probe.setdefault("executables", {})
+    for executable in cli_executables:
+        if not found.get(executable):
+            found[executable] = in_install_dirs(executable)
+    if not probe.get("fallback") and probe.get("path"):
+        # A sweep runs at boot, on a capability refresh and after an install finishes: the PATH it
+        # just read is the freshest there is, so everything spawned next gets it.
+        adopt_path(probe["path"])
 
     discovered: dict[str, CapabilityValue] = {}
     concrete = [r for r in runners if not isinstance(r, CapabilityReferenceRunner)]
@@ -170,6 +260,7 @@ async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityV
             discovered[value.kind] = value
 
     await _mirror_to_rows(discovered)
+    await _resolve_login_states(discovered)
     if kinds is None:
         _DISCOVERED_ONCE.set()  # unblock ensure_discovered() waiters
     return discovered
@@ -183,6 +274,70 @@ async def _discover_one(runner, probe: dict) -> CapabilityValue | None:
         return None
     set_capability_value(value)
     return value
+
+
+async def _resolve_login_states(discovered: dict[str, CapabilityValue]) -> None:
+    """Ask every installed harness whether it is signed in, and mirror the verdict.
+
+    ``Capability.login_state`` is ``Persist.FALSE`` -- ``None`` after every restart -- and
+    ``llm_source._device_source`` reads exactly that field to decide whether the device rung
+    is proven. ``None`` means "nobody has asked", so the rung stays eligible at
+    ``_RANK_DEVICE`` and ``pick_llm_candidate`` returns it on its first pass; on an unbound
+    box the ladder therefore never descends to a hub endpoint at ``_RANK_ENDPOINT``, and
+    ``resolve_worker_api_auth`` hands the spawn no credentials at all.
+
+    Until now the ONLY producer of ``login_state`` was ``Capability.auth_status_action`` --
+    the login modal's button. A box whose user never opened that screen kept ``None`` for the
+    life of the process, so a desktop install with a granted budget and no vendor login died
+    on the vendor's own "Could not resolve authentication method" with the budget untouched.
+    The sweep is where that question belongs: it already runs before any spawn resolves.
+
+    Deliberately narrow:
+
+    * only harness CLIs (``worker_type_for_kind``), and only ones the sweep found INSTALLED --
+      a probe against a missing binary answers ``NOT_INSTALLED``, which
+      ``_mirror_probe_to_login_state`` correctly refuses to write, so it is a subprocess spent
+      to learn nothing;
+    * concurrent, so N harnesses cost about one probe of wall clock rather than N;
+    * per-harness failures are swallowed -- a vendor CLI that hangs or misbehaves must not
+      take the whole capability sweep down with it.
+
+    It writes through ``_mirror_probe_to_login_state``, the same one writer the action uses,
+    so an undecided probe still moves nothing and a login in flight is still not clobbered.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.core.capabilities.registry import get_capability_registry
+
+    registry = get_capability_registry()
+
+    async def probe(kind: str, worker_type: str) -> None:
+        try:
+            # Probe FIRST, read the row after: the probe spawns the vendor CLI (seconds), and a
+            # row read before it is a stale copy whose save below writes back every field — it
+            # undid an LLM-source pick (``auth_mode``) made while the boot sweep's probe ran.
+            result = await get_driver(worker_type).auth_probe()
+            row = await Capability.get_by_kind(kind)
+            if row is None:
+                return
+            before = row.login_state
+            await row._mirror_probe_to_login_state(result)
+            if row.login_state != before:
+                # ``_mirror_probe_to_login_state`` writes the field and broadcasts, but does
+                # NOT save -- ``notify_updated`` only publishes. ``login_state`` is
+                # ``Persist.FALSE``, which means DB-only (never mirrored into
+                # metadata.json), not in-memory-only; without this the verdict dies with
+                # this row object and the resolver's own ``Capability.get_by_kind`` read in
+                # ``llm_source._inventory`` -- a DIFFERENT instance -- still sees ``None``.
+                # ``notify=False``: the mirror already emitted the frame.
+                await row.save(notify=False)
+        except Exception:
+            logger.exception("Failed to resolve login state for %s", kind)
+
+    installed = [
+        (kind, registry.worker_type_for_kind(kind)) for kind, value in discovered.items() if value.value is not None
+    ]
+    await asyncio.gather(*(probe(k, w) for k, w in installed if w))
 
 
 async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
@@ -200,15 +355,34 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
     registry = get_capability_registry()
     for kind, value in discovered.items():
         try:
-            row = await Capability.get_by_kind(kind)
-            if row is None:
-                continue
-            check = await registry.test(kind)
-            last_check = check.result.model_dump(mode="json")
-            # Passive sweep (attempted=False): may flip a row to AVAILABLE or
-            # back off a stale AVAILABLE, but never promotes NONE ("never
-            # tried") to NOT_AVAILABLE — that takes an explicit user verb.
-            state = row.derive_state(check.result)
+            # A passive sweep refreshes badges; it does not run work. A
+            # capability whose test() spawns a vendor CLI or drives an agent
+            # (``sweepable_test=False``) keeps whatever ``last_check`` an
+            # explicit verb last wrote, and the sweep still mirrors its VALUE
+            # below. Without this the sweep launched a real Claude agent per
+            # capabilities/summary request and waited on it — a badge refresh
+            # costing a live agent run, and the reason
+            # test_capabilities_summary_groups_by_intent blew its 30s cap once
+            # the caller actually waited for the worker it had started.
+            if not registry.get(kind).spec.sweepable_test:
+                row = await Capability.get_by_kind(kind)
+                if row is None:
+                    continue
+                last_check = row.last_check
+                state = row.state
+            else:
+                check = await registry.test(kind)
+                last_check = check.result.model_dump(mode="json")
+                # Read after the test: a row read before it is stale, and its save below
+                # would write back fields a user changed meanwhile (an LLM-source pick).
+                row = await Capability.get_by_kind(kind)
+                if row is None:
+                    continue
+                # Passive sweep (attempted=False): may flip a row to AVAILABLE
+                # or back off a stale AVAILABLE, but never promotes NONE
+                # ("never tried") to NOT_AVAILABLE — that takes an explicit
+                # user verb.
+                state = row.derive_state(check.result)
             unchanged = (
                 row.value == value.value
                 and row.value_type == value.value_type

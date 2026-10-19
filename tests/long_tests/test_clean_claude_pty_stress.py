@@ -26,11 +26,24 @@ import asyncio
 import os
 import re
 import select
+import sys
 import time
 
-import ptyprocess
 import pytest
 
+if sys.platform == "win32":
+    # select() on a PTY fd is POSIX-only, and ptyprocess (imported below) isn't
+    # installed on Windows at all — skip before either is reached, since a
+    # skipif marker doesn't stop pytest from importing the module first.
+    pytest.skip("reference-capture drives a PTY via select()/ptyprocess (POSIX)", allow_module_level=True)
+
+import ptyprocess
+
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
+from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.config import FLOWPAD_TEMP_DIR
+from tests.long_tests._pty_helpers import read_pty_stream
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -38,23 +51,18 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
-from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
-from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.config import FLOWPAD_TEMP_DIR
-from tests.long_tests._pty_helpers import read_pty_stream
-
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 ITERATIONS = 50
 SETTLE_SLEEP = 1.5  # seconds to wait after process.start() before reading PTY
 PTY_OUTPUT_DEADLINE = 5.0  # max wait for first PTY byte (cold Claude under stress)
-INVARIANT_DEADLINE = 5.0   # max wait for full Claude banner after first byte
+INVARIANT_DEADLINE = 5.0  # max wait for full Claude banner after first byte
 
 # Minimum run of '─' chars that counts as Claude Code's separator line.
 MIN_SEPARATOR_LEN = 60
 
 # ── VT100 screen renderer ──────────────────────────────────────────────────────
+
 
 def render_pty_screen(raw: bytes, cols: int = 80, rows: int = 24) -> list[str]:
     """Render PTY bytes onto a cols×rows character grid.
@@ -144,6 +152,7 @@ def render_pty_screen(raw: bytes, cols: int = 80, rows: int = 24) -> list[str]:
 
 # ── Structural invariant extraction ───────────────────────────────────────────
 
+
 def _find_separator_row(screen_rows: list[str]) -> int | None:
     """Return index of the first full-width separator row, or None."""
     for i, row in enumerate(screen_rows):
@@ -192,14 +201,12 @@ def extract_invariants(screen_rows: list[str]) -> dict:
 
 # ── Reference capture ─────────────────────────────────────────────────────────
 
+
 def _capture_reference_screen_sync() -> dict:
     """Blocking reference capture — runs in a thread executor."""
     import signal
 
-    env = {
-        k: v for k, v in os.environ.items()
-        if not k.startswith(("FLOWPAD", "CLAUDE_PROJECT_DIR", "CLAUDECODE"))
-    }
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("FLOWPAD", "CLAUDE_PROJECT_DIR", "CLAUDECODE"))}
     proc = ptyprocess.PtyProcess.spawn(
         ["claude", "--dangerously-skip-permissions"],
         cwd=FLOWPAD_TEMP_DIR,
@@ -238,6 +245,7 @@ async def capture_reference_screen() -> dict:
 
 # ── Claude Code section extractor ─────────────────────────────────────────────
 
+
 def extract_claude_section(full_pty: str) -> bytes:
     """Return the PTY bytes starting from Claude Code's first MODE ON ?2004.
 
@@ -257,6 +265,7 @@ def extract_claude_section(full_pty: str) -> bytes:
 
 
 # ── Test ──────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 # exception to 30s policy: 50 cold Claude PTY spawns × 1.5s settle = 75s floor by construction;
@@ -281,9 +290,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
     assert ref["separator_found"], "Reference launch missing separator — check claude is installed"
     assert ref["prompt_found"], "Reference launch missing ❯ prompt — unexpected UI change"
     assert ref["bypass_found"], "Reference launch missing bypass-permissions indicator"
-    assert ref["prompt_content"] == "", (
-        f"Reference prompt is not empty: {ref['prompt_content']!r}"
-    )
+    assert ref["prompt_content"] == "", f"Reference prompt is not empty: {ref['prompt_content']!r}"
 
     failures = []
 
@@ -305,8 +312,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
             process = await AgenticProcess.get_by_id(process.id)
             shell_id = process.shell_id
             assert shell_id, (
-                f"[iter {i}] process.start() did not set shell_id; "
-                f"resp={getattr(start_resp, 'message', start_resp)!r}"
+                f"[iter {i}] process.start() did not set shell_id; resp={getattr(start_resp, 'message', start_resp)!r}"
             )
 
             def _capture_invariants():
@@ -362,6 +368,4 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
         finally:
             await process.close()
 
-    assert not failures, (
-        f"{len(failures)}/{ITERATIONS} iterations had dirty PTY:\n" + "\n".join(failures)
-    )
+    assert not failures, f"{len(failures)}/{ITERATIONS} iterations had dirty PTY:\n" + "\n".join(failures)

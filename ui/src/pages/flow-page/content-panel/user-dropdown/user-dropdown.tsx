@@ -5,19 +5,48 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, HelpCircle, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Cloud, HelpCircle, KeyRound, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
+import { UserMenuHeader } from './user-menu-header';
+import { WorkspaceSubmenu } from '@src/components/workspace/workspace-switcher';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { setDev, useIsDev } from '@src/components/view-mode';
+import { cn } from '@src/lib/utils';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { Agent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
-import { useAuth, useCloudStatus, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import {
+  SubAgent,
+  cloudManager,
+  dataContext,
+  ExpansionRequest,
+  HubConnectionStatus,
+  HubLoginStatus,
+  navigator,
+  Page,
+  PAGE_TYPE,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+} from '@sdk';
+import {
+  useAuth,
+  useCloudStatus,
+  useConnectionStatus,
+  useContext,
+  useEntitiesQuery,
+  useEntity,
+  useWatch,
+} from '@sdk/react/hooks';
+import { getIconPacks, resolveIcon } from '@sdk/icons';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -25,6 +54,7 @@ import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 function isDefaultEmptyLexicalContent(content: { root: { children: SerializedLexicalNode[] } }): boolean {
   if (content.root?.children?.length !== 1) return false;
@@ -109,12 +139,18 @@ const instructionsQueryFilter = new QueryFilter({
 
 function cloudConnectionLabel(status: HubConnectionStatus): string {
   switch (status) {
-    case 'verified':       return 'connection verified';
-    case 'connected':      return 'connected';
-    case 'connecting':     return 'connecting';
-    case 'auth_rejected':  return 'connection rejected';
-    case 'error':          return 'connection error';
-    case 'disconnected':   return 'not connected';
+    case 'verified':
+      return 'connection verified';
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+      return 'connecting';
+    case 'auth_rejected':
+      return 'connection rejected';
+    case 'error':
+      return 'connection error';
+    case 'disconnected':
+      return 'not connected';
   }
 }
 
@@ -162,6 +198,7 @@ export function UserDropdown() {
   const { agentId } = useParams();
   const { user, currentUser } = useAuth();
   const { isConnected } = useConnectionStatus();
+  const devMode = useIsDev();
   const { cloudLoginAvailable } = useContext();
   // In Local (private) data-privacy mode the cloud is off-limits, so no login
   // affordance is shown at all.
@@ -184,8 +221,29 @@ export function UserDropdown() {
         .toUpperCase()
         .slice(0, 2)
     : null;
-  const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
-  const { data: agent } = useEntity<Agent>(agentTypeId, {
+  // `picture` carries two unrelated things now. A human's is a URL from the
+  // identity provider; a deployed agent's is the icon TOKEN its Agent row was
+  // authored with (an emoji or a lucide name — `/current-user` projects
+  // `identity.avatar` straight into this field). Feed a token to <img src> and
+  // it 404s, so discriminate: URL → image, known token → glyph, anything else →
+  // initials, same order of preference as the rest of the app.
+  const picture = cloudLoginAvailable ? (currentUser?.picture ?? '') : '';
+  const pictureIsUrl = /^(https?:|data:|\/)/.test(picture);
+  // A token is a glyph we can actually draw. Resolution answers that directly
+  // and better than the regex it replaces: an emoji is not a legal tag, so it
+  // comes back as text and IS drawable, while a bare word like "pirate" is a
+  // legal tag that nothing claims — `none` — and falls through to initials
+  // rather than putting literal text in the avatar circle.
+  const pictureIsToken = !!picture && !pictureIsUrl && resolveIcon(picture, getIconPacks()).kind !== 'none';
+  const pictureIcon = pictureIsToken ? <FlowIcon icon={picture} className="h-5 w-5" /> : null;
+  // Subtitle under the name. `title` is a BASE-entity field in both repos
+  // (flow_sdk `Entity.title`, hub `Entity.title`, and `APIEntity.title` here),
+  // so it needs no cast and no per-type plumbing: the hub sends it for an agent
+  // principal, and a human's is whatever they set. Absent → the line is skipped
+  // and the email moves up. The email is its own line below, never this one.
+  const profileTitle = currentUser?.title || null;
+  const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
+  const { data: agent } = useEntity<SubAgent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
   });
   const isOwner = useMemo(() => agent?.ImOwner || false, [agent]);
@@ -263,15 +321,17 @@ export function UserDropdown() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
+  // "open settings" / "open the database settings" (smart navigation): the same dialog, on that tab.
+  const [accountTab, setAccountTab] = useState<string | undefined>();
+  useUiActionRequest(['settings-dialog', 'settings-database', 'settings-secrets'], (id) => {
+    setAccountTab(id === 'settings-dialog' ? undefined : id.slice('settings-'.length));
+    setIsAccountDialogOpen(true);
+  });
 
   useEffect(() => {
     const handler = () => setIsAccountDialogOpen(false);
     window.addEventListener('close-account-dialog', handler);
     return () => window.removeEventListener('close-account-dialog', handler);
-  }, []);
-
-  useEffect(() => {
-    void cloudManager.refreshStatus();
   }, []);
 
   const handleSaveRules = useCallback(
@@ -348,10 +408,16 @@ export function UserDropdown() {
       <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
         <DialogContent className="flex h-[520px] max-w-lg flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle><Trans>Settings</Trans></DialogTitle>
-            <DialogDescription><Trans>Configure your account, app preferences, and notifications</Trans></DialogDescription>
+            <DialogTitle>
+              <Trans>Settings</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>Configure your account, app preferences, and notifications</Trans>
+            </DialogDescription>
           </DialogHeader>
-          {currentUser && <AccountInfo user={currentUser} />}
+          {currentUser && (
+            <AccountInfo user={currentUser} tab={accountTab} onNavigate={() => setIsAccountDialogOpen(false)} />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -360,95 +426,139 @@ export function UserDropdown() {
           <>
             <TooltipProvider>
               <Tooltip>
-                <DropdownMenu>
+                {/* Non-modal: its items open dialogs (Settings, New workspace…). A modal menu
+                    locks `body` (pointer-events: none) while it is still closing, the dialog
+                    opening on top records that lock as the page's own, and restores it on
+                    close — leaving the whole app unclickable until a reload. */}
+                <DropdownMenu modal={false}>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                <div className="relative cursor-pointer">
-                  <Avatar
-                    className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
-                    title={!isConnected ? t`Service unavailable` : undefined}
-                    data-testid="agent-page-user-avatar"
-                  >
-                    {cloudLoginAvailable && currentUser?.picture && (
-                      <AvatarImage src={currentUser.picture} alt={currentUser.name ?? currentUser.email ?? ''} />
-                    )}
-                    <AvatarFallback>
-                      {avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
-                    </AvatarFallback>
-                  </Avatar>
-                  {dotClass && (
-                    <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-background ${dotClass}`} />
-                  )}
-                </div>
+                      {/* The fire ring marks developer mode — unless the box is
+                          unreachable, whose orange pulse must not be mistaken for it. */}
+                      <div
+                        className={cn('relative cursor-pointer rounded-full', devMode && isConnected && 'dev-fire-ring')}
+                        data-dev-mode={devMode ? 'true' : undefined}
+                      >
+                        <Avatar
+                          className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? 'animate-pulse shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] ring-2 ring-orange-500' : ''}`}
+                          title={!isConnected ? t`Service unavailable` : undefined}
+                          data-testid="agent-page-user-avatar"
+                        >
+                          {cloudLoginAvailable && pictureIsUrl && (
+                            <AvatarImage
+                              src={currentUser!.picture}
+                              alt={currentUser?.name ?? currentUser?.email ?? ''}
+                            />
+                          )}
+                          <AvatarFallback>
+                            {pictureIcon ?? avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
+                          </AvatarFallback>
+                        </Avatar>
+                        {dotClass && (
+                          <span
+                            className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-background ${dotClass}`}
+                          />
+                        )}
+                      </div>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="top">{cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}</TooltipContent>
-                  <DropdownMenuContent align="end">
-                {isOwner && agentId && (
-                  <>
-                    <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
-                      <Settings className="mr-2 h-4 w-4" />
-                      <Trans>Settings</Trans>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => redirectToConsole(agentId)}
-                      onMouseDown={(e) => {
-                        if (e.button === 1) {
-                          e.preventDefault();
-                          redirectToConsole(agentId, true);
-                        }
-                      }}
-                      className="cursor-pointer"
-                    >
-                      <Wrench className="mr-2 h-4 w-4" />
-                      <Trans>Go to Console</Trans>
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuItem
-                  onClick={() => navigation.openPreferences()}
-                  className="cursor-pointer"
-                  data-testid="app-preferences-button"
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  <Trans>Preferences</Trans>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setIsAccountDialogOpen(true)}
-                  className="cursor-pointer"
-                  data-testid="agent-page-account-details-button"
-                >
-                  <UserIcon className="mr-2 h-4 w-4" />
-                  <Trans>Settings</Trans>
-                </DropdownMenuItem>
-                {/* Logout below = *cloud* logout. A local-only user (no cloud
+                  <TooltipContent side="top">
+                    {cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}
+                  </TooltipContent>
+                  <DropdownMenuContent align="end" className="w-64 p-0">
+                    <UserMenuHeader
+                      name={currentUser?.name}
+                      title={profileTitle}
+                      email={currentUser?.email}
+                      pictureUrl={pictureIsUrl ? picture : null}
+                      pictureIcon={pictureIcon}
+                      initials={avatarInitials}
+                      // Desk only: a workspace is a folder of projects on this machine.
+                      bannerSlot={isHubOnly() ? undefined : <WorkspaceSubmenu />}
+                      devMode={devMode}
+                      onAvatarDoubleClick={() => setDev()}
+                    />
+                    {/* Rule between who you are and what you can do. `mx-0` so it
+                    spans the full menu width — the header block is full-bleed
+                    (its backdrop reaches both edges) and an inset rule would
+                    read as belonging to the items rather than closing the
+                    identity block. */}
+                    <DropdownMenuSeparator className="mx-0 my-0" />
+                    <div className="p-1">
+                      {isOwner && agentId && (
+                        <>
+                          <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
+                            <Settings className="me-2 h-4 w-4" />
+                            <Trans>Settings</Trans>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => redirectToConsole(agentId)}
+                            onMouseDown={(e) => {
+                              if (e.button === 1) {
+                                e.preventDefault();
+                                redirectToConsole(agentId, true);
+                              }
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Wrench className="me-2 h-4 w-4" />
+                            <Trans>Go to Console</Trans>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => navigation.openPreferences()}
+                        className="cursor-pointer"
+                        data-testid="app-preferences-button"
+                      >
+                        <Settings className="me-2 h-4 w-4" />
+                        <Trans>Preferences</Trans>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => navigation.openCredentials()}
+                        className="cursor-pointer"
+                        data-testid="app-credentials-button"
+                      >
+                        <KeyRound className="me-2 h-4 w-4" />
+                        <Trans>Credentials</Trans>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setIsAccountDialogOpen(true)}
+                        className="cursor-pointer"
+                        data-testid="agent-page-account-details-button"
+                      >
+                        <UserIcon className="me-2 h-4 w-4" />
+                        <Trans>Settings</Trans>
+                      </DropdownMenuItem>
+                      {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
                     see Logout without being cloud-logged-in, cloudLoginAvailable
                     is stale (cloudManager state didn't match /cloud/status). */}
-                {cloudLoginAvailable ? (
-                  <>
-                    <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
-                      <Cloud className="mr-2 h-4 w-4" />
-                      <Trans>Flowpad Cloud</Trans>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => void handleLogout()}
-                      className="cursor-pointer text-red-500 focus:text-red-500"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <Trans>Logout</Trans>
-                    </DropdownMenuItem>
-                  </>
-                ) : isLocal ? null : (
-                  <DropdownMenuItem
-                    onClick={() => void handleCloudLogin()}
-                    title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
-                    className="cursor-pointer"
-                  >
-                    <LogIn className="mr-2 h-4 w-4" />
-                    <Trans>Login</Trans>
-                  </DropdownMenuItem>
-                )}
+                      {cloudLoginAvailable ? (
+                        <>
+                          <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
+                            <Cloud className="me-2 h-4 w-4" />
+                            <Trans>Flowpad Cloud</Trans>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => void handleLogout()}
+                            className="cursor-pointer text-red-500 focus:text-red-500"
+                          >
+                            <LogOut className="me-2 h-4 w-4" />
+                            <Trans>Logout</Trans>
+                          </DropdownMenuItem>
+                        </>
+                      ) : isLocal ? null : (
+                        <DropdownMenuItem
+                          onClick={() => void handleCloudLogin()}
+                          title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
+                          className="cursor-pointer"
+                        >
+                          <LogIn className="me-2 h-4 w-4" />
+                          <Trans>Login</Trans>
+                        </DropdownMenuItem>
+                      )}
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </Tooltip>

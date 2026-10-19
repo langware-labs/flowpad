@@ -5,7 +5,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 afterEach(cleanup);
 import { Journey, JourneyJournal } from '@sdk';
 import { JourneyTray } from '@src/journey/JourneyTray';
-import { groupSteps, type JourneyStep, type UseJourneyResult } from '@src/journey/use-journey';
+import { JourneyGraph } from '@sdk';
+import type { UseJourneyResult } from '@src/journey/use-journey';
+import { journeyStep } from '../utils/journey-fixtures';
 
 const closeJourney = vi.fn();
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -15,24 +17,15 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-const step = (node_id: string, group?: string): JourneyStep => ({
-  node_id,
-  name: node_id,
-  status_line: '',
-  group,
-  present: {},
-  await: { tag: 'manual' },
-});
+// Continue-only on purpose: these steps must not self-advance while the tray
+// is under test.
+const step = (node_id: string, group?: string) => journeyStep(node_id, { group });
 
-describe('groupSteps — consecutive-group sections', () => {
+describe('JourneyGraph.sections — consecutive-group sections', () => {
   it('folds consecutive grouped steps and keeps ungrouped ones standalone', () => {
-    const sections = groupSteps([
-      step('a'),
-      step('b', 'G1'),
-      step('c', 'G1'),
-      step('d', 'G2'),
-      step('e'),
-    ]);
+    const sections = new JourneyGraph({
+      steps: [step('a'), step('b', 'G1'), step('c', 'G1'), step('d', 'G2'), step('e')],
+    }).sections;
     expect(sections.map((s) => [s.group, s.indices])).toEqual([
       [null, [0]],
       ['G1', [1, 2]],
@@ -48,7 +41,7 @@ describe('JourneyTray — grouped rendering', () => {
     const state: UseJourneyResult = {
       journey: new Journey({ id: '5eaa7e57-1111-4222-8333-444455556666', name: 'J' }),
       journal: new JourneyJournal({ status: 'launched', cursor: 's2', total_steps: 3, steps_left: 2 }),
-      steps,
+      graph: new JourneyGraph({ steps }),
       currentStep: steps[1],
       cursorIndex: 1,
       loading: false,
@@ -74,7 +67,7 @@ describe('JourneyTray — draggable header + minimize-to-badge', () => {
     return {
       journey: new Journey({ id: '5eaa7e57-1111-4222-8333-444455556666', name: 'J' }),
       journal: new JourneyJournal({ status: 'launched', cursor: 's1', total_steps: 1, steps_left: 1 }),
-      steps,
+      graph: new JourneyGraph({ steps }),
       currentStep: steps[0],
       cursorIndex: 0,
       loading: false,

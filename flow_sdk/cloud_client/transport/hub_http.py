@@ -16,17 +16,20 @@ URL structure follows the Flowpad Hub API guidelines:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib as _contextlib
 import logging
 import uuid as _uuid
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
-from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
-from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason
+from flow_sdk.cloud_client.client_hooks import ANONYMOUS_EXTENSION, HubAuthExpiredError
+from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason, classify_hub_failure
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +42,54 @@ logger = logging.getLogger(__name__)
 # cert-bundle loads). Reusing ONE client builds the TLS context once and pools
 # connections; httpx clients are safe for concurrent use, and per-request auth
 # is injected by the client's event hooks, so the shared instance needs no
-# per-call credential refresh. Rebuilt only when the hub base URL changes (read
-# back off the client itself, so there's no second bookkeeping global to sync).
+# per-call credential refresh. Rebuilt when the hub base URL changes (read back
+# off the client itself) or when the running loop is not the one it was built on.
 _shared_client: "FlowpadClient | None" = None
+_shared_client_loop: "asyncio.AbstractEventLoop | None" = None
+
+
+#: Whether the last hub call could not reach the hub (nothing answered, or it answered 5xx/408/425/429).
+#: The first call that reaches it afterwards drains the outbox once: it is the one moment the hub is
+#: known to be back that no other transition sees -- an HTTP failure while the WebSocket stayed up.
+_hub_unreachable = False
+#: Set while the outbox drains, so a drain never sets off another (a message that keeps failing beside
+#: one that succeeds would otherwise drain in a loop).
+outbox_draining: ContextVar[bool] = ContextVar("outbox_draining", default=False)
+
+
+def _note_reach(status_code: int) -> None:
+    """Record whether this call reached the hub; on the edge back, drain the outbox."""
+    global _hub_unreachable
+    if status_code == 0 or classify_hub_failure(status_code) is HubFailureKind.SERVER_ERROR:
+        _hub_unreachable = True
+    elif _hub_unreachable and not outbox_draining.get():
+        _hub_unreachable = False
+        from flow_sdk.stream_inbox.catchup import start_outbox_drain  # noqa: PLC0415 — catchup imports this module
+
+        start_outbox_drain("hub reachable again")
 
 
 @_contextlib.asynccontextmanager
 async def _hub_client():
     """Yield the process-shared hub client. Does NOT close it on exit (the whole
     point is to keep the TLS context + connection pool alive across calls)."""
-    global _shared_client
+    global _shared_client, _shared_client_loop
     cfg = ApiConfig.from_env()
-    if _shared_client is None or _shared_client.config.api_base_url != cfg.api_base_url:
-        await close_hub_client()  # close any stale (URL-changed) client first
+    loop = asyncio.get_running_loop()
+    other_loop = _shared_client_loop is not loop
+    if _shared_client is None or other_loop or _shared_client.config.api_base_url != cfg.api_base_url:
+        if other_loop:
+            # Built on another event loop (each ``asyncio.run``, each pytest test):
+            # its pool is bound to that loop, and every call would fail with "bound
+            # to a different event loop" — which ``hub_get`` swallows as "hub
+            # unreachable". It cannot be closed from here (its loop may be gone);
+            # drop it. A detached task that outlives a ``close_hub_client()`` on a
+            # dying loop rebuilds the client THERE, so a close alone never covers this.
+            _shared_client = None
+        else:
+            await close_hub_client()  # close any stale (URL-changed) client first
         _shared_client = FlowpadClient(cfg)
+        _shared_client_loop = loop
     yield _shared_client
 
 
@@ -70,6 +107,108 @@ async def close_hub_client() -> None:
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 # bytes_total is 0 when the size is unknown (no Content-Length on a download).
 ProgressCallback = Callable[[int, int], Awaitable[None]]
+
+
+async def _send(
+    method: str,
+    url: str,
+    *,
+    payload: Any = None,
+    files: dict | None = None,
+    params: dict[str, str] | None = None,
+    timeout: httpx.Timeout | float = httpx.Timeout(10),
+    strict: bool = False,
+    anonymous: bool = False,
+    raw: bool = False,
+) -> Any:
+    """Send ONE hub request and answer its ``data`` — or raise ``HubError`` classified once.
+
+    Every typed helper below goes through here, so a failure is read one way everywhere:
+    no answer is ``offline``, a dead credential ``signed_out``, a load balancer's HTML page a
+    ``server_error`` that never echoes its body. ``strict`` additionally refuses a 200 whose
+    envelope says FAIL (the help paths need that; older callers still take ``{}``).
+    ``anonymous`` sends no credential (``ANONYMOUS_EXTENSION``); ``raw`` answers the body's bytes.
+    """
+    extensions = {ANONYMOUS_EXTENSION: True} if anonymous else None
+    try:
+        async with _hub_client() as client:
+            logger.info("[hub] %s %s", method, url)
+            if files:
+                resp = await client.request(
+                    method, url, files=files, params=params or None, timeout=timeout, extensions=extensions
+                )
+            else:
+                resp = await client.request(
+                    method, url, json=payload, params=params or None, timeout=timeout, extensions=extensions
+                )
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] %s %s auth expired: %s", method, url, e)
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] %s %s transport error: %s", method, url, e)
+        _note_reach(0)
+        raise HubError(0, str(e)) from e
+    _note_reach(resp.status_code)
+    if resp.status_code != 200:
+        logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
+        raise HubError(resp.status_code, _extract_reason(resp), code=_extract_error_code(resp))
+    if raw:
+        return resp.content
+    try:
+        body = resp.json()
+    except ValueError as e:
+        raise HubError(200, "HTTP 200 with a body that is not JSON", kind=HubFailureKind.SERVER_ERROR) from e
+    if not isinstance(body, dict):
+        return {}
+    if strict and str(body.get("status") or "").upper() == "FAIL":
+        code = _extract_error_code(resp)
+        raise HubError(
+            200, str(body.get("message") or "the hub refused"), code=code, kind=classify_hub_failure(400, code)
+        )
+    return body.get("data") or {}
+
+
+async def hub_request(
+    method: str,
+    entity_type: BuiltinEntityType | str,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    payload: Any = None,
+    files: dict | None = None,
+    params: dict[str, str] | None = None,
+    scope: list[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    """The hub call that never answers None: every way it can fail raises a classified ``HubError``.
+
+    Unlike ``hub_post`` (None when no hub is configured), this raises ``not_configured``; with
+    no credential it raises ``signed_out`` before anything is sent.
+    """
+    from flow_sdk.cloud_client.client_hooks import resolve_hub_credential  # noqa: PLC0415
+
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
+    if not url:
+        raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
+    try:
+        credential = await resolve_hub_credential()
+    except HubAuthExpiredError as e:
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
+    if not credential:
+        raise HubError(0, "signed out", kind=HubFailureKind.SIGNED_OUT)
+    return await _send(method, url, payload=payload, files=files, params=params, strict=True)
+
+
+def rows_of(payload: Any) -> list[dict]:
+    """The rows in a hub list answer: a bare list, or a dict wrapping one under
+    ``data`` / ``items`` / ``results``. Non-dict rows are dropped."""
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = next((v for k in ("data", "items", "results") if isinstance((v := payload.get(k)), list)), [])
+    else:
+        rows = []
+    return [r for r in rows if isinstance(r, dict)]
 
 
 def hub_base_url() -> Optional[str]:
@@ -102,6 +241,26 @@ def hub_public_url(sub_path: str) -> Optional[str]:
     return f"{base}{APIRequest.api_prefix}/{sub_path.lstrip('/')}"
 
 
+async def hub_anonymous_request(
+    method: str,
+    entity_type: BuiltinEntityType | str,
+    entity_id: str,
+    action: str,
+    payload: Any = None,
+    *,
+    raw: bool = False,
+) -> Any:
+    """One graph call whose ENTITY ID is the credential: ``_send`` with this box's login left out.
+
+    For an entity that admits whoever holds its id (``public_role``: a diagnosis request's
+    ``brief``/``submit``). ``raw`` answers the body's bytes (a file) instead of its ``data``.
+    """
+    url = hub_graph_url(entity_type, entity_id, action)
+    if not url:
+        raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
+    return await _send(method, url, payload=payload, timeout=httpx.Timeout(30), anonymous=True, raw=raw)
+
+
 async def get_info() -> Optional[dict[str, Any]]:
     """Fetch lightweight info about the configured hub.
 
@@ -132,14 +291,23 @@ async def get_info() -> Optional[dict[str, Any]]:
                 version = data.get("version")
                 deployed_at = data.get("deployed_at")
                 generated_at = data.get("generated_at")
-                # Fixed community/support project id — the app opens support
-                # tickets against this project. Returned by newer hubs only.
-                community_project_id = data.get("community_project_id")
+                # Default helpdesk project id — the app opens support tickets
+                # against this project when no nearer desk is configured.
+                # Returned by newer hubs only.
+                helpdesk_project_id = data.get("helpdesk_project_id")
+                # Portal repo for that desk (help content cloned locally).
+                helpdesk_portal_git_url = data.get("helpdesk_portal_git_url")
                 return {
                     "version": version if isinstance(version, str) else None,
                     "deployed_at": deployed_at if isinstance(deployed_at, str) else None,
                     "generated_at": generated_at if isinstance(generated_at, str) else None,
-                    "community_project_id": (community_project_id if isinstance(community_project_id, str) else None),
+                    "helpdesk_project_id": (helpdesk_project_id if isinstance(helpdesk_project_id, str) else None),
+                    "helpdesk_portal_git_url": (
+                        helpdesk_portal_git_url if isinstance(helpdesk_portal_git_url, str) else None
+                    ),
+                    # What the hub promises beyond its shape (``idempotent_guest_conversation``);
+                    # empty on a hub older than the field — which is exactly the answer for it.
+                    "capabilities": [c for c in (data.get("capabilities") or []) if isinstance(c, str)],
                 }
             return {"version": None}
     except Exception as e:  # noqa: BLE001
@@ -148,7 +316,7 @@ async def get_info() -> Optional[dict[str, Any]]:
 
 
 def hub_graph_url(
-    entity_type: BuiltinEntityType,
+    entity_type: BuiltinEntityType | str,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -172,7 +340,9 @@ def hub_graph_url(
       hub_graph_url("page", "pg-456", scope=[("workspace", "ws-123")])
         → ".../api/v1/graph/workspace/ws-123/page/pg-456"           (scoped entity)
     """
-    entity_type_str = entity_type.value
+    # A plain string is a TYPELESS hub action (``machine-enroll``): the hub's graph
+    # router matches those the same way, and the desktop has no entity to name.
+    entity_type_str = getattr(entity_type, "value", entity_type)
     if sub_path and not action:
         raise ValueError(
             f"sub_path '{sub_path}' requires an action "
@@ -199,7 +369,7 @@ def hub_graph_url(
 
 
 async def hub_get(
-    entity_type: BuiltinEntityType,
+    entity_type: BuiltinEntityType | str,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -266,6 +436,7 @@ async def hub_get(
         async with _hub_client() as client:
             logger.info("[hub] GET %s params=%s", url, params)
             resp = await client.request("GET", url, params=params or {}, timeout=timeout)
+            _note_reach(resp.status_code)
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
                 return result
@@ -274,6 +445,41 @@ async def hub_get(
     except Exception as e:
         logger.warning("[hub] GET %s error (non-fatal): %s", url, e)
         return None
+
+
+async def hub_get_or_raise(
+    entity_type: BuiltinEntityType,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+    params: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """GET a hub graph endpoint, PRESERVING the status. Raises ``HubError``.
+
+    The symmetric sibling of :func:`hub_post`, and the reason it exists is an
+    asymmetry that was quietly harmful: ``hub_get`` collapses *hub not
+    configured*, *signed out*, *network error*, *5xx* and a **definitive 404**
+    all to ``None``. A caller that must decide "is this permanently broken, or
+    just unreachable right now?" cannot, and picking either answer for ``None``
+    is wrong in one direction — park a healthy source on one dropped packet, or
+    retry a deleted resource every cycle forever while the UI shows a spinner
+    instead of "fix me".
+
+    That is the same three-way distinction :func:`hub_resolve_by_typeid`
+    documents; this returns the status so an ingest driver can map it through
+    ``SourceError.for_status`` — THE status→health table — instead of growing a
+    second copy of it.
+
+    ``HubError.status_code`` is 0 when there was no HTTP response at all; the
+    ``reason`` then separates "no hub URL configured" (a person must act) from a
+    transport failure (retry at the ordinary cadence).
+    """
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
+    if not url:
+        raise HubError(0, "hub not configured", kind=HubFailureKind.NOT_CONFIGURED)
+    return await _send("GET", url, params=params)
 
 
 # Result of a status-aware hub existence probe (see ``hub_resolve_by_typeid``):
@@ -326,7 +532,7 @@ async def hub_resolve_by_typeid(typeid: Any) -> tuple[HubResolveState, Optional[
 
 
 async def hub_post(
-    entity_type: BuiltinEntityType,
+    entity_type: BuiltinEntityType | str,
     payload: dict[str, Any],
     entity_id: str | None = None,
     action: str | None = None,
@@ -335,6 +541,7 @@ async def hub_post(
     scope: list[tuple[str, str]] | None = None,
     files: dict | None = None,
     on_progress: ProgressCallback | None = None,
+    params: dict[str, str] | None = None,
 ) -> Optional[dict[str, Any]]:
     """POST to a hub graph endpoint. Returns the response `data` dict on success.
 
@@ -363,29 +570,44 @@ async def hub_post(
     timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
     if files and on_progress is not None:
         return await _hub_post_streamed_upload(url, files, timeout, on_progress)
+    return await _send("POST", url, payload=None if files else payload, files=files, params=params, timeout=timeout)
+
+
+async def hub_invoke_raw(
+    entity_type: BuiltinEntityType | str,
+    entity_id: str,
+    sub_path: str,
+    payload: Any,
+    *,
+    method: str = "POST",
+) -> tuple[int, Any]:
+    """Call a hub passthrough (``<type>/<id>/invoke/<sub_path>``) and return the UPSTREAM answer.
+
+    ``hub_post`` cannot carry it: an ``invoke`` answers the vendor's own body, not the hub
+    envelope, and ``hub_post`` keeps only ``data`` -- a Jev decision came back ``{}``. So this
+    returns ``(status, parsed JSON)`` for every status and lets the caller fold it; the hub's
+    own refusals (403/429/503 with ``{error, message}``) arrive the same way.
+
+    Same client, auth and Local-privacy gate as every other hub call (``hub_graph_url`` is
+    ``None`` in Local mode or offline, and so is the answer: ``(0, None)``).
+    Raises ``HubError(0, ...)`` on transport failure and ``HubError(401)`` on an expired login.
+    """
+    url = hub_graph_url(entity_type, entity_id, "invoke", sub_path)
+    if not url:
+        return 0, None
     try:
         async with _hub_client() as client:
-            logger.info(
-                "[hub] POST %s files=%s payload_keys=%s",
-                url,
-                bool(files),
-                list(payload.keys()) if not files and payload else None,
-            )
-            if files:
-                resp = await client.request("POST", url, files=files, timeout=timeout)
-            else:
-                resp = await client.request("POST", url, json=payload, timeout=timeout)
+            resp = await client.request(method, url, json=payload, timeout=httpx.Timeout(10))
     except HubAuthExpiredError as e:
-        logger.warning("[hub] POST %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
     except Exception as e:
-        logger.warning("[hub] POST %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+        logger.warning("[hub] invoke %s transport error: %s", url, e)
+        raise HubError(0, str(e)) from e
+    try:
+        body = resp.json()
+    except ValueError:
+        body = resp.text[:500]
+    return resp.status_code, body
 
 
 async def _hub_post_streamed_upload(
@@ -451,7 +673,7 @@ async def _hub_post_streamed_upload(
             )
     except HubAuthExpiredError as e:
         logger.warning("[hub] POST (stream) %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT)
     except Exception as e:  # noqa: BLE001
         logger.warning("[hub] POST (stream) %s transport error: %s", url, e)
         raise HubError(0, str(e))
@@ -488,27 +710,7 @@ async def hub_delete(
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s", entity_type, entity_id)
         return None
-    try:
-        async with _hub_client() as client:
-            logger.info("[hub] DELETE %s payload=%s", url, payload)
-            resp = await client.request(
-                "DELETE",
-                url,
-                json=payload or {},
-                params=params or None,
-                timeout=httpx.Timeout(10),
-            )
-    except HubAuthExpiredError as e:
-        logger.warning("[hub] DELETE %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
-    except Exception as e:
-        logger.warning("[hub] DELETE %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] DELETE %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+    return await _send("DELETE", url, payload=payload or {}, params=params)
 
 
 async def hub_put(
@@ -516,6 +718,7 @@ async def hub_put(
     entity_id: str,
     payload: dict[str, Any],
     action: str | None = None,
+    sub_path: str | None = None,
     *,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
@@ -526,29 +729,11 @@ async def hub_put(
     Returns None only when FLOWPAD_HUB_URL is not configured (offline mode).
     Raises HubError on transport failure or non-200 response.
     """
-    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None
-    try:
-        async with _hub_client() as client:
-            logger.info(
-                "[hub] PUT %s payload_keys=%s",
-                url,
-                list(payload.keys()) if payload else None,
-            )
-            resp = await client.request("PUT", url, json=payload, timeout=10)
-    except HubAuthExpiredError as e:
-        logger.warning("[hub] PUT %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
-    except Exception as e:
-        logger.warning("[hub] PUT %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+    return await _send("PUT", url, payload=payload)
 
 
 async def hub_upload_entity_file(

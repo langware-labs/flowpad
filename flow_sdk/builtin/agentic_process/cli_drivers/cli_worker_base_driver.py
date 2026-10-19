@@ -20,7 +20,7 @@ module only, and ``AgenticProcess`` imports the driver factory plus the
 Public exports:
 - ``AgenticContext`` — per-turn execution context passed to workers.
 - ``AgenticWorker`` — minimal ABC for execute()/inject()/close_session().
-- ``WorkerCLIOptions`` — base CLI command builder (cd + env + worker_args).
+- ``AgentOptions`` — base CLI command builder (cd + env + worker_args).
 - ``WorkerExecutionInfo`` — Pydantic model returned by Shell.launch().
 - ``WorkerDriver`` — Protocol vendors implement; ``AgenticProcess`` calls it.
 - ``factory(cli_json, worker_type)`` — legacy CLI-options factory.
@@ -30,17 +30,17 @@ Public exports:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import os
 import re
-import shlex
 import shutil
 import signal
 import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -52,15 +52,26 @@ from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
     WorkerAuthResult,
     probe_worker_auth,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
+    quote_powershell_literal,
+    quote_shell_arg,
+)
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.directory import AssetDir
+    from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
-    from flow_sdk.builtin.worker_status import WorkerStatus
+    from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
+    from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 # Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
@@ -422,15 +433,41 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     * ``FLOWPAD_EXECUTION_SCOPE`` — process identity, so worker `flow`
       commands (show/record/context/…) resolve their calling process.
+    * ``FLOWPAD_PYTHON`` — the interpreter that can ``import flow_sdk``, named
+      outright so a worker never has to resolve one. Skills that run Flowpad's
+      own Python (e.g. flow-diagnose's ``report.py``) cannot use ``uv run``:
+      uv ignores PATH and resolves an environment by walking up from the
+      working directory, which for a worker is a user workspace with no
+      Flowpad in it. Nor can they use bare ``python``/``python3`` — the
+      capability bin folder is prepended AFTER our PATH pin at spawn time
+      (see :meth:`AgenticProcess.start_pty` and
+      :func:`build_worker_spawn_env`), so the name can resolve to an unrelated
+      interpreter, and a Windows venv ships no ``python3.exe`` at all. An
+      absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
+    * ``CLOUDSDK_CORE_PROJECT`` / ``GOOGLE_CLOUD_PROJECT`` / ``GCLOUD_PROJECT``
+      — gcloud/client-library default project, pinned to the isolated
+      deployment project (``gcp_deployment_project_id``) so agent-improvised
+      GCP deployments never land in the production project.
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
       to the same canonical root Flowpad uses for transcript discovery. The
       native default stays unset because Claude keeps ``~/.claude.json`` beside
       its default ``~/.claude/`` transcript directory.
 
+    * ``FLOWPAD_INVOCATION_ID`` / ``FLOWPAD_PARENT_CALL_ID`` — the FlowCall run
+      that spawned this worker (``context_data`` ``invocation_id`` / ``call_id``),
+      so its calls join that run's trace.
+
     ``setdefault`` semantics for the scope (an explicit override wins);
     mutates and returns ``env``.
+
+    The interpreter is assigned rather than ``setdefault``-ed on purpose: it is
+    derived machine state, not launch config, and its value moves whenever the
+    install does (upgrade, reinstall). A stale one persisted in a process's
+    ``cli_config["env_vars"]`` would silently point workers at an interpreter
+    that no longer exists — the same failure this var was added to remove. Same
+    reasoning as ``FLOW_INSTANCE`` below.
     """
     import json as _json  # noqa: PLC0415
 
@@ -438,6 +475,35 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    env["FLOWPAD_PYTHON"] = sys.executable
+    # The FlowCall run this worker serves (``runner._agent`` / a process call stamp it on
+    # ``context_data``): its own `flow op run` calls join that run, under the call that spawned it.
+    # From the process row, never inherited: a worker no call spawned is a root of its own.
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+    from flow_sdk.utils.environment import INVOCATION_ENV, PARENT_CALL_ENV  # noqa: PLC0415
+
+    context = getattr(process, "context_data", None) or {}
+    for key, name in (("invocation_id", INVOCATION_ENV), ("call_id", PARENT_CALL_ENV)):
+        if is_valid_entity_id(str(context.get(key) or "")):
+            env[name] = str(context[key])
+        else:
+            env.pop(name, None)
+    # `$FLOWPAD_FLOW` (this install's `flow`) and `FLOW_INSTANCE`, the pair a step's completion
+    # check runs with (`flow_env`): an agent handed that check as its bar must be able to run the
+    # same command, or it is told "done when this exits 0" about a command it cannot execute.
+    from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
+
+    env.update(flow_env())
+    from flow_sdk.config import default_service_config  # noqa: PLC0415
+
+    deploy_project = default_service_config.gcp_deployment_project_id
+    if deploy_project:
+        # Agent-driven GCP deployments must land in the isolated playground
+        # project, never in the production project a user's ambient gcloud
+        # login defaults to. setdefault: an explicit per-process override wins.
+        env.setdefault("CLOUDSDK_CORE_PROJECT", deploy_project)
+        env.setdefault("GOOGLE_CLOUD_PROJECT", deploy_project)
+        env.setdefault("GCLOUD_PROJECT", deploy_project)
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -473,21 +539,107 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
-    pinned = flow_cli_env_path(env.get("PATH"))
-    if pinned:
-        env["PATH"] = pinned
+    for key, configured_root in getattr(process.driver, "session_store_env", {}).items():
+        supplied = env.get(key)
+        if supplied and Path(supplied).expanduser().resolve() != Path(configured_root).resolve():
+            raise ValueError(f"Worker {key} must match Flowpad's configured session store")
+        env[key] = configured_root
+    if (getattr(process, "context_data", None) or {}).get("compute_op"):
+        # An install step's agent (a compute op's agent rung) answers "is X installed?" by what
+        # its shell finds, and the caller re-checks from a shell with NO Flowpad on PATH. Pinned
+        # first, this backend's venv bin dir hands the agent Flowpad's own `python` — on a box
+        # with no Python it reported "already installed" and never installed anything. So the
+        # agent sees the machine the check sees. It still has `flow` via the user's install.
+        # The marker carries the decision to the spawn step, which re-inserts the harness's own
+        # bin folder — for deepagents that folder IS this venv's (see `hide_flowpad_interpreter`).
+        env[HIDE_FLOWPAD_PYTHON_ENV] = "1"
+        env["PATH"] = path_without_flowpad_interpreter(env.get("PATH", os.environ.get("PATH", "")))
+    else:
+        pinned = flow_cli_env_path(env.get("PATH"))
+        if pinned:
+            env["PATH"] = pinned
     return env
 
 
-async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve project SecretOrigin pointers into this transient worker env.
+#: Set by :func:`apply_worker_env` on a worker that must not see Flowpad's own interpreter; read
+#: by the spawn steps, which only get the env, not the process.
+HIDE_FLOWPAD_PYTHON_ENV = "FLOWPAD_HIDE_OWN_PYTHON"
 
-    This must only be called on spawn-time env dicts. It must not mutate
-    WorkerCLIOptions.env_vars because those are persisted and rendered.
+
+def hide_flowpad_interpreter(env: dict[str, str]) -> dict[str, str]:
+    """Drop this backend's interpreter dirs from ``env["PATH"]`` when the worker asked for it.
+
+    Called AFTER a spawn step puts the harness's bin folder first. For every harness but one
+    that folder is the vendor's own (npm, ~/.local/bin) and is kept. For deepagents it is this
+    venv's bin dir — the harness runs in-process — and re-adding it would hand an install
+    agent Flowpad's `python` again. deepagents spawns by absolute interpreter path
+    (``deepagents/cli.py``), so nothing needs that dir on PATH to start. Mutates and returns.
+    """
+    if env.get(HIDE_FLOWPAD_PYTHON_ENV) == "1" and "PATH" in env:
+        env["PATH"] = path_without_flowpad_interpreter(env["PATH"])
+    return env
+
+
+def path_without_flowpad_interpreter(path: str | None) -> str:
+    """*path* minus every directory that holds the interpreter this backend runs on.
+
+    That is the venv's bin dir (``python``, ``pip``, every console script of the backend's own
+    dependencies) and the base interpreter it was built from. Entries are compared the way the
+    OS compares them — case-insensitively on Windows — so a differently-cased copy still goes.
+    """
+    exe = Path(sys.executable)
+    base = Path(sys.base_prefix)
+    own = {exe.parent, base, base / "Scripts", base / "bin", Path(sys.prefix) / "Scripts", Path(sys.prefix) / "bin"}
+    drop = {os.path.normcase(os.path.normpath(str(d))) for d in own}
+    kept = [p for p in (path or "").split(os.pathsep) if p and os.path.normcase(os.path.normpath(p)) not in drop]
+    return os.pathsep.join(kept)
+
+
+async def resolve_worker_language(process: "AgenticProcess") -> str | None:
+    """English name of the language this worker must reply in, or ``None``.
+
+    Read from the owning project's ``locale`` — the value the footer language
+    selector already writes and that already travels with a shared project.
+    ``None`` (unset, or English) leaves the worker on its default behaviour of
+    inferring the language from the conversation. That default is what drifts to
+    English mid-session; naming the language outright is the fix.
+
+    Resolution only. The ``# Language`` text reaches every worker, on every turn
+    path, as the ``LANGUAGE`` layer of ``system_prompt.compose_layers`` — the same
+    channel as every other standing instruction.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+    from flow_sdk.i18n.supported_locales import language_name  # noqa: PLC0415
+
+    # Every turn path runs ``get_project()`` first, which stashes the locale from its
+    # own project fetch — so a turn costs no second lookup. A bare call still resolves.
+    if "_project_locale" in getattr(process, "__dict__", {}):
+        locale = process.__dict__["_project_locale"]
+    else:
+        project_id = getattr(process, "project_id", None)
+        if not project_id:
+            return None
+        try:
+            project = await Project.get_by_id(project_id)
+        except Exception:
+            logger.debug("language: project lookup failed", exc_info=True)
+            return None
+        locale = getattr(project, "locale", None) if project else None
+    name = language_name(locale)
+    if name:
+        logger.debug("[lang] process=%s locale=%s language=%s", process.id, locale, name)
+    return name
+
+
+async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
+
+    This must only be called on spawn-time env dicts. It must not mutate
+    AgentOptions.env_vars because those are persisted and rendered.
+    """
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project = None
     project_id = getattr(process, "project_id", None)
@@ -498,36 +650,14 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
-    if project is None:
-        return env
 
-    seen: set[str] = set()
-    for bucket in ("private", "shared"):
-        for tid in project.context_of_type("secret_origin", bucket=bucket):
-            if str(tid) in seen:
-                continue
-            seen.add(str(tid))
-            entry = project.get_context_entry_data(tid) or {}
-            env_var = (entry.get("env_var") or "").strip()
-            if env_var and env_var in env:
-                continue
-            secret = await SecretOrigin.get_by_id(tid.id)
-            if secret is None:
-                continue
-            env_var = env_var or (secret.env_var or "").strip()
-            if not env_var or env_var in env:
-                continue
-            try:
-                resolved = await get_secret_origin_driver(secret.locator.kind).resolve(
-                    secret.locator,
-                    project=project,
-                    process=process,
-                    secret_origin=secret,
-                )
-            except Exception:
-                continue
-            if resolved is not None:
-                env.setdefault(env_var, resolved.get_secret_value())
+    # Node attachment gates the worker too, not only the connector's commands.
+    # None = nothing curated on this node, i.e. every declared variable. With no
+    # project, only user-scope credentials apply. Values come from where the process's
+    # Deployment keeps them, else this computer.
+    for env_var, value in (await resolve_attached_secrets(project, process=process)).items():
+        # setdefault, not assignment: an explicitly-set env var wins.
+        env.setdefault(env_var, value.get_secret_value())
 
     # API-key auth (harness in "api" mode): inject the provider env block + key.
     # Lazy import avoids a cycle with the driver registry. This wins over device
@@ -538,6 +668,15 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     if api_auth is not None:
         for key, value in api_auth.env.items():
             env[key] = value
+        # Stamp what actually resolved — the tier ('sm'/'md'/'lg') or a models_allow fallback
+        # both collapse into one concrete slug here, and this is the one place that slug is
+        # known. Skipped when unchanged so a restart on an unmodified spawn writes nothing.
+        if api_auth.model_slug and getattr(process, "resolved_model_slug", None) != api_auth.model_slug:
+            process.resolved_model_slug = api_auth.model_slug
+            try:
+                await process.save()
+            except Exception:
+                logger.exception("AgenticProcess %s: failed to persist resolved_model_slug", process.id)
     return env
 
 
@@ -564,8 +703,43 @@ def flow_cli_env_path(existing_path: str | None = None) -> str | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AgenticContext — execution context handed to workers
+# ProcessHookRuntime / AgenticContext — launch context handed to workers
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class ProcessHookRuntime(BaseModel):
+    """Immutable, launch-only artifacts prepared from persisted hook intent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plugin_dirs: tuple[str, ...] = ()
+    config_overrides: tuple[tuple[str, Any], ...] = ()
+    bypass_hook_trust: bool = False
+
+
+class ProcessMcpRuntime(BaseModel):
+    """Immutable, launch-only artifacts prepared from persisted MCP intent.
+
+    Sibling of ``ProcessHookRuntime``. Every field here is a RENDERED form
+    (a serialized JSON string, ``-c`` pairs, a config fragment) and therefore
+    launch-only: none of it reaches ``AgentOptions.to_json()``, so a change of
+    rendering can never churn ``last_started_hash``. The *intent* that does move
+    the restart hash is the spec list itself, via ``mcp_projection.mcp_snapshot``.
+
+    The union-of-vendors shape mirrors ``ProcessHookRuntime`` (whose
+    ``plugin_dirs`` serve claude/copilot while ``config_overrides`` serve codex):
+    each driver fills only the fields its own channel reads.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    #: claude ``--mcp-config`` / copilot ``--additional-mcp-config`` — both take
+    #: a JSON STRING, so no file is written for either.
+    mcp_config_json: str = ""
+    #: codex ``-c`` pairs; appended to the hook overrides on the same option.
+    config_overrides: tuple[tuple[str, Any], ...] = ()
+    #: opencode's ``mcp`` config key.
+    config_fragment: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgenticContext(BaseModel):
@@ -587,6 +761,10 @@ class AgenticContext(BaseModel):
     model: str | None = None
     max_thinking_tokens: int = 1024
     permission_mode: str = "bypassPermissions"
+    #: ``opencode.json`` ``provider`` fragment for a turn spending a hub LLMEndpoint. It rides the
+    #: CONTEXT because opencode is configured by file and two different prompt paths generate that
+    #: file; putting it anywhere else lets them disagree about what is in it.
+    provider_options: dict[str, dict] = Field(default_factory=dict)
 
     amd_support: bool = False
     stack_frame: dict[str, Any] | None = None
@@ -610,16 +788,31 @@ class AgenticContext(BaseModel):
     # Claude's ``--add-dir``). Drivers populate this from process configuration
     # so print-mode workers see the same skill/agent surface as PTY-mode runs.
     add_dirs: list[str] = Field(default_factory=list)
+    # Prepared process-local plugins. Runtime-only: never persisted or hashed.
+    plugin_dirs: list[str] = Field(default_factory=list)
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
+    # Tool patterns the worker may never run — its agent's ``disallowed_tools``, from ``cli_config``.
+    # Honoured by Claude (``--disallowedTools``); ignored by vendors without a deny list.
+    disallowed_tools: list[str] = Field(default_factory=list)
 
     # Extra `-c key=val` config overrides for API-key auth (currently codex's
     # OpenRouter provider block). Derived per-spawn from the harness Capability,
     # so — like fork/resume — excluded from the restart hash. Same name as
-    # CodexCliOptions.extra_config_overrides so apply_api_model_to_options can
+    # CodexAgentOptions.extra_config_overrides so apply_api_model_to_options can
     # stamp either object.
-    extra_config_overrides: list[tuple[str, str]] = Field(default_factory=list)
+    extra_config_overrides: list[tuple[str, Any]] = Field(default_factory=list)
+    # Rendered per-process MCP config for this launch. Vendor-neutral carrier:
+    # claude/copilot read ``mcp_config_json``, codex takes its servers through
+    # ``extra_config_overrides`` above, and opencode reads
+    # ``mcp_config_fragment`` into its generated config. Re-derived on every
+    # spawn, so — like plugin_dirs — never persisted or hashed.
+    mcp_config_json: str = ""
+    mcp_config_fragment: dict[str, Any] = Field(default_factory=dict)
+    # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
+    # behind an explicit trust flag (currently Codex). Never persisted.
+    bypass_hook_trust: bool = False
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -630,7 +823,20 @@ class AgenticContext(BaseModel):
         return self
 
     def to_persistable_dict(self) -> dict[str, Any]:
-        data = self.model_dump(exclude={"compute_node", "stack_frame"})
+        data = self.model_dump(
+            exclude={
+                "compute_node",
+                "stack_frame",
+                "plugin_dirs",
+                "extra_config_overrides",
+                "bypass_hook_trust",
+                "mcp_config_json",
+                "mcp_config_fragment",
+                # Resolved per turn from the process's endpoint; persisting it would let a
+                # stale baseURL outlive the binding it came from.
+                "provider_options",
+            }
+        )
         if self.compute_node is not None:
             data["compute_node_id"] = self.compute_node.id
         return data
@@ -649,6 +855,12 @@ class AgenticWorker(ABC):
     ``get_session_id``, ``manages_history``) are no-ops by default; concrete
     workers override what makes sense for their CLI.
     """
+
+    #: The process-local JSONL tee this worker writes, when it keeps one.
+    #: Declared here (not just on the workers that have one) so callers can ask
+    #: every worker without a hasattr dance — claude has no tee and leaves it
+    #: None, which is an answer, not a missing attribute.
+    transcript_path: Path | None = None
 
     @abstractmethod
     async def execute(
@@ -694,16 +906,16 @@ class AgenticWorker(ABC):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WorkerCLIOptions — cross-platform shell command builder
+# AgentOptions — cross-platform shell command builder
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class WorkerCLIOptions:
+class AgentOptions:
     """Base class for worker CLI commands.
 
     Converts a structured configuration into a shell command string suitable
-    for PTY injection. Subclasses override ``_build_worker_args()`` to provide
-    the actual executable and its flags.
+    for PTY injection. Subclasses declare ``EXECUTABLE`` and override
+    ``_emit_flags()`` to provide their raw CLI arguments.
 
     Model **tier** resolution lives here, once: ``self.model`` keeps the raw
     persisted intent (``sm``/``md``/``lg`` or a concrete model), while
@@ -712,9 +924,9 @@ class WorkerCLIOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model map; empty in the base (pass-through). See
+    # Per-worker tier→model/auto map; empty in the base (pass-through). See
     # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
-    MODEL_TIERS: dict[str, str] = {}
+    MODEL_TIERS: dict[str, str | None] = {}
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────
     # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may
@@ -723,9 +935,9 @@ class WorkerCLIOptions:
     # Where the per-turn prompt is delivered: 'argv' (claude, ``-- <text>``) or
     # 'stdin' (codex/copilot pipe it). Drives both ``cli_cmd`` and ``stdin_text``.
     PROMPT_CHANNEL: str = "argv"
-    # How a system-prompt addition reaches the worker: a CLI flag name
-    # (claude ``--append-system-prompt``) or None ⇒ prepend into the prompt body.
-    SYSTEM_PROMPT_FLAG: str | None = None
+    # The flag a vendor reads its system-prompt FILE from (``system_prompt.render``
+    # projected by ``prepare_instruction_assets``), or None when it reaches the
+    # text another way (developer_instructions / custom dirs / generated config).
     SYSTEM_PROMPT_FILE_FLAG: str | None = None
 
     def __init__(
@@ -735,16 +947,20 @@ class WorkerCLIOptions:
     ) -> None:
         self.workdir: str | None = workdir
         self.env_vars: dict[str, str] = dict(env_vars or {})
-        # Forking is a claude-only concept, but the attribute lives on the base
-        # (default None) so callers can read ``cmd.fork_session_id`` without a
-        # ``hasattr`` guard. Only claude's ``to_json`` serializes it, so the wire
-        # shape (and restart hash) of codex/copilot is unaffected.
+        # Source history for providers that support native session forks.
         self.fork_session_id: str | None = None
-        # Launch-time system-prompt append (``resolve_system_instructions()``),
-        # set by the launcher; derived state — not a ctor param, not serialized,
-        # so restart hashing is unaffected.
-        self.system_prompt_append: str | None = None
+        # Launch-time system-prompt file (``apply_instruction_assets``); derived
+        # state — not a ctor param, not serialized, so restart hashing is unaffected.
         self.system_prompt_file: str | None = None
+        # Rendered per-process MCP for this launch — see ``ProcessMcpRuntime``
+        # for why it is launch-only. On the base so every vendor can be stamped
+        # without a hasattr dance, though each reads only its own channel's field.
+        self.mcp_config_json: str = ""
+        self.mcp_config_fragment: dict[str, Any] = {}
+
+    def configure_fork(self, source_session_id: str) -> None:
+        """Set provider-specific launch intent without reusing the parent's identity."""
+        raise NotImplementedError(f"{self.WORKER_TYPE} does not support session forks")
 
     @property
     def model(self) -> str | None:
@@ -765,9 +981,47 @@ class WorkerCLIOptions:
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
 
-    def _system_prompt(self, override: str | None) -> str | None:
-        """Explicit per-call value wins; else the launch-derived field."""
-        return override if override is not None else self.system_prompt_append
+    def apply_instruction_assets(self, assets: "Any") -> None:
+        """Route FlowPad's generated instruction/skill assets into this argv.
+
+        The one seam for "how does a vendor receive system instructions".
+        The default covers every vendor that reads them off the filesystem via
+        a directory flag (``--add-dir`` / custom-instruction dirs) plus a
+        system-prompt file. A vendor with a different channel — opencode reaches
+        them only through a generated config file — overrides this instead of
+        the shared caller growing another ``hasattr`` arm.
+        """
+        if hasattr(self, "add_dirs"):
+            add_dirs = list(getattr(self, "add_dirs", []) or [])
+            assets_path = str(assets.assets_dir)
+            if assets_path not in add_dirs:
+                add_dirs.append(assets_path)
+                self.add_dirs = add_dirs
+        # None when the process has assets but no instruction text; the MOUNT
+        # above still applies. See ``SystemInstructionAssets``.
+        self.system_prompt_file = assets.system_prompt_file
+        if hasattr(self, "developer_instructions"):
+            self.developer_instructions = assets.instructions
+        if hasattr(self, "custom_instruction_dirs"):
+            self.custom_instruction_dirs = [str(assets.assets_dir)]
+            if hasattr(self, "no_custom_instructions"):
+                self.no_custom_instructions = False
+
+    def apply_process_mcp(self, runtime: "ProcessMcpRuntime", process_id: str = "") -> None:
+        """Route a rendered ``ProcessMcpRuntime`` into this argv.
+
+        The MCP counterpart of ``apply_instruction_assets`` — one seam, owned by
+        the argv class. The default stamps every field and appends codex's
+        ``-c`` pairs to whatever the hook projection already put there; opencode
+        overrides it because its channel is a generated file, not argv.
+        """
+        self.mcp_config_json = runtime.mcp_config_json
+        self.mcp_config_fragment = dict(runtime.config_fragment)
+        if runtime.config_overrides:
+            self.extra_config_overrides = [
+                *(getattr(self, "extra_config_overrides", None) or []),
+                *runtime.config_overrides,
+            ]
 
     # ── Unified arg construction (argv is canonical; shell is derived) ───────
 
@@ -780,43 +1034,34 @@ class WorkerCLIOptions:
     def _emit_flags(self) -> list[str]:
         """Vendor hook: every argv token AFTER the binary, EXCEPT the per-turn
         instruction (placed by ``cli_cmd`` per ``PROMPT_CHANNEL``) and the
-        system-prompt addition (placed per ``SYSTEM_PROMPT_FLAG``). This is the
+        system-prompt file (placed per ``SYSTEM_PROMPT_FILE_FLAG``). This is the
         ONLY arg builder a vendor writes — the shell string is derived from it."""
         raise NotImplementedError
 
-    def cli_cmd(self, instruction: str | None = None, system_prompt_append: str | None = None) -> list[str]:
+    def cli_cmd(self, instruction: str | None = None) -> list[str]:
         """Canonical argv. The single source of truth; the shell string and the
         spawn tuple both derive from this."""
         argv: list[str] = [*self._resolve_binary(), *self._emit_flags()]
-        spa = self._system_prompt(system_prompt_append)
         if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
             argv.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
-        if spa and self.SYSTEM_PROMPT_FLAG:
-            argv.extend([self.SYSTEM_PROMPT_FLAG, spa])
         if self.PROMPT_CHANNEL == "argv" and instruction:
             argv.extend(["--", instruction])
         return argv
 
-    def stdin_text(self, instruction: str | None = None, system_prompt_append: str | None = None) -> str | None:
+    def stdin_text(self, instruction: str | None = None) -> str | None:
         """The text to pipe to the worker's stdin, or None for argv-channel
-        vendors. For stdin vendors with no system-prompt flag, the addition is
-        prepended into the prompt body (their only sink)."""
+        vendors. Only the user turn — standing instructions never ride the
+        prompt body (see ``system_prompt``)."""
         if self.PROMPT_CHANNEL != "stdin":
             return None
-        body = instruction or ""
-        spa = self._system_prompt(system_prompt_append)
-        if spa and not self.SYSTEM_PROMPT_FLAG:
-            body = f"{spa}\n\n{body}".strip() if body else spa
-        return body
+        return instruction or ""
 
-    def to_spawn(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
-    ) -> tuple[list[str], dict[str, str], str | None]:
+    def to_spawn(self, instruction: str | None = None) -> tuple[list[str], dict[str, str], str | None]:
         """The one IO contract a worker needs: (argv, env, stdin|None)."""
         return (
-            self.cli_cmd(instruction=instruction, system_prompt_append=system_prompt_append),
+            self.cli_cmd(instruction=instruction),
             dict(self.env_vars),
-            self.stdin_text(instruction, system_prompt_append),
+            self.stdin_text(instruction),
         )
 
     def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
@@ -825,46 +1070,81 @@ class WorkerCLIOptions:
         return self.cli_cmd(instruction=instruction), dict(self.env_vars)
 
     def to_shell_string(self, instruction: str | None = None) -> str:
-        args = self._build_worker_args()
-        if sys.platform == "win32":
-            return self._build_win32(args, instruction)
-        return self._build_posix(args, instruction)
+        return self._render_shell_string(sys.platform, instruction)
+
+    # ── Serialisation (declarative) ─────────────────────────────────────────
+    #
+    # ``to_json`` is a WIRE FORMAT: AgenticProcess.last_started_hash is an md5
+    # over it, so a renamed key or a changed value type invalidates every stored
+    # restart snapshot. Each subclass therefore declares only WHAT is on the
+    # wire (``SERIALIZED_FIELDS`` + ``WORKER_TYPE``) and how a raw value is
+    # normalised on the way back in (``_COERCE``); the mechanics live here once.
+    #
+    # Fields absent from ``data`` are NOT passed to the constructor, so a missing
+    # key falls through to the constructor default — the single place a default
+    # is written down.
+
+    #: Attribute names serialized on top of ``workdir``/``env_vars``.
+    SERIALIZED_FIELDS: tuple[str, ...] = ()
+    #: Fields written only when set (non-empty). A field added to SERIALIZED_FIELDS lands on every
+    #: process's ``cli_config`` and changes every stored restart hash; a sparse one changes only
+    #: the processes that use it.
+    SPARSE_FIELDS: tuple[str, ...] = ()
+    #: Value of the ``worker_type`` discriminator; "" ⇒ omitted (base only).
+    WORKER_TYPE: str = ""
+    #: field name → callable applied to a PRESENT value when reading.
+    _COERCE: "dict[str, Callable[[Any], Any]]" = {}
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "workdir": self.workdir,
             "env_vars": self.env_vars,
         }
+        if self.WORKER_TYPE:
+            data["worker_type"] = self.WORKER_TYPE
+        for name in self.SERIALIZED_FIELDS:
+            data[name] = getattr(self, name)
+        for name in self.SPARSE_FIELDS:
+            if value := getattr(self, name):
+                data[name] = value
+        return data
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "WorkerCLIOptions":
-        return cls(
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-        )
+    def from_json(cls, data: dict[str, Any]) -> "AgentOptions":
+        kwargs: dict[str, Any] = {}
+        for name in ("workdir", "env_vars", *cls.SERIALIZED_FIELDS, *cls.SPARSE_FIELDS):
+            if name not in data:
+                continue
+            coerce = cls._COERCE.get(name)
+            kwargs[name] = coerce(data[name]) if coerce is not None else data[name]
+        return cls(**kwargs)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, WorkerCLIOptions):
+        if not isinstance(other, AgentOptions):
             return NotImplemented
         return self.to_json() == other.to_json()
 
     def _build_worker_args(self) -> list[str]:
-        """Shell-token form of the argv (sans instruction — appended by
-        ``_build_posix``/``_build_win32``). Built from ``_emit_flags`` so the
-        shell string can never drift from argv; ``args[0]`` stays the bare binary
-        name (``Shell`` reads it as the worker name, and we skip resolving the
-        real path here since callers only want the name). Vendors that track
-        ``skill_names`` get cosmetic ``# skill=<name>`` suffixes so ``cmd_line``
-        reflects materialized skills (they aren't real CLI args)."""
-        args = [self.EXECUTABLE, *[shlex.quote(a) for a in self._emit_flags()]]
+        """Raw worker argv without the instruction or resolved binary path.
+
+        ``Shell`` reads ``args[0]`` as the worker name. Shell quoting happens
+        later in :meth:`_render_shell_string`, exactly once per argv value.
+        """
+        return [self.EXECUTABLE, *self._emit_flags()]
+
+    def _render_shell_string(self, platform: str, instruction: str | None) -> str:
+        """Render raw worker argv for the target shell platform."""
+        args = [quote_shell_arg(arg, platform) for arg in self._build_worker_args()]
         for sk in getattr(self, "skill_names", []):
-            args.append(f"# skill={shlex.quote(sk)}")
-        return args
+            args.append(f"# skill={quote_shell_arg(sk, platform)}")
+        if platform == "win32":
+            return self._build_win32(args, instruction)
+        return self._build_posix(args, instruction)
 
     def _build_posix(self, args: list[str], instruction: str | None) -> str:
         workdir = self.workdir or "."
-        cd_part = f"cd {shlex.quote(workdir)}"
-        env_part = " ".join(f"{k}={shlex.quote(v)}" for k, v in self.env_vars.items())
+        cd_part = f"cd {quote_shell_arg(workdir, 'linux')}"
+        env_part = " ".join(f"{k}={quote_shell_arg(v, 'linux')}" for k, v in self.env_vars.items())
         cmd = f"{cd_part} && {env_part} {' '.join(args)}" if env_part else f"{cd_part} && {' '.join(args)}"
         if instruction:
             escaped = instruction.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n")
@@ -874,12 +1154,9 @@ class WorkerCLIOptions:
     def _build_win32(self, args: list[str], instruction: str | None) -> str:
         import base64 as _b64
 
-        def _ps_quote(s: str) -> str:
-            return "'" + s.replace("'", "''") + "'"
-
         workdir = self.workdir or "."
-        cd_part = f"cd {_ps_quote(workdir)}"
-        env_commands = [f"$env:{k} = {_ps_quote(v)}" for k, v in self.env_vars.items()]
+        cd_part = f"cd {quote_powershell_literal(workdir)}"
+        env_commands = [f"$env:{k} = {quote_powershell_literal(v)}" for k, v in self.env_vars.items()]
         env_part = "; ".join(env_commands) + "; " if env_commands else ""
         cmd_part = " ".join(args)
         if instruction:
@@ -889,11 +1166,14 @@ class WorkerCLIOptions:
         return f"{cd_part}; {env_part}{cmd_part}"
 
 
-def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any]:
+def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     """Return the worker CLI payload relevant for restart detection.
 
     Runtime-only env vars are injected after the process identity is known but
     are not user launch config, so they must not force a restart prompt.
+    ``FLOWPAD_PYTHON`` is stripped for the same reason and one of its own: it is
+    derived from this backend's ``sys.executable``, so it changes on every
+    reinstall/upgrade and would light a phantom restart glow on every process.
 
     ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
     ``cli_options`` and flips False→True as soon as the worker writes its first
@@ -912,6 +1192,10 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
+    env_vars.pop("FLOWPAD_PYTHON", None)
+    env_vars.pop("CLOUDSDK_CORE_PROJECT", None)
+    env_vars.pop("GOOGLE_CLOUD_PROJECT", None)
+    env_vars.pop("GCLOUD_PROJECT", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)
@@ -924,25 +1208,50 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 
 
 def worker_capability_kind(worker_type: str) -> str:
-    """The capability kind whose discovered value provides this worker's CLI."""
-    return f"harness.{worker_type}.cli"
+    """The capability kind whose discovered value provides this worker's CLI.
+
+    Read from ``VENDORS`` (claude's worker_type is ``claude_code`` but its kind
+    is ``harness.claude.cli`` — interpolation once produced a kind nothing
+    registers). Interpolated only for a name the table does not know.
+    """
+    vendor = vendor_or_none(worker_type)
+    return vendor.capability_kind if vendor else f"harness.{worker_type}.cli"
 
 
 def worker_bin_folder(worker_type: str) -> str | None:
-    """The discovered bin FOLDER of this worker's CLI, or ``None`` ⇔ not installed.
+    """This worker's CLI bin FOLDER, or ``None`` ⇔ not installed.
 
     The harness capability's value (RecordType.FOLDER, an FSRef dict) is the
     CLI's bin directory as a standard terminal would resolve it — recorded by
     capability discovery even when the backend's own service PATH (e.g. a
     desktop launchd/named-instance environment) does not contain it.
-    """
-    from flow_sdk.core.capabilities.discovery import get_capability_value
 
-    discovered = get_capability_value(worker_capability_kind(worker_type))
+    THE one place the whole agentic-process tree reads that value:
+    ``worker_path_env``, ``build_worker_spawn_env``,
+    ``resolve_worker_probe_context`` and ``AgenticProcess.is_installed`` all
+    come through here. It RESOLVES rather than merely reads
+    (``resolve_capability_value``), so a plain Python spawn works without a
+    discovery sweep having run in this process — which is why spawning needs
+    neither a live backend nor an ``ensure_discovered()`` handshake.
+    """
+    from flow_sdk.core.capabilities.discovery import resolve_capability_value
+
+    discovered = resolve_capability_value(worker_capability_kind(worker_type))
     if discovered is None or not isinstance(discovered.value, dict):
         return None
     folder = discovered.value.get("path")
     return str(folder) if folder else None
+
+
+def worker_is_installed(worker_type: str) -> bool:
+    """THE install predicate: this worker's CLI exists on disk in its discovered folder.
+
+    Disk-verified (``worker_executable``), not "discovery once recorded a folder": a CLI
+    removed after the sweep must read as absent everywhere at once -- the spawn gate, the
+    status record (``core.status.harness_install``) and funding -- instead of the folder
+    check saying yes while the probe says ``NOT_INSTALLED``.
+    """
+    return worker_executable(worker_type) is not None
 
 
 def worker_path_env(worker_type: str) -> dict[str, str] | None:
@@ -963,29 +1272,93 @@ def worker_path_env(worker_type: str) -> dict[str, str] | None:
 
 
 def prepend_path_dir(folder: str, path: str | None) -> str:
-    """*path* with *folder* prepended; idempotent when it is already first."""
+    """*path* with *folder* prepended; idempotent when it is already first.
+
+    Use this only where nothing ahead of *folder* needs protecting — i.e. a
+    PATH built from ``os.environ`` that carries no Flowpad pin (see
+    :func:`worker_path_env`). When the PATH may already begin with this
+    backend's venv bin dir, use :func:`insert_capability_path_dir` instead.
+    """
     base = path or ""
     if base.split(os.pathsep, 1)[0] == folder:
         return base
     return f"{folder}{os.pathsep}{base}" if base else folder
 
 
-def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
-    """(abs executable path, probe env) for a short vendor-CLI probe, or
-    ``None`` ⇔ not installed. The executable name IS the worker type
-    (claude/codex/copilot).
+def insert_capability_path_dir(folder: str, path: str | None) -> str:
+    """*path* with *folder* ahead of everything EXCEPT this backend's venv pin.
 
-    Resolution is disk-verified against the DISCOVERED bin folder (same shape
-    as ``CliCapabilityRunner.test``): a stale discovered folder — CLI
-    uninstalled after discovery — surfaces as not-installed here rather than
-    as a spawn error. The env pins the folder first on PATH so the CLI's
-    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend
-    was launched.
+    The discovered capability folder has to outrank the service PATH, or spawn
+    fails with "codex not found despite discovery" (D02) — that is why it is
+    prepended at all. But prepending it unconditionally also puts it ahead of
+    the venv bin dir that :func:`flow_cli_env_path` pinned first, and vendor
+    bin folders are routinely shared directories (``~/.local/bin``) that carry
+    their own ``flow``. The version-skew guard then loses to whatever ``flow``
+    the vendor dir happens to ship — silently, and precisely for the worker
+    calls (``flow record/show/context``) the guard exists to protect.
+
+    ``apply_worker_env``'s docstring already names this ordering as the reason
+    ``FLOWPAD_PYTHON`` must be an absolute path; ``flow`` had no equivalent
+    escape, so the ordering is fixed here instead.
+
+    So: keep the venv dir first when it is first, and put *folder* immediately
+    behind it. Idempotent, and identical to ``prepend_path_dir`` when no pin is
+    present.
+    """
+    base = path or ""
+    if not base:
+        return folder
+    entries = base.split(os.pathsep)
+    if entries[0] == folder:
+        return base
+
+    venv_bin = str(Path(sys.executable).parent)
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    pinned = entries[0] == venv_bin and (Path(venv_bin) / exe).exists()
+    if not pinned:
+        return f"{folder}{os.pathsep}{base}"
+    if len(entries) > 1 and entries[1] == folder:
+        return base  # already immediately behind the pin
+    return os.pathsep.join([entries[0], folder, *entries[1:]])
+
+
+def worker_executable(worker_type: str) -> str | None:
+    """This worker's CLI as an absolute path, or ``None`` ⇔ not installed.
+
+    Disk-verified against the DISCOVERED bin folder (same shape as
+    ``CliCapabilityRunner.test``): a stale discovered folder — CLI uninstalled
+    after discovery — answers ``None`` here rather than surfacing as a spawn
+    error later. The executable name is the capability runner's (the vendor key for
+    a CLI on PATH; this interpreter for a ``python -m`` harness), so callers must
+    pass the DRIVER name.
+
+    Ask this when the question is "is it installed"; ``resolve_worker_probe_context``
+    is the same answer plus the env a subprocess needs.
     """
     folder = worker_bin_folder(worker_type)
-    if folder is None:
-        return None
-    path = shutil.which(worker_type, path=folder)
+    return shutil.which(_worker_executable_name(worker_type), path=folder) if folder is not None else None
+
+
+def _worker_executable_name(worker_type: str) -> str:
+    """The executable's file name, as the vendor's registered capability runner declares it."""
+    from flow_sdk.core.capabilities.registry import CliCapabilityRunner, get_capability_registry
+
+    try:
+        runner = get_capability_registry().get(worker_capability_kind(worker_type))
+    except KeyError:
+        return worker_type
+    return runner.executable if isinstance(runner, CliCapabilityRunner) else worker_type
+
+
+def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
+    """(abs executable path, probe env) for a short vendor-CLI probe, or
+    ``None`` ⇔ not installed.
+
+    The env pins the discovered folder first on PATH so the CLI's
+    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend was
+    launched.
+    """
+    path = worker_executable(worker_type)
     if path is None:
         return None
     return path, {**os.environ, **(worker_path_env(worker_type) or {})}
@@ -998,10 +1371,66 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
     NOT_INSTALLED — the install gate also applies to copilot, whose probe is
     a pure heuristic that must not claim logged-in for an uninstalled CLI),
     then runs the vendor probe off-loop.
+
+    Canonicalizes the worker type FIRST, and that is the whole fix for a bug that
+    made Claude device login report "claude_code CLI is not installed" for a working
+    CLI. Every other caller arrives via ``get_driver(...).auth_probe()`` and so passes
+    the driver name (``claude``); device login alone keys off the CAPABILITY's
+    worker_type (``claude_code``) and reached here un-normalized, where both the
+    binary lookup and the vendor dispatch then missed. ``get_driver``'s alias table is
+    the one canonicalizer in the tree — use it rather than teaching this layer, or the
+    import-free ``auth_probe``, a fourth set of aliases.
     """
+    try:
+        worker_type = get_driver(worker_type).name
+    except ValueError:
+        pass  # unregistered worker: fall through and report NOT_INSTALLED as before
     ctx = resolve_worker_probe_context(worker_type)
     path, env = ctx if ctx is not None else (None, {})  # env unread on the NOT_INSTALLED path
-    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home())
+    # Copilot's heuristic reads its instance-redirectable config dir. Avoid
+    # resolving unrelated settings for the executable probes used by the other
+    # vendors.
+    copilot_home = None
+    if worker_type == "copilot":
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        copilot_home = get_instance_settings().copilot_home
+    if worker_type == "opencode" and ctx is not None:
+        # OpenCode reads its credentials from ``$XDG_DATA_HOME/opencode/auth.json``, and a spawn
+        # redirects that per instance -- probe the store the WORKER will read, not the user's own.
+        env = {**env, **get_driver(worker_type).session_store_env}
+    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
+
+
+def no_worker_message(worker_type: str) -> str:
+    """Why this spawn cannot happen, distinguishing the two cases that matter.
+
+    "codex is not installed" and "nothing is installed" call for different
+    actions, and the caller cannot tell us which it is: ``get_driver(None)``
+    resolves the DEFAULT vendor from ``FLOWPAD_DEFAULT_WORKER`` — a name, never
+    an availability — so a defaulted worker is indistinguishable from a chosen
+    one by the time we get here. Answer it from what actually resolves instead.
+    """
+    from flow_sdk.flowpad_types.vendors import VENDORS
+
+    # One `which` per vendor, and only ever here — the failure path. A hit is
+    # already memoized; a miss deliberately is not (see
+    # ``resolve_capability_value``), so a caller retrying a broken install
+    # re-probes each time. That is the price of letting an install done outside
+    # Flowpad be noticed without a restart.
+    # A hidden vendor is never something a person is told to go and install or pick.
+    offered = [v for v in VENDORS if not v.hidden]
+    installed = [v.key for v in offered if worker_is_installed(v.key)]
+    if not installed:
+        known = ", ".join(v.key for v in offered)
+        return (
+            f"no harness is installed — none of {known} was found on PATH or "
+            f"recorded by capability discovery. Install one, then retry."
+        )
+    return (
+        f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} "
+        f"installation discovered (installed: {', '.join(installed)})"
+    )
 
 
 def build_worker_spawn_env(
@@ -1026,12 +1455,12 @@ def build_worker_spawn_env(
     if folder is None:
         raise WorkerSpawnError(
             worker_type,
-            f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} installation discovered",
+            no_worker_message(worker_type),
         )
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
-    env["PATH"] = prepend_path_dir(folder, env.get("PATH"))
-    return env
+    env["PATH"] = insert_capability_path_dir(folder, env.get("PATH"))
+    return hide_flowpad_interpreter(env)
 
 
 def resolve_worker_argv0(worker_type: str, argv: list[str], env: dict[str, str]) -> list[str]:
@@ -1083,26 +1512,48 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
-    """Return the correct WorkerCLIOptions subclass for the given worker_type.
+def _vendor_module(vendor, leaf: str):
+    """``<vendor.package>.<leaf>``, imported on demand (the vendor packages
+    import this base module, so a top-level import would be a cycle)."""
+    return importlib.import_module(f"{vendor.package}.{leaf}")
 
-    String keys (``"claude"``, ``"codex"``, ``"copilot"``) are the wire form used by
-    serialised ``AgenticProcess.cli_config`` — kept stable across enum
-    renames. Local imports break the cli_drivers/<vendor> → base cycle.
+
+def factory(cli_json: dict, worker_type: str) -> AgentOptions:
+    """The AgentOptions subclass for ``worker_type`` — any spelling ``VENDORS``
+    knows (the wire form in ``AgenticProcess.cli_config`` is the driver key)."""
+    vendor = vendor_or_none(worker_type)
+    if vendor is None:
+        raise ValueError(f"Unknown worker_type: {worker_type!r}")
+    return _vendor_module(vendor, "cli").AGENT_OPTIONS.from_json(cli_json)
+
+
+def interactive_launch_command(worker_type: str, workdir: str | None = None) -> str:
+    """The shell line this machine WOULD run to start ``worker_type``'s
+    interactive TUI in ``workdir``.
+
+    Derived, not described: it builds the vendor's real ``AgentOptions`` through
+    :func:`factory` and renders it with ``to_shell_string()`` — the same object
+    and the same renderer the PTY spawn path uses. A vendor that changes a flag
+    changes this line with it, which is the whole point: the caller is a *debug*
+    affordance whose only value is being the command we actually run.
+
+    ``json_stream``/``print_mode`` are the one thing forced. Three vendors
+    default to their HEADLESS shape and the spawn path flips them when
+    ``process.pty_mode``; there is no process here, so the interactive shape is
+    stated instead. Each key reaches only the vendors that serialize it — the
+    rest ignore it, as they ignore any key outside their ``SERIALIZED_FIELDS``.
+
+    What it deliberately does NOT carry is everything that only exists once a
+    process does: ``--add-dir``, ``--agents``, ``--mcp-config``, the session id,
+    and the spawn-time env (``FLOWPAD_EXECUTION_SCOPE``, secrets, the pinned
+    ``flow`` on PATH). A terminal launched from this line is a FRESH session in
+    that folder, not a rehydration of a Flowpad worker.
     """
-    if worker_type == "claude":
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
-
-        return ClaudeCliOptions.from_json(cli_json)
-    if worker_type == "codex":
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
-
-        return CodexCliOptions.from_json(cli_json)
-    if worker_type == "copilot":
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
-
-        return CopilotCliOptions.from_json(cli_json)
-    raise ValueError(f"Unknown worker_type: {worker_type!r}")
+    vendor = vendor_or_none(worker_type)
+    if vendor is not None and not vendor.interactive:
+        raise ValueError(f"{vendor.label} is a headless worker: it has no interactive TUI to launch")
+    options = factory({"workdir": workdir or "", "json_stream": False, "print_mode": False}, worker_type)
+    return options.to_shell_string()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1128,6 +1579,12 @@ _COMPOSER_SCAN_WINDOW = 65536
 # then residual C0 controls (keep \t\n\r as separators is unnecessary — the
 # markers are single-line, so drop them all except nothing).
 _OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# A TUI may paint the gap between words as a horizontal cursor jump instead of
+# a space: Claude Code renders ``Try "fix lint errors"`` as
+# ``Try\x1b[7G"fix\x1b[12Glint…`` on most boots. Dropping the jump would glue
+# the words together and hide a marker that IS on screen, so a cursor-forward
+# (CUF) or cursor-to-column (CHA) move reads as one space.
+_CURSOR_GAP_RE = re.compile(rb"\x1b\[[0-9]*[CG]")
 _CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
 _ESC_RE = re.compile(rb"\x1b[@-_=>]?")
 _CTRL_RE = re.compile(rb"[\x00-\x08\x0b-\x1f\x7f]")
@@ -1136,13 +1593,14 @@ _CTRL_RE = re.compile(rb"[\x00-\x08\x0b-\x1f\x7f]")
 def strip_pty_controls(data: bytes) -> str:
     """Reduce raw PTY output to its printable text (best-effort).
 
-    Removes OSC/CSI/ESC escape sequences and C0 controls, then decodes as
-    UTF-8 with replacement. Good enough for marker *search* — it does not
+    Removes OSC/CSI/ESC escape sequences and C0 controls (a horizontal cursor
+    jump becomes one space), then decodes as UTF-8 with replacement. Good enough for marker *search* — it does not
     reconstruct screen layout (a TUI that paints word-by-word yields the words
     concatenated in paint order), so patterns must match text the TUI paints
     contiguously (e.g. the codex ``>_ OpenAI Codex`` banner).
     """
     data = _OSC_RE.sub(b"", data)
+    data = _CURSOR_GAP_RE.sub(b" ", data)
     data = _CSI_RE.sub(b"", data)
     data = _ESC_RE.sub(b"", data)
     data = _CTRL_RE.sub(b"", data)
@@ -1161,16 +1619,27 @@ async def pump_composer_ready(
     awaitable callable yielding subsequent raw output chunks, with ``None`` as
     the close sentinel (PTY died / stream ended → returns False: the caller
     must NOT type). Purely event-driven: it only ever waits on the next paint.
+
+    ``initial`` is scanned WHOLE. It is already scoped to this PTY generation
+    (``generation_start_seq``), and that — not a byte count — is what keeps a
+    pre-restart banner from authorizing input into a new process. Trimming it to
+    a trailing window on top of that silently loses the marker instead: a vendor
+    paints its composer-ready frame only on a FULL redraw, so one chatty turn
+    can leave that paint hundreds of KB back, and an idle composer has no reason
+    to repaint it. The gate would then wait for a frame that is never coming.
+    The window still bounds the INCREMENTAL buffer, where it only has to hold a
+    marker split across consecutive paints.
     """
+    if pattern.search(strip_pty_controls(initial)):
+        return True
     buf = initial[-_COMPOSER_SCAN_WINDOW:]
     while True:
-        text = strip_pty_controls(buf)
-        if pattern.search(text):
-            return True
         chunk = await next_chunk()
         if chunk is None:
             return False
         buf = (buf + chunk)[-_COMPOSER_SCAN_WINDOW:]
+        if pattern.search(strip_pty_controls(buf)):
+            return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1193,7 +1662,22 @@ class WorkerDriver(Protocol):
     """
 
     name: str  # wire id: "claude" | "codex" | "copilot"
+    supports_process_hooks: bool
+    # True iff this harness accepts MCP servers scoped to ONE launch. All four
+    # do, each through a different channel (see ``mcp_projection``); the flag
+    # exists so a fifth vendor starts off unsupported by construction, exactly
+    # like ``supports_process_hooks``.
+    supports_process_mcp: bool
+    process_hooks_use_assets: bool
     preassign_interactive_session_id: bool
+    # The byte sequence that INTERRUPTS an in-flight turn in this vendor's
+    # interactive TUI, leaving the session alive. Ctrl-C for claude/codex/copilot;
+    # opencode QUITS on a single Ctrl-C (measured on 1.18.16: the process exits
+    # and prints its ``opencode -s <id>`` resume hint), so cancelling a turn there
+    # destroyed the whole session instead of stopping generation. Escape is
+    # opencode's interrupt. Read via ``getattr`` with a Ctrl-C default, so a
+    # vendor that does not declare it keeps the historical behaviour.
+    pty_interrupt_sequence: bytes
     # True iff this vendor's interactive TUI submits a pasted prompt that ends
     # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
     # literal text and need a discrete Enter after the paste settles (copilot,
@@ -1216,7 +1700,7 @@ class WorkerDriver(Protocol):
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> WorkerCLIOptions:
+    def cli_options(self, process: "AgenticProcess") -> AgentOptions:
         """Return a fully-configured options object (model, session_id,
         workdir, add_dirs, agents/skills) for this process — used by
         ``AgenticProcess.cmd_line`` and the spawn paths."""
@@ -1225,9 +1709,69 @@ class WorkerDriver(Protocol):
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict[str, Any]:
         """Return this worker's canonical launch payload for restart hashing."""
+        ...
+
+    def hook_capabilities(self) -> "HookCapabilities":
+        """Declare which hook scopes/events this harness supports.
+
+        A scope absent from the mapping is unsupported: ``HooksManager`` raises
+        ``NotImplementedError`` when asked to configure it, rather than writing a
+        hook that could never fire. A vendor that declares nothing (or predates
+        this contract) is therefore unsupported everywhere, which is exactly the
+        state a newly added driver should start in.
+        """
+        ...
+
+    def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
+        """Return a pure semantic snapshot for persisted process-hook intent."""
+        ...
+
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        """Write this harness's instruction projection and return the prompt file."""
+        ...
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: Sequence["HookEventType"],
+    ) -> ProcessHookRuntime:
+        """Materialize launch artifacts once and return their runtime inputs."""
+        ...
+
+    def prepare_process_mcp(self, specs: Sequence["McpSpec"]) -> ProcessMcpRuntime:
+        """Render this harness's per-launch MCP inputs from the attached specs.
+
+        No ``AssetDir``: three of the four vendors take an inline string, and
+        opencode's file is written by its existing config generator. An empty
+        ``specs`` returns an empty runtime — never a half-written artifact.
+        """
+        ...
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> "AgentHookData":
+        """Normalize one vendor-native report into canonical hook data."""
+        ...
+
+    def render_hook_response(
+        self,
+        event: "HookEventType",
+        response: "AgentHookResponse",
+    ) -> "HookOutcome":
+        """Render a typed callback answer into this vendor's stdout shape.
+
+        The mirror of :meth:`normalize_process_hook_data`: that converges a
+        vendor payload onto ``AgentHookData`` coming in, this diverges a typed
+        ``AgentHookResponse`` back into vendor JSON going out. A vendor that
+        cannot consume a decision for ``event`` raises ``NotImplementedError`` —
+        the same contract as an unsupported hook cell.
+        """
         ...
 
     # ── Per-turn execution ───────────────────────────────────────────────────
@@ -1284,13 +1828,41 @@ class WorkerDriver(Protocol):
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Native session-store environment pinned to instance configuration."""
+        ...
+
+    @property
+    def naming_adapter(self) -> "NamingAdapter":
+        """Provider title observations, read on transcript events and lifecycle edges."""
+        ...
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolved transcript path plus the native JSONL format metadata."""
         ...
 
+    # Optional ``transcript_is_final(process, path) -> bool``: True when ``path``
+    # is this session's own record, which a live turn only appends to, so its
+    # location may be remembered (``agentic_process.transcript_cache``). Read via
+    # ``getattr`` with a False default, so a vendor that does not declare it keeps
+    # resolving on every read.
+
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the
         given process — or None if no session id is yet assigned."""
+        ...
+
+    async def available_assets(self, process: "AgenticProcess"):
+        """File-backed executable assets reported by this harness's native resolver."""
+        ...
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        """Filesystem locations this worker loads, shared by PTY and headless.
+
+        Unlike the indexer catalog, this excludes other harnesses' formats
+        and directories merely accessible through filesystem tools.
+        """
         ...
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
@@ -1364,43 +1936,14 @@ def get_driver(worker_type: Any) -> WorkerDriver:
     The returned driver is cached per name; constructing one is cheap but
     caching avoids re-importing the vendor module on every property access.
     """
-    if worker_type is None:
-        worker_type = os.environ.get("FLOWPAD_DEFAULT_WORKER") or "claude"
-
-    # Map enum values → driver registry keys.
-    if hasattr(worker_type, "value"):
-        worker_type = worker_type.value
-    key = str(worker_type).lower()
-    aliases = {
-        "claude_code": "claude",
-        "claude_code_cli": "claude",
-        "claude": "claude",
-        "codex": "codex",
-        "copilot": "copilot",
-    }
-    name = aliases.get(key, key)
-
-    cached = _DRIVER_CACHE.get(name)
-    if cached is not None:
-        return cached
-
-    if name == "claude":
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
-
-        driver: WorkerDriver = ClaudeDriver()
-    elif name == "codex":
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
-
-        driver = CodexDriver()
-    elif name == "copilot":
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
-
-        driver = CopilotDriver()
-    else:
+    vendor = default_vendor() if worker_type is None else vendor_or_none(worker_type)
+    if vendor is None:
         raise ValueError(f"No WorkerDriver registered for worker_type={worker_type!r}")
 
-    _DRIVER_CACHE[name] = driver
-    return driver
+    cached = _DRIVER_CACHE.get(vendor.key)
+    if cached is None:
+        cached = _DRIVER_CACHE[vendor.key] = _vendor_module(vendor, "driver").DRIVER()
+    return cached
 
 
 __all__ = [
@@ -1409,7 +1952,8 @@ __all__ = [
     "AgenticContext",
     "AgenticProcessContextKey",
     "AgenticWorker",
-    "WorkerCLIOptions",
+    "AgentOptions",
+    "ProcessHookRuntime",
     "WorkerExecutionInfo",
     "WorkerDriver",
     "WorkerSpawnError",
@@ -1418,6 +1962,10 @@ __all__ = [
     "get_driver",
     "latch_spawn_failure",
     "prepend_path_dir",
+    "path_without_flowpad_interpreter",
+    "hide_flowpad_interpreter",
+    "HIDE_FLOWPAD_PYTHON_ENV",
+    "insert_capability_path_dir",
     "resolve_worker_argv0",
     "restart_payload_from_cli_options",
     "stamp_cli_run_id",

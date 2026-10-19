@@ -1,0 +1,36 @@
+"""The agent transport's manifest declares every ``config`` key its driver
+reads. The form is built from the manifest, so an undeclared key is one an
+author can only set by hand and never see — six were missing when this was
+written (deadline, send persona overrides, the legacy segment aliases)."""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import flow_sdk
+from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
+
+agent_source = asset_module("agent")
+agent_driver = asset_module("agent", "transport")
+
+ROOT = Path(flow_sdk.__file__).parent
+MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_driver/agent/data_driver.json"
+
+
+def test_every_key_the_driver_reads_is_declared():
+    declared = set(json.loads(MANIFEST.read_text())["config"])
+    text = "\n".join(Path(module.__file__).read_text() for module in (agent_driver, agent_source))
+    read = set(re.findall(r"config\.get\(['\"](\w+)['\"]", text))
+    assert read, "the driver reads config through config.get(...)"
+    assert read <= declared, f"config keys the driver reads but the manifest does not declare: {sorted(read - declared)}"
+
+
+def test_the_declared_defaults_are_the_drivers():
+    spec = DataDriverSpec.model_validate(json.loads(MANIFEST.read_text()))
+    fields = agent_source.AgentConfig.model_fields
+    assert fields["deadline_seconds"].default == agent_driver.DEFAULT_DEADLINE_SECONDS
+    assert fields["send_deadline_seconds"].default == agent_driver.DEFAULT_SEND_DEADLINE_SECONDS
+    for key in ("deadline_seconds", "send_agent", "send_subagent", "send_deadline_seconds"):
+        assert spec.config[key].advanced, f"{key} is an override, not the form's first screen"

@@ -22,17 +22,17 @@ describe('participantKey', () => {
 
 describe('participantFromContact', () => {
   it('carries the foreign hub user_id when present', () => {
-    const u = new User({ id: 'local-1', email: 'g@x.io', name: 'Gadi', user_id: 'hub-gadi' });
+    const u = new User({ id: 'local-1', email: 'g@x.io', name: 'Bob', user_id: 'hub-bob' });
     const p = participantFromContact(u);
-    expect(p.user_id).toBe('hub-gadi');
+    expect(p.user_id).toBe('hub-bob');
     expect(p.email).toBe('g@x.io');
   });
 
   it('keys an email-less, user_id-only contact by its user_id', () => {
-    const u = new User({ id: 'local-2', user_id: 'hub-nir', name: 'Nir' });
+    const u = new User({ id: 'local-2', user_id: 'hub-carol', name: 'Carol' });
     const p = participantFromContact(u);
-    expect(p.user_id).toBe('hub-nir');
-    expect(participantKey(p)).toBe('hub-nir');
+    expect(p.user_id).toBe('hub-carol');
+    expect(participantKey(p)).toBe('hub-carol');
   });
 
   it('falls back to the local id for a remote contact with no hub user_id', () => {

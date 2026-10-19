@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { gitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
-import { matchContextDir } from '@src/hooks/use-context-folder-for-rel';
+import { matchContextDir } from '@src/hooks/use-dependency-for-rel';
 import type { ProjectContextDirInfo } from '@sdk';
 
 /**

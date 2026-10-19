@@ -6,7 +6,6 @@ import { TypeId } from '../models/TypeId';
 export class KnowledgeBase extends APIEntity<KnowledgeBase> {
   static type: string = 'knowledge_base';
   raw_knowledge?: string;
-  name?: string;
 
   constructor(entity: Partial<KnowledgeBase> = {}) {
     super(entity);

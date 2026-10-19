@@ -3,8 +3,10 @@ HTTP reporter - forwards hook events to a remote server.
 """
 
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import aiohttp
+
 from .base import BaseReporter
 
 

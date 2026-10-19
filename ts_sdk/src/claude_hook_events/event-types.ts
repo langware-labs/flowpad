@@ -22,13 +22,13 @@ export enum HookEventType {
   POST_TOOL_USE_FAILURE = 'PostToolUseFailure',
   PERMISSION_REQUEST = 'PermissionRequest',
 
-  // Agent stop/start events
+  // SubAgent stop/start events
   STOP = 'Stop',
   STOP_FAILURE = 'StopFailure',
   SUBAGENT_START = 'SubagentStart',
   SUBAGENT_STOP = 'SubagentStop',
 
-  // Agent teams events
+  // SubAgent teams events
   TEAMMATE_IDLE = 'TeammateIdle',
   TASK_CREATED = 'TaskCreated',
   TASK_COMPLETED = 'TaskCompleted',

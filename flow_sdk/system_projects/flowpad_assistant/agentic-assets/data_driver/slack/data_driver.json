@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "name": "slack",
+  "title": "Your own Slack app",
+  "icon_name": "Slack",
+  "group": "Slack",
+  "group_order": 1,
+  "group_icon_name": "Slack",
+  "description": "One channel in a connected Slack workspace. Connect Slack first, then invite the bot to the channel and press Verify.",
+  "kind": "datasource.api.slack",
+  "setup_wiki": "Slack channels",
+  "auth": {
+    "connector": "slack"
+  },
+  "permissions": {
+    "permission.slack.channels.read": {
+      "mechanism": "oauth",
+      "why": "Read the channels the app is in."
+    },
+    "permission.slack.chat.write": {
+      "mechanism": "oauth",
+      "why": "Post replies as the app."
+    },
+    "permission.slack.files": {
+      "mechanism": "oauth",
+      "why": "Read the files people share in the channel, and send files (`files:read`, `files:write`)."
+    },
+    "permission.slack.reactions": {
+      "mechanism": "oauth",
+      "why": "See the emoji people react with, and react as the app (`reactions:read`, `reactions:write`)."
+    }
+  },
+  "config": {
+    "channel": {
+      "type": "text",
+      "choices": true,
+      "label": "Channel",
+      "placeholder": "C0123456789",
+      "hint": "Pick from the channels this workspace has, or type its ID. The ID is what is stored — a renamed channel keeps its ID, and keying on the name would fork its history. Watching several channels? Add one source per channel."
+    },
+    "allowed_senders": {
+      "type": "lines",
+      "label": "Allowed senders",
+      "placeholder": "U0123456789",
+      "hint": "Who may drive the owning agent from this channel — Slack member IDs, one per line. Empty allows nobody."
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
+    }
+  }
+}

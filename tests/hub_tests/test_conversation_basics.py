@@ -25,8 +25,6 @@ test_echo_round_trip_10:
 """
 from __future__ import annotations
 
-import asyncio
-import time
 from datetime import datetime, timezone
 
 import httpx
@@ -39,8 +37,8 @@ async def test_share_in_cloud(hub_base_url, hub_login_payload, isolated_hub_keyr
     # helper reads from. The autouse `isolated_hub_keyring` fixture redirects
     # the keyring backend to an in-memory dict so this doesn't touch the macOS
     # keychain.
-    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
+    from tests.hub_tests._local_login import login_as
 
     api_key = login_as(hub_login_payload)
 

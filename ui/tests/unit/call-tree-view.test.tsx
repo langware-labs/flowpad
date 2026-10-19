@@ -7,6 +7,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallTreeView } from '@src/components/assets/editor/agent-trace/CallTreeView';
 import type { AgentTraceDoc, CallFrame } from '@src/components/assets/editor/agent-trace/trace-types';
 
+// `view-mode-context` reads the current dock, which calls `useLocation()`.
+// These tests render without a Router, so stub only that hook and keep the
+// rest of the module real (a full mock would drop `useDockNavigation`).
+vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/navigation/useDockNavigation')>()),
+  useCurrentDock: () => null,
+}));
+
+
 afterEach(cleanup);
 
 function frame(over: Partial<CallFrame>): CallFrame {

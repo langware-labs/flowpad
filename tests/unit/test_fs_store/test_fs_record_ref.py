@@ -71,7 +71,19 @@ class TestFromRecord:
         assert ref.type == "task"
         assert ref.path is None
 
-    def test_from_record_with_source_file(self):
-        record = Record(id="r2", type="session", source_file="/tmp/r.json")
+    def test_from_record_with_asset_ref(self):
+        # FSRecord carries its file as ``asset_ref`` (an FSRef); the ref's
+        # ``path`` is that file. ``source_file`` was a Record-era attribute
+        # FSRecord never had, so the ref used to come back path-less.
+        record = Record(id="r2", type="session", asset_ref="/var/data/r.json")
         ref = RecordRef.from_record(record)
-        assert ref.path == "/tmp/r.json"
+        assert ref.path == record.asset_ref.path
+        assert ref.path.endswith("/r.json")
+
+    def test_from_duck_typed_record_with_string_asset_ref(self):
+        class _Duck:
+            id = "r3"
+            type = "note"
+            asset_ref = "/tmp/n.md"
+
+        assert RecordRef.from_record(_Duck()).path == "/tmp/n.md"

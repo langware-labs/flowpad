@@ -2,7 +2,12 @@
 
 A type's ``browseable_by`` says the *minimum* view mode at which it appears in
 the Assets browser. Visibility is **cumulative**: a higher mode sees everything
-a lower mode sees (``Standard ⊂ Advanced ⊂ Dev``). ``None`` ⇒ never browseable.
+a lower mode sees (``Standard ⊂ Advanced``). ``None`` ⇒ never browseable.
+
+Developer mode is NOT a tier: it is a switch (the frontend's ``DEV_MODE``
+preference), so a developer-only type is ``TypeInfo.dev_only`` on top of its tier.
+A stored ``"dev"`` tier — from when it was one — reads as ``ADVANCED`` + ``dev_only``
+(``TypeInfo.from_dict``).
 
 This enumerates the *browseable tiers* a type can require — deliberately NOT the
 full set of view modes the client can be in (the frontend enum in
@@ -19,7 +24,10 @@ from flow_sdk._compat import StrEnum
 class ViewMode(StrEnum):
     STANDARD = "standard"
     ADVANCED = "advanced"
-    DEV = "dev"
+
+
+#: The retired third tier's wire value — read as ``ADVANCED`` + ``dev_only``.
+LEGACY_DEV_TIER = "dev"
 
 
 # Visibility ordering: a type required at level L is visible when the current
@@ -27,7 +35,6 @@ class ViewMode(StrEnum):
 _ORDER: dict[ViewMode, int] = {
     ViewMode.STANDARD: 0,
     ViewMode.ADVANCED: 1,
-    ViewMode.DEV: 2,
 }
 
 

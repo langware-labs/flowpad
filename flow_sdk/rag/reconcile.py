@@ -1,0 +1,231 @@
+"""The background pass: bring stale indexes level, off the indexer's critical path.
+
+The observer marks; this embeds. Splitting them is what keeps a scan free of paid calls and
+means a provider being down delays an index rather than stalling a walk.
+
+**The tick does no work.** It selects, guards and spawns, exactly as the ingest poller does, and
+returns inside its budget. The embedding runs in its own task, because it is network-bound and
+unbounded in time; doing it in the tick would block every other heartbeat task behind it.
+
+**`pending` is a hint, not the truth.** It is cleared before the work runs, so a document
+changed *during* a pass re-marks the index and is picked up next time rather than being missed.
+The authority is each root's recorded hash against the tree's, which the pass compares anyway —
+so a marker that never fired costs a delay, never a lost document.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
+from flow_sdk.external_apis.llm.dialects import same_model
+from flow_sdk.rag import runtime
+from flow_sdk.rag.store import ModelMismatch
+from flow_sdk.server.system_heartbeat import register_heartbeat_task
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.rag_index import RagIndex
+    from flow_sdk.rag.indexing import IndexReport
+
+logger = logging.getLogger(__name__)
+
+#: Indexes being embedded right now. One pass per index at a time: they share a store, a usearch
+#: handle and a budget. Same guard, and the same reason, as the ingest poller's.
+_inflight: set[str] = set()
+
+
+#: What every surface says when nothing funds an index's embeddings — the card, the search route,
+#: a pass's report and the exception a script sees read the same.
+NO_EMBEDDING = "no embedding endpoint is available on this machine"
+
+
+class EmbeddingUnavailable(LookupError):
+    """Nothing funds this index's embeddings: no endpoint is bound and no local key resolves."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            f"{NO_EMBEDDING} — store an embedding API key (Credentials) or bind an LLM endpoint to the index"
+        )
+
+
+def default_embedding_model(endpoint) -> str:
+    """The model an endpoint embeds with when nobody chose one.
+
+    A hub endpoint carries no model names of its own (the hub serializes none), so the answer
+    comes from the ROOT provider's dialect -- the same fallback its client makes. Read here
+    rather than left to the client, so the index can record the model it is about to be pinned to.
+    """
+    dialect = endpoint.dialect
+    return (endpoint.models or {}).get("embedding") or (dialect.default_models.get("embedding", "") if dialect else "")
+
+
+async def embedder_for(index: "RagIndex"):
+    """``(embed, model)``: the embed call this index is funded by, and the model it embeds with.
+
+    ``EmbeddingUnavailable`` when nothing funds it — a script calling ``embed`` must fail HERE with
+    the reason, not a line later as ``'NoneType' object is not callable``. The resolution itself
+    lives on the entity, because the status card answers the same question ("is anything funding
+    this?") and the two must never disagree.
+    """
+    endpoint = await index.resolve_endpoint()
+    if endpoint is None:
+        raise EmbeddingUnavailable()
+
+    # Always a concrete name, so the store records what it was built with — a hub endpoint
+    # used to leave this "" and the store pinned a width with no model beside it.
+    model = index.model or default_embedding_model(endpoint)
+
+    async def embed(texts):
+        vectors, answered = await endpoint.create_embeddings_with_model(list(texts), model=model or None)
+        if answered and model and not same_model(answered, model):
+            raise ModelMismatch(model, answered)
+        return vectors
+
+    return embed, model
+
+
+async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexReport"]:
+    """One pass over every root of *index*. Records what happened on the row.
+
+    Never raises: a pass that fails leaves the reason on the row for a person to read, and the
+    next tick tries again. Anything reaching the outer guard is a bug in this module, not a
+    provider being unreachable.
+    """
+    from flow_sdk.rag.indexing import index_roots  # noqa: PLC0415
+
+    refusal = index.index_refusal()
+    if refusal:
+        return []
+
+    try:
+        embed, model = await embedder_for(index)
+    except EmbeddingUnavailable:
+        index.last_error = NO_EMBEDDING
+        await index.save(notify=False)
+        return []
+
+    # Before a single paid embed: a pass that cannot load the index would pay for every chunk
+    # and store none of them. On Windows this is where the person is asked for the runtime.
+    missing = await runtime.ensure(str(index.id))
+    if missing:
+        if index.last_error != missing:
+            index.last_error = missing
+            await index.save(notify=True)
+        return []
+
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    reports: list["IndexReport"] = []
+    async with index.embedding():
+        try:
+            async with index.open_store() as store:
+                reports = await index_roots(store, index.roots, embed=embed, model=model, force=force)
+                index.chunk_count = store.chunk_count()
+                index.document_count = len(store.document_refs())
+                index.model = index.model or store.model
+                index.dimensions = index.dimensions or store.dimensions
+            problems = [e for r in reports for e in r.errors]
+            index.last_error = problems[0] if problems else ""
+            if any(not r.fresh for r in reports):
+                index.last_indexed_at = datetime.now(timezone.utc)
+        except Exception as exc:  # noqa: BLE001 — the reason belongs on the row, not in a traceback
+            logger.warning("rag: pass failed for %s", index.id, exc_info=True)
+            # Saved by ``embedding`` on the way out, or the card never shows why.
+            index.last_error = str(exc)
+    return reports
+
+
+def force_pass(index: "RagIndex") -> None:
+    """Run a pass now, ignoring ``pending``.
+
+    ``force`` re-reads every document, which is what a person asks for when they suspect the
+    marks are wrong — so it cannot go through the flag the marks set. Still guarded: two passes
+    over one index would contend for a single usearch handle.
+    """
+    key = str(index.id)
+    if key in _inflight:
+        return
+    runtime.forget_answer()
+    _inflight.add(key)
+    asyncio.create_task(_run_guarded(index, force=True), name=f"rag-index-force-{index.id}")
+
+
+def _spawn(index: "RagIndex") -> None:
+    """Start one pass in the background.
+
+    A named seam rather than a bare ``asyncio.create_task`` call, so a test can assert the tick
+    dispatches without also running the embedding — and can do so without reaching into the
+    shared ``asyncio`` module, which would break every other await in the process.
+    """
+    asyncio.create_task(_run_guarded(index), name=f"rag-index-{index.id}")
+
+
+async def _run_guarded(index: "RagIndex", *, force: bool = False) -> None:
+    try:
+        await run_index(index, force=force)
+    finally:
+        _inflight.discard(str(index.id))
+
+
+async def dispatch_due_indexes() -> list[str]:
+    """Spawn a pass for every index that needs one. Returns the ids dispatched.
+
+    Two reasons to run, and neither is a walk. ``pending`` is a field read, set by the observer
+    when a covered document changed. ``unstamped_roots`` is one sqlite read, and it answers the
+    case a mark can never cover: a root the store has no hash for at all — freshly added, or its
+    store deleted, moved, or rebuilt out from under the row. Without it an index whose vectors
+    vanished sat there looking indexed forever, because nothing was left to mark it.
+    """
+    from flow_sdk.builtin.rag_index import RagIndex, RagStatus  # noqa: PLC0415
+
+    dispatched: list[str] = []
+    # The runtime was asked for and is still missing: nothing can load an index, so a pass would
+    # only ask again. A person adding a folder or pressing "index now" lifts this.
+    if runtime.parked():
+        return dispatched
+    # SETUP rows are included so an index minted before any key existed is promoted once one
+    # does. Only MARKED ones: settling costs an endpoint lookup, and an unmarked index has
+    # nothing to do even if it were promoted.
+    candidates = [
+        index
+        for status in (RagStatus.ACTIVE, RagStatus.SETUP)
+        for index in await RagIndex.get_all({"status": status.value})
+    ]
+    for index in candidates:
+        key = str(index.id)
+        if key in _inflight:
+            continue
+        await index.clear_stale_indexing()
+        if not index.pending and not await index.unstamped_roots():
+            continue
+        if index.status == RagStatus.SETUP and await index.settle_status():
+            continue
+        if index.index_refusal():
+            continue
+        # Cleared BEFORE the work: an edit arriving mid-pass re-marks the index and is caught
+        # next tick. Clearing after would swallow it.
+        index.pending = False
+        await index.save(notify=False)
+        _inflight.add(key)
+        dispatched.append(key)
+        _spawn(index)
+    return dispatched
+
+
+@register_heartbeat_task("rag_index")
+async def _heartbeat_dispatch() -> None:
+    dispatched = await dispatch_due_indexes()
+    if dispatched:
+        logger.info("rag: dispatched %d index pass(es)", len(dispatched))
+
+
+__all__ = [
+    "NO_EMBEDDING",
+    "EmbeddingUnavailable",
+    "default_embedding_model",
+    "dispatch_due_indexes",
+    "embedder_for",
+    "force_pass",
+    "run_index",
+]

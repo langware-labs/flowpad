@@ -4,6 +4,10 @@ Endpoints:
 - ``GET /api/v1/assets/types``    — registered user-asset entity types.
 - ``GET /api/v1/assets/by-path``  — entities whose ``asset_ref`` lives under
   one or more folders. Thin wrapper over ``Entity.assets_by_path``.
+- ``GET /api/v1/assets/resolve``  — THE path → asset resolver: type, id,
+  layout, editor and the row (indexed on a miss). 404 when not an asset.
+- ``GET /api/v1/assets/entity``   — exact ``asset_ref`` → row, else the
+  containing folder asset; ``null`` when nothing owns the path. Never indexes.
 """
 
 from pathlib import Path
@@ -24,10 +28,10 @@ async def _markdown_vaults() -> list[dict]:
     every scan root is reachable via the local compute node's VFS.
 
     A **project** vault is rooted at the project's mount path — the whole
-    project, NOT just its ``docs/`` subfolder — so the menu walks every ``.md``
-    in the project (gitignore-aware, via ``walk_markdown_files``). This is why a
-    project-root file like ``streams_sdk.md`` shows up alongside ``docs/`` files.
-    The single **user** vault stays the user-level ``.claude/docs`` knowledge dir.
+    project — and the menu lists the ``.md`` files in every ``docs``/``doc``
+    folder inside it (gitignore-aware, via ``walk_markdown_files``); markdown
+    outside a doc folder is not a document.
+    The single **user** vault is the user-level ``docs/`` knowledge dir.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
@@ -54,8 +58,8 @@ async def _markdown_vaults() -> list[dict]:
             "record_project_id": record_project_id,
         })
 
-    # User vault — the user-level knowledge dir (~/.claude/docs).
-    user_docs = get_instance_settings().claude_docs_dir
+    # User vault — the user-level knowledge dir (~/docs).
+    user_docs = get_instance_settings().user_docs_dir
     _add(str(user_docs), scope="user", project_id=None,
          record_project_id=None, label="User docs")
 
@@ -107,11 +111,11 @@ async def get_asset_types():
 async def list_markdown_files(
     root: str = Query(..., description="Absolute filesystem path of the vault root to walk."),
 ):
-    """Walk a vault root for every ``.md`` file, honoring ``.gitignore``.
+    """Walk a vault root for the ``.md`` files in its doc folders, honoring ``.gitignore``.
 
-    Powers the Markdown asset menu's folder tree. Returns the COMPLETE set of
-    markdown files under ``root`` (relative POSIX paths), so a project-root file
-    like ``streams_sdk.md`` is included — not just files under ``docs/``. The
+    Powers the Markdown asset menu's folder tree. Returns the markdown files
+    under ``root`` that sit in a ``docs``/``doc`` folder (relative POSIX paths).
+    The
     walk reuses the indexer's gitignore matcher (``_WALK_IGNORED`` fast-path,
     ``.claude/`` force-include, last-match-wins ``.gitignore`` stack).
     """
@@ -163,6 +167,7 @@ async def list_entities_by_path(
             "name": getattr(e, "name", "") or getattr(e, "uname", "") or "",
             "asset_ref": getattr(e, "asset_ref", "") or "",
             "scope": getattr(e, "scope", "") or "",
+            "remote": bool(getattr(e, "remote", False)),
             "modified_at": str(getattr(e, "updated_date", "") or ""),
         } for e in entities],
         "limit": limit,
@@ -170,21 +175,56 @@ async def list_entities_by_path(
     }})
 
 
+@router.get("/api/v1/assets/resolve")
+async def resolve_by_path(
+    path: str = Query(..., description="Absolute machine path of the asset to resolve."),
+):
+    """``{type, id, root, body, editor, entity}`` for the asset at ``path``.
+
+    Filesystem identity and layout come from the asset library. The application
+    adds an Entity projection when its metadata can be parsed. Malformed
+    metadata leaves the document addressable for inspection and repair.
+    """
+    import yaml
+
+    from flow_sdk.assets import Asset
+    from flow_sdk.assets.asset import NotAnAsset
+    from flow_sdk.fs_store.resolve import Resolved, ensure_entity
+
+    try:
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path('/') / candidate
+        asset = Asset.from_path(candidate)
+    except (NotAnAsset, FileNotFoundError) as reason:
+        return JSONResponse(status_code=404, content={"status": "FAIL", "message": str(reason), "data": None})
+    resolved = Resolved(asset.typeid.type, asset.typeid.id, asset.path, asset.layout.body,
+                        asset.info.editor, layout=asset.layout)
+    projection_error = None
+    try:
+        entity = await ensure_entity(resolved)
+        if entity is None:
+            projection_error = 'File metadata could not be read.'
+    except (ValueError, yaml.YAMLError) as error:
+        entity = None
+        projection_error = str(error)
+    return JSONResponse(content={"status": "SUCCESS", "data": {
+        **resolved.to_dict(),
+        "entity": entity.model_dump(mode="json") if entity is not None else None,
+        **({"entity_error": projection_error} if projection_error else {}),
+    }})
+
+
 @router.get("/api/v1/assets/entity")
 async def get_entity_by_path(
     path: str = Query(..., description="Exact asset_ref (file path) of the entity to resolve."),
 ):
-    """Resolve the single entity whose ``asset_ref`` equals ``path``.
+    """The entity row whose ``asset_ref`` equals ``path``, or ``null``.
 
-    Pure DB lookup across every file-backed type (thin wrapper over
-    ``Entity.get_by_asset_ref``) — **no discovery, no recovery scan, no
-    indexing**. Exact match wins; on a miss, a file inside a folder-backed
-    asset (skill, whiteboard, task, ...) resolves to its owning folder entity
-    (deepest ancestor ``asset_ref`` — still a pure indexed DB lookup). Returns
-    the full entity row, or ``null`` when no entity owns the path (caller
-    keeps its fallback). This is the cheap, best-effort path→entity conversion
-    the loader uses; ``/fs-records/{type}/discover`` is the heavy recovery
-    counterpart and stays out of the hot path.
+    Pure DB lookup — no discovery, no indexing (``/assets/resolve`` is the
+    indexing counterpart). Exact match first; on a miss a file INSIDE a
+    folder-backed asset answers its owning folder entity (deepest ancestor
+    ``asset_ref``). ``null`` when no entity owns the path.
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
 

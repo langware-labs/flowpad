@@ -45,11 +45,7 @@ class JSONFsRef(FSRef):
             raise IOError(f"JSONFsRef at {self.path!r} is read-only")
         import json
 
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        Path(self.path).write_text(
-            json.dumps({"data": self._json_data}, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        super().write(json.dumps({"data": self._json_data}, indent=2, ensure_ascii=False))
 
     def get(self, key: str, default=None):
         self._ensure_loaded()
@@ -78,8 +74,7 @@ class JSONFsRef(FSRef):
         """Write raw text content (resets JSON cache)."""
         if self.read_only:
             raise IOError(f"JSONFsRef at {self.path!r} is read-only")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(content, encoding="utf-8")
+        super().write(content)
         self._json_data = None  # invalidate cache
 
     @property

@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { Conversation, type Task } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { buildAssistancePrompt } from './prompt-building';
+import { buildConversationStatusPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -17,18 +17,30 @@ import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
  * can be dropped into the route header (which has no gate of its own). Launch
  * routes through `ensureMapped`, so an unmapped conversation opens the project
  * picker first and the launch continues automatically once a project is chosen.
- * The header prompt is intentionally light — the assistant prompt is
- * informational and the drawer supplies the full context-aware variant.
+ * The header launch opens on the conversation itself — "read it and report its
+ * latest status"; the drawer supplies the full context-aware variant.
+ *
+ * A surface that starts a session on something narrower (the live session, on
+ * its latest message) passes its own `buildPrompt` and `launchOnly`, which
+ * always offers the launch toolbar.
  */
 export function ConversationHeaderSession({
   conversation,
   task,
+  buildPrompt: buildPromptOverride,
+  launchOnly = false,
+  testIdPrefix = 'conversation',
 }: {
   conversation: Conversation | null;
   task?: Task | null;
+  buildPrompt?: () => string;
+  launchOnly?: boolean;
+  testIdPrefix?: string;
 }) {
   const { ensureMapped, dialogProps } = useProjectMappingGate(task ?? undefined, conversation ?? undefined);
-  const buildPrompt = useCallback(() => buildAssistancePrompt([], []), []);
+  // Only called by a launch, which needs a conversation — so it has one here.
+  const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversation!.typeId), [conversation]);
+  const buildPrompt = buildPromptOverride ?? buildStatusPrompt;
   const { conversationProcess, starting, launch, open } = useConversationSession({
     conversation,
     ensureMapped,
@@ -40,12 +52,12 @@ export function ConversationHeaderSession({
   return (
     <>
       <WorkerToolbar
-        hasProcess={!!conversationProcess}
+        hasProcess={!launchOnly && !!conversationProcess}
         starting={starting}
         onOpen={open}
         onLaunch={launch}
         openTitle="Open the conversation session"
-        testIdPrefix="conversation"
+        testIdPrefix={testIdPrefix}
       />
       <OpenProjectComponent {...dialogProps} />
     </>

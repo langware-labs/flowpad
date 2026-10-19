@@ -1,0 +1,66 @@
+"""Filesystem contracts independent of application entities."""
+from __future__ import annotations
+
+import logging
+from typing import Any, ClassVar, Dict, Optional
+
+from pydantic import ValidationError, model_validator
+
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, UnregisteredKind
+from flow_sdk.schema.data_spec.io.native import FreeForm
+from flow_sdk.tags.grammar import normalize_tag
+
+logger = logging.getLogger(__name__)
+
+
+
+
+class DatasetManifestSpec(FrontMatter):
+    """The ``metadata`` section of ``dataset.json`` — the fields a human authors.
+    The denormalized counts are NOT here: the indexer computes them from the
+    rows, and writing them back would make the manifest lie after an append.
+
+    A malformed ``spec`` ON DISK degrades the SLOT, never the dataset: raising
+    would cost every example row, and an ``orphan_action=DELETE`` sweep would
+    then reap rows that parsed fine. That is a disk-read policy — the entity
+    field itself is strict — so it lives here, at the header read.
+    """
+
+    main_file: ClassVar[str | None] = "dataset.json"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lenient_spec(cls, values: Any) -> Any:
+        raw = values.get("spec") if isinstance(values, dict) else None
+        if raw is None or isinstance(raw, type):
+            return values
+        try:
+            if isinstance(raw, str):
+                # A kind NAME is checked for its grammar only. Whether it resolves is a question for
+                # whoever reads the rows typed (``Dataset._dataset_type``): the walk reads a dataset
+                # before the data schemas nested in it, so a name may not resolve YET -- and a name
+                # that does not resolve yet is not malformed.
+                normalize_tag(raw)
+                return values
+            DatasetSpec.parse(raw)
+        except UnregisteredKind:
+            # The same rule as a kind NAME above: a kind that does not resolve YET is not malformed.
+            # Dropping the spec here made every later read fall back to untyped artifact rows.
+            return values
+        except (ValueError, ValidationError) as exc:
+            logger.warning("[dataset] ignoring malformed `spec`: %s", exc)
+            return {k: v for k, v in values.items() if k != "spec"}
+        return values
+
+    title: Optional[str] = None
+    description: Optional[str] = None
+    #: The DataSource whose items this dataset curates (empty when hand-authored).
+    source_id: Optional[str] = None
+    data_layout: Optional[str] = None
+    field_spec: Optional[Dict[str, str]] = None
+    delimiter: Optional[str] = None
+    spec: Optional[ShapeForm] = None
+    #: The free ``data`` section of ``dataset.json`` — the document's second half.
+    data: Optional[FreeForm] = None

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { FlowDataFactory } from './flow-data-factory';
-import { FlowData, FlowDataSource, FlowDataType } from './flow-data';
+import { FlowData, FlowDataAttribute, FlowDataSource, FlowDataType } from './flow-data';
 import { FlowError, FlowErrorEvent, FlowErrorUtils } from './flow-errors';
 import { FlowDataEvents, FlowEvents } from './flow-events';
 import { GroupChannelKey } from './group-channel-key';
@@ -511,6 +511,7 @@ export class FlowStreamProcessor extends EventEmitter {
 
     // Set source to 'stream' for all FlowData created by streaming processor
     flowData.source = FlowDataSource.Stream;
+    flowData.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE] = 'FlowStreamProcessor';
 
     this.registerElementLogging(flowData);
 

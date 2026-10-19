@@ -1,12 +1,35 @@
-import { useId, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { Paperclip, FileUp, Boxes, X, ChevronDown } from 'lucide-react';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
-import {
-  displayLabelForTypeid,
-  parseTypeid,
-} from '@src/components/asset-manager/asset-row-helpers';
+import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
+import { displayLabelForDescriptor, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
+
+/**
+ * Wires a list of picked assets to `AssetManagerPopover`'s selection props.
+ *
+ * Selection is keyed by TYPEID, not `(typeid, source)`: the same asset reachable
+ * through two sources is one asset, and the wire payload (`assetReferences`) is
+ * a list of typeids — so a source-keyed dedupe would ship the same typeid twice.
+ * Every send surface that collects assets shares this, so that rule is stated
+ * once.
+ */
+export function useAssetRefSelection(assetRefs: AssetDescriptor[], onChange: (next: AssetDescriptor[]) => void) {
+  const selectedTypeIds = useMemo(() => assetRefs.map((a) => a.typeid), [assetRefs]);
+  const onPick = useCallback(
+    (d: AssetDescriptor) => {
+      if (assetRefs.some((a) => a.typeid === d.typeid)) return;
+      onChange([...assetRefs, d]);
+    },
+    [assetRefs, onChange],
+  );
+  const onUnpick = useCallback(
+    (d: AssetDescriptor) => onChange(assetRefs.filter((a) => a.typeid !== d.typeid)),
+    [assetRefs, onChange],
+  );
+  return { selectedTypeIds, onPick, onUnpick };
+}
 
 interface AttachMenuProps {
   assetRefs: AssetDescriptor[];
@@ -16,6 +39,8 @@ interface AttachMenuProps {
   /** Suppress the inline asset-chip list (parent renders chips externally
    *  via {@link AssetRefChips} — used by composer rows in flex layouts). */
   hideAssetList?: boolean;
+  /** Which assets the picker offers. Default: everything. */
+  assetFilter?: (descriptor: AssetDescriptor) => boolean;
 }
 
 /**
@@ -23,7 +48,7 @@ interface AttachMenuProps {
  *
  * Implemented as two stacked Radix Popovers driven by a single piece of state
  * (``view``): ``"menu"`` shows the File/Asset choice; ``"asset"`` swaps the
- * content for the AssetPickerPopover. We deliberately avoid nesting
+ * content for the AssetManagerPopover. We deliberately avoid nesting
  * DropdownMenu + Popover — the portal/focus cascade between two Radix
  * primitives keeps closing the inner popover immediately after open.
  */
@@ -33,16 +58,14 @@ export function AttachMenu({
   onFilesPicked,
   disabled,
   hideAssetList,
+  assetFilter,
 }: AttachMenuProps) {
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'menu' | 'asset'>('menu');
 
-  const handlePick = (d: AssetDescriptor) => {
-    if (assetRefs.some((a) => a.typeid === d.typeid && a.source === d.source)) return;
-    onAssetRefsChange([...assetRefs, d]);
-  };
+  const selection = useAssetRefSelection(assetRefs, onAssetRefsChange);
 
   const openMenu = (next: boolean) => {
     setOpen(next);
@@ -65,7 +88,7 @@ export function AttachMenu({
           <PopoverContent align="start" className="w-40 p-1">
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent"
               onClick={() => {
                 setOpen(false);
                 fileInputRef.current?.click();
@@ -77,7 +100,7 @@ export function AttachMenu({
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent"
               onClick={() => setView('asset')}
               data-testid="attach-menu-asset"
             >
@@ -87,12 +110,10 @@ export function AttachMenu({
           </PopoverContent>
         </Popover>
 
-        {/* AssetPickerPopover — opens centered on screen when
-            ``view === 'asset'``. The trigger is incidental (the menu fans out
-            to it programmatically), so the picker renders as a centered modal
-            rather than anchored to the Attach button. */}
-        <AssetPickerPopover
-          trigger={<span className="sr-only" aria-hidden />}
+        {/* Opens centered on screen when ``view === 'asset'``. The menu fans out
+            to it programmatically with no anchor of its own, so it renders as a
+            centered modal rather than anchored to the Attach button. */}
+        <AssetManagerPopover
           centered
           open={open && view === 'asset'}
           onOpenChange={(next) => {
@@ -101,8 +122,11 @@ export function AttachMenu({
               setView('menu');
             }
           }}
-          onPick={handlePick}
-          filter={() => true}
+          filter={assetFilter}
+          {...selection}
+          // Attach lives in forms (a message, a diagnosis request): looking at an asset must not
+          // leave the screen and throw away what was typed.
+          openInWindow
           searchPlaceholder="Search assets…"
         />
 
@@ -141,13 +165,14 @@ export function AssetRefChips({ assetRefs, onChange, disabled }: AssetRefChipsPr
     <ul className="space-y-1" data-testid="attach-menu-asset-list">
       {assetRefs.map((a) => {
         const { type } = parseTypeid(a.typeid);
-        const label = displayLabelForTypeid(a.typeid);
+        const TypeIcon = iconForType(type);
+        const label = displayLabelForDescriptor(a);
         return (
           <li
             key={`${a.typeid}|${a.source}`}
             className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-2 py-1 text-xs"
           >
-            <Boxes className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <TypeIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
             <span className="flex-1 truncate text-foreground" title={a.typeid}>
               {label}
             </span>

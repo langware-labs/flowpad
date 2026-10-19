@@ -19,12 +19,10 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.models.entities  # noqa: F401 — full registry (skill/spec resolve)
-
 from flow_sdk.app.actions import message_attachment_action as ma_action
 from flow_sdk.app.actions.message_attachment_action import (
     handle_attachment_install,
     handle_attachment_uninstall,
-    handle_staged_file_content,
     handle_staged_files,
 )
 from flow_sdk.builtin.flow_message_bundle import unpack_bundle
@@ -33,6 +31,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -109,7 +108,7 @@ async def test_install_project_scope_copies_indexes_and_stamps(tmp_path, ids):
 
     project_root = tmp_path / "proj"
     project_root.mkdir()
-    project = Project(name="dst", fs_storage_mount_path=str(project_root))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(project_root))
     await project.save(notify=False)
 
     res = await handle_attachment_install(ma.id, "project", project.id)
@@ -154,7 +153,7 @@ async def test_install_user_scope_lands_under_claude_home_root(tmp_path, ids, mo
     ma = await _stage(tmp_path, ids)
     user_root = tmp_path / "home"
     user_root.mkdir()
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
 
     res = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
@@ -173,7 +172,7 @@ async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypat
     # test_placement_matrix's support cross-product.
     import flow_sdk.app.actions.message_attachment_action as ma_action
 
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: tmp_path / "home")
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: tmp_path / "home")
     await _stage(tmp_path, ids)
     spec_ma = await MessageAttachment.get_one(
         {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-{ids.spec}")}
@@ -186,7 +185,7 @@ async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypat
 async def test_install_conflict_409_then_overwrite_replaces(tmp_path, ids):
     ma = await _stage(tmp_path, ids)
     project_root = tmp_path / "proj"
-    project = Project(name="dst2", fs_storage_mount_path=str(project_root))
+    project = Project(name=unique_project_name("dst2"), fs_storage_mount_path=str(project_root))
     await project.save(notify=False)
 
     # A DIFFERENT skill already occupies the destination path.
@@ -209,7 +208,7 @@ async def test_install_conflict_409_then_overwrite_replaces(tmp_path, ids):
 async def test_redownload_refreshes_staging_and_preserves_install_state(tmp_path, ids, monkeypatch):
     ma = await _stage(tmp_path, ids)
     user_root = tmp_path / "home"
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     await handle_attachment_install(ma.id, "user", None)
 
     # Second unpack of an updated bundle: same deterministic MA id, staging
@@ -254,8 +253,8 @@ async def _stage_raw_file(tmp_path: Path, fm_id: str, fname: str, body: str) -> 
 
 async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monkeypatch):
     """A raw markdown file rides the full staged→install→uninstall lifecycle:
-    project scope copies to <project>/.claude/docs/<name> and indexes it as a
-    MARKDOWN record; user scope copies to <home>/.claude/docs/<name>; uninstall
+    project scope copies to <project>/docs/<name> and indexes it as a
+    MARKDOWN record; user scope copies to <home>/docs/<name>; uninstall
     removes the file and reverts to staged. Regression for SAPAK-DEMO-SPEC.md."""
     import uuid
 
@@ -271,14 +270,14 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     # --- project scope --------------------------------------------------------
     project_root = tmp_path / "proj"
     project_root.mkdir()
-    project = Project(name="dst", fs_storage_mount_path=str(project_root))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(project_root))
     await project.save(notify=False)
 
     res = await handle_attachment_install(ma.id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
-    installed = project_root / ".claude" / "docs" / fname
+    installed = project_root / "docs" / fname
     assert installed.exists() and "Staged raw-file body." in installed.read_text(encoding="utf-8")
-    # Markdown record materialized under the project (the .claude/docs walker
+    # Markdown record materialized under the project (the docs walker
     # emits it as a Docs/Markdown row stamped with the project).
     md_rows = await Markdown.get_all({"project_id": project.id})
     stem = fname.rsplit(".", 1)[0]
@@ -300,15 +299,15 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     # --- user scope (install for me) ------------------------------------------
     user_root = tmp_path / "home"
     user_root.mkdir()
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     res3 = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res3, ApiSuccessResponse), getattr(res3, "message", res3)
-    assert (user_root / ".claude" / "docs" / fname).exists()
+    assert (user_root / "docs" / fname).exists()
     again = await MessageAttachment.get_one({"id": ma.id})
     assert again.scope == "user" and again.installed_root == str(user_root)
 
 
-async def test_staged_read_surface_lists_and_reads(tmp_path, ids):
+async def test_staged_listing_locates_the_asset_by_its_shape(tmp_path, ids):
     ma = await _stage(tmp_path, ids)
 
     res = await handle_staged_files(ma.id)
@@ -316,13 +315,46 @@ async def test_staged_read_surface_lists_and_reads(tmp_path, ids):
     paths = {f["path"] for f in res.data["files"]}
     assert f".claude/skills/{ids.leaf}/SKILL.md" in paths
     assert f".claude/skills/{ids.leaf}/helper.py" in paths
+    # The skill's folder, found by its shape's main document — review opens it there.
+    assert res.data["asset_root"] == f".claude/skills/{ids.leaf}"
     assert res.data["main_file"] == f".claude/skills/{ids.leaf}/SKILL.md"
+    assert [f["path"] for f in res.data["files"] if f["is_main"]] == [res.data["main_file"]]
     assert Path(res.data["abs_root"]).is_dir()
 
-    content = await handle_staged_file_content(ma.id, f".claude/skills/{ids.leaf}/SKILL.md")
-    assert isinstance(content, ApiSuccessResponse)
-    assert SENTINEL in content.data["content"] and content.data["truncated"] is False
 
-    # Path traversal is refused.
-    bad = await handle_staged_file_content(ma.id, "../../../etc/passwd")
-    assert isinstance(bad, ApiFailResponse) and bad.status_code == 400
+def _staged_tree(root: Path, files: list[str]) -> list[str]:
+    for rel in files:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("x")
+    return sorted(files)
+
+
+@pytest.mark.parametrize(
+    ("asset_type", "files", "asset_root", "main"),
+    [
+        # A deck bundle: the folder sits under the bundle's wrapper dirs, and its
+        # .flow capsule sorts first — the shape's main (deck.json) decides.
+        (
+            "deck",
+            ["agentic-assets/deck/arch/.flow/capsules/identity.json", "agentic-assets/deck/arch/arch.html", "agentic-assets/deck/arch/deck.json"],
+            "agentic-assets/deck/arch",
+            "agentic-assets/deck/arch/deck.json",
+        ),
+        # A header-only task row: no task.md, so no task layout to open.
+        ("task", ["header.json"], None, "header.json"),
+        # A raw file: the file type's shape does not claim a PDF.
+        ("file", ["report.pdf"], None, "report.pdf"),
+    ],
+)
+def test_staged_asset_is_located_by_its_type_shape(tmp_path, asset_type, files, asset_root, main):
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    paths = _staged_tree(tmp_path, files)
+    assert ma_action._locate_staged_asset(tmp_path, paths, SchemaRegistry.get(asset_type)) == (asset_root, main)
+
+
+def test_staged_asset_at_the_staged_dir_itself_is_the_empty_root(tmp_path):
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    paths = _staged_tree(tmp_path, ["spec.md"])
+    assert ma_action._locate_staged_asset(tmp_path, paths, SchemaRegistry.get("spec")) == ("", "spec.md")

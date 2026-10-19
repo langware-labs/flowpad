@@ -1,15 +1,18 @@
-import {
-  AgenticProcess,
-  isBusy,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, isBusy, TypeId, WorkerStatus, type StatusBearingProcess } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
-import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
+import {
+  CompactExecutionInput,
+  type CompactExecutionInputHandle,
+} from '@src/components/entity-execution-panel/CompactExecutionInput';
+import { BackgroundWorkChip } from '@src/components/entity-execution-panel/BackgroundWorkChip';
+import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
+import { isTerminalStatus } from '@src/components/entity-execution-panel/ChatActivityLine';
+import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, type Ref } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useChatPlanMode } from './chat-plan-mode-context';
 import { ChatToolsMenu } from './ChatToolsMenu';
@@ -24,35 +27,68 @@ interface ChatComposerBarProps {
    * by InteractiveTerminal so chat paste reuses the exact PTY paste behaviour.
    */
   onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
+  /** Forwarded to the composer so the owner can insert text at its caret. */
+  composerRef?: Ref<CompactExecutionInputHandle>;
 }
 
 /**
  * The chat composer for an interactive agent tab, lifted out of SimpleChatPane so
  * it can live inside the shared TerminalBottomRibbon (one unified bottom ribbon
  * instead of two stacked rows). Sends through the standard `prompt()` (routed to
- * the PTY for a visible process) and interrupts the in-flight turn via
- * `interruptTurn()`. Status + busy come from the gold entity, reflected live.
+ * the PTY for a visible process), enqueues mid-turn sends onto the backend prompt
+ * queue, and interrupts the in-flight turn via `interruptTurn()`. Status + busy
+ * come from the gold entity, reflected live.
  */
-export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps) {
+export function ChatComposerBar({ process, onPasteImages, composerRef }: ChatComposerBarProps) {
   const { t } = useLingui();
-  const [sending, setSending] = useState(false);
   const plan = useChatPlanMode();
+
+  // Reflect the gold entity reactively — the prop comes from the loader context
+  // and may not re-render on data_op patches (worker_status flips on transcript
+  // transitions). Same pattern as EntityExecutionPanel / SimpleChatPane. Read
+  // before the handlers because the send path branches on live `busy`.
+  const processTypeId = useMemo(() => new TypeId(AgenticProcess.type, process.id), [process.id]);
+  const { data: liveProcess } = useEntity<AgenticProcess>(processTypeId, { watch: true });
+  const reflected = liveProcess ?? process;
+
+  // Headless and PTY turns both broadcast status live now, so the reactive
+  // entity is the single source. The backend's turn-in-flight `busy` boolean
+  // (serialized alongside `status`; read via `isBusy`) drives the Stop button.
+  // Routing mid-turn sends to the queue is `promptOrEnqueue`'s job (called
+  // below), so the composer stays USABLE while busy instead of being locked
+  // out. A dead PTY reads ¬busy and is relaunched by prompt(), so it stays
+  // sendable.
+  const indicatorProcess = reflected;
+  const busy = isBusy(indicatorProcess);
+
+  // Gate the pill's "turn in flight" collapse on the same optimistic signal
+  // ChatActivityLine uses (`isPrompting` OR `busy`, see useTurnActivity), not
+  // on raw server-confirmed `busy` alone. `getDisplayStatus` already collapses
+  // a non-busy workerStatus to WORKING once `busy` flips true, but that flip
+  // only lands after the backend's websocket broadcast — until then this pill
+  // rendered the stale terminal workerStatus (e.g. INACTIVE) verbatim, for the
+  // whole round trip during which the activity line — gated on `active` —
+  // already read "Working" (FLOWPAD-2095).
+  const turn = useTurnActivity(reflected);
+  const workerStatus = turn.status ?? reflected.workerStatus;
+  const displayStatusSource: StatusBearingProcess =
+    turn.active && isTerminalStatus(workerStatus)
+      ? { status: reflected.status, workerStatus: WorkerStatus.WORKING, busy: reflected.busy }
+      : indicatorProcess;
 
   const handleSend = useCallback(
     async (text: string) => {
-      if (sending) return;
-      setSending(true);
+      // `promptOrEnqueue` enqueues mid-turn sends instead of racing a second
+      // turn, so the composer stays usable while busy (queue chip shows count).
       try {
         // Plan toggle on → send this turn read-only (`--permission-mode plan`).
-        await process.prompt(text, undefined, plan.planPending ? { permissionMode: 'plan' } : undefined);
+        await reflected.promptOrEnqueue(text, undefined, plan.planPending ? { permissionMode: 'plan' } : undefined);
       } catch (err) {
-        console.error('[ChatComposerBar] prompt failed', err);
+        console.error('[ChatComposerBar] send failed', err);
         notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
-      } finally {
-        setSending(false);
       }
     },
-    [process, sending, plan.planPending, t],
+    [reflected, plan.planPending, t],
   );
 
   const handleStop = useCallback(async () => {
@@ -64,35 +100,24 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
     }
   }, [process, t]);
 
-  // Reflect the gold entity reactively — the prop comes from the loader context
-  // and may not re-render on data_op patches (worker_status flips on transcript
-  // transitions). Same pattern as EntityExecutionPanel / SimpleChatPane.
-  const processTypeId = useMemo(() => new TypeId(AgenticProcess.type, process.id), [process.id]);
-  const { data: liveProcess } = useEntity<AgenticProcess>(processTypeId, { watch: true });
-  const reflected = liveProcess ?? process;
-
-  // Headless and PTY turns both broadcast status live now, so the reactive
-  // entity is the single source. One boolean gates the composer: the backend's
-  // turn-in-flight `busy` boolean (serialized alongside `status`; read via
-  // `isBusy`). A dead PTY reads ¬busy and is relaunched by prompt(), so it stays
-  // sendable.
-  const indicatorProcess = reflected;
-  const busy = isBusy(indicatorProcess);
-
   return (
     <CompactExecutionInput
       bare
       onSend={handleSend}
-      disabled={sending || busy}
       running={busy}
       onStop={handleStop}
       onPasteImages={onPasteImages}
+      handleRef={composerRef}
+      animateEnqueue
+      draftScope={process.id}
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
-      onShiftTab={plan.enabled ? plan.togglePlan : undefined}
+      onShiftTab={plan.planToggleEnabled ? plan.togglePlan : undefined}
       leadingSlot={
         <div className="flex items-center gap-2">
           <ChatToolsMenu />
-          {plan.enabled ? (
+          <QueueChip process={reflected} />
+          <BackgroundWorkChip process={reflected} />
+          {plan.planToggleEnabled ? (
             <button
               type="button"
               onClick={plan.togglePlan}
@@ -114,11 +139,16 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       }
       statusSlot={
         <span
-          title={getStatusLabel(indicatorProcess)}
+          title={getStatusLabel(displayStatusSource)}
           className="flex items-center"
           data-testid="simple-chat-status"
         >
-          <ProcessStatusIndicator process={indicatorProcess} showLabel size="sm" className="px-1 text-muted-foreground" />
+          <ProcessStatusIndicator
+            process={displayStatusSource}
+            showLabel
+            size="sm"
+            className="px-1 text-muted-foreground"
+          />
         </span>
       }
     />

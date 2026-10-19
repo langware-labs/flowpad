@@ -4,18 +4,19 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from flow_sdk._compat import UTC
-from typing import AsyncIterator, Callable, Generic, List, Optional, Tuple
-from flow_sdk.settings import is_desktop
+from typing import AsyncIterator, Awaitable, Callable, Generic, List, Optional, Tuple
+
 from pydantic import BaseModel
 
-from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
-from flow_sdk.api.type_id import TypeId
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, RecordType
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.entity_factory import type_registry as _entity_registry
+from flow_sdk._compat import UTC
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, EntityChild, EntityLocation, RecordType
 from flow_sdk.db.drivers.path_model import NodesPath
 from flow_sdk.db.drivers.query import QueryFilter
+from flow_sdk.flowpad_types.enums import BuiltInConstant, RelationshipDirection
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.entity_factory import type_registry as _entity_registry
+from flow_sdk.settings import is_desktop
 
 
 # Stub for transaction handling
@@ -75,7 +76,14 @@ class DBConfig:
         database=None,
         commit_immediately=False,
         debug_commit_immediately=False,
+        pooled=True,
     ):
+        # Reuse DB connections instead of opening one per operation. Default on:
+        # a fresh aiosqlite connection costs ~3.7ms (new thread + 6 PRAGMAs)
+        # before any work. Test harnesses that swap a driver in globally and
+        # then close it should pass pooled=False — a pooled displaced driver
+        # keeps live connections to a file the test is about to delete.
+        self.pooled = pooled
         self.uri = uri
         self.host = host
         self.port = port
@@ -99,8 +107,8 @@ class DBDriver(Generic[RecordType]):
 
     @staticmethod
     def apply_create_fields(record: DBBaseRecord):
-        from flow_sdk.request_context.methods import get_current_request_info
         from flow_sdk.core.entity.entity_model import _REMOTE_REFLECTION
+        from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         current_time = datetime.now(UTC)
         # created_through/updated_through are local provenance (not identity) and
@@ -153,8 +161,8 @@ class DBDriver(Generic[RecordType]):
 
     @staticmethod
     def apply_update_fields(record: DBBaseRecord):
-        from flow_sdk.request_context.methods import get_current_request_info
         from flow_sdk.core.entity.entity_model import _REMOTE_REFLECTION
+        from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         current_time = datetime.now(UTC)
         # updated_through is local provenance, identical in both modes — stamp once.
@@ -195,6 +203,26 @@ class DBDriver(Generic[RecordType]):
         if schema validation is needed.
         """
         pass
+
+    async def get_entity_locations(self, entity_type: str, *, active_only: bool = False) -> list[EntityLocation]:
+        """Location projection; drivers may avoid constructing complete entities."""
+        rows = await self.get_all(QueryFilter(type=entity_type))
+        if active_only:
+            rows = sorted(
+                (row for row in rows if getattr(row, "last_active_at", None)),
+                key=lambda row: row.last_active_at,
+                reverse=True,
+            )
+        return [
+            EntityLocation(
+                id=row.id,
+                name=getattr(row, "name", None),
+                uname=row.uname,
+                fs_storage_mount_path=getattr(row, "fs_storage_mount_path", None),
+                system=bool(getattr(row, "system", False)),
+            )
+            for row in rows
+        ]
 
     async def create_entity_fulltext_index(self, entity_type: str, fulltext_field: str):
         raise NotImplementedError("create_entity_fulltext_index is not implemented")
@@ -312,6 +340,52 @@ class DBDriver(Generic[RecordType]):
         """Atomically update only recency; return ``(current, stamped)``."""
         raise NotImplementedError("stamp_last_active_at is not implemented")
 
+    async def stamp_tab_order(self, entity_id: str, tab_order: int) -> tuple[Optional[RecordType], bool]:
+        """Atomically update only ``tab_order``; no-op on hidden/missing rows."""
+        raise NotImplementedError("stamp_tab_order is not implemented")
+
+    async def compare_and_set_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        expected_value: object,
+        value: object,
+    ) -> tuple[Optional[RecordType], bool]:
+        """Atomically patch one JSON data field on an existing matching row."""
+        raise NotImplementedError("compare_and_set_data_field is not implemented")
+
+    async def update_existing_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        value: object,
+    ) -> tuple[Optional[RecordType], bool]:
+        """Atomically patch one JSON field without ever inserting a missing row."""
+        raise NotImplementedError("update_existing_data_field is not implemented")
+
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncIterator[None]:
+        """Group existing-row patches under one writer transaction."""
+        raise NotImplementedError("write_transaction is not implemented")
+        yield
+
+    async def update_existing_data_fields(
+        self, entity_id: str, entity_type: str, values: dict[str, object]
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically patch fields without creating a missing entity."""
+        raise NotImplementedError("update_existing_data_fields is not implemented")
+
+    def defer_to_commit(self, callback: Callable[[], Awaitable[None]]) -> bool:
+        """Synchronously queue ``callback`` to run after the transaction bound to this context commits.
+        ``False`` when none is bound — the caller runs it now (the write it follows is already durable)."""
+        return False
+
+    async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
+        """Run a notification only after the ambient write commits successfully."""
+        raise NotImplementedError("after_commit is not implemented")
+
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None):
         raise NotImplementedError("create is not implemented")
 
@@ -324,7 +398,8 @@ class DBDriver(Generic[RecordType]):
         ``source_entity`` is *structural scope*, not authorization (authorization is
         the hub's concern, not the local store's): ``None`` or a ``user`` source means
         "no scope" (return all matching rows), while a non-user source restricts the
-        result to that entity's descendants via the ``is_child`` role edges.
+        result to that entity's descendants via the ``is_child`` role edges (a
+        ``project`` source also matches rows whose ``project_id`` is the project).
         """
         raise NotImplementedError("get_all is not implemented")
 
@@ -448,24 +523,20 @@ _default_driver = "sqlite"  # Default to SQLite driver
 # swap. It is a plain ``asyncio.Lock`` taken inside the already-async call
 # paths (no event-loop reaching).
 #
-# ``_lifecycle_in_progress`` is the same-task bypass: the mutator's own nested
-# session opens (bootstrap rebuild, clear_index, entity-cache work that runs
-# *while it holds the lock*) must NOT re-acquire the non-reentrant lock or
-# they self-deadlock. Modeled on the existing ``_standalone_session_var``
-# same-task handoff in sqlite_driver.py: a ContextVar set inside the held
-# region, so the holder's coroutine sees it True.
+# ``_lifecycle_in_progress`` is the same-task bypass: a mutator's own nested
+# session opens during the atomic swap must NOT re-acquire the non-reentrant
+# lock or they self-deadlock. Modeled on the existing
+# ``_standalone_session_var`` same-task handoff in sqlite_driver.py: a
+# ContextVar set inside the held region, so the holder's coroutine sees it
+# True.
 #
-# Context propagation note: a child task spawned *inside* the held region
-# (e.g. anything bootstrap rebuild launches via create_task) inherits the
-# True snapshot and therefore also bypasses. That is correct AND required:
-# by the time the rebuild/bootstrap runs, the close→unlink→init→repoint has
-# already completed, so those nested opens target the freshly-rebuilt engine
-# — there is no longer any deleted file to straddle, and forcing them to
-# block on the lock the parent still holds would deadlock. Foreign request /
-# WS / indexer work arrives as top-level tasks created by the ASGI server
-# OUTSIDE this context (their snapshot is the default False), so they
-# correctly block on the lock until the swap completes. Verified: a task
-# created outside the guard blocks; one created inside inherits the bypass.
+# Context propagation note: a child task spawned inside the held region
+# inherits the True snapshot and therefore also bypasses. Lifecycle mutators
+# must only spawn such work after the destructive swap is complete. Foreign
+# request / WS / indexer work arrives as top-level tasks created outside this
+# context (their snapshot is the default False), so it correctly blocks until
+# the swap completes. Verified: a task created outside the guard blocks; one
+# created inside inherits the bypass.
 _DB_LIFECYCLE_LOCK = asyncio.Lock()
 _lifecycle_in_progress: ContextVar[bool] = ContextVar("db_lifecycle_in_progress", default=False)
 
@@ -487,10 +558,11 @@ def remove_db_sidecars(db_path: Path) -> None:
 async def db_lifecycle_guard() -> "AsyncIterator[None]":
     """Hold the DB-lifecycle lock for the duration of a destructive swap.
 
-    Acquire around the full close→unlink/swap→init→repoint(→bootstrap) block
-    of a lifecycle mutator. Sets ``_lifecycle_in_progress`` for the holder's
-    coroutine so its own nested session opens bypass the lock instead of
-    self-deadlocking on this non-reentrant lock.
+    Acquire around the full close→unlink/swap→init→repoint block of a
+    lifecycle mutator. Record-writing bootstrap/reseed work must run after
+    releasing this guard to preserve record-lock→session-lock ordering. Sets
+    ``_lifecycle_in_progress`` for the holder's coroutine so its own nested
+    session opens bypass this non-reentrant lock.
     """
     async with _DB_LIFECYCLE_LOCK:
         token = _lifecycle_in_progress.set(True)

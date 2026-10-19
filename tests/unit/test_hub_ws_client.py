@@ -67,6 +67,42 @@ async def test_ws_connect_without_credentials_does_not_attempt_network(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_ws_connect_honors_standard_proxy_discovery(monkeypatch, memory_keyring):
+    """Restricted sandboxes reach both REST and WSS through HTTPS_PROXY."""
+    import flow_sdk.cloud_client.ws_client as ws_client
+
+    captured = {}
+
+    class FakeSocket:
+        async def recv(self):
+            return json.dumps({"message_type": "ws_ready_msg"})
+
+    class FakeConnection:
+        async def __aenter__(self):
+            return FakeSocket()
+
+        async def __aexit__(self, *args):
+            return False
+
+    def fake_connect(*args, **kwargs):
+        captured.update(kwargs)
+        return FakeConnection()
+
+    monkeypatch.setattr(ws_client.websockets, "connect", fake_connect)
+    credentials = UserHubCredentials(api_key="token", expires_at=time.time() + 60, user={"id": "u1"})
+
+    async def load_test_credentials():
+        return credentials
+
+    monkeypatch.setattr(ws_client, "_load_ws_credentials", load_test_credentials)
+
+    async with connect_hub_websocket(ApiConfig(api_base_url="https://hub.test/api/v1")):
+        pass
+
+    assert captured["proxy"] is True
+
+
+@pytest.mark.asyncio
 async def test_ws_pre_expired_credentials_clear_login_and_broadcast(
     monkeypatch,
     memory_keyring,
@@ -130,3 +166,20 @@ async def test_ws_policy_violation_close_clears_login(memory_keyring, capture_br
     assert load_credentials() is None
     assert not is_logged_in()
     assert any(msg.get("message_type") == "auth_expired_msg" and msg.get("reason") == "rejected" for msg in capture_broadcast)
+
+
+@pytest.mark.asyncio
+async def test_ws_policy_violation_from_superseded_key_preserves_new_login(memory_keyring, capture_broadcast):
+    manager = HubWebSocketManager()
+    save_credentials(UserHubCredentials(api_key="new-token", expires_at=time.time() + 60, user={"id": "u1"}))
+    set_user({"id": "u1"})
+
+    handled = await manager._handle_closed_connection(
+        type("Closed", (), {"code": 1008, "reason": "policy violation"})(),
+        rejected_api_key="old-token",
+    )
+
+    assert handled is False
+    assert load_credentials().api_key == "new-token"
+    assert is_logged_in()
+    assert not capture_broadcast

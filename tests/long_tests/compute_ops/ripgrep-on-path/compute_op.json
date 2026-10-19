@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "name": "ripgrep-on-path",
+  "label": "ripgrep",
+  "description": "The rg CLI is on the PATH.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "apt-get install -y ripgrep"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "command -v rg"
+    }
+  }
+}

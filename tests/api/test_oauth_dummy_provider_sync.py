@@ -1,0 +1,345 @@
+"""The same connection, exercised through each topology, verified by VALUE.
+
+Three modes:
+
+1. hub only — the token lives on the hub and the desktop holds nothing.
+2. desktop login while the hub holds nothing — a full provider round trip, and
+   the token ends up on both sides.
+3. desktop login while the hub already holds it — no provider round trip at all;
+   the desktop adopts what is already there.
+
+Because the provider is fake it can report what it issued, so every assertion is
+`provider issued X` ∧ `hub holds X` ∧ `desktop holds X` — never `status ==
+AVAILABLE`, which is reached purely from the presence of a name-matching row and
+proves nothing about the value (see `test_env_var_table.py:46-64`).
+
+The negatives at the bottom are the ones that would catch this file passing for
+the wrong reason.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from flow_sdk.app.actions.oauth_action import _adopt_hub_credential, _handle_wait_callback
+from flow_sdk.builtin.user import User
+from flow_sdk.core.oauth.hub_oauth import hub_credential_value, hub_holds_credential
+from tests.api import _oauth_sync_helpers as fixtures
+from tests.api._oauth_sync_helpers import (
+    HUB_CREDENTIALS_NAME,
+    LOCAL_CREDENTIALS_NAME,
+    PROVIDER,
+    assert_in_sync,
+    local_value,
+)
+
+# Register this module's imported pytest fixtures without shadowing imports.
+_isolate_oauth_module_state = fixtures._isolate_oauth_module_state
+dummy_provider = fixtures.dummy_provider
+hub = fixtures.hub
+local_dummy_provider = fixtures.local_dummy_provider
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
+
+
+async def _user(name: str) -> User:
+    user = User(name=name)
+    await user.save()
+    return user
+
+
+async def _adopt(user, monkeypatch) -> None:
+    """Run the adoption the way `wait-callback` does, as this request's user."""
+    monkeypatch.setattr(
+        "flow_sdk.request_context.methods.get_current_request_user_fresh",
+        _returning(user),
+    )
+    await _adopt_hub_credential(PROVIDER, LOCAL_CREDENTIALS_NAME, HUB_CREDENTIALS_NAME)
+
+
+def _returning(value):
+    async def _fn(*_a, **_kw):
+        return value
+
+    return _fn
+
+
+# ── mode 1: hub only ─────────────────────────────────────────────────────────
+
+
+async def test_hub_only_leaves_the_token_on_the_hub(hub, dummy_provider):
+    """A cloud-only flow stores its token without any desktop adoption."""
+    issued = hub.complete_flow()
+
+    assert issued == dummy_provider.latest_token
+    assert await hub_holds_credential(HUB_CREDENTIALS_NAME) is True
+    assert await hub_credential_value(HUB_CREDENTIALS_NAME) == issued
+
+
+async def test_dynamic_hub_provider_also_stores_its_token_locally(hub, dummy_provider, monkeypatch):
+    """A provider needs no local registry entry to store its completed grant."""
+    hub.complete_flow()
+    user = await _user("hub-only-user")
+
+    await _adopt(user, monkeypatch)
+
+    assert_in_sync(dummy_provider, hub, await local_value(user))
+    assert user.get_env_var(LOCAL_CREDENTIALS_NAME) is not None
+
+
+# ── mode 2: desktop login, hub holds nothing yet ─────────────────────────────
+
+
+async def test_desktop_login_with_an_empty_hub_syncs_both_sides(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    assert hub.held is None, "precondition: the hub holds nothing"
+    user = await _user("mode2-user")
+
+    hub.complete_flow()          # the browser + provider round trip
+    await _adopt(user, monkeypatch)  # what wait-callback does once the hub has it
+
+    assert_in_sync(dummy_provider, hub, await local_value(user))
+
+
+async def test_the_stored_value_is_the_exact_string_the_provider_issued(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    """Not 'a token' — THAT token. The dummy server's values appear nowhere else
+    in the fixtures, so finding this one in SOD proves it travelled the chain."""
+    user = await _user("mode2-exact-user")
+    issued = hub.complete_flow()
+    await _adopt(user, monkeypatch)
+
+    assert await local_value(user) == issued
+    assert issued.startswith("dmy_tok_1_")
+
+
+# ── mode 3: desktop login, hub already holds it ──────────────────────────────
+
+
+async def test_desktop_login_when_the_hub_already_holds_it_skips_the_provider(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    """The proof is a COUNTER, not a clock: the provider is never called again."""
+    hub.complete_flow()
+    before = dummy_provider.counts
+    user = await _user("mode3-user")
+
+    await _adopt(user, monkeypatch)
+
+    assert dummy_provider.counts == before, (
+        "adopting a token the hub already held made a fresh provider request"
+    )
+    assert_in_sync(dummy_provider, hub, await local_value(user))
+
+
+async def test_wait_callback_adopts_without_polling_when_the_hub_already_has_it(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    """Through the real entry point. The round trip completes BEFORE the call, so
+    the first poll succeeds and the 3s interval never elapses — a 'never lands'
+    case here would burn the 120s callback budget against a 30s cap."""
+    hub.complete_flow()
+    user = await _user("mode3-waitcb-user")
+    monkeypatch.setattr(
+        "flow_sdk.request_context.methods.get_current_request_user_fresh", _returning(user)
+    )
+
+    result = await _handle_wait_callback(PROVIDER, state="not-a-desktop-session")
+
+    assert result.data["status"] == "success"
+    assert_in_sync(dummy_provider, hub, await local_value(user))
+
+
+# ── negatives: each catches this file passing for the wrong reason ───────────
+
+
+async def test_a_row_that_reads_available_does_not_prove_the_value_is_held(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    """The trap this whole suite is shaped around. The hub reports the provider
+    connected but refuses to release the value; the desktop must end up with a
+    row and NO token — and a status-only assertion would have called that a pass."""
+    hub.complete_flow()
+    hub.release_value = False
+    user = await _user("no-release-user")
+
+    with pytest.raises(RuntimeError, match="could not be read from the hub"):
+        await _adopt(user, monkeypatch)
+
+    assert await hub_holds_credential(HUB_CREDENTIALS_NAME) is True
+    assert user.get_env_var(LOCAL_CREDENTIALS_NAME) is None
+    assert await local_value(user) is None
+
+
+async def test_a_stale_local_value_is_replaced_not_kept(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    """Seed a sentinel first: if adoption silently no-ops, the sentinel survives
+    and the equality assertion is what catches it."""
+    from flow_sdk.request_context.methods import set_user_credentials
+
+    user = await _user("stale-user")
+    await set_user_credentials(user, LOCAL_CREDENTIALS_NAME, "dmy_tok_STALE", user.id)
+
+    issued = hub.complete_flow()
+    await _adopt(user, monkeypatch)
+
+    held = await local_value(user)
+    assert held == issued
+    assert held != "dmy_tok_STALE"
+
+
+async def test_latest_login_wins_on_both_sides(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    """Two complete grants. Both sides must end on the SECOND token — and the
+    first must be gone, which only distinct issuances can prove."""
+    user = await _user("latest-wins-user")
+
+    first = hub.complete_flow()
+    await _adopt(user, monkeypatch)
+    assert await local_value(user) == first
+
+    second = hub.complete_flow()
+    await _adopt(user, monkeypatch)
+
+    assert second != first
+    assert_in_sync(dummy_provider, hub, await local_value(user))
+    assert await local_value(user) != first
+
+
+async def test_a_refused_authorization_stores_nothing_anywhere(dummy_provider, monkeypatch):
+    """The provider says no: no token is issued, so there is nothing to sync."""
+    from tests.api._oauth_sync_helpers import HubDouble
+
+    with __import__("tests.utils.dummy_oauth_server", fromlist=["x"]).dummy_oauth_server(
+        auto_approve=False
+    ) as refusing:
+        double = HubDouble(dummy=refusing)
+        payload = double.start_auth()
+        import httpx
+
+        location = httpx.URL(
+            httpx.get(payload["auth_url"], follow_redirects=False).headers["Location"]
+        )
+
+        assert location.params.get("error") == "access_denied"
+        assert location.params.get("code") is None
+        assert refusing.latest_token is None
+        assert refusing.counts["token"] == 0
+        assert double.held is None
+
+
+# ── the poller's shape: no request context at all ────────────────────────────
+
+
+async def test_an_adopted_token_resolves_with_no_request_context(
+    dummy_provider, hub, local_dummy_provider, monkeypatch
+):
+    """`token_for` must answer for the BACKGROUND poller, not just a request.
+
+    Every consumer that matters runs outside a request: the slack source's credential resolver (`_connection_token`)
+    is called from the ingest poller on every tick, and `credential_for`'s first
+    tier (`get_current_request_user_fresh`) is None there. Adoption writes under
+    the REQUEST user, so a provider whose token is only reachable through that
+    tier is connected in the UI and dead in the poller — which is exactly how a
+    connected Slack source failed with `no_credential` on every poll while the
+    Connections row stayed green.
+    """
+    from flow_sdk.core.oauth.provider_registry import token_for
+
+    hub.complete_flow()
+    user = await _user("poller-owner")
+
+    await _adopt(user, monkeypatch)
+    assert await local_value(user) == hub.held, "adoption did not land a local value"
+
+    # The poller's context: no request user. `User.get_local()` is the tier that
+    # must carry it from here on.
+    monkeypatch.setattr(
+        "flow_sdk.request_context.methods.get_current_request_user_fresh",
+        _returning(None),
+    )
+    monkeypatch.setattr("flow_sdk.builtin.user.User.get_local", _returning(user))
+
+    assert await token_for(PROVIDER) == dummy_provider.latest_token
+
+
+async def test_local_storage_failure_cannot_complete_adoption(hub, dummy_provider, monkeypatch):
+    hub.complete_flow()
+    user = await _user("failed-local-write")
+    monkeypatch.setattr(
+        "flow_sdk.app.actions.desktop_oauth.record_credential", _returning(False)
+    )
+    with pytest.raises(RuntimeError, match="could not be stored locally"):
+        await _adopt(user, monkeypatch)
+    assert await local_value(user) is None
+    assert user.get_env_var(LOCAL_CREDENTIALS_NAME) is None
+
+
+async def test_hub_rotation_updates_the_actual_local_copy(hub, dummy_provider, monkeypatch):
+    from flow_sdk.request_context.methods import get_user_credentials
+
+    first = hub.complete_flow()
+    user = await _user("rotating-token")
+    await _adopt(user, monkeypatch)
+    second = hub.complete_flow()
+    assert first != second
+    assert await local_value(user) == first
+    assert await get_user_credentials(user, LOCAL_CREDENTIALS_NAME, user.id) == second
+    assert await local_value(user) == second
+
+
+async def test_unavailable_hub_never_returns_the_stale_local_copy(hub, dummy_provider, monkeypatch):
+    from flow_sdk.request_context.methods import get_user_credentials
+
+    issued = hub.complete_flow()
+    user = await _user("unavailable-hub")
+    await _adopt(user, monkeypatch)
+    hub.release_value = False
+    with pytest.raises(RuntimeError, match="could not resolve"):
+        await get_user_credentials(user, LOCAL_CREDENTIALS_NAME, user.id)
+    assert await local_value(user) == issued
+
+
+async def test_another_cloud_account_cannot_refresh_the_local_copy(hub, dummy_provider, monkeypatch):
+    from flow_sdk.request_context.methods import get_user_credentials
+
+    issued = hub.complete_flow()
+    user = await _user("account-bound-copy")
+    await _adopt(user, monkeypatch)
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_mirror._cloud_user_id", lambda: "different-user")
+    with pytest.raises(RuntimeError, match="different cloud account or server"):
+        await get_user_credentials(user, LOCAL_CREDENTIALS_NAME, user.id)
+    assert await local_value(user) == issued
+
+
+async def test_account_mismatch_does_not_fall_through_to_another_token(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    from flow_sdk.core.oauth.provider_registry import token_for
+
+    hub.complete_flow()
+    user = await _user("no-principal-fallback")
+    await _adopt(user, monkeypatch)
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_mirror._cloud_user_id", lambda: "different-user")
+    assert await token_for(PROVIDER, user=user) is None
+
+
+async def test_connect_adopts_a_verified_existing_grant_without_new_authorization(
+    hub, dummy_provider, local_dummy_provider, monkeypatch
+):
+    from flow_sdk.app.actions.oauth_action import _handle_auth
+
+    hub.complete_flow()
+    user = await _user("one-click-existing-grant")
+    monkeypatch.setattr("flow_sdk.request_context.methods.get_current_request_user_fresh", _returning(user))
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_oauth.hub_test_provider", _returning({"ok": True}))
+    before = dummy_provider.counts
+    result = await _handle_auth(PROVIDER, None)
+    assert result.data["status"] == "success"
+    assert "auth_url" not in result.data
+    assert dummy_provider.counts == before
+    assert_in_sync(dummy_provider, hub, await local_value(user))

@@ -1,10 +1,4 @@
-import {
-  ARTIFACT_KINDS,
-  gitOriginFromUrl,
-  normalizeKind,
-  type FSOriginField,
-  type IArtifact,
-} from '@sdk';
+import { ARTIFACT_KINDS, gitOriginFromUrl, normalizeKind, type FSOriginField, type IArtifact } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { notify } from '@src/notifications';
@@ -110,7 +104,9 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle><Trans>Add Artifact</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>Add Artifact</Trans>
+          </DialogTitle>
           <DialogDescription>
             <Trans>Describe the logical application, service, resource, or content and its optional source.</Trans>
           </DialogDescription>
@@ -118,7 +114,9 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
         <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="artifact-name"><Trans>Name</Trans> <span className="text-destructive">*</span></Label>
+            <Label htmlFor="artifact-name">
+              <Trans>Name</Trans> <span className="text-destructive">*</span>
+            </Label>
             <Input
               id="artifact-name"
               placeholder={t`My web application`}
@@ -128,7 +126,9 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="artifact-kind"><Trans>Kind</Trans> <span className="text-destructive">*</span></Label>
+            <Label htmlFor="artifact-kind">
+              <Trans>Kind</Trans> <span className="text-destructive">*</span>
+            </Label>
             <Input
               id="artifact-kind"
               list="artifact-kind-suggestions"
@@ -137,7 +137,9 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
               onChange={(event) => setFormState((previous) => ({ ...previous, kind: event.target.value }))}
             />
             <datalist id="artifact-kind-suggestions">
-              {KIND_SUGGESTIONS.map((kind) => <option value={kind} key={kind} />)}
+              {KIND_SUGGESTIONS.map((kind) => (
+                <option value={kind} key={kind} />
+              ))}
             </datalist>
             <p className="text-xs text-muted-foreground">
               <Trans>Open dot-path ontology; custom descendants are welcome.</Trans>
@@ -145,7 +147,9 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="artifact-description"><Trans>Description</Trans></Label>
+            <Label htmlFor="artifact-description">
+              <Trans>Description</Trans>
+            </Label>
             <Input
               id="artifact-description"
               placeholder={t`Optional description`}
@@ -155,16 +159,26 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
           </div>
 
           <div className="space-y-2 rounded-md border p-3">
-            <Label><Trans>Source</Trans></Label>
+            <Label>
+              <Trans>Source</Trans>
+            </Label>
             <Select
               value={formState.originKind}
               onValueChange={(value) => setFormState((previous) => ({ ...previous, originKind: value as OriginKind }))}
             >
-              <SelectTrigger aria-label={t`Source kind`}><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label={t`Source kind`}>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none"><Trans>No source</Trans></SelectItem>
-                <SelectItem value="local"><Trans>Local path</Trans></SelectItem>
-                <SelectItem value="git"><Trans>Git repository</Trans></SelectItem>
+                <SelectItem value="none">
+                  <Trans>No source</Trans>
+                </SelectItem>
+                <SelectItem value="local">
+                  <Trans>Local path</Trans>
+                </SelectItem>
+                <SelectItem value="git">
+                  <Trans>Git repository</Trans>
+                </SelectItem>
               </SelectContent>
             </Select>
 
@@ -178,27 +192,37 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
                     id="artifact-origin-locator"
                     placeholder={formState.originKind === 'git' ? 'https://github.com/acme/app.git' : '/workspace/apps'}
                     value={formState.originLocator}
-                    onChange={(event) => setFormState((previous) => ({ ...previous, originLocator: event.target.value }))}
+                    onChange={(event) =>
+                      setFormState((previous) => ({ ...previous, originLocator: event.target.value }))
+                    }
                   />
                 </div>
                 {formState.originKind === 'git' && (
                   <div className="space-y-2">
-                    <Label htmlFor="artifact-origin-branch"><Trans>Branch</Trans></Label>
+                    <Label htmlFor="artifact-origin-branch">
+                      <Trans>Branch</Trans>
+                    </Label>
                     <Input
                       id="artifact-origin-branch"
                       placeholder="main"
                       value={formState.originBranch}
-                      onChange={(event) => setFormState((previous) => ({ ...previous, originBranch: event.target.value }))}
+                      onChange={(event) =>
+                        setFormState((previous) => ({ ...previous, originBranch: event.target.value }))
+                      }
                     />
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="artifact-origin-rel"><Trans>Relative path</Trans></Label>
+                  <Label htmlFor="artifact-origin-rel">
+                    <Trans>Relative path</Trans>
+                  </Label>
                   <Input
                     id="artifact-origin-rel"
                     placeholder="."
                     value={formState.originRelPath}
-                    onChange={(event) => setFormState((previous) => ({ ...previous, originRelPath: event.target.value }))}
+                    onChange={(event) =>
+                      setFormState((previous) => ({ ...previous, originRelPath: event.target.value }))
+                    }
                   />
                 </div>
               </>
@@ -210,7 +234,7 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
               <Trans>Cancel</Trans>
             </Button>
             <Button type="submit" disabled={isAdding}>
-              {isAdding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isAdding && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               <Trans>Add Artifact</Trans>
             </Button>
           </DialogFooter>

@@ -19,12 +19,16 @@ Your only output is a report.
 
 ## Input
 
-The task instruction ends with a `## Scan roots` section listing absolute
-directories, one per line, and optionally a `## Projects` section holding a
-JSON array of Flowpad projects (`{id, name, path, last_session_at,
-session_count}`).
+The task instruction contains a `## Scan roots` section listing absolute
+directories and an authoritative `## Asset inventory` JSON array. Every
+inventory entry supplies its exact `path`, `kind`, `name`, `root`, and either
+the text `content` to classify or settings-backup timestamps. The inventory is
+assembled deterministically by Flowpad and is complete: classify exactly those
+entries from the supplied data. Do not call filesystem tools, inspect other
+paths, or write a report file. Optionally, a `## Projects` section holds a JSON
+array of Flowpad projects (`{id, name, path, last_session_at, session_count}`).
 
-For each root `<R>`, inventory these assets (kind in parentheses):
+Flowpad inventories these assets for each root `<R>` (kind in parentheses):
 
 - (`skill`) every directory `<R>/.claude/skills/<name>/` containing a
   `SKILL.md` (or `skill.yaml` / `skill.yml`).
@@ -36,18 +40,17 @@ For each root `<R>`, inventory these assets (kind in parentheses):
   `settings.json.bak*` or `settings.json.backup` (never `settings.json` or
   `settings.local.json` themselves).
 
-If a directory does not exist, record the root as scanned and move on. Do not
-wander outside these locations.
+If a directory does not exist, record the root as scanned and move on.
 
 If a `## Projects` section is present, additionally classify each listed
-project (kind `project`). Judge from the supplied metadata first (name
-pattern, session_count, last_session_at); you may peek at the folder (`ls`,
-read a file or two) to confirm, but do not recurse deeply.
+project (kind `project`) from the supplied metadata (name pattern,
+session_count, last_session_at). If the metadata is insufficient, choose
+`unsure`; do not inspect the project folder.
 
 ## Classification
 
-Read each asset's frontmatter and body (or project metadata), then assign one
-verdict:
+Classify each asset's supplied frontmatter and body (or project metadata), then
+assign one verdict:
 
 - `garbage` — clearly junk. Signals (any strong one suffices):
   - placeholder/test names: `test`, `test_skill`, `hello`, `demo`, `foo`,

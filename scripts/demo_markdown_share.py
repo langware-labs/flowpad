@@ -158,15 +158,11 @@ def run() -> int:
             local_post(client, APP_BE, "graph/conversation-list", {})
             local_post(client, APP_BE, "graph/conversation-message-sync",
                        {"conversation_id": conv_id})
-            # (b) reproduce the chip-open via the REAL resolver: discover scans
-            #     the file on disk (same machine), adopts its frontmatter id
+            # (b) reproduce the chip-open via the REAL resolver: it reads the
+            #     file on disk (same machine), adopts its frontmatter id
             #     (== md_id, validate-on-adopt), and syncs it to Bob's DB.
             try:
-                local_post(
-                    client, APP_BE,
-                    f"graph/compute_node/@local/fs-records/markdown/discover?path={md_path}",
-                    {},
-                )
+                local_get(client, APP_BE, f"assets/resolve?path={md_path}")
             except Exception:
                 pass
             # (c) re-sync so the subtree catch-up links parent_type_id=conversation

@@ -1,23 +1,16 @@
 import { CUSTOM_VIEW, isCustomViewAvailable } from '@src/constants/editor';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
-import {
-  copyToClipboard,
-  downloadFile,
-  EditorLanguage,
-  /* FSItem, */ fsStore,
-  isImagePath,
-  VFSPath,
-} from '@sdk';
+import { SnippetView } from './SnippetView';
+import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
+import { copyToClipboard, downloadFile, EditorLanguage, /* FSEntry, */ fsStore, isImagePath, VFSPath } from '@sdk';
 import { useContext, useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { useFS } from '@src/hooks/useFS';
 import Editor, { Monaco } from '@monaco-editor/react';
-import { shikiToMonaco } from '@shikijs/monaco';
 import { Copy, Download, Eye, Play, /* PlayCircle, */ RefreshCw } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createHighlighter, Highlighter } from 'shiki';
 import { useLingui } from '@lingui/react/macro';
 
 const SAVE_TIMEOUT = 1000; // 1 second
@@ -32,6 +25,9 @@ const LANGUAGE_COMMANDS = {
 const isExecutableScript = (language: string) => {
   return language in LANGUAGE_COMMANDS;
 };
+
+/** Only picks the default view; what a region IS is decided by the backend. */
+const SNIPPET_MARKER = /^\s*(?:#|\/\/|--)\s*%%\s*flowpad:(?:hidden|init|snippet)\b/m;
 
 /**
  * TODO: How do we want to sync the editor changes into the agent if at all?
@@ -65,17 +61,17 @@ interface EditorPaneProps {
    * link into a file (e.g. an interface block's "Open in editor") lands here.
    */
   revealLine?: number | null;
+  revealColumn?: number | null;
   onExecuteScript?: () => void;
   onShellCmd?: (command: string) => void;
   onDirtyChange?: (isDirty: boolean) => void;
 }
 
-let shikiHighlighter: Highlighter | null = null;
-
 export const EditorPane: React.FC<EditorPaneProps> = ({
   file,
   readOnly,
   revealLine,
+  revealColumn,
   onExecuteScript,
   onShellCmd,
   onDirtyChange,
@@ -103,10 +99,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
 
   // Images are binary: render them inline via the backend download URL instead
   // of decoding the bytes as text into Monaco (which shows garbage).
-  const isImage = useMemo(
-    () => isImagePath(effectiveFilePath || file?.path || ''),
-    [effectiveFilePath, file?.path],
-  );
+  const isImage = useMemo(() => isImagePath(effectiveFilePath || file?.path || ''), [effectiveFilePath, file?.path]);
   const imageUrl = useMemo(
     () => (isImage && effectiveFilePath && fs ? fs.getDownloadUrl(effectiveFilePath) : null),
     [isImage, effectiveFilePath, fs],
@@ -125,6 +118,8 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   useEffect(() => {
     setIsCustomView(isCustomViewAvailable(file?.language || ''));
   }, [file?.path, file?.language]);
+  const [notSnippet, setNotSnippet] = useState(false);
+  useEffect(() => setNotSnippet(false), [file?.path]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingExecuteRef = useRef<null | { language: string; filePath: string }>(null);
 
@@ -135,6 +130,28 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const fileContent = (cached?.content as string) || '';
   const isDirty = cached?.isDirty || false;
 
+  // A snippet file opens in the snippet view (markers → regions + Run); the Eye
+  // toggle goes to the raw file. The backend needs the machine path, which a
+  // local file's VFS path carries directly and a project file joins to the mount.
+  // Decided only from loaded content: while the file is (re)fetching `fileContent`
+  // is '' and a snippet would flicker to "not a snippet", unmounting its editors.
+  const [isSnippet, setIsSnippet] = useState(false);
+  useEffect(() => setIsSnippet(false), [file?.path]);
+  useEffect(() => {
+    if (cached) setIsSnippet(!notSnippet && SNIPPET_MARKER.test(fileContent));
+  }, [cached, fileContent, notSnippet]);
+  const snippetPath = useMemo(() => {
+    if (parsedFilePath.type === 'compute_node') return parsedFilePath.machinePath;
+    const mount = project?.fs_storage_mount_path;
+    return mount && effectiveFilePath ? `${mount.replace(/\/+$/, '')}/${effectiveFilePath.replace(/^\/+/, '')}` : '';
+  }, [parsedFilePath, project?.fs_storage_mount_path, effectiveFilePath]);
+  const snippetDefaultedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isSnippet && snippetDefaultedRef.current !== file?.path) {
+      snippetDefaultedRef.current = file?.path ?? null;
+      setIsCustomView(true);
+    }
+  }, [isSnippet, file?.path]);
   // Auto-download file content if not in cache
   useEffect(() => {
     if (!effectiveFilePath || !effectiveTypeId) return;
@@ -221,6 +238,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // A deep link is honoured once per (file, line): re-revealing on every content
   // change would fight the user as they scroll away from it.
   const revealedRef = useRef<string | null>(null);
+  // The file whose first content already landed. Opening a file shows its top,
+  // like any code editor; only content arriving AFTER that (an agent streaming
+  // the file) is tail-followed.
+  const openedRef = useRef<string | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const [editorReady, setEditorReady] = useState(false);
 
@@ -234,11 +255,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     // `revealLine(getLineCount())` call would scroll a deep link straight to
     // the bottom of the file the moment content settled.
     if (revealLine && revealLine > 0) {
-      const key = `${file?.path ?? ''}#${revealLine}`;
+      const key = `${file?.path ?? ''}#${revealLine}:${revealColumn ?? 1}`;
       if (revealedRef.current === key) return;
       const line = Math.min(revealLine, model.getLineCount());
       editor.revealLineInCenter(line);
-      editor.setPosition({ lineNumber: line, column: 1 });
+      const column = Math.max(1, Math.min(revealColumn ?? 1, model.getLineMaxColumn(line)));
+      editor.setPosition({ lineNumber: line, column });
       // Scrolling there isn't enough to SEE it in a wall of code — mark the
       // line until the next deep link replaces the decoration.
       decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [
@@ -251,6 +273,11 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       return;
     }
 
+    const path = file?.path ?? '';
+    if (openedRef.current !== path) {
+      if (fileContent) openedRef.current = path;
+      return;
+    }
     if (isUserScrolling) return;
     editor.revealLine(model.getLineCount());
     /*
@@ -260,7 +287,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
      * — the first run happens before Monaco mounts and bails on the null ref.
      * Missing either one is why a deep link silently landed on line 1.
      */
-  }, [file?.path, fileContent, isUserScrolling, revealLine, editorReady]);
+  }, [file?.path, fileContent, isUserScrolling, revealLine, revealColumn, editorReady]);
 
   const clearSaveTimeout = useCallback(() => {
     if (!saveTimeoutRef.current) return;
@@ -301,16 +328,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     if (!file) return;
 
     async function setupEditor(language: EditorLanguage) {
-      if (!shikiHighlighter) {
-        shikiHighlighter = await createHighlighter({
-          themes: ['dark-plus', 'light-plus'],
-          langs: [language],
-        });
-      } else {
-        await shikiHighlighter.loadLanguage(language);
-      }
-      monaco.languages.register({ id: language });
-      shikiToMonaco(shikiHighlighter, monaco);
+      await ensureShikiMonaco(monaco, language);
       editor.updateOptions({
         fontSize: 14,
         lineHeight: 20,
@@ -318,21 +336,18 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         scrollBeyondLastLine: false,
         automaticLayout: true,
         wordWrap: 'on',
-        theme: resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus',
+        theme: monacoTheme(resolvedTheme),
         readOnly: readOnly,
       });
     }
     void setupEditor(file.language);
   };
 
-  // Cleanup Monaco Editor on unmount
-  useEffect(() => {
-    return () => {
-      if (editorRef.current) {
-        editorRef.current.dispose();
-      }
-    };
-  }, []);
+  // No manual dispose here: <Editor> disposes its model and then its editor on
+  // unmount. A parent-side `editorRef.current.dispose()` ran BEFORE that cleanup
+  // (React runs the parent's effect cleanup first) and detached the model
+  // without disposing it, so the library's `getModel()?.dispose()` saw null —
+  // one orphan model holding the whole file text per unmount (B8).
 
   // Stable onChange handler — uses a ref so MilkdownEditor's useEditor (which
   // depends on [onChange]) doesn't re-initialize and lose focus on every keystroke.
@@ -383,19 +398,35 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   }, [file, agenticProcess, fs, effectiveFilePath]);
 
+  // The snippet view reads/writes the file through the backend and hands back its
+  // text, set here as clean content so a stale raw copy can't undo a snippet edit
+  // from the Eye view. Not invalidate-and-refetch: that blanks `fileContent` and
+  // unmounts the snippet view mid-typing. Unsaved raw edits are never overwritten.
+  // Read through a ref so the callback stays stable across content changes.
+  const rawRef = useRef({ isDirty, fileContent });
+  rawRef.current = { isDirty, fileContent };
+  const adoptSnippetText = useCallback(
+    (text: string) => {
+      const raw = rawRef.current;
+      if (!fs || !effectiveFilePath || raw.isDirty || text === raw.fileContent) return;
+      fs.setContent(effectiveFilePath, text, false);
+    },
+    [fs, effectiveFilePath],
+  );
+
   // Navigate to execute-flow page with current file
   // const handleExecuteFlow = useCallback(() => {
   //   if (!file || !effectiveTypeId || !effectiveFilePath) return;
   //
-  //   // Create FSItem for the current file
+  //   // Create FSEntry for the current file
   //   // Use effectiveTypeId and effectiveFilePath for cross-context file support
-  //   const fsItem = new FSItem({
+  //   const fsItem = new FSEntry({
   //     is_dir: false,
   //     vfs_abs_path: `${effectiveTypeId.toString()}${effectiveFilePath}`,
   //     size: 0,
   //   });
   //
-  //   // Navigate to execute-flow page with the FSItem
+  //   // Navigate to execute-flow page with the FSEntry
   //   navigation.openExecuteFlow({ file: fsItem });
   // }, [file, effectiveTypeId, effectiveFilePath, navigation]);
 
@@ -496,12 +527,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             variant="ghost"
             size="icon"
             onClick={handleExecuteFlow}
-            title="Execute in Flow"
+            title={t`Execute in Flow`}
             className="hover:bg-muted"
           >
             <PlayCircle className="h-4 w-4" />
           </Button> */}
-          {isExecutableScript(file.language) && (
+          {isExecutableScript(file.language) && !(isCustomView && isSnippet) && (
             <Button
               variant="ghost"
               size="icon"
@@ -517,7 +548,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               )}
             </Button>
           )}
-          {isCustomViewAvailable(file.language) && (
+          {(isCustomViewAvailable(file.language) || isSnippet) && (
             <Button
               variant="ghost"
               size="icon"
@@ -564,7 +595,17 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       </div>
 
       <div className="h-full" style={{ position: 'relative' }}>
-        {isCustomView ? (
+        {isCustomView && isSnippet && snippetPath ? (
+          <SnippetView
+            path={snippetPath}
+            watch={effectiveTypeId && effectiveFilePath ? { typeid: effectiveTypeId, path: effectiveFilePath } : undefined}
+            language={file.language}
+            revision={fileContent}
+            readOnly={readOnly}
+            onNotSnippet={() => setNotSnippet(true)}
+            onSynced={adoptSnippetText}
+          />
+        ) : isCustomView && isCustomViewAvailable(file.language) ? (
           CUSTOM_VIEW[file.language as keyof typeof CUSTOM_VIEW] === 'markdown' ? (
             <div className="h-full w-full overflow-auto">
               <MilkdownEditor
@@ -588,7 +629,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             value={fileContent}
             onChange={handleContentChange}
             onMount={handleEditorDidMount}
-            theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
+            theme={monacoTheme(resolvedTheme)}
             options={{
               readOnly: readOnly,
               fontSize: 14,

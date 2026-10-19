@@ -1,35 +1,42 @@
+import type { FSRefJson } from './fs/FSRef';
 import { v4 as uuidv4 } from 'uuid';
-import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
-import { Record, RecordRefs } from './fs/Record';
-import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
-import { Frontmatter } from './fs/Frontmatter';
-import { EntityFactory } from './schema/factory';
+import { ActionInfo } from './models/ActionInfo';
+import { ActionType, JSONSchemaParser } from './FlowSync/schema';
+import { ExpansionType } from './FlowSync/expand';
+import { EntityExpansion } from './FlowSync/store';
+import { EntityTypes } from './schema/types';
+import type { IWorkspace, Workspace } from './entities/workspace';
+// Aliased: a bare `Record` import shadows the global `Record<K,V>` utility for
+// this entire file, so every `Record<string, unknown>` in it resolved to the
+// FS record class and failed as a non-generic type.
+import { Record as FsRecord, RecordRefs } from './fs/Record';
+import { EntityFactory, type EntityConstructor } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
 import { defaultEntityType, IEntity } from './IEntity';
-import { DockPointerData } from './models/DockPointer';
+import { DockPointerData, type IDockPointer } from './models/DockPointer';
+import type { ShowTarget } from './models/ShowTarget';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { normalizeEmail } from './utils/utils';
-import { Callable } from './types';
+import { Callable } from './types/callable';
 
 /**
  * The DisplayTarget an `install()` / `setup()` returns — what the receiver should
- * navigate to (`openDisplayTarget`). Mirrors the backend `_entity_payload` /
- * `resolve_display_target` shape. `kind:'entity'` pointing at an `agentic_process`
- * is a spawned Vibe setup session; other entities open in their editor; `webapp`
- * opens the port preview.
+ * navigate to (`openDisplayTarget`). `kind:'entity'` pointing at an
+ * `agentic_process` is a spawned Vibe setup session; other entities open in
+ * their editor; `webapp` opens the port preview.
+ *
+ * An alias for {@link ShowTarget}, not a fourth declaration of it. The backend
+ * builds both from the same place — `Entity.setup_on_receive`'s
+ * `_entity_payload` is the builder `resolve_display_target` uses — and this
+ * copy had already fallen behind by `artifact_id`, `micro_app_id`, `runtime`
+ * and `name`, so a `kind:'app'` target arriving here was typed as though it had
+ * no artifact or app id at all.
  */
-export interface ReceiveShowTarget {
-  kind?: 'entity' | 'vfs' | 'webapp';
-  typeid?: string;
-  type?: string;
-  id?: string;
-  path?: string;
-  port?: number | string;
-}
+export type ReceiveShowTarget = ShowTarget;
 
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
@@ -47,13 +54,48 @@ export interface EntityMember {
   [key: string]: unknown;
 }
 
-/** One backend-ranked on-disk occurrence of an asset identity. */
+/**
+ * The hub's roster keys (``user_email`` / ``user_name`` / ``user_picture``) in the client form.
+ * The local server does this in ``_normalize_hub_response``, but a hub-only frontend reads the hub
+ * directly and skips it — so an invited user with no name rendered as "unknown".
+ */
+export function normalizeMember(m: EntityMember): EntityMember {
+  return {
+    ...m,
+    email: m.email ?? (m.user_email as string | null | undefined) ?? null,
+    name: m.name ?? (m.user_name as string | null | undefined) ?? null,
+    picture: m.picture ?? m.user_picture ?? null,
+  };
+}
+
+/** Why a copy exists on disk, as classified by the backend path rules. */
+export type AssetOccurrenceOrigin = 'installed_package' | 'dependency' | 'local';
+
+/** Which signal separated the primary from the runner-up. Primary row only. */
+export type AssetRankBasis = 'git' | 'created' | 'first_seen' | 'path';
+
+/**
+ * One backend-ranked on-disk occurrence of an asset identity, with the
+ * evidence that ranked it. Evidence is present only on collided assets — a
+ * lone occurrence has nothing to explain — so every field past `first_seen_at`
+ * is optional and the UI must render around its absence.
+ */
 export interface AssetOccurrence {
   path: string;
+  /** When FlowPad first indexed this path. */
   first_seen_at: string;
+  /** Git introduction time, when the path is tracked in a repo. */
+  introduced_at?: string;
+  /** Filesystem birth time, when the filesystem reports a trustworthy one. */
+  birth_time?: string;
+  /** Omitted when `local`. */
+  origin?: AssetOccurrenceOrigin;
+  /** Set on the primary occurrence only. */
+  rank_basis?: AssetRankBasis;
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
+import type { HttpMethod } from './models/ApiUrl';
 
 /**
  * True when ``v`` is a string with at least one non-whitespace character.
@@ -63,6 +105,25 @@ import { WikiLink } from './types/wiki';
  */
 export function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
+}
+
+/** One person a ``share`` invites: a bare ``idOrEmail``, or ``{idOrEmail, role?}``. */
+export type ShareInvitee = string | { idOrEmail: string; role?: string };
+
+/**
+ * ``users`` as the ``share`` action's ``recipients`` wire list — trimmed, blanks
+ * dropped, a role only when there is one (``ShareRequestSpec`` in
+ * ``flow_sdk/app/actions/share_action.py`` validates it).
+ */
+export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: string; role: string })[] {
+  const recipients: (string | { idOrEmail: string; role: string })[] = [];
+  for (const u of users) {
+    const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
+    const trimmed = idOrEmail.trim();
+    if (!trimmed) continue;
+    recipients.push(role ? { idOrEmail: trimmed, role } : trimmed);
+  }
+  return recipients;
 }
 
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
@@ -84,8 +145,7 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
         // component" warning: a getter-with-side-effects (e.g. `flowDataStream`)
         // mutated `_flowDataStream` during a sibling component's render and
         // synchronously dispatched setState across all subscribers.
-        const isInternal =
-          typeof property === 'string' && property.startsWith('_');
+        const isInternal = typeof property === 'string' && property.startsWith('_');
         if (!isInternal && property !== 'dirty') {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
@@ -96,9 +156,58 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
   });
 }
 
-export const registerEntity = (constructor: new (json?: IEntity) => unknown) => {
+export const registerEntity = (constructor: EntityConstructor) => {
   EntityFactory.registerEntity(constructor);
 };
+
+/**
+ * Persisted fields declared by this class itself — the shared columns every
+ * entity carries (Python ``DBBaseRecord`` + ``Entity``). They are db fields no
+ * matter what a per-type schema says, because the type schema only describes
+ * that type's OWN fields. See ``isDbField``.
+ *
+ * Read-only/computed slots (``expand``, ``members``, ``asset_occurrences``,
+ * ``duplicate_count``, ``orphan*``) stay OUT — they're server-owned and must
+ * not be echoed back on save.
+ */
+const BASE_WIRE_FIELDS = new Set<string>([
+  'id',
+  'uname',
+  'name',
+  'title',
+  'key',
+  'namespace',
+  'tags',
+  'labels',
+  'system',
+  'created_by',
+  'created_date',
+  'updated_by',
+  'updated_date',
+  'created_through',
+  'updated_through',
+  'schema_version',
+  'root_vfs_path',
+  'fs_storage_mount_path',
+  'visitor_role',
+  'last_edited_at',
+]);
+
+/** Backend-owned fields that hydrate into the cache but never ride a full save. */
+const SERVER_MANAGED_SAVE_FIELDS = new Set<string>(['last_edited_at']);
+
+/**
+ * Any entity, without caring which.
+ *
+ * `APIEntity<T>` is F-bounded — `T` is the SELF type (`clone(): T`,
+ * `save(): Promise<T>`) — so the obvious spellings do not work: `APIEntity<never>`
+ * makes nothing assignable, and `APIEntity<unknown>` does not satisfy its own
+ * bound. `any` is the one type argument that does, which is why it was already
+ * hand-written at ~40 sites. Named once so those sites say what they mean
+ * instead of each re-deriving the trick.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyEntity = APIEntity<any>;
 
 export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
@@ -109,9 +218,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   // in the base constructor copies wire fields onto the instance, so
   // subclasses no longer need to redeclare or manually assign these.
   id: string;
+  /** The wire's own `type` discriminator, copied onto the instance by
+   *  `deepAssign` (absent on an entity constructed without one). Distinct from
+   *  the static `type` the class registers under — `getType()` reads that. */
+  type?: string;
   uname?: string;
-  name?: string;
-  title?: string;
+  // Nullable: the wire sends null for an unset name/title, and subclasses
+  // (Shell, Conversation) declare them that way. The base must admit it or
+  // every such subclass fails its own `APIEntity<T>` F-bound.
+  name?: string | null;
+  title?: string | null;
   key?: string;
   namespace?: string;
   tags?: string[];
@@ -135,10 +251,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   created_through?: string;
   updated_through?: string;
   schema_version?: string;
+  /**
+   * Epoch-ms of this entity's last activation, stamped server-side by the
+   * generic `activate` action (`Entity.last_active_at`, entity_model.py:375).
+   * A base-entity field the wire sends for EVERY type, and `IEntity` already
+   * declared it — but `APIEntity` did not, so `Project.last_active_at` (the
+   * open-recency sort in the project picker) read as "does not exist" even
+   * though `deepAssign` puts it on the instance.
+   */
+  last_active_at?: number | string | null;
   labels?: string[];
   root_vfs_path?: string;
-  fs_storage_mount_path?: string;
+  fs_storage_mount_path?: string | null;
   visitor_role?: string;
+  /** Epoch-ms of the last successful content edit. */
+  last_edited_at?: number | string | null;
   /**
    * Hub role roster cache: one row per member with their hub-set role. Membership
    * is a generic capability of any remote entity; the hub is the source of truth
@@ -200,8 +327,24 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this._dirty = value;
   }
 
-  get icon(): string | null {
-    return (this.constructor as typeof APIEntity).icon;
+  _icon?: string | null;
+
+  /**
+   * This row's icon: a per-ROW `icon` from the wire when the backend sends one
+   * (`Organization.icon` is a real `APIField(None)`), otherwise the TYPE's
+   * registry glyph (`static icon`, from `TypeInfo.icon`).
+   *
+   * This USED to be a getter with no setter, which made `deepAssign` throw
+   * `Cannot set property icon of #<APIEntity> which has only a getter` for any
+   * entity whose payload carried an `icon` key — `new Team({icon})` crashed.
+   * The pair is what the two-level fallback needed all along.
+   */
+  get icon(): string | null | undefined {
+    return this._icon ?? (this.constructor as typeof APIEntity).icon;
+  }
+
+  set icon(value: string | null | undefined) {
+    this._icon = value ?? null;
   }
 
   get editorDockPointer(): DockPointerData {
@@ -209,7 +352,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   get saved(): boolean {
-    return this.created_by !== undefined;
+    // Hub mirrors intentionally omit ``created_by``: attribution is PRIVATE.
+    // ``created_date`` is HUB_READ and is stamped for every durable row,
+    // including creator-less remote reflections. Recognize either marker so a
+    // received entity updates its existing id via PUT instead of being POSTed
+    // as a new, local-only entity.
+    return (
+      (this.created_by !== undefined && this.created_by !== null) ||
+      (this.created_date !== undefined && this.created_date !== null)
+    );
   }
 
   get isLoaded(): boolean {
@@ -302,7 +453,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._expand;
   }
 
-  set expand(value: any) {
+  set expand(value: EntityExpansion | undefined) {
     this._expand = value;
   }
 
@@ -434,7 +585,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.expand?.auth_scopes.forEach((scope) => {
       scope.forEach((raw) => {
         const tid = new TypeId(raw);
-        if (tid.type === Workspace.type) {
+        if (tid.type === EntityTypes.Workspace) {
           workspaces.push(tid);
         }
       });
@@ -461,17 +612,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // ``private_context_entities`` (Pydantic computed_field).
     const fromWireShared = (this as any).shared_context_entities as Array<unknown> | undefined;
     if (Array.isArray(fromWireShared) && fromWireShared.length > 0) {
-      this._shared_context_entities_ = fromWireShared.map((v) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      this._shared_context_entities_ = fromWireShared.map((v) => (v instanceof TypeId ? v : new TypeId(String(v))));
     }
     delete (this as any).shared_context_entities;
 
     const fromWirePrivate = (this as any).private_context_entities as Array<unknown> | undefined;
     if (Array.isArray(fromWirePrivate) && fromWirePrivate.length > 0) {
-      this._private_context_entities_ = fromWirePrivate.map((v) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      this._private_context_entities_ = fromWirePrivate.map((v) => (v instanceof TypeId ? v : new TypeId(String(v))));
     }
     delete (this as any).private_context_entities;
 
@@ -512,29 +659,67 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._typeId;
   }
 
-  public get dockPointer(): DockPointerData {
+  /**
+   * The dock that opens this entity.
+   *
+   * Declared `IDockPointer | null` rather than `DockPointerData` because ONE
+   * subclass legitimately has no dock: `Tab.dockPointer` parses a stored
+   * pointer string and returns null when there is none or it will not parse.
+   * Its consumers have always null-checked (`if (!tab?.dockPointer) return`) —
+   * only this declaration disagreed with them.
+   *
+   * The 28 subclasses that always produce a pointer keep narrowing their own
+   * override back to `DockPointerData`, so code holding a concrete `Shell`,
+   * `Agent` or `Conversation` still gets a non-null type. The null only shows
+   * up when you read `.dockPointer` off a generic entity — where it might in
+   * fact be a Tab, so the check belongs there.
+   */
+  public get dockPointer(): IDockPointer | null {
+    return this.defaultDockPointer;
+  }
+
+  /**
+   * The generic "open this entity" dock, always non-null.
+   *
+   * Subclasses that compute a better pointer fall back to THIS rather than to
+   * `this.defaultDockPointer` — a named member instead of reaching back through the
+   * member they are overriding, and one that keeps its non-null type where
+   * `dockPointer` itself cannot (see above).
+   */
+  protected get defaultDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
   }
 
   /**
-   * Generic read/write access to this asset's YAML frontmatter, or null when the
-   * entity has no FrontMatterFsRef-backed `doc` (resolved from the subclass `doc`
-   * getter). Unlike `doc.save()` (name+description only), the accessor preserves
-   * the body and all keys — the home of frontmatter-persisted fields like
-   * `version`. Caller must `await frontmatter.load()` before get/set.
+   * POST one of this entity's actions (`/graph/<type>/<id>/<action>`) with an
+   * optional JSON body and return the envelope's `data`. The one helper every
+   * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
    */
-  public get frontmatter(): Frontmatter | null {
-    const doc = (this as unknown as { doc?: unknown }).doc;
-    return doc instanceof FrontMatterFsRef ? new Frontmatter(doc) : null;
+  protected post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
+    const info = new ActionInfo(action, this.getType(), this.id, 'POST' as HttpMethod);
+    if (body) info.bodyParameters = body;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  /** GET one of this entity's actions (with `query` as its query string) and return the envelope's `data`. */
+  protected get<R>(action: string, query?: Record<string, unknown>): Promise<R> {
+    const info = new ActionInfo(action, this.getType(), this.id, 'GET' as HttpMethod);
+    if (query && Object.keys(query).length) info.queryParameters = query;
+    return dataManager.callAction<undefined, R>(info);
   }
 
   /**
    * Asset-editor dock pointer for a file-backed asset entity, or null when it
    * has no asset file yet. Asset subclasses return this from `dockPointer`
-   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * (falling back to `this.defaultDockPointer`); the `editor/<type>/<ref>` format
    * lives here once so it stays consistent across every asset type.
+   *
+   * `typeSegment` defaults to this entity's own type, which is what all 32 call
+   * sites passed as a hand-written literal. A typo in one of those was silent —
+   * `editorForType` just returns undefined and the entity gets a permanently
+   * inert editor link.
    */
-  protected assetEditorPointer(typeSegment: string): DockPointerData | null {
+  protected assetEditorPointer(typeSegment: string = this.getType()): DockPointerData | null {
     const editor = editorForType(typeSegment);
     if (!editor) return null;
     // Stable typeid form: editor/<editor>/typeid/<type>-<id>. `this.typeId`
@@ -546,8 +731,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
   }
 
-  public get searchDockPointer(): DockPointerData {
-    return this.dockPointer;
+  /**
+   * Where a search hit for this entity navigates. Always non-null: a result row
+   * has to go SOMEWHERE, and the generic "open this entity" dock is the right
+   * floor. This used to return `this.dockPointer` while declaring
+   * `DockPointerData`, so for the one entity whose pointer can be absent (a Tab
+   * with no stored pointer, or one that will not parse) it handed back a null
+   * its callers were typed never to receive.
+   */
+  public get searchDockPointer(): DockPointerData | IDockPointer {
+    return this.dockPointer ?? this.defaultDockPointer;
   }
 
   /**
@@ -558,9 +751,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public openDock(extraOptions?: Record<string, string>): void {
     const nav = (window as any).navigation as
-      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | { openDock: (pointer: IDockPointer, extraOptions?: Record<string, string>) => void }
       | undefined;
-    nav?.openDock(this.dockPointer, extraOptions);
+    // No dock is the same no-op as no navigation: an entity that does not
+    // address one (a Tab whose stored pointer is missing or unparseable) has
+    // nowhere to send the dock.
+    const dock = this.dockPointer;
+    if (!dock) return;
+    nav?.openDock(dock, extraOptions);
   }
 
   public clone(): T {
@@ -605,6 +803,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // This includes properties in subclasses
     for (const key in this) {
       if (!key.startsWith('_') && this.hasOwnProperty(key) && baseObject[key] === undefined) {
+        // Edit recency is patched atomically by the generic mark-edit action.
+        // Echoing a cached value in a normal full-entity save could overwrite a
+        // newer stamp that arrived after this entity snapshot was hydrated.
+        if (SERVER_MANAGED_SAVE_FIELDS.has(key)) continue;
         if (this.schema && !this.isDbField(key)) {
           continue; // Skip non-database fields
         }
@@ -629,6 +831,20 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
           baseObject[key] = value;
         }
       }
+    }
+
+    // `icon` is a prototype ACCESSOR over `_icon` (falling back to the class's
+    // static TypeInfo glyph), so the own-property loop above cannot see it and
+    // the `_icon` backing field is underscore-skipped. Emit it here, under
+    // exactly the filters that loop applies.
+    //
+    // This used to be done by installing an own enumerable accessor on every
+    // instance in the constructor. Measured, that cost ~300-430ns and ~176
+    // bytes per entity — on the hottest constructor in the app — and it needed
+    // a prototype-chain guard so it would not shadow a subclass override.
+    if (baseObject.icon === undefined && (!this.schema || this.isDbField('icon'))) {
+      const icon = this.icon;
+      if (icon !== undefined) baseObject.icon = icon;
     }
 
     // delete baseObject.expand?.roles;
@@ -671,7 +887,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public static isType<U extends APIEntity<U>>(
     this: { new (): U; type: string },
-    entity: APIEntity<any> | null,
+    entity: AnyEntity | null,
   ): entity is U {
     return entity?.getType() === this.type;
   }
@@ -697,6 +913,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   public isDbField(fieldName: string): boolean {
+    // The universal fields this class declares (lifted from Python
+    // ``DBBaseRecord``/``Entity``) belong to EVERY entity's wire contract by
+    // construction — a per-type schema is only authoritative about that type's
+    // own fields. The desk publishes each type's fully-resolved schema, so the
+    // distinction never showed; the hub publishes only the SUBCLASS DELTA
+    // (`project` → artifacts/helpdesk/shared_*_origins), which made `name` look
+    // like a non-db field and silently stripped it from every project POST/PUT
+    // — a project created on the hub came back nameless.
+    if (BASE_WIRE_FIELDS.has(fieldName)) return true;
     if (!this.schema) {
       console.warn('isDbField: Schema not found, cant check blobs', this.type);
       return false;
@@ -754,7 +979,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.expand = { ...this.expand, expansions: [...loadingExpansions.expand] };
   }
 
-  public async save(scope: TypeId[] | TypeId = []): Promise<T> {
+  public async save(scope: TypeId[] | TypeId = [], destination?: FSRefJson): Promise<T> {
     const isNew = !this.saved;
     if (!Array.isArray(scope)) {
       scope = [scope];
@@ -765,6 +990,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // DataOp. A JSON round-trip is also the exact wire normalization Axios
     // would perform (Dates -> strings, undefined fields omitted).
     const entityJson = JSON.parse(JSON.stringify(this.toJSON())) as IEntity;
+    if (destination) {
+      if (!isNew) throw new Error('A creation destination cannot relocate an existing entity');
+      Object.assign(entityJson, { destination });
+    }
     const entity = await dataManager.save<T>(this.typeId, scope, entityJson);
     if (isNew) {
       this.markAsExpanded();
@@ -777,21 +1006,51 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Push this entity to the hub via the standard graph action
    * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
    * ``share`` action handler forwards the create to the hub using the
-   * stored cloud credentials. On success, ``remote`` is flipped.
+   * stored cloud credentials. The action returns the backend's canonical
+   * entity; adopt that response rather than guessing which fields changed.
    *
-   * When ``recipients`` is provided (list of email strings) and the entity
-   * is a Conversation, each recipient is invited via the standard
-   * ``MembershipRequest`` pattern (one ``POST /graph/conversation/<id>/members``
-   * per recipient). See ``Conversation.share`` on the Python side.
+   * ``users`` invites recipients via the standard ``MembershipRequest``
+   * pattern (one ``POST /graph/<type>/<id>/members`` per recipient — see
+   * ``Conversation.share`` / ``Project.share`` on the Python side). Each
+   * entry is either a bare ``idOrEmail`` string — for a caller with no role
+   * to send — or ``{idOrEmail, role?}`` when one is needed. ``idOrEmail`` is
+   * either an email — for anyone, including someone with no account yet —
+   * or a hub user id, for a contact the address book knows only by id (the
+   * hub never discloses other people's emails, so those contacts have no
+   * email to invite by); the backend decides which by shape. ``role`` is
+   * optional; only a Project invite honours it (one of the roles the
+   * ``share-roles`` action returns — ``membershipService.fetchShareRoles`` —
+   * default ``member``) — other types ignore it.
+   *
+   * On the wire, ``recipients`` mirrors ``users`` exactly (bare string or
+   * ``{idOrEmail, role}``) — the local backend's ``share`` action validates it.
    */
-  public async share(recipients?: string[]): Promise<T> {
+  public async share(users: ShareInvitee[] = []): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    const cleaned = recipients
-      ?.map((r) => normalizeEmail(r))
-      .filter((r): r is string => !!r);
-    info.bodyParameters = { ...this.toJSON(), ...(cleaned?.length ? { recipients: cleaned } : {}) };
-    await dataManager.callAction<unknown, unknown>(info);
-    (this as any).remote = true;
+    const recipients = shareRecipients(users);
+    info.bodyParameters = recipients.length ? { ...this.toJSON(), recipients } : {};
+    // Not one fixed shape — a full entity or a bare receipt, depending on entity type — hence a guarded dict, not a named response type.
+    const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
+    return this.adoptShareResponse(response);
+  }
+
+  /**
+   * Adopt the ``share`` action's answer: the backend's canonical entity when it
+   * returned this one, else ``this`` unchanged.
+   */
+  protected adoptShareResponse(response: Record<string, unknown> | null | undefined): T {
+    if (
+      response &&
+      'id' in response &&
+      'type' in response &&
+      String(response.id) === this.id &&
+      String(response.type) === this.typeId.type
+    ) {
+      return dataManager.updateEntityFromJson<T>(response);
+    }
+    // Some specialized share actions return a receipt rather than an entity.
+    // They update their local cache server-side and broadcast that canonical
+    // state; crucially, do not manufacture ``remote=true`` while waiting for it.
     return this as unknown as T;
   }
 
@@ -824,7 +1083,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const res = await dataManager.callAction<undefined, EntityMember[]>(info);
     // Defensive: the hub utils coerce empty lists to {} upstream
     // (`resp.json().get('data') or {}`); treat any non-array as "no members".
-    this._membersCache = Array.isArray(res) ? res : [];
+    this._membersCache = (Array.isArray(res) ? res : []).map(normalizeMember);
     return this._membersCache;
   }
 
@@ -839,12 +1098,84 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *
    * ``role`` defaults to ``member``. The reflection layer returns the refreshed
    * roster; seed the cache from it when it comes back as an array.
+   *
+   * ``opts`` are all optional and all omitted from the body when absent — an
+   * always-present ``undefined`` would change the wire shape of every existing
+   * caller:
+   *  - ``callbackOverride``: app-relative path the recipient lands on after
+   *    accepting. Without it the hub falls back to the target's entity URL,
+   *    which for most types the SPA has no route for.
+   *  - ``transfer`` + ``roleToKeep``: hand the entity OVER rather than share it.
+   *    ``roleToKeep: null`` means keep nothing. Owner-only, enforced hub-side by
+   *    ``can_assign``'s TRANSFER branch — never assume it from the UI.
+   *  - ``notifyByEmail: false``: grant without emailing. The role is written —
+   *    and, with auto-accept on, accepted — before the hub reaches the mail
+   *    step, so this withholds the NOTIFICATION and nothing else. Only worth it
+   *    where the recipient is being told another way. Sent only when explicitly
+   *    false, so the body of every existing caller is unchanged.
    */
-  public async inviteMember(email: string, role: string = 'member'): Promise<void> {
+  public async inviteMember(
+    email: string,
+    role: string = 'member',
+    opts?: {
+      callbackOverride?: string;
+      transfer?: boolean;
+      roleToKeep?: string | null;
+      /**
+       * Entities to grant ALONGSIDE this one, in the same invitation.
+       *
+       * `invitation_targets` has always been a list the hub grants in full, and
+       * ONE invitation means one email landing on one place — which is why a
+       * thing that is only usable together with something else says so here
+       * rather than being chased with a second invitation.
+       *
+       * Safe to combine with `transfer`: the hub decides the grant kind per
+       * TARGET (the entity invited at `owner` is the one handed over), so a
+       * companion granted at a lower role rides along as an ordinary
+       * membership instead of being refused.
+       */
+      extraTargets?: { typeid: string; role: string }[];
+      /**
+       * Send the invitation email? Defaults to true (the hub's own default).
+       *
+       * The SENDER's choice, not the recipient's — the hub keeps this separate
+       * from `is_notification_required`, which is the recipient's preference.
+       */
+      notifyByEmail?: boolean;
+    },
+  ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       recipient_email: normalizeEmail(email) ?? '',
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
+      ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
+      ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
+      ...(opts?.notifyByEmail === false ? { notify_by_email: false } : {}),
+    };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
+   * Grant a role to a GROUP principal (a Team or an Organization) on this entity —
+   * POST ``<type>/<id>/members`` with ``{principal, invitation_targets}``.
+   *
+   * The group counterpart of {@link inviteMember}, and deliberately a separate
+   * method: a person is *invited* (an Invitation is minted, an email goes out, the
+   * grant lands only on accept), whereas a group is *granted* immediately — it has
+   * no mailbox, no account to provision and nothing to accept. The hub refuses a
+   * body carrying both a `recipient_email` and a `principal` for exactly that
+   * reason, so the two paths never blur.
+   *
+   * Direction, since it is easy to get backwards: this makes `principal` a MEMBER
+   * OF this entity (a class inside a school), not the other way round.
+   */
+  public async addGroupMember(principal: TypeId, role: string = 'member'): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = {
+      principal: `${principal.type}-${principal.id}`,
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
@@ -865,9 +1196,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * ``fetchMembers`` is free (falls back to invalidation on any other shape).
    */
   public async removeMember(userId: string): Promise<void> {
+    // Never send an empty selector: a blank id serializes to ``{}`` and the hub
+    // rejects it ("At least one of 'user_id'…"). Fail loudly at the source
+    // instead of round-tripping a body-less DELETE.
+    const id = userId.trim();
+    if (!id) throw new Error('removeMember: a non-empty user id is required');
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
-    info.bodyParameters = { user_id: userId };
+    info.bodyParameters = { user_id: id };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
   }
@@ -899,6 +1235,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   remote?: boolean;
 
   /**
+   * True when this asset is listed in its project's manifest
+   * (`agentic-assets/project_manifest/project_manifest.json`). Mirrors the
+   * Python `Entity.published` cache; the manifest FILE is the truth, and the
+   * flag is flipped only by adopting the canonical row `setPublished()` returns.
+   */
+  published?: boolean;
+
+  /**
    * Canonical parent reference ("<type>-<id>"). Single source of truth for
    * parentage; supersedes the legacy per-type ``data.parent_id``.
    */
@@ -923,13 +1267,27 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     await dataManager.callAction<unknown, unknown>(info);
   }
 
+  /** Resolve a reference relative to this entity through the shared backend resolver. */
+  public async resolveDisplayTarget(link: string): Promise<ShowTarget | null> {
+    const info = new ActionInfo('resolve-display-target', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { link };
+    return (await dataManager.callAction<unknown, ShowTarget>(info)) ?? null;
+  }
+
   /**
    * Open / set up this entity — the reception hook reused for the open-an-existing
    * surfaces (artifact favorites/cards/chips, skill run). Returns the DisplayTarget
    * to navigate to (`openDisplayTarget`): the entity itself, or a spawned Vibe setup
    * session. `projectId` optionally overrides the entity's own project binding.
+   *
+   * Named for the backend hook (`Entity.setup_on_receive`) rather than the wire
+   * action, which stays `setup`. A bare `setup` here collided with two real,
+   * differently-shaped subclass actions — `Capability.setup` (a type-specific
+   * `@action.post("setup")` returning a CapabilityCheck) and
+   * `ComputeNode.setup` (a different endpoint entirely, `ops/setup`, returning
+   * the provider id). This one had no callers, so it is the one that moved.
    */
-  public async setup(projectId?: string | null): Promise<ReceiveShowTarget | null> {
+  public async setupOnReceive(projectId?: string | null): Promise<ReceiveShowTarget | null> {
     const info = new ActionInfo('setup', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { project_id: projectId ?? null };
     const res = await dataManager.callAction<unknown, { show?: ReceiveShowTarget | null }>(info);
@@ -946,6 +1304,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async activate(): Promise<void> {
     const info = new ActionInfo('activate', this.typeId.type, this.typeId.id, 'POST');
     await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /**
+   * Record real user editing without issuing a request for every input event.
+   * Calls coalesce by canonical type + entity id and stamp server-side one
+   * minute after the final call. Fire-and-forget by design; a pending mark is
+   * not flushed during a hard page close.
+   */
+  public static markEditById(this: { type: string }, id: string): void {
+    dataManager.markEdit(new TypeId(this.type, id));
+  }
+
+  public markEdit(): void {
+    const entityClass = this.constructor as typeof APIEntity & { type: string };
+    entityClass.markEditById(this.id);
   }
 
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
@@ -1024,26 +1397,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async get_related_workspace(): Promise<Workspace | undefined> {
     if (!this.saved) return undefined;
     const actionInfo = new ActionInfo('get_related_workspace', this.typeId.type, this.typeId.id, 'GET');
-    const ws = await dataManager.callAction<undefined, APIEntity<Workspace>>(actionInfo);
+    // The action answers wire JSON, not a hydrated entity — hence `IWorkspace`.
+    const ws = await dataManager.callAction<undefined, IWorkspace>(actionInfo);
     if (!ws) return undefined;
-    let workspace = Workspace.getByIdFromCache(ws.id);
-    if (!workspace) workspace = new Workspace(ws);
-    return workspace;
+    const cached = ws.id ? dataManager.getByTypeIdFromCache<Workspace>(new TypeId(EntityTypes.Workspace, ws.id)) : null;
+    return cached ?? (EntityFactory.createEntity({ ...ws, type: EntityTypes.Workspace }) as Workspace);
   }
 
   public findWorkspaceScope(workspaceTypeId: TypeId | null): TypeId[] {
     if (!this.expand?.auth_scopes) {
       return [];
     }
-    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) =>
-      scope.map((raw) => new TypeId(raw)),
-    );
+    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) => scope.map((raw) => new TypeId(raw)));
     let selectedScope = parsedScopes.find((scope) =>
       workspaceTypeId
-        ? scope.some(
-            (typeId) =>
-              typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type,
-          )
+        ? scope.some((typeId) => typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type)
         : false,
     );
     if (!selectedScope && parsedScopes.length > 0) {
@@ -1224,9 +1592,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters =
-      targets.length === 1
-        ? { typeid: targets[0].toString() }
-        : { typeids: targets.map((t) => t.toString()) };
+      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
     const result = await dataManager.callAction<
       { typeid?: string; typeids?: string[] },
       { ok: boolean; id: string; type: string; shared_context_entities: string[] }
@@ -1243,9 +1609,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('unshare-context', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters =
-      targets.length === 1
-        ? { typeid: targets[0].toString() }
-        : { typeids: targets.map((t) => t.toString()) };
+      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
     const result = await dataManager.callAction<
       { typeid?: string; typeids?: string[] },
       { ok: boolean; id: string; type: string; shared_context_entities: string[] }
@@ -1341,7 +1705,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Get the first and closest ancestor by type using the entity scope.
    * Uses the same logic as breadcrumbs to find ancestors.
    */
-  public async get_ancestor(ancestor_type: string): Promise<APIEntity<any> | null> {
+  public async get_ancestor(ancestor_type: string): Promise<AnyEntity | null> {
     if (!this.saved) {
       return null;
     }
@@ -1385,11 +1749,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Returns a Record with recordFolderRef (record folder) and mainRef (primary content).
    * Use ref.child() to navigate further: entity.record().then(r => r.mainRef?.child("subdir"))
    */
-  public async record(): Promise<Record> {
+  public async record(options: { hubReflect?: boolean } = {}): Promise<FsRecord> {
     const actionInfo = new ActionInfo('record', this.typeId.type, this.typeId.id, 'GET');
     actionInfo.subpath = 'refs';
+    actionInfo.hubReflect = options.hubReflect === true;
     const result = await dataManager.callAction<void, RecordRefs>(actionInfo);
-    return new Record(result as RecordRefs);
+    return new FsRecord(result as RecordRefs);
   }
 
   /**
@@ -1400,6 +1765,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const actionInfo = new ActionInfo('set_public_access', this.typeId.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { is_public: isPublic };
     await dataManager.callAction<{ is_public: boolean }, { public: boolean }>(actionInfo);
+  }
+
+  /**
+   * Publish / unpublish this asset into its project's manifest
+   * (`POST /graph/<type>/<id>/set-published`). Resolves to the canonical row the
+   * backend returns after the manifest was re-indexed — adopted into the cache,
+   * which is what flips `published`; this method never writes the flag itself.
+   * Refusals (not publishable, outside the project, …) reject with the backend
+   * message; `code` rides on the error's `data`.
+   */
+  public async setPublished(published: boolean, projectId?: string | null): Promise<T> {
+    const body: Record<string, unknown> = { published };
+    if (projectId) body.project_id = projectId;
+    const json = await this.post<Record<string, unknown>>('set-published', body);
+    return dataManager.updateEntityFromJson<T>(json);
   }
 
   static getLoadingExpansions() {
@@ -1519,7 +1899,29 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       // silently dropped every argument after the first, so consumers
       // subscribing via `on('entity_event', (event, payload) => ...)` received
       // an undefined payload. Single-arg emits are unaffected (callback(arg)).
-      listeners.forEach((callback) => callback(...args));
+      // Per-listener isolation. `forEach` aborts on the first throw, so ONE bad
+      // subscriber used to starve every subscriber registered after it — an
+      // entity `delete` that threw in a view hook never reached the entity cache,
+      // the tab manager, or the conversation/flow-message taps, and which
+      // listeners lost it depended on mount order. Fan-out must be all-or-each,
+      // never all-or-nothing.
+      //
+      // This isolates; it does NOT hide. The error is still reported at
+      // console.error, so a throwing subscriber stays as visible as it was
+      // before — it simply no longer takes the other subscribers down with it.
+      // Deliberately a plain loop: `forEach` with a try inside would work, but
+      // this keeps the control flow obvious at the one place it matters.
+      // Indexed loop, not a spread copy: this fans out every WS entity
+      // create/update/delete, so an allocation per emit is real cost on a hot path.
+      // Indexing also preserves the previous `forEach` visiting semantics exactly —
+      // the only intended change here is the per-listener isolation.
+      for (let i = 0; i < listeners.length; i++) {
+        try {
+          listeners[i](...args);
+        } catch (err) {
+          console.error(`[EventEmitter] listener for "${eventType}" threw; other listeners still ran`, err);
+        }
+      }
     }
   }
 
@@ -1549,6 +1951,36 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.emit('flow_data', flowData);
   }
 
+  // Cache lifetime — what the store asks an entity (FlowSync/store.ts, "one way out")
+
+  /**
+   * True once this row is finished for the UI: nothing shows it any more, so the store may
+   * drop it as soon as nothing references it. False by default — a type opts in by saying
+   * what "finished" means for it (a closed tab, a closed shell, an ended session whose tab
+   * is gone).
+   */
+  isRetired(): boolean {
+    return false;
+  }
+
+  /**
+   * Someone is listening to this entity or to its flow-data stream — a mounted view — so
+   * it is in use whatever the store's own counts say.
+   */
+  hasListeners(): boolean {
+    return this._eventListeners.size > 0 || (this._flowDataStream?.eventNames().length ?? 0) > 0;
+  }
+
+  /**
+   * The store dropped this entity for good (deleted, removed, evicted). Free what hangs
+   * off it; a subclass that owns more (a PTY connection, loaded artifacts) releases that
+   * too. Safe to call twice. The stream object stays, so a holder that outlived the cache
+   * entry sees `'clear'` and renders empty.
+   */
+  onEvicted(): void {
+    this._flowDataStream?.clear();
+  }
+
   /**
    * Mirror of Python `Entity.emit_entity_event` arriving over the WS transport.
    * Dispatched by `DataManager.onFlowData` for envelopes with
@@ -1564,7 +1996,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 }
 
 // Create the singleton DataManager instance
-export const dataManager = new DataManager<APIEntity<any>>();
+export const dataManager = new DataManager<AnyEntity>();
 
 // Define store as a global for console debugability
 defineGlobal('store', dataManager);

@@ -8,17 +8,16 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 
 /**
- * True for a FILE attachment the user can download as a chip — i.e. any FILE
- * except the `conversation.jsonl` transcript, which lives on the toolbar rather
- * than as an attachment chip. Shared so the bubble and the prompt builder agree
- * on what counts as a downloadable file.
+ * True for a FILE attachment the user can download as a chip — i.e. every FILE.
+ *
+ * There used to be a carve-out for `conversation.jsonl`, because a shared
+ * session's transcript was smuggled through the raw-file lane under that name
+ * and had to be hidden from the chip row. A transcript is now a normal
+ * file-backed entity attachment, so no filename is special here.
  */
-export function isDownloadableFileAttachment(
-  att: Pick<Attachment, 'attachment_type' | 'data'>,
-): boolean {
+export function isDownloadableFileAttachment(att: Pick<Attachment, 'attachment_type' | 'data'>): boolean {
   if (att.attachment_type !== AttachmentType.FILE) return false;
-  const d = attachmentDataString(att);
-  return !!d && !d.endsWith('conversation.jsonl');
+  return !!attachmentDataString(att);
 }
 
 /**
@@ -42,10 +41,7 @@ export function fileAttachmentUrl(messageId: string, vfsPath: string): string {
  * of a 404. To pull a not-yet-local body, go through `FlowMessage.downloadAttachments()`
  * (the chip's download affordance); this helper is only for already-local bytes.
  */
-export function localAttachmentUrl(
-  messageId: string,
-  att: Pick<Attachment, 'data' | 'local_path'>,
-): string | null {
+export function localAttachmentUrl(messageId: string, att: Pick<Attachment, 'data' | 'local_path'>): string | null {
   if (!att.local_path) return null;
   const vfsPath = attachmentDataString(att);
   if (!vfsPath) return null;

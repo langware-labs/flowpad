@@ -1,8 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, List, NamedTuple, Optional
+from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
+
+from pydantic import computed_field, model_validator
+
+from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
+from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
+from flow_sdk.builtin.user import normalize_email, recipient_user_id
+from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
+from flow_sdk.core.urls.service_urls import build_hub_url
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
+from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
+from flow_sdk.tags.envelope import parse_target
 
 
 class MessageRef(NamedTuple):
@@ -14,66 +30,69 @@ class MessageRef(NamedTuple):
     id: str
     landed_at: Optional[datetime]
 
-from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.builtin.user import normalize_email
-from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import TypeId
-from flow_sdk.schema.types import EntityType
+
+def _ref_sort_key(ref: "MessageRef") -> tuple:
+    """Total order over message refs, oldest-first, that cannot raise.
+
+    Two hazards a bare ``landed_at`` key would hit: ``None`` (a missing or
+    unparseable projected timestamp) is not comparable, and a naive datetime
+    is not comparable to an aware one — both appear in real projections, and
+    either one raises TypeError inside ``max``. Timestamped refs always beat
+    untimestamped ones; everything is compared in UTC.
+    """
+    from datetime import timezone  # noqa: PLC0415
+
+    landed = ref.landed_at
+    if landed is None:
+        return (0, 0.0)
+    if landed.tzinfo is None:
+        landed = landed.replace(tzinfo=timezone.utc)
+    return (1, landed.timestamp())
+
+
+def member_label(member: dict) -> str:
+    """How a conversation member is named in plain text: ``name (role)``,
+    falling back to email then user id."""
+    label = member.get("name") or member.get("email") or member.get("user_id") or "?"
+    role = member.get("role")
+    return f"{label} ({role})" if role else str(label)
 
 
 class ConversationKind(StrEnum):
     """How a conversation should be interpreted across the UI/hub.
 
-    ``DIRECT`` is the default 1:1 / group conversation. ``COMMUNITY`` marks a
-    support-center "ticket": a guest opens it against the canonical community
-    project, staff pick it up from a shared pool, and replies are displayed
-    under the project's single ``community.display_name`` identity rather than
-    the individual responder (see ``Project.community``). This field is
-    **hub-authoritative** — it is stamped by ``Project.start_guest_conversation``
-    and must never be honored from a client-supplied payload (anti-spoof).
+    ``DIRECT`` is the default 1:1 / group conversation. ``HELPDESK`` marks a
+    support "ticket": a guest opens it against a helpdesk project, staff pick
+    it up from a shared pool, and replies are displayed under the project's
+    single ``helpdesk.display_name`` identity rather than the individual
+    responder (see ``Project.helpdesk``). This field is **hub-authoritative**
+    — it is stamped by ``Project.start_guest_conversation`` and must never be
+    honored from a client-supplied payload (anti-spoof).
     """
 
     DIRECT = "direct"
-    COMMUNITY = "community"
+    HELPDESK = "helpdesk"
+
+
+class ConversationStatus(StrEnum):
+    """Whether a ticket is still awaiting an answer. Mirrors the hub's field of
+    the same name, which is authoritative and enforces the same two values."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.cloud_client.client import FlowpadClient
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.message_thread import MessageThread
 
 
-# Sentinel used by ConversationRecord.sync_to_db to bypass the projection
-# guard on Conversation.message_ids / message_count. Application code never
-# imports this — it must call the projection writer on the record instead.
-_PROJECTION_SENTINEL = object()
+# Kept as module-level aliases: `fs_store/operations/conversation.py` imports
+# `_PROJECTION_SENTINEL` from here, and the guard itself now lives in the
+# shared `ProjectedFields` mixin (one sentinel for every projected entity).
+_PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count"})
-
-
-# Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
-# ``add_message`` are on the hot path (ping-pong e2e: 10 alice sends back-to-
-# back in ≤6s). Constructing a fresh FlowpadClient per call rebuilds the
-# httpx.AsyncClient and pays a full TCP+TLS handshake to the hub on every
-# request (~80-130ms). The cached client keeps a single AsyncClient alive so
-# subsequent calls reuse the underlying keep-alive connection (~5-20ms).
-_HUB_CLIENT_BY_KEY: dict[str, "FlowpadClient"] = {}
-
-
-def _get_hub_client(api_key: str) -> "FlowpadClient":
-    """Return a process-cached FlowpadClient bound to ``api_key``.
-
-    Safe to call from any async context — FlowpadClient's underlying
-    ``httpx.AsyncClient`` is created lazily on first request and is itself
-    safe for concurrent reuse. The cache key is the api_key so credential
-    rotation produces a fresh client.
-    """
-    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-
-    existing = _HUB_CLIENT_BY_KEY.get(api_key)
-    if existing is not None:
-        return existing
-    client = FlowpadClient(ApiConfig.from_env(), api_key=api_key)
-    _HUB_CLIENT_BY_KEY[api_key] = client
-    return client
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count", "archived"})
 
 
 # Shared-context asset types the hub hosts as first-class nodes, so a share can
@@ -84,7 +103,7 @@ def _get_hub_client(api_key: str) -> "FlowpadClient":
 # are intentionally absent: the hub doesn't host them; they keep riding the
 # message bundle and stay local. (Ideally this becomes a ``hub_hostable`` flag on
 # the type's ``TypeInfo`` so a new type lights up without editing this tuple.)
-_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.AGENT.value)
+_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.SUBAGENT.value)
 
 
 def _coerce_context_typeid(ref) -> Optional[TypeId]:
@@ -104,7 +123,22 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     return None
 
 
-class Conversation(Entity):
+_ROW_LOCKS = new_registry()
+_DELIVERY_LOCKS = new_registry()
+
+
+def conversation_row_lock(conversation_id: str) -> asyncio.Lock:
+    """The lock every create-or-merge of one conversation's local row holds.
+
+    Two writers materialize the same row: a ticket opened HERE (``ensure_conversation_entity``)
+    and the hub's push of it back (``hub_bridge._handle_conversation_op``). Each read "no row"
+    and saved a whole new one, the later save winning — the hub's untitled row over the local
+    title. Held across the read and the save, the second writer sees the first's row and merges.
+    """
+    return keyed_loop_lock(_ROW_LOCKS, conversation_id)
+
+
+class Conversation(ProjectedFields, Entity):
     """A conversation composed into a Task (or other parent entity).
 
     message_ids is a JSON-encoded list of typed Pointers projected from the
@@ -118,13 +152,20 @@ class Conversation(Entity):
     """
 
     type: str = APIField(default="conversation")
-    title: Optional[str] = APIField(default=None)
+    # Persisted to the record: it is what the conversation is found by (the record's own ``name``
+    # is a generated ``conversation-<id>``, and search reads the record's title).
+    title: Optional[str] = APIField(default=None, persist=Persist.TRUE)
     # Conversation interpretation. ``direct`` (default) is a normal 1:1/group
-    # conversation; ``community`` marks a support-center ticket whose responder
-    # identity is masked behind ``Project.community.display_name``. Stamped by
+    # conversation; ``helpdesk`` marks a support ticket whose responder
+    # identity is masked behind ``Project.helpdesk.display_name``. Stamped by
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
+    # Settlement state, mirrored from the hub by ``conversation-settle`` and by
+    # ``_upsert_hub_conversation_metadata``. The requester's portal reads this
+    # LOCAL row, so without the mirror a ticket they just closed keeps
+    # presenting as open on the surface they closed it from.
+    status: ConversationStatus = APIField(default=ConversationStatus.OPEN)
     # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
     # on the hub). Populated VERBATIM by ``_upsert_hub_conversation_metadata``
     # and used by ``handle_conversation_delete_archived`` to classify each
@@ -134,11 +175,58 @@ class Conversation(Entity):
     # convs reflect ``None`` here (the receiver must NOT fabricate a 'system'
     # sentinel). Ownership for display/authz resolves from the participant
     # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
-    created_by: Optional[str] = APIField(default=None)
+    created_by: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whose stream inbox lists this conversation — the local user's or an Agent's. Not
+    # ``created_by`` (the hub's creator mirror, a bare user uuid) and not the
+    # roster's ``owner`` role (hub-side authz): this is the LOCAL partition key
+    # the stream inbox filters by, set from the thread that minted the conversation.
+    # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
+    # resolves those to the local user. PRIVATE — never travels.
+    owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # The channel this conversation replies through. Every conversation has one: born
+    # ``flowpad`` (Flowpad's own chat, `conversation_channel.HOME_CHANNEL`), and adopted by
+    # a data source's channel (``gmail``, ``slack``, ``helpdesk``) when the stream inbox
+    # projection places its first message there (`adopt_channel`). What the channel IS —
+    # chip, transport, attachments — is `channel_spec`, never a test of this string.
+    # ``channel`` travels so a peer renders the badge — HUB_WRITE, so a hub refresh that
+    # lacks it never blanks it; ``channel_source_id`` is a row id in OUR database, so it
+    # is PRIVATE.
+    channel: str = APIField(default=HOME_CHANNEL, sharing=Sharing.HUB_WRITE)
+    channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and an
+    # external WhatsApp connector are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
+    # driver's. Stamped with ``channel_source_id``.
+    channel_provider: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whether someone other than the person answers this channel's messages — an Agent or a deployment
+    # (``data_source.answered_by``). ``False`` for a person's own channel (their Tasks channel): an inbound
+    # message there waits for no one, so the surface shows no "picked up / handling / replied" line.
+    # ``None`` = not yet known (stamped by the projection with ``channel_source_id``).
+    channel_answered: Optional[bool] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──
+    # Who it is with, as the channel addresses them (an email address, a phone number, a Slack channel):
+    # stamped from its first message and extended as others join, so a reply — or the first message of
+    # one WE started — goes to them rather than to whoever wrote last. When it began and ended, in
+    # message time: a call ends on hang-up, a chat when its source's thread timeout retires it; an
+    # email topic or a Slack thread stays open. PRIVATE: third parties' addresses, facts of this machine.
+    address: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    started_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
-    message_count: int = APIField(0)
-    message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
+    # A conversation written here FOR the hub, not there yet — an ask for help captured before
+    # delivery (``ask-for-help``). ``Conversation.deliver`` creates it there first, then clears this.
+    # And the project the person was in when they asked, so the ask lists with it (a ticket lives
+    # under the desk's project, not theirs). Both PRIVATE: this machine's bookkeeping.
+    awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    message_count: int = APIField(0, sharing=Sharing.PRIVATE)
+    # The roster's hub WIRE key is ``participants`` (hub contract); the local
+    # read cache is the generic ``members``. Declared once here so every
+    # ingest/merge seam reads the alias from ``hub_names(Conversation)``.
+    members: List[dict] = APIField(default_factory=list, sharing=Sharing.PRIVATE, hub_name="participants")
+    # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
+    # log, like ``message_count``: rebuilt locally, never accepted from the hub.
+    message_ids: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Roster cache lives on the Entity base as ``members`` (generic hub capability).
     # The hub sends/receives the conversation roster on the WIRE as ``participants``
     # (its field + fanout key); that key is adapted to ``members`` at ingest
@@ -151,11 +239,65 @@ class Conversation(Entity):
     # side. Defaults False (copy) — the sender opts in per conversation via the
     # Share dialog's Git toggle. Plain-text replies never change it.
     git_sharing_enabled: bool = APIField(default=False)
+    # The hub parent ``updated_date`` this device has RECONCILED THROUGH — the
+    # catch-up watermark, in the hub's clock, never the local one. Advanced only
+    # after a message reconcile actually succeeds (see the conversation-list
+    # drain), so it certifies work that happened rather than a row we merely saw.
+    #
+    # Why not reuse ``updated_date``: on Conversation that field is LOCAL recency,
+    # rewritten by ``ConversationRecord`` from the messages' own clocks (so a bare
+    # hub touch can't surface a days-old thread as "just now"). Those clocks are
+    # by construction EARLIER than the hub's parent stamp, so a synced row settles
+    # permanently BEHIND the hub: a ``hub.updated_date > local.updated_date`` gate
+    # never closes, and every catch-up re-ran the full per-conversation +
+    # per-message hub fan-out for conversations with nothing to fetch.
+    #
+    # Why not ``fetched_at``: that is a local wall clock, so it is skew-prone —
+    # and its own contract forbids using it as a correctness gate. Hub-clock to
+    # hub-clock has neither problem. LOCAL_ONLY: never sent to the hub.
+    hub_updated_date: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whether this conversation is unread for the local viewer — the ONE answer every
+    # row and the badge render, computed by `stream_inbox.recompute_unread` from
+    # `conversation_unread_count` > 0 (latest received message unread, or a pending
+    # invitation). The frontend reads it; it does not recompute it. LOCAL_ONLY.
+    is_unread: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    #: How many messages are waiting for this user, newest first up to the first one read or sent
+    #: by them (``stream_inbox.conversation_unread_count``); a pending invitation is at least 1.
+    #: Projected beside ``is_unread`` by the same recompute, so the two never disagree.
+    unread_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
+    #: ``is_archived()`` stored, so a paged stream inbox filters its views in the query. Projected beside
+    #: ``is_unread`` by the same recompute (which every archive, unarchive and landing message triggers).
+    archived: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
+    projection_writer: ClassVar[str] = (
+        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count/archived)"
+    )
+
+    @classmethod
+    def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:
+        """Has the hub row changed since we last reconciled it?
+
+        Hub clock vs hub clock — ``hub_updated`` against ``local.hub_updated_date``.
+        Lives here, beside the field it reads, because ``Entity.is_stale`` gives the
+        WRONG answer for a Conversation: it compares against ``updated_date``, which
+        on this type is a local projection rather than the hub's clock, so it never
+        converges (see the ``hub_updated_date`` comment above). Callers deciding
+        whether to re-pull a conversation from the hub must use this, not ``is_stale``.
+
+        A hub payload with no ``updated_date`` (old hub) cannot prove movement — the
+        caller's message-count check is then the only signal. A local row that has
+        never recorded a watermark IS drifted: that is the one-time pass for rows
+        written before this field existed, and it self-heals on first reconcile.
+        """
+        if hub_updated is None:
+            return False
+        return cls._as_datetime(local.hub_updated_date) != hub_updated
+
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
-    # (auto-revive on new activity). The Inbox ignores this field entirely.
+    # (auto-revive on new activity). The stream inbox ignores this field entirely.
     dismissed_at: Optional[datetime] = APIField(default=None)
-    # Conversation-level archive. Honored by **both** Inbox and Recent strip
+    # Conversation-level archive. Honored by **both** stream inbox and Recent strip
     # — the conversation is hidden everywhere UNTIL a FlowMessage newer than
     # ``archived_at`` lands (auto-revive on new activity, same comparison
     # pattern as ``dismissed_at``). Per-message ``FlowMessage.is_read``
@@ -169,6 +311,142 @@ class Conversation(Entity):
     # ``conv.first_context_of_type('task', bucket='shared')`` to read it back.
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str | None] = "MessageSquare"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_home_channel(cls, data):
+        """A row written before every conversation had a channel carries none — it is
+        Flowpad's own chat. Read-side only; the row heals on its next save."""
+        if isinstance(data, dict) and not (data.get("channel") or "").strip():
+            data = {**data, "channel": HOME_CHANNEL}
+        return data
+
+    @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
+    @property
+    def channel_spec(self) -> ChannelSpec:
+        """What this conversation's channel is — the traits every surface reads."""
+        return channel_spec(self.channel, self.channel_provider)
+
+    async def send(self, body: str, *, reply_to=None, in_thread=None, files=()):
+        """Continue this conversation on its channel — Flowpad's own chat or a data source's.
+
+        ``reply_to`` (one of ``messages()``, or its id) answers that message: it quotes it where the
+        channel quotes (WhatsApp, Telegram, Flowpad) and lands in its thread everywhere. ``in_thread``
+        (a ``MessageThread`` of this conversation, or its id) writes into that thread without
+        quoting anyone. On a data source channel the send goes to whom the conversation is with —
+        whether they wrote last or only we have — and answers the channel's ``SendOutcome``;
+        ``files`` are paths or ``MessageFile``s, and one the channel cannot take is refused before
+        anything is sent. On Flowpad's own chat it is the app's own send (``add_message``) and
+        answers the new ``FlowMessage``."""
+        from flow_sdk.schema.data_spec.channel_spec import ChannelTransport  # noqa: PLC0415
+
+        reply_id = str(getattr(reply_to, "id", reply_to) or "") or None
+        thread = await self._thread_of(in_thread) if in_thread is not None and reply_id is None else None
+        if self.channel_spec.transport == ChannelTransport.FLOWPAD:
+            if files:
+                raise ValueError("files on Flowpad's own chat ride add_message's attachments, not send()")
+            return await self._send_native(
+                body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None
+            )
+
+        from flow_sdk.stream_inbox.outbound import (  # noqa: PLC0415
+            outgoing_files,
+            quoting,
+            resolve_reply_target,
+            send_to,
+        )
+
+        target = await resolve_reply_target(str(self.id))
+        if reply_id is not None:
+            target = await quoting(target, reply_id)
+        elif thread is not None:
+            # Into the thread: address its newest message. A channel whose replies only thread
+            # (email, Slack) files it there; a quoting channel's thread is the chat, and
+            # quote=False keeps the message unquoted.
+            newest = (await self.messages(thread=thread.id))[-1:]
+            if newest:
+                target = await quoting(target, newest[0])
+        return await send_to(
+            str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None
+        )
+
+    async def _thread_of(self, ref) -> "MessageThread":
+        thread = await self.resolve_thread(ref)
+        if thread is None:
+            raise ValueError(f"no thread {ref!r} in this conversation")
+        return thread
+
+    async def _send_native(self, body: str, *, reply_to_id: Optional[str], thread_root_id: Optional[str]):
+        """Flowpad's own chat: the same handler and gate the composer's send reaches
+        (``add_message``) — queued as ``pending_send`` without cloud login, refused in Local mode."""
+        from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+        from flow_sdk.app.actions.share_action import add_message_gate  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+        request: dict = {"conversation_id": str(self.id), "text": body}
+        if reply_to_id:
+            request["reply_to_id"] = reply_to_id
+        elif thread_root_id:
+            request["thread_root_id"] = thread_root_id
+        blocked, pending_send = add_message_gate(request)
+        if blocked:
+            raise PermissionError(blocked)
+        me = await get_or_create_local_user()
+        response = await handle_add_message(request, str(me.typeid), pending_send=pending_send)
+        if getattr(response, "status", "") != "SUCCESS":
+            raise ValueError(getattr(response, "message", None) or "send refused")
+        return await FlowMessage.get_one({"id": response.data["flow_message_id"]})
+
+    async def messages(self, *, thread=None) -> list:
+        """This conversation's messages, oldest first — only one thread's with ``thread`` (a
+        ``MessageThread`` or its id, or a message in it)."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+        match: dict = {"conversation_id": str(self.id)}
+        if thread is not None:
+            resolved = thread if isinstance(thread, MessageThread) else await self.resolve_thread(thread)
+            if resolved is None:
+                return []
+            match["thread_id"] = resolved.id
+        rows = await FlowMessage.get_all({"match": match})
+        # Event time first (a backfill lands in message time), then arrival.
+        return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
+
+    async def react(self, message, emoji: str) -> list:
+        """Put our ``emoji`` on one of this conversation's messages; answers its reactions after. A
+        channel that cannot show the emoji refuses (``Rejected``) — it is never swapped for another."""
+        from flow_sdk.stream_inbox.reactions import react  # noqa: PLC0415
+
+        return await react(message, emoji)
+
+    async def unreact(self, message, emoji: str = "") -> list:
+        """Take back our ``emoji`` from a message — all of ours with ``""``."""
+        from flow_sdk.stream_inbox.reactions import unreact  # noqa: PLC0415
+
+        return await unreact(message, emoji)
+
+    def adopt_channel(self, channel: str, source_id: str, provider: str = "") -> bool:
+        """Name the data source channel this conversation replies through. Returns whether
+        anything changed (the caller saves).
+
+        The channel is replaced only while the current one is the HOME channel: a help desk
+        ticket is born ``flowpad`` and becomes ``helpdesk`` when its first message is
+        projected, but a source channel is never overwritten — a twin source projecting
+        into the same thread must not make it flap. The source id is set once, while empty.
+        """
+        changed = False
+        if channel and channel != self.channel and self.channel_spec.home:
+            self.channel = channel
+            changed = True
+        if source_id and not self.channel_source_id:
+            self.channel_source_id = source_id
+            changed = True
+        if provider and not self.channel_provider and (not source_id or self.channel_source_id == source_id):
+            self.channel_provider = provider
+            changed = True
+        return changed
 
     @classmethod
     async def resolve_project_id(
@@ -191,41 +469,98 @@ class Conversation(Entity):
         when no shared entity resolves, and to ``None`` for a pure entity-less
         cross-user chat — which is left project-less by design (the receiver
         maps a project only in that one case).
+
+        Resolves against DB ROWS only — deliberately NOT through
+        ``Entity.project_id_of``, whose ``get_by_id`` lets a type recover itself
+        from disk (``ClaudeSession`` does). Binding a conversation to a project
+        is DURABLE INSTALL CONSENT (docs/collab/messages-and-attachments.md §6):
+        a bound conversation auto-installs every later arrival with no review,
+        so it must never be decided from a filesystem scan.
+
+        Concretely: a receiver materializes the conversation BEFORE the bundle
+        unpacks, so a shared session has no row yet. Going through the recovering
+        lookup, the id-keyed disk scan found the SENDER's transcript (two
+        instances sharing one home dir), derived the receiver's own project from
+        its ``cwd``, and bound the conversation — swallowing both the
+        pick-a-project step and the review dialog. Unresolvable now means
+        unbound, which is the correct answer: the receiver chooses.
         """
-        for ref in (shared_context_entities or []):
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        for ref in shared_context_entities or []:
             tid = _coerce_context_typeid(ref)
             if tid is None or not tid.id:
                 continue
-            proj = await cls.project_id_of(tid.type, tid.id)
+            model = SchemaRegistry.get_entity_cls(tid.type)
+            if model is None:
+                continue
+            try:
+                target = await model.get_one({"id": tid.id})
+                proj = await target.effective_project_id() if target is not None else None
+            except Exception:
+                logging.debug("resolve_project_id: failed for %s", tid, exc_info=True)
+                continue
             if proj:
                 return proj
         return fallback
 
-    async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
-        """Push to hub + invite recipients via the standard hub pattern.
+    async def share(
+        self,
+        recipients: Optional[List[str]] = None,
+        recipient_user_ids: Optional[List[str]] = None,
+        *,
+        principals: Optional[List[str]] = None,
+        notify_by_email: bool = True,
+        deliver_messages: bool = True,
+    ) -> "Conversation":
+        """Push to hub + admit people via the standard hub pattern.
 
-        Without ``recipients``: equivalent to ``Entity.share()`` — POSTs to
+        With no one to admit: equivalent to ``Entity.share()`` — POSTs to
         ``/graph/conversation`` so the hub-side row exists; the caller then
         has ``owner`` role.
 
-        With ``recipients`` (list of email strings): after the create, the
-        caller joins the conversation (so they enter ``participants``), then
-        one ``MembershipRequest`` per recipient is sent via the canonical
-        ``POST /graph/conversation/<id>/members`` endpoint, targeting this
-        Conversation with role ``member``. Each recipient discovers the
-        invitation via ``GET /graph/invitation/pending``, accepts via
-        ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
-        themselves (wired in ``flow_message_action.handle_invitation_accept``).
+        Two ways to admit someone, because the address book knows people two
+        ways. A contact learned from a conversation roster carries a hub
+        ``user_id`` and NO email (the hub never discloses other people's
+        addresses — see ``_learn_address_book``), so an email-only admit path
+        makes exactly those contacts unreachable even though the picker offers
+        them.
 
-        Persisting ``remote=True`` to the local DB is the caller's
-        responsibility (``share_action.share_entity`` does the local row
-        UPDATE immediately after ``share()`` returns).
+        Both are the SAME invitation — one ``MembershipRequest`` per person via
+        the canonical ``POST /graph/conversation/<id>/members``, targeting this
+        Conversation with role ``member``; the recipient discovers it via
+        ``GET /graph/invitation/pending``, accepts via
+        ``GET /graph/members/accept``, and then
+        ``POST /graph/conversation/<id>/join`` themselves (wired in
+        ``flow_message_action.handle_invitation_accept``). Only the ADDRESS
+        differs:
+
+        ``recipients`` (email strings) — for anyone, including someone with no
+        account yet: the hub provisions a shadow user for them.
+
+        ``recipient_user_ids`` (hub user ids, or ``"user-<id>"`` typeid strings)
+        — for someone the hub already knows, addressed the only way we can
+        address them. The hub resolves the id to their address server-side. Use
+        it for a contact whose email we do not have and cannot get.
+
+        ``principals`` (group typeids, e.g. ``"team-<id>"``) — a group admitted
+        as ONE grant, so its current and future members all read it.
+
+        ``notify_by_email=False`` admits without the hub's invitation email —
+        for a share whose recipient another invitation already emails (a
+        project invite carries its own).
+
+        The person lists may be passed together; each person should appear in only
+        one (the hub refuses a request naming both). Persisting ``remote=True``
+        to the local DB is the caller's responsibility
+        (``share_action.share_entity`` does the local row UPDATE immediately
+        after ``share()`` returns).
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
-        if not recipients:
+        if not recipients and not recipient_user_ids and not principals:
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
             # comment on it auto-shares under the conversation (the hub parent).
@@ -241,7 +576,7 @@ class Conversation(Entity):
             # row. Local context linking, pending-message delivery, and asset
             # sharing can all block or fail, so none may sit in this ownership
             # gap and leave an undeletable conversation behind.
-            await client.post(f"/graph/conversation/{self.id}/join", {})
+            await client.post(build_hub_url(self, action="join"), {})
 
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
@@ -252,7 +587,10 @@ class Conversation(Entity):
             # local. Flush them through the same send pipeline a normal reply
             # uses, BEFORE inviting, so the invitation's callback_override and
             # the recipient's first fetch resolve.
-            await self._deliver_pending_messages()
+            # (``deliver_messages=False`` when ``deliver`` itself is opening this conversation.)
+            if deliver_messages:
+                await self.deliver(bodies=False)
+                self.kick_delivery()
 
             # Post-accept landing: point at the conversation's first FlowMessage
             # on the hub. Falls back to None (hub default = entity URL) when the
@@ -263,15 +601,14 @@ class Conversation(Entity):
             # on the same invitation as the conversation member grant.
             asset_targets = await self._share_hostable_assets()
 
-            # One invitation per recipient.
-            for email in recipients:
-                if not email or not isinstance(email, str):
-                    continue
-                email = normalize_email(email)
-                if not email:
-                    continue
+            def _membership_body(**identity) -> dict:
+                """One ``MembershipRequest`` for this conversation. ``identity``
+                is the single key addressing the invitee — ``recipient_email``
+                or ``recipient_user_id`` — so both forms carry the identical
+                targets (conversation + any shared assets) and cannot drift
+                apart."""
                 body: dict = {
-                    "recipient_email": email,
+                    **identity,
                     "invitation_targets": [
                         {"typeid": f"conversation-{self.id}", "role": "member"},
                         *asset_targets,
@@ -279,10 +616,38 @@ class Conversation(Entity):
                 }
                 if callback_override:
                     body["callback_override"] = callback_override
+                if not notify_by_email:
+                    body["notify_by_email"] = False
+                return body
+
+            # One invitation per recipient.
+            for email in recipients or []:
+                if not email or not isinstance(email, str):
+                    continue
+                email = normalize_email(email)
+                if not email:
+                    continue
                 await client.post(
-                    f"/graph/conversation/{self.id}/members",
-                    body,
+                    build_hub_url(self, action="members"),
+                    _membership_body(recipient_email=email),
                 )
+
+            # One invitation per contact we can only name by hub id.
+            for value in recipient_user_ids or []:
+                user_id = recipient_user_id(value)
+                if not user_id:
+                    continue
+                await client.post(
+                    build_hub_url(self, action="members"),
+                    _membership_body(recipient_user_id=user_id),
+                )
+            # One grant per group principal (a team).
+            for principal in principals or []:
+                if principal:
+                    await client.post(
+                        build_hub_url(self, action="members"),
+                        _membership_body(principal=principal),
+                    )
         return self
 
     async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:
@@ -310,6 +675,11 @@ class Conversation(Entity):
             try:
                 tid = _coerce_context_typeid(ref)
                 if tid is None:
+                    continue
+                if tid.type in MEMBERSHIP_CONTAINER_TYPES:
+                    # An org / team / project is a hub-owned root, never a
+                    # conversation's child — linking it would re-parent the
+                    # shared container under the message it rode in.
                     continue
                 cls = SchemaRegistry.get_entity_cls(tid.type)
                 if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
@@ -345,10 +715,11 @@ class Conversation(Entity):
         riding the message bundle as before. Best-effort per asset; a failed
         push is logged and that asset simply isn't granted (no membership
         breakage)."""
+        from flow_sdk.core.urls.service_urls import hub_wire_type  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         targets: list[dict] = []
-        for ref in (self.shared_context_entities or []):
+        for ref in self.shared_context_entities or []:
             tid = _coerce_context_typeid(ref)
             if tid is None or tid.type not in _HUB_SHAREABLE_ASSET_TYPES or not tid.id:
                 continue
@@ -366,27 +737,86 @@ class Conversation(Entity):
                         await ent.save(None)
                     except Exception as e:  # noqa: BLE001
                         logging.warning("[conv.share] persist remote %s failed (non-fatal): %s", tid, e)
-                targets.append({"typeid": str(tid), "role": "reader"})
+                # The hub resolves this typeid against its OWN registry, so it
+                # needs the wire spelling (subagent → agent until the hub
+                # renames) — same map as build_hub_url.
+                wire = TypeId(type=hub_wire_type(tid.type), id=tid.id)
+                targets.append({"typeid": str(wire), "role": "reader"})
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets
 
-    async def _deliver_pending_messages(self) -> None:
-        """Push messages that were composed before this conversation was remote.
+    @property
+    def hub_bound(self) -> bool:
+        """Whether this conversation's messages are meant for the hub (so the outbox delivers them)."""
+        return bool(self.remote or self.awaits_hub)
 
-        Reuses the SAME send pipeline a normal reply uses — there is no separate
-        push path. ``_send_conversation_message_header`` is the hub-side create
-        that ``handle_add_message`` calls for every reply; ``_upload_body_and_
-        finalize`` is its body-bundle step. We read the on-disk pointer index
-        (the source of truth, so this works on the transient entity the share
-        action builds) and run each not-yet-remote message through that pipeline.
-        Best-effort per message: a failed push is logged and the row left local,
-        so a later re-share retries it."""
+    async def deliver(self, *, bodies: bool = True, force: bool = False, **upload_options) -> None:
+        """Hand the hub every message of mine this conversation still owes it — in order.
+
+        THE delivery path: a fresh send, a resend the person asked for, and every hub-session
+        transition (startup, login, reconnect, the hub answering again) all come through here,
+        so there is one way a message reaches the hub. What is owed is ``FlowMessage.owes_delivery``
+        — never "not remote", which a slow-path send never set and a peer's row does not have.
+
+        Headers go in conversation order (the on-disk pointer index), one at a time, and stop at
+        the first that fails: a later message must not land before an earlier one. Each attempt
+        records its outcome on the message (SENT, or ``delivery_failure``). Bodies follow, each
+        under its own lock (``FlowMessage._upload_body_inflight``), so a large upload never holds
+        this conversation's headers back.
+
+        A message the hub REFUSED waits for the person (``force``, the Retry): asking again
+        unchanged is the same no.
+        """
         from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
             _send_conversation_message_header,
             _upload_body_and_finalize,
         )
-        from flow_sdk.builtin.flow_message import BodyStatus, FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import BodyStatus, DeliveryStatus, delivery_rank  # noqa: PLC0415
+
+        owed_bodies = []
+        async with keyed_loop_lock(_DELIVERY_LOCKS, self.id):
+            if self.awaits_hub and not await self._open_on_hub(force=force):
+                return
+            for fm in await self._owed_messages(force=force):
+                if delivery_rank(fm.delivery_status) < delivery_rank(DeliveryStatus.SENT):
+                    # Announce a body bundle so the hub expects the upload that follows.
+                    if fm.has_body() and fm.body_status not in (BodyStatus.UPLOADING, BodyStatus.FAILED):
+                        fm.body_status = BodyStatus.UPLOADING
+                    failure = await _send_conversation_message_header(self, fm)
+                    if failure is not None:
+                        await fm.record_delivery_failure(failure)
+                        break
+                    await fm.mark_sent()
+                if fm.has_body() and fm.body_status in (BodyStatus.UPLOADING, BodyStatus.FAILED):
+                    owed_bodies.append(fm)
+        if bodies:
+            for fm in owed_bodies:
+                await _upload_body_and_finalize(fm, self.id, **upload_options)
+
+    async def _open_on_hub(self, *, force: bool) -> bool:
+        """Stage 0: a conversation captured here for the hub (an ask for help) is created there
+        first. False when it could not be — the reason is on its opening message."""
+        from flow_sdk.app.actions.ask_for_help_action import open_on_hub  # noqa: PLC0415
+
+        owed = await self._owed_messages(force=force)
+        if not owed:
+            return False
+        failure = await open_on_hub(self, owed[0])
+        if failure is not None:
+            await owed[0].record_delivery_failure(failure)
+            return False
+        return True
+
+    def kick_delivery(self, **upload_options) -> None:
+        """``deliver()`` off the caller's path. Losing this task loses nothing: what is owed is on
+        the rows, and the next transition delivers it."""
+        asyncio.create_task(self.deliver(**upload_options))
+
+    async def _owed_messages(self, *, force: bool = False) -> list:
+        """My messages here the hub does not fully have, in conversation order — less the ones it
+        refused, unless the person asked again (``force``)."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
             default_jsonl_path,
             from_jsonl,
@@ -394,32 +824,107 @@ class Conversation(Entity):
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        rec = from_jsonl(
-            default_jsonl_path(self.id), parent_id="", record_id=self.id,
-            parent_type=RecordType.PROJECT,
-        )
+        rec = from_jsonl(default_jsonl_path(self.id), parent_id="", record_id=self.id, parent_type=RecordType.PROJECT)
+        owed = []
         for ptr in message_pointers(rec):
             fm = await FlowMessage.get_one({"id": ptr.id})
-            if fm is None or getattr(fm, "remote", False):
-                continue  # missing row, or already on the hub — nothing to do
-            # Mirror handle_add_message: a message carrying a body bundle is
-            # announced as UPLOADING so the hub expects the bundle we upload next.
-            if fm.has_body() and fm.body_status != BodyStatus.UPLOADING:
-                fm.body_status = BodyStatus.UPLOADING
-                await fm.save()
-            if not await _send_conversation_message_header(self, fm):
-                continue  # push failed (already logged) — leave local for retry
-            fm.remote = True
-            await fm.save()
-            if fm.body_status == BodyStatus.UPLOADING:
-                await _upload_body_and_finalize(fm, self.id)
+            if fm is None or not fm.owes_delivery:
+                continue
+            refused = fm.delivery_failure is not None and not fm.delivery_failure.kind.stays_owed
+            if refused and not force:
+                continue
+            owed.append(fm)
+        return owed
+
+    async def discard_invite_conversation(self, client) -> None:
+        """Delete an invite conversation whose share failed — the hub row (the
+        sharer owns it once joined) and the local row — so a refused invite leaves
+        no empty conversation behind. Best-effort on each side."""
+        try:
+            response = await client.request("DELETE", build_hub_url(self))
+            if response.status_code >= 400:
+                logging.warning("[invite] hub delete of conversation %s answered %s", self.id, response.status_code)
+        except Exception as e:  # noqa: BLE001
+            logging.warning("[invite] hub delete of conversation %s failed: %s", self.id, e)
+        try:
+            await self.delete()
+        except Exception as e:  # noqa: BLE001
+            logging.warning("[invite] local delete of conversation %s failed: %s", self.id, e)
+
+    async def ensure_message_edges(self) -> dict:
+        """Backfill parent→message ``is_child`` edges from what we already know.
+
+        Membership used to live only in the on-disk pointer index and the
+        ``conversation_id`` field; edges are new, so every conversation that
+        predates them has none. Anything deriving membership from edges must
+        call this first or it reads an empty set and blanks the projection.
+
+        Candidates are the union of BOTH legacy sources — jsonl pointers and
+        rows carrying ``conversation_id`` — so a message whose pointer was lost
+        (DB rebuild, interrupted write) is recovered rather than dropped.
+        Strictly additive and idempotent: ``attach_child`` dedups, so a
+        converged conversation does zero writes. Silent by design — the caller
+        announces once afterwards rather than once per backfilled message.
+
+        Returns counts for logging: ``{candidates, added, missing}``.
+        """
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        candidate_ids: set[str] = set()
+        try:
+            rec = from_jsonl(
+                default_jsonl_path(self.id),
+                parent_id="",
+                record_id=self.id,
+                parent_type=RecordType.PROJECT,
+            )
+            candidate_ids.update(p.id for p in message_pointers(rec))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for fm in await FlowMessage.get_all({"conversation_id": self.id}):
+                if fm.id:
+                    candidate_ids.add(fm.id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        added = 0
+        missing = 0
+        for fm_id in candidate_ids:
+            fm = await FlowMessage.get_one({"id": fm_id})
+            if fm is None:
+                missing += 1
+                continue
+            if await self._has_child_edge(fm):
+                continue
+            if fm.parent_type_id != str(self.typeid):
+                fm.parent_type_id = str(self.typeid)
+                await fm.save(None, notify=False)
+            await self.attach_child(fm, notify=False)
+            added += 1
+
+        if added or missing:
+            logging.info(
+                "[conv-edges] %s: backfilled %d edge(s) from %d candidate(s); %d unresolvable",
+                (self.id or "?")[:8],
+                added,
+                len(candidate_ids),
+                missing,
+            )
+        return {"candidates": len(candidate_ids), "added": added, "missing": missing}
 
     def message_refs(self) -> "list[MessageRef]":
         """This conversation's messages in order (oldest-first), as lightweight
         references parsed from the ``message_ids`` projection.
 
         The ONE reader of the projection's JSON shape — the landing path, the
-        inbox unread count, and any future consumer resolve messages through
+        stream inbox unread count, and any future consumer resolve messages through
         here. Skips non-FlowMessage/corrupt entries; empty list when the
         projection is missing or unparseable.
 
@@ -440,10 +945,8 @@ class Conversation(Entity):
         refs: list[MessageRef] = []
         for entry in entries:
             typeid = str(entry.get("typeid") or "") if isinstance(entry, dict) else ""
-            if "-" not in typeid:
-                continue
-            ptype, pid = typeid.split("-", 1)
-            pid = pid.lstrip("@")
+            ptype, pid = parse_target(typeid)
+            pid = (pid or "").lstrip("@")
             if ptype != "flow_message" or not pid:
                 continue
             ts_raw = entry.get("ts")
@@ -454,6 +957,29 @@ class Conversation(Entity):
             refs.append(MessageRef(pid, landed_at))
         return refs
 
+    def latest_message_ref(self) -> "Optional[MessageRef]":
+        """The NEWEST message, by timestamp — not the last one appended.
+
+        ``message_ids`` is append-ordered, and appends are arrival-ordered.
+        That is the same thing only while messages arrive in the order they
+        were sent, which stops being true the moment anything backfills: an
+        ingested mailbox hands its history back newest-first, so the LAST
+        pointer is the OLDEST mail. Reading ``refs[-1]`` there silently
+        corrupts the unread count, the stream inbox preview line and the archive
+        auto-revive comparison at once.
+
+        Refs whose timestamp is missing/unparseable sort oldest, so they can
+        never win — a corrupt entry must not become "latest".
+        """
+        refs = self.message_refs()
+        if not refs:
+            return None
+        return max(refs, key=_ref_sort_key)
+
+    def message_refs_newest_first(self) -> "list[MessageRef]":
+        """``message_refs`` newest-first, by the same timestamp order ``latest_message_ref`` uses."""
+        return sorted(self.message_refs(), key=_ref_sort_key, reverse=True)
+
     def is_archived(self) -> bool:
         """Conversation-level archive with auto-revive (see ``archived_at``):
         True while the stamp is set and no message NEWER than it has landed.
@@ -462,8 +988,8 @@ class Conversation(Entity):
         revive."""
         if self.archived_at is None:
             return False
-        refs = self.message_refs()
-        latest_ts = refs[-1].landed_at if refs else None
+        latest = self.latest_message_ref()
+        latest_ts = latest.landed_at if latest else None
         if latest_ts is None:
             return True
         archived_at = self.archived_at
@@ -482,39 +1008,112 @@ class Conversation(Entity):
         participants+roles, message count) followed by one line per message
         (``FlowMessage.summary()``), oldest-first.
 
-        Cheap and synchronous-ish: reads the on-disk jsonl pointer index (the
-        source of truth, same idiom as ``_deliver_pending_messages``) and loads
-        each FlowMessage by id. No LLM, no hub calls.
+        Cheap: the ordered ``message_refs`` projection plus one bulk load.
+        No LLM, no hub calls.
         """
-        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
-            default_jsonl_path,
-            from_jsonl,
-            message_pointers,
-        )
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        def _who(p: dict) -> str:
-            label = p.get("name") or p.get("email") or p.get("user_id") or "?"
-            role = p.get("role")
-            return f"{label} ({role})" if role else str(label)
-
-        participants = ", ".join(_who(p) for p in (self.members or [])) or "(none)"
+        participants = ", ".join(member_label(p) for p in (self.members or [])) or "(none)"
         lines = [
             f"Conversation: {self.title or '(untitled)'}",
             f"Participants: {participants}",
             f"Messages: {self.message_count}",
             "",
         ]
-        rec = from_jsonl(
-            default_jsonl_path(self.id), parent_id="", record_id=self.id,
-            parent_type=RecordType.PROJECT,
-        )
-        for ptr in message_pointers(rec):
-            fm = await FlowMessage.get_one({"id": ptr.id})
-            if fm is not None:
-                lines.append(fm.summary())
+        lines.extend(fm.summary() for fm in await self._messages_oldest_first())
         return "\n".join(lines)
+
+    async def _messages_oldest_first(
+        self, *, last: Optional[int] = None, since: Optional[datetime] = None
+    ) -> list["FlowMessage"]:
+        """This conversation's messages oldest-first, in the order the UI shows
+        them: ``message_refs`` sorted by event time (``_ref_sort_key``).
+        ``since`` / ``last`` narrow the REFS, so only the messages kept are
+        loaded, in one query."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # The row's projection, not this object's: a send since this object was loaded re-projected it.
+        current = await Conversation.get_one({"id": str(self.id)}) if self.id else None
+        refs = sorted((current or self).message_refs(), key=_ref_sort_key)
+        if since is not None:
+            refs = [r for r in refs if _ref_sort_key(r) >= (1, since.timestamp())]
+        if last is not None:
+            refs = refs[-last:] if last > 0 else []
+        ids = [r.id for r in refs]
+        if not ids:
+            return []
+        rows = await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
+        by_id = {fm.id: fm for fm in rows}
+        return [by_id[pid] for pid in ids if pid in by_id]
+
+    async def threads(self) -> list["MessageThread"]:
+        """This conversation's threads (channel and native), oldest first."""
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+        rows = await MessageThread.get_all({"match": {"conversation_id": self.id}})
+        return sorted(rows, key=lambda t: str(t.created_date or ""))
+
+    async def resolve_thread(self, ref) -> Optional["MessageThread"]:
+        """The thread ``ref`` names in this conversation: a thread (or its id), or a message in
+        it (its root, for a native thread). None when neither."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+        ref = str(getattr(ref, "id", ref) or "").strip()
+        if not ref:
+            return None
+        thread = await MessageThread.get_one({"id": ref, "conversation_id": str(self.id)})
+        if thread is not None:
+            return thread
+        fm = await FlowMessage.get_one({"id": ref})
+        if fm is None or fm.conversation_id != self.id or not fm.thread_id:
+            return None
+        return await MessageThread.get_one({"id": fm.thread_id})
+
+    async def resolve_thread_id(self, ref: str) -> Optional[str]:
+        """The id of the thread ``ref`` names in this conversation (``resolve_thread``)."""
+        thread = await self.resolve_thread(ref)
+        return thread.id if thread else None
+
+    async def transcript(
+        self,
+        *,
+        self_ids: frozenset[str] | set[str] = frozenset(),
+        last: Optional[int] = None,
+        since: Optional[datetime] = None,
+        thread_id: Optional[str] = None,
+    ) -> dict:
+        """The unabridged read of this conversation for an agent: header, its threads, and
+        ``FlowMessage.read_entry`` per message (with its thread's title), oldest-first.
+        ``thread_id`` keeps one thread; ``since`` keeps messages at/after that instant;
+        ``last`` then keeps the newest N. Local reads only — the same residence ``summary`` reads."""
+        if thread_id:
+            msgs = await self.messages(thread=thread_id)
+            if since is not None:
+                msgs = [m for m in msgs if (m.sent_at or m.created_date) and (m.sent_at or m.created_date) >= since]
+            if last is not None:
+                msgs = msgs[-last:] if last > 0 else []
+        else:
+            msgs = await self._messages_oldest_first(last=last, since=since)
+        threads = await self.threads()
+        titles = {t.id: t.title or "" for t in threads}
+        entries = []
+        for m in msgs:
+            entry = m.read_entry(self_ids)
+            if m.thread_id:
+                entry["thread_title"] = titles.get(m.thread_id, "")
+            entries.append(entry)
+        return {
+            "id": self.id,
+            "title": self.title or "",
+            "participants": [member_label(p) for p in (self.members or [])],
+            "message_count": self.message_count,
+            "threads": [
+                {"id": t.id, "title": t.title or "", "channel": t.channel, "message_count": t.message_count}
+                for t in threads
+            ],
+            "thread_id": thread_id,
+            "messages": entries,
+        }
 
     async def add_message(
         self,
@@ -529,6 +1128,8 @@ class Conversation(Entity):
         cloned_from_sender_id: Optional[str] = None,
         remote_worker_session_id: Optional[str] = None,
         kind: Optional[str] = None,
+        reply_to_id: Optional[str] = None,
+        thread_root_id: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -551,15 +1152,10 @@ class Conversation(Entity):
         hub FM, and the uploaded ``body.flowmsg`` bundle all share one key —
         ``FlowMessage.upload_body()`` then targets the same id.
         """
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_request  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            raise RuntimeError("Cloud login required before add_message()")
         body: dict = {"text": text}
         if flow_message_id:
             body["id"] = flow_message_id
@@ -568,10 +1164,7 @@ class Conversation(Entity):
         if sender_name:
             body["sender_name"] = sender_name
         if attachments:
-            body["attachment"] = [
-                a if isinstance(a, dict) else a.model_dump(mode="python")
-                for a in attachments
-            ]
+            body["attachment"] = [a if isinstance(a, dict) else a.model_dump(mode="python") for a in attachments]
         if shared_context_entities:
             body["shared_context_entities"] = shared_context_entities
         # Forward provenance — mirrored on the hub FlowMessage schema so it
@@ -588,10 +1181,16 @@ class Conversation(Entity):
             body["remote_worker_session_id"] = remote_worker_session_id
         if kind:
             body["kind"] = kind
+        # The quote and the native thread — mirrored on the hub FlowMessage schema,
+        # so every member's copy carries them (``stream_inbox.native_threads``).
+        if reply_to_id:
+            body["reply_to_id"] = reply_to_id
+        if thread_root_id:
+            body["thread_root_id"] = thread_root_id
         body["conversation_id"] = self.id
-        path = build_hub_url(self, action="add_message")
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            data = await client.post(path, body)
+        # The one hub seam: every way this fails raises a classified ``HubError`` (signed out
+        # before anything is sent, offline, refused, broken) that delivery records as is.
+        data = await hub_request("POST", BuiltinEntityType.CONVERSATION, self.id, "add_message", payload=body)
         # Some hub deployments do not echo conversation_id on the FlowMessage
         # payload even though the add_message route is scoped to this
         # conversation. Preserve the known parent locally so callers that pack
@@ -612,7 +1211,6 @@ class Conversation(Entity):
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")
@@ -625,7 +1223,6 @@ class Conversation(Entity):
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             return await client.post(path, {"flow_message_id": flow_message_id})
 
-
     @property
     def data_path(self) -> str:
         """Canonical path to this conversation's jsonl pointer index.
@@ -634,42 +1231,8 @@ class Conversation(Entity):
         so on-disk layout is uniform; no per-instance storage.
         """
         from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
+
         return str(default_jsonl_path(self.id))
-
-    def __setattr__(self, key, value):
-        if (
-            key in _PROJECTED_FIELDS
-            and not self.__dict__.get("_allow_projection_write", False)
-        ):
-            raise AttributeError(
-                f"Conversation.{key} is a projection — write via "
-                f"ConversationRecord.sync_to_db, not directly"
-            )
-        return super().__setattr__(key, value)
-
-    def apply_field_updates(self, fields: dict):
-        """Silently drop projection fields from inbound PUT/PATCH bodies.
-
-        A typical client save round-trips the entire entity dump, which
-        includes ``message_ids`` / ``message_count``. Those are projections
-        of ``conversation.jsonl`` — re-applying the previous values would
-        be a no-op, but the projection guard refuses any direct write.
-        Stripping them here keeps generic graph CRUD working without making
-        the projection guard leaky.
-        """
-        if fields:
-            fields = {k: v for k, v in fields.items() if k not in _PROJECTED_FIELDS}
-        return super().apply_field_updates(fields)
-
-    def _set_projection(self, key: str, value, sentinel) -> None:
-        """Internal projection writer used by ConversationRecord.sync_to_db."""
-        if sentinel is not _PROJECTION_SENTINEL:
-            raise PermissionError("invalid projection sentinel")
-        object.__setattr__(self, "_allow_projection_write", True)
-        try:
-            setattr(self, key, value)
-        finally:
-            object.__setattr__(self, "_allow_projection_write", False)
 
     # NOTE: per-subclass project-id projection moved to
     # ``Entity.get_implicit_private_context_entities`` in the base. The

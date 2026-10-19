@@ -1,0 +1,12 @@
+{
+  "type": "agent",
+  "id": "2f941749-dcc7-498c-acb4-3899f4d19351",
+  "name": "setup-fixer",
+  "description": "The last resort of a failing web-app setup step: repairs what the step stands on, then the step runs again.",
+  "avatar": "🔧",
+  "worker_type": "claude",
+  "model": "sm",
+  "permission_mode": "bypassPermissions",
+  "enabled": true,
+  "load_flowpad_assistant": true
+}

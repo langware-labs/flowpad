@@ -74,7 +74,7 @@ const TRACKED: Array<[label: string, mutate: (p: AgenticProcess) => void]> = [
   // impossible state. workdir-drift is covered by the freeze semantics, not the
   // restart-required snapshot path.
   ['additional_dirs',            (p) => { p.additional_dirs = [...(p.additional_dirs ?? []), '/tmp/extra_a']; }],
-  ['embedded_agent_ids',         (p) => { p.embedded_agent_ids = [...(p.embedded_agent_ids ?? []), 'legacy_persona']; }],
+  ['embedded_subagent_ids',      (p) => { p.embedded_subagent_ids = [...(p.embedded_subagent_ids ?? []), 'legacy_persona']; }],
   ['shell_mode',                 (p) => { p.shell_mode = !p.shell_mode; }],
 ];
 

@@ -11,6 +11,18 @@ interface ConfirmDialogProps {
   variant?: 'default' | 'destructive';
   onConfirm: () => void;
   onCancel?: () => void;
+  /**
+   * The thing being acted on, when there is one.
+   *
+   * Passing it makes the dialog say so when the action reaches a CLOUD
+   * resource: `remote` means this row has a hub counterpart at the same id, so
+   * deleting it does not just drop a local record — it destroys a real machine
+   * or resource that someone is paying for. Derived here rather than spelled
+   * out per call site, so a new destructive surface inherits the warning
+   * instead of forgetting it.
+   */
+  entity?: { remote?: boolean } | null;
+  testId?: string;
 }
 
 export function ConfirmDialog({
@@ -23,6 +35,8 @@ export function ConfirmDialog({
   variant = 'default',
   onConfirm,
   onCancel,
+  entity,
+  testId,
 }: ConfirmDialogProps) {
   const handleConfirm = () => {
     onConfirm();
@@ -36,10 +50,15 @@ export function ConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent data-testid={testId}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
+          {entity?.remote && (
+            <AlertDialogDescription className="font-medium text-destructive">
+              This is a cloud resource — it will be destroyed in the cloud, not just here.
+            </AlertDialogDescription>
+          )}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleCancel}>{cancelLabel}</AlertDialogCancel>

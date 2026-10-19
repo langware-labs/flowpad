@@ -12,18 +12,24 @@
  * so this is safe even if a stale per-route loader still calls it.
  */
 
-import { dataContext, initSdk } from '@sdk';
+import { dataContext, initSdk, isBackendUnreachable } from '@sdk';
 import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { applySupportedLocales } from '@src/contexts/locale-context';
+import { isAnonymousEntryPath } from '@src/routes/anonymous-entry';
 
-export async function loadRoot(_args: LoaderArgs) {
-  await initSdk();
+export async function loadRoot(args: LoaderArgs) {
+  // Which route this is decides whether a signed-out hub load renders or is
+  // redirected to the provider — and this loader is the last place that knows
+  // before `initSdk` (which is memoised) settles the question for the whole
+  // session. The route table is the app's, so the app answers; the SDK only
+  // obeys. See `anonymous-entry.ts`.
+  await initSdk({ allowAnonymous: isAnonymousEntryPath(new URL(args.request.url).pathname) });
 
   // Backend is the source of truth for supported locales (bootstrap payload).
   // Install the list + re-resolve the active locale now that it's available
   // (initLocale ran pre-bootstrap against the en-US fallback). Awaited so the
   // catalog/direction are settled before the app tree mounts.
-  await applySupportedLocales(dataContext.bootstrapInfo?.supported_locales);
+  await applySupportedLocales(dataContext.bootstrapInfo?.supported_locales, dataContext.bootstrapInfo?.user_languages);
 
   // Bootstrap may still set a service-unavailable / network / config error
   // on dataContext (initSdk swallows those and signals via navigator.error).
@@ -33,7 +39,7 @@ export async function loadRoot(_args: LoaderArgs) {
     | { isServiceUnavailable?: boolean; type?: string; message?: string }
     | null
     | undefined;
-  if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network' || bootstrapError?.type === 'config') {
+  if (isBackendUnreachable(bootstrapError)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw bootstrapError;
   }

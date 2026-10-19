@@ -30,12 +30,12 @@ from tests.long_tests._model_tier import small_model_for
 
 BASE = os.environ.get("FLOWPAD_HAMMER_URL", "http://localhost:9008").rstrip("/") + "/api/v1"
 ITER = 10
-DETECT_BUDGET = 8.0   # user-msg lands early; >8s = broken
-TURN_BUDGET = 25.0    # serialize: wait out the turn (codex/copilot run ~15s) before next
+DETECT_BUDGET = 8.0  # user-msg lands early; >8s = broken
+TURN_BUDGET = 25.0  # serialize: wait out the turn (codex/copilot run ~15s) before next
 AP = "/graph/agentic_process"
 RUNNING = "running"
-# worker_type → (CLI binary, model). The model is the cheapest tier each worker can
-# resolve (see ``_model_tier.small_model_for`` — Copilot must stay unset).
+# worker_type → (CLI binary, model). Persist the portable small tier for every
+# worker; native Copilot resolves it to vendor auto and omits --model.
 WORKERS = {
     "claude_code": ("claude", small_model_for("claude_code")),
     "codex": ("codex", small_model_for("codex")),
@@ -111,9 +111,9 @@ def hammer(c: httpx.Client, cnid: str, worker_type: str, transport: str) -> list
     assert r.status_code == 200, f"createProcess {r.status_code}: {r.text[:200]}"
     pid = (r.json().get("data") or r.json())["id"]
 
-    _wait_running(c, pid)          # process-level boot gate (cross-worker)
+    _wait_running(c, pid)  # process-level boot gate (cross-worker)
     if pty:
-        _pty_settle(c, pid)        # PTY: TUI must finish drawing before typing
+        _pty_settle(c, pid)  # PTY: TUI must finish drawing before typing
     else:
         # Headless boot gate: the FIRST print-mode turn pays the cold start
         # (spawn `<cli> -p`, load model). Warm it up here — submit a throwaway

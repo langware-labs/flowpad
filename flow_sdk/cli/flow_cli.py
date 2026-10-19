@@ -4,16 +4,13 @@ import os
 import threading
 from typing import Optional
 
-import requests
 import typer
+import typer.core
+import typer.main
 from typing_extensions import Annotated
 
 from flow_sdk._version import __version__
-from flow_sdk.cli.auth.hub_login import delete_api_key, is_logged_in, set_api_key
-from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.cli_context import ClaudeScope, CLIContext
-from flow_sdk.cli.commands.prompt_cmd import run_prompt_command
-from flow_sdk.cli.commands.setup_cmd.setup_cmd import run_setup
 from flow_sdk.cli.config_manager import (
     list_config,
     remove_config_value,
@@ -26,8 +23,83 @@ from flow_sdk.instance_settings import get_instance_settings
 # Initialize CLI - load environment variables as first step
 cli_init()
 
+#: The commands that live in their own module, imported only when invoked (or listed by --help):
+#: ``name -> (module, attribute, command settings)``. An attribute that is a ``typer.Typer`` is a
+#: command group; a function is a single command, registered with the settings given.
+#:
+#: Importing them all up front made every `flow X` pay for every command's dependency tree --
+#: ~1,060 modules (fastapi, the entity model, requests, ...) before `X` ran. On a Windows VM that
+#: alone was 10.7s, so a setup step that ran `flow status --check` blew its 30s budget.
+_EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
+LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
+    "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
+    "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
+    "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),
+    "asset": ("flow_sdk.cli.commands.asset_cmd", "asset_app", None),
+    "op": ("flow_sdk.cli.commands.op_cmd", "op_app", None),
+    "show": ("flow_sdk.cli.commands.show_cmd", "show_app", None),
+    "snippet": ("flow_sdk.cli.commands.snippet_cmd", "snippet_app", None),
+    "source": ("flow_sdk.cli.commands.source_cmd", "source_app", None),
+    "terminal": ("flow_sdk.cli.commands.terminal_cmd", "terminal_app", None),
+    "tag": ("flow_sdk.cli.commands.tag_cmd", "tag_app", None),
+    "icons": ("flow_sdk.cli.commands.icons_cmd", "icons_app", None),
+    "app": ("flow_sdk.cli.commands.app_cmd", "app_app", None),
+    "context": ("flow_sdk.cli.commands.context_cmd", "context_app", None),
+    "llm": ("flow_sdk.cli.commands.llm_cmd", "llm_app", None),
+    "connections": ("flow_sdk.cli.commands.connections_cmd", "connections_app", None),
+    "status": ("flow_sdk.cli.commands.status_cmd", "status_app", None),
+    "credentials": ("flow_sdk.cli.commands.credentials_cmd", "credentials_app", None),
+    "agent": ("flow_sdk.cli.commands.agent_cmd", "agent_app", None),
+    "dep": ("flow_sdk.cli.commands.dep_cmd", "dep_app", None),
+    "project": ("flow_sdk.cli.commands.project_cmd", "project_app", None),
+    "schema": ("flow_sdk.cli.commands.schema_cmd", "schema_app", None),
+    "progress": ("flow_sdk.cli.commands.progress_cmd", "progress_app", None),
+    "test": ("flow_sdk.cli.commands.test_cmd", "test_app", None),
+    "record": ("flow_sdk.cli.commands.record_cmd", "record_app", None),
+    "conversation": ("flow_sdk.cli.commands.conversation_cmd", "conversation_app", None),
+    "process": ("flow_sdk.cli.commands.process_cmd", "process_app", None),
+    "task": ("flow_sdk.cli.commands.task_cmd", "task_app", None),
+    "ask": ("flow_sdk.cli.commands.ask_cmd", "ask_app", None),
+    # No positional args: the rest of the line is the command's own (`flow wizard run <name>`,
+    # `flow diagnose backend down` -- the issue is read at a prompt, stray words ignored).
+    "wizard": ("flow_sdk.cli.commands.wizard_cmd", "wizard_command", _EXTRA),
+    "migrate": ("flow_sdk.cli.commands.migrate_cmd", "migrate_app", None),
+    "instance": ("flow_sdk.cli.commands.instance_cmd", "instance_app", None),
+    "workspace": ("flow_sdk.cli.commands.workspace_cmd", "workspace_app", None),
+    "diagnose": ("flow_sdk.cli.commands.diagnose_cmd", "diagnose_command", _EXTRA),
+}
+
+
+class _LazyGroup(typer.core.TyperGroup):
+    """The `flow` group, resolving a `LAZY_COMMANDS` entry when click first asks for it by name."""
+
+    def list_commands(self, ctx):  # noqa: ANN001, ANN201
+        return sorted(set(super().list_commands(ctx)) | set(LAZY_COMMANDS))
+
+    def get_command(self, ctx, cmd_name):  # noqa: ANN001, ANN201
+        command = super().get_command(ctx, cmd_name)
+        if command is not None or cmd_name not in LAZY_COMMANDS:
+            return command
+        import importlib  # noqa: PLC0415
+
+        module, attribute, settings = LAZY_COMMANDS[cmd_name]
+        target = getattr(importlib.import_module(module), attribute)
+        # Registered exactly as an eager `app.add_typer` / `app.command` would have, on a holder
+        # app, so a lazy command behaves identically: a one-command group stays a group (`flow
+        # asset install`), and a callback-only group keeps its callback's options (`flow status`).
+        holder = typer.Typer()
+        if isinstance(target, typer.Typer):
+            holder.add_typer(target, name=cmd_name)
+        else:
+            holder.command(cmd_name, **(settings or {}))(target)
+        command = typer.main.get_group(holder).commands[cmd_name]
+        command.name = cmd_name
+        self.add_command(command, cmd_name)
+        return command
+
+
 # Create Typer app
-app = typer.Typer(name="flow", help="Flow CLI tool for flowpad", add_completion=False)
+app = typer.Typer(name="flow", help="Flow CLI tool for flowpad", add_completion=False, cls=_LazyGroup)
 
 # Global context (initialized once)
 _context: Optional[CLIContext] = None
@@ -76,12 +148,13 @@ def setup(
     Example: flow setup claude-code
     """
     context = get_context()
-    cmd = CLICommand(f"setup {agent_name}", context=context)
 
     # Set first_time_prompt flag when running setup
     set_config_value("first_time_prompt", "true")
 
-    run_setup(agent_name, cmd)
+    from flow_sdk.cli.commands.setup_cmd.setup_cmd import run_setup  # noqa: PLC0415
+
+    run_setup(agent_name, context)
 
 
 @app.command()
@@ -92,9 +165,9 @@ def prompt(prompt_text: Annotated[Optional[str], typer.Argument(help="Prompt tex
     Example: flow prompt "analyze this code"
     """
     if prompt_text:
-        context = get_context()
-        cmd = CLICommand(f"prompt {prompt_text}", context=context)
-        run_prompt_command(prompt_text, cmd)
+        from flow_sdk.cli.commands.prompt_cmd import run_prompt_command  # noqa: PLC0415
+
+        run_prompt_command(prompt_text)
 
 
 @app.command()
@@ -106,14 +179,18 @@ def ping(
 
     Example: flow ping hello
     """
+    import requests  # noqa: PLC0415
+
     get_context()
 
     port = _discover_port()
 
     # Send ping to local server
     try:
+        from flow_sdk.cli.commands._common import local_get
+
         url = f"http://127.0.0.1:{port}/ping"
-        response = requests.get(url, params={"ping_str": ping_str}, timeout=5)
+        response = local_get(url, params={"ping_str": ping_str}, timeout=5)
 
         if response.status_code == 200:
             typer.echo(f"Ping sent successfully: {ping_str}")
@@ -132,8 +209,7 @@ def upgrade(
     """
     Upgrade flowpad to the latest version from PyPI.
 
-    Detects whether flowpad was installed via 'uv tool' or pip and
-    uses the appropriate upgrade mechanism.
+    Installs exactly that version, via 'uv tool' or pip -- whichever installed flowpad.
 
     Use --info to print version and machine info as JSON (used by the desktop app).
 
@@ -141,7 +217,6 @@ def upgrade(
     Example: flow upgrade --info
     """
     import json
-    import shutil
     import subprocess
     import sys
 
@@ -155,63 +230,130 @@ def upgrade(
         typer.echo(json.dumps(status))
         return
 
-    uv = shutil.which("uv")
+    from flow_sdk.server import self_update
+    from flow_sdk.utils.semver import is_newer
 
-    if uv:
-        # Ask uv where its tools live, then check if this Python lives there
-        dir_result = subprocess.run([uv, "tool", "dir"], capture_output=True, text=True)
-        if dir_result.returncode != 0:
-            typer.echo("Error: 'uv tool dir' failed — cannot determine install method.", err=True)
-            raise typer.Exit(1)
-        uv_tools_dir = dir_result.stdout.strip()
-        use_uv = sys.executable.startswith(uv_tools_dir)
-    else:
-        use_uv = False
+    latest = self_update.latest_release()
+    if latest is None:
+        typer.echo("Could not reach PyPI to find the latest flowpad.", err=True)
+        raise typer.Exit(1)
+    if not is_newer(__version__, latest):
+        typer.echo(f"flowpad {__version__} is the latest version.")
+        return
+    if self_update.is_editable_install():
+        typer.echo(f"flowpad {__version__} is an editable (source) install; update the checkout instead.", err=True)
+        raise typer.Exit(1)
 
-    if use_uv:
-        typer.echo("Detected install method: uv tool")
-        typer.echo("Upgrading flowpad via uv tool...")
-        cmd = [uv, "tool", "upgrade", "flowpad"]
-    else:
-        typer.echo("Detected install method: pip")
-        typer.echo("Upgrading flowpad via pip...")
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "flowpad"]
+    # An explicit flowpad==<latest> -- never `uv tool upgrade`: the desktop app and the version
+    # picker install an exact pin, and `uv tool upgrade` refreshes the dependencies under that pin
+    # and leaves flowpad where it was, exit 0.
+    method = self_update.detect_install_method()
+    typer.echo(f"Detected install method: {method}")
+    if sys.platform == "win32":
+        # Windows cannot replace the flow.exe running this very command; uv answers that by deleting
+        # the tool, pip by stopping halfway. So the install runs after this command exits, detached.
+        import tempfile
+        from pathlib import Path
 
-    result = subprocess.run(cmd)
+        log = Path(tempfile.gettempdir()) / "flowpad-upgrade.log"
+        log.write_text(f"Upgrading flowpad {__version__} -> {latest}...\n", encoding="utf-8")
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        subprocess.Popen(
+            [sys.executable, "-m", "flow_sdk.server.self_update", "upgrade", latest, str(log),
+             str(os.getpid()), str(os.getppid())],
+            creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+        typer.echo(f"Upgrading flowpad {__version__} -> {latest} as soon as this command exits (about a minute).")
+        typer.echo(f"Progress: {log}   Check with: flow")
+        _echo_restart_hint(latest)
+        return
+    typer.echo(f"Upgrading flowpad {__version__} -> {latest}...")
+    result = subprocess.run(self_update.build_install_command(latest))
     if result.returncode != 0:
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
+    typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
+    _echo_restart_hint(latest)
 
-    typer.echo("flowpad upgraded successfully.")
+
+def _echo_restart_hint(latest: str) -> None:
+    """A running server keeps the code it started with: say so, or it serves the old version on."""
+    from flow_sdk.server.launch import server_alive
+
+    try:
+        running = server_alive()
+    except Exception:  # noqa: BLE001 -- a hint, never a reason to fail the upgrade
+        return
+    if running:
+        typer.echo(
+            f"Flowpad is still running the old version. Restart it to use {latest}: "
+            "`flow stop`, then `flow start` (or quit and reopen the desktop app)."
+        )
 
 
 def _start_service(port: int) -> None:
     """Start the Flow server and monitor. Shared by `flow start` and `flow start service`."""
-    from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
+    from flow_sdk.core.connections.service import FlowServiceError, service_lifecycle_mutation
 
+    try:
+        with service_lifecycle_mutation():
+            _start_service_guarded(port)
+    except FlowServiceError as exc:
+        typer.echo(f"{exc.code}: {exc.detail}", err=True)
+        raise typer.Exit(1) from exc
+
+
+def _start_service_guarded(port: int) -> None:
+    """Start while the caller holds the lifecycle mutation guard."""
     # Run any pending migration for the current version BEFORE the server
     # boots. The migration is itself a headless AgenticProcess, so its
     # stdout streams to this same terminal — the user sees progress.
     # ``run_if_needed`` is a no-op when no recipe exists or the migration
     # already completed, so this is safe on every start.
+    from flow_sdk import boot_progress
     from flow_sdk.migrations import runner as migration_runner
-    migration_exit = migration_runner.run_if_needed()
-    if migration_exit != 0:
-        typer.echo(
-            f"Migration failed (exit={migration_exit}); refusing to start server.",
-            err=True,
-        )
-        raise typer.Exit(migration_exit)
+    from flow_sdk.server.launch import (
+        EXIT_FATAL_FAILURE,
+        check_server_health,
+        refuse_start_reason,
+        start_monitor_detached,
+        wait_for_server_health,
+    )
 
-    if check_server_health(port):
-        typer.echo(f"Server already running on port {port}")
-    else:
-        typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
-        start_monitor_detached(port)
-        if wait_for_server_health(port, timeout=10.0):
-            typer.echo("Server is ready")
+    # Each step below is a boot phase the desktop app's startup gate can see
+    # (boot_progress writes to this process's stdout when the app asked for
+    # it). A migration imports nothing for minutes, so without the phase line
+    # the gate would read it as a hang.
+    try:
+        boot_progress.set_phase("migration")
+        migration_exit = migration_runner.run_if_needed()
+        if migration_exit != 0:
+            typer.echo(
+                f"Migration failed (exit={migration_exit}); refusing to start server.",
+                err=True,
+            )
+            raise typer.Exit(migration_exit)
+
+        if check_server_health(port):
+            typer.echo(f"Server already running on port {port}")
+        elif (refusal := refuse_start_reason()) is not None:
+            # The last backend died deterministically (FLOWPAD-2231) and the runtime is the
+            # same: starting it again would only reproduce the failure. The monitor would refuse
+            # too; saying it here puts the reason on the terminal instead of in a log.
+            typer.echo(f"Not starting the Flow server: {refusal}", err=True)
+            raise typer.Exit(EXIT_FATAL_FAILURE)
         else:
-            typer.echo("Server may still be starting...")
+            typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
+            boot_progress.set_phase("spawn")
+            start_monitor_detached(port)
+            boot_progress.set_phase("wait_health")
+            if wait_for_server_health(port, timeout=10.0):
+                typer.echo("Server is ready")
+            else:
+                typer.echo("Server may still be starting...")
+    finally:
+        boot_progress.stop()
 
 
 start_app = typer.Typer(help="Start the Flow server.", invoke_without_command=True, add_completion=False)
@@ -237,6 +379,7 @@ def start(ctx: typer.Context):
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
     if not os.environ.get("FLOWPAD_NO_BROWSER"):
         import time
+
         from flow_sdk.server.launch import check_server_health
 
         healthy = False
@@ -279,55 +422,20 @@ def stop():
 
     Example: flow stop
     """
+    from flow_sdk.core.connections.service import FlowServiceError
     from flow_sdk.server.launch import stop_all
 
-    monitor_killed, server_killed = stop_all()
+    try:
+        monitor_killed, server_killed = stop_all()
+    except FlowServiceError as exc:
+        typer.echo(f"{exc.code}: {exc.detail}", err=True)
+        raise typer.Exit(1) from exc
     if monitor_killed:
         typer.echo("Monitor stopped")
     if server_killed:
         typer.echo("Server stopped")
     if not (monitor_killed or server_killed):
         typer.echo("Nothing was running")
-
-
-@app.command()
-def status():
-    """
-    Show server and monitor status.
-
-    Example: flow status
-    """
-    import shutil
-    import sys
-    from pathlib import Path
-
-    import flow_sdk.server as _srv_pkg
-    from flow_sdk.server.launch import get_status
-
-    s = get_status()
-    port = s["port"]
-
-    cli_path = shutil.which("flow") or sys.argv[0]
-    server_path = Path(_srv_pkg.__file__).parent
-
-    typer.echo(f"Port:    {port}")
-    typer.echo(f"CLI:     {cli_path}")
-    typer.echo(f"Server:  {server_path}")
-
-    if s["monitor_alive"]:
-        typer.echo(f"Monitor: running (PID {s['monitor_pid']})")
-    else:
-        typer.echo("Monitor: not running")
-
-    if s["server_healthy"]:
-        typer.echo(f"Health:  healthy (PID {s['server_pid']})")
-    elif s["server_alive"]:
-        typer.echo(f"Health:  alive but unhealthy (PID {s['server_pid']})")
-    else:
-        typer.echo("Health:  not running")
-
-    if s["launch_iso_time"]:
-        typer.echo(f"Started: {s['launch_iso_time']}")
 
 
 @app.command()
@@ -452,6 +560,8 @@ def auth_login(
       flow auth login your-api-key-here
       flow auth login  # Opens browser
     """
+    from flow_sdk.cli.auth.hub_login import set_api_key  # noqa: PLC0415
+
     if api_key:
         # Direct API key login
         from flow_sdk.cli.app_config import set_user
@@ -504,19 +614,195 @@ def auth_login(
 @auth_app.command("logout")
 def auth_logout():
     """
-    Logout from Flowpad by removing your stored API key.
+    Logout from Flowpad: remove your stored API key and the hub data it pulled
+    onto this machine.
+
+    Asks the RUNNING backend to do it whenever there is one, rather than doing
+    it here. The CLI is a separate process: a logout performed in-process would
+    stop a hub WebSocket this process never opened and invalidate a bootstrap
+    cache only it can see, while the live backend kept its authenticated socket
+    and its logged-in UI — and the one part that did cross over, deleting rows,
+    would make the CLI a second writer on the instance's SQLite. Delegating puts
+    the whole logout in the one process that owns the state, and gets the UI
+    repaint for free. With no backend up there is no such conflict, so the same
+    work runs locally.
+
+    "The running backend" is the one FLOW_INSTANCE's ``server.json`` names, never
+    ``get_instance_settings().port``: that is the port an instance BINDS to, which
+    defaults to prod's — so ``FLOW_INSTANCE=sn-1 flow auth logout`` signed out prod.
 
     Example: flow auth logout
     """
-    if is_logged_in():
-        from flow_sdk.cli.app_config import clear_user
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
 
-        delete_api_key()
-        clear_user()
-        typer.echo("✓ Successfully logged out from Flowpad")
-        typer.echo("✓ API key and user info removed")
-    else:
+    if not is_logged_in():
         typer.echo("⚠ Not currently logged in")
+        return
+
+    from flow_sdk.cli.commands._common import discover_port, local_post
+    from flow_sdk.server.launch import check_server_health
+
+    port = discover_port(required=False)
+    if port is not None and check_server_health(port):
+        # ``local_post``, not a bare requests call: it carries the cookie-gate
+        # secret, without which a gated instance refuses this like any other
+        # keyless caller.
+        local_post(f"http://127.0.0.1:{port}/api/v1/cloud/logout", json={}, timeout=30).raise_for_status()
+    else:
+        import asyncio
+
+        from flow_sdk.cli.auth.cloud_login import clear_user_data
+
+        asyncio.run(clear_user_data())
+    typer.echo("✓ Successfully logged out from Flowpad")
+    typer.echo("✓ API key, user info and local hub data removed")
+
+
+# --- what the hub configures on a box it launched -------------------------
+#
+# These three exist so the hub has a channel into a running box that does NOT
+# require the box's HTTP server to be up and answering. The loopback
+# `/auth/login_callback` curl needs a healthy app to accept anything, which is
+# exactly what cannot be relied on while a box is starting, restarting, or
+# refusing keyless callers. `run_command` always works.
+#
+# All three are hub-driven and idempotent. None is meant to be typed by a human,
+# which is why they say so in their help rather than pretending otherwise.
+
+
+@auth_app.command("set-cookie-gate")
+def auth_set_cookie_gate(
+    value: Annotated[str, typer.Argument(help="The gate secret, minted by the hub for this box")],
+):
+    """
+    Arm this instance's request gate. Hub-driven; not for interactive use.
+
+    Once armed the instance answers NOTHING without the secret — not the UI, not
+    the API, not a WebSocket, and not /health/status. That total coverage is the
+    point (see docs/cookie-gate.md); it is also why the supervisor in
+    server/launch.py has to present the secret on its own probes.
+
+    Refused on a desktop-managed instance, where that same total coverage would
+    reject the Electron shell's own startup health poll and stop the app from
+    launching at all.
+
+    Example: flow auth set-cookie-gate <secret>
+    """
+    from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+
+    try:
+        set_cookie_gate(value)
+    except ValueError as e:
+        # Empty value: arming on "" would store a secret that reads as unset,
+        # leaving the instance open while looking locked. Or DesktopGateRefused:
+        # this instance is the desktop app's, which the gate would brick.
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo("✓ Cookie gate armed")
+
+
+@auth_app.command("clear-cookie-gate")
+def auth_clear_cookie_gate():
+    """
+    Disarm this instance's request gate. Hub-driven; not for interactive use.
+
+    Example: flow auth clear-cookie-gate
+    """
+    from flow_sdk.instance_settings.cookie_gate import clear_cookie_gate
+
+    if clear_cookie_gate():
+        typer.echo("✓ Cookie gate cleared")
+    else:
+        # Distinguished from success on purpose: "already open" and "I just
+        # opened it" are different facts about the machine.
+        typer.echo("⚠ Cookie gate was not armed")
+
+
+@auth_app.command("hub-login")
+def auth_hub_login(
+    api_key: Annotated[str, typer.Argument(help="The node-bound key the hub minted for this box")],
+):
+    """
+    Sign this instance in with a hub-minted key. Hub-driven; not for interactive use.
+
+    Deliberately NOT `flow auth login`, which is the human path and does
+    something materially different: it stores the key and the user and stops
+    there. This mirrors what `/auth/login_callback` does, because the box's
+    logged-in state is built from more than a stored key —
+    ``_finalize_login`` also broadcasts the OAuth SUCCESS that unblocks a
+    watching UI, folds the hub-resolved organization id/role into the user, and
+    invalidates the bootstrap cache. A box signed in through the shorter path
+    looks logged in locally while reporting something different about itself.
+
+    Unlike the HTTP route this needs no in-band credential check before it acts.
+    That check exists there because the endpoint is reachable by anyone until
+    the gate arms; a command inside the box is already proof of access to the
+    box.
+
+    Example: flow auth hub-login fp_live_...
+    """
+    import asyncio
+
+    from flow_sdk.cli.auth.cloud_login import _finalize_login
+    from flow_sdk.cli.auth.hub_login import validate_api_key_async
+    from flow_sdk.cloud_client.api.auth import LoginData
+
+    async def _run() -> dict:
+        user_info = await validate_api_key_async(api_key)
+        await _finalize_login(LoginData(token=api_key, expires=None, refresh_token=None, user=user_info))
+        return user_info
+
+    try:
+        user_info = asyncio.run(_run())
+    except Exception as e:
+        typer.echo(f"✗ Login failed: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Signed in as {user_info.get('email') or user_info.get('id') or 'unknown'}")
+
+
+@auth_app.command("set-runtime")
+def auth_set_runtime(
+    kind: Annotated[str, typer.Argument(help="What the hub launched this instance as: sandbox | agent")],
+):
+    """
+    Record what this instance was launched AS. Hub-driven; not for interactive use.
+
+    The box cannot work this out for itself: a sandbox a human opens and a box an
+    agent was deployed into are byte-for-byte identical from inside. The value
+    only exists because the hub says so.
+
+    Example: flow auth set-runtime sandbox
+    """
+    from flow_sdk.instance_settings.runtime import set_assigned_runtime
+
+    try:
+        assigned = set_assigned_runtime(kind)
+    except ValueError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Runtime set to {assigned.value if hasattr(assigned, 'value') else assigned}")
+
+
+@auth_app.command("set-compute-node")
+def auth_set_compute_node(
+    typeid: Annotated[str, typer.Argument(help="The hub ComputeNode this instance runs as: compute_node-<uuid>")],
+):
+    """
+    Record which hub ComputeNode this instance is. Hub-driven; not for interactive use.
+
+    The keep-alive loop names this node when it tells the hub the machine is in
+    use; without it the instance sends no keep-alive and pauses on idle.
+
+    Example: flow auth set-compute-node compute_node-00000000-0000-4000-8000-000000000000
+    """
+    from flow_sdk.instance_settings.runtime import set_assigned_compute_node
+
+    try:
+        set_assigned_compute_node(typeid)
+    except ValueError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Compute node set to {typeid}")
 
 
 @auth_app.command("test")
@@ -716,6 +1002,9 @@ def hooks_report(
     hook_entry_id: Annotated[
         Optional[str], typer.Option("--hook-entry-id", help="Hook entry ID for metadata lookup")
     ] = None,
+    process_id: Annotated[
+        Optional[str], typer.Option("--process-id", help="AgenticProcess ID for a process-local hook")
+    ] = None,
     name: Annotated[Optional[str], typer.Option("--name", help="Hook name (e.g. flowpad_sniffer)")] = None,
     wait_for_response: Annotated[
         bool, typer.Option("--wait-for-response", help="Wait synchronously for response (for PermissionRequest)")
@@ -734,6 +1023,20 @@ def hooks_report(
     import json
     import sys
     from pathlib import Path
+
+    import requests  # noqa: PLC0415
+
+    if process_id and hook_entry_id:
+        raise typer.BadParameter("--process-id and --hook-entry-id are mutually exclusive")
+    if process_id:
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id
+
+        if not is_valid_entity_id(process_id):
+            raise typer.BadParameter("--process-id must be a canonical UUID v4 or v5")
+        last_resp = _report_process_hook(process_id)
+        if not wait_for_response:
+            raise typer.Exit(0)
+        _apply_hook_outcome(last_resp)
 
     def find_hook_metadata(
         entry_id: Optional[str], hook_name: Optional[str] = None
@@ -816,7 +1119,7 @@ def hooks_report(
                 typer.echo(f"\nTarget: POST {report_url}")
                 typer.echo(f"\nPayload:\n{json.dumps(flow_data_payload, indent=2)}")
             try:
-                last_resp = requests.post(report_url, json=flow_data_payload, timeout=5)
+                last_resp = _post_hook_report(report_url, flow_data_payload)
                 if verbose:
                     typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
             except requests.exceptions.RequestException as e:
@@ -850,7 +1153,12 @@ def hooks_report(
                     if verbose:
                         typer.echo(f"\nReporting to server at port {s.port}")
                     try:
-                        last_resp = requests.post(s.url, json=fallback_payload, timeout=5)
+                        # Broadcast: `s.url` may be ANOTHER instance, whose gate
+                        # secret differs from this one's. Attaching ours is
+                        # harmless — that instance refuses it exactly as it
+                        # refuses a keyless call today — and it is what makes
+                        # the report land on the gated instance that is ours.
+                        last_resp = _post_hook_report(s.url, fallback_payload)
                         if verbose:
                             typer.echo(f"  Response: {last_resp.status_code} {last_resp.text[:200]}")
                     except requests.exceptions.RequestException as e:
@@ -862,7 +1170,7 @@ def hooks_report(
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")
                 try:
-                    last_resp = requests.post(fallback_url, json=report_payload, timeout=5)
+                    last_resp = _post_hook_report(fallback_url, report_payload)
                     if verbose:
                         typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
                 except requests.exceptions.RequestException as e:
@@ -880,11 +1188,94 @@ def hooks_report(
         # Normal fire-and-forget mode
         raise typer.Exit(0)
 
-    # Echo server's data field to stdout (Claude Code reads hookSpecificOutput from it).
-    data = (last_resp.json().get("data") or {}) if last_resp and last_resp.text else {}
-    if data:
-        typer.echo(json.dumps(data))
-    raise typer.Exit(0)
+    # Same envelope, same application as the process branch. The global door
+    # answers with a WebhookHandleResult (trigger bookkeeping) and no hook
+    # outcome, so this correctly writes nothing and exits 0 — echoing trigger
+    # internals to stdout would have fed them to the harness as hook output.
+    _apply_hook_outcome(last_resp)
+
+
+def _apply_hook_outcome(response) -> None:
+    """Apply the backend's hook-outcome envelope to THIS process, then exit.
+
+    Deliberately vendor-blind: which exit code and which stream carry meaning is
+    a per-harness fact, and it is decided by the driver in the backend. Here we
+    only obey — write what we were told and exit with the code we were given.
+
+    Anything absent or malformed degrades to an inert outcome (exit 0, no
+    output). This process is holding a worker's turn open, and on claude and
+    codex a non-zero exit BLOCKS that turn, so a garbled payload must never be
+    able to produce one.
+    """
+    import json as _json
+
+    from flow_sdk.builtin.hooks.types import HOOK_OUTCOME_KEY, HookOutcome
+
+    data = {}
+    try:
+        if response is not None and response.text:
+            data = response.json().get("data") or {}
+    except ValueError:
+        data = {}
+
+    outcome = HookOutcome.from_wire(data.get(HOOK_OUTCOME_KEY))
+    if outcome.stdout:
+        typer.echo(_json.dumps(outcome.stdout))
+    if outcome.stderr:
+        typer.echo(outcome.stderr, err=True)
+    raise typer.Exit(outcome.exit_code)
+
+
+def _post_hook_report(url: str, payload: dict):
+    """POST a hook report using the command's established request policy.
+
+    Goes through ``local_post`` so the instance's cookie-gate secret rides
+    along: a gated backend refuses a keyless report, and this is the one seam
+    every hook-report call site shares.
+    """
+    from flow_sdk.cli.commands._common import local_post
+
+    return local_post(url, json=payload, timeout=5)
+
+
+def _report_process_hook(process_id: str):
+    """Forward one native hook payload to its FLOW_INSTANCE-pinned backend.
+
+    This is deliberately separate from the legacy AgentHook transport above:
+    process-local hooks never inspect global hook metadata, an override URL, or
+    the all-instance discovery list.
+    """
+    import json
+    import sys
+
+    from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData, WebhookPayload
+    from flow_sdk.discovery.flowpad_discovery import resolve_cli_port
+
+    verbose = sys.stdin.isatty()
+    try:
+        input_data = {"hook_event_name": "test_ping", "source": "manual_cli"} if verbose else json.load(sys.stdin)
+        # The CLI owns transport, not vendor normalization.  Preserve Claude's
+        # native object exactly once; the selected process driver converts it
+        # into canonical AgentHookData at the listen boundary.
+        agent_hook = AgentHookData(
+            agentic_process_id=process_id,
+            hook_data={"raw_hook_data": input_data},
+        )
+        payload = WebhookPayload(
+            webhook_type="agent_hook",
+            webhook_payload=agent_hook.model_dump(mode="json"),
+        ).model_dump(mode="json")
+        url = f"http://127.0.0.1:{resolve_cli_port()}/api/v1/webhook/listen"
+        if verbose:
+            typer.echo(f"\nTarget: POST {url}")
+            typer.echo(f"\nPayload:\n{json.dumps(payload, indent=2)}")
+        return _post_hook_report(url, payload)
+    except json.JSONDecodeError:
+        return None
+    except Exception as exc:
+        if verbose:
+            typer.echo(f"Error: {exc}")
+        return None
 
 
 @hooks_app.command("list")
@@ -959,56 +1350,7 @@ def hooks_list(
 log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
 
-from flow_sdk.cli.commands.compute_cmd import compute_app
-app.add_typer(compute_app, name="compute")
-
-from flow_sdk.cli.commands.navigate_cmd import navigate_app
-app.add_typer(navigate_app, name="navigate")
-
-from flow_sdk.cli.commands.show_cmd import show_app
-app.add_typer(show_app, name="show")
-
-from flow_sdk.cli.commands.tag_cmd import tag_app
-app.add_typer(tag_app, name="tag")
-
-from flow_sdk.cli.commands.app_cmd import app_app
-app.add_typer(app_app, name="app")
-
-from flow_sdk.cli.commands.context_cmd import context_app
-app.add_typer(context_app, name="context")
-
-from flow_sdk.cli.commands.schema_cmd import schema_app
-app.add_typer(schema_app, name="schema")
-
-from flow_sdk.cli.commands.record_cmd import record_app
-app.add_typer(record_app, name="record")
-
-from flow_sdk.cli.commands.conversation_cmd import conversation_app
-app.add_typer(conversation_app, name="conversation")
-
-
-from flow_sdk.cli.commands.process_cmd import process_app
-app.add_typer(process_app, name="process")
-
-from flow_sdk.cli.commands.wizard_cmd import wizard_command
-app.command(
-    "wizard",
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)(wizard_command)
-
-from flow_sdk.cli.commands.migrate_cmd import migrate_app
-app.add_typer(migrate_app, name="migrate")
-
-from flow_sdk.cli.commands.instance_cmd import instance_app
-app.add_typer(instance_app, name="instance")
-
-from flow_sdk.cli.commands.diagnose_cmd import diagnose_command
-# No positional MESSAGE arg — the issue is read at a prompt. allow_extra_args so
-# stray words (e.g. `flow diagnose backend down`) are ignored, not errors.
-app.command(
-    "diagnose",
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)(diagnose_command)
+# Every other command group is imported on first USE, not at `flow` startup -- see `_LazyGroup`.
 
 
 @log_app.callback(invoke_without_command=True)
@@ -1241,8 +1583,24 @@ def uninstall():
         typer.echo("No sniffer hooks found.")
 
 
+#: Commands whose arguments or stdin carry a secret: ``VAR=VALUE`` pairs, typed keys. The log keeps
+#: the command and its names, never the values.
+_SECRET_COMMANDS = {("credentials", "set"), ("project", "setup")}
+
+
+def _carries_secrets(argv: list[str]) -> bool:
+    return tuple(argv[1:3]) in _SECRET_COMMANDS
+
+
+def _logged_argv(argv: list[str]) -> list[str]:
+    """``argv`` as the CLI log may keep it: a secret command's ``VAR=VALUE`` becomes ``VAR=***``."""
+    if not _carries_secrets(argv):
+        return argv
+    return [a if i < 3 or "=" not in a or a.startswith("-") else a.split("=", 1)[0] + "=***" for i, a in enumerate(argv)]
+
+
 def cli_main():
-    """Entry point that can be used with CLICommand.
+    """Entry point for the installed ``flow`` console script.
 
     Wraps app() with tee streams to capture stdout/stderr and log each
     CLI invocation to ~/.flow/logs/cli.log.jsonl.
@@ -1282,7 +1640,7 @@ def cli_main():
     try:
         import select
 
-        if not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.0)[0]:
+        if not _carries_secrets(argv) and not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.0)[0]:
             from io import StringIO
 
             stdin_data = sys.stdin.read()
@@ -1321,7 +1679,7 @@ def cli_main():
 
             record = CliLogRecord(
                 workdir=workdir,
-                command=argv,
+                command=_logged_argv(argv),
                 exit_code=exit_code,
                 stdout=stdout_val,
                 stderr=stderr_val,

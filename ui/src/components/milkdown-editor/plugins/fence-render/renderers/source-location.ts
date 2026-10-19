@@ -52,14 +52,52 @@ function resolveRoot(
   return { ok: true, root: ctx.documentProjectRoot };
 }
 
+/**
+ * Join a repo-relative path onto a root — the one place that rule lives.
+ *
+ * Shared by the two kinds of pointer a fence can carry, which differ only in
+ * how they find their root:
+ *
+ *   * an `interface` block's `source` names an ORIGIN, and the origin is what
+ *     picks the root (`resolveRoot` below);
+ *   * a `breadcrumb` site is already rooted by construction — `scan_code_capsules`
+ *     walks exactly one directory and reports paths relative to it — so its
+ *     caller passes that root straight in.
+ *
+ * `root` is nullable because the second case has a real "no project open"
+ * state, and every failure has to come back with a reason rather than a throw.
+ */
+export function resolveRelPath(
+  relPath: string,
+  root: string | null,
+  line?: number,
+): SourceLocation {
+  // The last gate before a path reaches navigation, and callable independently
+  // of any parse-time validation.
+  if (!isSafeRelPath(relPath)) {
+    return { ok: false, reason: `Unsafe path "${relPath}"` };
+  }
+  // Worded for the caller that passes its root in directly (a breadcrumb
+  // site); `resolveRoot` keeps its own origin-flavoured wording for the
+  // pointer kind that derives a root.
+  if (!root) return { ok: false, reason: 'No project open to resolve this path against' };
+
+  const base = normalizePath(root);
+  if (!base) return { ok: false, reason: 'Origin resolved to an empty root path' };
+
+  const rel = normalizePath(relPath).replace(/^\//, '');
+  return { ok: true, path: `${base}/${rel}`, line };
+}
+
 export function resolveSourceLocation(
   source: InterfaceSource,
   ctx: SourceResolveContext,
 ): SourceLocation {
   const { origin, line } = source;
 
-  // Re-checked here as well as at parse time: this function is the last gate
-  // before a path reaches navigation, and it is callable independently.
+  // Checked before the root is resolved, not only inside `resolveRelPath`: an
+  // unsafe path is the more actionable complaint of the two, so it must win
+  // even when the root is also unresolvable.
   if (!isSafeRelPath(origin.rel_path)) {
     return { ok: false, reason: `Unsafe path "${origin.rel_path}"` };
   }
@@ -67,11 +105,7 @@ export function resolveSourceLocation(
   const root = resolveRoot(origin, ctx);
   if (!root.ok) return root;
 
-  const base = normalizePath(root.root);
-  const rel = normalizePath(origin.rel_path).replace(/^\//, '');
-  if (!base) return { ok: false, reason: 'Origin resolved to an empty root path' };
-
-  return { ok: true, path: `${base}/${rel}`, line };
+  return resolveRelPath(origin.rel_path, root.root, line);
 }
 
 /**

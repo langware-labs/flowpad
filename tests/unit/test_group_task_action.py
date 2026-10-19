@@ -5,15 +5,12 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.group_task_action import (
-    _group_members,
-    _member_asset_ref,
-    _safe_task_folder_name,
-)
+from flow_sdk.app.actions.group_task_action import _group_members
+from flow_sdk.app.actions.task_receive import _member_asset_ref, _safe_task_folder_name
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.task import extract_task
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
+from tests.fixtures.identity import resolve_id
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -22,7 +19,7 @@ def _registered():
 
 
 def _task_md_body_from(entity) -> str:
-    return SchemaRegistry.get("task").default_body_fn(entity)
+    return SchemaRegistry.get("task").serializer().render(entity)
 
 
 # ── member folder dedup ─────────────────────────────────────────────────────
@@ -117,7 +114,8 @@ async def test_resolve_group_requires_group_id_or_members():
 
 
 def test_group_fields_round_trip_task_md(tmp_path):
-    from flow_sdk.builtin.task import Task, TaskKind
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.schema.data_spec.task_spec import TaskKind
 
     child = Task(
         title="Ship It",
@@ -130,14 +128,15 @@ def test_group_fields_round_trip_task_md(tmp_path):
     (folder / "task.md").write_text(_task_md_body_from(child), encoding="utf-8")
 
     ref = FSRef(folder)
-    rec = extract_task(ref, SchemaRegistry.get("task").mint_id(ref))[0]
+    rec = SchemaRegistry.get("task").from_disk_fn(ref, resolve_id(SchemaRegistry.get("task"), ref))[0]
     assert rec.parent_id == "11111111-2222-4333-8444-555566667777"
     assert rec.assignee == "bob@x.com"
     assert rec.kind == "standard"
 
 
 def test_group_kind_round_trips(tmp_path):
-    from flow_sdk.builtin.task import Task, TaskKind
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.schema.data_spec.task_spec import TaskKind
 
     parent = Task(title="Overview", kind=TaskKind.GROUP)
     folder = tmp_path / "tasks" / "overview"
@@ -145,7 +144,7 @@ def test_group_kind_round_trips(tmp_path):
     (folder / "task.md").write_text(_task_md_body_from(parent), encoding="utf-8")
 
     ref = FSRef(folder)
-    rec = extract_task(ref, SchemaRegistry.get("task").mint_id(ref))[0]
+    rec = SchemaRegistry.get("task").from_disk_fn(ref, resolve_id(SchemaRegistry.get("task"), ref))[0]
     assert rec.kind == "group"
     # Empty parent_id is dropped from frontmatter (not a leak, just clean yaml).
     assert "parent_id" not in (folder / "task.md").read_text(encoding="utf-8")

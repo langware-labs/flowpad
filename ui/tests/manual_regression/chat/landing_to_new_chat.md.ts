@@ -19,11 +19,11 @@ test.describe('Landing to New Chat', () => {
 
     // Step 2: submit from landing page to create session
     // Home renders <SessionInput> (textarea, aria-label="What would you like to work on?")
-    // and navigates to /dock/shell/<uuid> on submit.
+    // and navigates to the session's Vibe tab (/dock/vibe/agentic_process-<uuid>) on submit.
     await submitFromLanding(page, 'Hello, can you help me?');
 
-    // Step 3: validate URL changed to /dock/shell/<uuid>
-    await expect(page).toHaveURL(/\/dock\/shell\//, { timeout: 15_000 });
+    // Step 3: validate URL changed to the session's Vibe tab
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: 15_000 });
 
     // Step 4: validate terminal tab bar is visible
     const terminalArea = page.locator('.xterm, .xterm-screen, [class*="terminal"]').first();

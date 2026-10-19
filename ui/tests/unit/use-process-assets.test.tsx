@@ -1,0 +1,66 @@
+/**
+ * Staging-mode (process === null) guard for `useProcessAssets`: the picker's
+ * pre-first-send list must come from ONE `project/{id}/get-assets` call —
+ * never from whole-type corpus queries (the removed implementation fetched
+ * ALL agents + skills + specs + markdown docs, ~3.3MB / 3-5s at ~3k docs,
+ * per picker open).
+ */
+import { renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AgenticProcess, Project, dataContext, type AssetDescriptor } from '@sdk';
+import { useProcessAssets } from '@src/components/asset-manager/useProcessAssets';
+
+const DESCRIPTORS: AssetDescriptor[] = [
+  {
+    typeid: 'skill-00000000-0000-4000-8000-000000000001',
+    source: 'user_dir',
+    posix_path: '/home/u/.claude/skills/s',
+    source_dir: '/home/u',
+    project_id: null,
+    usage: [],
+  } as unknown as AssetDescriptor,
+];
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('useProcessAssets — staging (null process)', () => {
+  it('uses the backend resolved assistant setting and preserves usage on verification failure', async () => {
+    const process = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000002' });
+    vi.spyOn(process, 'getAssetInventory').mockResolvedValue({
+      assets: DESCRIPTORS,
+      assistant_enabled: false,
+      availability_error: 'Cannot inspect this worker',
+      unresolved_usage: [{asset: null, reference: 'plugin:gone', resolution: 'missing', evidence: [{kind: 'skill_invoked'}]}],
+    });
+    const { result } = renderHook(() => useProcessAssets(process));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.assistantEnabled).toBe(false);
+    expect(result.current.error).toBe(true);
+    expect(result.current.descriptors).toEqual(DESCRIPTORS);
+    expect(result.current.unresolvedUsage?.[0].reference).toBe("plugin:gone");
+  });
+
+  it('resolves descriptors via Project.getAssetsById, @local fallback when projectless', async () => {
+    const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue({ assets: DESCRIPTORS, scan_issues: [{path: '/broken', message: 'Malformed metadata'}], truncated: true });
+    // dataContext.project is a non-configurable MobX computed — can't be
+    // stubbed. Derive the id the hook must pass from the same expression
+    // (null in this bootstrap-less unit env → '@local' fallback).
+    const expectedProjectId = dataContext.project?.typeId?.id ?? '@local';
+    const { result } = renderHook(() => useProcessAssets(null));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.descriptors).toEqual(DESCRIPTORS);
+    expect(result.current.scanIssues?.[0].path).toBe('/broken');
+    expect(result.current.truncated).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(expectedProjectId, { limit: 1000 });
+  });
+
+  it('disabled hook fetches nothing', async () => {
+    const spy = vi.spyOn(Project, 'getAssetsById').mockResolvedValue({ assets: DESCRIPTORS, scan_issues: [{path: '/broken', message: 'Malformed metadata'}], truncated: true });
+    const { result } = renderHook(() => useProcessAssets(null, { enabled: false }));
+    expect(result.current.descriptors).toEqual([]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

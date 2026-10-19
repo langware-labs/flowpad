@@ -5,7 +5,7 @@
 the hub **carrying the HTTP method verbatim**, swapping only the base URL. It does
 *not* infer the verb from anything — which is precisely why it cannot reproduce the
 class of bug where a roster ``GET`` got reflected to the hub as a destructive
-``DELETE`` (the "Cloud request rejected" inbox toast).
+``DELETE`` (the "Cloud request rejected" stream inbox toast).
 
 Auth + error reporting are reused, not duplicated: the inner client is the shared
 ``FlowpadClient`` httpx client, whose event hooks (``client_hooks._on_request`` /
@@ -17,6 +17,7 @@ large uploads, binary/large downloads, chunked + SSE streaming, Range/206, gzip
 passthrough, redirect non-follow, hop-by-hop stripping, framing, connection
 lifecycle, the file+params message-send shape) before landing here.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -24,12 +25,20 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
-from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.client import FlowpadClient
+from flow_sdk.cloud_client.client_hooks import PASSTHROUGH_EXTENSION
 
 # RFC 7230 §6.1 hop-by-hop headers — never forwarded end-to-end.
 _HOP: set[bytes] = {
-    b"connection", b"keep-alive", b"proxy-authenticate", b"proxy-authorization",
-    b"te", b"trailer", b"trailers", b"transfer-encoding", b"upgrade",
+    b"connection",
+    b"keep-alive",
+    b"proxy-authenticate",
+    b"proxy-authorization",
+    b"te",
+    b"trailer",
+    b"trailers",
+    b"transfer-encoding",
+    b"upgrade",
     b"proxy-connection",
 }
 # Outbound we additionally drop Host (httpx sets the hub's authority), any stale
@@ -42,12 +51,21 @@ class CloudProxy:
     """Forward a Starlette request to the hub, preserving the method verbatim."""
 
     def __init__(self, client: FlowpadClient | None = None) -> None:
-        # Reuse the hooked FlowpadClient so token injection + error reporting are
-        # shared with every other outbound hub call (and the WS side's creds).
-        self._fp = client or FlowpadClient(ApiConfig.from_env())
+        # No client given -> the process-shared hub client (hub_http._hub_client):
+        # one pool + one TLS context for every hub call, closed at server shutdown.
+        # A proxy that built its own FlowpadClient per request left the socket
+        # for the cyclic GC (one hub connection + one TLS-context build per call),
+        # so ``CloudProxy()`` built inline per request is now the right shape.
+        self._fp = client
 
     async def _client(self) -> httpx.AsyncClient:
-        return await self._fp._get_client()
+        if self._fp is not None:
+            return await self._fp._get_client()
+        # Lazy, as in _target: hub_http pulls the db layer.
+        from flow_sdk.cloud_client.transport.hub_http import _hub_client
+
+        async with _hub_client() as fp:
+            return await fp._get_client()
 
     def _target(self, request: Request, url: str | httpx.URL | None) -> httpx.URL:
         """Resolve the hub URL. When ``url`` is None, forward the incoming graph
@@ -59,6 +77,7 @@ class CloudProxy:
         # db layer) — import from this package's own modules, not the utils shim.
         from flow_sdk.cloud_client.shared.errors import HubError
         from flow_sdk.cloud_client.transport.hub_http import hub_base_url
+
         base = hub_base_url()
         if not base:
             raise HubError(0, "hub not configured (FLOWPAD_HUB_URL unset)")
@@ -76,7 +95,16 @@ class CloudProxy:
         te = (request.headers.get("transfer-encoding") or "").lower()
         has_body = (clen not in (None, "0")) or ("chunked" in te)
         content = request.stream() if has_body else None
-        return client.build_request(request.method, target, headers=fwd, content=content)
+        # Mark the hop as a passthrough so the shared client's response hook keeps
+        # its hands off the body: this response is streamed to the caller, and a
+        # hook-side read would consume the stream and truncate it to zero bytes.
+        return client.build_request(
+            request.method,
+            target,
+            headers=fwd,
+            content=content,
+            extensions={PASSTHROUGH_EXTENSION: True},
+        )
 
     async def __call__(self, request: Request, url: str | httpx.URL | None = None) -> Response:
         """Stream the forwarded response straight back to the caller."""
@@ -92,7 +120,6 @@ class CloudProxy:
         async def _close() -> None:
             await resp.aclose()
 
-        out = StreamingResponse(resp.aiter_raw(), status_code=resp.status_code,
-                                background=BackgroundTask(_close))
+        out = StreamingResponse(resp.aiter_raw(), status_code=resp.status_code, background=BackgroundTask(_close))
         out.raw_headers = filtered  # full fidelity (dup Set-Cookie, exact CL/CE/CT)
         return out

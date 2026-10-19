@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.git_origin import GitOrigin, is_safe_rel_path
+from flow_sdk.fs_store.origin.git_origin import GitOrigin, is_safe_rel_path
 from flow_sdk.builtin.flow_message_bundle import (
     _pack_file_backed_attachment,
     _restore_file_backed_entry,
@@ -248,8 +248,8 @@ async def test_pack_bundle_writes_git_origins_json_and_rel_path_subtree(tmp_path
     zip_path = await pack_bundle(fm, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        assert "git_origins.json" in names, "in-repo asset must produce git_origins.json"
-        origins = json.loads(zf.read("git_origins.json"))
+        assert "fs_origins.json" in names, "in-repo asset must produce git_origins.json"
+        origins = json.loads(zf.read("fs_origins.json"))
         key = f"{EntityType.SKILL.value}-{ENTITY_ID}"
         assert origins[key]["rel_path"] == "packages/x/.claude/skills/foo"
         assert origins[key]["owner"] == "Acme"
@@ -283,7 +283,7 @@ async def test_pack_bundle_git_transfer_writes_metadata_only(tmp_path, monkeypat
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
         key = f"{EntityType.SKILL.value}-{ENTITY_ID}"
-        assert "git_origins.json" in names
+        assert "fs_origins.json" in names
         assert "git_transfers.json" in names
         assert f"metadata/{key}/metadata.json" in names
         assert f"attachment/{key}/packages/x/.claude/skills/foo/SKILL.md" not in names
@@ -302,17 +302,17 @@ async def test_pack_bundle_git_transfer_writes_metadata_only(tmp_path, monkeypat
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.asyncio
-async def test_stamp_git_origins_sets_validated_origin_on_entity(monkeypatch):
-    from flow_sdk.builtin.flow_message_bundle import _stamp_git_origins
+async def test_stamp_origins_sets_validated_origin_on_entity(monkeypatch):
+    from flow_sdk.builtin.flow_message_bundle import _stamp_origins
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     saved = {}
 
     class _Ent:
         def __init__(self):
-            self.git_origin = None
+            self.origin = None
         async def save(self, owner=None):
-            saved["git_origin"] = self.git_origin
+            saved["origin"] = self.origin
 
     ent = _Ent()
 
@@ -326,10 +326,10 @@ async def test_stamp_git_origins_sets_validated_origin_on_entity(monkeypatch):
     origin = {"provider": "github", "owner": "Acme", "name": "Widgets",
               "branch": "main", "head_commit": "x" * 40, "rel_path": "docs/foo.md"}
     received = {("markdown", ENTITY_ID)}
-    await _stamp_git_origins(received, {f"markdown-{ENTITY_ID}": origin}, owner_typeid=None)
+    await _stamp_origins(received, {f"markdown-{ENTITY_ID}": origin}, owner_typeid=None)
 
-    assert saved["git_origin"]["rel_path"] == "docs/foo.md"
-    assert saved["git_origin"]["owner"] == "Acme"
+    assert saved["origin"].rel_path == "docs/foo.md"
+    assert saved["origin"].owner == "Acme"
 
     # A malformed origin is dropped (validated through GitOrigin), not persisted.
     ent2 = _Ent()
@@ -341,7 +341,7 @@ async def test_stamp_git_origins_sets_validated_origin_on_entity(monkeypatch):
 
     monkeypatch.setattr(SchemaRegistry, "get_entity_cls", classmethod(lambda c, t: _Cls2))
     saved.clear()
-    await _stamp_git_origins({("markdown", ENTITY_ID)},
+    await _stamp_origins({("markdown", ENTITY_ID)},
                              {f"markdown-{ENTITY_ID}": {"rel_path": ["not", "a", "string"]}},
                              owner_typeid=None)
-    assert ent2.git_origin is None and "git_origin" not in saved
+    assert ent2.origin is None and "origin" not in saved

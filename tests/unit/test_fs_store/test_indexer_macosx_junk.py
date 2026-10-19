@@ -22,9 +22,8 @@ import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
-from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 from flow_sdk.fs_store.record_types import RecordType
-
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # Faithful AppleDouble bytes: the real ``._*.md`` header (00 05 16 07 …) plus an
 # invalid-UTF-8 byte (0xa9) — matching an on-disk sample that raised
@@ -84,7 +83,7 @@ def test_extract_markdown_returns_empty_on_binary(tmp_path: Path) -> None:
     """Defense in depth: binary content under .md yields [] instead of raising."""
     p = tmp_path / "binary.md"
     p.write_bytes(_APPLEDOUBLE)
-    assert extract_markdown(
+    assert SchemaRegistry.get("markdown").from_disk_fn(
         FSRef(p, record_type=RecordType.MARKDOWN),
         "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
     ) == []

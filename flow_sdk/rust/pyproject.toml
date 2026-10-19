@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "flow_rs"
 version = "0.1.0"
 description = "OS-keychain helper (Rust + pyo3), interchangeable with Python keyring"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 test = ["pytest", "keyring"]

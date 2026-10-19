@@ -115,8 +115,7 @@ describe('chat-history row follows a tab/process rename (bidirectional)', () => 
     const view = render(row(stale));
     expect(screen.getByText('old name')).toBeInTheDocument();
 
-    proc.name = 'new name';
-    await proc.save();
+    await AgenticProcess.renameById(id, 'new name');
     await dataManager.clearCache();
     const reloaded = await AgenticProcess.getById(id);
     expect(reloaded!.displayName).toBe('new name'); // process really renamed

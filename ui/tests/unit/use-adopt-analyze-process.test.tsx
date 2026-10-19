@@ -47,7 +47,7 @@ describe('useAdoptAnalyzeProcess', () => {
   });
 
   it('does not adopt a non-analyze process on the same target, even if running', () => {
-    h.useProcessesForTarget.mockReturnValue({ processes: [proc('git-context-folder', WorkerStatus.WORKING)] });
+    h.useProcessesForTarget.mockReturnValue({ processes: [proc('git-dependency', WorkerStatus.WORKING)] });
     const { result } = renderHook(() => useAdoptAnalyzeProcess(task));
     expect(result.current).toBeNull();
   });

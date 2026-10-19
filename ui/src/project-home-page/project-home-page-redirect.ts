@@ -1,0 +1,132 @@
+import { Agent, AgenticProcess, dataContext, isHubOnly, Project, TypeId, type ProjectHomePage } from '@sdk';
+import { replace } from 'react-router';
+
+import { DockPointer } from '@src/navigation/DockPointer';
+import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
+import { isAppType } from '@src/navigation/app-dock';
+import { projectScope } from '@src/lib/scope-filter';
+import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
+import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
+import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
+import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM } from './dependency-home';
+import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, rememberProjectHomePage } from './home-page-state';
+
+/** Registration IS the switch: `false` takes the resolver out of the chain entirely. */
+export const PROJECT_HOME_PAGE_ENABLED = true;
+
+/**
+ * Where an AGENT home page lands: its last chat in this project — the
+ * last-chat query narrowed to the agent (`lastVibeChatQuery`) — else a new
+ * session, opened with the same pre-turn stack `useAgentLauncher` gives one
+ * (auto prompt queued, vibe embedded, turn 1 started). A resumed chat already
+ * had its turn 1, so nothing is re-sent.
+ * Resuming is the point: Home is clicked again and again, and minting a
+ * session per click would leave an empty conversation behind each time.
+ */
+async function agentHomePageDock(agentTypeId: string, projectId: string): Promise<DockPointer | null> {
+  const last = pickLastVibeChat(
+    await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, agentTypeId)),
+  );
+  const processId = last?.id ?? (await mintHomeChat(agentTypeId, projectId));
+  if (!processId) return null;
+  // A resumed chat keeps the mode it was last shown in — landing never switches
+  // a session. A minted one, and one with no memory, is Vibe.
+  return DockPointer.forSession(processId).withViewMode(rememberedViewMode(last) ?? ViewMode.Vibe);
+}
+
+/** A new session for the agent in this project, with its pre-turn stack; null when the agent is gone. */
+async function mintHomeChat(agentTypeId: string, projectId: string): Promise<string | null> {
+  const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
+  if (!agent) return null;
+  const processId = (await agent.use(projectId, true)).process_id;
+  await prepareAgentSession(processId).catch((e) =>
+    console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
+  );
+  return processId;
+}
+
+/**
+ * Where a resolved home page lives: an agent's chat in Vibe; a web app RUNNING
+ * (the project opens app-first — `/dock/app/<typeid>`, the same view `flow show`
+ * opens an app in), pinned to the project so it stays the current one there and
+ * on reload; else the asset's own view — the routing `flow show entity` uses.
+ * Null when the asset addresses nothing openable.
+ */
+export async function homePageDock(data: ProjectHomePage, projectId: string): Promise<DockPointer | null> {
+  if (!data.asset || !data.type) return null;
+  if (data.type === Agent.type) {
+    // Never launch an agent while its provider is still waiting for setup approval.
+    if (data.lifecycle && data.lifecycle.state !== 'ready') {
+      return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type })
+        ?.withScopeFilter(projectScope(projectId))
+        .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle.project_id)
+        .withOption(HOME_AGENT_PARAM, data.asset) ?? null;
+    }
+    return agentHomePageDock(data.asset, projectId);
+  }
+  if (isAppType(data.type)) {
+    return DockPointer.forAppEntity(new TypeId(data.asset)).withScopeFilter(projectScope(projectId))
+      .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle?.project_id || projectId);
+  }
+  return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type });
+}
+
+/**
+ * The project home page redirect, or null when there is nothing to land on.
+ *
+ * Acts only on a load that ASKS for it — `?homePage=open` (`withHomePage`),
+ * on the root or on the project's dock — and every time it is asked, not only
+ * the first. Two kinds of navigation ask:
+ *  - LAUNCHING a project: opening a folder or clone, picking a project,
+ *    setting up a shared one, switching to one.
+ *  - The Home button (`goHome({ homePage: true })`), and closing a project's
+ *    LAST tab (the strip lands where Home would).
+ * Everything else that lands on the project page — its own "Open project home"
+ * button, its tab — does not ask, so the project page (where the home page is
+ * configured) stays reachable. Safe to
+ * repeat because an agent home page RESUMES its last chat rather than minting
+ * one per visit.
+ *
+ * Same contract as the other load redirects: never blocks the load (any
+ * failure means the default home) and lands as real URL state. `replace`, not
+ * `redirect`: the `?homePage=open` location must not stay behind the session,
+ * or Back would re-run this loader and bounce straight forward again.
+ */
+export async function projectHomePageRedirect(request: Request): Promise<Response | null> {
+  if (isHubOnly()) return null;
+  if (new URL(request.url).searchParams.get(HOME_PAGE_PARAM) !== HOME_PAGE_OPEN) return null;
+  const scoped = ambientLoadProjectId(request);
+  if (scoped === undefined) return null; // deep link / Hub / inside a session
+  const projectId = scoped ?? dataContext.project?.id ?? null;
+  if (!projectId) return null;
+
+  let data: ProjectHomePage;
+  try {
+    data = await Project.openHomePage(projectId);
+  } catch (e) {
+    console.warn('[project-home-page] backend call failed; default home', e);
+    return null;
+  }
+  if (data?.error) {
+    console.warn('[project-home-page] backend could not open the home page', data.error);
+    return null;
+  }
+  let dock: DockPointer | null;
+  try {
+    dock = data ? await homePageDock(data, projectId) : null;
+  } catch (e) {
+    console.warn('[project-home-page] could not open the home page; default home', e);
+    return null;
+  }
+  if (!dock) return null;
+
+  rememberProjectHomePage(projectId, dock);
+  return replace(dock.toUrl());
+}
+
+// Imported by the home loader; the resolver list is shared, so it runs on root
+// loads and on project-dock loads alike. After agent auto-launch on purpose:
+// first redirect wins, so an agent's once-only auto-launch takes the very first
+// open.
+if (PROJECT_HOME_PAGE_ENABLED) registerLoadRedirect(projectHomePageRedirect);

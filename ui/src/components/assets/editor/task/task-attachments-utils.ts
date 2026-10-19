@@ -66,7 +66,7 @@ export function normalizeAttachments(artifacts: unknown): Attachment[] {
 
 /** Build the stored entry for a freshly added path. A git folder becomes
  *  `{label, git_origin, rel}` (no sender path — `rel` is the offset within its
- *  git context folder root, machine-independent); anything else keeps `{path,
+ *  git dependency's root, machine-independent); anything else keeps `{path,
  *  label}`. */
 export function makeAttachmentEntry(
   p: string,

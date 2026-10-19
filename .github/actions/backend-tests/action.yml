@@ -1,0 +1,151 @@
+name: 'Backend tests (pytest)'
+description: 'uv sync, then one pytest tier (unit or api); pip-audit + Claude CLI install where relevant'
+inputs:
+  tier:
+    description: "Which pytest tier to run: 'unit' or 'api'"
+    required: true
+  shard:
+    description: >-
+      1-based shard index for the unit tier. Omit (or set shards to 1) to run
+      the whole tier in one job.
+    required: false
+    default: '1'
+  shards:
+    description: 'How many shards the unit tier is split across.'
+    required: false
+    default: '1'
+  k:
+    description: >-
+      pytest -k expression: run only matching tests, in whichever shard(s) carry them. For
+      iterating on one or two failures instead of the whole tier.
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    # Every Linux job here shares ONE cache key (platform + lockfile), so on a run
+    # where the key is new they all miss and every post step then races to save it
+    # — one wins, the rest warn "Unable to reserve cache". Saving is therefore the
+    # unit tier's first shard's job alone (the same elect-one pattern as pip-audit
+    # below); everyone else only restores.
+    - name: Set up uv + Python 3.11
+      uses: astral-sh/setup-uv@v10.0.1
+      with:
+        python-version: '3.11'
+        enable-cache: true
+        save-cache: ${{ inputs.tier == 'unit' && inputs.shard == '1' }}
+
+    # setup-uv registers GitHub's Python problem matcher, which promotes any
+    # traceback-shaped log line to an error annotation — including the benign
+    # teardown warnings in pytest's WARNINGS SUMMARY (e.g. aiosqlite's worker
+    # thread racing session-loop close, "Event loop is closed"), stamping red
+    # annotations on green runs. pytest's exit code is the real signal.
+    - name: Disable Python problem matcher (annotates warnings as errors)
+      run: echo "::remove-matcher owner=python::"
+      shell: bash
+
+    - name: Install dependencies
+      run: uv sync --dev --frozen
+      shell: bash
+
+    # Advisory-only: a new CVE in a pinned transitive dep must not block PRs
+    # (or, through the deploy gate, PyPI releases). Failures show as a red
+    # step icon in the log without failing the job. Runs once, in the unit
+    # tier's FIRST shard, so neither the parallel api job nor the sibling
+    # shard duplicates it.
+    - name: pip-audit (advisory, non-blocking)
+      if: ${{ inputs.tier == 'unit' && inputs.shard == '1' }}
+      continue-on-error: true
+      run: uv tool run pip-audit --desc
+      shell: bash
+
+    # pytest.ini enforces --timeout=30 per test; never raise it.
+    #
+    # --long is REQUIRED here. `long`-marked tests (>1s) are deselected by
+    # default so the local inner loop stays fast; that is an ergonomic choice,
+    # not a coverage one, and CI is not the inner loop. Without the flag those
+    # tests run nowhere — tests/long_tests is an excluded tier (see test.yml).
+    # Sharded by FILE, round-robin over a sorted list, so the two halves are
+    # interleaved rather than split alphabetically — adjacent files tend to be
+    # the same subsystem and therefore the same cost, so a straight cut would
+    # put most of the weight on one runner.
+    #
+    # The split is by path rather than pytest-xdist because these tests are not
+    # written to share a process: tests/conftest.py roots the DB, records and
+    # home under a per-PROCESS mkdtemp, and the repo has a documented history of
+    # SQLite lock contention when writers overlap. Separate jobs are separate
+    # VMs, so isolation is exactly what it was in a single run.
+    #
+    # This does NOT relax the 15-minute cap. The tier was 12m09s green on
+    # 2026-09-06 and had only three minutes of headroom; runner variance ate it
+    # and the job has been killed on every branch since, release/v0.2 included.
+    # Halving the work restores real headroom instead of widening the budget.
+    - name: pytest tests/unit
+      if: ${{ inputs.tier == 'unit' }}
+      run: |
+        set -euo pipefail
+        SHARD='${{ inputs.shard }}'
+        SHARDS='${{ inputs.shards }}'
+        K='${{ inputs.k }}'
+        if [ "$SHARDS" -le 1 ]; then
+          if [ -n "$K" ]; then
+            uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long -k "$K" || [ $? -eq 5 ]
+          else
+            uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long
+          fi
+          exit $?
+        fi
+        # Atoms are DIRECTORIES (plus the loose top-level test files), never
+        # individual files inside a package. tests/unit/test_data_spec is why:
+        # its _roundtrip helper exposes module-level NOT_ON_DISK / OVERRIDES
+        # dicts that test_asset_roundtrip.py fills in AT IMPORT, and
+        # test_db_roundtrip.py reads. Split those two apart and the second fails
+        # with "harness has no sample for field 'expand'" — which is exactly
+        # what a per-file split did. The coupling is pre-existing (that test
+        # fails standalone on main too); keeping a package whole means sharding
+        # does not have to fix it first.
+        #
+        # `while read` rather than `mapfile`: mapfile is bash 4+, and this
+        # script should not silently depend on the runner image's bash version.
+        SEL=()
+        i=0
+        total=0
+        while IFS= read -r f; do
+          total=$(( total + 1 ))
+          if [ $(( i % SHARDS )) -eq $(( SHARD - 1 )) ]; then SEL+=("$f"); fi
+          i=$(( i + 1 ))
+        # A data source's own tests live in its asset folder; each folder is an atom.
+        done < <( { find tests/unit -mindepth 1 -maxdepth 1 -type d ! -name '__pycache__';
+                    find tests/unit -mindepth 1 -maxdepth 1 -name 'test_*.py';
+                    find flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -mindepth 2 -maxdepth 2 -type d -name tests; } | sort )
+        if [ ${#SEL[@]} -eq 0 ]; then
+          echo "::error::shard $SHARD/$SHARDS selected no test files — the split is broken"
+          exit 1
+        fi
+        echo "shard $SHARD/$SHARDS: ${#SEL[@]} of $total files"
+        if [ -n "$K" ]; then
+          # Exit 5 ("no tests collected") is expected here: a `-k` filter usually
+          # matches nothing in most shards, and that is not this shard's failure.
+          uv run pytest "${SEL[@]}" -q --long -k "$K" || [ $? -eq 5 ]
+        else
+          uv run pytest "${SEL[@]}" -q --long
+        fi
+      shell: bash
+
+    # tests/api includes files that spawn or probe a real Claude CLI (worker
+    # lifecycle, PTY, capability tests) — install it so the full tier runs.
+    - name: Install Claude Code
+      if: ${{ inputs.tier == 'api' }}
+      run: npm install -g @anthropic-ai/claude-code
+      shell: bash
+
+    - name: pytest tests/api
+      if: ${{ inputs.tier == 'api' }}
+      run: |
+        K='${{ inputs.k }}'
+        if [ -n "$K" ]; then
+          uv run pytest tests/api -q -k "$K" || [ $? -eq 5 ]
+        else
+          uv run pytest tests/api -q
+        fi
+      shell: bash

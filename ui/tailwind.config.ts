@@ -20,9 +20,14 @@ export default {
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        cloud: 'hsl(var(--cloud-entity))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
+        },
+        brand: {
+          DEFAULT: 'hsl(var(--brand))',
+          foreground: 'hsl(var(--brand-foreground))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -149,6 +154,22 @@ export default {
               '0 0 0 1px hsl(var(--primary) / 0.65), 0 0 8px 0 hsl(var(--primary) / 0.50)',
           },
         },
+        'setup-glow': {
+          '0%, 100%': {
+            boxShadow: '0 0 0 1px rgb(234 179 8 / 0.35), 0 0 4px 0 rgb(234 179 8 / 0.25)',
+          },
+          '50%': {
+            boxShadow: '0 0 0 2px rgb(234 179 8 / 0.70), 0 0 14px 3px rgb(234 179 8 / 0.55)',
+          },
+        },
+        'unfunded-flash': {
+          '0%, 100%': {
+            backgroundColor: 'rgb(248 113 113 / 0.10)',
+          },
+          '50%': {
+            backgroundColor: 'rgb(248 113 113 / 0.45)',
+          },
+        },
         'pending-glow-once': {
           '0%': {
             boxShadow:
@@ -174,6 +195,8 @@ export default {
         'float-background': 'float-background 15s ease infinite',
         'pending-glow': 'pending-glow 3.6s ease-in-out infinite',
         'pending-glow-once': 'pending-glow-once 3s ease-in-out 1 forwards',
+        'unfunded-flash': 'unfunded-flash 1.4s ease-in-out infinite',
+        'setup-glow': 'setup-glow 2s ease-in-out infinite',
       },
     },
   },

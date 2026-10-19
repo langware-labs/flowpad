@@ -7,7 +7,7 @@ Endpoints covered (defined in flow_sdk/server/routes/cloud.py):
   - POST /api/v1/cloud/logout            -> {cloud_logout_url}
   - GET  /auth/login_callback            -> success/error HTML page
   - GET  /api/v1/cloud/logout_callback   -> success HTML page
-  - GET  /api/v1/graph/bootstrap         -> desktop_info.cloud_login_available
+  - GET  /api/v1/graph/info              -> desktop_info.cloud_login_available
 
 Mocked targets (existing module paths still in use after the refactor):
   - flow_sdk.cli.auth.hub_login.{is_logged_in, validate_api_key_async}
@@ -19,13 +19,33 @@ Mocked targets (existing module paths still in use after the refactor):
 """
 
 import json
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 TEST_API_KEY = "fp_production_testkey123456789abc"
 USER_INFO = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
+
+
+@pytest.fixture(autouse=True)
+def _no_login_escapes_this_module():
+    """Restore the process's cloud-login state around every test here.
+
+    These tests drive the real login endpoints, and a mis-aimed patch persists
+    a login instead of faking one. The damage lands nowhere near here: a
+    logged-in process routes `user/{id}/oauth/...` through the HUB, so twelve
+    tests in three other files failed against `app.flowpad.ai` with an id that
+    only exists in this file. Assertion-free on purpose — it is a net, not a
+    check; the patch target is what keeps the login from happening at all.
+    """
+    from flow_sdk.cli import app_config
+
+    before = app_config.get_user()
+    try:
+        yield
+    finally:
+        if app_config.get_user() != before:
+            app_config.set_user(before) if before else app_config.clear_user()
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +216,12 @@ async def test_login_callback_returns_success_html(client):
             new=AsyncMock(return_value=USER_INFO),
         ),
         patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
-        patch("flow_sdk.cli.app_config.set_user"),
+        # AS USED, not at the source: `_finalize_login` imported `set_user` at
+        # module load, so patching `flow_sdk.cli.app_config.set_user` leaves the
+        # real one bound and the fake user is really persisted — which made the
+        # PROCESS cloud-logged-in as `user_abc123` for every later test, sending
+        # their hub calls to production. Same idiom as the full-flow test below.
+        patch("flow_sdk.cli.auth.cloud_login.set_user"),
         patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
@@ -361,38 +386,49 @@ async def test_logout_callback_returns_success_html(client):
 
 
 # ---------------------------------------------------------------------------
-# Bootstrap exposes cloud_login_available
+# Deferred info exposes cloud_login_available
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_cloud_login_available_true(bootstrapped_client):
-    """Bootstrap exposes desktop_info.cloud_login_available=True when the hub is reachable."""
+async def test_info_cloud_login_available_true(bootstrapped_client):
+    """Deferred info reports cloud availability without delaying bootstrap."""
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
 
-    bootstrap_mod._bootstrap_cache = None
+    bootstrap_mod.invalidate_bootstrap_cache()
     with patch(
         "flow_sdk.server.routes.bootstrap.is_cloud_login_available",
         new=AsyncMock(return_value=True),
     ):
-        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+        response = await bootstrapped_client.get("/api/v1/graph/info")
 
     assert response.status_code == 200
-    payload = response.json()
-    desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
-    assert desktop_info is not None, f"desktop_info missing from bootstrap: {list(payload.keys())}"
+    desktop_info = response.json()["data"]["desktop_info"]
     assert desktop_info.get("cloud_login_available") is True
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_cloud_login_available_false(bootstrapped_client):
-    """Bootstrap exposes desktop_info.cloud_login_available=False when the hub is unreachable."""
+async def test_bootstrap_carries_the_cloud_identity(bootstrapped_client):
+    """Bootstrap says WHO this instance is signed in as, not merely that it could be.
+
+    The sandbox identity race. A cloud sandbox is signed in by the hub over
+    loopback, but its own bootstrap carried only `cloud_login_available` — a bool —
+    and the local user. So the UI painted `currentUser = cloudUser ?? localUser`,
+    i.e. the template's "E2B Local", and only corrected itself when an async
+    `/cloud/status` landed. On a cold resume that call races a still-waking backend
+    and loses, and the user is left looking at the wrong account.
+
+    `login` here is the same block `/api/v1/cloud/status` returns, from the same
+    builder — the point is that the identity arrives WITH the first paint instead
+    of one round trip later.
+    """
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
 
     bootstrap_mod._bootstrap_cache = None
-    with patch(
-        "flow_sdk.server.routes.bootstrap.is_cloud_login_available",
-        new=AsyncMock(return_value=False),
+    user = {"id": "b0b00000-0000-4000-8000-000000000001", "type": "user", "email": "bob@local.test"}
+    with (
+        patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
+        patch("flow_sdk.cli.app_config.get_user", return_value=user),
     ):
         response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
 
@@ -400,4 +436,66 @@ async def test_bootstrap_cloud_login_available_false(bootstrapped_client):
     payload = response.json()
     desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
     assert desktop_info is not None
+    login = desktop_info.get("login")
+    assert login is not None, f"bootstrap carries no cloud identity: {sorted(desktop_info)}"
+    assert login["status"] == "logged_in"
+    assert login["user"]["email"] == "bob@local.test"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_says_logged_out_when_it_is(bootstrapped_client):
+    """The negative half — an absent identity must be stated, not omitted.
+
+    A missing `login` block and a `logged_out` one mean different things to the
+    client: the first is an old server, the second is an answer.
+    """
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
+
+    bootstrap_mod._bootstrap_cache = None
+    with patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=False):
+        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+
+    payload = response.json()
+    desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
+    login = desktop_info.get("login")
+    assert login is not None
+    assert login["status"] == "logged_out"
+    assert login["user"] is None
+
+
+@pytest.mark.asyncio
+async def test_info_cloud_login_available_false(bootstrapped_client):
+    """Deferred info reports an unavailable hub without delaying bootstrap."""
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
+
+    bootstrap_mod.invalidate_bootstrap_cache()
+    with patch(
+        "flow_sdk.server.routes.bootstrap.is_cloud_login_available",
+        new=AsyncMock(return_value=False),
+    ):
+        response = await bootstrapped_client.get("/api/v1/graph/info")
+
+    assert response.status_code == 200
+    desktop_info = response.json()["data"]["desktop_info"]
     assert desktop_info.get("cloud_login_available") is False
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_hub_outage_preserves_stored_login():
+    """A transient validation failure must not turn an outage into logout."""
+    from flow_sdk.server.routes.bootstrap import is_cloud_login_available
+
+    with (
+        patch("flow_sdk.cli.auth.secrets.is_secrets_enabled", return_value=True),
+        patch("flow_sdk.cli.auth.hub_login.get_api_key", return_value=TEST_API_KEY),
+        patch(
+            "flow_sdk.cli.auth.hub_login.validate_api_key_async",
+            new=AsyncMock(side_effect=ConnectionError("hub unavailable")),
+        ),
+        patch("flow_sdk.cli.auth.hub_login.delete_api_key") as delete_api_key,
+        patch("flow_sdk.cli.app_config.set_user") as set_user,
+    ):
+        assert await is_cloud_login_available() is False
+
+    delete_api_key.assert_not_called()
+    set_user.assert_not_called()

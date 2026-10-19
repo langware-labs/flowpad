@@ -1,12 +1,20 @@
 import { useCallback, useState } from 'react';
-import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
-import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import { FlowMessage, PROCESS_CALL_TYPE, RETURNED_VALUE_TYPE, TypeId, type HubClientErrorInfo } from '@sdk';
+import {
+  AttachmentType,
+  BodyStatus,
+  attachmentDataString,
+  isAttachmentMissing,
+  type Attachment,
+  type AttachmentReference,
+} from '@sdk/entities/flow-message';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { AttachmentChipState } from './AttachmentChip';
 import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
-import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
+import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
 /** TYPE_ID attachment types the send path injects as structural self-refs —
  *  every message auto-carries ``conversation-<id>`` + ``flow_message-<id>``
@@ -21,8 +29,23 @@ import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
  *  chip at all and ``useAttachedParentTaskIds`` becomes dead code.
  *
  *  Not to be confused with the backend's ``_NON_MATERIALIZING_TYPE_IDS``, which
- *  does list ``task`` — that gates body-download bookkeeping, not rendering. */
-const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message']);
+ *  does list ``task`` — that gates body-download bookkeeping, not rendering.
+ *
+ *  ``prompt_completion`` is the reply marker (see ``REPLY_MARKER_TYPE``): plumbing
+ *  as well, and the one that used to be hidden only BY the missing-attachment
+ *  filter. It is listed here so it stays hidden once nothing reports it missing. */
+const STRUCTURAL_ATTACHMENT_TYPES = new Set([
+  'conversation',
+  'flow_message',
+  REPLY_MARKER_TYPE,
+  // The live-session carrier: every session message bears one (the snapshot's
+  // envelope), so as a chip it read "Live session · <you>" under each prompt.
+  // The session card is the session's one entry in the thread.
+  'remote_worker_session',
+  // A prompt call and its answer: the call card is their one rendering.
+  PROCESS_CALL_TYPE,
+  RETURNED_VALUE_TYPE,
+]);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
  *  — and nothing it could use to fetch a body that isn't there. */
@@ -49,22 +72,28 @@ export interface AttachmentTypeChipView {
   count: number;
 }
 
+/** Session-local record of the pulls this device attempted for one message. */
+export interface DownloadAttempts {
+  /** Epoch ms of the last `download()` invocation, or null if none this session. */
+  lastAttemptAt: number | null;
+  /** Epoch ms of the last invocation that completed without throwing. */
+  lastSuccessAt: number | null;
+  /** How many pulls ran this session. */
+  count: number;
+}
+
+const NO_ATTEMPTS: DownloadAttempts = { lastAttemptAt: null, lastSuccessAt: null, count: 0 };
+
 export interface UseAttachments {
-  /** FILE attachments (the conversation.jsonl transcript is filtered out). */
+  /** FILE attachments. */
   items: AttachmentView[];
   /** Non-structural TYPE_ID (entity) attachments — skill / markdown / agent /
    *  spec — as TypeIds. Rendered as entity chips once the body is
    *  downloaded; until then they ride inside the single Download button. */
   entities: TypeId[];
-  /** Message-level download state, straight from the backend-derived
-   *  `fm.body_downloaded`: true once the body bundle has been pulled + unpacked
-   *  so every renderable attachment is local. The UI switches the whole message
-   *  between the Download button and rendered chips off this one flag. */
+  /** Bundle download completion, independent of missing assets. */
   downloaded: boolean;
-  /** True when the message carries the `conversation.jsonl` transcript. The
-   *  transcript is deliberately NOT in `items` (it surfaces in the Context
-   *  tab) — this flag lets the bubble say so instead of rendering nothing. */
-  sharesTranscript: boolean;
+  missingAttachments: AttachmentReference[];
   /** True when the message carries a PROMPT attachment (the prompt row
    *  renders it). */
   hasPrompt: boolean;
@@ -81,6 +110,14 @@ export interface UseAttachments {
   dismissError: () => void;
   /** True while a body pull triggered via `download()` is in flight. */
   downloading: boolean;
+  /** Body lifecycle on the hub — `na` means no bundle was ever uploaded, so a
+   *  retry cannot succeed. Surfaced in the missing-attachment diagnostics. */
+  bodyStatus: BodyStatus;
+  /** Session-local pull history: when `download()` was last invoked, when it
+   *  last returned without throwing, and how many times it ran. Not persisted
+   *  (no backend field records a per-device pull) — it resets on refresh, and
+   *  the diagnostics label says so. */
+  attempts: DownloadAttempts;
   /** The single download entrypoint — pulls + unpacks the body via
    *  `FlowMessage.downloadAttachments()`, which is a no-op unless body_status
    *  is READY. Chips call this; they never build a download URL themselves.
@@ -127,7 +164,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
     .filter((a) => isDownloadableFileAttachment(a) || isImagePromptFileAttachment(a))
     .map((a) => {
       const d = attachmentDataString(a);
-      const state = stateFor(a, bodyStatus);
+      const state = isAttachmentMissing(fm, a) ? AttachmentChipState.Unavailable : stateFor(a, bodyStatus);
       return {
         key: d,
         filename: d.split('/').pop() || d,
@@ -138,6 +175,17 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
         localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
       };
     });
+}
+
+/** What a message with no text carries, named for a one-line preview: the types it shares
+ *  ("Claude Session"), then its file names. Empty when it carries nothing a person would name. */
+export function attachmentSummary(fm: FlowMessage | null | undefined): string {
+  const types = [...new Set(buildEntities(fm).map((t) => t.type))].map(labelForType);
+  const files = (fm?.attachment ?? [])
+    .filter((a) => a.attachment_type === AttachmentType.FILE)
+    .map((a) => attachmentDataString(a).split('/').pop() ?? '')
+    .filter(Boolean);
+  return [...types, ...files].join(', ');
 }
 
 function typeLabel(type: string): string {
@@ -170,6 +218,7 @@ function buildAssetTypeChips(entities: TypeId[], items: AttachmentView[]): Attac
  */
 export function useAttachments(fm: FlowMessage | null | undefined, messageId: string): UseAttachments {
   const [downloading, setDownloading] = useState(false);
+  const [attempts, setAttempts] = useState<DownloadAttempts>(NO_ATTEMPTS);
   const progress = useFlowMessageProgress(messageId);
   const { error, dismiss } = useFlowMessageDownloadError(messageId);
 
@@ -178,7 +227,6 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
   const items = buildItems(fm, messageId);
   const entities = buildEntities(fm);
   const downloaded = fm?.body_downloaded ?? false;
-  const sharesTranscript = (fm?.attachment ?? []).some(isTranscriptAttachment);
   // Both prompt generations count: legacy PROMPT and entity-backed TYPE_ID.
   const hasPrompt = (fm?.attachment ?? []).some(isPromptAttachment);
   // The Download button badge + tooltip: one entry per attached asset
@@ -190,23 +238,26 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
   const download = useCallback(async () => {
     if (!fm || downloading) return;
     setDownloading(true);
+    setAttempts((prev) => ({ ...prev, lastAttemptAt: Date.now(), count: prev.count + 1 }));
     try {
       // No-op unless body_status === READY (frontend gate #1). On success an
       // entity UPDATE fans out and the chips re-render as Downloaded; on failure
       // the error surfaces via useFlowMessageDownloadError, so swallow here.
       await fm.downloadAttachments();
+      setAttempts((prev) => ({ ...prev, lastSuccessAt: Date.now() }));
+      dismiss();
     } catch {
       /* surfaced inline via the download-error hook */
     } finally {
       setDownloading(false);
     }
-  }, [fm, downloading]);
+  }, [fm, downloading, dismiss]);
 
   return {
     items,
     entities,
     downloaded,
-    sharesTranscript,
+    missingAttachments: downloaded ? (fm?.body_missing_attachments ?? []) : [],
     hasPrompt,
     assetCount,
     assetLabels,
@@ -215,6 +266,8 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
     error,
     dismissError: dismiss,
     downloading,
+    bodyStatus: fm?.body_status ?? BodyStatus.NA,
+    attempts,
     download,
   };
 }

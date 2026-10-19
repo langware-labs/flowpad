@@ -10,4 +10,7 @@ export enum LMApiProvider {
   OpenRouter = 'openrouter',
   Anthropic = 'anthropic',
   OpenAI = 'openai',
+  /** The FlowPad hub's LLMEndpoint: authenticated by the box's hub login, bound
+   *  by the hub after login. No key to paste — see `LmApiKeySummary.managed`. */
+  FlowPad = 'flowpad',
 }

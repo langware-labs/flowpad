@@ -1,7 +1,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   ActionType,
   clearPendingAction,
@@ -31,12 +31,12 @@ interface LoginGuardOptions {
 
 export const useLoginRequired = (): UseLoginRequiredReturn => {
   const { agent } = useAgentContext();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const { navigation, currentDock } = useDockNavigation();
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingLoginAction | null>(null);
 
   const requiresLogin = agent?.site_config?.feature_flags?.require_login ?? false;
-  const returnedFromLogin = searchParams.has('login') || searchParams.has('signup');
+  const returnedFromLogin = !!currentDock?.options?.login || !!currentDock?.options?.signup;
   const loginSatisfied = useCloudAuthed();
   const isPostLogin = returnedFromLogin || Boolean(loginSatisfied && pendingAction);
 
@@ -50,13 +50,11 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
       }
     }
     if (returnedFromLogin) {
-      // Clean up query params
-      const newParams = new URLSearchParams(searchParams);
-      newParams.delete('login');
-      newParams.delete('signup');
-      setSearchParams(newParams, { replace: true });
+      // Drop the return markers so a refresh does not look like a fresh return.
+      navigation.setOption('login', null);
+      navigation.setOption('signup', null);
     }
-  }, [returnedFromLogin, loginSatisfied, searchParams, setSearchParams]);
+  }, [returnedFromLogin, loginSatisfied, navigation]);
 
   const checkLoginAndProceed = useCallback(
     (

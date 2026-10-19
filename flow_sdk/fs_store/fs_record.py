@@ -1,7 +1,7 @@
 """FSRecord — the lean filesystem manifest for an Entity's on-disk shadow.
 
 Replaces ``Record``. Construct as ``FSRecord(type, id)``; the shadow
-lives at ``<records_root>/<type>/<type>-@<id>/metadata.json``. Holds the
+lives at ``<records_root>/<type>/<id>/metadata.json``. Holds the
 asset_ref (FSRef to the user-facing source file) and a free-form
 collection of meta fields as direct instance attributes (default).
 Per-type typed metadata models are opt-in via ``TypeInfo.meta_model``.
@@ -30,14 +30,37 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, TypeVar
 from weakref import WeakValueDictionary
 
+from pydantic import BaseModel
+
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.record_paths import (
+    data_dir_for as data_dir_for,
+)
+from flow_sdk.fs_store.record_paths import (
+    is_record_dir as is_record_dir,
+)
+from flow_sdk.fs_store.record_paths import (
+    parse_record_stem as parse_record_stem,
+)
+from flow_sdk.fs_store.record_paths import (
+    record_stem as record_stem,
+)
+from flow_sdk.fs_store.record_paths import (
+    shadow_dir_for as shadow_dir_for,
+)
+
+if TYPE_CHECKING:
+    pass
 
 
 M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in via TypeInfo.meta_model
@@ -66,10 +89,11 @@ _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 _RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = (
     WeakValueDictionary()
 )
+
+
 _HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
     "_held_record_sync_keys", default=frozenset()
 )
-
 
 @asynccontextmanager
 async def record_sync_guard(record_type: str, record_id: str):
@@ -103,13 +127,6 @@ async def record_sync_guard(record_type: str, record_id: str):
 
 # Single source of truth lives in record_paths; re-exported here for the callers
 # that import the stem / path helpers from this module.
-from flow_sdk.fs_store.record_paths import (  # noqa: E402
-    data_dir_for as data_dir_for,
-    is_record_dir as is_record_dir,
-    parse_record_stem as parse_record_stem,
-    record_stem as record_stem,
-    shadow_dir_for as shadow_dir_for,
-)
 
 
 def write_text_if_changed(path: Path, text: str) -> None:
@@ -124,6 +141,24 @@ def write_text_if_changed(path: Path, text: str) -> None:
         pass
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    """Write ``data`` as ``path``'s whole content in one step.
+
+    ``Entity`` saves metadata on a worker thread (``asyncio.to_thread``) while the
+    loop keeps reading records; a truncate-then-write let a read parse an empty
+    file. The temp file sits beside ``path`` so ``os.replace`` stays on one
+    filesystem, where the swap is atomic.
+    """
+    text = json.dumps(data, indent=2, ensure_ascii=False, default=_json_default)
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _get_default_records_root() -> Path:
@@ -141,6 +176,46 @@ def _digest(raw: str) -> str:
     """
     import hashlib
     return hashlib.blake2b(raw.encode(), digest_size=8).hexdigest()
+
+
+#: Bumped whenever a record of a type is written or removed. A corpus cache
+#: (e.g. the project cwd index) keys its validity on this, so it can never serve
+#: a record whose fields were rewritten in place — rewriting an EXISTING record
+#: touches only its own metadata.json, which does not move the type directory's
+#: mtime.
+_RECORD_WRITE_GENERATION: dict[str, int] = {}
+
+
+def record_write_generation(record_type: str) -> int:
+    """Monotonic counter of in-process writes to ``record_type``'s corpus."""
+    return _RECORD_WRITE_GENERATION.get(str(record_type), 0)
+
+
+def _bump_record_write_generation(record_type: str) -> None:
+    key = str(record_type)
+    _RECORD_WRITE_GENERATION[key] = _RECORD_WRITE_GENERATION.get(key, 0) + 1
+
+
+def _json_default(obj: Any) -> Any:
+    """Encode a value ``json.dumps`` cannot handle on its own.
+
+    A Pydantic model is dumped, not stringified. Without this a model-valued
+    metadata field (a model written via ``save_metadata``) would fall to the ``str``
+    fallback and be written as its **repr** — ``"kind='array' fields=None …"`` —
+    which re-reads as a string and fails validation on the next load. Silent
+    corruption, no exception to notice it by.
+
+    ``mode="json"`` so nested datetimes/enums/paths inside the model encode the
+    same way the DB writer encodes them, and nulls are KEPT: the top-level
+    ``None`` skip in ``save_metadata`` exists to protect a partial merge, and
+    there is no partial merge inside a value that is replaced wholesale.
+
+    Everything else keeps the historical ``str`` coercion — narrowing that is a
+    separate change with its own blast radius.
+    """
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    return str(obj)
 
 
 class FSRecord(Generic[M]):
@@ -185,7 +260,7 @@ class FSRecord(Generic[M]):
              if k not in _SYSTEM_ATTRS and not k.startswith("_")}
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         info = SchemaRegistry.get(self.type)
-        model_cls = getattr(info, "meta_model", None) if info else None
+        model_cls = getattr(info, "effective_meta_model", None) if info else None
         if model_cls is not None:
             try:
                 return model_cls(**d)
@@ -226,8 +301,12 @@ class FSRecord(Generic[M]):
     def from_dict(cls, data: dict) -> "FSRecord":
         # Legacy on-disk shape from the deleted Record class wraps the record
         # payload under a top-level ``data`` key (alongside ``meta``).
-        # Unwrap so subsequent code sees a flat dict.
-        if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+        # Unwrap so subsequent code sees a flat dict. A FLAT record always names
+        # its ``type`` at the top; one whose entity has a ``data`` field of its
+        # own (a dataset's free section) is not wrapped -- unwrapping it read
+        # back an empty record, so project delete's destroy() was a silent no-op
+        # and every API-saved dataset outlived its project.
+        if isinstance(data, dict) and "type" not in data and isinstance(data.get("data"), dict):
             payload = dict(data["data"])
         else:
             payload = data
@@ -243,8 +322,16 @@ class FSRecord(Generic[M]):
     # ── Identity ──────────────────────────────────────────────────────────
 
     @property
-    def fingerprint(self) -> str:
-        """Deterministic uuid5 for (type, asset_ref). Matches Entity.allocate_id."""
+    def content_fingerprint(self) -> str:
+        """Deterministic uuid5 over ``(type, asset_ref or name)``.
+
+        NOT an entity id, despite having been assigned as one until 0.2.121.
+        It is a fifth identity formula that never agreed with any of the others
+        — ``Entity.allocate_id`` keys ``type:rid`` under NAMESPACE_DNS, while
+        this keys ``type:path`` under NAMESPACE_URL — and it can fall back to
+        ``name``, so two records with the same name at unrelated paths collide.
+        Entity identity comes from the type's carrier (``reconcile``) and nowhere else.
+        """
         key = self._asset_ref.path if self._asset_ref else (self.__dict__.get("name") or "")
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.type}:{key}"))
 
@@ -269,6 +356,12 @@ class FSRecord(Generic[M]):
     def asset_ref(self) -> FSRef | None:
         return self.__dict__.get("_asset_ref")
 
+    @property
+    def asset_path(self) -> str:
+        """The path behind ``asset_ref``; ``""`` when the record has none."""
+        ref = self.asset_ref
+        return ref.path if ref is not None else ""
+
     @asset_ref.setter
     def asset_ref(self, value: Any) -> None:
         if value is None:
@@ -280,8 +373,17 @@ class FSRecord(Generic[M]):
 
     @property
     def main_ref(self) -> FSRef | None:
-        """Alias — the 'main' file is the asset_ref."""
-        return self.asset_ref
+        """Primary content ref, including an inner file for folder assets."""
+        asset_ref = self.asset_ref
+        if asset_ref is None:
+            return None
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        info = SchemaRegistry.get(self.type) if self.type else None
+        if info is None:
+            return asset_ref
+        body_path = info.body_path_for(asset_ref._path)
+        return asset_ref if body_path == asset_ref._path else FSRef(body_path, parent=asset_ref)
 
     def ensure_asset_ref(self) -> "FSRecord":
         """Bind ``asset_ref`` from the record's own mount metadata
@@ -294,19 +396,30 @@ class FSRecord(Generic[M]):
                 self.asset_ref = FSRef(str(mount))
         return self
 
+    def _meta_path_for_write(self, caller: str) -> Path:
+        """Shadow ``metadata.json`` path, refusing a record that has no id.
+
+        An id-less record reaching disk used to silently mint a FIFTH identity
+        formula (``content_fingerprint``), invisible to every identity guard.
+        Identity is resolved through the type's carrier before save — the
+        fallback was logged for one release and is now a hard error.
+        """
+        if self.id is None:
+            raise ValueError(
+                f"FSRecord({self.type}) reached {caller} with no id; "
+                "resolve it through the type's carrier (reconcile) first"
+            )
+        folder = self.shadow_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder / _METADATA_JSON
+
     # ── Save / Load ───────────────────────────────────────────────────────
 
     def save(self) -> Path:
-        """Write metadata.json into the shadow folder. Mints id if absent."""
-        if self.id is None:
-            self.__dict__["id"] = self.fingerprint
-        folder = self.shadow_dir
-        folder.mkdir(parents=True, exist_ok=True)
-        meta_path = folder / _METADATA_JSON
-        meta_path.write_text(
-            json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
+        """Write metadata.json into the shadow folder. Raises if the record has no id."""
+        meta_path = self._meta_path_for_write("save()")
+        _write_json_atomic(meta_path, self.to_dict())
+        _bump_record_write_generation(self.type)
         return meta_path
 
     def current_meta_keys(self) -> set[str]:
@@ -327,11 +440,7 @@ class FSRecord(Generic[M]):
         never clobbers a fresh on-disk one. Unmentioned keys are preserved.
         ``type``/``id`` are always anchored from the record's identity.
         """
-        if self.id is None:
-            self.__dict__["id"] = self.fingerprint
-        folder = self.shadow_dir
-        folder.mkdir(parents=True, exist_ok=True)
-        meta_path = folder / _METADATA_JSON
+        meta_path = self._meta_path_for_write("save_metadata()")
         merged: dict = {}
         if meta_path.exists():
             try:
@@ -345,10 +454,8 @@ class FSRecord(Generic[M]):
                 continue
             merged[k] = v
             self.__dict__[k] = v  # keep the in-memory view consistent
-        meta_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
+        _write_json_atomic(meta_path, merged)
+        _bump_record_write_generation(self.type)
         return meta_path
 
     def save_metadata_field(self, key: str, val) -> Path:
@@ -378,10 +485,7 @@ class FSRecord(Generic[M]):
                 removed = True
         if not removed:
             return None
-        meta_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
+        _write_json_atomic(meta_path, merged)
         return meta_path
 
     @classmethod
@@ -444,18 +548,27 @@ class FSRecord(Generic[M]):
         directly via ``load_record``. Missing root or malformed entries are
         skipped silently.
         """
+        return list(cls.iter_discovered(type))
+
+    @classmethod
+    def iter_discovered(cls, type: str) -> "Iterator[FSRecord]":
+        """Lazy :meth:`discover` — same walk, same skips, one record at a time.
+
+        Split out so callers that only need the FIRST match (e.g.
+        ``type_has_pending_changes``) don't pay to load every shadow of the
+        type, without re-implementing the ``is_record_dir`` filter or the
+        malformed-entry handling.
+        """
         root = _get_default_records_root() / type
         if not root.is_dir():
-            return []
-        out: list[FSRecord] = []
+            return
         for child in root.iterdir():
             if not is_record_dir(child):
                 continue
             try:
-                out.append(cls.load_record(child))
+                yield cls.load_record(child)
             except (FileNotFoundError, OSError, ValueError):
                 continue
-        return out
 
     @classmethod
     def count(cls, type: str) -> int:
@@ -533,7 +646,8 @@ class FSRecord(Generic[M]):
     def indexed_at(self) -> str | None:
         """ISO-8601 UTC time of the last index (from the sentinel filename),
         or None if never indexed."""
-        from datetime import datetime as _dt, timezone as _tz  # noqa: PLC0415
+        from datetime import datetime as _dt  # noqa: PLC0415
+        from datetime import timezone as _tz
 
         f = self._hash_file()
         if f is None:
@@ -594,9 +708,18 @@ class FSRecord(Generic[M]):
 
     @property
     def orphan(self) -> bool:
-        """True when the record's source asset no longer exists on disk."""
+        """True when the record's source asset is genuinely GONE from disk.
+
+        Absence alone is not enough: an unmounted volume or a disconnected share
+        makes every file under it stat as missing. ``source_unreachable`` keeps
+        those out — see its docstring for the parent-directory rule.
+        """
         ar = self._asset_ref
-        return ar is not None and not ar.exists()
+        if ar is None or ar.exists():
+            return False
+        from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+
+        return not source_unreachable(ar.path)
 
     def write_hash(self) -> None:
         """Stamp the current source hash + now as the index sentinel, replacing
@@ -621,6 +744,18 @@ class FSRecord(Generic[M]):
                 f.unlink(missing_ok=True)
         except OSError:
             pass
+
+    @classmethod
+    def type_has_pending_changes(cls, type_name: str) -> bool:
+        """True if ANY record of ``type_name`` needs re-indexing.
+
+        The per-type answer to the same question ``index_required`` answers per
+        record, and the primitive the unscoped index-status path was missing:
+        it reported a hardcoded ``stale=False`` for every type while the
+        indexer was re-parsing thousands of records. Short-circuits on the
+        first pending record, so a stale type costs one shadow read.
+        """
+        return any(rec.index_required for rec in cls.iter_discovered(type_name))
 
     @classmethod
     def clear_hashes_for_type(cls, type_name: str) -> None:
@@ -667,7 +802,7 @@ class FSRecord(Generic[M]):
         configured asset layout. ``default_worker`` defaults to ``claude`` so
         callers that pass a bare ``scope_root`` keep today's ``.claude/*`` layout.
         """
-        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
+        from flow_sdk.assets.placement import family_subdir  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
@@ -676,97 +811,16 @@ class FSRecord(Generic[M]):
         subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
         if subdir is None:
             return None
-        safe = self._safe_name(entity)
-        base = Path(scope_root) / subdir
-        if info.main_layout == "folder":
-            # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
-            # body_path_for, recovers the body on write) so the convention lives
-            # in one place rather than mirrored here.
-            target = info.asset_ref_for(base / safe)
-        else:
-            target = base / f"{safe}{info.main_ext}"
-        return FSRef(target)
+        from flow_sdk.assets.creation import destination_in
 
-    @staticmethod
-    def _safe_name(entity) -> str:
-        # Fall back to ``title`` for types that display via title rather than
-        # name (e.g. Spec) so their owned main_ref folder isn't "untitled".
-        raw = (getattr(entity, "name", None) or getattr(entity, "title", None) or "").strip().lower()
-        out = "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
-        return out or "untitled"
+        name = getattr(entity, "name", None) or getattr(entity, "title", None) or ""
+        target = destination_in(Path(scope_root) / subdir, info, name)
+        resolved_root = Path(scope_root).resolve()
+        resolved_target = target.resolve()
+        if not resolved_target.is_relative_to(resolved_root):
+            raise ValueError(f"Derived {self.type} asset path escapes its scope root")
+        return FSRef(resolved_target)
 
-    def default_body(self, entity) -> str | None:
-        """Per-type default body. Looks up ``TypeInfo.default_body_fn``."""
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        info = SchemaRegistry.get(self.type)
-        body_fn = info.default_body_fn if info else None
-        if body_fn is None:
-            return None
-        return body_fn(entity)
-
-    def upsert_main_ref(self, entity) -> str | None:
-        """Write default_body into asset_ref iff the file doesn't yet exist —
-        or on EVERY save for ``owns_main_ref`` types (the entity is the file's
-        sole editor, so entity-side edits must reach the on-disk source of
-        truth; otherwise the next rescan would revert them).
-
-        Returns the filesystem identity committed by ``TypeInfo`` when the type
-        has an identity policy. No-op if the record has no asset_ref.
-        Asset_ref must be under the user's scope_root — never under records_root.
-        """
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        ar = self._asset_ref
-        if ar is None:
-            return None
-        if ar.read_only:
-            raise IOError(f"FSRef at {ar.path!r} is read-only")
-        info = SchemaRegistry.get(self.type)
-        # For folder types whose asset_ref is the folder (skill/whiteboard), the
-        # body lives at <folder>/<main_file>. Resolve the real file before the
-        # existence check — the folder itself always exists, which would
-        # otherwise short-circuit the first-create write.
-        path = info.body_path_for(ar._path) if info else ar._path
-        owns = bool(info and info.owns_main_ref)
-        if not path.exists() or owns:
-            body = self.default_body(entity)
-            if body is not None:
-                # An owned Markdown renderer replaces domain content but never
-                # owns capsule bytes. Validate/snapshot every named block,
-                # render, then restore the raw blocks before one atomic write.
-                if path.exists() and path.suffix.lower() in {".md", ".markdown"}:
-                    from flow_sdk.capsules import (  # noqa: PLC0415
-                        restore_capsule_blocks,
-                        snapshot_capsule_blocks,
-                    )
-
-                    existing = path.read_text(encoding="utf-8")
-                    body = restore_capsule_blocks(body, snapshot_capsule_blocks(existing))
-                try:
-                    unchanged = path.exists() and path.read_text(encoding="utf-8") == body
-                except OSError:
-                    unchanged = False
-                if not unchanged:
-                    from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
-                        _atomic_write_text,
-                    )
-
-                    _atomic_write_text(path, body)
-            elif info and info.folder_backed:
-                # Main-doc-less folder assets still need an existing carrier
-                # target before AssetCapsule.from_path can select FolderCapsule.
-                ar._path.mkdir(parents=True, exist_ok=True)
-
-        entity_id = getattr(entity, "id", None)
-        if info is None or info.identity_backend is None or not entity_id:
-            return None
-        committed_id = info.mint_id(ar, proposed_id=str(entity_id))
-        # The carrier is authoritative. A create can race an existing asset at
-        # the same path (or use a deterministic policy), so the record must not
-        # keep advertising the losing proposed DB id after the commit.
-        self.__dict__["id"] = committed_id
-        return committed_id
 
     # ── DB integration ────────────────────────────────────────────────────
 
@@ -792,13 +846,18 @@ class FSRecord(Generic[M]):
           4. wiki edge re-extraction
           5. type-specific ``post_sync_fn`` from ``TypeInfo``
         """
-        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-        from flow_sdk.db import session as _db_session, get_db_driver  # noqa: PLC0415
-        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.record_error import from_exception as _record_error_from_exception  # noqa: PLC0415
         from flow_sdk import wiki  # noqa: PLC0415
+        from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db import session as _db_session  # noqa: PLC0415
+        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.record_error import (
+            from_exception as _record_error_from_exception,  # noqa: PLC0415
+        )
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
+        register_asset_runtime_bindings()
         try:
             async with _db_session():
                 entity = await Entity.from_record(self, notify=notify)
@@ -808,13 +867,8 @@ class FSRecord(Generic[M]):
                 await asyncio.to_thread(self.sync_from_entity, entity)
 
                 # FTS — read directly from instance attrs, no per-record parse.
-                entry = FtsEntry(
-                    entity_id=entity.id,
-                    entity_type=entity.type,
-                    name=self.__dict__.get("name") or None,
-                    title=self.search_title,
-                    description=self.search_description,
-                    content=self.search_content,
+                entry = FtsEntry.from_record(
+                    entity.id, entity.type, self.__dict__.get("name"), self
                 )
                 if fts_batch is not None:
                     fts_batch.append(entry)
@@ -834,14 +888,16 @@ class FSRecord(Generic[M]):
 
                 # Type-specific post-sync hook.
                 info = SchemaRegistry.get(self.type)
-                if info is not None and info.post_sync_fn is not None:
+                # Each callback is isolated: one observer raising must not stop the next from
+                # running, any more than it stops the sync that already committed.
+                for callback in info.post_sync_callbacks if info is not None else ():
                     try:
-                        await info.post_sync_fn(self)
+                        await callback(self)
                     except Exception as post_exc:
                         import logging  # noqa: PLC0415
                         logging.getLogger(__name__).warning(
-                            "post_sync_fn failed for %s:%s — %s",
-                            self.type, self.id, post_exc,
+                            "post_sync_fn %s failed for %s:%s — %s",
+                            getattr(callback, "__name__", callback), self.type, self.id, post_exc,
                         )
         except Exception as exc:
             _record_error_from_exception(self, exc, trigger="sync_to_db").save()
@@ -870,7 +926,13 @@ class FSRecord(Generic[M]):
             try:
                 self.save()
             except Exception:
-                pass
+                logging.getLogger(__name__).warning(
+                    "[record-sync] FSRecord(%s/%s) could not persist the entity mirror; "
+                    "metadata.json is stale until the next sync",
+                    self.type,
+                    self.id,
+                    exc_info=True,
+                )
         return changed
 
     async def get_links(self) -> list:
@@ -885,11 +947,11 @@ class FSRecord(Generic[M]):
 
     async def unindex(self) -> None:
         """Remove the Entity row, FTS entry, and wiki edges for this record."""
-        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk import wiki  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         try:
             await wiki.delete_for_id(self.type, str(self.id))

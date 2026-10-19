@@ -1,0 +1,32 @@
+{
+  "type": "compute_op",
+  "id": "71f7a01d-debe-4178-83e8-c0d4709783d6",
+  "name": "tree-on-path",
+  "label": "tree",
+  "description": "tree is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install tree",
+      "linux": "apt-get update && apt-get install -y tree"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install tree (https://oldmanprogrammer.net/source.php?dir=projects/tree) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v tree >/dev/null 2>&1",
+      "linux": "command -v tree >/dev/null 2>&1"
+    },
+    "timeout_seconds": 30
+  }
+}

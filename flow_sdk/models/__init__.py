@@ -1,9 +1,9 @@
 """Data models for flow-sdk.
 
-Includes FSItem for filesystem operations and other data models.
+Includes FSEntry for filesystem listings and other data models.
 """
 
-from .fs_models import FSItem
+from .fs_models import FSEntry
 from .bootstrap_models import AppPaths, EnvInfo, LmInfo, BootstrapInfo
 
-__all__ = ["FSItem", "AppPaths", "EnvInfo", "LmInfo", "BootstrapInfo"]
+__all__ = ["FSEntry", "AppPaths", "EnvInfo", "LmInfo", "BootstrapInfo"]

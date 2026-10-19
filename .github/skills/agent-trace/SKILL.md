@@ -38,7 +38,7 @@ If `server.json` is missing, that instance's backend isn't running — stop and 
 ```bash
 mkdir -p "$OUT"
 curl -sf "$API_URL/api/v1/workers/claude/<SESSION_ID>/trace-skeleton" \
-  | jq '.skeleton' > "$OUT/<SESSION_ID>.skeleton.json"
+  | jq '.data.skeleton' > "$OUT/<SESSION_ID>.skeleton.json"
 jq '.summary' "$OUT/<SESSION_ID>.skeleton.json"
 ```
 

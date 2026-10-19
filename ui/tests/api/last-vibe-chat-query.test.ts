@@ -20,8 +20,13 @@
  */
 import { AgenticProcess, Project, ProcessKind } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { trackForCleanup } from '../_cleanup';
+import type { TestContext } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
+import {
+  lastVibeChatQuery,
+  pickLastVibeChat,
+} from '@src/pages/flow-page/vibe-process-resolver';
 
 /** Fixed and far apart, so ordering can't hinge on clock skew. */
 const OLD = 1_700_000_000_000;
@@ -32,9 +37,9 @@ describe('last-vibe-chat selection', () => {
   const signupInfo = getTestSignupInfo();
   let project: Project;
 
-  beforeEach(async (context: any) => {
+  beforeEach(async (context: TestContext) => {
     await apiTestSetup(signupInfo, context.task.name);
-    project = await new Project({ name: `/tmp/flow_test_last_vibe_${Date.now()}` }).save([]);
+    project = trackForCleanup(await new Project({ name: `/tmp/flow_test_last_vibe_${Date.now()}` }).save([]));
   });
 
   /**
@@ -46,11 +51,17 @@ describe('last-vibe-chat selection', () => {
    * descendant of its project the way an asset is. Fixtures saved WITH a scope
    * hid that — they made the broken query pass. Do not add a scope here.
    */
-  const makeProcess = (name: string, processType: string, lastActiveAt?: number) =>
+  const makeProcess = (
+    name: string,
+    processType: string,
+    lastActiveAt?: number,
+    target?: string,
+  ) =>
     new AgenticProcess({
       name,
       project_id: project.id,
       process_type: processType,
+      ...(target ? { target_typeid_str: target } : {}),
       ...(lastActiveAt === undefined ? {} : { last_active_at: lastActiveAt }),
     }).save([]);
 
@@ -90,12 +101,12 @@ describe('last-vibe-chat selection', () => {
   });
 
   it('resolves to nothing for a project with no chats at all', async () => {
-    const empty = await new Project({ name: `/tmp/flow_test_last_vibe_empty_${Date.now()}` }).save([]);
+    const empty = trackForCleanup(await new Project({ name: `/tmp/flow_test_last_vibe_empty_${Date.now()}` }).save([]));
     expect(await resolve(empty.id)).toBeNull();
   });
 
   it("does not leak another project's chat", async () => {
-    const other = await new Project({ name: `/tmp/flow_test_last_vibe_other_${Date.now()}` }).save([]);
+    const other = trackForCleanup(await new Project({ name: `/tmp/flow_test_last_vibe_other_${Date.now()}` }).save([]));
     await makeProcess('mine', ProcessKind.Chat, OLD);
     await new AgenticProcess({
       name: 'theirs',
@@ -121,4 +132,5 @@ describe('last-vibe-chat selection', () => {
     expect(pickLastVibeChat(candidates)?.id).toBe(b.id);
     expect(pickLastVibeChat([...candidates].reverse())?.id).toBe(b.id);
   });
+
 });

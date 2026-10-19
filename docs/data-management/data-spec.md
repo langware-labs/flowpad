@@ -1,0 +1,409 @@
+---
+id: cdd25916-d86c-4c47-984a-db8a7c25cc85
+---
+
+# DataSpec — schemas as Pydantic, the schema as the layout
+
+Two things the schema layer needed and did not have: a way to describe data
+whose schema **arrives as data**, and a way for an asset's on-disk layout to be
+**the class that models it**. Both live in `flow_sdk/schema/data_spec/`.
+
+Three words, used exactly (see the [glossary](../glossary.md#kind--schema--value-2026-10-07)):
+a **kind** is a name (`navigator.decision`); a **schema** is the definition registered under it —
+a `DataSpec` subclass; a **value** is an instance of a schema. `DataSpec` is the base class the
+way pydantic's `BaseModel` is: subclasses are schemas, instances are values.
+
+The ruling behind both: **the schema is Pydantic, period.** A schema declared in
+source is a `DataSpec` subclass. A schema that arrives at runtime is *compiled
+to* a `DataSpec` subclass. One type system, not two — and a value's carrier is
+plain JSON, never a wrapper.
+
+## `DataSpec` — the base of every schema
+
+```python
+class DataSpec(BaseModel):
+    spec_kind: ClassVar[str] = ""      # the schema's kind in the tag ontology; "" ⇒ anonymous
+    model_config = ConfigDict(extra="forbid", frozen=True)
+```
+
+Every schema inherits from it — `RowSpec`, `DatasetSpec`, the three leaves, a
+user's `class EmailInput(DataSpec)`, and every schema parsed from YAML. A value is
+immutable (`frozen`); build a changed one with `model_copy(update=...)`. Asset
+document schemas (`AssetDocumentSpec`, `FrontMatter`) relax `extra` to `"ignore"`
+so a hand-edited file still loads. A field typed `DataSpec` means "a value of any schema."
+
+### Declared in source
+
+```python
+class EmailInput(DataSpec):
+    spec_kind = "email.message"        # a bare assignment — NOT an annotation
+    subject: str
+    body: str
+```
+
+Subclassing **registers** the schema under its kind in the one `SchemaRegistry`
+(`__pydantic_init_subclass__` — the hook that sees `model_fields`). Two rules,
+both enforced: `spec_kind` must stay a `ClassVar` (annotating it makes it a
+field, and the guard — an `assert` in the hook — trips at class creation); and a
+Pydantic **parametrization** (`RowSpec[A, B]`) inherits its origin's kind and
+deliberately does not register — only a *named* subclass does. So does a plain
+subclass that declares no kind of its own: `spec_kind` must be in the class's own
+`__dict__`, because an inherited one is not a new kind. Without that rule
+`FileDataPage` rebound `source.page` to itself and a plain `DataPage` no longer
+resolved from its own name.
+
+Registration is import-time, and forgetting it fails silently: a kind whose
+module nobody imported resolves to `Any`. `register_builtin_kinds()`
+(`data_spec/_kinds.py`) is the one place that makes the SDK's own kinds
+reachable — it binds `fs_ref` to `FSRef` and imports `dataset_spec`
+(`file_ref` / `folder` / `text`), `llm_source_spec` (`llm.source`) and
+`mcp_spec` (`mcp.server`); `SchemaRegistry` calls it at registration.
+`ingest.source_item` registers when `flow_sdk/builtin/source_item.py` is
+imported — `register_all()` reaches it through `source_item_type_info`, so it
+is bound before any manifest's `spec` is parsed.
+
+### Arriving as data — `DataSpec.parse`
+
+The authoring form mirrors a Python annotation. Three forms are structural,
+three are input-side marks:
+
+| authored (JSON / YAML) | annotation it mirrors | `parse` returns |
+|---|---|---|
+| `"string"` — a bare kind | `str` | `resolve_kind("string")` |
+| `{"category": "string", …}` — an object | `class X: category: str` | an anonymous `DataSpec` subclass (`create_model`) |
+| `["string"]` — a one-element list | `list[str]` | `list[T]` |
+| `"?string"` — may be absent | `Optional[str] = None` | the field becomes optional |
+| `"enum:a\|b"` — a closed set | `Literal["a", "b"]` | a `Literal` |
+| `{"*": "string"}` — a map | `dict[str, str]` | `dict[str, T]` |
+| `"date"` — a calendar day | `datetime.date` | ISO `YYYY-MM-DD` on disk |
+| `"crm.company"` as a field or list element | `Company \| ref` | a value, OR a reference `<kind>.id.<uuid>` to one stored instance (`value_ref`) — how one dataset row links to another |
+| `"crm.company\|crm.lead"` — a link to several kinds | a `value_ref` of any | a reference only |
+
+A dataset row is an instance: its reference is `<row kind>.id.<row id>`, the id stored in the row's
+`row.json` (`metadata.id`, a v4 minted on first write) so it survives a rename and a re-clone.
+`Dataset.check / append / put` refuse a reference to a row no dataset beside it holds, and
+`delete_row` refuses while another row still references the one being deleted
+(`flow_sdk/datasets/links.py`). A list of references is written inline in the document; a list of
+values one folder per element.
+
+A record schema may also declare **rules across rows** — two link paths that must name the same
+row wherever both ends are set (`"rules": [{"same": ["persona.icp", "icp"]}]`; `*` follows every
+element of a list, an empty step means the rule does not apply). `flow schema apply` checks each
+path walks links; `Dataset.check / append / put` refuse a break (`code: "rule"`), `rows()` reports
+rows that break one, and a `put` that would break a rule of a row reaching it is refused
+(`flow_sdk/datasets/rules.py`).
+
+A rule may instead be over the rows of one dataset: `{"unique": ["crm_id"]}` — no two rows share
+the value (several fields: the combination; a row leaving one empty is not judged). Writes are
+refused with `code: "unique"`, a batch is checked against itself, and a duplicate that reached the
+disk is reported in `problems` (`rules.UniqueIndex`).
+
+A field may say an outside system owns its value — `"owned_by": "crm"` — and then only a writer
+that passes `by="crm"` sets or changes it (`code: "owned"` otherwise); `GET /kinds/<kind>` carries
+`owned_by` per field. A record may `"include": ["crm.synced"]` other records: their fields, rules
+and owners are its own (a field named twice is refused; a change to an included schema rebuilds the
+kinds that include it on the next `load_root` / apply of the group).
+
+The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`
+renders a hand-written class back with the three structural forms, so an
+`Optional[X]` renders as `X` and a `dict` field renders only on a class that
+carries a `spec_kind`.
+
+A dict is **always** an object whose keys are field names. That is why the
+registration hook is `spec_kind`, not `kind`: a user must be free to author a
+field called `kind`. Identical object forms share one compiled class, and the
+class remembers the (normalized) form it came from, so it dumps back to exactly
+what was written — that is what keeps `agent.json` and `dataset.json` readable.
+
+### `spec_kind` is the connector
+
+An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
+**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `binary`)
+→ its Python type; a registered kind → its class (`register_kind` /
+`kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
+opaque, never minted. A kind referenced before it is registered resolves to
+`Any` — compilation is eager, so there is no cycle to detect.
+
+**A kind names a SCHEMA, never an Entity row.** Entity type names live in the same table,
+so `"dataset"` is a kind — and it resolves to that type's `asset_spec`, its
+document schema, registered automatically from the type name. It never resolves
+to the Entity class: a row model is not a `DataSpec`, and a field holding one
+could not validate a value against it. A registered type with **no**
+asset document therefore names no shape and raises, rather than answering `Any`:
+the author meant a real thing. See [`ontology.md`](../ontology.md).
+
+A schema that declares its own `spec_kind` keeps it, and it stays the name that is
+WRITTEN — so `SourceItemSpec` dumps as `ingest.source_item` while both that and
+`source_item` resolve.
+
+### A schema held by a field — `ShapeForm`
+
+A schema is a *class*, and a class is not a value, so a field never holds one.
+A field that declares a schema holds its **authoring form, as data**:
+`ShapeForm` (`flow_sdk/schema/data_spec/_form.py` —
+`Annotated[str | dict | list, BeforeValidator(normalize_shape_form)]`). The
+form is validated at the write, where the author can still be told which key is
+wrong, and compiled to a class only by the one caller that needs a type
+(`compile_form`; `core/compute/declared_value.to_declared`). `Agent.input` /
+`output`, `AgentSpec.input`, `CapabilitySpec.value_spec`, `Dataset.spec` and
+`DatasetManifestSpec.spec` are `ShapeForm` fields. (`SpecType` held a live class
+here once; it is gone, and the name now belongs to an unrelated enum in
+`spec_doc_spec.py`.)
+
+### Deliberately not in this cut
+
+Self-referential kinds.
+
+## `RowSpec` / `DatasetSpec` — typed by generics
+
+`Spec` is the suffix for a **schema** — a class whose instances are values, not an
+entity, never a row of its own. The one entity is `Dataset`.
+
+```python
+class RowSpec(DataSpec, Generic[I, O, C]):
+    id: str; kind: RowKind                    # `kind` is the ROW role — a field
+    input: I
+    output: O | list[O] | None                    # numbered occurrences on disk → list[O]
+    ground_truth: O | list[O] | None              # the gold answer — the SAME shape as output
+    context: C | None
+    metadata: dict; data: dict                    # row.json sections ∪ sidecars by filename
+
+class DatasetSpec(DataSpec, Generic[E]):
+    rows: list[E]
+```
+
+`DatasetSpec[MyExample]` validates every row as `MyExample` — a dataset can be
+**typed by the agent that produced it**. The bare generics are refused
+(Pydantic would otherwise silently validate against the TypeVar *bounds*).
+An input-only row is legal: unlabeled, or not yet run.
+
+Three built-in leaves say what a slot holds when it is a file, a folder, or a
+CSV cell — **the type IS the file/folder distinction**:
+
+```python
+class FileRef(DataSpec):    spec_kind = "file_ref"; path: str            # row-relative POSIX; resolved by the layout
+class FolderSpec(DataSpec): spec_kind = "folder";   path: str; files: dict[str, FileRef | FolderSpec]
+class TextSpec(DataSpec):   spec_kind = "text";     text: str
+```
+
+`FolderSpec.files` is the precedent for a `dict` field on a hand-written schema: the
+rendered authoring form has no map (the `{"*": …}` map is input only), so a
+`dict[...]` field renders ONLY on a class that carries a `spec_kind` —
+`to_authoring_form` short-circuits on the kind before it would fail with
+`no authoring form for ...`. The three leaves are the untyped
+default slot (`Artifact = FileRef | FolderSpec | TextSpec`).
+
+The keyword authoring form lives in `dataset.json` (see
+[datasets.md](datasets.md)) and compiles to `DatasetSpec[RowSpec[I, O, C]]`.
+
+## `DatasetLayout` — the one thing that knows the disk
+
+`RowSpec` is a value; it never learns whether it came from a CSV row or a
+folder of files. A layout does: `read(folder, spec) -> list[E]` turns the disk
+into typed rows, `write(folder, rows)` turns rows back. `CsvLayout` and
+`FolderLayout` are a 1:1 port of the old walker — the on-disk grammar is
+unchanged, and the 74 grammar tests are its spec. `FolderLayout.write_row`
+/ `write_row_meta` are the primitives the graph-workflow capture seam
+(`prepare_execution_io`, `_stamp_row`) calls, so an execution directory IS
+a row directory and the two writers cannot drift.
+
+## The schema IS the layout — `TypeInfo.asset_spec`
+
+One mechanism: a type's document schema is a `DataSpec` registered as
+**`TypeInfo.asset_spec`**, and the schema's field TYPES say what the document holds. There is no asset mixin
+and no `header` ClassVar — the entity class is the row, its `APIField`s are the
+columns, and the registry check (`check_asset_spec`) guarantees every spec field
+is an entity field with a compatible core (the entity may narrow: `str` → `TypeId`,
+`str` → a `StrEnum`).
+
+| in the spec | on disk |
+|---|---|
+| a scalar field | frontmatter (`.md`) / the `metadata` section (`.json`) / a key of `<type>.json` (entity layout) |
+| `prompt: Body` | the markdown body — never in the header; `<field>.md` beside `<type>.json` in the entity layout |
+| `data: FreeSection` | the free `data` section of a two-section JSON manifest |
+| `FileRef` / `FolderSpec` | bytes — a file, a directory |
+| `list[RowSpec]` | rows, written by the `DatasetLayout` `TypeInfo.rows_layout_field` names |
+| a field typed as another **asset type** | a sub-asset with its own identity — recognised by the REGISTRY (the nested class's type has an `asset_spec`), never by inheritance; a `list[…]` of a file-layout type is a directory of files |
+
+```python
+class SubAgentSpec(FrontMatter):            # a DataSpec with extra="ignore" (hand-edited file)
+    file_ext: ClassVar[str | None] = ".md"
+    name: str | None = None
+    tools: Any = None
+    prompt: Body = ""                       # ⇒ frontmatter + body
+
+class DatasetManifestSpec(FrontMatter):     # dataset.json
+    main_file: ClassVar[str | None] = "dataset.json"
+    title: str | None = None
+    data_layout: str | None = None
+    data: Optional[FreeSection] = None      # ⇒ {"metadata": …, "data": …}
+
+SUBAGENT = TypeInfo(..., asset_spec=SubAgentSpec)
+DATASET  = TypeInfo(..., asset_spec=DatasetManifestSpec)
+```
+
+The asset spec owns its filesystem contract as class metadata: `main_file` names
+an enclosing folder's main document; `file_ext`, `file_names`, and
+`file_extensions` describe standalone files. `TypeInfo.shape` is the derived
+`File`/`Folder` projection consumed by discovery and the frontend. These class
+variables are not document fields. Plain value and row-only specs declare no
+filesystem contract. A spec-backed type cannot repeat its contract on `TypeInfo`.
+
+`TypeInfo` still declares placement and application policy: `name_from_path`,
+`hub_main_file`, identity, discovery scope, and the DB medium's `natural_key` /
+`digest_fields`. Custom-parser types without a filesystem spec continue to
+supply `shape` directly and use their existing parsers and writers.
+
+The spec also owns explicit `manifest_layout` choices (`"sections"` for
+`{metadata, data}`, `"flat"` for a report payload, `"entity"` for an entity JSON
+document). `TypeInfo` exposes the resolved value; omitted choices retain the
+serializer's existing inference. `SectionedHeader` maps fields under keys such
+as `summary`. This does not change the separate `DataSpec.save/load` format.
+
+`TypeInfo` retains `derive_fields_fn(data, root, header_raw)` — the facts the DISK carries
+that the header cannot (counts over rows, wiki-links in a body, a name from the
+path), applied by `load` before the row is built. The header dump is
+`exclude_defaults`: a spec default is not authored, so a fresh doc has an empty
+header and a counter is written only once it moved.
+
+### Entity document — `<type>.json`
+
+`manifest_layout="entity"` is the default home for a native folder asset's fields: ONE JSON
+document named after the type, shaped like the record shadow `metadata.json`, rendered and read
+in one place (`render_entity_json` / `read_entity_json`, `flow_sdk/assets/serialization.py`).
+Agent is the first type on it; task, spec, prompt and chart are next.
+
+```
+agentic-assets/agent/whatsapp-e2e/
+  agent.json        {"type": "agent", "id": "ceae4f10-…", "name": "whatsapp-e2e",
+                     "worker_type": "claude", "model": "haiku", …,
+                     "phone": {"country_code": "972", "number": "500000000"}}
+  system_prompt.md  You are an end-to-end test agent reached over WhatsApp…
+```
+
+- **Declare it on the spec:** `main_file="<type>.json"` and `manifest_layout="entity"`
+  as `ClassVar` metadata.
+  Registration refuses a main that is not `<type>.json`, a `FreeSection`, or a carrier other
+  than `JsonRoot`; `__post_init__` defaults the carrier and the fingerprint.
+- **Keys, in order:** `type`, `id` (the identity carrier — `JsonRoot`), `name`, `version`
+  (carried from the file), then the spec's header fields (`exclude_none` + `exclude_defaults`).
+  A `type` that names another type is a load error.
+- **Every `Body` field is `<field>.md`** beside the JSON (`TypeInfo.body_files`) — plain text, no
+  frontmatter. It never enters the shadow `metadata.json`; `fts_content` still indexes it.
+- **Freshness** (`entity_document_fingerprint`) covers the JSON and every body file, so editing
+  `system_prompt.md` alone re-indexes the entity.
+- **Editing** goes through the same `read_document` / `update_document` as a markdown main
+  (`flow_sdk/assets/entity_document.py`): fields are the JSON minus `type`/`id`, the body is the
+  body file, the revision spans both, identity keys are refused, the spec validates the patch.
+- **Retired forms:** `TypeInfo.retired_mains` (`("agent.md",)`) names the file a type used to
+  keep. A folder with only that file is a scan issue naming
+  `migration_2026_09_entity_json_mains`, which converts it keeping the id, then deletes the old file.
+  `TypeInfo.retired_families` (`("data_spec",)` on `data_schema`) names a family folder a type used
+  to live under: the folder is not read, and the scan reports it as one issue naming the rename —
+  no migration converts it.
+
+### Persistence is the serializer's
+
+`flow_sdk/fs_store/serializer/` owns **how** and **where**. A `DataSerializer`
+has `store(obj, origin: FSOrigin) -> FSOrigin` and `load(cls, origin)`; the
+destination is resolved from `origin.kind` through a registry, exactly like
+`FSOriginDriver`:
+
+| origin | serializer | what it does |
+|---|---|---|
+| `LocalOrigin` (`"local"`) | `DiskSerializer` | frontmatter/JSON main doc + every `FileRef`/`FolderSpec`/sub-asset field; rows through `DatasetLayout` (`rows_layout_field`); commits identity via `TypeInfo.stamp_id` at the end of `store`, reads it (`TypeInfo.read_id`) at the start of `load` |
+| `DbOrigin` (`"db"`) | `DbSerializer` | the entity's `data` column dict |
+| `HubOrigin` (`"hub"`) | `HubSerializer` | the share body (`_hub_body`) |
+
+`TypeInfo.serializer(origin=None)` picks the default from `default_origin_kind`
+(`"db"` for `db_only` types, else `"local"`); `Entity._store()` IS that call —
+one writer, so `Dataset.save()` lands `dataset.json` and `data.csv` on disk.
+An owned flat JSON doc whose payload is `None` renders nothing — a
+metadata-only save never clobbers a report file.
+
+A field the medium cannot hold — a `FileRef` reaching the DB or an HTTP body —
+**raises `UnsupportedFieldError`**; it is never downgraded. The one
+type→persistence mapping is `serializer/fields.py::field_persistence`.
+
+The `asset_spec` is the disk policy; `TypeInfo.effective_meta_model` is derived
+from it (`BaseMeta ∪ spec ∪ Persist.TRUE − Persist.FALSE`) so there is one field
+policy per type. A row-only type (`db_only`) writes no shadow at all and feeds
+FTS from the row (`FtsEntry.from_entity`). **`TypeInfo.fts_content`** is the one
+FTS rule for every type: the named fields joined by newlines become the record's
+`content` (asset types) or the FTS row (`db_only`).
+
+### The contract, and the test that enforces it
+
+**What the spec declares is what the disk holds, and nothing else.** A key the
+spec does not declare is dropped on read (`extra="ignore"`) and never written.
+`None` is absent, not `null`, and reads back as the field's default.
+
+`tests/unit/test_data_spec/test_asset_roundtrip.py` is a **per-field matrix**:
+for every migrated class it builds an instance with every field non-default,
+stores it through `DiskSerializer`, loads it back, and fails on the first field
+that did not survive — by name. It asserts `cls.model_fields`, not what its
+author remembered. `test_db_roundtrip.py` / `test_hub_roundtrip.py` are the
+same matrix for the other two media, including the raise cells.
+
+### TypeInfo integration
+
+A spec-bearing type needs **no `from_disk_fn`**: `SchemaRegistry.register`
+defaults it to `spec_extractor(type)` (`fs_store/serializer/record.py`), which
+resolves the asset root from the walker's ref (folder / inner main file / file
+with the `File` ext), runs `serializer().load`, emits every declared field plus
+`content` from `fts_content`, and anchors `asset_ref` at the asset root. A
+rejected file (bad manifest, binary under `.md`) is `[]`, never an indexer error.
+Per-type facts live in `derive_fields_fn`; a hand `from_disk_fn` is only for a
+type with no spec.
+
+## Where it is used
+
+| site | what |
+|---|---|
+| `Dataset.spec` / `Dataset.rows` | the dataset's shape (`DatasetSpec[…]`) and its rows (`list[RowSpec]`) |
+| `Agent.input` / `Agent.output` | the agent's I/O contract as authoring FORMS (`ShapeForm`) — `input + template → output`. Declaration only: never in `to_agent_options` (md5'd into `last_started_hash`) |
+| `CapabilitySpec.value_spec` / `CapabilityValue.spec` | the shape of a capability's discovered value (`fs_ref`); `value_type` is the spec's kind |
+| `prepare_execution_io` / `_stamp_row` | the capture seam, writing through `FolderLayout` |
+| `AgentSpec`, `SubAgentSpec`, `DatasetManifestSpec`, `DataDriverSpec`, `SourceItemSpec` | the `asset_spec` of Agent / SubAgent / Dataset / DataDriver / SourceItem |
+| `SpecDocSpec`, `PromptSpec`, `SkillSpec`, `MarkdownSpec` / `ClaudeMdSpec`, `TaskSpec` | the `asset_spec` of the `.md`-backed types — `TaskSpec` is also the share whitelist |
+| `AgentTraceSpec`, `UsageReportSpec`, `AssetCleanupReportSpec` | flat JSON reports (`manifest_layout="flat"`, a `FreeSection` payload; `SectionedHeader` for `summary`/`data`) |
+| SOURCE_ITEM `asset_spec` = `SourceItemSpec` | the ingestion envelope a driver emits, lifted to `origin` + tagged `data` before it is stored; the DB medium resolves the row by `TypeInfo.natural_key` (`data_source_id` + the origin triple) and no-ops on `TypeInfo.digest_fields` |
+| DATA_DRIVER `asset_spec` = `DataDriverSpec` | `data_driver.json` — a FLAT manifest (no `FreeSection`), every authoring rule a validator |
+
+## Related
+
+- [Schema Registry](schema-registry.md) — `register_kind` / `kind_type` / `kind_for`
+- [Dataset Layout](datasets.md) — the on-disk grammar and the `spec` authoring form
+- [Tags](../tags.md) — the taxonomy `spec_kind` draws from
+
+## Schemas defined by a folder
+
+`agentic-assets/data_schema/<full.kind>/` is a `data_schema` asset: `data_schema.json` (an entity
+document) plus `description.md`. Indexing it compiles the schema and registers it under its kind —
+the folder name, the full dot path, never relative to where it is nested — in its project's
+namespace (ours when shipped). It may nest further data schemas in its own `agentic-assets/`, at
+any depth. (The family was `data_spec` until 2026-10-07; a folder still under that name is not
+read, and the asset scan reports it as an issue naming the rename — `TypeInfo.retired_families`.)
+
+```json
+{"type": "data_schema", "fields": {
+  "route":  {"shape": "enum:quick|agentic", "description": "quick: open now; agentic: ask"},
+  "target": {"shape": "?navigator.target",  "description": "what to open"}}}
+```
+
+* **The subkind is optional.** Implicit: `fields` is a `record`, `rows` (`input` / `output` /
+  `context` → shapes) a `dataset`. Explicit: `"subkind"` declared and checked against the body.
+  None: no body — a documentation node that registers nothing.
+* **Form additions** (input side only): `?<shape>` may be absent, `enum:a|b` is one of these
+  strings, `{"*": <shape>}` is a map. A hand-written schema renders exactly as before.
+* **Failures are recorded, never raised**: a duplicate kind, a name nobody defines, a bad `ns` —
+  the row's `error` says which. A duplicate is two folders that both define the kind on disk; a
+  folder that moved, was renamed or now names another kind releases it to the next folder that
+  claims it, so no change to a schema needs a restart.
+* **A folder that only groups schemas** is itself a data schema with no body (`type` + `ns`): the
+  indexer walks into nested schemas only through folders that are schemas.
+* **`flow schema apply <path>`** registers every data schema folder at or below `path` (a schema,
+  a group, `agentic-assets/data_schema/`, `agentic-assets/`, or a project) and reports each one's
+  live fields or its `error`; exit 6 when any failed.
+
+See [ontology](../ontology.md#coverage--every-path-a-kind-is-minted), path 5.

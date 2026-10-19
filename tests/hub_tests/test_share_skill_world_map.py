@@ -6,13 +6,13 @@ Validates the graph-level contract that durable asset sharing relies on:
   * creating a ``skill`` mints ``creator ─[ROLE owner]→ skill`` (the hub's
     owner-on-create), and the skill shows on the creator's access-scoped
     ``org_graph`` world map;
-  * a second user has NO path to the skill until they accept — the skill is
+  * a second user has NO path to the skill until they are invited — the skill is
     absent from their world map (access-scoped, not "see everything");
-  * inviting them with a ``reader`` target on the skill, then accepting, mints
+  * inviting them with a ``reader`` target on the skill immediately mints
     ``user ─[ROLE reader]→ skill`` so the skill appears on THEIR world map too,
     and ``GET /graph/skill/<id>/members`` lists them as a reader.
 
-This mirrors ``test_org_login_and_invite``'s invite→accept flow, swapping the
+This mirrors ``test_org_login_and_invite``'s immediate-assignment flow, swapping the
 org/team target for a ``skill`` asset and adding the world-map assertions. The
 full share-through-a-conversation path is covered by the browser validation.
 """
@@ -24,8 +24,9 @@ import time
 import httpx
 import pytest
 
-from tests.hub_tests.test_org_login_and_invite import _accept, _invite, _pending_for
+from tests.hub_tests._assignment import assert_auto_assigned
 from tests.hub_tests.test_members_basic_operations import _alice_and_bob
+from tests.hub_tests.test_org_login_and_invite import _invite
 
 
 async def _create_skill(hub_base_url: str, token: str, name: str) -> str:
@@ -74,11 +75,7 @@ def _edge_kind(graph: dict, src_id: str, dst_type: str, dst_id: str) -> str | No
         if not isinstance(e, dict):
             continue
         frm, to = e.get("from") or {}, e.get("to") or {}
-        if (
-            str(frm.get("id")) == str(src_id)
-            and to.get("type") == dst_type
-            and str(to.get("id")) == str(dst_id)
-        ):
+        if str(frm.get("id")) == str(src_id) and to.get("type") == dst_type and str(to.get("id")) == str(dst_id):
             return e.get("kind")
     return None
 
@@ -86,11 +83,9 @@ def _edge_kind(graph: dict, src_id: str, dst_type: str, dst_id: str) -> str | No
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_shared_skill_on_world_map_of_owner_and_reader(
-    hub_base_url, hub_login_payload, isolated_hub_keyring
-):
+async def test_shared_skill_on_world_map_of_owner_and_reader(hub_base_url, hub_login_payload, isolated_hub_keyring):
     """alice creates a skill → it's on her map as owner; bob can't see it until he
-    accepts a ``reader`` invite, then it's on his map as reader too."""
+    receives a ``reader`` assignment, then it's on his map as reader too."""
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
     alice_token = actors["alice_token"]
     alice_id = actors["alice_id"]
@@ -114,19 +109,21 @@ async def test_shared_skill_on_world_map_of_owner_and_reader(
     )
 
     # Grant bob a durable reader edge on the skill (the asset target an invite
-    # carries alongside the conversation member target), then accept.
+    # carries alongside the conversation member target).
     await _invite(hub_base_url, alice_token, "skill", skill_id, bob_email, role="reader")
-    pending = await _pending_for(hub_base_url, bob_token, bob_email)
-    skill_pending = [
-        p for p in pending if isinstance(p.get("target"), dict) and p["target"].get("id") == skill_id
-    ]
-    assert skill_pending, f"bob has no pending skill invitation for {skill_id}; got {pending}"
-    assert skill_pending[0]["target"].get("type") == "skill"
-    await _accept(hub_base_url, bob_token, skill_pending[0]["id"])
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="skill",
+        entity_id=skill_id,
+        user_id=bob_id,
+        expected_role="reader",
+        members_token=alice_token,
+    )
 
     # Reader: the skill is now on bob's world map with a reader edge from bob.
     bob_graph_after = await _org_graph(hub_base_url, bob_token)
-    assert _has_node(bob_graph_after, "skill", skill_id), "skill missing from reader's world map after accept"
+    assert _has_node(bob_graph_after, "skill", skill_id), "skill missing from reader's world map after assignment"
     assert _edge_kind(bob_graph_after, bob_id, "skill", skill_id) == "reader", (
         f"reader edge missing/wrong on bob's map: {bob_graph_after.get('edges')}"
     )
@@ -138,5 +135,5 @@ async def test_shared_skill_on_world_map_of_owner_and_reader(
     assert r.status_code == 200, r.text
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
-    assert bob_id in by_id, f"bob not in skill members after accept: {members}"
+    assert bob_id in by_id, f"bob not in skill members after assignment: {members}"
     assert by_id[bob_id].get("role") == "reader", f"bob's role on skill is not reader: {by_id[bob_id]}"

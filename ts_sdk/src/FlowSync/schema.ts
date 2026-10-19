@@ -14,18 +14,26 @@ export type ActionType =
  * View-mode visibility tier — mirrors the backend ``ViewMode`` StrEnum
  * (flow_sdk/schema/view_mode.py) and the UI enum in view-mode-context.tsx.
  * A type's ``browseable_by`` is the *minimum* mode at which it is browseable
- * (cumulative: standard ⊂ advanced ⊂ dev). null ⇒ never browseable.
+ * (cumulative: standard ⊂ advanced). null ⇒ never browseable. Developer-only
+ * types are `dev_only` on top of their tier — Dev is a switch, not a tier.
  */
 export type ViewMode = 'vibe' | 'standard' | 'advanced' | 'dev';
 
 // Vibe is the lowest tier (simpler than Standard): a type required at 'standard'
-// or above never shows in Vibe. The backend only ever emits standard/advanced/dev
-// as a type's `browseable_by` (its minimum tier); 'vibe' only appears here as the
-// client's *current* mode, so it just needs a well-defined rank.
+// or above never shows in Vibe. The backend only emits standard/advanced as a
+// type's `browseable_by` (its minimum tier); 'vibe' and 'dev' only appear here as
+// the client's *current* tier ('dev' = developer mode on), so they just need a rank.
 const VIEW_MODE_ORDER: Record<ViewMode, number> = { vibe: 0, standard: 1, advanced: 2, dev: 3 };
 
-/** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative). */
-export function isBrowseableIn(required: ViewMode | null | undefined, current: ViewMode): boolean {
+/** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative).
+ *  `current` `dev` means developer mode is on: it reaches every tier AND the
+ *  `dev_only` types (pass `devOnly`). */
+export function isBrowseableIn(
+  required: ViewMode | null | undefined,
+  current: ViewMode,
+  devOnly = false,
+): boolean {
+  if (devOnly && current !== 'dev') return false;
   return required != null && VIEW_MODE_ORDER[current] >= VIEW_MODE_ORDER[required];
 }
 
@@ -44,6 +52,18 @@ export interface JSONSchemaProperty {
  * the JSON validation schema for entity-backed types (null otherwise); ``icon``
  * is the single source of truth for the lucide icon name (backend-owned).
  */
+export type TypeShape =
+  | FolderShape
+  | { kind: 'file'; ext: string; also?: string[]; names?: string[] };
+
+export type FolderShape = { kind: 'folder'; main: string | null };
+
+/** True when an asset of this shape IS a directory (skill/task/mcp). Narrows,
+ *  so a caller reads `main` off the shape without re-testing `kind`. */
+export function isFolderShape(shape: TypeShape | null | undefined): shape is FolderShape {
+  return shape?.kind === 'folder';
+}
+
 export interface TypeInfo {
   type_name: string;
   uid_field: string;
@@ -51,21 +71,50 @@ export interface TypeInfo {
   defaults: Record<string, unknown>;
   indexed_by_default: boolean;
   browseable_by: ViewMode | null;
+  /** Shown only with developer mode on, on top of `browseable_by` — Dev is a
+   *  switch, not a tier (`flow_sdk/schema/view_mode.py`). */
+  dev_only?: boolean;
   creatable: boolean;
   api_visible: boolean;
+  /** Storage authority for shared asset bytes. Git-backed types publish their
+   *  source tree and use entity VFS refs in cloud; embedded is the legacy path. */
+  cloud_file_transport?: 'embedded' | 'git';
   icon: string | null;
   /** UX-friendly label for the type (e.g. "Skills"); backend-owned, null when the
    *  type has no curated label — callers fall back to `humanizeType(type_name)`. */
   display_name: string | null;
   parent_type: string | null;
   locations: string[];
-  /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
-  main_file?: string | null;
-  /** True when a folder-layout type's asset_ref points at the inner main_file. */
-  main_file_is_asset_ref?: boolean;
-  /** True when asset_ref is a bare folder (e.g. skill): the Assets sidebar
-   *  expands the row into its on-disk file tree. Derived from the folder layout. */
-  folder_backed: boolean;
+  /**
+   * Placement axis — mirrors `flow_sdk/fs_store/placement.py`. The backend is the
+   * ONLY authority on where an asset lands on disk; the client reads these three
+   * rather than keeping its own table of subfolders (which drifts silently the
+   * moment a type is reclassified).
+   *
+   * - `asset_class` — 'shared' | 'harness' → mounts under a harness dot-dir;
+   *   'repo' → `agentic-assets/<family>` (harness-less); 'internal' → bare at the
+   *   scope root (project-only). Null for types with no on-disk layout.
+   * - `harness` — only meaningful for `asset_class === 'harness'`.
+   * - `family` — the family segment, e.g. `skills`, `commands`, `chart`.
+   */
+  asset_class?: 'internal' | 'harness' | 'shared' | 'none' | 'repo' | null;
+  harness?: string | null;
+  family?: string | null;
+  /** Scope-relative subdir for the claude-default mount (e.g. `.claude/skills`,
+   *  `agentic-assets/task`). Derived server-side from the three fields above. */
+  main_subdir?: string | null;
+  /** Backend-declared scope-relative asset mounts. */
+  scan_mounts?: string[];
+  /** THE on-disk shape declaration this type makes — mirrors `flow_sdk/schema/layout.py`
+   *  `Folder.to_dict` / `File.to_dict`. `{kind:'folder', main:'SKILL.md'}`: the asset IS
+   *  a directory (asset_ref is the folder; the Assets sidebar expands it into its file
+   *  tree, and it can OWN nested assets under its own `agentic-assets/` — what the
+   *  backend `repo_assets_fn` walker recurses into); `main` is its fixed inner file
+   *  when one exists. `{kind:'file', ext:'.md'}`: the asset IS a single file. */
+  shape?: TypeShape | null;
+  /** The asset editor that opens this type (`'markdown'`, `'skill'`, …), declared
+   *  once on the backend so the client never keeps a hand-maintained type→editor map. */
+  editor?: string | null;
   /** The entity owns its backing file (re-rendered from the default body on every
    *  save, e.g. task/spec), so an orphaned row (file missing / no asset_ref) can
    *  self-heal with a single save. Defaults false for hand-edited files (markdown/skill). */

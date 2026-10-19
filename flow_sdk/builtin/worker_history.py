@@ -18,17 +18,39 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from enum import Enum
+from functools import partial
 from pathlib import Path
-from typing import Awaitable, Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from pydantic import BaseModel
+
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 logger = logging.getLogger(__name__)
+
+
+# Worker-history walks a user-owned, potentially multi-gigabyte transcript
+# corpus. Keep that blocking/GIL-heavy work out of asyncio's shared executor:
+# overlapping Vibe (limit=10) and Chats (limit=50) requests otherwise fan out
+# eight scans, delaying unrelated bootstrap work even after the browser cancels
+# its waiters. One owned lane also keeps the per-session cache single-writer.
+_WORKER_HISTORY_MAX_WORKERS = 1
+_WORKER_HISTORY_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_WORKER_HISTORY_MAX_WORKERS,
+    thread_name_prefix="worker-history",
+)
+
+
+async def _run_worker_history_blocking(fn: Callable[..., Any], *args: object) -> Any:
+    """Run one native-history collector on worker-history's bounded lane."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_WORKER_HISTORY_EXECUTOR, partial(fn, *args))
 
 
 # Claude/codex/copilot all append bookkeeping lines on resume/attach
@@ -77,6 +99,8 @@ class WorkerType(str, Enum):
     CLAUDE = "claude"
     CODEX = "codex"
     COPILOT = "copilot"
+    OPENCODE = "opencode"
+    DEEPAGENTS = "deepagents"
 
 
 class WorkerHistoryEntry(BaseModel):
@@ -228,9 +252,14 @@ def _project_id_for(
             rid = cwd_to_pid.get(canonical_posix_path(cwd))
             if rid:
                 return rid
-        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{cwd}"))
+        # DIVERGENT (deliberately left alone): unlike ``Project.derive_id_for_path``
+        # this does NOT canonicalize, so a non-canonical cwd yields an id that
+        # matches no project row. Canonicalizing here would CHANGE values for
+        # whatever it currently matches, so it needs a migration, not a tidy-up.
+        return mint_uuid(f"project:{cwd}", namespace=uuid.NAMESPACE_DNS)
     if encoded:
-        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
+        # A separate key space (encoded dir name), not the cwd formula.
+        return mint_uuid(f"project:{encoded}", namespace=uuid.NAMESPACE_DNS)
     return None
 
 
@@ -265,6 +294,8 @@ def _normalize_worker_type(wt: object) -> WorkerType:
         return WorkerType.CODEX
     if "copilot" in val:
         return WorkerType.COPILOT
+    if val == WorkerType.OPENCODE.value:
+        return WorkerType.OPENCODE
     return WorkerType.CLAUDE
 
 
@@ -298,6 +329,7 @@ def _build_history_latest_prompt_index() -> dict[str, str]:
     # Read ~/.claude/history.jsonl directly. The ClaudeHistoryEntryFsRecord
     # subclass was deleted; this inline reader replaces its .discover().
     import json
+
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     index: dict[str, str] = {}
@@ -331,9 +363,7 @@ def _claude_dir_cwd(path: Path) -> Optional[str]:
     """The ``cwd`` recorded in a Claude session's envelope head — cheap (no
     content parse). All sessions in a ``~/.claude/projects/<enc>/`` directory
     share one cwd, so one peek maps the whole directory to a project_id."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-        extract_claude_session_from_path,
-    )
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
 
     try:
         s = extract_claude_session_from_path(path, include_content=False)
@@ -384,8 +414,8 @@ def _collect_claude_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_claude_worker_history``. Runs under ``to_thread``."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import extract_claude_session_from_path
+    """Blocking body of ``get_claude_worker_history``. Runs on the history lane."""
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
     projects_dir = get_instance_settings().claude_projects_dir
@@ -536,8 +566,8 @@ def _collect_codex_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_codex_worker_history``. Runs under ``to_thread``."""
-    from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
+    """Blocking body of ``get_codex_worker_history``. Runs on the history lane."""
+    from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
     from flow_sdk.instance_settings import get_instance_settings
 
     sessions_root = get_instance_settings().codex_sessions_dir
@@ -568,7 +598,10 @@ def _collect_codex_entries_sync(
     # newest ``limit`` rows, instead of parsing every date-sharded rollout file.
     scope_counts: dict[str, int] = {}
 
-    from flow_sdk.fs_store.indexer.functions.codex_sessions import ensure_codex_session_stats  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.codex_sessions import (  # noqa: PLC0415
+        ensure_codex_session_stats,
+        rollout_thread_source,
+    )
 
     cache = _open_history_cache()
     cached = _cache_lookup(cache, candidates)
@@ -594,8 +627,18 @@ def _collect_codex_entries_sync(
                 "message_count": sd.get("message_count") or None,
                 "last_user_message": sd.get("last_user_message"),
                 "last_content_ts": _last_content_timestamp(jsonl_path, mtime).isoformat(),
+                "thread_source": getattr(session, "thread_source", "") or "",
             }
             pending.append((str(jsonl_path), mtime_ns, size, "codex", payload))
+
+        # A codex sub-agent thread is not a chat the user can resume: codex
+        # rejects `resume` on it ("cannot resume an unloaded multi-agent v2
+        # sub-agent through its parent") and the worker exits 1, so listing one
+        # produces a spawn -> exit 1 -> retry loop. Cache rows written before
+        # this classification carry no ``thread_source``; those pay one header
+        # read, once.
+        if (payload.get("thread_source") or rollout_thread_source(jsonl_path)) == "subagent":
+            continue
 
         sid = payload.get("session_id")
         if not sid or sid in seen:
@@ -645,11 +688,9 @@ def _collect_copilot_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
-    """Blocking body of ``get_copilot_worker_history``. Runs under ``to_thread``."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
-        copilot_session_state_root,
-        read_copilot_session_meta,
-    )
+    """Blocking body of ``get_copilot_worker_history``. Runs on the history lane."""
+    from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+    from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import copilot_session_state_root
 
     root = copilot_session_state_root()
     if not root.is_dir():
@@ -773,7 +814,9 @@ async def get_claude_worker_history(
     under-active project's sessions aren't truncated behind busier ones.
     """
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_claude_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_claude_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 async def get_codex_worker_history(
@@ -789,7 +832,9 @@ async def get_codex_worker_history(
     Claude provider's stat-then-parse pattern.
     """
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_codex_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_codex_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 async def get_copilot_worker_history(
@@ -800,14 +845,120 @@ async def get_copilot_worker_history(
 ) -> list[WorkerHistoryEntry]:
     """Return the most-recent N Copilot sessions, newest first."""
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_copilot_entries_sync, limit, idx, project_ids, cwd_to_pid)
+    return await _run_worker_history_blocking(
+        _collect_copilot_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
+
+
+def _collect_opencode_entries_sync(
+    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
+) -> list[WorkerHistoryEntry]:
+    """Blocking body of ``get_opencode_worker_history``. Runs on the history lane.
+
+    Unlike the other three vendors there is no per-session file to stat: opencode
+    keeps sessions in a SQLite database, so one ordered query replaces the
+    glob-and-mtime-cache dance (and there is nothing to cache — the query is the
+    index). Only the ``session``/``message`` tables are read, always read-only:
+    the same database also holds provider credentials.
+    """
+    import sqlite3
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import (
+        opencode_db_path,
+    )
+
+    db_path = opencode_db_path()
+    if not db_path.exists():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return []
+
+    scoped = project_ids is not None
+    result: list[WorkerHistoryEntry] = []
+    scope_counts: dict[str, int] = {}
+    try:
+        rows = con.execute(
+            """
+            SELECT s.id, s.directory, s.title,
+                   (SELECT MAX(m.time_created) FROM message m WHERE m.session_id = s.id),
+                   (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id)
+            FROM session s
+            ORDER BY s.rowid DESC
+            """
+        )
+        for sid, directory, title, last_ms, message_count in rows:
+            if not sid:
+                continue
+            if not scoped and len(result) >= limit:
+                break
+            if scoped and all(scope_counts.get(p, 0) >= limit for p in project_ids):
+                break
+            cwd = directory or None
+            if _is_scratch_cwd(cwd):
+                continue
+            pid = _project_id_for(cwd, None, cwd_to_pid)
+            if scoped and pid not in project_ids:
+                continue
+            if scoped:
+                scope_counts[pid] = scope_counts.get(pid, 0) + 1
+            # ``time_created`` is unix milliseconds in opencode's schema.
+            last_active = (
+                datetime.fromtimestamp(last_ms / 1000, tz=timezone.utc)
+                if last_ms
+                else datetime.now(timezone.utc)
+            )
+            ap_id, ap_name, ap_last_active_at = process_index.get(sid, (None, None, None))
+            result.append(
+                WorkerHistoryEntry(
+                    worker_type=WorkerType.OPENCODE,
+                    worker_id=sid,
+                    project_id=pid,
+                    project_name=_basename(cwd),
+                    project_cwd=cwd,
+                    last_active_time=last_active,
+                    name=ap_name or (title or None),
+                    last_prompt=_pick_last_prompt(title),
+                    git_branch=None,
+                    message_count=message_count,
+                    agentic_process_id=ap_id,
+                    last_active_at=ap_last_active_at,
+                )
+            )
+    except sqlite3.Error:
+        logger.debug("opencode worker history query failed", exc_info=True)
+    finally:
+        con.close()
+    return result
+
+
+async def get_opencode_worker_history(
+    limit: int,
+    process_index: Optional[ProcessIndex] = None,
+    project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
+) -> list[WorkerHistoryEntry]:
+    """Return the most-recent N OpenCode sessions, newest first."""
+    idx = process_index if process_index is not None else {}
+    return await _run_worker_history_blocking(
+        _collect_opencode_entries_sync, limit, idx, project_ids, cwd_to_pid
+    )
 
 
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
     WorkerType.CLAUDE: get_claude_worker_history,
     WorkerType.CODEX: get_codex_worker_history,
     WorkerType.COPILOT: get_copilot_worker_history,
+    WorkerType.OPENCODE: get_opencode_worker_history,
 }
+
+
+_WorkerHistoryRequestKey = tuple[int, Optional[tuple[str, ...]]]
+_WORKER_HISTORY_IN_FLIGHT: dict[
+    _WorkerHistoryRequestKey, asyncio.Task[list[WorkerHistoryEntry]]
+] = {}
 
 
 def _agentic_process_only_entries(
@@ -891,6 +1042,36 @@ async def _load_agentic_processes() -> list["AgenticProcess"]:
 async def get_worker_history(
     limit: int = 10, project_ids: ScopeProjectIds = None
 ) -> list[WorkerHistoryEntry]:
+    """Share one provider scan among identical concurrent requests.
+
+    Browser navigation cancels the HTTP waiter, but it cannot stop work already
+    running on the bounded history lane. Shielding one request-owned task keeps a
+    disconnected waiter from cancelling that scan, while the request key stops
+    the next mount from launching four duplicate provider walks.
+    """
+    normalized_ids = None if project_ids is None else tuple(sorted(project_ids))
+    key = (limit, normalized_ids)
+    task = _WORKER_HISTORY_IN_FLIGHT.get(key)
+    if task is None:
+        task = asyncio.create_task(
+            _collect_worker_history(
+                limit=limit,
+                project_ids=None if normalized_ids is None else set(normalized_ids),
+            )
+        )
+        _WORKER_HISTORY_IN_FLIGHT[key] = task
+
+        def forget(completed: asyncio.Task[list[WorkerHistoryEntry]]) -> None:
+            if _WORKER_HISTORY_IN_FLIGHT.get(key) is completed:
+                del _WORKER_HISTORY_IN_FLIGHT[key]
+
+        task.add_done_callback(forget)
+    return await asyncio.shield(task)
+
+
+async def _collect_worker_history(
+    limit: int = 10, project_ids: ScopeProjectIds = None
+) -> list[WorkerHistoryEntry]:
     """Unified, deduplicated worker history across every registered provider.
 
     The ``limit`` is applied **per project scope**, not as a single global
@@ -913,11 +1094,12 @@ async def get_worker_history(
     collected: list[WorkerHistoryEntry] = []
     seen: set[tuple[WorkerType, str]] = set()
 
-    # Providers run concurrently (each is one ``to_thread`` hop over its own
-    # disk corpus) — wall time is max(provider), not sum. Results are folded in
-    # registration order so dedup precedence is unchanged. The call happens
-    # inside ``_run`` so even a synchronously-raising provider is captured by
-    # ``return_exceptions`` instead of escaping ``gather(*...)``.
+    # Providers are submitted together but their blocking collectors share one
+    # resource-owned lane. That prevents vendors and distinct request keys from
+    # fanning GIL-heavy corpus work across asyncio's shared executor. Results are
+    # folded in registration order so dedup precedence is unchanged. The call
+    # happens inside ``_run`` so even a synchronously-raising provider is captured
+    # by ``return_exceptions`` instead of escaping ``gather(*...)``.
     async def _run(provider: WorkerHistoryProvider) -> list[WorkerHistoryEntry]:
         return await provider(limit, process_index, project_ids, cwd_to_pid)
 
@@ -956,46 +1138,90 @@ async def get_worker_history(
             continue
         counts[bucket] = n + 1
         capped.append(entry)
+    await _project_history_names(capped, processes)
     return capped
 
 
-def _claude_file_title_sync(jsonl_path: Path) -> tuple[Optional[str], Optional[str]]:
-    """``(custom_title, slug)`` for a Claude session file — the on-file title
-    fields ``_collect_claude_entries_sync`` feeds to ``_pick_name``. Returns
-    ``(None, None)`` on any parse failure."""
-    try:
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-            extract_claude_session_from_path,
-        )
+def _canonical_process_name(process: "AgenticProcess", tabs: list) -> Optional[str]:
+    from types import SimpleNamespace
 
-        session = extract_claude_session_from_path(jsonl_path, include_content=False)
-        sd = object.__getattribute__(session, "__dict__")
-        return (sd.get("custom_title") or None, session.slug or None)
-    except Exception as e:  # noqa: BLE001
-        logger.debug("[worker_history] claude title read failed for %s: %s", jsonl_path, e)
-        return (None, None)
+    from flow_sdk.builtin.agentic_process.naming.service import migrate_legacy_name
+    from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
+
+    state = getattr(process, "naming_state", None)
+    if state is not None:
+        return SessionNameState.model_validate(state).title
+    # Legacy projections share the migration policy without writing or arming a
+    # watcher. Normalize optional fields because history also accepts thin rows.
+    legacy = SimpleNamespace(
+        name=getattr(process, "name", None), session_id=getattr(process, "session_id", None),
+        auto_rename=getattr(process, "auto_rename", True), context_data=getattr(process, "context_data", None),
+    )
+    return migrate_legacy_name(legacy, tabs).title
 
 
-def _claude_first_prompt_sync(jsonl_path: Path) -> Optional[str]:
-    """First real user prompt in a Claude transcript head, whitespace-collapsed.
+async def _legacy_name_tabs(processes: list) -> dict[str, list]:
+    """At most one tab query for legacy rows whose process name cannot decide."""
+    from flow_sdk.builtin.tab import Tab
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+    from flow_sdk.schema.types import EntityType
 
-    The ``prompt_fallback`` rung of :func:`get_worker_session_name` — see its
-    docstring for why headless sessions need it. Head-bounded like the envelope
-    reads (``_iter_head_json``); returns ``None`` when no user line is found.
-    ``_extract_text`` also rejects ``<``-prefixed text, so synthetic envelopes
-    (``<command-name>`` etc.) can't become a display name.
+    ids = [str(process.id) for process in processes
+           if getattr(process, "naming_state", None) is None and not (getattr(process, "name", None) or "").strip()]
+    if not ids:
+        return {}
+    tabs = await Tab.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["target_id", ids])))
+    grouped: dict[str, list] = {}
+    for tab in tabs:
+        if tab.target_type == EntityType.AGENTIC_PROCESS:
+            grouped.setdefault(str(tab.target_id), []).append(tab)
+    return grouped
+
+
+async def _project_history_names(entries: list[WorkerHistoryEntry], processes: list) -> None:
+    """One loaded process snapshot plus one batch of unmanaged filesystem reads.
+
+    History is a read path. It must not run process/tab writer transactions or
+    bind subscriptions once for every row in a listing.
     """
-    try:
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import _extract_text, _iter_head_json
+    by_id = {str(process.id): process for process in processes}
+    selected = {entry.agentic_process_id for entry in entries if entry.agentic_process_id}
+    legacy_tabs = await _legacy_name_tabs([process for pid, process in by_id.items() if pid in selected])
+    unresolved: list[WorkerHistoryEntry] = []
+    for entry in entries:
+        process = by_id.get(entry.agentic_process_id or "")
+        title = _canonical_process_name(process, legacy_tabs.get(str(process.id), [])) if process else None
+        if title is not None:
+            entry.name = title
+        else:
+            unresolved.append(entry)
+    if unresolved:
+        def resolve_batch() -> list[Optional[str]]:
+            return [_unmanaged_session_name_sync(entry.worker_type, entry.worker_id, prompt_fallback=True)
+                    for entry in unresolved]
 
-        for raw in _iter_head_json(jsonl_path):
-            if raw.get("type") != "user" or raw.get("isMeta"):
-                continue
-            text = _extract_text((raw.get("message") or {}).get("content"))
-            if text:
-                return " ".join(text.split())
+        titles = await _run_worker_history_blocking(resolve_batch)
+        for entry, title in zip(unresolved, titles):
+            entry.name = title
+
+
+def _worker_first_prompt_sync(worker_type: WorkerType, jsonl_path: Path) -> Optional[str]:
+    """First human prompt from the bounded transcript head, using the vendor parser."""
+    from flow_sdk.assets.types.claude_sessions import _iter_head_json
+    from flow_sdk.transcript_analyzer.entries import UserMessageEntry
+    from flow_sdk.transcript_analyzer.parsers import get_parser_class
+
+    parser = get_parser_class(worker_type.value)()
+    try:
+        for index, raw in enumerate(_iter_head_json(jsonl_path)):
+            for entry in parser.feed(raw, index):
+                if not isinstance(entry, UserMessageEntry) or entry.is_meta or entry.is_sidechain:
+                    continue
+                text = " ".join(entry.text.split())
+                if text and not text.startswith("<") and text != "[Request interrupted by user for tool use]":
+                    return text
     except OSError as e:
-        logger.debug("[worker_history] claude first-prompt read failed for %s: %s", jsonl_path, e)
+        logger.debug("[worker_history] first-prompt read failed for %s: %s", jsonl_path, e)
     return None
 
 
@@ -1006,56 +1232,57 @@ async def get_worker_session_name(
     jsonl_path: Optional[Path] = None,
     prompt_fallback: bool = False,
 ) -> Optional[str]:
-    """Generic display title for ONE worker session — the same value that
-    ``WorkerHistoryEntry.name`` (and therefore the ``history_entry`` list) carries,
-    resolved for a single session id.
-
-    Priority matches the history collectors: the owning ``AgenticProcess.name``
-    first, then — for Claude only — the session's own ``custom_title``/``slug``
-    (Codex/Copilot carry no on-file title, so they name only through an owning
-    process). Returns ``None`` when nothing names it, so the caller can leave the
-    existing label untouched. ``jsonl_path`` (when known) skips a path re-resolve.
-
-    ``prompt_fallback=True`` adds a LAST-resort rung: the transcript's first
-    user prompt. The history list must NOT use it (it renders name and
-    last-prompt as two separate lines), but the default-name stamp does —
-    headless (SDK-launched) sessions carry no on-file title at all, and
-    without this rung they stay nameless on every UI surface.
-    """
+    """Resolve history through the same provider evidence and naming policy as tabs."""
     if not session_id:
         return None
-    wt = _normalize_worker_type(worker_type)
-    # One filtered lookup for the owning process — NOT the full ``get_all()`` +
-    # index the history list builds; this runs per single transcript open.
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
+    wt = _normalize_worker_type(worker_type)
     proc = await AgenticProcess.get_by_session_id(session_id)
-    raw_name = getattr(proc, "name", None) if proc else None
-    ap_name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
-
-    custom_title: Optional[str] = None
-    slug: Optional[str] = None
-    first_prompt: Optional[str] = None
-    if wt is WorkerType.CLAUDE and jsonl_path is not None:
-
-        def _read_title_fields() -> tuple[Optional[str], Optional[str], Optional[str]]:
-            title, s = _claude_file_title_sync(jsonl_path)
-            prompt = None
-            if prompt_fallback and not (ap_name or title or s):
-                prompt = _claude_first_prompt_sync(jsonl_path)
-            return title, s, prompt
-
-        # One thread hop for both file reads — the prompt rung only runs when
-        # the title slots came back empty, so it rides the same offload.
-        custom_title, slug, first_prompt = await asyncio.to_thread(_read_title_fields)
-
-    # Same arg→priority mapping as ``_collect_claude_entries_sync``:
-    # AgenticProcess.name > Claude custom_title > Claude slug. ``first_prompt``
-    # is only ever set when the three title slots are all empty, so it rides
-    # the last rung and gets the same trim / 80-char cap / not-an-id filter.
-    return _pick_name(
-        custom_title=ap_name,
-        slug=custom_title,
-        display=slug or first_prompt,
-        session_id=session_id,
+    if proc is not None:
+        tabs = await _legacy_name_tabs([proc])
+        title = _canonical_process_name(proc, tabs.get(str(proc.id), []))
+        if title is not None:
+            return title
+    return await _run_worker_history_blocking(
+        partial(_unmanaged_session_name_sync, wt, session_id, jsonl_path=jsonl_path, prompt_fallback=prompt_fallback)
     )
+
+
+def _unmanaged_session_name_sync(
+    worker_type: WorkerType,
+    session_id: str,
+    *,
+    jsonl_path: Optional[Path] = None,
+    prompt_fallback: bool = False,
+) -> Optional[str]:
+    """Provider evidence and prompt fallback; no process lookup or database write."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+    from flow_sdk.builtin.agentic_process.naming.state import SessionNameState, reduce_name
+    from flow_sdk.transcript_analyzer.resolver import TranscriptNotFoundError, resolve_session_jsonl
+
+    adapter = get_driver(worker_type).naming_adapter
+    context = SimpleNamespace(session_id=session_id, transcript_path=jsonl_path)
+    state = SessionNameState(session_id=session_id)
+    for observation in adapter.read(context):
+        state = reduce_name(state, observation=observation)
+    if state.title is not None:
+        return state.title
+
+    path = jsonl_path
+    if path is None:
+        try:
+            path = resolve_session_jsonl(worker_type.value, session_id)
+        except (TranscriptNotFoundError, ValueError):
+            pass
+    # Store-backed providers usually resolved above without a transcript walk.
+    # Claude needs its resolved file; read metadata before parsing prompt text.
+    if path != jsonl_path:
+        context.transcript_path = path
+        for observation in adapter.read(context):
+            state = reduce_name(state, observation=observation)
+    if prompt_fallback and path and state.title is None:
+        state = reduce_name(state, first_prompt=_worker_first_prompt_sync(worker_type, path))
+    return state.title

@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { sdkConfig } from '@sdk/config/index';
-import {
-  parseTranscriptResponse,
-  type ParsedTranscript,
-} from '@sdk/utils/agent-transcript';
+import apiClient from '@sdk/client';
+import { describeApiError } from '@src/lib/error-message';
+import { parseTranscriptResponse, type ParsedTranscript } from '@sdk/utils/agent-transcript';
 
 /**
  * Worker types the generic transcript viewer supports. Mirrors the server
  * route's whitelist in `flow_sdk/server/routes/transcripts.py`.
  */
-export type WorkerType = 'claude' | 'codex' | 'copilot' | 'workflow';
+export type WorkerType = 'claude' | 'codex' | 'copilot' | 'opencode' | 'deepagents' | 'workflow';
+/** A worker whose sessions are entities (every transcript worker but `workflow`). */
+export type SessionWorker = Exclude<WorkerType, 'workflow'>;
 
 interface UseTranscriptArgs {
   workerType: WorkerType;
@@ -24,6 +24,24 @@ interface UseTranscriptReturn {
   isLoading: boolean;
   error: Error | null;
   refetch: () => void;
+}
+
+/**
+ * A transcript fetch that failed, carrying the server's structured
+ * ``error_code`` alongside the human message.
+ *
+ * Callers need to tell "there is no transcript" (``NOT_FOUND`` — a session that
+ * never took a turn writes no JSONL) apart from a real failure, and sniffing
+ * the message string for a prefix is too brittle to base a UI branch on.
+ */
+export class TranscriptFetchError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = 'TranscriptFetchError';
+  }
 }
 
 /**
@@ -56,19 +74,19 @@ export function useTranscript({ workerType, path, sessionId }: UseTranscriptArgs
 
     // Prefer sessionId form (server resolves the JSONL — no client-side path
     // encoding required, fixes the project_encoded_name divergence bug).
-    const url = sessionId
-      ? `${sdkConfig.apiUrl}/api/v1/workers/${encodeURIComponent(workerType)}/${encodeURIComponent(sessionId)}/transcript`
-      : `${sdkConfig.apiUrl}/api/v1/transcripts/${encodeURIComponent(workerType)}?path=${encodeURIComponent(path!)}`;
-    fetch(url, { credentials: 'include' })
-      .then(async (r) => {
-        const json = await r.json();
-        if (!r.ok || json?.ok === false) {
-          const code = json?.error_code ?? r.status;
-          const msg = json?.error ?? r.statusText;
-          throw new Error(`${code}: ${msg}`);
-        }
-        return parseTranscriptResponse(json);
-      })
+    const request = sessionId
+      ? apiClient.get<unknown>(
+          `/api/v1/workers/${encodeURIComponent(workerType)}/${encodeURIComponent(sessionId)}/transcript`,
+        )
+      : apiClient.get<unknown>(`/api/v1/transcripts/${encodeURIComponent(workerType)}`, { params: { path } });
+    request
+      .then(
+        (json) => parseTranscriptResponse(json),
+        (e: unknown) => {
+          const { code, message } = describeApiError(e);
+          throw new TranscriptFetchError(`${code}: ${message}`, code);
+        },
+      )
       .then((parsed) => {
         if (cancelRef.current !== myToken) return;
         setData(parsed);

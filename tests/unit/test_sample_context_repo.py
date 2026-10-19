@@ -1,0 +1,174 @@
+"""The ``sample-context-git`` repo, added to a project as a ``flow.json`` dependency.
+
+The local half of the sample-repo cycle: generate the repository, publish it to a
+bare `file://` origin, clone it, add the clone to a project as a dependency, and
+assert the project's menu reports all 34 assets by type.
+
+This is the gate before the repo is published to GitHub — if a type declared in
+the manifest is not actually discovered from a context folder, the count is wrong
+here first, and it says which type.
+
+The declaration is the load-bearing part: a folder inside git is written to
+``flow.json`` as its repository (``git+<url>#<branch>``), never as its path — so
+reading that line back proves ``Folder.detect_origin`` read the local `file://`
+remote as a real ``GitOrigin``, the same code path a GitHub remote takes.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import uuid
+from pathlib import Path
+
+import pytest
+
+# Register every walker + TypeInfo. Pytest does not run the server startup path.
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401
+
+from flow_sdk.builtin.asset_menu import BrowsingOptions
+from flow_sdk.builtin.folder import Folder
+from flow_sdk.builtin.project import Project
+from flow_sdk.fs_store.path_utils import canonical_posix_path
+from scripts.make_sample_context_repo import write_repo
+from tests.fixtures.asset_tree import AssetTree, teardown_asset_tree
+from tests.fixtures.sample_context_repo import SAMPLE_CONTEXT_ASSETS, SAMPLE_CONTEXT_TOTAL
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+@pytest.fixture
+async def attached(tmp_path: Path, monkeypatch):
+    """A project with the generated repo's clone added as a dependency."""
+    from flow_sdk.instance_settings import reset_instance_settings
+
+    user_home = tmp_path / "user_home"
+    user_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FLOW_INSTANCE", "test")
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(user_home))
+    monkeypatch.setenv("FLOWPAD_INDEX_SCAN_MODE", "thread")
+    reset_instance_settings()
+
+    # NOT tmp_path itself — the autouse isolated_records_root puts the records
+    # store at tmp_path/records, and walking that would index the shadow store.
+    base = tmp_path / "tree"
+    base.mkdir(parents=True, exist_ok=True)
+
+    # 1. Generate the repo, then publish it to a bare origin and clone it back —
+    #    the clone is what gets attached, exactly as a user would work.
+    source = base / "source"
+    write_repo(source)
+    _git(source, "init", "-q", "-b", "main")
+    _git(source, "config", "user.email", "fixture@example.test")
+    _git(source, "config", "user.name", "Fixture")
+    _git(source, "add", "-A")
+    _git(source, "commit", "-qm", "sample context assets")
+
+    origin = base / "sample-context-git.git"
+    subprocess.run(
+        ["git", "init", "--bare", "-q", "-b", "main", str(origin)],
+        check=True,
+        capture_output=True,
+    )
+    _git(source, "remote", "add", "origin", origin.resolve().as_uri())
+    _git(source, "push", "-q", "-u", "origin", "main")
+
+    clone = base / "sample-context-git"
+    _git(base, "clone", "-q", origin.resolve().as_uri(), str(clone))
+
+    # 2. A project, and the clone added to it as a dependency.
+    root = base / "proj"
+    root.mkdir(parents=True, exist_ok=True)
+    project = Project(
+        id=Project.derive_id_for_path(str(root)),
+        name=f"sample-{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(root),
+    )
+    await project.save()
+    state = await project.add_dependency(str(clone))
+    assert state.state == "ready", state
+    # Declared as its repository, not its path: the file:// remote was read as a
+    # real GitOrigin. And the user's clone is reused, never cloned a second time.
+    assert state.source.startswith("git+file://") and state.source.endswith("/sample-context-git#main"), state.source
+    assert state.local_path == canonical_posix_path(str(clone))
+
+    yield {"project": project, "clone": clone, "origin": origin}
+
+    await teardown_asset_tree(AssetTree(base=base, projects={"P": project}))
+    reset_instance_settings()
+
+
+async def _menu(project) -> dict:
+    resp = await project.get_assets_action(browsing=BrowsingOptions(menu=True, assets=False))
+    return resp.data["menu"]
+
+
+def _groups(node: dict) -> dict[str, int]:
+    return {g["type_name"]: g["count"] for g in node["groups"]}
+
+
+async def test_every_declared_type_is_discovered(attached):
+    """Anti-vacuity gate. Names the type that stopped being found rather than
+    just reporting a wrong total."""
+    root = (await _menu(attached["project"]))["root"]
+    ctx = root["children"][0]
+    found = _groups(ctx)
+    for type_name, expected in SAMPLE_CONTEXT_ASSETS.items():
+        assert found.get(type_name, 0) == expected, (
+            f"{type_name}: expected {expected} in the sample repo, menu reports {found.get(type_name, 0)}"
+        )
+
+
+async def test_all_34_assets_accumulate_into_the_project(attached):
+    """The project's own folder is empty, so its accumulated counts ARE the
+    context folder's — the whole point of attaching one."""
+    root = (await _menu(attached["project"]))["root"]
+    assert _groups(root) == dict(SAMPLE_CONTEXT_ASSETS)
+    assert sum(_groups(root).values()) == SAMPLE_CONTEXT_TOTAL == 34
+    # Nothing of its own: every asset arrived through the context folder.
+    assert all(g["own_count"] == 0 for g in root["groups"])
+
+
+async def test_the_context_folder_reports_a_git_origin(attached):
+    root = (await _menu(attached["project"]))["root"]
+    ctx = root["children"][0]
+    assert ctx["path"] == canonical_posix_path(attached["clone"])
+    assert ctx["origin_kind"] == "git"
+    assert ctx["depth"] == 1
+
+    origin = await Folder.detect_origin(canonical_posix_path(attached["clone"]))
+    assert origin.kind == "git"
+    assert origin.transportable is True
+    # The origin round-trips to a clonable URL — what a receiver would use.
+    assert origin.clone_url().startswith("file://")
+
+
+async def test_no_markdown_comes_from_a_dot_directory(attached):
+    """The menu reports exactly the markdown we author — the root README is
+    outside a doc folder, and .claude/plans and .claude/rules files belong to
+    their own types. Pin the rule here, so a regression in it fails pointing at
+    the rule rather than at an arithmetic mismatch in the manifest."""
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
+
+    entities = await Entity.assets_by_path(
+        PathQueryOptions(search_dirs=[str(attached["clone"])], types=["markdown"], limit=200)
+    )
+    offenders = [e.asset_ref for e in entities if "/.claude/" in (e.asset_ref or "")]
+    assert not offenders, f"markdown counted from dot-directories: {offenders}"
+    assert len(entities) == SAMPLE_CONTEXT_ASSETS["markdown"]
+
+
+def test_readme_describes_the_repo(tmp_path):
+    """Reads a generated file — deliberately NOT on the `attached` fixture, which
+    would spend a git publish, a clone and an indexer walk to open a README."""
+    write_repo(tmp_path / "repo")
+    readme = (tmp_path / "repo" / "README.md").read_text(encoding="utf-8")
+    assert "# sample-context-git" in readme
+    assert "context folder" in readme
+    assert str(SAMPLE_CONTEXT_TOTAL) in readme
+    # The manifest table is rendered from the same declaration the test asserts.
+    for type_name in SAMPLE_CONTEXT_ASSETS:
+        assert str(SAMPLE_CONTEXT_ASSETS[type_name]) in readme

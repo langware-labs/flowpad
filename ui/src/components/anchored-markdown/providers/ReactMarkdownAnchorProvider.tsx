@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -57,19 +57,27 @@ export function useReactMarkdownAnchor(source: string): {
  * element. Inline elements (em, strong, code) are not anchored — they live
  * inside their parent block.
  */
-function dataLine(node: Parameters<NonNullable<Components['p']>>[0]['node']): number | undefined {
+function dataLine(node: ExtraProps['node']): number | undefined {
   const line = node?.position?.start?.line;
   return typeof line === 'number' ? line : undefined;
 }
 
 const anchoredComponents: Components = {
   h1: ({ node, children, ...rest }) => (
-    <h1 data-line={dataLine(node)} className="mb-4 mt-2 scroll-m-20 text-3xl font-bold tracking-tight first:mt-0" {...rest}>
+    <h1
+      data-line={dataLine(node)}
+      className="mb-4 mt-2 scroll-m-20 text-3xl font-bold tracking-tight first:mt-0"
+      {...rest}
+    >
       {children}
     </h1>
   ),
   h2: ({ node, children, ...rest }) => (
-    <h2 data-line={dataLine(node)} className="mb-3 mt-6 scroll-m-20 border-b pb-1.5 text-2xl font-semibold tracking-tight first:mt-0" {...rest}>
+    <h2
+      data-line={dataLine(node)}
+      className="mb-3 mt-6 scroll-m-20 border-b pb-1.5 text-2xl font-semibold tracking-tight first:mt-0"
+      {...rest}
+    >
       {children}
     </h2>
   ),
@@ -89,12 +97,12 @@ const anchoredComponents: Components = {
     </p>
   ),
   ul: ({ node, children, ...rest }) => (
-    <ul data-line={dataLine(node)} className="my-2 ml-6 list-disc [&>li]:mt-1" {...rest}>
+    <ul data-line={dataLine(node)} className="my-2 ms-6 list-disc [&>li]:mt-1" {...rest}>
       {children}
     </ul>
   ),
   ol: ({ node, children, ...rest }) => (
-    <ol data-line={dataLine(node)} className="my-2 ml-6 list-decimal [&>li]:mt-1" {...rest}>
+    <ol data-line={dataLine(node)} className="my-2 ms-6 list-decimal [&>li]:mt-1" {...rest}>
       {children}
     </ol>
   ),
@@ -104,12 +112,16 @@ const anchoredComponents: Components = {
     </li>
   ),
   blockquote: ({ node, children, ...rest }) => (
-    <blockquote data-line={dataLine(node)} className="my-3 border-l-2 pl-4 italic text-muted-foreground" {...rest}>
+    <blockquote data-line={dataLine(node)} className="my-3 border-s-2 ps-4 italic text-muted-foreground" {...rest}>
       {children}
     </blockquote>
   ),
   pre: ({ node, children, ...rest }) => (
-    <pre data-line={dataLine(node)} className="my-3 overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground" {...rest}>
+    <pre
+      data-line={dataLine(node)}
+      className="my-3 overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground"
+      {...rest}
+    >
       {children}
     </pre>
   ),

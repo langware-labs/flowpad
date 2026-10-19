@@ -1,4 +1,4 @@
-import { ViewType } from '../utils/ui/view-types';
+import { CredentialsSubview, ViewType } from '../utils/ui/view-types';
 
 /**
  * Icon names available for warnings
@@ -13,7 +13,9 @@ export type WarningIconName =
   | 'Wifi'
   | 'WifiOff'
   | 'Settings'
-  | 'Key';
+  | 'Key'
+  | 'KeyRound'
+  | 'FolderX';
 
 /**
  * Color variants for warnings
@@ -42,6 +44,8 @@ export interface UserWarning {
   wikiPage?: string;
   /** Optional callback to execute when the warning is clicked (in addition to navigation) */
   onClick?: () => void;
+  /** Optional button drawn inside the warning, for the one thing a person can do about it. */
+  action?: { label: string; onClick: () => void };
 }
 
 /**
@@ -59,6 +63,9 @@ export const WARNING_IDS = {
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
+  EMPTY_PROJECTS: 'empty-projects',
+  PROJECT_SETUP_REQUIRED: 'project-setup-required',
+  SETUP_INCOMPLETE: 'setup-incomplete',
 } as const;
 
 /**
@@ -71,7 +78,8 @@ export function createCloudDisconnectedWarning(): UserWarning {
     color: 'gray',
     message: 'Cloud Disconnected',
     description: 'Sharing, backup and download are blocked',
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: async () => {
       try {
         const { cloudManager } = await import('../services/cloud_login');
@@ -94,7 +102,8 @@ export function createCloudLoginFailedWarning(description: string): UserWarning 
     color: 'red',
     message: 'Cloud Login Failed',
     description,
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
   };
 }
 
@@ -109,7 +118,8 @@ export function createCloudConnectionLostWarning(description?: string): UserWarn
     color: 'yellow',
     message: 'Cloud Connection Lost',
     description: description ?? 'Sharing and realtime updates are paused.',
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: async () => {
       try {
         const { cloudManager } = await import('../services/cloud_login');
@@ -133,7 +143,8 @@ export function createCloudConnectionAuthRejectedWarning(description?: string): 
     color: 'red',
     message: 'Hub Rejected Connection',
     description: description ?? 'The hub refused this client. Try reconnect.',
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: async () => {
       try {
         const { cloudManager } = await import('../services/cloud_login');
@@ -166,7 +177,8 @@ export function createHubRequestFailedWarning(detail: {
     color: 'orange',
     message: 'Cloud Request Failed',
     description: `${method} ${path} ${statusCode}: ${message}`.trim(),
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: onDismiss,
   };
 }
@@ -203,17 +215,55 @@ export function createNoHarnessWarning(): UserWarning {
 }
 
 /**
- * Create a warning shown when harness CLIs are installed but none is logged
- * in. The warnings popover routes clicks on this id to the harness-login
- * modal (device-login flow).
+ * Empty projects are piling up — old workspace folders with no sessions and no
+ * files, left behind by harness runs.
+ *
+ * Informational, and deliberately gray rather than orange: nothing is broken,
+ * and clicking it opens the cleanup screen rather than cleaning anything up.
+ * The count comes from the project scan, so the warning appears only after a
+ * scan has actually run.
  */
-export function createHarnessLoginWarning(): UserWarning {
+export function createEmptyProjectsWarning(count: number): UserWarning {
+  return {
+    id: WARNING_IDS.EMPTY_PROJECTS,
+    icon: 'FolderX',
+    color: 'gray',
+    message: `${count.toLocaleString()} empty projects`,
+    description: 'Old workspace folders with no sessions or files. Click to review and clean up.',
+    targetView: ViewType.LENS,
+    targetPointer: 'projects/cleanup',
+  };
+}
+
+/**
+ * The current project cannot run here yet: a MUST credential value is unset, or a connection it
+ * needs is not held. The warnings popover routes clicks on this id to the project setup wizard.
+ */
+export function createProjectSetupRequiredWarning(projectName: string, count: number): UserWarning {
+  return {
+    id: WARNING_IDS.PROJECT_SETUP_REQUIRED,
+    icon: 'KeyRound',
+    color: 'yellow',
+    message: 'Project setup required',
+    description: `${projectName}: ${count} ${count === 1 ? 'thing' : 'things'} to set up before it can run. Click to set up.`,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
+  };
+}
+
+/**
+ * Create a warning shown when the default assistant is installed and nothing
+ * funds it — no login, no key, no hub endpoint. The warnings popover routes
+ * clicks on this id to the Assistants & keys modal.
+ */
+export function createHarnessLoginWarning(reason: string): UserWarning {
   return {
     id: WARNING_IDS.HARNESS_LOGIN,
     icon: 'KeyRound',
     color: 'orange',
-    message: 'Harness login required',
-    description: 'A coding agent CLI is installed but not signed in. Click to sign in.',
+    message: 'Default assistant not funded',
+    // The funding layer's own sentence for why — it is the only author of that fact.
+    description: `${reason} Click to sign in or add a key.`,
     targetView: ViewType.CAPABILITIES,
   };
 }

@@ -179,6 +179,15 @@ describe('buildShellRedirectUrl (loader redirects preserve layout)', () => {
   it('preserves the agent/flow base path', () => {
     expect(buildShellRedirectUrl('/agent/a/flow/f/win/shell', 'shell-1')).toBe('/agent/a/flow/f/win/shell/shell-1');
   });
+
+  it('preserves URL-owned options across a loader redirect', () => {
+    expect(
+      buildShellRedirectUrl('/dock/shell/new_terminal', 'shell-1', {
+        viewMode: 'advanced',
+        windows: 'transcript',
+      }),
+    ).toBe('/dock/shell/shell-1?viewMode=advanced&windows=transcript');
+  });
 });
 
 describe('DockPointer.terminalTargetTypeIdForShellPointer (shell-pointer → tab-key grammar)', () => {

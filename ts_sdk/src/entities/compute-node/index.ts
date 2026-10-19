@@ -8,21 +8,33 @@
  */
 
 // Export ComputeNode entity class and utilities
-export { ComputeNode, vfsToOsPath } from './compute-node';
-export type { FindSessionResult, IComputeNode, WorkerKind } from './compute-node';
+export { ComputeNode, vfsToOsPath, WORKSPACE_FLAVOR } from './compute-node';
+export type { FindSessionResult, WorkerKind } from './compute-node';
 
 // Export compute node types (enums and interfaces)
-export { ComputeProviderType, ExecutionEnvironmentStatus, OSType, RuntimeType } from './compute-node-types';
-export type { RuntimeEnvironment } from './compute-node-types';
+export {
+  ComputeProviderType,
+  ExecutionEnvironmentStatus,
+  OSType,
+  RuntimeType,
+  SANDBOX_PROVIDERS,
+} from './compute-node-types';
+export type {
+  AppUpgrade,
+  IComputeNode,
+  NodeStatus,
+  ProvisionCompanion,
+  ProvisionContextProject,
+  ProvisionResult,
+  ProvisionSetup,
+  ProvisionStep,
+  RuntimeEnvironment,
+  WorkspaceReady,
+} from './compute-node-types';
 
 // Export machine status types for monitoring compute nodes
 export { ComputeNodeSize, ComputeNodeSizeLabels, MachineStatusUtils, ServiceStatusEnum } from './machine-status';
-export type {
-  ComputeNodeInfo,
-  MachineStatus,
-  NetworkConnection,
-  ProcessInfo,
-} from './machine-status';
+export type { ComputeNodeInfo, MachineStatus, NetworkConnection, ProcessInfo } from './machine-status';
 
 // Export service control utilities for managing artifact processes
 export { canStartService, isServiceRuntime, ServiceControlError } from './service-control';
@@ -42,9 +54,11 @@ export {
   scanProjectFromComputeNode,
   Scope,
   SystemProfileUtils,
+  workerLaunchCommandsFromComputeNode,
 } from './system-profile';
 export type {
   AccountInfo,
+  WorkerLaunchCommand,
   AgentItem,
   ClaudeMdItem,
   ClaudeContextAgent,
@@ -73,8 +87,13 @@ export type {
   SessionItem,
   SkillItem,
   SystemProfile,
+  SystemProfileEntry,
   SystemProfileItem,
   SystemProfileSummary,
   TodoEntry,
   TodoFileItem,
 } from './system-profile';
+
+// Export the `flow connect` device-code approval calls (hub typeless action `machine-enroll`)
+export { approveMachine, denyMachine, formatMachineCode, lookupMachineCode } from './machine-enroll';
+export type { MachineApproval, MachineEnrollmentView } from './machine-enroll';

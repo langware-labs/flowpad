@@ -1,0 +1,7 @@
+{
+  "name": "editor",
+  "title": "RSS / Atom \u2014 editor",
+  "description": "Configure a rss source, see its items, and define the output shape to label them with.",
+  "kind": "application.web.editor",
+  "build": "."
+}

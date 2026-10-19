@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigation } from 'react-router';
-import { dataManager, Project, TypeId, ViewType } from '@sdk';
+import { dataManager, Project, TypeId } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import type { IConversation } from '@sdk/entities/conversation';
 import { useContext } from '@src/hooks/useContext';
@@ -144,7 +144,7 @@ export function useProjectMappingGate(task: ITask | null | undefined, conversati
       // project change observed while a navigation is in flight is never a
       // user pick — bail until the router settles.
       if (routerNav.state !== 'idle') return;
-      if (currentDock?.viewType === ViewType.SHELL) return;
+      if (DockPointer.isSessionView(currentDock?.viewType)) return;
       navigateToProjectHome(activeProjectId);
       return;
     }

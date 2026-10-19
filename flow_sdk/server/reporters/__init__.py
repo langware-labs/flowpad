@@ -11,10 +11,10 @@ Provides pluggable reporters for handling hook events:
 
 from .base import BaseReporter
 from .buffer_reporter import BufferReporter
-from .ws_reporter import WebSocketReporter
-from .print_reporter import PrintReporter
 from .http_reporter import HttpReporter
+from .print_reporter import PrintReporter
 from .registry import ReporterRegistry
+from .ws_reporter import WebSocketReporter
 
 __all__ = [
     "BaseReporter",

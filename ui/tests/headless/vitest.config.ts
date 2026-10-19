@@ -60,25 +60,13 @@ export default mergeConfig(
       testTimeout: 30000, // do not increase timeout without approval
       hookTimeout: 30000, // do not increase timeout without approval
       // Process isolation per FILE (forks, not threads). Each full-app boot
-      // leaves a live SDK realm behind it — an open WebSocket + initSdk timers
-      // that a reused worker can't reap and that starve the next file's boot
-      // (its realm-boot balloons from <1s to ~9s and the editor never opens in
-      // budget). `isolate` recycles the fork between files — a FRESH child per
-      // file kills those OS handles. Sequential (no fileParallelism) so
-      // concurrent boots don't contend on the one backend.
-      //
-      // Cap the pool at ONE fork: with fileParallelism off we never run two
-      // files at once, but tinypool otherwise pre-warms `minForks` = CPU-count
-      // idle children, each piping stdio into the parent's shared stdout/stderr
-      // socket — which trips Node's MaxListenersExceededWarning (vitest caps it
-      // at 24). min=max=1 keeps isolation (isolate still respawns per file) with
-      // a single live child, so listeners stay well under the limit.
+      // leaves app-owned timers and browser globals that must die with its
+      // child process. The npm headless command owns serialization with
+      // `--no-file-parallelism`: Vitest treats fileParallelism and worker
+      // counts as root/CLI-only options, so setting them in this extended
+      // project config would be silently ineffective.
       pool: 'forks',
       isolate: true,
-      fileParallelism: false,
-      poolOptions: {
-        forks: { singleFork: false, minForks: 1, maxForks: 1 },
-      },
       server: {
         deps: {
           inline: ['next-themes', 'react', 'react-dom', 'react-router'],

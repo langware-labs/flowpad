@@ -1,30 +1,42 @@
 import '@src/styles/highlightjs.css';
+import { useAsyncSdkInit } from '@src/hooks/use-async-sdk-init';
 import { trackEvent } from '@src/utils/analytics';
 import { config, dataContext, navigator } from '@sdk';
 import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
+import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
+import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetailsModal';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
+import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
-import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
 import { useEffect, useRef } from 'react';
+import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
+import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
+import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
+import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
+import { SourceSetupDialogRoot } from '@src/components/setup-wizard/SourceSetupDialog';
+import { MissingDependenciesDialogRoot } from '@src/components/project-home/MissingDependenciesDialog';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
+import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
-import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
+import { RagRootsProvider } from '@src/hooks/use-rag-roots';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
+import { useKeepAliveReporter } from '@src/hooks/use-keep-alive-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
-import { useSyncOsBadge } from '@src/hooks/useInboxManager';
+import { useShowTargetListener } from '@src/hooks/use-show-target-listener';
+import { useSyncOsBadge } from '@src/hooks/useStreamInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
@@ -33,54 +45,72 @@ import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
+import { queryClient } from '@sdk/lazy';
+import { PrimaryContentProvider } from '@sdk/react/primary-content';
+import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
+import { AskModalRoot } from '@src/components/ask/AskModal';
+import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopupRoot';
+import { UiActionRoot } from '@src/navigation/UiActionRoot';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
 
-// The harness capability triple (Claude/Codex/Copilot) is owned by
-// `HarnessCapabilitiesProvider` below: it subscribes once, warms the cache at
-// startup, and every consumer (terminal strips, openers) reads the shared
-// snapshots via `useHarnessCapabilities` instead of re-subscribing.
+// The default-harness capability is owned by `HarnessCapabilitiesProvider` below: it
+// subscribes once and every consumer reads it from there. What is installed and signed in
+// is the status record (`useStatusRecord`), pushed by the backend.
+
+/**
+ * The app's global listener mount: WS commands, presence, `flow show`, the OS
+ * badge, hotkeys. Renders nothing.
+ *
+ * MODULE SCOPE ON PURPOSE. Declared inside `AppContent` it was a NEW component
+ * identity on every render, so React unmounted and remounted the whole subtree
+ * each time `AppContent` re-rendered (auth / SDK-init state). Every remount
+ * re-ran these hooks' mount effects — which is how the notification-click
+ * bridge reached 11 stacked listeners, and how the WS/presence subscriptions
+ * were being torn down and rebuilt for no reason.
+ */
+const GlobalEvents = () => {
+  void useGlobalEvents();
+  usePresenceReporter();
+  // Holds a hub sandbox awake while a person is using it — see the hook.
+  useKeepAliveReporter();
+  useUiCommandListener();
+  // `flow show` outside vibe — mints the shown target as a tab beside the
+  // calling process (never navigates). Vibe's own display surfaces own the
+  // vibe branch, so this no-ops there.
+  useShowTargetListener();
+  // OS dock/launcher badge = the backend-owned StreamInboxManager.unread (state,
+  // not a notification event) — mounted once, next to the WS listeners.
+  useSyncOsBadge();
+  useDockViewModeOverrideSync();
+  useSpotlightHotkey();
+  // Re-report browser_context (incl. the current URL) on every navigation.
+  // The reporter's mobx autorun only fires on context-slot changes, so a
+  // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
+  // refresh the pathname the backend reads to tell what page is open. The query too:
+  // `CurrentUrl` carries viewMode / scope / focus, which change without the path.
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    dataContext.resendBrowserContext();
+  }, [pathname, search]);
+  return null;
+};
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
+  useAsyncSdkInit();
   const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
-
-  const GlobalEvents = () => {
-    void useGlobalEvents();
-    usePresenceReporter();
-    useUiCommandListener();
-    // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
-    // not a notification event) — mounted once, next to the WS listeners.
-    useSyncOsBadge();
-    useDockViewModeOverrideSync();
-    useSpotlightHotkey();
-    // Re-report browser_context (incl. the current URL) on every navigation.
-    // The reporter's mobx autorun only fires on context-slot changes, so a
-    // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
-    // refresh the pathname the backend reads to tell what page is open.
-    const { pathname } = useLocation();
-    useEffect(() => {
-      dataContext.resendBrowserContext();
-    }, [pathname]);
-    return null;
-  };
 
   // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
   useEffect(() => {
     const cleanup = initNotificationIngest();
+    // A load-time resolver (agent auto-launch) cannot toast before the outlet
+    // exists; it stashes, and this is the flush.
+    flushAgentAutoLaunchWarning();
     return cleanup;
   }, []);
 
@@ -110,12 +140,15 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
-        <DiagnoseErrorModal />
-        <CleanupModal />
+        {/* `<DiagnoseErrorModal/>` is mounted in `main.tsx`, above the router:
+            the root error boundary replaces this whole tree, and the error
+            screen's diagnose button still needs a host. */}
         <DeleteAssetModal />
         <InputPromptModal />
         <ImageAnnotatorRoot />
         <Spotlight />
+        {/* What a smart-navigation action needs from the tree, and the dialogs it opens anywhere. */}
+        <UiActionRoot />
         <UiTagEmitter />
         <TagHighlightObserver />
         <JourneyController />
@@ -123,20 +156,42 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             box opens on whichever the view mode picks. */}
         <IncomingDeepLink />
         <ActivityProgressModalRoot />
+        <ActivityDetailsModalRoot />
         <WikiModalRoot />
+        <RunPreviewRoot />
         <FilePreviewRoot />
+        {/* A ComputeOp `ask` raised on this live tab — see `use-ui-command-listener`.
+            Mounted at the root like every other global overlay, so it opens over
+            whatever page is showing rather than replacing it. */}
+        <AskModalRoot />
+        {/* A popup wizard (first-run setup) shown over the current page, which stays as it was. */}
+        <WizardPopupRoot />
         <GlobalEvents />
+        {/* One-click install from the hub lands here — desktop only (it writes files). */}
+        {!isHubOnly() && <AddAssetDialogRoot />}
         <GitHubDeviceFlowModal />
+        <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
+        {!isHubOnly() && <HarnessSignInDialogRoot />}
+        {!isHubOnly() && (
+          <>
+            <ProjectSetupDialogRoot />
+            <ProjectLoadDialogRoot />
+          </>
+        )}
+        {!isHubOnly() && <SourceSetupDialogRoot />}
+        {/* A required dependency of the open project is not on this machine. */}
+        {!isHubOnly() && <MissingDependenciesDialogRoot />}
         <MigrateLegacyKeychain />
+        <SessionTakenOverOverlay />
         <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>
-            <FloatingChatProvider>
-              {children}
-            </FloatingChatProvider>
+            <RagRootsProvider>
+              <FloatingChatProvider>{children}</FloatingChatProvider>
+            </RagRootsProvider>
           </SnifferProvider>
         </HarnessCapabilitiesProvider>
       </TooltipProvider>
@@ -145,7 +200,12 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = ({ children }: { children: React.ReactNode }) => {
-  return <AppContent>{children}</AppContent>;
+  const location = useLocation();
+  return (
+    <PrimaryContentProvider navigationKey={location.key}>
+      <AppContent>{children}</AppContent>
+    </PrimaryContentProvider>
+  );
 };
 
 export default App;

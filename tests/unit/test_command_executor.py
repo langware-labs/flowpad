@@ -1,0 +1,346 @@
+"""Pins the two properties that let one caller run on either substrate.
+
+``CommandExecutor`` exists so git logic can be written once and run locally or on
+a compute node. That only holds if both implementations agree on the two things
+that are easy to get subtly different:
+
+* **argv is never shell-interpreted.** A path or branch name containing ``;`` or
+  ``$(...)`` must reach the program as one literal argument. Locally that means
+  never ``shell=True``; remotely it means the executor does the quoting, because
+  ``ComputeNode.run_command`` takes a string. A mock cannot tell you this — the
+  local leg has to actually spawn a process, and the remote leg has to be
+  inspected for the exact string it would send.
+* **``env`` is an additive overlay.** Providers pass command overlays separately from
+  command text, and retain the ambient environment. Both legs
+  therefore mean "these variables on top of what the target already has". If the
+  local leg ever passed ``env`` straight to ``subprocess``, PATH would vanish and
+  the divergence would only show up on one substrate.
+
+The remote leg is exercised through a stub node that records the command string.
+That is deliberate: this module's job is argv -> shell string and CLICommand ->
+CliResult. Real remote IO belongs to the provider's own tests.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
+from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.config import ComputeProviderType
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode
+from flow_sdk.utils.command_executor import _LocalCommandExecutor
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
+
+
+# ---------------------------------------------------------------------------
+# LocalCommandExecutor
+# ---------------------------------------------------------------------------
+
+
+async def test_run_captures_stdout_and_exit_code():
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", "print('hi')"])
+    assert result.returncode == 0
+    assert result.ok is True
+    assert result.stdout.strip() == "hi"
+
+
+async def test_run_captures_stderr_and_failure():
+    result = await _LocalCommandExecutor().run(
+        [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"]
+    )
+    assert result.returncode == 3
+    assert result.ok is False
+    assert "boom" in result.stderr
+
+
+async def test_argv_is_not_shell_interpreted(tmp_path: Path):
+    """The security property. If argv reached a shell, the `;` would run `touch`
+    and the file would exist."""
+    sentinel = tmp_path / "PWNED"
+    hostile = f"; touch {sentinel}"
+
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", "import sys; print(sys.argv[1])", hostile])
+
+    assert result.stdout.strip() == hostile, "argument was mangled by a shell"
+    assert not sentinel.exists(), "SECURITY: argv was shell-interpreted"
+
+
+async def test_run_honours_cwd(tmp_path: Path):
+    result = await _LocalCommandExecutor().run(
+        [sys.executable, "-c", "import os; print(os.getcwd())"], cwd=str(tmp_path)
+    )
+    assert Path(result.stdout.strip()).resolve() == tmp_path.resolve()
+
+
+async def test_env_is_an_additive_overlay():
+    """The variable is set AND the ambient environment survives."""
+    script = "import os; print(os.environ.get('FLOWPAD_TEST_VAR', '')); print(bool(os.environ.get('PATH')))"
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", script], env={"FLOWPAD_TEST_VAR": "overlay"})
+    value, has_path = result.stdout.strip().splitlines()
+    assert value == "overlay"
+    assert has_path == "True", "ambient environment was replaced instead of extended"
+
+
+async def test_missing_binary_returns_a_result_not_an_exception():
+    result = await _LocalCommandExecutor().run(["flowpad-definitely-not-a-real-binary"])
+    # Never started: no exit status at all, and the reason is on stderr.
+    assert result.returncode is None
+    assert result.ran is False
+    assert result.ok is False
+    assert "FileNotFoundError" in result.stderr
+
+
+@pytest.mark.long  # 1.01s
+async def test_timeout_returns_a_result_not_an_exception():
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=1)
+    assert result.timed_out is True
+    assert result.returncode is None
+    assert result.exit_code is ExitCode.NOT_YET
+    assert result.ok is False
+
+
+async def test_file_primitives_round_trip(tmp_path: Path):
+    executor = _LocalCommandExecutor()
+    target = tmp_path / "nested" / "deep" / "file.bin"
+
+    assert await executor.exists(str(target)) is False
+    await executor.write_bytes(str(target), b"payload")  # parents created on the way
+    assert await executor.exists(str(target)) is True
+    assert await executor.read_bytes(str(target)) == b"payload"
+    assert await executor.is_dir(str(target)) is False
+    assert await executor.is_dir(str(target.parent)) is True
+    assert await executor.list_dir(str(target.parent)) == ["file.bin"]
+
+    await executor.remove(str(target))
+    assert await executor.exists(str(target)) is False
+
+
+async def test_remove_deletes_a_directory_tree(tmp_path: Path):
+    executor = _LocalCommandExecutor()
+    tree = tmp_path / "tree"
+    await executor.write_bytes(str(tree / "a" / "b.txt"), b"x")
+
+    await executor.remove(str(tree))
+
+    assert await executor.exists(str(tree)) is False
+
+
+async def test_list_dir_of_a_missing_path_is_empty_not_an_error(tmp_path: Path):
+    assert await _LocalCommandExecutor().list_dir(str(tmp_path / "nope")) == []
+
+
+async def test_resolve_works_on_a_path_that_does_not_exist_yet(tmp_path: Path):
+    """A caller resolves first and decides after; strict resolution would make
+    containment checks impossible for a path about to be created."""
+    resolved = await _LocalCommandExecutor().resolve(str(tmp_path / "a" / ".." / "b"))
+    assert resolved == str((tmp_path / "b").resolve())
+
+
+async def test_make_dirs_is_idempotent(tmp_path: Path):
+    executor = _LocalCommandExecutor()
+    await executor.make_dirs(str(tmp_path / "d"))
+    await executor.make_dirs(str(tmp_path / "d"))
+    assert await executor.is_dir(str(tmp_path / "d")) is True
+
+
+# ---------------------------------------------------------------------------
+# ComputeNodeCommandExecutor — argv -> shell string, CLICommand -> CliResult
+# ---------------------------------------------------------------------------
+
+
+async def test_local_node_preserves_native_arguments_environment_and_cwd(tmp_path: Path):
+    node = ComputeNode(node_provider_type=ComputeProviderType.LOCAL_MACHINE)
+    args = [r"^remote\..*\.(url|pushurl)$", "%PATH%", "a&b", 'embedded"quote', "space trailing\\", ""]
+    program = "import json,os,sys; print(json.dumps([sys.argv[1:],os.getcwd(),os.getenv('FLOWPAD_ARGV_TEST'),bool(os.getenv('PATH'))]))"
+    result = await node.get_command_executor().run(
+        [sys.executable, "-c", program, *args], cwd=str(tmp_path), env={"FLOWPAD_ARGV_TEST": "literal & value"}
+    )
+    assert result.ok, result.stderr
+    received, cwd, overlay, inherited = json.loads(result.stdout)
+    assert received == args
+    assert Path(cwd).resolve() == tmp_path.resolve()
+    assert (overlay, inherited) == ("literal & value", True)
+
+
+async def test_local_node_uses_provider_directory_when_cwd_is_omitted():
+    node = ComputeNode(node_provider_type=ComputeProviderType.LOCAL_MACHINE)
+    result = await node.get_command_executor().run([sys.executable, "-c", "import os; print(os.getcwd())"])
+    assert result.ok, result.stderr
+    assert Path(result.stdout.strip()).resolve() == Path(node.compute_provider.get_home_path()).resolve()
+
+
+async def test_git_repo_local_node_reads_remote_regex_without_a_shell(tmp_path: Path):
+    from flow_sdk.builtin.faas.git_repo import GitRepo
+
+    node = ComputeNode(node_provider_type=ComputeProviderType.LOCAL_MACHINE)
+    executor = node.get_command_executor()
+    assert (await executor.run(["git", "init"], cwd=str(tmp_path))).ok
+    remote = "https://example.test/repo.git"
+    assert (await executor.run(["git", "remote", "add", "origin", remote], cwd=str(tmp_path))).ok
+    result = await GitRepo(str(tmp_path), node)._folder.git("config", "--get-regexp", r"^remote\..*\.(url|pushurl)$")
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == f"remote.origin.url {remote}"
+
+
+def _stub_node(path_sep: str = "/", *, stdout: str = "", stderr: str = "", exit_code: "int | None" = 0,
+               hang: bool = False, error: "Exception | None" = None):
+    """Records the exact command string the executor would send."""
+    sent: list[str] = []
+
+    async def run_command(command, session_id=None, background=True, env=None):
+        sent.append(command)
+        node.last_env = env
+        if error is not None:
+            raise error
+        if hang:
+            await asyncio.Event().wait()
+        return SimpleNamespace(all_stdout=stdout, all_stderr=stderr, exit_code=exit_code)
+
+    node = SimpleNamespace(
+        compute_provider=SimpleNamespace(path_sep=path_sep),
+        run_command=run_command,
+    )
+    return node, sent
+
+
+async def test_remote_quotes_every_argument():
+    node, sent = _stub_node()
+    await ComputeNodeCommandExecutor(node).run(["git", "commit", "-m", "a message; rm -rf /"])
+
+    assert sent[0] == "git commit -m 'a message; rm -rf /'"
+
+
+async def test_remote_prefixes_cwd():
+    node, sent = _stub_node()
+    await ComputeNodeCommandExecutor(node).run(["git", "status"], cwd="/work/my repo")
+
+    assert sent[0] == "cd '/work/my repo' && git status"
+
+
+async def test_remote_passes_env_separately_from_command():
+    node, sent = _stub_node()
+    result = await ComputeNodeCommandExecutor(node).run(["git", "fetch"], env={"FLOWPAD_GIT_TOKEN": "s3cret"})
+
+    assert sent[0] == result.command == "git fetch"
+    assert {item.name: item.value for item in node.last_env} == {"FLOWPAD_GIT_TOKEN": "s3cret"}
+
+
+async def test_remote_maps_the_cli_command_to_a_result():
+    node, _ = _stub_node(stdout="out", stderr="err", exit_code=2)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "status"])
+
+    assert isinstance(result, CliResult)
+    assert (result.returncode, result.stdout, result.stderr) == (2, "out", "err")
+    assert result.exit_code is ExitCode.NOT_YET
+    assert result.command == "git status"
+
+
+async def test_remote_missing_exit_status_is_not_success():
+    # The provider did not report an exit: that is "did not finish", never 0.
+    node, _ = _stub_node(exit_code=None)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "status"])
+
+    assert result.returncode is None
+    assert result.ok is False
+
+
+async def test_remote_given_timeout_bounds_the_wait():
+    node, _ = _stub_node(hang=True)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "fetch"], timeout=0.05)
+
+    assert result.timed_out is True
+    assert result.returncode is None
+    assert result.ok is False
+
+
+async def test_remote_provider_failure_is_returned_not_raised():
+    node, _ = _stub_node(error=RuntimeError("sandbox gone"))
+    result = await ComputeNodeCommandExecutor(node).run(["git", "status"])
+
+    assert result.returncode is None
+    assert result.ok is False
+    assert "sandbox gone" in result.stderr
+
+
+async def test_remote_windows_uses_cmd_quoting_and_cd_slash_d():
+    node, sent = _stub_node(path_sep="\\")
+    await ComputeNodeCommandExecutor(node).run(["git", "add", "a file.txt"], cwd=r"C:\work\repo")
+
+    expected_cwd = subprocess.list2cmdline([r"C:\work\repo"])
+    assert sent[0] == f"cd /d {expected_cwd} && git add \"a file.txt\""
+
+
+async def test_remote_is_dir_reads_the_parent_listing():
+    node, _ = _stub_node()
+
+    async def list_dir(paths):
+        return {"/work": [SimpleNamespace(name="repo", is_dir=True), SimpleNamespace(name="a.txt", is_dir=False)]}
+
+    node.list_dir = list_dir
+    executor = ComputeNodeCommandExecutor(node)
+
+    assert await executor.is_dir("/work/repo") is True
+    assert await executor.is_dir("/work/a.txt") is False
+    assert await executor.is_dir("/work/missing") is False
+
+
+async def test_remote_read_bytes_joins_the_stream():
+    node, _ = _stub_node()
+
+    async def read_files(paths, file_format="text"):
+        async def chunks():
+            yield b"one"
+            yield b"two"
+
+        return {paths: chunks()}
+
+    node.read_files = read_files
+
+    assert await ComputeNodeCommandExecutor(node).read_bytes("/work/f.bin") == b"onetwo"
+
+
+async def test_both_executors_satisfy_the_protocol():
+    """Structural check — a missing method must fail here, not at a remote call site."""
+    from flow_sdk.utils.command_executor import CommandExecutor
+
+    node, _ = _stub_node()
+    assert isinstance(_LocalCommandExecutor(), CommandExecutor)
+    assert isinstance(ComputeNodeCommandExecutor(node), CommandExecutor)
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Output is never truncated: a caller PARSES it
+# ---------------------------------------------------------------------------
+#
+# `CliResult.of_process` keeps only the last OUTPUT_CAP characters of a stream
+# by default — right for a record a person reads, wrong here. These executors
+# feed `git show` (a whole file's content), diffs, `status --porcelain` and JSON
+# that `module_rpc` parses. Cut to its last 8 KB, a file reads as its own tail
+# and a JSON document stops parsing.
+
+_BIG = "A" * 20_000 + "END"
+
+
+async def test_local_output_arrives_whole():
+    script = f"import sys; sys.stdout.write('A' * 20_000 + 'END')"
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", script])
+    assert result.stdout == _BIG, f"got {len(result.stdout)} of {len(_BIG)} characters"
+
+
+async def test_remote_output_arrives_whole():
+    node, _sent = _stub_node(stdout=_BIG)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "show", "HEAD:big.txt"])
+    assert result.stdout == _BIG, f"got {len(result.stdout)} of {len(_BIG)} characters"

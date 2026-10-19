@@ -1,30 +1,28 @@
 import { config } from '@sdk';
 const GOOGLE_TAG_MANAGER_ID = 'GTM-WHLSBH6Q';
+const GTM_SCRIPT_URL = 'https://www.googletagmanager.com/gtm.js';
 
-function loadGoogleTagManager(): void {
+/**
+ * Inject the GTM container, once per page.
+ *
+ * No environment gate of its own: the caller decides whether this page is measured.
+ * The page-wide call below measures PRODUCTION builds; the hub's `/launch` page opts
+ * in on its own (`launch-analytics.ts`), because the hub serves the desktop build.
+ * The DOM check, not a module flag, is the guard — this module is also a separate
+ * `index.html` entry, and a second copy of it must not load the container twice.
+ */
+export function injectGoogleTagManager(): void {
   window.dataLayer = window.dataLayer || [];
+  if (document.querySelector(`script[src^="${GTM_SCRIPT_URL}"]`)) return;
 
-  // Only load Google Tag Manager in production environment
-  if (config.DEPLOY_ENV !== 'PRODUCTION') {
-    return;
-  }
-
-  (function (w, d, s, l, i) {
-    const windowWithDataLayer = w as unknown as Record<string, unknown>;
-    windowWithDataLayer[l] = (windowWithDataLayer[l] as Array<Record<string, unknown>>) || [];
-    (windowWithDataLayer[l] as Array<Record<string, unknown>>).push({
-      'gtm.start': new Date().getTime(),
-      event: 'gtm.js',
-    });
-    const f = d.getElementsByTagName(s)[0];
-    const j = d.createElement(s) as HTMLScriptElement;
-    const dl = l != 'dataLayer' ? '&l=' + l : '';
-    j.async = true;
-    j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
-    if (f.parentNode) {
-      f.parentNode.insertBefore(j, f);
-    }
-  })(window, document, 'script', 'dataLayer', GOOGLE_TAG_MANAGER_ID);
+  window.dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = `${GTM_SCRIPT_URL}?id=${GOOGLE_TAG_MANAGER_ID}`;
+  const first = document.getElementsByTagName('script')[0];
+  if (first?.parentNode) first.parentNode.insertBefore(script, first);
+  else document.head.appendChild(script);
 }
 
-loadGoogleTagManager();
+// Only load Google Tag Manager page-wide in the production environment.
+if (config.DEPLOY_ENV === 'PRODUCTION') injectGoogleTagManager();

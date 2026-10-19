@@ -11,6 +11,7 @@ import {
 } from './services/cloud_status';
 import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
+import type { InstallRequest } from './models/project-manifest';
 
 type MessageType =
   | 'data_op_msg'
@@ -27,17 +28,19 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
-  | 'flow_run_event_msg'
+  | 'status_changed_msg'
   | 'tag_msg'
-  | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
+  | 'file_changed_msg'
   | 'broadcast';
 
 
 interface BaseMessage {
   message_type: MessageType;
   message_id: string;
+  /** Monotonic server-side creation sequence (present on entity data ops). */
+  instance_id?: number;
 }
 
 export interface IWSRestOptions {
@@ -72,23 +75,20 @@ interface EntityMessage extends BaseMessage {
   to_entity: ITypeId;
 }
 
-export interface IStreamMessage extends BaseMessage {
-  stream_id: number;
-}
-
-export interface TranscriptMessage extends IStreamMessage {
-  text: string;
-}
-
 export interface ControlMessage extends BaseMessage {
   state: boolean;
 }
 
 export interface OAuthMessage extends BaseMessage {
   oauth_request_id: string;
-  status: 'success' | 'error';
+  status: 'success' | 'error' | 'cancelled';
   message?: string | null;
   user?: Record<string, any> | null;
+  // Sent to the initiating connection only (flow_sdk/core/oauth/flows.py), so
+  // that screen can confirm without a follow-up read. Absent from older senders.
+  provider?: string | null;
+  identity?: string | null;
+  code?: string | null;
 }
 
 export interface HubClientErrorMessage extends BaseMessage {
@@ -127,48 +127,13 @@ export interface ToplogStateMessage extends BaseMessage {
   message_type: 'toplog_state_msg';
   enabled: boolean;
   filter: Record<string, boolean>;
+  persist?: boolean;
 }
 
-/**
- * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
- * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
- */
 /** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
 export interface TagMsg extends BaseMessage {
   message_type: 'tag_msg';
   event: import('./tags/EventBus').FlowEvent;
-}
-
-export interface FlowRunEventMessage extends BaseMessage {
-  message_type: 'flow_run_event_msg';
-  flow_id: string;
-  run_id: string;
-  /** run_start | event | run_end */
-  kind: string;
-  event: string;
-  data: Record<string, unknown>;
-  node: string;
-  status: string;
-  ts: string;
-}
-
-/**
- * Broadcast on every FlowManager scheduler transition for a flow node — the
- * push feed for live queue/active counters and node status lines.
- * Backend mirror: FlowNodeStatusMessage in flow_sdk/api/messages.py.
- */
-export interface FlowNodeStatusMessage extends BaseMessage {
-  message_type: 'flow_node_status_msg';
-  flow_id: string;
-  run_id: string;
-  node_id: string;
-  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed';
-  /** Node runtime counts AFTER this transition. */
-  queued: number;
-  active: number;
-  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
-  detail: Record<string, unknown>;
-  ts: string;
 }
 
 /**
@@ -180,17 +145,37 @@ export interface FlowNodeStatusMessage extends BaseMessage {
 export interface UiCommandMessage extends BaseMessage {
   message_type: 'ui_command';
   /** Discriminator for the specific action the UI should perform. */
-  kind: 'navigate_entity' | 'navigate_vfs' | string;
+  kind: 'navigate_entity' | 'navigate_vfs' | 'navigate_dock' | string;
   /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
   type?: string;
   /** For `navigate_entity`: the entity's id. */
   id?: string;
   /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
   path?: string;
+  /** For `navigate_dock`: the dock address — a SCREEN. Already validated
+   *  server-side against the dock-address table, so the UI constructs rather
+   *  than resolves. */
+  view_type?: string;
+  /** For `navigate_dock`: the pointer within that screen. Also `open_ask_modal`'s
+   *  whole payload — the question id — since both are "here is the one thing
+   *  this command is about", and a modal has no screen to construct. */
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
+  /** For `navigate_dock`: which layout to land in. Absent means `dock` — the
+   *  app as usual. `win` is the chrome-less focus window, which is how a
+   *  backend can raise ONE component with no app around it. Without this field
+   *  a pushed command could only ever land in the dock. */
+  layout?: string;
+  /** For `navigate_dock` to a question: the wizard run that asked, so a screen showing that run
+   *  can draw it in place (`ask-claims.ts`). */
+  run?: string;
   /** For `desktop_notify`: the notification kind (e.g. "message"). */
   notify_type?: string;
   /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */
   info?: Record<string, unknown>;
+  /** `kind: 'install_request'` — a published asset the hub asks this desktop to install (opens the Add-asset dialog). */
+  request?: InstallRequest;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -239,6 +224,9 @@ export interface RestApiMessage extends BaseMessage {
   // Per-call hub-reflection opt-in (default false). The WS-REST handler copies
   // this onto request_info.hub_reflect (the HTTP path uses the Hub-Reflect header).
   hub_reflect?: boolean;
+  // This call names its socket as the initiator (the HTTP path sends
+  // X-Flow-Connection-Id). The handler already knows the connection id.
+  carries_initiator?: boolean;
 }
 
 export interface ResponseMessage extends BaseMessage {
@@ -285,15 +273,30 @@ export interface BroadcastMessage extends BaseMessage {
   broadcast_type?: string;
 }
 
-export type DataOpType = 'create' | 'update' | 'delete';
+export type DataOpType =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'child_created'
+  | 'child_updated'
+  | 'child_deleted';
 
 /** Enum form of {@link DataOpType}. Use these members instead of bare
  *  'create' / 'update' / 'delete' string literals when matching a
- *  data_op frame's ``op``. */
+ *  data_op frame's ``op``.
+ *
+ *  The ``CHILD_*`` members INVERT the envelope: ``to_entity`` is the PARENT,
+ *  ``from_entity`` is the changed child, and ``data`` is the child. They exist
+ *  so a watcher of a parent learns its subtree changed without subscribing to
+ *  every child — which is how a new message reaches an open conversation.
+ *  Values match the hub's ``messages.py`` exactly. */
 export enum DataOp {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
+  CHILD_CREATED = 'child_created',
+  CHILD_UPDATED = 'child_updated',
+  CHILD_DELETED = 'child_deleted',
 }
 
 interface DataOpMessage extends EntityMessage {
@@ -301,12 +304,25 @@ interface DataOpMessage extends EntityMessage {
   data?: { [key: string]: any }; // Use a dictionary to represent the data or define the specific structure if known
 }
 
+/**
+ * How many sequence numbers behind the newest accepted data-op a late frame can
+ * still be. The backend stamps one rising counter on every outbound data-op, so
+ * an entity's last sequence is needed only to refuse an older frame for it; once
+ * the stream is this far past that sequence, no such frame is still in flight.
+ * A distance in frames, not a time.
+ */
+export const DATA_OP_REORDER_WINDOW = 4096;
+
 export class ConnectionManager extends EventEmitter {
   id = uuidv4();
   private static instance: ConnectionManager;
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
   private warnedMessageTypes = new Set<string>();
+  /** Last accepted data-op sequence per entity on the current socket, in acceptance order. */
+  private lastDataOpInstanceByEntity = new Map<string, number>();
+  /** Highest data-op sequence accepted on the current socket. */
+  private highestDataOpInstance = 0;
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
@@ -475,7 +491,11 @@ export class ConnectionManager extends EventEmitter {
     // Kick a connect if none is in flight. connect() short-circuits when
     // OPEN/CONNECTING, so this is cheap to call concurrently.
     if (!this._openPromise) {
-      void this.connect();
+      // `.catch`, not `void`: a fire-and-forget connect that REJECTS (the
+      // backend is down, or the unit tier points at an invalid host) becomes an
+      // unhandled rejection and fails the whole run even when every test passed.
+      // The caller below already observes the outcome through `_openPromise`.
+      this.connect().catch(() => undefined);
     }
     const open = this._openPromise;
     if (!open) return; // race: connect() resolved synchronously to OPEN
@@ -508,6 +528,11 @@ export class ConnectionManager extends EventEmitter {
   }
 
   onOpen(event: Event) {
+    // The backend counter restarts with its process and an old socket cannot
+    // deliver frames after this new connection opens, so sequence ownership is
+    // per socket generation.
+    this.lastDataOpInstanceByEntity.clear();
+    this.highestDataOpInstance = 0;
     this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
@@ -624,14 +649,14 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'status_changed_msg') {
+      // A status fact changed (harness install/login, a stored key, the hub login): a signal to
+      // re-read `status` and `funding`, not a payload.
+      this.emit('on_status_changed_msg');
+      return;
+    }
     if (data.message_type === 'tag_msg') {
       return this.onTagMessage(data as TagMsg);
-    }
-    if (data.message_type === 'flow_run_event_msg') {
-      return this.onFlowRunEventMessage(data as FlowRunEventMessage);
-    }
-    if (data.message_type === 'flow_node_status_msg') {
-      return this.onFlowNodeStatusMessage(data as FlowNodeStatusMessage);
     }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
@@ -641,6 +666,11 @@ export class ConnectionManager extends EventEmitter {
     }
     if (data.message_type === 'recovered_msg') {
       return this.onRecoveredMessage(data);
+    }
+    if (data.message_type === 'file_changed_msg') {
+      // A file this connection watches changed on disk (fs/watch). FSManager
+      // routes it to the watchers of that path.
+      return this.emit('on_file_changed', data);
     }
     if (data.message_type === 'broadcast') {
       return this.onBroadcastMessage(data as BroadcastMessage);
@@ -689,14 +719,6 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_tag_msg', data);
   }
 
-  onFlowRunEventMessage(data: FlowRunEventMessage) {
-    this.emit('on_flow_run_event_msg', data);
-  }
-
-  onFlowNodeStatusMessage(data: FlowNodeStatusMessage) {
-    this.emit('on_flow_node_status_msg', data);
-  }
-
   onUiCommandMessage(data: UiCommandMessage) {
     this.emit('on_ui_command', data);
   }
@@ -741,7 +763,28 @@ export class ConnectionManager extends EventEmitter {
       console.warn('Ignoring data_op message with invalid to_entity:', data.to_entity);
       return;
     }
-    this.emit('on_data_op', typeId.toString(), data.op, data.data);
+    // ``from_entity`` rides as a trailing 4th argument so the six existing
+    // 3-arg listeners are untouched (JS ignores extra args). It is only
+    // meaningful for the child_* ops, where ``to_entity`` is the parent and
+    // this carries the child that actually changed.
+    const fromEntity = data.from_entity ? this.parseTypeId(data.from_entity) : null;
+    const key = typeId.toString();
+    const instanceId = data.instance_id;
+    if (typeof instanceId === 'number' && Number.isSafeInteger(instanceId)) {
+      const previous = this.lastDataOpInstanceByEntity.get(key);
+      if (previous !== undefined && instanceId <= previous) return;
+      // Re-insert so the map stays in acceptance order, then forget the entities
+      // at its front whose last sequence is outside the reorder window.
+      this.lastDataOpInstanceByEntity.delete(key);
+      this.lastDataOpInstanceByEntity.set(key, instanceId);
+      if (instanceId > this.highestDataOpInstance) this.highestDataOpInstance = instanceId;
+      const floor = this.highestDataOpInstance - DATA_OP_REORDER_WINDOW;
+      for (const [staleKey, sequence] of this.lastDataOpInstanceByEntity) {
+        if (sequence >= floor) break;
+        this.lastDataOpInstanceByEntity.delete(staleKey);
+      }
+    }
+    this.emit('on_data_op', key, data.op, data.data, fromEntity?.toString() ?? null);
   }
   onOAuthMessage(data: OAuthMessage) {
     this.emit('on_oauth_msg', data);
@@ -813,7 +856,7 @@ export class ConnectionManager extends EventEmitter {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
         toplog.log(
-          'process_load',
+          ['process_load', 'pty', 'agentic_process.load'],
           `WS request TIMEOUT after ${(performance.now() - tSent).toFixed(0)}ms (budget ${timeoutMs}ms) ` +
             `${message.method} action=${message.action ?? ''} target=${message.target_typeid?.type ?? ''}-${(message.target_typeid?.id ?? '').slice(0, 8)} pending=${this.pendingRequests.size}`,
         );

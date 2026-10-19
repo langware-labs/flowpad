@@ -5,7 +5,7 @@
  * without compute_node_id. See RCA below.
  */
 
-import { AgenticProcess, ClaudeCliOptions, ConnectionManager } from '@sdk';
+import { AgenticProcess, ClaudeAgentOptions, ConnectionManager } from '@sdk';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
@@ -18,14 +18,16 @@ describe('AgenticProcess spawn regression', () => {
   });
 
   it('process.start() succeeds after spawn() creates the process', async () => {
-    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
 
     const process = await new AgenticProcess({
       cli_config: cliConfig.toJson(),
       context_data: {},
     }).save();
 
-    await process.start({ instruction: 'echo hello', ptyTimeout: 3000 });
+    // Opening an idle composer proves the spawn/attach path without making a
+    // provider request; CI supplies an inert funding source for the resolver.
+    await process.start();
     expect(process.shell_id).toBeTruthy();
   }, 10000);
 });

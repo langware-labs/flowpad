@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TypeId } from '@sdk';
+import { PageId, TypeId } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
   AssetEditor,
@@ -28,13 +28,13 @@ describe('AssetDocPointer', () => {
       expect(() => p.validate()).not.toThrow();
     });
 
-    it('typeid (agent)', () => {
-      const p = AssetDocPointer.forTypeId(AssetEditor.AGENT, new TypeId('agent', V4));
-      expect(p.toPointer()).toBe(`editor/agent/typeid/agent-${V4}`);
+    it('typeid (subagent)', () => {
+      const p = AssetDocPointer.forTypeId(AssetEditor.SUBAGENT, new TypeId('subagent', V4));
+      expect(p.toPointer()).toBe(`editor/subagent/typeid/subagent-${V4}`);
       const back = AssetDocPointer.parse(p.toPointer());
-      expect(back.editor).toBe(AssetEditor.AGENT);
+      expect(back.editor).toBe(AssetEditor.SUBAGENT);
       expect(back.method).toBe(AssetRoutingMethod.TYPEID);
-      expect(back.value).toBe(`agent-${V4}`);
+      expect(back.value).toBe(`subagent-${V4}`);
     });
 
     it('forEntity prefers typeid', () => {
@@ -55,6 +55,22 @@ describe('AssetDocPointer', () => {
       const back = AssetDocPointer.parse('wiki/workspace-123/Some Note');
       expect(back.space).toBe('workspace-123');
       expect(back.wikiName).toBe('Some Note');
+    });
+
+    it('keeps a legacy wiki/<word> deep link in the local Wiki', () => {
+      const back = AssetDocPointer.parse('wiki/Legacy Note');
+      expect(back.space).toBe('@local');
+      expect(back.wikiName).toBe('Legacy Note');
+      expect(back.toPointer()).toBe('wiki/@local/Legacy Note');
+    });
+
+    it('builds the canonical Hub Wiki URL without changing the asset grammar', () => {
+      const url = AssetDocPointer
+        .forWiki('Quick start', V4)
+        .toDockPointer()
+        .withPage(PageId.HUB)
+        .toUrl();
+      expect(url).toBe(`/dock/hub/assets/wiki/${V4}/Quick%20start`);
     });
   });
 

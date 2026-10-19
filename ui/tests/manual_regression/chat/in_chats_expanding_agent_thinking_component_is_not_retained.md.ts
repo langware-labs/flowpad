@@ -6,6 +6,7 @@
  * returning via the first tab must restore its expanded thinking block.
  */
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { withViewMode } from '../_shared/view-mode';
 
 const LONG_THINKING =
   'I am comparing the request with the project context.\n' +
@@ -59,36 +60,86 @@ async function fulfillTranscript(route: Route) {
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(transcript(sessionId, name)),
+    // The route answers with the ApiResponse envelope; `apiClient` unwraps
+    // `data`, so a bare body reaches the app as undefined.
+    body: JSON.stringify({ status: 'SUCCESS', data: transcript(sessionId, name) }),
   });
 }
 
-async function forceAdvanced(page: Page) {
+async function dismissSetup(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
 test('thinking expansion is retained when switching between two chat tabs', async ({ page }) => {
-  await forceAdvanced(page);
+  await dismissSetup(page);
   await page.route('**/api/v1/workers/codex/*/transcript', fulfillTranscript);
-  await page.goto('/dock/lens/codex/transcript/thinking-one?transcriptMode=chat');
+  await page.goto(withViewMode('/dock/home', 'advanced'));
+  // Home adopts the default project in its route loader, which settles after
+  // the document 'load' goto waits for — read it once it has landed, not at
+  // whatever instant goto returned.
+  const readProjectId = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { dataContext?: { project?: { id?: string } | null } })
+          .dataContext?.project?.id ?? null,
+    );
+  await expect.poll(readProjectId, { message: 'home adopts the default project' }).toMatch(/^[0-9a-f-]{36}$/);
+  const projectId = await readProjectId();
+  if (!projectId) throw new Error('The default project did not load');
+  await page.goto(
+    withViewMode(
+      `/dock/lens/codex/transcript/thinking-one?scope-mode=project&scope-activeProjectId=${projectId}`,
+      'advanced',
+    ),
+  );
+  // The transcript's Chat/Trace chips are an Advanced surface, and Advanced is
+  // the developer switch now (bd2e5b0d1) — `?viewMode=advanced` only picks the
+  // Terminal surface. Flip it the way the avatar double-click does, on the page
+  // that needs it: the switch is a saved preference, and a document navigation
+  // right behind the flip can cut its save short.
+  await expect(page.getByTestId('top-nav-bar')).toBeVisible();
+  await page.evaluate(() => window.setDev(true));
+
+  // The persisted mode can be either Chat or Trace after earlier scenarios.
+  // Selecting the already-active chip is intentionally a no-op, so switch away
+  // only when Chat is active, then select Chat through the real control. This
+  // makes the preference and URL deterministic before the tab is revisited.
+  const chatChip = page.getByTestId('transcript-mode-chip-chat');
+  if ((await chatChip.getAttribute('data-mode-active')) === 'true') {
+    await page.getByTestId('transcript-mode-chip-trace').click();
+    await expect(page).toHaveURL(/transcriptMode=trace/);
+  }
+  await chatChip.click();
+  await expect(page).toHaveURL(/transcriptMode=chat/);
 
   const thinking = page.getByText(LONG_THINKING, { exact: true });
   await expect(thinking).toBeVisible();
   await page.getByRole('button', { name: 'Show more' }).click();
   await expect(page.getByRole('button', { name: 'Show less' })).toBeVisible();
 
-  await page.evaluate(() => {
+  await page.evaluate((activeProjectId) => {
     (window as unknown as {
-      navigation: { openLens: (category: string, type: string, ref: string) => void };
-    }).navigation.openLens('codex', 'transcript', 'thinking-two');
-  });
+      navigation: {
+        openLens: (
+          category: string,
+          type: string,
+          ref: string,
+          options: Record<string, string>,
+        ) => void;
+      };
+    }).navigation.openLens('codex', 'transcript', 'thinking-two', {
+      'scope-mode': 'project',
+      'scope-activeProjectId': activeProjectId,
+    });
+  }, projectId);
   await expect(page).toHaveURL(/thinking-two/);
   await expect(page.getByText('response from Thinking chat two', { exact: true })).toBeVisible();
 
-  await page.locator('[data-testid*="thinking-one"]').first().click();
+  await page
+    .locator('[data-testid="tab-content-lens|codex/transcript/thinking-one"]')
+    .click();
   await expect(page).toHaveURL(/thinking-one/);
   await expect(page.getByRole('button', { name: 'Show less' })).toBeVisible();
 });

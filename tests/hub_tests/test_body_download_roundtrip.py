@@ -21,14 +21,13 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.flow_message import (
+    BODY_FILENAME,
     Attachment,
     AttachmentType,
-    BODY_FILENAME,
     BodyNotReadyError,
     BodyStatus,
     FlowMessage,
 )
-
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

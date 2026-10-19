@@ -16,6 +16,15 @@
 // below the `vi.mock` and read before initialization.
 import { vi } from 'vitest';
 
+// Activate the source locale for the whole tier, exactly as `main.tsx` does by
+// importing `i18n-init` first. The `vi.mock` factory below also does this, but
+// only for a test that actually imports `@lingui/react` — and plain modules now
+// resolve lazy `msg` descriptors through the shared `i18n._` (crumb labels, type
+// labels, tree-root labels). A test that touches one of those without rendering
+// a Lingui component would otherwise hit "called a translation function without
+// setting a locale". Side-effect import, so it runs before any test module.
+import '@src/i18n-init';
+
 vi.mock('@lingui/react', async (importOriginal) => {
   const { createElement } = await import('react');
   const actual = await importOriginal<typeof import('@lingui/react')>();

@@ -70,7 +70,7 @@ class TranscriptHandler(Protocol):
     async def handle(self, entry: TranscriptEntry, ctx: TranscriptContext) -> None: ...
 ```
 
-- `match_kind` / `match_tool_name` are the class-level matchers. The dispatcher feeds them straight into the analyzer's `AgentTranscriptFile.filter(kind=..., tool_name=...)` (`flow_sdk/transcript_analyzer/transcript.py`), which yields only entries matching **all** provided filters (they are AND-ed; a `None` filter matches everything). `tool_name` matches any parsed entry that carries a tool name, including semantic operation entries like `shell_command`.
+- `match_kind` / `match_tool_name` are the class-level matchers. The dispatcher feeds them straight into the analyzer's `AgentTranscriptFile.filter(kind=..., tool_name=...)` (`flow_sdk/transcript_analyzer/transcript.py`), which yields only entries matching **all** provided filters (they are AND-ed; a `None` filter matches everything). `tool_name` matches any entry that carries a tool name, including semantic operation entries like `shell_command`. Note those may be *derived* rather than parsed: the derivation layer (`flow_sdk/transcript_analyzer/derivation/`, see [agentic_process_outputs.md](../agentic_process_outputs.md)) appends semantic entries beside the physical ones a parser produced, flagged `virtual=true`. A handler that must act once per real tool call should therefore filter on `virtual` — a physical entry and its refinement share a `tool_use_id`.
 - `handle` receives the matched `TranscriptEntry` and a `TranscriptContext` — a frozen dataclass carrying the `jsonl_path` and the parsed `AgentTranscriptFile`.
 - Handlers are registered on an indexer instance via `TranscriptIndexer.add_handler(handler)`.
 
@@ -112,7 +112,7 @@ Each wrapper computes the correct `root` from the hint path's on-disk layout (di
 | Wrapper | Layout it expects | Root computed | Indexer fn / record type |
 |---------|-------------------|---------------|--------------------------|
 | `_index_single_plan` | `~/.claude/plans/<name>.md` | `parents[2]` (`~`) | `claude_plan_fn` / `PLAN` |
-| `_index_single_markdown` | `<root>/.claude/docs/**/*.md` | `parents[2]` | `markdown_flat_fn` / `MARKDOWN` |
+| `_index_single_markdown` | `<root>/docs/**/*.md` (the `DOCS_FAMILY` mount, any depth) | the parent of the nearest `docs` ancestor segment — walked up, not a fixed `parents[N]`; no-op if the path has no `docs` ancestor | `markdown_flat_fn` / `MARKDOWN` |
 | `_index_single_skill` | `<root>/.claude/skills/<name>/SKILL.md` (or the skill dir) | `parents[2]` of the skill dir | `skill_fn` / `SKILL` |
 | `_index_single_claude_md` | `<root>/CLAUDE.md` or `<root>/.claude/CLAUDE.md` | file's parent, stepped up if `.claude/` | `claude_md_in_project_root_fn` / `CLAUDE_MD` |
 | `_index_single_claude_session` | `~/.claude/projects/<encoded>/<sid>.jsonl` | the encoded project dir | `claude_sessions_fn` / `CLAUDE_SESSION` (root type `PROJECT`) |
@@ -120,11 +120,11 @@ Each wrapper computes the correct `root` from the hint path's on-disk layout (di
 | `_index_single_claude_rules` | `<root>/.claude/rules/<name>.md` | `parents[2]` | `claude_rules_fn` / `CLAUDE_RULES` |
 | `_index_single_command` | `<root>/.claude/commands/<name>.md` | `parents[2]` | `command_fn` / `COMMAND` |
 
-`_index_single_markdown` handles only the flat `.claude/docs/` layout (via `markdown_flat_fn`); project-scoped markdown picked up by the folder walker uses a different setup and is left to the regular project walks.
+`_index_single_markdown` handles only the `docs/` family mount (via `markdown_flat_fn`, which rglobs below `docs/` — hence the walk-up rather than a fixed parent index, which silently picked the wrong root for `docs/sub/a.md`); project-scoped markdown picked up by the folder walker (`markdown_in_folder_fn`) uses a different setup and is left to the regular project walks.
 
 ### The 404 self-heal path
 
-The wrappers are consumed by the dock loader's self-heal in `flow_sdk/server/routes/graph.py`. When an action handler needs a `self` entity and the target 404s, `_try_self_heal_missing_entity` checks for a `?hint_path=<file>` query param; if present and the file exists, it looks up the matching wrapper by the target type and runs it, then retries the lookup after resetting the per-request entity cache. `_get_self_heal_indexers` wires the `plan`, `markdown`, `skill`, `claude_md`, `claude_memory`, `claude_rules`, and `command` types to their wrappers (built lazily so the import cost only lands on an actual self-heal).
+The wrappers are consumed by the dock loader's self-heal in `flow_sdk/server/routes/graph.py` (the same coroutine is also called from `flow_sdk/server/middleware/request_transaction_middleware.py` when a request's target entity resolves to nothing). When an action handler needs a `self` entity and the target 404s, `_try_self_heal_missing_entity` checks for a `?hint_path=<file>` query param; if present and the file exists, it looks up the matching wrapper by the target type and runs it, then retries the lookup after resetting the per-request entity cache. `_get_self_heal_indexers` wires the `plan`, `markdown`, `skill`, `claude_md`, `claude_memory`, `claude_rules`, and `command` types to their wrappers (built lazily so the import cost only lands on an actual self-heal).
 
 This is deliberately gated on an explicit path hint, per the no-auto-indexing rule: it only fires when the caller supplied `hint_path` — e.g. a chip click that originated from a context entry carrying `data.path` — never as an implicit background walk.
 

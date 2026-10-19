@@ -11,7 +11,7 @@
  */
 import { promises as fsp } from 'node:fs';
 
-import { HUB_URL } from './_hub';
+import { HUB_URL, syncAssignedConversationAt } from './_hub';
 
 // Rendezvous file: alice writes the freshly-created conv id here after
 // ``share()``; bob polls for it so he targets THIS run's conversation and
@@ -48,6 +48,12 @@ export async function probeLocalBackendLoggedIn(apiBase: string): Promise<{
   }
 }
 
+/** Materialize only this protocol's immediately assigned conversation.
+ * `apiBase` is the SDK-configured `/api/v1` base for the current process. */
+export async function syncAssignedConversation(apiBase: string, convId: string): Promise<void> {
+  await syncAssignedConversationAt(apiBase, convId);
+}
+
 // Generic poll: call ``fn`` every 100ms until it returns a truthy value or we
 // hit ``timeoutMs``. Returns the truthy value. Used for cross-process waits
 // (waiting on a message to arrive, a file to appear, a status to flip).
@@ -63,23 +69,6 @@ export async function pollUntil<T>(
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`pollUntil(${label}) timed out after ${timeoutMs}ms`);
-}
-
-
-/** Pick the pending invitation that targets `convId` from an invitation list.
- *  Matches the EMBEDDED conversation id (the hub stamps `target_url_path`
- *  null but embeds `conversation`) or a persisted `target_url_path`. NO
- *  newest-unaccepted fallback — on a shared hub, stale/concurrent invitations
- *  to the same recipient make recency pick the wrong conversation. */
-export function pickPendingInvitation(all: any[], convId: string): any | null {
-  return (
-    all.find(
-      (inv) =>
-        !inv.accepted &&
-        ((inv.conversation?.id ?? inv.conversation_id) === convId ||
-          (inv.target_url_path || '').includes(convId)),
-    ) ?? null
-  );
 }
 
 // Bob waits for alice to publish the conv id. Returns the conv id string.
@@ -116,12 +105,7 @@ export async function writeRendezvous(convId: string): Promise<void> {
 // Poll a /tmp marker file until it contains ``value`` — the cross-process "done"
 // handshake used alongside the rendezvous file (e.g. "bob joined", "http rename
 // landed"). Written with plain ``fsp.writeFile(path, value)``.
-export async function waitMarker(
-  path: string,
-  value: string,
-  label: string,
-  timeoutMs = 25_000,
-): Promise<void> {
+export async function waitMarker(path: string, value: string, label: string, timeoutMs = 25_000): Promise<void> {
   await pollUntil(
     async () => {
       try {

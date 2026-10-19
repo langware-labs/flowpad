@@ -26,6 +26,7 @@ def _make_process(**kwargs) -> AgenticProcess:
 # ── execute-plan ──────────────────────────────────────────────
 
 
+@pytest.mark.long  # 1.50s
 @pytest.mark.asyncio
 async def test_execute_plan_includes_file_path_in_prompt():
     """When file_path is given, the injected prompt must reference it."""
@@ -39,6 +40,7 @@ async def test_execute_plan_includes_file_path_in_prompt():
     assert "/plans/my-plan.md" in injected[0]
 
 
+@pytest.mark.long  # 1.50s
 @pytest.mark.asyncio
 async def test_execute_plan_prompt_mentions_plan_note_and_execution():
     """execute-plan prompt must mention plan-note updates AND continuing to execution."""

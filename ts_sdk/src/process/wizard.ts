@@ -1,12 +1,17 @@
 import { APIEntity } from '../APIEntity';
 import { AgenticProcess } from './agentic-process';
+import type { WizardResult } from '../models/ReturnedValue';
 
 export type WizardStatus = 'done' | 'cancel' | 'error';
 
 export interface WizardProcessResult<T = unknown> {
+  /** The agent's own word — keeps a cancel apart from an error for the person. */
   status: WizardStatus;
   data: T | null;
   errorStr?: string | null;
+  /** The same close as the answer every wizard run gives. Present when the
+   *  backend closed it; absent for a close the UI made up locally. */
+  answer?: WizardResult;
 }
 
 export interface WizardData {
@@ -20,6 +25,11 @@ export interface WizardData {
    *  report nothing back to the caller. Values are placeholders describing the
    *  field (e.g. `{ readyForDone: '<true|false>' }`), not real results. */
   resultShape?: Record<string, unknown>;
+  /** Model for the run: a `WorkerModelTier` (`sm`/`md`/`lg`) or a concrete name.
+   *  Omitted means the worker's default. A narrow, mechanical wizard should ask
+   *  for `sm` — it is markedly cheaper and faster, and the tier resolves per
+   *  worker so it still means "the small model" on codex/copilot. */
+  model?: string;
 }
 
 export interface WizardLaunchRequest {
@@ -66,6 +76,7 @@ export function normalizeWizardResult<T = unknown>(
     status,
     data: (obj.data ?? null) as T | null,
     errorStr: typeof obj.errorStr === 'string' ? obj.errorStr : null,
+    ...(obj.answer && typeof obj.answer === 'object' ? { answer: obj.answer as WizardResult } : {}),
   };
 }
 

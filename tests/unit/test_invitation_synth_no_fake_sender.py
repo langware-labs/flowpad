@@ -26,7 +26,7 @@ _CONV_ID = "a591294e-e8ba-4ced-822b-98ea655f51b4"
 async def test_synth_invite_notice_has_no_fabricated_identity():
     hub_inv = {
         "id": _INV_ID,
-        "recipient_email": "alice@example.com",
+        "recipient_email": "dan@example.com",
         "accepted": False,
         "sent": True,
         "message": None,

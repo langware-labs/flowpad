@@ -1,0 +1,10 @@
+{
+  "name": "dataset-editor",
+  "title": "Dataset editor",
+  "description": "Browse a dataset's examples and label them -- forms built from the dataset's declared kinds.",
+  "kind": "application.web.editor",
+  "build": ".",
+  "edits": [
+    "dataset"
+  ]
+}

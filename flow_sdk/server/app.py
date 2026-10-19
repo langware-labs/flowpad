@@ -17,6 +17,7 @@ _startup_times = {"module_import_start": time.time()}
 
 import logging
 
+import psutil
 import uvicorn
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
@@ -29,10 +30,13 @@ from . import state
 # ── Load entities & actions BEFORE importing routes (resolves circular deps) ──
 _startup_times["before_build"] = time.time()
 
+from flow_sdk import boot_progress
 from flow_sdk.core.loaders import load_actions, load_entities
 
+boot_progress.set_phase("entities")
 load_entities()
 load_actions()
+boot_progress.set_phase("app")
 
 # Run the declarative type-info registrations (register_all) at import time so
 # per-type TypeInfo extras — icon/browseable/creatable authored in
@@ -40,44 +44,43 @@ load_actions()
 # Entities self-register via their metaclass on import; this import's side
 # effect is what lands the declarative metadata (icons, etc.).
 import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
-
-# Warm the per-type payload list now that every TypeInfo is registered. The
-# ~225ms assembly is static after registration, so building it here — at import,
-# before the server listens — keeps it off the first (cold) bootstrap request.
-# Default args (include_schema=True) match bootstrap's call, so it's a cache hit.
-try:
-    from flow_sdk.core.schema import build_all_type_payloads as _warm_type_payloads
-    _warm_type_payloads()
-except Exception:
-    logging.getLogger(__name__).exception("Failed to warm type payloads at startup")
-
 from flow_sdk.server import FlowServer
 
 from .routes import (
+    activity_router,
     agent_records_router,
-    agentic_flows_router,
+    agents_router,
+    ask_router,
+    asset_share_router,
     assets_router,
     auth_router,
+    browser_profiles_router,
     capabilities_router,
-    chat_router,
     cloud_router,
-    compute_register_router,
+    data_source_webhook_router,
     debug_router,
     dep_graph_router,
     detection_router,
     directory_router,
+    display_router,
     docs_graph_router,
     favorites_router,
     git_router,
+    graph_workflows_router,
     hooks_router,
+    ingest_router,
     journeys_router,
+    kinds_router,
     markdown_index_router,
     navigate_router,
     privacy_router,
     project_router,
     pty_stream_router,
+    runs_router,
     search_router,
     semantic_checker_router,
+    shell_router,
+    snippet_router,
     subgraph_router,
     tags_router,
     testing_router,
@@ -101,6 +104,38 @@ async def _on_server_startup():
 
     settings = get_instance_settings()
     clear_backend_restart_request()
+
+    # Establish local identities before background services use them. Assemble
+    # the type payload after those services have registered their entity types.
+    from flow_sdk.server.routes.bootstrap import _ensure_local_entities, initialize_bootstrap
+
+    await _ensure_local_entities()
+
+    # A previously enabled direct callback keeps its port across restarts.
+    from flow_sdk.server import webhook_listener
+
+    try:
+        await webhook_listener.restore()
+    except Exception:
+        logging.getLogger(__name__).exception("Direct webhook listener could not start")
+
+    # The two audience doors — one listener per audience a browser can enter this box by.
+    from flow_sdk.server import audience_listener
+
+    try:
+        await audience_listener.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Audience listeners could not start")
+
+    # Start putting activity progress on the socket. Installed HERE rather than at import
+    # time because the emitter captures the running loop to defer its coalesced flushes
+    # onto — at import there is no loop, and every tick would silently go nowhere.
+    try:
+        from flow_sdk.activity.emit import install as _install_activity_emitter
+
+        _install_activity_emitter()
+    except Exception as _e:  # noqa: BLE001 — progress reporting never blocks a boot
+        print(f"  Activity emitter: failed to install ({_e})")
     print(f"  Database path: {get_database_path()}")
 
     # Development: mirror all logs to a file on disk in addition to the
@@ -118,8 +153,8 @@ async def _on_server_startup():
         {
             "port": settings.port,
             "server_pid": os.getpid(),
-            "webhook_path": "/api/v1/webhook/listen",
-            "health_path": "/api/v1/health/status",
+            "server_create_time": psutil.Process(os.getpid()).create_time(),
+            "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
         }
     )
     print(f"  server.json:   {settings.server_json_path}")
@@ -161,12 +196,21 @@ async def _on_server_startup():
         from flow_sdk.core.capabilities.discovery import run_discovery
         from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
 
-        _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
+        async def _discover_after_recovery():
+            from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+
+            await ensure_secret_recovery()
+            await run_discovery()
+            # The sweep is what fills the status record (installed, login); a page already open
+            # read it before the sweep landed, so say it changed.
+            from flow_sdk.core.status import publish_status_changed
+
+            publish_status_changed()
+
+        _asyncio_disc.create_task(_discover_after_recovery(), name="capability-discovery")
         # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
         # indexed records so they exist after boot.
-        _asyncio_disc.create_task(
-            reconcile_mcp_capabilities(), name="mcp-capability-reconcile"
-        )
+        _asyncio_disc.create_task(reconcile_mcp_capabilities(), name="mcp-capability-reconcile")
         print("  Capability discovery: started (background)")
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
@@ -201,6 +245,8 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  PTY recovery: failed to start ({_e})")
 
+    await _start_pty_parked_reaper()
+
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
 
@@ -222,21 +268,141 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Tag forwarding: failed to arm ({_e})")
 
-    # Warm schema cache in background so first bootstrap call is fast
-    import asyncio as _asyncio
-
-    from flow_sdk.core.schema import get_public_schema as _warm_schema
-
-    _asyncio.create_task(_asyncio.to_thread(_warm_schema))
-
+    await _lift_this_computer_placement()
+    await _lift_credential_stores()
+    await _lift_place_settings()
+    await _lift_credential_guides()
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
-    await _start_inbox_catchup()
+    await _start_keep_alive_loop()
+    await _start_session_expiry_loop()
+    await _start_stream_inbox_catchup()
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
+    await _prune_fileless_data_sources()
+    await _migrate_list_configs()
+    await _prune_retired_type_rows()
+    await _prune_web_delivery_rows()
+    await _start_agent_server()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
+    # Startup imports (notably the trigger callbacks) bind additional entity
+    # types and invalidate schema memos. Warming earlier made the first cache
+    # expiry rebuild every schema on the HTTP path (~500 ms).
+    await initialize_bootstrap()
+    await _start_app_ready_signal()
+
+
+async def _start_keep_alive_loop() -> None:
+    """Spawn the once-a-minute keep-alive reporter (``flow_sdk/compute/keep_alive.py``).
+
+    Started on every instance: the hub assigns a node id after boot, and until it
+    does -- on a desktop, forever -- each tick is a config read and nothing else.
+    """
+    import asyncio as _asyncio
+
+    from flow_sdk.compute.keep_alive import run_keep_alive_loop
+
+    _asyncio.create_task(run_keep_alive_loop(), name="keep-alive")
+
+
+async def _start_session_expiry_loop() -> None:
+    """Spawn the live-session length-cap sweep (``run_session_expiry_loop``)."""
+    import asyncio as _asyncio
+
+    from flow_sdk.app.actions.execute_prompt import run_session_expiry_loop
+
+    _asyncio.create_task(run_session_expiry_loop(), name="live-session-expiry")
+
+
+async def _start_app_ready_signal() -> None:
+    """Spawn the detached `app.ready` emitter. Never blocks startup."""
+    try:
+        import asyncio as _asyncio
+
+        _asyncio.create_task(_app_ready_signal(), name="app-ready-signal")
+        print("  App-ready signal: scheduled (background)")
+    except Exception:
+        logging.getLogger(__name__).exception("App-ready signal: failed to start")
+
+
+async def _app_ready_signal() -> None:
+    """Emit ``app.ready`` once this boot, when the app is genuinely usable.
+
+    The four steps below are ordered, and the order is the whole design.
+
+    1. ``first_bootstrap_served`` — "ready" means somebody asked for their
+       world, not merely that the port is open. Only ``/api/v1/graph/bootstrap``
+       sets it, so a health probe does not count.
+    2. Await the system-content index. A wizard shipped in a system project is
+       discovered ONLY by that detached walk.
+    3. Reconcile the wizard triggers, so anything the walk just found is armed.
+    4. Emit.
+
+    Steps 2 and 3 are what make the event mean anything. The bus has no
+    durability: an unarmed subscriber at emit time does not get the event late,
+    it never gets it at all — and nothing anywhere would say why the wizard did
+    not run. Never reorder these.
+
+    It is tempting to also await ``capabilities.ensure_discovered()`` here, so a
+    wizard step that hands work to an agent finds its harness resolved. DON'T —
+    it was tried and it wedges this signal. A sweep runs ``registry.test()`` per
+    capability, which spawns real CLI probes (including a PTY running the claude
+    binary), so the wait is unbounded in practice: measured at over three minutes
+    on a developer machine, and on one where a probe hangs the event never fires
+    at all. It is also unnecessary: ``resolve_default_worker_type`` is a
+    SELECTION lookup over the seeded ``reference_kind``, not an availability
+    probe, and ``Capability.ensure_seeded()`` has already run synchronously
+    above. A harness that is genuinely absent is then reported by the step, which
+    is where that failure belongs.
+
+    Detached and non-raising: the app is already serving by the time this runs,
+    and no failure here may change that.
+    """
+    log = logging.getLogger(__name__)
+    try:
+        from flow_sdk._version import __version__
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.server.builtin_triggers import reap_stale_trigger_rows, reconcile_wizard_triggers
+        from flow_sdk.server.routes.bootstrap import first_bootstrap_served, system_content_ready
+        from flow_sdk.tags import target_of
+        from flow_sdk.tags.bus import make_tag_event, publish_tag
+        from flow_sdk.utils.machine_id import local_entity_id
+
+        await first_bootstrap_served.wait()
+
+        if _system_content_index_task is not None:
+            import asyncio as _asyncio
+
+            await _asyncio.gather(_system_content_index_task, return_exceptions=True)
+
+        await reconcile_wizard_triggers()
+        await reap_stale_trigger_rows()
+        system_content_ready.set()
+
+        # make+publish rather than emit: `emit` returns None when nothing is
+        # subscribed, and this line wants a stable event id in the log either
+        # way — it is the join key the trigger log records as `cause_event_id`.
+        event = publish_tag(
+            make_tag_event(
+                "app.ready",
+                target_of("compute_node", local_entity_id("compute_node")),
+                {
+                    "version": __version__,
+                    "instance": get_instance_settings().instance_name,
+                },
+            )
+        )
+        log.info("[app.ready] emitted event_id=%s", event.id)
+    except Exception:
+        log.exception("App-ready signal failed")
+
+
+#: The detached system-content index task. Held so the app-ready signal can
+#: AWAIT it — a wizard shipped in a system project is only discovered by that
+#: walk, and its trigger is only armed once the row exists.
+_system_content_index_task = None
 
 
 async def _start_system_content_index() -> None:
@@ -247,9 +413,15 @@ async def _start_system_content_index() -> None:
     try:
         import asyncio as _asyncio
 
+        from flow_sdk.fs_store.indexer.auto_index import own_index_task
         from flow_sdk.server.routes.bootstrap import index_system_content
 
-        _asyncio.create_task(index_system_content(), name="system-content-index")
+        global _system_content_index_task
+        # Owned like an auto-index: a factory reset arriving while this pass is
+        # still walking must cancel it, not let it write through the wipe.
+        _system_content_index_task = own_index_task(
+            _asyncio.create_task(index_system_content(), name="system-content-index")
+        )
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")
@@ -270,23 +442,170 @@ async def _prune_orphan_scheduler_jobs() -> None:
         logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
+#: Entity types renamed (0.2.170: data_driver, secret_pack; 0.2.178: secret_pack → credential, its folders
+#: moved by the 0.2.178 migration; later: stream_inbox_manager): their folders re-index (or the singleton
+#: self-heals) under the new type, so a row still carrying the old string is dead weight no index sweep reaches.
+RETIRED_TYPES = ("data_source_spec", "credential_spec", "secret_pack", "inbox_manager", "data_source_cursor")
+
+
+async def _boot_lift(module: str, label: str) -> None:
+    """Run a boot migration's ``lift`` before anything that reads what it moves; log its report when it
+    did something. A failure is logged, never raised: boot goes on."""
+    import importlib
+
+    try:
+        report = await importlib.import_module(f"flow_sdk.migrations.{module}").lift(dry_run=False)
+        if any(getattr(report, name, None) for name in ("stripped", "moved", "failed")):
+            for line in report.lines():
+                logging.getLogger(__name__).info("%s", line)
+    except Exception:
+        logging.getLogger(__name__).exception("%s: lift failed", label)
+
+
+async def _lift_this_computer_placement() -> None:
+    """Deployments lost ``kind``/``slot``: this computer becomes the local node's placement, extra agent
+    slots go — before anything reads this computer (``migration_2026_09_this_computer_placement``)."""
+    await _boot_lift("migration_2026_09_this_computer_placement", "This computer placement")
+
+
+async def _lift_credential_stores() -> None:
+    """Where credential values live moves off pre-0.2.178 ``credential.json`` files onto deployments —
+    before anything that reads a credential starts (``migration_2026_09_credential_stores``)."""
+    await _boot_lift("migration_2026_09_credential_stores", "Credential stores")
+
+
+async def _lift_place_settings() -> None:
+    """A data source's per-machine settings move out of ``data_source.json`` into its credential — before
+    any source reads them (``migration_2026_09_place_settings``)."""
+    await _boot_lift("migration_2026_09_place_settings", "Place settings")
+
+
+async def _lift_credential_guides() -> None:
+    """An authored credential's inline guide moves into ``setup.md`` beside it
+    (``migration_2026_09_credential_setup_md``)."""
+    await _boot_lift("migration_2026_09_credential_setup_md", "Credential guides")
+
+
+async def _prune_retired_type_rows() -> None:
+    try:
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db.drivers.query import QueryFilter
+        from flow_sdk.fs_store.orphan_removal import remove_orphan_row
+
+        for type_name in RETIRED_TYPES:
+            for record in await get_db_driver().get_all(QueryFilter(type=type_name)):
+                await remove_orphan_row(str(record.id), type_name)
+    except Exception:
+        logging.getLogger(__name__).exception("Retired entity types: prune failed")
+
+
+#: The one supervisor of the agent deployments running on this machine (``builtin/agent_serve``).
+_AGENT_SERVER = None
+
+#: The background transcript catch-up walk (``_transcript_catch_up_walk``), held
+#: so ``_shutdown_extras`` can cancel it and its child process with it.
+_TRANSCRIPT_CATCH_UP_TASK = None
+
+
+async def _start_agent_server() -> None:
+    """Every running local agent deployment's process runs (and its ``chat`` channel exists)."""
+    global _AGENT_SERVER
+    try:
+        from flow_sdk.builtin.agent_serve import AgentServer
+        from flow_sdk.config import default_service_config
+
+        _AGENT_SERVER = AgentServer(
+            run_processes=default_service_config.agent_run_deployments,
+            watch_seconds=default_service_config.agent_watch_seconds,
+        )
+        await _AGENT_SERVER.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Agent server: start failed")
+    try:
+        # The task ledger's runtime: dispatch subagent runs, deliver task news, feed the Tasks channel.
+        from flow_sdk.tasks import runtime as task_runtime
+
+        task_runtime.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Task runtime: start failed")
+    try:
+        # The local person's Tasks channel: their tasks as threads in their stream inbox.
+        from flow_sdk.tasks.cos import ensure_user_tasks_channel
+
+        await ensure_user_tasks_channel()
+    except Exception:
+        logging.getLogger(__name__).exception("Tasks channel: ensure failed")
+
+
+async def _prune_web_delivery_rows() -> None:
+    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go — and so do the
+    per-app endpoint rows from before a placement's ``admin`` / ``app`` proxies."""
+    try:
+        from flow_sdk.builtin.webapp_placement import prune_delivery_rows
+
+        pruned = await prune_delivery_rows()
+        if pruned:
+            print(f"  Web apps: dropped {pruned} delivery row(s) — builds are served by their endpoints")
+        from flow_sdk.builtin.webapp_placement import prune_per_app_endpoints
+
+        folded = await prune_per_app_endpoints()
+        if folded:
+            print(f"  Web apps: dropped {folded} per-app endpoint row(s) — apps are routes of their audience proxy")
+    except Exception:
+        logging.getLogger(__name__).exception("Web apps: pruning delivery rows failed")
+
+
+async def _prune_fileless_data_sources() -> None:
+    """A configured data source is an asset now; rows with no ``data_source.json`` go, with their records."""
+    try:
+        from flow_sdk.builtin.data_source import prune_fileless_data_sources
+
+        pruned = await prune_fileless_data_sources()
+        if pruned:
+            print(f"  Data sources: removed {pruned} source(s) with no data_source.json")
+    except Exception:
+        logging.getLogger(__name__).exception("Data sources: file-less prune failed")
+
+
+async def _migrate_list_configs() -> None:
+    """One source reads one stream: a stored config listing N containers becomes N sources."""
+    try:
+        from flow_sdk.builtin.data_source import migrate_list_configs
+
+        split = await migrate_list_configs()
+        if split:
+            print(f"  Data sources: split {split} list config(s) into one source per entry")
+    except Exception:
+        logging.getLogger(__name__).exception("Data sources: list-config split failed")
+
+
 async def _seed_service_triggers() -> None:
     """Upsert built-in system triggers (toplog filter watcher, etc.). Must run
     before `_start_fsop_watcher()` so the watcher's startup walk finds them."""
     try:
-        from flow_sdk.server.builtin_triggers import set_service_triggers
+        from flow_sdk.server.builtin_triggers import seed_service_entities
 
-        await set_service_triggers()
-        # Seed the system-scope service flows (mini-analyzer, daily-analysis).
-        try:
-            from flow_sdk.flow_manager.service_flows import set_service_flows
-
-            await set_service_flows()
-        except Exception:
-            logging.getLogger(__name__).exception("set_service_flows failed")
+        await seed_service_entities()
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
+
+
+async def _start_pty_parked_reaper() -> None:
+    """Start the PtyRegistry sweep that drops parked connection ids.
+
+    Every page reload parks its (per-page-load) connection id on each shell it
+    watched, and nothing but this loop removes an id that never reconnects.
+    Started with no TTL on purpose: the loop reaps parked ids only and never
+    closes a PTY (the orphan close is a separate, untaken product decision).
+    """
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await pty_registry.start_cleanup_task()
+        print("  PTY parked-id reaper: started (background, periodic)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  PTY parked-id reaper: failed to start ({_e})")
 
 
 async def _start_fsop_watcher() -> None:
@@ -300,9 +619,27 @@ async def _start_fsop_watcher() -> None:
 
         await start_tag_triggers()
         # Arm graph-level flow subscriptions (flow-events phase 5).
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        await get_flow_manager().arm_all_flow_subscriptions()
+        await get_graph_workflow_manager().arm_all_flow_subscriptions()
+        # Arm every stream inbox lane (ingested cloud records → conversations, and mail
+        # to an agent's own mailbox → that agent). Backend subscribers rather
+        # than GraphWorkflows on purpose: it must not be possible to break your
+        # stream inbox by editing a graph. `start_stream_inbox` owns the order they depend on.
+        from flow_sdk.stream_inbox import start_stream_inbox
+
+        start_stream_inbox()
+        # Arm the data-source change lane. Any producer — a webhook relay, a
+        # CLI, a scheduler — announces a change with the same envelope, and this
+        # is what makes the bus the way in rather than each producer needing a
+        # private path to the ingest subsystem.
+        from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
+
+        subscribe_source_changes()
+        # A source that declares a mirror has its dataset made the mirror of its records after every sync.
+        from flow_sdk.datasets.projection import start_dataset_projection
+
+        start_dataset_projection()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -316,7 +653,10 @@ async def _start_transcript_streamer() -> None:
     for files that haven't changed since startup, and folder-mode FSOp catch-up
     is intentionally skipped. The walk lazily constructs a streamer per file
     (full initial parse via ``AgentTranscriptFile.__init__``), then
-    ``parse_delta()`` flushes everything as one chunk to subscribers.
+    ``parse_delta()`` flushes everything as one chunk to subscribers, and
+    releases the streamer again unless a subscriber claimed the session —
+    on a fresh instance "pending" is every transcript on the machine, and a
+    parsed copy of each would otherwise sit in memory for the idle TTL.
 
     The walk runs as a background task (not awaited in the lifespan) so the
     server reaches the listen phase immediately — users may have thousands
@@ -337,7 +677,13 @@ async def _start_transcript_streamer() -> None:
             get_instance_settings().transcript_cursors_path,
         )
         await transcript_streamer_registry.start_idle_sweeper()
-        _asyncio.create_task(_transcript_catch_up_walk(), name="transcript-catch-up")
+        # Held so shutdown can cancel it: the walk drives a child process, and
+        # a cancelled walk kills the child with it (``stream_ndjson``).
+        global _TRANSCRIPT_CATCH_UP_TASK
+        _TRANSCRIPT_CATCH_UP_TASK = _asyncio.create_task(
+            _transcript_catch_up_walk(),
+            name="transcript-catch-up",
+        )
         print("  Transcript streamer: started (catch-up scheduled in background)")
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer: failed to start")
@@ -350,6 +696,13 @@ async def _transcript_catch_up_walk() -> None:
     cursor store filters out every file whose size/mtime is unchanged since
     it was last consumed — so a routine restart parses only what actually
     changed while the server was down, not the full history.
+
+    The parse itself runs in a child process (``transcript_streamer.catch_up``):
+    on a fresh instance "pending" is every transcript on the machine, and
+    parsing them in this process held the GIL for the whole walk. Only files a
+    process owns (or could adopt) come back through ``registry.catch_up``
+    here; the rest get a cursor row. Whatever the child did not finish — or
+    all of it, where a child cannot be spawned — takes the in-process loop.
     """
     try:
         import asyncio as _asyncio
@@ -383,19 +736,22 @@ async def _transcript_catch_up_walk() -> None:
             return pending, total
 
         pending, total = await _asyncio.to_thread(_discover)
-        scanned = 0
-        for jsonl in pending:
+        from flow_sdk.transcript_streamer.catch_up import catch_up_via_child
+
+        remaining = await catch_up_via_child(pending)
+        scanned = len(pending) - len(remaining)
+        for jsonl in remaining:
             try:
-                await transcript_streamer_registry.notify_change(jsonl)
+                await transcript_streamer_registry.catch_up(jsonl)
                 scanned += 1
             except Exception:
-                logging.getLogger(__name__).exception(
-                    "Transcript streamer catch-up failed for %s", jsonl
-                )
+                logging.getLogger(__name__).exception("Transcript streamer catch-up failed for %s", jsonl)
         await transcript_streamer_registry.flush_cursors()
         logging.getLogger(__name__).info(
             "Transcript streamer catch-up: parsed %d of %d JSONL(s) (%d fresh, skipped)",
-            scanned, total, total - len(pending),
+            scanned,
+            total,
+            total - len(pending),
         )
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer catch-up failed")
@@ -408,6 +764,7 @@ async def _start_notification_scanner() -> None:
 
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User as _User
+
         local_user = await _User.get_one({"uname": "local"})
         if local_user:
             _asyncio.create_task(scan_incoming_notifications(local_user.id))
@@ -415,41 +772,32 @@ async def _start_notification_scanner() -> None:
         print(f"  Notification scanner: failed to start ({e})")
 
 
-async def _start_inbox_catchup() -> None:
+async def _start_stream_inbox_catchup() -> None:
     """Pull any FlowMessages that landed on the hub while the app was offline.
 
-    The hub WebSocket only pushes live events; it does not replay history on
-    (re)connect, so a user who closes the app overnight and reopens it would
-    otherwise see an empty inbox until something else (manual refresh, an
-    inbound live message, ...) triggers a fetch. This sweep closes that gap.
+    Startup is only ONE of the two catch-up transitions — logging in is the
+    other, and it runs the same sweep from ``cloud_login._finalize_login``
+    (this one bails on ``hub_auth_available()`` when the app boots logged out).
+    See ``flow_sdk.stream_inbox.catchup`` for why the sweep exists at all.
     """
-    import asyncio as _asyncio
+    import asyncio
 
-    async def _run() -> None:
+    async def _run():
+        from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+        from flow_sdk.stream_inbox.catchup import start_hub_catchup
+
+        await ensure_secret_recovery()
+        start_hub_catchup("startup")
+        # Prompts already delivered and approved whose turn never ran (or died
+        # mid-run) — the catch-up cannot see those, they are already local.
+        from flow_sdk.app.actions.execute_prompt import recover_interrupted_sessions
+
         try:
-            from flow_sdk.app.actions.flow_message_action import handle_conversation_list
-            from flow_sdk.builtin.user import User as _User
-            from flow_sdk.cli.auth.hub_login import hub_auth_available
+            await recover_interrupted_sessions()
+        except Exception as e:  # noqa: BLE001 — never block startup
+            logging.warning("[session] startup recovery sweep failed: %s", e)
 
-            # No cloud session → the hub would 401 every conversation/invitation
-            # call. Skip the catch-up entirely instead of logging 401 warnings
-            # on every offline startup.
-            if not hub_auth_available():
-                return
-            local_user = await _User.get_one({"uname": "local"})
-            if not local_user:
-                return
-            resp = await handle_conversation_list(local_user.typeid)
-            data = getattr(resp, "data", None) or {}
-            dispatched = data.get("bg_fetch_dispatched") or []
-            if dispatched:
-                logging.getLogger(__name__).info(
-                    "Inbox catch-up: queued bundle fetch for %d conversation(s)", len(dispatched),
-                )
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).info("Inbox catch-up skipped: %s", exc)
-
-    _asyncio.create_task(_run())
+    asyncio.create_task(_run(), name="stream-inbox-catchup-startup")
 
 
 async def _start_cloud_ws_listener() -> None:
@@ -460,11 +808,19 @@ async def _start_cloud_ws_listener() -> None:
         try:
             from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
             from flow_sdk.cloud_client.ws_client import hub_ws_manager
+            from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+
+            await ensure_secret_recovery()
 
             # Install the bridge before starting the manager so the inbound
             # dispatcher is ready to consume frames the moment the WS connects.
             hub_ws_bridge.install()
-            await hub_ws_manager.start()
+            await hub_ws_manager.start(wait_connected=True)
+            # The hub's own answer to "who am I" is what makes this box signed in to FlowPad
+            # (``core.status.hub_status``): a stored credential is only a claim until the hub
+            # names the same user. Asked once here, at boot, rather than on a UI's request.
+            if hub_ws_manager.is_connected:
+                await hub_ws_manager.verify_current_user()
         except Exception as e:
             logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
 
@@ -473,7 +829,36 @@ async def _start_cloud_ws_listener() -> None:
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
+    import asyncio as _asyncio
+
     from flow_sdk.config import clear_server_info
+    from flow_sdk.server import audience_listener, webhook_listener
+
+    await _asyncio.gather(webhook_listener.stop(), audience_listener.stop())
+
+    if _AGENT_SERVER is not None:
+        try:
+            await _AGENT_SERVER.stop()
+        except Exception:
+            logging.getLogger(__name__).debug("Agent server: stop failed", exc_info=True)
+
+    # Symmetric with the start above: the runtime subscribes to `task.*` on the
+    # process-wide bus, so a shutdown that leaves it subscribed leaves a live
+    # dispatcher behind — it kept claiming tasks created after the server it
+    # belonged to was gone.
+    try:
+        from flow_sdk.tasks import runtime as task_runtime
+
+        task_runtime.stop()
+    except Exception:
+        logging.getLogger(__name__).debug("Task runtime: stop failed", exc_info=True)
+
+    try:
+        from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
+
+        clear_process_hook_callbacks()
+    except Exception:
+        pass
 
     # Close the process-shared outbound hub HTTP client (kept alive across calls
     # so its TLS context isn't rebuilt per request — see hub_http._hub_client).
@@ -507,6 +892,26 @@ async def _shutdown_extras():
     except Exception:
         pass
 
+    # Stop the PtyRegistry parked-id reaper loop
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await pty_registry.stop_cleanup_task()
+    except Exception:
+        pass
+
+    # Cancel the catch-up walk if it is still running: its child process is
+    # killed by the cancellation, so it cannot outlive the server and keep
+    # parsing transcripts for nobody.
+    global _TRANSCRIPT_CATCH_UP_TASK
+    task, _TRANSCRIPT_CATCH_UP_TASK = _TRANSCRIPT_CATCH_UP_TASK, None
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except BaseException:  # CancelledError is the expected outcome
+            pass
+
     # Stop the TranscriptStreamer idle sweeper. Streamer dict drops with the
     # process — no other cleanup needed.
     try:
@@ -517,7 +922,16 @@ async def _shutdown_extras():
         pass
 
     print("Shutting down minihub server...")
-    clear_server_info()
+    create_time = None
+    try:
+        create_time = psutil.Process(os.getpid()).create_time()
+    except Exception:
+        pass
+    clear_server_info(
+        expected_pid=os.getpid(),
+        expected_create_time=create_time,
+        expected_generation=os.environ.get("FLOWPAD_SERVICE_GENERATION"),
+    )
     print("Shutdown complete.")
 
 
@@ -525,8 +939,8 @@ server = FlowServer()
 server.add_router(auth_router)
 server.add_router(cloud_router)
 server.add_router(privacy_router)
+server.add_router(browser_profiles_router)
 server.add_router(hooks_router)
-server.add_router(chat_router)
 server.add_router(directory_router)
 server.add_router(detection_router)
 server.add_router(search_router)
@@ -534,13 +948,28 @@ server.add_router(testing_router)
 server.add_router(ui_router)
 server.add_router(watch_router)
 server.add_router(websocket_router)
+# Ahead of the graph catch-all (added by FlowServer after every app router): the
+# endpoint proxy needs the raw body and a WebSocket route, which the graph has neither of.
+from .routes.service_endpoint import router as service_endpoint_router  # noqa: E402
+
+server.add_router(service_endpoint_router)
 server.add_router(webhook_api_router)
+server.add_router(data_source_webhook_router)
+from flow_sdk.server.routes.tasks import router as task_ledger_router  # noqa: E402
+
+server.add_router(task_ledger_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
-server.add_router(compute_register_router)
 server.add_router(debug_router)
+server.add_router(ingest_router)
+server.add_router(runs_router)
 server.add_router(tags_router)
+server.add_router(display_router)
+server.add_router(snippet_router)
+server.add_router(shell_router)
+server.add_router(asset_share_router)
 server.add_router(subgraph_router)
+server.add_router(ask_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)
@@ -549,11 +978,14 @@ server.add_router(version_router)
 server.add_router(favorites_router)
 server.add_router(markdown_index_router, prefix="/api/v1")
 server.add_router(pty_stream_router, prefix="/api/v1")
+server.add_router(activity_router)
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
+server.add_router(kinds_router)
 server.add_router(toplog_router)
-server.add_router(agentic_flows_router)
+server.add_router(graph_workflows_router)
+server.add_router(agents_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)
@@ -587,6 +1019,49 @@ def _get_assets_path() -> Path | None:
 _assets_path = _get_assets_path()
 if _assets_path and _assets_path.exists():
     app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
+
+
+# ── Type icons (/icons/<file>) ───────────────────────────────────────────────
+# ``TypeInfo.icon`` may name a lucide glyph OR a file this backend serves; the
+# frontend absolutises the second against THIS origin (ts_sdk ``iconAssetUrl``).
+# Backend origin, not the frontend's, because the file is declared by the type
+# registry — a plugin's bespoke glyph is something only this server knows about
+# and only this server can hand out.
+#
+# Its own directory rather than ``server/static/`` (see that directory's
+# README): a dev backend has no built ``static/`` at all, and packaging wipes it
+# wholesale, so a checked-in icon would not survive either.
+def _get_type_icons_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "server" / "icons"
+    return Path(__file__).parent / "icons"
+
+
+_type_icons_path = _get_type_icons_path()
+if _type_icons_path.exists():
+    app.mount("/icons", StaticFiles(directory=str(_type_icons_path)), name="type-icons")
+
+
+# ── Icon pack assets (/icon-packs/<kind>/<file>) ─────────────────────────────
+# An ``icon_pack`` asset lives in whatever scope holds it, so no static mount can
+# name its directory: the registry knows which folder serves each kind, and only
+# files inside that folder are served. A pack that failed validation or collides
+# with another has no folder here, and only files a validated icon names are
+# handed out -- never a rejected SVG that happens to sit in the folder.
+@app.get("/icon-packs/{kind}/{asset_path:path}", include_in_schema=False)
+async def icon_pack_file(kind: str, asset_path: str):
+    from fastapi import HTTPException  # noqa: PLC0415
+    from fastapi.responses import FileResponse  # noqa: PLC0415
+
+    from flow_sdk.icons import icons  # noqa: PLC0415
+
+    target = icons.served_file(kind, asset_path)
+    if target is None:
+        await icons.sync_indexed()
+        target = icons.served_file(kind, asset_path)
+    if target is None:
+        raise HTTPException(status_code=404, detail="icon not found")
+    return FileResponse(target, media_type="image/svg+xml", headers={"Content-Security-Policy": "script-src 'none'"})
 
 
 # ── Root-level public files ──────────────────────────────────────────────────
@@ -636,9 +1111,28 @@ def _get_sdk_path() -> Path | None:
         return Path(__file__).parent / "static" / "sdk"
 
 
+import flow_sdk.builtin.faas.serve_static  # noqa: E402, F401 -- registers .js/.mjs as JavaScript for /sdk too
+
+
+class _RevalidatedStaticFiles(StaticFiles):
+    """Static files that are always revalidated (ETag/304), never heuristically cached.
+
+    ``/sdk/flowpad-sdk.js`` is a FIXED name whose body changes on every SDK
+    build (it imports a hashed chunk). Without a Cache-Control header the
+    browser caches it heuristically and a served app keeps importing the
+    PREVIOUS build's chunk long after a rebuild — observed as an iframe app
+    running an SDK that predates a just-added entity class.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 _sdk_path = _get_sdk_path()
 if _sdk_path and _sdk_path.exists():
-    app.mount("/sdk", StaticFiles(directory=str(_sdk_path)), name="sdk")
+    app.mount("/sdk", _RevalidatedStaticFiles(directory=str(_sdk_path)), name="sdk")
 
 # ── SPA fallback ─────────────────────────────────────────────────────────────
 from fastapi import Request as _Request
@@ -656,7 +1150,8 @@ async def _spa_fallback(request: _Request, full_path: str):
         if candidate.exists():
             # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
             # hit the serving backend, not the bundle's baked URL.
-            return serve_index_html(candidate.read_text())
+            # encoding= on purpose: the shell is UTF-8, the host codepage is not.
+            return serve_index_html(candidate.read_text(encoding="utf-8"))
     return _HTMLResponse(content="UI not found", status_code=404)
 
 
@@ -726,6 +1221,7 @@ def wait_for_login_callback(timeout_sec: int = None):
         timeout_sec = int(timeout_str) if timeout_str else 30
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     port = get_instance_settings().port
 
     # Start server in daemon thread
@@ -748,6 +1244,7 @@ def wait_for_login_callback(timeout_sec: int = None):
 if __name__ == "__main__":
     setup_defaults()
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     port = get_instance_settings().port
     print(f"Starting minihub server on http://127.0.0.1:{port}")
     start_server(port)

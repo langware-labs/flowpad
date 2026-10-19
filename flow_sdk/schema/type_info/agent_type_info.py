@@ -1,41 +1,50 @@
-"""Type metadata for AGENT."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
-from flow_sdk.fs_store.indexer.functions.agent import (
-    extract_agent,
-)
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+"""Type metadata for AGENT — the launchable agent (identity + launch bundle).
+
+A flowpad-native REPO asset at ``agentic-assets/agent/<name>/``, found by the shared
+``repo_assets_fn`` walker via its main document. It is an ENTITY DOCUMENT: every field lives in
+``agent.json`` (``type``, ``id``, ``name``, then the spec's fields) and the system prompt beside it
+in ``system_prompt.md``. A folder still carrying the retired ``agent.md`` is reported, not indexed,
+until ``migration_2026_09_entity_json_mains`` converts it.
+Distinct from SUBAGENT, which is the provider-owned ``.claude/agents/*.md``.
+"""
+from contextlib import asynccontextmanager
+
+from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
 
-def _agent_default_body(entity) -> str:
-    """Agent .md written to the agent's main_ref on create.
+@asynccontextmanager
+async def _agent_document_edit(path, patch, *, project_id=None):
+    # Imported on use: a type declaration loads without the application layer.
+    from flow_sdk.builtin.agent_authoring import agent_document_edit  # noqa: PLC0415
 
-    Mirrors Skill/Workflow/Spec: without a default-body writer, create persists
-    the entity + asset_ref but never materializes the backing .md, leaving a
-    dangling pointer the editor reports as "file not found". Frontmatter shape
-    (name/description) is what ``parse_agent_markdown`` reads back; the body is
-    the agent's system prompt.
-    """
-    name = (getattr(entity, "name", None) or "Untitled Agent").strip()
-    desc = (getattr(entity, "description", None) or "").strip()
-    prompt = (getattr(entity, "prompt", None) or "").strip()
-    return render_entity_frontmatter(entity, {"name": name, "description": desc}) + f"\n\n{prompt}\n"
+    async with agent_document_edit(path, patch, project_id=project_id):
+        yield
 
 
-AGENT = TypeMetadata(
-    type=EntityType.AGENT,
-    displayName="Agents",
-    from_disk_fn=extract_agent,
-    capsules=(IDENTITY_CAPSULE,),
-    identity_backend=capsule_identity(frontmatter_id),
-    indexed_by_default=True,
+AGENT = TypeInfo(
+    type_name=EntityType.AGENT,
+    display_name="Agents",
+    # Not Bot — that is SUBAGENT's; Brain/BrainCircuit are claude_memory/graph_context.
+    icon="BrainCog",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
+    indexed_by_default=True,
     api_visible=True,
-    icon="Bot",
+    cloud_file_transport="git",
     index_fields=["description"],
-    asset_class="shared",
-    family="agents",
-    default_body_fn=_agent_default_body,
+    asset_class="repo",
+    family="agent",
+    editor="agent",
+    name_from_path=True,
+    fts_content=("system_prompt",),
+    asset_spec=AgentSpec,
+    # The entity document: fields in agent.json, the prompt in system_prompt.md, the id in agent.json.
+    retired_mains=("agent.md",),
+    # The entity is the authoring surface for its fields, so it re-renders
+    # the document on every save rather than writing once.
+    owns_main_ref=True,
+    document_edit_context=_agent_document_edit,
 )

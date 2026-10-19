@@ -32,7 +32,6 @@ import {
   Clock,
   Command,
   Cpu,
-  DollarSign,
   FileText,
   FolderOpen,
   GitBranch,
@@ -207,7 +206,7 @@ export function LiveStatus() {
     { id: 'sessions', label: t`Sessions`, icon: Clock, badge: historyEntries.length },
     { id: 'skills', label: t`Skills`, icon: Sparkles, badge: filteredData?.skills.length },
     { id: 'commands', label: t`Commands`, icon: Command, badge: filteredData?.commands.length },
-    { id: 'agents', label: t`Agents`, icon: Bot, badge: filteredData?.agents.length },
+    { id: 'agents', label: t`Sub-agents`, icon: Bot, badge: filteredData?.agents.length },
     { id: 'plugins', label: t`Plugins`, icon: Plug, badge: filteredData?.plugins.length },
     { id: 'hooks', label: t`Hooks`, icon: Settings, badge: filteredData?.hooks.length },
     { id: 'directories', label: t`Directories`, icon: FolderOpen },
@@ -222,14 +221,15 @@ export function LiveStatus() {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-background">
         <FusionSpinner size="lg" className="text-primary" />
-        <p className="mt-2 text-sm text-muted-foreground"><Trans>Loading system profile...</Trans></p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          <Trans>Loading system profile...</Trans>
+        </p>
       </div>
     );
   }
 
   // Error state - but don't block projects tab which uses its own data fetching
   if ((error || !data) && !skipFullFetch) {
-    const { t } = useLingui();
     return (
       <div className="flex h-full flex-col items-center justify-center bg-background">
         <div className="text-center">
@@ -252,7 +252,9 @@ export function LiveStatus() {
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Terminal className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium"><Trans>Claude Code Status</Trans></span>
+        <span className="text-sm font-medium">
+          <Trans>Claude Code Status</Trans>
+        </span>
         {data?.machine && <span className="text-xs text-muted-foreground">• {data.machine}</span>}
 
         {/* Scope Filter */}
@@ -266,11 +268,17 @@ export function LiveStatus() {
               project: newScope === 'project' ? selectedProjectEncoded : null,
             });
           }}
-          className="ml-auto h-6 rounded border border-border bg-background px-1.5 text-xs"
+          className="ms-auto h-6 rounded border border-border bg-background px-1.5 text-xs"
         >
-          <option value="all"><Trans>All</Trans></option>
-          <option value="global"><Trans>Global</Trans></option>
-          <option value="project"><Trans>Project</Trans></option>
+          <option value="all">
+            <Trans>All</Trans>
+          </option>
+          <option value="global">
+            <Trans>Global</Trans>
+          </option>
+          <option value="project">
+            <Trans>Project</Trans>
+          </option>
         </select>
 
         {/* Project Picker - only when scope = project */}
@@ -286,7 +294,9 @@ export function LiveStatus() {
             }}
             className="h-6 max-w-[150px] rounded border border-border bg-background px-1.5 text-xs"
           >
-            <option value=""><Trans>All Projects</Trans></option>
+            <option value="">
+              <Trans>All Projects</Trans>
+            </option>
             {[...data.projects]
               .sort((a, b) => b.session_count - a.session_count)
               .map((p) => (
@@ -321,7 +331,7 @@ export function LiveStatus() {
               <span>{section.label}</span>
               {section.badge !== undefined && Number(section.badge) > 0 && (
                 <span
-                  className={`ml-0.5 rounded-full px-1 text-[10px] ${
+                  className={`ms-0.5 rounded-full px-1 text-[10px] ${
                     isActive ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted-foreground/20'
                   }`}
                 >
@@ -346,7 +356,12 @@ export function LiveStatus() {
         {activeSection === 'directories' && filteredData && <DirectoriesSection data={filteredData} />}
         {activeSection === 'repos' && filteredData && <ReposSection data={filteredData} />}
         {activeSection === 'sessions' && (
-          <SessionsSection entries={historyEntries} isLoading={historyLoading} selectedItemId={currentDock?.options?.item} navigation={navigation} />
+          <SessionsSection
+            entries={historyEntries}
+            isLoading={historyLoading}
+            selectedItemId={currentDock?.options?.item}
+            navigation={navigation}
+          />
         )}
         {activeSection === 'projects' && <ProjectsSection />}
         {activeSection === 'plans' && filteredData && <PlansSection data={filteredData} />}
@@ -371,7 +386,9 @@ function SummarySection({ data, onNavigate }: { data: SystemProfile; onNavigate:
       <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
         <HardDrive className="h-4 w-4 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] text-muted-foreground"><Trans>Current Directory</Trans></p>
+          <p className="text-[10px] text-muted-foreground">
+            <Trans>Current Directory</Trans>
+          </p>
           <p className="truncate font-mono text-xs">{data.summary.currentDirectory}</p>
         </div>
       </div>
@@ -384,7 +401,9 @@ function SummarySection({ data, onNavigate }: { data: SystemProfile; onNavigate:
       />
 
       {/* Generated timestamp */}
-      <p className="text-center text-[10px] text-muted-foreground"><Trans>Updated: {data.generated}</Trans></p>
+      <p className="text-center text-[10px] text-muted-foreground">
+        <Trans>Updated: {data.generated}</Trans>
+      </p>
     </div>
   );
 }
@@ -396,26 +415,6 @@ function formatNumber(num: number): string {
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
   return num.toLocaleString();
-}
-
-/**
- * Format bytes to human readable
- */
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
-
-/**
- * Format currency
- */
-function formatCurrency(usd: number): string {
-  if (usd >= 100) return `$${usd.toFixed(0)}`;
-  if (usd >= 1) return `$${usd.toFixed(2)}`;
-  if (usd >= 0.01) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(4)}`;
 }
 
 /**
@@ -510,7 +509,9 @@ function TranscriptsSection({
     return (
       <div className="flex h-32 items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="ml-2 text-sm text-muted-foreground"><Trans>Loading transcript data...</Trans></span>
+        <span className="ms-2 text-sm text-muted-foreground">
+          <Trans>Loading transcript data...</Trans>
+        </span>
       </div>
     );
   }
@@ -519,8 +520,12 @@ function TranscriptsSection({
     return (
       <div className="text-center text-sm text-muted-foreground">
         <BarChart3 className="mx-auto mb-2 h-8 w-8 opacity-50" />
-        <p><Trans>No transcript data available</Trans></p>
-        <p className="text-xs"><Trans>Session data will appear after using Claude Code</Trans></p>
+        <p>
+          <Trans>No transcript data available</Trans>
+        </p>
+        <p className="text-xs">
+          <Trans>Session data will appear after using Claude Code</Trans>
+        </p>
       </div>
     );
   }
@@ -570,9 +575,24 @@ function TranscriptsSection({
         </h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <TokenBar label={t`Input`} value={stats.totalInputTokens} total={totalTokens + cacheTokens} color="blue" />
-          <TokenBar label={t`Output`} value={stats.totalOutputTokens} total={totalTokens + cacheTokens} color="purple" />
-          <TokenBar label={t`Cache Read`} value={stats.totalCacheRead} total={totalTokens + cacheTokens} color="green" />
-          <TokenBar label={t`Cache Write`} value={stats.totalCacheCreation} total={totalTokens + cacheTokens} color="orange" />
+          <TokenBar
+            label={t`Output`}
+            value={stats.totalOutputTokens}
+            total={totalTokens + cacheTokens}
+            color="purple"
+          />
+          <TokenBar
+            label={t`Cache Read`}
+            value={stats.totalCacheRead}
+            total={totalTokens + cacheTokens}
+            color="green"
+          />
+          <TokenBar
+            label={t`Cache Write`}
+            value={stats.totalCacheCreation}
+            total={totalTokens + cacheTokens}
+            color="orange"
+          />
         </div>
       </div>
 
@@ -592,7 +612,9 @@ function TranscriptsSection({
                   <span className="text-xs text-muted-foreground">
                     {count} {count === 1 ? t`response` : t`responses`}
                     {model === stats.primaryModel && (
-                      <span className="ml-1 rounded bg-blue-500/10 px-1 text-[10px] text-blue-600"><Trans>primary</Trans></span>
+                      <span className="ms-1 rounded bg-blue-500/10 px-1 text-[10px] text-blue-600">
+                        <Trans>primary</Trans>
+                      </span>
                     )}
                   </span>
                 </div>
@@ -614,7 +636,7 @@ function TranscriptsSection({
               .map(([tool, count]) => (
                 <div key={tool} className="rounded bg-muted/50 px-2 py-1">
                   <span className="font-mono text-xs font-medium">{tool}</span>
-                  <span className="ml-1 text-xs text-muted-foreground">({count})</span>
+                  <span className="ms-1 text-xs text-muted-foreground">({count})</span>
                 </div>
               ))}
           </div>
@@ -627,15 +649,25 @@ function TranscriptsSection({
           <h3 className="mb-2 flex items-center gap-2 text-xs font-medium">
             <FileText className="h-3.5 w-3.5 text-blue-500" />
             <Trans>Recent Transcripts</Trans>
-            <span className="text-[10px] text-muted-foreground"><Trans>Click to view</Trans></span>
+            <span className="text-[10px] text-muted-foreground">
+              <Trans>Click to view</Trans>
+            </span>
           </h3>
 
           {/* Table Header */}
           <div className="grid grid-cols-[1fr_80px_60px_60px] gap-2 border-b border-border px-2 py-1 text-[10px] font-medium text-muted-foreground">
-            <span><Trans>Session</Trans></span>
-            <span><Trans>Messages</Trans></span>
-            <span><Trans>Tokens</Trans></span>
-            <span><Trans>Duration</Trans></span>
+            <span>
+              <Trans>Session</Trans>
+            </span>
+            <span>
+              <Trans>Messages</Trans>
+            </span>
+            <span>
+              <Trans>Tokens</Trans>
+            </span>
+            <span>
+              <Trans>Duration</Trans>
+            </span>
           </div>
 
           {/* Session Rows - show up to 20, deduplicated by session_id */}
@@ -650,15 +682,19 @@ function TranscriptsSection({
                   key={entry.id}
                   onClick={() => handleEntryClick(entry)}
                   disabled={!hasSession}
-                  className={`grid w-full grid-cols-[1fr_80px_60px_60px] items-center gap-2 rounded px-2 py-1.5 text-left transition-colors ${
-                    hasSession ? 'cursor-pointer hover:bg-primary/5 hover:text-primary' : 'cursor-not-allowed opacity-60'
+                  className={`grid w-full grid-cols-[1fr_80px_60px_60px] items-center gap-2 rounded px-2 py-1.5 text-start transition-colors ${
+                    hasSession
+                      ? 'cursor-pointer hover:bg-primary/5 hover:text-primary'
+                      : 'cursor-not-allowed opacity-60'
                   }`}
                   title={s?.jsonl_path || undefined}
                 >
                   <div className="flex min-w-0 items-center gap-1.5">
                     {s?.status && <SessionStatusDot status={s.status} />}
                     <div className="min-w-0">
-                      <span className="block truncate font-mono text-[10px]">{s?.cwd || entry.display?.slice(0, 60) || entry.name}</span>
+                      <span className="block truncate font-mono text-[10px]">
+                        {s?.cwd || entry.display?.slice(0, 60) || entry.name}
+                      </span>
                       <span className="block text-[9px] text-muted-foreground">
                         {entry.timestamp_ms ? new Date(entry.timestamp_ms).toLocaleString() : ''}
                       </span>
@@ -756,24 +792,14 @@ function TokenBar({
 }
 
 /**
- * Cost Item Component
- */
-function CostItem({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded bg-muted/50 px-2 py-1">
-      <p className="text-[10px] text-muted-foreground">{label}</p>
-      <p className="text-xs font-medium">{formatCurrency(value)}</p>
-    </div>
-  );
-}
-
-/**
  * Plugins Section
  */
 function PluginsSection({ data }: { data: SystemProfile }) {
   return (
     <div className="space-y-3">
-      <h3 className="text-xs font-medium text-muted-foreground"><Trans>Installed Plugins</Trans></h3>
+      <h3 className="text-xs font-medium text-muted-foreground">
+        <Trans>Installed Plugins</Trans>
+      </h3>
       {data.plugins.length > 0 ? (
         <div className="space-y-2">
           {data.plugins.map((plugin: PluginItem) => (
@@ -789,10 +815,14 @@ function PluginsSection({ data }: { data: SystemProfile }) {
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground"><Trans>No plugins installed</Trans></p>
+        <p className="text-xs text-muted-foreground">
+          <Trans>No plugins installed</Trans>
+        </p>
       )}
 
-      <h3 className="mt-4 text-xs font-medium text-muted-foreground"><Trans>Marketplaces</Trans></h3>
+      <h3 className="mt-4 text-xs font-medium text-muted-foreground">
+        <Trans>Marketplaces</Trans>
+      </h3>
       {data.marketplaces.length > 0 ? (
         data.marketplaces.map((mp: MarketplaceItem) => (
           <div key={mp.id} className="rounded-lg bg-muted/50 px-2 py-1.5">
@@ -801,7 +831,9 @@ function PluginsSection({ data }: { data: SystemProfile }) {
           </div>
         ))
       ) : (
-        <p className="text-xs text-muted-foreground"><Trans>No marketplaces configured</Trans></p>
+        <p className="text-xs text-muted-foreground">
+          <Trans>No marketplaces configured</Trans>
+        </p>
       )}
     </div>
   );
@@ -817,7 +849,11 @@ function HooksSection({ data }: { data: SystemProfile }) {
   const [hookToDelete, setHookToDelete] = useState<HookItem | null>(null);
 
   if (data.hooks.length === 0) {
-    return <p className="text-xs text-muted-foreground"><Trans>No hooks configured</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>No hooks configured</Trans>
+      </p>
+    );
   }
 
   // Helper to truncate from the beginning, showing end of string
@@ -889,12 +925,24 @@ function HooksSection({ data }: { data: SystemProfile }) {
     <div className="space-y-1">
       {/* Table Header */}
       <div className="grid grid-cols-[100px_55px_60px_minmax(150px,1fr)_minmax(120px,200px)_60px] gap-2 border-b border-border px-2 py-1 text-[10px] font-medium text-muted-foreground">
-        <span><Trans>Event</Trans></span>
-        <span><Trans>Scope</Trans></span>
-        <span><Trans>Matcher</Trans></span>
-        <span><Trans>Command</Trans></span>
-        <span><Trans>Location</Trans></span>
-        <span className="text-center"><Trans>Actions</Trans></span>
+        <span>
+          <Trans>Event</Trans>
+        </span>
+        <span>
+          <Trans>Scope</Trans>
+        </span>
+        <span>
+          <Trans>Matcher</Trans>
+        </span>
+        <span>
+          <Trans>Command</Trans>
+        </span>
+        <span>
+          <Trans>Location</Trans>
+        </span>
+        <span className="text-center">
+          <Trans>Actions</Trans>
+        </span>
       </div>
 
       {/* Table Rows */}
@@ -1022,7 +1070,11 @@ function DirectoriesSection({ data }: { data: SystemProfile }) {
  */
 function ReposSection({ data }: { data: SystemProfile }) {
   if (data.githubRepos.length === 0) {
-    return <p className="text-xs text-muted-foreground"><Trans>No GitHub repos linked</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>No GitHub repos linked</Trans>
+      </p>
+    );
   }
 
   return (
@@ -1074,13 +1126,19 @@ function SessionsSection({
     return (
       <div className="flex items-center gap-2 py-4">
         <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        <span className="text-xs text-muted-foreground"><Trans>Loading sessions...</Trans></span>
+        <span className="text-xs text-muted-foreground">
+          <Trans>Loading sessions...</Trans>
+        </span>
       </div>
     );
   }
 
   if (entries.length === 0) {
-    return <p className="text-xs text-muted-foreground"><Trans>No recent sessions</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>No recent sessions</Trans>
+      </p>
+    );
   }
 
   return (
@@ -1121,9 +1179,7 @@ function SessionsSection({
               )}
               {s?.cwd && <span className="flex-1 truncate font-mono text-[10px] text-muted-foreground">{s.cwd}</span>}
               {s?.git_branch && (
-                <span className="rounded bg-blue-500/10 px-1 py-0.5 text-[10px] text-blue-600">
-                  {s.git_branch}
-                </span>
+                <span className="rounded bg-blue-500/10 px-1 py-0.5 text-[10px] text-blue-600">{s.git_branch}</span>
               )}
             </div>
 
@@ -1200,8 +1256,12 @@ function ProjectsSection() {
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <FolderOpen className="mx-auto h-8 w-8 text-muted-foreground/50" />
-          <p className="mt-2 text-sm text-muted-foreground"><Trans>No projects found</Trans></p>
-          <p className="text-xs text-muted-foreground"><Trans>Run Claude Code in a project directory to see it here.</Trans></p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            <Trans>No projects found</Trans>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Run Claude Code in a project directory to see it here.</Trans>
+          </p>
         </div>
       </div>
     );
@@ -1266,7 +1326,9 @@ function ProjectResourcesDashboard({
     return (
       <div className="flex h-32 items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="ml-2 text-sm text-muted-foreground"><Trans>Loading project resources...</Trans></span>
+        <span className="ms-2 text-sm text-muted-foreground">
+          <Trans>Loading project resources...</Trans>
+        </span>
       </div>
     );
   }
@@ -1276,7 +1338,11 @@ function ProjectResourcesDashboard({
   }
 
   if (!resources) {
-    return <p className="text-xs text-muted-foreground"><Trans>Select a project to view resources</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>Select a project to view resources</Trans>
+      </p>
+    );
   }
 
   const { summary, sessions, hooks, mcp_servers, total_session_count } = resources;
@@ -1298,7 +1364,8 @@ function ProjectResourcesDashboard({
           <div>
             <p className="text-sm font-bold">{summary.sessions}</p>
             <p className="text-[10px] text-muted-foreground">
-              <Trans>Sessions</Trans>{total_session_count > summary.sessions && ` (${total_session_count} total)`}
+              <Trans>Sessions</Trans>
+              {total_session_count > summary.sessions && ` (${total_session_count} total)`}
             </p>
           </div>
         </div>
@@ -1306,21 +1373,27 @@ function ProjectResourcesDashboard({
           <Settings className="h-4 w-4 text-orange-500" />
           <div>
             <p className="text-sm font-bold">{summary.hooks}</p>
-            <p className="text-[10px] text-muted-foreground"><Trans>Hooks</Trans></p>
+            <p className="text-[10px] text-muted-foreground">
+              <Trans>Hooks</Trans>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-2">
           <Plug className="h-4 w-4 text-green-500" />
           <div>
             <p className="text-sm font-bold">{summary.mcp_servers}</p>
-            <p className="text-[10px] text-muted-foreground"><Trans>MCP Servers</Trans></p>
+            <p className="text-[10px] text-muted-foreground">
+              <Trans>MCP Servers</Trans>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-2">
           <Sparkles className="h-4 w-4 text-purple-500" />
           <div>
             <p className="text-sm font-bold">{summary.skills}</p>
-            <p className="text-[10px] text-muted-foreground"><Trans>Skills</Trans></p>
+            <p className="text-[10px] text-muted-foreground">
+              <Trans>Skills</Trans>
+            </p>
           </div>
         </div>
       </div>
@@ -1328,7 +1401,9 @@ function ProjectResourcesDashboard({
       {/* Recent sessions */}
       {sessions.length > 0 && (
         <div className="rounded-lg border border-border bg-card p-3">
-          <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>Recent Sessions</Trans></h3>
+          <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+            <Trans>Recent Sessions</Trans>
+          </h3>
           <div className="space-y-1">
             {sessions.slice(0, 5).map((session) => (
               <div key={session.id} className="flex items-center justify-between rounded bg-muted/50 px-2 py-1">
@@ -1339,7 +1414,9 @@ function ProjectResourcesDashboard({
               </div>
             ))}
             {sessions.length > 5 && (
-              <p className="text-center text-[10px] text-muted-foreground"><Trans>+{sessions.length - 5} more</Trans></p>
+              <p className="text-center text-[10px] text-muted-foreground">
+                <Trans>+{sessions.length - 5} more</Trans>
+              </p>
             )}
           </div>
         </div>
@@ -1348,7 +1425,9 @@ function ProjectResourcesDashboard({
       {/* MCP Servers */}
       {mcp_servers.length > 0 && (
         <div className="rounded-lg border border-border bg-card p-3">
-          <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>MCP Servers</Trans></h3>
+          <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+            <Trans>MCP Servers</Trans>
+          </h3>
           <div className="space-y-1">
             {mcp_servers.map((server) => (
               <div key={server.id} className="rounded bg-muted/50 px-2 py-1">
@@ -1362,7 +1441,9 @@ function ProjectResourcesDashboard({
       {/* Hooks */}
       {hooks.length > 0 && (
         <div className="rounded-lg border border-border bg-card p-3">
-          <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>Hooks</Trans></h3>
+          <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+            <Trans>Hooks</Trans>
+          </h3>
           <div className="space-y-1">
             {hooks.map((hook) => (
               <div key={hook.id} className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1">
@@ -1375,7 +1456,9 @@ function ProjectResourcesDashboard({
       )}
 
       {/* Scanned timestamp */}
-      <p className="text-center text-[10px] text-muted-foreground"><Trans>Scanned: {resources.scanned_at}</Trans></p>
+      <p className="text-center text-[10px] text-muted-foreground">
+        <Trans>Scanned: {resources.scanned_at}</Trans>
+      </p>
     </div>
   );
 }
@@ -1385,7 +1468,11 @@ function ProjectResourcesDashboard({
  */
 function PlansSection({ data }: { data: SystemProfile }) {
   if (data.plans.length === 0) {
-    return <p className="text-xs text-muted-foreground"><Trans>No saved plans</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>No saved plans</Trans>
+      </p>
+    );
   }
 
   return (
@@ -1411,7 +1498,11 @@ function TodosSection({ data }: { data: SystemProfile }) {
   const todos = data.todos || [];
 
   if (todos.length === 0) {
-    return <p className="text-xs text-muted-foreground"><Trans>No todo files found (~/.claude/todos/)</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>No todo files found (~/.claude/todos/)</Trans>
+      </p>
+    );
   }
 
   // Filter out empty todos if hideEmpty is checked
@@ -1431,7 +1522,9 @@ function TodosSection({ data }: { data: SystemProfile }) {
     <div className="space-y-3">
       {/* Header with filter */}
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-medium text-muted-foreground"><Trans>Todo Files (~/.claude/todos/)</Trans></h3>
+        <h3 className="text-xs font-medium text-muted-foreground">
+          <Trans>Todo Files (~/.claude/todos/)</Trans>
+        </h3>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -1461,7 +1554,9 @@ function TodosSection({ data }: { data: SystemProfile }) {
             <div className="flex items-center gap-2">
               <span className="truncate font-mono text-xs">{todo.name}</span>
               {todo.is_sub_agent && (
-                <span className="rounded bg-purple-500/10 px-1 py-0.5 text-[10px] text-purple-600"><Trans>sub-agent</Trans></span>
+                <span className="rounded bg-purple-500/10 px-1 py-0.5 text-[10px] text-purple-600">
+                  <Trans>sub-agent</Trans>
+                </span>
               )}
             </div>
             <span className="text-[10px] text-muted-foreground">
@@ -1477,7 +1572,9 @@ function TodosSection({ data }: { data: SystemProfile }) {
               </span>
               <span>
                 {todo.in_progress_count > 0 && (
-                  <span className="text-yellow-600">{todo.in_progress_count} <Trans>in progress</Trans></span>
+                  <span className="text-yellow-600">
+                    {todo.in_progress_count} <Trans>in progress</Trans>
+                  </span>
                 )}
               </span>
             </div>
@@ -1541,8 +1638,12 @@ function IDESection({ data }: { data: SystemProfile }) {
         <Cpu className="h-5 w-5 text-green-500" />
       </div>
       <div>
-        <p className="text-lg font-bold">{data.ideConnections} <Trans>Active</Trans></p>
-        <p className="text-xs text-muted-foreground"><Trans>IDE Connections (VS Code, Cursor, etc.)</Trans></p>
+        <p className="text-lg font-bold">
+          {data.ideConnections} <Trans>Active</Trans>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          <Trans>IDE Connections (VS Code, Cursor, etc.)</Trans>
+        </p>
       </div>
     </div>
   );
@@ -1556,20 +1657,26 @@ function SkillsSection({ data }: { data: SystemProfile }) {
     <div className="space-y-4">
       {/* Skills */}
       <div>
-        <h3 className="mb-1 text-xs font-medium text-muted-foreground"><Trans>Skills (~/.claude/skills/)</Trans></h3>
+        <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+          <Trans>Skills (~/.claude/skills/)</Trans>
+        </h3>
         {data.skills.length > 0 ? (
           <div className="space-y-1">
             {data.skills.map((skill: SkillItem) => (
               <div key={skill.id} className="flex items-center justify-between rounded bg-muted/50 px-2 py-1">
                 <span className="font-mono text-xs">{skill.name}</span>
                 {skill.usage_count > 0 && (
-                  <span className="text-xs text-muted-foreground">{skill.usage_count} <Trans>uses</Trans></span>
+                  <span className="text-xs text-muted-foreground">
+                    {skill.usage_count} <Trans>uses</Trans>
+                  </span>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground"><Trans>No skills installed</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>No skills installed</Trans>
+          </p>
         )}
       </div>
     </div>
@@ -1588,7 +1695,9 @@ function CommandsSection({ data }: { data: SystemProfile }) {
     <div className="space-y-4">
       {/* Global Commands */}
       <div>
-        <h3 className="mb-1 text-xs font-medium text-muted-foreground"><Trans>Global Commands (~/.claude/commands/)</Trans></h3>
+        <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+          <Trans>Global Commands (~/.claude/commands/)</Trans>
+        </h3>
         {globalCommands.length > 0 ? (
           <div className="space-y-1">
             {globalCommands.map((cmd: CommandItem) => (
@@ -1598,13 +1707,17 @@ function CommandsSection({ data }: { data: SystemProfile }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground"><Trans>None</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>None</Trans>
+          </p>
         )}
       </div>
 
       {/* Project Commands */}
       <div>
-        <h3 className="mb-1 text-xs font-medium text-muted-foreground"><Trans>Project Commands (.claude/commands/)</Trans></h3>
+        <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+          <Trans>Project Commands (.claude/commands/)</Trans>
+        </h3>
         {projectCommands.length > 0 ? (
           <div className="space-y-1">
             {projectCommands.map((cmd: CommandItem) => (
@@ -1614,7 +1727,9 @@ function CommandsSection({ data }: { data: SystemProfile }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground"><Trans>None</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>None</Trans>
+          </p>
         )}
       </div>
     </div>
@@ -1633,7 +1748,9 @@ function AgentsSection({ data }: { data: SystemProfile }) {
     <div className="space-y-4">
       {/* Global Agents */}
       <div>
-        <h3 className="mb-1 text-xs font-medium text-muted-foreground"><Trans>Global Agents (~/.claude/agents/)</Trans></h3>
+        <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+          <Trans>Global Agents (~/.claude/agents/)</Trans>
+        </h3>
         {globalAgents.length > 0 ? (
           <div className="space-y-1">
             {globalAgents.map((agent: AgentItem) => (
@@ -1644,13 +1761,17 @@ function AgentsSection({ data }: { data: SystemProfile }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground"><Trans>None</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>None</Trans>
+          </p>
         )}
       </div>
 
       {/* Project Agents */}
       <div>
-        <h3 className="mb-1 text-xs font-medium text-muted-foreground"><Trans>Project Agents (.claude/agents/)</Trans></h3>
+        <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+          <Trans>Project Agents (.claude/agents/)</Trans>
+        </h3>
         {projectAgents.length > 0 ? (
           <div className="space-y-1">
             {projectAgents.map((agent: AgentItem) => (
@@ -1661,7 +1782,9 @@ function AgentsSection({ data }: { data: SystemProfile }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground"><Trans>None</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>None</Trans>
+          </p>
         )}
       </div>
     </div>

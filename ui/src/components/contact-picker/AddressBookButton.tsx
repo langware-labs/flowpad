@@ -6,19 +6,8 @@ import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Input } from '@src/components/ui/input';
 import { ContactPermissionsDialog } from '@src/components/conversation/ContactPermissionsDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
-import {
-  filterContacts,
-  participantFromContact,
-  participantKey,
-  useContacts,
-} from './use-contacts';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 
 interface AddressBookButtonProps {
   /** Currently selected contacts (shared with the sibling ContactPicker). */
@@ -71,10 +60,7 @@ export function AddressBookButton({
     }
   };
 
-  const selectedKeys = useMemo(
-    () => new Set(value.map(participantKey).filter(Boolean)),
-    [value],
-  );
+  const selectedKeys = useMemo(() => new Set(value.map(participantKey).filter(Boolean)), [value]);
 
   const toggle = (u: User) => {
     const participant = participantFromContact(u);
@@ -121,11 +107,7 @@ export function AddressBookButton({
                 data-testid={`${testId}-refresh`}
                 title={t`Scan conversations for new contacts`}
               >
-                {refreshing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
+                {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                 <Trans>Refresh</Trans>
               </Button>
             </DialogTitle>
@@ -160,7 +142,7 @@ export function AddressBookButton({
                     <button
                       type="button"
                       onClick={() => setDetailFor(u)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-start"
                       title={t`View contact details`}
                       data-testid={`${testId}-open-${u.id}`}
                     >
@@ -171,9 +153,7 @@ export function AddressBookButton({
                           aria-label={t`Known by user id only`}
                         />
                       )}
-                      {u.name && u.email && (
-                        <span className="truncate text-xs text-muted-foreground">{u.email}</span>
-                      )}
+                      {u.name && u.email && <span className="truncate text-xs text-muted-foreground">{u.email}</span>}
                     </button>
                   </div>
                 );
@@ -189,13 +169,7 @@ export function AddressBookButton({
         </DialogContent>
       </Dialog>
 
-      {detailFor && (
-        <ContactPermissionsDialog
-          open
-          onClose={() => setDetailFor(null)}
-          user={detailFor}
-        />
-      )}
+      {detailFor && <ContactPermissionsDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
     </>
   );
 }

@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.flow_message import (
     FILE_VFS_PREFIX,
     PROMPT_FILE_VFS_PREFIX,

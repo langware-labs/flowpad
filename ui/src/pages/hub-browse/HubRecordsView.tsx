@@ -1,7 +1,8 @@
 import { PageId, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
+import { hubEntityDock } from '@src/lib/hub-page-url';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 
@@ -22,13 +23,22 @@ import { Trans } from '@lingui/react/macro';
 // SDK's canonical label getter, present on every hydrated entity).
 type Row = { id?: string; displayName?: string };
 
-// Plural list headings for the rail-reachable types; anything else falls back to
-// the raw type string.
-const TYPE_LABEL: Record<string, string> = {
-  conversation: 'Conversations',
+/**
+ * Headings for the types the RAIL points at — the rail's slot name, not the type's
+ * name, so the page reads as the icon the user clicked.
+ *
+ * These deliberately differ from the registry's `display_name`, which is the word
+ * for the *type* ("Documents" for markdown, "Task" for task) and is mirrored from
+ * flow_sdk so desk and hub agree. A rail slot is free to be called something else
+ * — "Stream Inbox" is not what a `conversation` is — so this cannot be sourced from
+ * `labelForType`. It can't be sourced from the rail either: those titles come from
+ * a lingui macro tag, which returns an empty string once passed across a module
+ * boundary. Anything not listed falls back to the registry word.
+ */
+const RAIL_HEADING: Record<string, string> = {
+  conversation: 'Stream Inbox',
   task: 'Tasks',
   markdown: 'Docs',
-  agentic_flow: 'Flows',
 };
 
 export function HubRecordsView({ type }: { type?: string }) {
@@ -53,11 +63,13 @@ export function HubRecordsView({ type }: { type?: string }) {
     if (type === 'conversation') {
       navigation.openPage(PageId.HUB, ViewType.CONVERSATION, row.id);
     } else {
-      navigation.openPage(PageId.HUB, ViewType.HUB_ENTITY, `${type}/${row.id}`);
+      navigation.openDock(hubEntityDock(type, row.id));
     }
   };
 
-  const label = (type && TYPE_LABEL[type]) || type || 'Records';
+  // `labelForType` (registry `display_name`, else the generic title-caser) rather
+  // than the raw type string, so a type with no rail slot still reads as a word.
+  const label = (type && (RAIL_HEADING[type] || labelForType(type))) || 'Records';
   const RowIcon = iconForType(type ?? '');
 
   return (
@@ -66,9 +78,13 @@ export function HubRecordsView({ type }: { type?: string }) {
         <h1 className="text-xl font-semibold">{label}</h1>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground"><Trans>Loading…</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </p>
         ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground"><Trans>Nothing here yet.</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Nothing here yet.</Trans>
+          </p>
         ) : (
           <div className="flex flex-col gap-2">
             {rows.map((row) => (
@@ -76,7 +92,7 @@ export function HubRecordsView({ type }: { type?: string }) {
                 key={row.id}
                 type="button"
                 onClick={() => open(row)}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+                className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-start transition-colors hover:bg-accent"
               >
                 <RowIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.displayName || row.id}</span>

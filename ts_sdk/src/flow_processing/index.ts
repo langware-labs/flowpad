@@ -22,7 +22,7 @@ export { decodeXMLEntities, KeyGenerator, parseAttributes, waitForChunks } from 
 export { ShellCmdFlowData as ShellInputFlowData } from './flow-data-types/shell-input';
 export type { ShellCmd } from './flow-data-types/shell-input';
 export { ShellOutputFlowData } from './flow-data-types/shell-output';
-export type { ShellResult } from './flow-data-types/shell-output';
+export type { ShellOutput } from './flow-data-types/shell-output';
 
 // FlowDataStream
 export { FlowDataStream } from './flow-data-stream';

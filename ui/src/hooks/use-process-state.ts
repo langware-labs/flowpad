@@ -31,7 +31,7 @@ export function useProcessState(process: AgenticProcess | null | undefined): {
         error: process.error,
       };
     } else {
-      snapshotRef.current = { status: ProcessStatus.NEW, workerStatus: null, completed: false, error: null };
+      snapshotRef.current = { status: ProcessStatus.NEW, completed: false, error: null };
     }
   }, [process]);
 

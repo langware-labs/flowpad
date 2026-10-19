@@ -1,0 +1,136 @@
+import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
+import { surfaceForViewMode, ViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { chatTargetForProject } from '@src/lib/chat-target';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
+import { embedStandardAgent } from './embed-standard-agent';
+import type { NavigationActions } from './NavigationActions';
+
+export interface OpenNewChatOptions {
+  workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
+  projectId?: string;
+  /** Working directory; defaults to the active project's mount path. */
+  cwd?: string;
+  /** The surface to open in; defaults to the mode on screen. */
+  mode?: ViewMode;
+  /** The session's first prompt — typed into a terminal, sent as the first turn of a chat. */
+  prompt?: string;
+  /** What the chat is ABOUT (an entity TypeId or a VFS path), in place of its project. */
+  targetVfsPath?: string;
+  /** Entity TypeIds the session starts with in its context. */
+  sharedContextEntities?: string[];
+}
+
+/**
+ * THE way a front-face "open a chat" action starts a session.
+ *
+ * One chain, so the chat mode propagates the same way from every entry point —
+ * the chats side-menu, the + tab, quick-create, fork. It is deliberately NOT for
+ * task runners (wizard, run-on-file, skill eval, analysis, worktree, error
+ * recovery): those pin their own transport and must never follow a UI
+ * preference.
+ *
+ * The view mode is the one read, and decides all three of the below. It is the
+ * mode ON SCREEN — the dock URL's `?viewMode=` when it carries one, else the
+ * saved preference — not the saved preference alone: loading a mode from the
+ * URL only displays it (the preference is saved on a switch), so a page
+ * showing Terminal from its URL over a saved Standard spawned a headless chat
+ * and flipped the user out of the mode they were looking at.
+ *
+ *   - TRANSPORT: only the terminal surface runs an interactive PTY; vibe and
+ *     chat are headless print-mode.
+ *   - SURFACE: the mode rides `?viewMode=` on the process's own shell URL, so the
+ *     URL alone reproduces what the user sees.
+ *   - PERSONA: only the chat surface embeds the `standard` agent, which carries
+ *     the `flow show` presentation contract. Terminal is a raw passthrough, and
+ *     vibe embeds `vibe` through its own creation path.
+ *
+ * IDENTITY is NOT mode-dependent, and that is the point of the two stamps
+ * below. A chat started here is a `ProcessKind.Chat` keyed to its project — the
+ * same pair `createVibeProcessForProject` writes — because a chat is a chat
+ * whichever mode it was born in. They were previously omitted, so every session
+ * from this path landed with `process_type` and `target_typeid_str` null and was
+ * invisible to every consumer that filters on them: Vibe's "Past builds"
+ * (`useProcessesForTarget`) and the agent home page's last-chat
+ * resolver (`lastVibeChatQuery`) both do.
+ */
+export async function openNewChat(
+  navigation: Pick<NavigationActions, 'openShellProcess'>,
+  options: OpenNewChatOptions = {},
+): Promise<AgenticProcess | null> {
+  const computeNode: ComputeNode | null = dataContext.computeNode;
+  if (!computeNode) {
+    console.error('[openNewChat] No compute node');
+    return null;
+  }
+  // An opener that names no surface opens a TERMINAL — the same as the strip's
+  // openers. The home prompt and Vibe's New/Recent pass Vibe explicitly.
+  const mode = options.mode ?? ViewMode.Advanced;
+  const ptyMode = viewModePtyMode(mode);
+  const project = dataContext.project;
+  const projectId = options.projectId ?? project?.id;
+  toplog.log(
+    'agentic_process.load',
+    `openNewChat click worker=${options.workerType ?? 'default'} mode=${mode} pty=${ptyMode} visibility=${document.visibilityState}`,
+  );
+
+  // Remembered BEFORE the spawn, so the strip's quick-launch slot reflects the
+  // user's pick (vendor + shape) even when the harness turns out to be missing.
+  if (options.workerType) rememberLaunch(workerToOpener(options.workerType), mode);
+
+  const target = options.targetVfsPath ?? (projectId ? chatTargetForProject(projectId) : undefined);
+  const tCreate = performance.now();
+  const process = await computeNode.createProcess(
+    {
+      // `?? undefined`: a project with no mount path has `null` there, and `workdir`
+      // is an optional string — undefined drops off the wire, null would be sent.
+      workdir: options.cwd || project?.fs_storage_mount_path || undefined,
+      ...(projectId ? { projectId } : {}),
+      ...(options.workerType ? { workerType: options.workerType } : {}),
+      processType: ProcessKind.Chat,
+      // Keyed to the project, matching `chatTargetForProject`, unless the caller
+      // says what the chat is about (a review of one document). Omitted
+      // without one: a target is an attachment key, and a bare literal shared
+      // by every project-less chat would collide them into one bucket.
+      ...(target ? { targetVfsPath: target } : {}),
+      ...(options.sharedContextEntities?.length ? { sharedContextEntities: options.sharedContextEntities } : {}),
+      // Headless surfaces stream the transcript as JSON; a PTY has no such stream.
+      ...(ptyMode ? {} : { outputFormat: 'stream-json' as const }),
+    },
+    {
+      watchProcess: false,
+      visible: ptyMode,
+      pty_mode: ptyMode,
+      // A PTY takes its first prompt at launch; a headless chat is prompted
+      // below, once its persona is embedded.
+      ...(ptyMode && options.prompt ? { launchPrompt: options.prompt } : {}),
+    },
+  );
+
+  toplog.log(
+    'agentic_process.load',
+    `openNewChat createProcess took ${(performance.now() - tCreate).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+  );
+
+  const tNav = performance.now();
+  await navigation.openShellProcess(process.id, { viewMode: mode });
+  toplog.log(
+    'agentic_process.load',
+    `openNewChat openShellProcess took ${(performance.now() - tNav).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+  );
+  // Chat surface only: terminal is a raw PTY passthrough where the user drives
+  // the CLI directly, and vibe embeds its own persona via
+  // createVibeProcessForProject. Awaited before returning so a caller that
+  // prompts on the returned process can't race the load-embedded-subagent round
+  // trip — the persona has to be on disk before the FIRST turn, since
+  // prepare_system_instruction_assets() builds the system prompt per turn.
+  // Never throws (see embedStandardAgent), so the `void openNewChat(...)`
+  // callers keep their existing failure semantics.
+  if (surfaceForViewMode(mode) === 'chat') {
+    await embedStandardAgent(process);
+  }
+  if (!ptyMode && options.prompt) {
+    process.prompt(options.prompt).catch((e) => console.error('[openNewChat] first prompt failed', e));
+  }
+  return process;
+}

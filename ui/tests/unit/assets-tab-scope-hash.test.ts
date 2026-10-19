@@ -75,6 +75,19 @@ describe('assets scoped identity survives persistence', () => {
     expect(skill).toBe(agent);
     expect(JSON.parse(skill!).pointer).toBe('');
   });
+
+  it('preserves content classification without changing scoped identity', () => {
+    const list = DockPointer.forAssetList('markdown', { scope: A });
+    const editor = DockPointer.forAssetEditor('markdown', '/p/doc.md').withScopeFilter(A);
+
+    expect(editor.tabHash).toBe(list.tabHash);
+    expect(JSON.parse(list.toJSON()!)).not.toHaveProperty('workspaceContent');
+    expect(JSON.parse(editor.toJSON()!)).toMatchObject({
+      pointer: '',
+      tabHash: `assets|project:${PA}`,
+      workspaceContent: true,
+    });
+  });
 });
 
 describe('regression — non-asset tabHash is unchanged', () => {

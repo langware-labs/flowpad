@@ -1,26 +1,28 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
-import { IEntity } from '../IEntity';
+import { EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { IWebDomain } from './web-domain-types';
+export type * from './web-domain-types';
 
-export interface IWebDomain extends IEntity {
-  domain: string;
-  verified?: boolean;
-  micro_app_id: string;
-}
+// `implements IWebDomain` only checks the class; it contributes no members, so every
+// field declared solely on IWebDomain read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface WebDomain extends EntityMerge<IWebDomain> {}
 
 @registerEntity
 export class WebDomain extends APIEntity<WebDomain> implements IWebDomain {
   static type: string = 'web_domain';
   domain!: string;
   verified?: boolean;
-  micro_app_id!: string;
+  service_endpoint_id?: string | null;
 
   constructor(entity: Partial<IWebDomain> = {}) {
     super(entity);
     this.domain = entity.domain || '';
     this.verified = entity.verified;
-    this.micro_app_id = entity.micro_app_id || '';
+    this.service_endpoint_id = entity.service_endpoint_id ?? null;
   }
 
   public static async getByName(name: string): Promise<WebDomain | undefined> {

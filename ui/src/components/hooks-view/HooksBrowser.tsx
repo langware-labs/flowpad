@@ -80,7 +80,10 @@ function groupHooksBy(
       groupMap.get(g.name)!.push(hook);
       if (!inserted.has(g.name)) {
         inserted.set(g.name, g.source);
-        result.push({ type: 'group', group: { groupName: g.name, groupSource: g.source, hooks: groupMap.get(g.name)! } });
+        result.push({
+          type: 'group',
+          group: { groupName: g.name, groupSource: g.source, hooks: groupMap.get(g.name)! },
+        });
       }
     } else {
       result.push({ type: 'single', hook });
@@ -510,7 +513,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           {isExpanded ? (
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:-scale-x-100" />
           )}
           {hook.plugin_name && (
             <Badge variant="outline" className="shrink-0 border-blue-300 px-1 py-0 text-[10px] text-blue-600">
@@ -542,7 +545,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
               {hookPath(hook.source_file)}
             </span>
           )}
-          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <div className="ms-auto flex shrink-0 items-center gap-0.5">
             {hook.source_file && (
               <Button
                 type="button"
@@ -597,37 +600,57 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
         {isExpanded && (
           <div className="space-y-1.5 border-t bg-muted/20 px-8 py-3 text-xs">
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-              <span className="font-semibold text-muted-foreground"><Trans>Name</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>Name</Trans>
+              </span>
               <span>{hook.name}</span>
-              <span className="font-semibold text-muted-foreground"><Trans>Hook Type</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>Hook Type</Trans>
+              </span>
               <span>{hook.hook_type}</span>
-              <span className="font-semibold text-muted-foreground"><Trans>Matcher</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>Matcher</Trans>
+              </span>
               <span className="font-mono">{hook.matcher || '*'}</span>
-              <span className="font-semibold text-muted-foreground"><Trans>Command</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>Command</Trans>
+              </span>
               <span className="break-all font-mono">{hook.command}</span>
               {hook.source_file && (
                 <>
-                  <span className="font-semibold text-muted-foreground"><Trans>Source File</Trans></span>
+                  <span className="font-semibold text-muted-foreground">
+                    <Trans>Source File</Trans>
+                  </span>
                   <span className="break-all">{hook.source_file}</span>
                 </>
               )}
               {hook.path && (
                 <>
-                  <span className="font-semibold text-muted-foreground"><Trans>Path</Trans></span>
+                  <span className="font-semibold text-muted-foreground">
+                    <Trans>Path</Trans>
+                  </span>
                   <span className="break-all">{hook.path}</span>
                 </>
               )}
-              <span className="font-semibold text-muted-foreground"><Trans>ID</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>ID</Trans>
+              </span>
               <span className="font-mono">{hook.id}</span>
               {eventCount > 0 && (
                 <>
-                  <span className="font-semibold text-muted-foreground"><Trans>Calls</Trans></span>
+                  <span className="font-semibold text-muted-foreground">
+                    <Trans>Calls</Trans>
+                  </span>
                   <span>{eventCount}</span>
                 </>
               )}
-              <span className="font-semibold text-muted-foreground"><Trans>Modified</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>Modified</Trans>
+              </span>
               <span>{formatDate(hook.modified_at)}</span>
-              <span className="font-semibold text-muted-foreground"><Trans>Created</Trans></span>
+              <span className="font-semibold text-muted-foreground">
+                <Trans>Created</Trans>
+              </span>
               <span>{formatDate(hook.created_at)}</span>
             </div>
           </div>
@@ -652,7 +675,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                     type="button"
                     size="sm"
                     variant={editorScope === scope ? 'secondary' : 'ghost'}
-                    className={cn(i === 0 ? 'rounded-l-md rounded-r-none' : 'rounded-l-none rounded-r-md')}
+                    className={cn(i === 0 ? 'rounded-e-none rounded-s-md' : 'rounded-e-md rounded-s-none')}
                     onClick={() => setEditorScope(scope)}
                   >
                     {scope}
@@ -690,7 +713,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t`Search by event, command, matcher, path, scope, or plugin`}
-            className="pl-9"
+            className="ps-9"
           />
         </div>
 
@@ -703,14 +726,14 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
             {SCOPE_OPTIONS.map((scope, index) => {
               const isActive = scopeFilter === scope;
               const roundedClass =
-                index === 0 ? 'rounded-l-md' : index === SCOPE_OPTIONS.length - 1 ? 'rounded-r-md' : 'rounded-none';
+                index === 0 ? 'rounded-s-md' : index === SCOPE_OPTIONS.length - 1 ? 'rounded-e-md' : 'rounded-none';
               return (
                 <Button
                   key={scope}
                   type="button"
                   size="sm"
                   variant={isActive ? 'secondary' : 'ghost'}
-                  className={`${roundedClass} border-r last:border-r-0`}
+                  className={`${roundedClass} border-e last:border-e-0`}
                   onClick={() => setScopeFilter(scope)}
                 >
                   {scopeLabel(scope)}
@@ -720,7 +743,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           </div>
 
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-            <X className="mr-1 h-3.5 w-3.5" />
+            <X className="me-1 h-3.5 w-3.5" />
             <Trans>Clear filters</Trans>
           </Button>
           <Button
@@ -733,11 +756,11 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
               void refresh();
             }}
           >
-            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`me-1 h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             <Trans>Refresh</Trans>
           </Button>
           <Button type="button" variant="default" size="sm" onClick={handleStartCreate} disabled={isEditorOpen}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <Plus className="me-1 h-3.5 w-3.5" />
             <Trans>Add Hook</Trans>
           </Button>
         </div>
@@ -752,9 +775,13 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
 
       <div className="divide-y rounded-lg border">
         {isLoading ? (
-          <div className="py-6 text-center text-sm text-muted-foreground"><Trans>Scanning hooks...</Trans></div>
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            <Trans>Scanning hooks...</Trans>
+          </div>
         ) : sortedHooks.length === 0 ? (
-          <div className="py-6 text-center text-sm text-muted-foreground"><Trans>No hooks match your filters</Trans></div>
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            <Trans>No hooks match your filters</Trans>
+          </div>
         ) : (
           groupedHooks.map((item) => {
             if (item.type === 'group') {
@@ -783,7 +810,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                     {isGroupExpanded ? (
                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     ) : (
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:-scale-x-100" />
                     )}
                     <span className="text-xs font-semibold">{groupName}</span>
                     <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]">
@@ -798,17 +825,14 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                       </Badge>
                     )}
                     {isPluginGroup && (
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-blue-300 px-1 py-0 text-[10px] text-blue-600"
-                      >
+                      <Badge variant="outline" className="shrink-0 border-blue-300 px-1 py-0 text-[10px] text-blue-600">
                         <Trans>plugin</Trans>
                       </Badge>
                     )}
                     {groupTotalCount > 0 && (
                       <Badge
                         variant="default"
-                        className="ml-0.5 min-w-[1.125rem] justify-center rounded-full px-1 py-0 text-[10px] leading-tight"
+                        className="ms-0.5 min-w-[1.125rem] justify-center rounded-full px-1 py-0 text-[10px] leading-tight"
                       >
                         {groupTotalCount}
                       </Badge>
@@ -816,7 +840,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                   </div>
                   {/* Group children */}
                   {isGroupExpanded && (
-                    <div className="ml-3 border-l-2 border-muted-foreground/20">
+                    <div className="ms-3 border-s-2 border-muted-foreground/20">
                       {groupHooks.map((hook) => renderHookRow(hook))}
                     </div>
                   )}

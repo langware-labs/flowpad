@@ -1,18 +1,16 @@
+import { t } from '@lingui/core/macro';
 import { DockLoadError } from './dock-load-error';
 import { describeProcessStartError, type ProcessLoadError } from './load-process';
 
-export function processLoadErrorToDockError(
-  error: ProcessLoadError,
-  source: string,
-): DockLoadError {
+export function processLoadErrorToDockError(error: ProcessLoadError, source: string): DockLoadError {
   if (error.kind === 'entity_not_found') {
     return new DockLoadError(
       'session_not_found',
       'hard',
       {
         action: 'render_error',
-        title: 'Session not found',
-        message: 'Agentic process does not exist.',
+        title: t`Session not found`,
+        message: t`Agentic process does not exist.`,
       },
       source,
       error,
@@ -24,19 +22,15 @@ export function processLoadErrorToDockError(
       error.severity,
       {
         action: 'render_error',
-        title: 'Session unavailable',
-        message: 'Could not reach the backend. Try again in a moment.',
+        title: t`Session unavailable`,
+        message: t`Could not reach the backend. Try again in a moment.`,
         retryable: true,
       },
       source,
       error,
     );
   }
-  if (
-    error.kind === 'runtime_terminated' ||
-    error.kind === 'pty_attach_failed' ||
-    error.kind === 'failed_to_start'
-  ) {
+  if (error.kind === 'runtime_terminated' || error.kind === 'pty_attach_failed' || error.kind === 'failed_to_start') {
     const { title, description } = describeProcessStartError(error.cause ?? error);
     return new DockLoadError(
       `session_${error.kind}`,
@@ -57,8 +51,8 @@ export function processLoadErrorToDockError(
       'soft',
       {
         action: 'render_error',
-        title: 'Project not found',
-        message: "Could not recover this session's project.",
+        title: t`Project not found`,
+        message: t`Could not recover this session's project.`,
       },
       source,
       error,
@@ -69,8 +63,8 @@ export function processLoadErrorToDockError(
     'soft',
     {
       action: 'render_error',
-      title: 'Session unavailable',
-      message: 'No shell is linked to this process.',
+      title: t`Session unavailable`,
+      message: t`No shell is linked to this process.`,
     },
     source,
     error,

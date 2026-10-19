@@ -1,6 +1,8 @@
+import { t } from '@lingui/core/macro';
 import React, { useEffect, useState } from 'react';
 import { ActionInfo, GitWorkdir, type FSRef, dataManager } from '@sdk';
-import { extractBody } from '@sdk/fs/FrontMatterFsRef';
+import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
+const extractBody = (raw: string) => parseFrontmatterDoc(raw).body;
 import { Loader2, RotateCcw, Save } from 'lucide-react';
 import { AssetDiffTabs } from '@src/components/assets/editor/revisions/AssetDiffTabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -34,7 +36,10 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
   onCommitted,
   valueNote,
 }) => {
-  const computeNodeId = skillFile.typeId.id;
+  // `typeId` is protected on FSRef; `localComputeNodeId` is the public accessor
+  // (null for a hub-backed ref, which has no machine to run git on — fall back
+  // to GitWorkdir's own '@local' default).
+  const computeNodeId = skillFile.localComputeNodeId ?? '@local';
   const workdir = skillFile.parent.path;
   const file = skillFile.path.slice(skillFile.path.lastIndexOf('/') + 1);
 
@@ -77,7 +82,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
     try {
       const r = await new GitWorkdir(workdir, computeNodeId).discardFile(file, 'M');
       if (r && r.ok === false) {
-        notify.error({ title: 'Could not discard', message: r.message || 'Discard failed' });
+        notify.error({ title: t`Could not discard`, message: r.message || 'Discard failed' });
         return;
       }
       invalidateGitStatus(computeNodeId, workdir);
@@ -85,7 +90,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
       onCommitted?.();
       onClose();
     } catch (e) {
-      notify.error({ title: 'Discard failed', message: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: t`Discard failed`, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }
@@ -98,15 +103,16 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
       action.bodyParameters = { workdir, file };
       const r = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
       if (r?.committed) {
-        notify.success({ title: `Committed ${skillName} v${r.version}` });
+        const version = r.version ?? '?';
+        notify.success({ title: t`Committed ${skillName} v${version}` });
         invalidateGitStatus(computeNodeId, workdir);
         onCommitted?.();
         onClose();
       } else {
-        notify.info({ title: 'Nothing to commit', message: 'The skill matches HEAD.' });
+        notify.info({ title: t`Nothing to commit`, message: t`The skill matches HEAD.` });
       }
     } catch (e) {
-      notify.error({ title: 'Commit failed', message: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: t`Commit failed`, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }
@@ -118,14 +124,22 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
   const unchanged = ready && oldBody === newBody && !diff;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="flex flex-col" style={{ width: '95vw', maxWidth: '95vw', height: '90vh' }}>
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-medium">
             {skillName}/SKILL.md{' '}
             <span className="text-xs font-normal text-muted-foreground">— improvement vs last version</span>
             {valueNote && (
-              <span className="ml-2 text-[11px] font-normal text-emerald-600 dark:text-emerald-400" data-testid="improvement-value-note">
+              <span
+                className="ms-2 text-[11px] font-normal text-emerald-600 dark:text-emerald-400"
+                data-testid="improvement-value-note"
+              >
                 {valueNote}
               </span>
             )}
@@ -153,7 +167,11 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
             className="text-destructive hover:text-destructive"
             data-testid="improvement-reject"
           >
-            {busy === 'reject' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
+            {busy === 'reject' ? (
+              <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="me-1 h-3.5 w-3.5" />
+            )}
             Reject
           </Button>
           <Button
@@ -162,7 +180,11 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
             disabled={!!busy || unchanged}
             data-testid="improvement-save-version"
           >
-            {busy === 'commit' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+            {busy === 'commit' ? (
+              <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="me-1 h-3.5 w-3.5" />
+            )}
             Save &amp; create version
           </Button>
         </div>

@@ -1,6 +1,6 @@
 /**
  * Machine status types for process and network monitoring on compute nodes.
- * These types mirror the Python Pydantic models in flowpad/hub/types/machine_status.py
+ * These types mirror the Python Pydantic models in hub machine_status.py
  */
 
 import { ExecutionEnvironmentStatus } from './compute-node-types';
@@ -18,7 +18,7 @@ export enum ComputeNodeSize {
  * Display labels for compute node sizes.
  */
 export const ComputeNodeSizeLabels: Record<ComputeNodeSize, string> = {
-  [ComputeNodeSize.SMALL]: 'Small (2 CPU, 1GB)',
+  [ComputeNodeSize.SMALL]: 'Small (2 CPU, 2GB)',
   [ComputeNodeSize.MEDIUM]: 'Medium (4 CPU, 2GB)',
   [ComputeNodeSize.LARGE]: 'Large (8 CPU, 4GB)',
 };

@@ -32,8 +32,8 @@ interface ScopeBarProps<T extends string> {
 
 /**
  * Presentational toggle row used for scope/type filters. Domain-free —
- * AssetsPage wraps it with project-picker logic; AssetPickerPopover uses it
- * directly for both its scope and type filter rows.
+ * AssetsPage wraps it with project-picker logic; the navigators use it
+ * directly through ScopeFilterIconBar.
  */
 export function ScopeBar<T extends string>({
   value,
@@ -79,9 +79,7 @@ export function ScopeBar<T extends string>({
                 <span
                   className={cn(
                     'absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none',
-                    isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground',
+                    isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
                   )}
                 >
                   {opt.count}
@@ -111,9 +109,7 @@ export function ScopeBar<T extends string>({
               <span
                 className={cn(
                   'inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px]',
-                  isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground',
+                  isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
                 )}
               >
                 {opt.count}

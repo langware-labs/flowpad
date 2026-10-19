@@ -20,11 +20,25 @@ class EntityType(StrEnum):
     TASK = "task"
     RULE = "rule"
     SKILL = "skill"
+    # A Claude Code *subagent* definition — a `.claude/agents/<name>.md` prompt
+    # asset. Named for what the provider calls it. The FAMILY stays "agents"
+    # because the directory is provider-owned.
+    SUBAGENT = "subagent"
+    # The launchable agent: identity (name/avatar/system prompt) + the launch
+    # bundle, deployed via a Deployment and run as an AgenticProcess. Distinct
+    # from SUBAGENT, which is the provider's `.claude/agents/*.md` prompt asset
+    # this may delegate to.
     AGENT = "agent"
+    # The Hub's server-minted mailbox row. The value deliberately differs from
+    # the Agent action name ("mailbox") so graph paths remain unambiguous.
+    AGENT_MAILBOX = "agent_mailbox"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
     DEPLOYMENT = "deployment"
+    # One service a Deployment exposes (builtin/service_endpoint.py). Same value
+    # on the hub, where the row is mirrored at the same id.
+    SERVICE_ENDPOINT = "service_endpoint"
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"
@@ -42,7 +56,12 @@ class EntityType(StrEnum):
     CLAUDE_MEMORY = "claude_memory"
     CLAUDE_RULES = "claude_rules"
     COMMAND = "command"
+    # FlowPad's OWN MCP asset (authored, v4, attachable). Distinct from
+    # MCP_SERVER below, which is the read-only scan of a vendor's config files.
+    MCP = "mcp"
     MCP_SERVER = "mcp_server"
+    # The per-project ledger of PUBLISHED assets (agentic-assets/project_manifest/).
+    PROJECT_MANIFEST = "project_manifest"
     # Scaffold type — .mcp.json / mcp.json files that contain server definitions.
     MCP_SERVER_SOURCE = "mcp_server_source"
     PLUGIN = "plugin"
@@ -95,6 +114,8 @@ class EntityType(StrEnum):
     # codex_project=True provenance flag. Kept for backward compatibility.
     CODEX_PROJECT = "codex_project"
     COPILOT_SESSION = "copilot_session"
+    OPENCODE_SESSION = "opencode_session"
+    DEEPAGENTS_SESSION = "deepagents_session"
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"
     TRIGGER_LOG = "trigger_log"
@@ -107,9 +128,10 @@ class EntityType(StrEnum):
     MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
     PROMPT = "prompt"
-    PROMPT_RESULT = "prompt_result"
+    PROMPT_COMPLETION = "prompt_completion"
     CONVERSATION = "conversation"
-    WHITEBOARD = "whiteboard"
+    CHART = "chart"
+    ICON_PACK = "icon_pack"
     AGENT_TRACE = "agent_trace"
     DYNAMIC_WORKFLOW = "dynamic_workflow"
     # A Claude Code workflow *run* — the provider's wf_<runId>.json journal,
@@ -119,31 +141,37 @@ class EntityType(StrEnum):
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     DATASET = "dataset"
     # A reusable slide-deck template — a folder of layout HTML components +
-    # shared design tokens under assets/deck-templates/ (see the decker skill).
+    # shared design tokens under agentic-assets/deck_template/ (see the decker skill).
     DECK_TEMPLATE = "deck_template"
-    # A generated presentation — a folder under assets/decks/ holding the
+    # A generated presentation — a folder under agentic-assets/deck/ holding the
     # self-contained deck HTML + its deck.json build record (see decker skill).
     DECK = "deck"
     # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)
     # discovered anywhere in a project, rendered in a grid editor.
     SPREADSHEET = "spreadsheet"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
+    # A diagnosis someone ELSE runs and writes into on the hub, by id, with no login
+    # (``flow diagnose <id>``). Subclass of FLOWPAD_DIAGNOSIS — see builtin/diagnosis_request.py.
+    DIAGNOSIS_REQUEST = "diagnosis_request"
     COLLABORATION_ROOM = "collaboration_room"
     # A host/guest remote-execution session that lives inside a CollaborationRoom
     # (alongside its files/assets): guest sends Prompts, host's worker returns
-    # PromptResults. See builtin/remote_worker_session.py.
+    # PromptCompletions. See builtin/remote_worker_session.py.
     REMOTE_WORKER_SESSION = "remote_worker_session"
+    # A searchable vector index over a set of project folders. See builtin/rag_index.py.
+    RAG_INDEX = "rag_index"
     # Transient indexer waypoints — fan-out scaffolding, never persisted.
     USER_HOME_FOLDER = "user_home_folder"
     REAL_PROJECT_CWD = "real_project_cwd"
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
-    SECRET_ORIGIN = "secret_origin"
     CONTACTS_GROUP = "contacts_group"
     # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
     # enrichment — anonymous tags (plain strings) need no entity at all.
     TAG = "tag"
+    WIKI = "wiki"
+    WIKI_ENTRY = "wiki_entry"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"
@@ -170,47 +198,94 @@ class EntityType(StrEnum):
     SYSTEM_JOB = "system_job"
     JOB_EXECUTION = "job_execution"
     API_KEY = "api_key"
-    CODE_REF = "code_ref"
+    # A hub budget this box may spend. There is never a local row -- the box
+    # holds it as a read-only projection of hub state (builtin/llm_endpoint.py);
+    # the member exists so the type can carry TypeInfo (icon, browse tier).
+    LLM_ENDPOINT = "llm_endpoint"
     AGENT_HOOK = "agent_hook"
     TRIGGER = "trigger"
     PROCESS_RESULT = "process_result"
     CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
-    # ── Flow-graph slice (FlowManager) — DB-only entities, no asset_ref ──────
+    # ── Flow-graph slice (GraphWorkflowManager) — DB-only entities, no asset_ref ──────
     # A station in the flow graph: binds a program (skill/callback/instruction)
     # to execution defaults; executions are separate AgenticProcess entities.
-    FLOW_NODE = "flow_node"
+    GRAPH_WORKFLOW_NODE = "graph_workflow_node"
     # A folder-backed flow document (graph.json + display.json + scripts/ +
     # runs/). NOTE: "flow" stays reserved by the retired conversational Flow.
-    AGENTIC_FLOW = "agentic_flow"
-    # One execution of an AgenticFlow — row is start/end bookkeeping; the full
+    GRAPH_WORKFLOW = "graph_workflow"
+    # One execution of an GraphWorkflow — row is start/end bookkeeping; the full
     # trace lives in the flow folder's runs/<id>.jsonl.
-    AGENTIC_FLOW_RUN = "agentic_flow_run"
+    GRAPH_WORKFLOW_RUN = "graph_workflow_run"
     # A folder-backed guided-onboarding document (graph.json of guided_step
-    # nodes + child *.html pages). Runs on the FlowManager engine like an
-    # AgenticFlow, but typed separately so it stays out of the Flows list.
+    # nodes + child *.html pages). Runs on the GraphWorkflowManager engine like an
+    # GraphWorkflow, but typed separately so it stays out of the Flows list.
     JOURNEY = "journey"
     # A user's private progress through a Journey (DB-only, one per user+journey).
     JOURNEY_JOURNAL = "journey_journal"
+    # A folder-backed AUTONOMOUS setup document (wizard.json of ordered steps).
+    # The counterpart of JOURNEY, and the distinction is the reason both exist:
+    # a Journey PRESENTS a step and waits for a person; a Wizard DECIDES and
+    # executes. So a wizard step carries an exit-code map, not a waitFor.
+    WIZARD = "wizard"
+    # A folder-backed GOAL: compute_op.json holding the one check that decides
+    # whether the goal holds, plus attempts ordered cheapest-first (a shell
+    # one-liner, then an agent). A Wizard SEQUENCES steps; a ComputeOp is one
+    # step's worth of "make this true and prove it", reusable on its own.
+    COMPUTE_OP = "compute_op"
+    # A folder-backed SETUP NODE: asset_setup.json naming what an asset needs set up before it works
+    # (``prepare`` / ``run`` wizards) and what must be set up first (``children``) — core/setup walks them.
+    ASSET_SETUP = "asset_setup"
+    # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
+    # hub project that owns the ticket queue. A repo declares itself a help desk
+    # by shipping one, so cloning it as a context folder is what gives a project
+    # a help desk — there is no separate "add help desk" flow.
+    HELPDESK = "helpdesk"
     # A received, staged bundle attachment awaiting explicit install
     # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
     MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
-    # The @local singleton owning the inbox unread projection (see
-    # builtin/inbox_manager.py + flow_sdk/inbox). DB-only, not user-creatable.
-    INBOX_MANAGER = "inbox_manager"
+    # The @local singleton owning the stream inbox unread projection (see
+    # builtin/stream_inbox_manager.py + flow_sdk/stream_inbox). DB-only, not user-creatable.
+    STREAM_INBOX_MANAGER = "stream_inbox_manager"
     RUN = "run"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
     # A content-panel tab — DB-only placement record keyed by a DockPointer
     # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
     TAB = "tab"
+    # One record ingested from a cloud DataSource (a feed entry, a chat
+    # message). Generic and discriminated by `kind`, NOT one type per provider
+    # — the stream inbox projection has to be one queryable table.
+    SOURCE_ITEM = "source_item"
+    # A configured source we sync from — files, records or messages (flow_sdk/ingest).
+    DATA_SOURCE = "data_source"
+    # One independently-checkpointed stream within a DataSource — a feed URL, a
+    # channel. DB-only: written every poll, so it must never touch disk.
+    # How far one consumer (a workflow) has got through one source. See builtin/consumer_position.py.
+    CONSUMER_POSITION = "consumer_position"
+    # One reflected page of an object-shaped source — the log a folder consumer pages. See builtin/source_change.py.
+    SOURCE_CHANGE = "source_change"
+    #: The AUTHORED half of a source — a folder asset describing what a source
+    #: is. ``DATA_DRIVER`` is the configured instance; this is its definition.
+    DATA_DRIVER = "data_driver"
+    #: A SCHEMA defined by a folder, not by code: ``agentic-assets/data_schema/<full.kind>/``
+    #: holding ``data_schema.json`` (the fields) and ``description.md``. Indexing it registers the
+    #: schema under its kind (the folder name).
+    DATA_SCHEMA = "data_schema"
+    #: The authored definition of a NAMED SET OF ENV VARS a provider needs
+    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
+    #: declared, in user or project scope.
+    CREDENTIAL = "credential"
+    # One thread of ingested cloud messages (a Gmail thread, a Slack
+    # `thread_ts`). MANY threads may point at ONE conversation — that is the
+    # merge seam, and why the conversation id is not derived from the thread.
+    MESSAGE_THREAD = "message_thread"
     # Entity types that previously had no enum member (string-literal `type`).
     # Retired: Artifact composition now uses canonical parent_type_id. Keep the
     # persisted value parseable, but do not register a public entity surface.
     ARTIFACT_RELATION = "artifact_relation"
-    FS_ITEM = "fs_item"
     KNOWLEDGE_BASE = "knowledge_base"
     # A frozen snapshot of the global context (a list of typeids) — the saved
     # "context" half of an automation (agentic process = prompt + context).
@@ -219,3 +294,11 @@ class EntityType(StrEnum):
     # ── Skillit ──────────────────────────────────────────────────────────────
     SKILLIT_SESSION = "skillit_session"
     SKILLIT_CONFIG = "skillit_config"
+
+
+#: Membership containers: hub-owned roots whose rows only the hub membership
+#: mirror writes. One never rides a message as an entities.json envelope, never
+#: becomes a conversation's child, and never takes a message's context backlink.
+MEMBERSHIP_CONTAINER_TYPES: frozenset[str] = frozenset(
+    {EntityType.ORGANIZATION.value, EntityType.TEAM.value, EntityType.PROJECT.value}
+)

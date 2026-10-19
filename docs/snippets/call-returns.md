@@ -1,0 +1,549 @@
+---
+id: 26f5399a-af9d-4b55-8b64-3b1166ac11b1
+version: 2
+---
+# FlowCall — calls, outcomes, and returned values
+
+**FlowCall is Flowpad’s contract for invoking work, receiving a structured outcome and value, and composing that result into further work.**
+
+A ComputeOp, a wizard, a shell command, an agent run and a person's reply
+participate through a common `ReturnedValue` contract, or the subclass their
+kind of work carries. FlowCall names the mechanism, not a new class or entity.
+See the [glossary](../glossary.md#flowcall--the-call-and-result-mechanism) for the vocabulary.
+
+The mechanism joins execution (`ComputeOp` and the runners), the answer
+(`ReturnedValue` and `ExitCode`), declared-output validation, tagged serialization,
+and composition (Python callers and wizards). `ProcessCall` carries a call through
+a message and correlates its answer. REST and CLI adapters expose those parts;
+`ApiResponse` is the transport envelope, not the FlowCall answer.
+
+A **FlowCall block** is a reusable ComputeOp, including the Python variant
+whose entry is `call.py:call`. It declares `input` and `output` with the existing
+schema authoring form, including typed lists. See the
+[executable block and chain recipe](flowcall-blocks.md) for authoring, explicit
+per-item mapping, scoped discovery and invocation correlation.
+
+The scope is participating work calls, not every SDK method. HTTP success says
+the request was handled; read the answer for the work's outcome. Python `AgenticProcess.send_turn()`
+answers whether a turn was **accepted**, while `AgenticProcess.run()` waits for its result.
+Expected unsuccessful outcomes are returned; only bad input and broken systems
+raise, unless the caller opts into `raise_for_status()`.
+
+Every `python` fence below is run by `tests/unit/test_call_returns_snippets.py` (how, just below).
+
+## Durable calls
+
+Use `ComputeOp.start(input=..., approved=True)` in Python or
+`op.start(input, {approved: true})` in TypeScript when work must outlive a client
+request. Admission returns a private call record with `call_id` and
+`invocation_id`; retain the block identity and call ID. Read it with
+`ComputeOp.get_call(call_id)` / `op.get_call(callId)`. Reading never starts work.
+
+The record state is `running`, `completed`, `interrupted`, or `failed`.
+Only a completed record carries the tagged `ReturnedValue` in `result`; still
+check its outcome and value presence before chaining. A completed refusal is
+not successful output. Validation rejects invalid input before admission, and
+approval still precedes executable imports. Each start creates new work:
+invocation correlation is not an idempotency key and an uncertain request must
+not be silently retried.
+
+Records survive backend restarts. Unfinished work whose executor has stopped
+is reported interrupted without replay; this does not roll back prior effects.
+A surviving external agent is not, by itself, proof that its enclosing Python
+block can resume. Persisted executor information is for correlation, not a
+promise of checkpoint recovery. Awaited `call` and Wizard composition retain
+their existing contracts.
+
+## TypeScript calls
+
+`dataManager.callFlowAction<R>(actionInfo, transport)` returns the FlowCall answer
+for `http` (default), `ws`, or `prefer-ws`. It validates the shared answer fields
+and preserves subtype fields, nested values, and unknown tagged values. The generic
+`R` describes the expected subtype; it does not add runtime subtype validation.
+Raw and streaming responses are outside this method's contract.
+
+Expected outcomes remain values, including a valid legacy HTTP 409 busy answer
+(`NOT_YET`, `busy=true`, `ran=false`). Authentication, validation, network, and
+server errors still throw. Transport selection happens once: a failed WebSocket
+send is never replayed over HTTP. Existing `callAction*` methods retain their
+contracts, including the envelope returned by `callActionOverWS`.
+
+| Method | What its answer means |
+| --- | --- |
+| `ComputeOp.check()` / `ComputeOp.run(approved)` | The completed check or operation's outcome and value, through `callFlowAction`. |
+| `ComputeOp.call<T>(input, {approved})` | A completed typed block answer; server-side schemas validate the payload. `T` describes its output value. |
+| `AgenticProcess.sendTurn(instruction, options?)` | Admission only; no optimistic message echo or completion wait. `workerSessionId` is optional. |
+| `Agent.launch(prompt)` | Launch admission; `executor` identifies the process to observe. |
+| Legacy `AgenticProcess.executeInstruction()` | Retains its message echo, readiness checks, and optional completion wait. |
+| Legacy `Agent.run(prompt)` | Retains its admission response and throwing HTTP error behavior. |
+
+For admission methods, `OK` means accepted, not completed. Observe the process
+identified by `executor` for subsequent work. `PromptResult.files` carries file
+paths; `NavigateResult.delivered` and `verdict` distinguish delivery from usability.
+
+**Every fence on this page is checked.** `tests/unit/test_call_returns_snippets.py`
+runs every `python` fence as written; a line ending `# <expected>` is asserted
+(`expr == expected`, prose after `—` is ignored). Every `pyi` fence is a
+shape listing, and its fields are checked against the real class. A fence that
+needs a real agent harness or an LLM source says so on its first line and runs
+in the long tier (`tests/long_tests/test_call_returns_live.py`).
+
+The decisions behind this page were made one problem at a time in review
+(2026-09-22); the 23-site audit that prompted them is at the end.
+
+***
+
+Every fence below runs in one session, after this one — the names they use and a folder to work in:
+
+```python
+# setup
+import tempfile
+from pathlib import Path
+from typing import ClassVar
+
+from pydantic import ValidationError
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.core.wizard.runner import Resolved, run_wizard
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.compute_op_spec import CHECK_TIMEOUT, AgentOp, AskOp, CliOp, ComputeOpSpec, PromptOp
+from flow_sdk.schema.data_spec.returned_value_spec import (
+    AskResult, CliResult, ExitCode, OpNotReached, PromptResult, ReturnedValue, WizardResult,
+)
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
+
+tmp = Path(tempfile.mkdtemp())       # the folder the ops below work in
+```
+
+## 1. A ComputeOp is one call
+
+An op describes one goal or value-producing call and its primary subkind.
+Its optional `attempts` are further rungs tried against the same completion
+check. Separate goals or explicit composition belong in Python or a wizard;
+see [ComputeOps](compute-ops.md) for the attempts contract.
+
+Following [the ontology](../ontology.md): the type is `compute_op`, `subkind`
+is a closed enum, and each subkind's structure is its own DataSpec, the kind
+`compute_op.<subkind>`, nested in `exe_data` — never flattened onto the op.
+
+```pyi
+class ExeData(DataSpec):                      # no kind of its own
+    timeout_seconds: float | None             # unset ⇒ the default for the ROLE (§6)
+
+class CliOp(ExeData):                         # compute_op.cli — also every completion check
+    commands: dict[str, str]                  # sys.platform → shell one-liner
+    source_step: str | None                   # a setup step of the run's source, run IN the backend (no shell)
+    webapp_step: str | None                   # a setup step of the run's web app (install/build/start), IN the backend
+    requirement_step: str | None              # what a setup requirement needs, IN the backend
+
+class PromptOp(ExeData):                      # compute_op.prompt — a model, no tools
+    prompt: str
+
+class AgentOp(ExeData):                       # compute_op.agent — a harness with tools
+    agent: str
+    prompt: str
+    retries: int                              # further turns in the SAME session while the check fails
+    input: str                                # a scope value (by name) mounted as the process's input folder
+    launch_context: str                       # a scope value (by name) holding a LaunchContext
+
+class LaunchContext(DataSpec):                # compute_op.agent.launch_context — what a caller stamps on the spawned process
+    context_data: dict[str, Any]              # merged into the process's context_data
+    shared_context_entities: list[str]        # context chips, '<type>-<uuid>'
+    target_typeid_str: str                    # what the session is keyed to, when not the run's subject
+
+class Require(DataSpec):                      # compute_op.decision.require — exactly one of the four
+    choice: str | None                        # the option that must win, `min` sure
+    yes: float | None                         # the probability floor of yes
+    no: float | None                          # the probability floor of no
+    at_least: str | None                      # the lowest score level that counts
+    min: float                                # the confidence floor for `choice`
+
+class DecisionOp(ExeData):                    # compute_op.decision — a closed question to the Decision API
+    questions: dict[str, Question]            # the decision API's own: choice / score / yes_no
+    require: dict[str, Require]               # what each named answer must be; ALL must hold
+    input: str                                # the scope value (by name) the questions are about
+    sentence: str                             # the one-line form it was written as, kept for the document
+
+class AskOp(ExeData):                         # compute_op.ask — a person
+    prompt: str
+    secret: bool                              # masked where it is typed (an API key)
+    file: bool                                # the answer is a file's content (a key file): a file picker
+    detail: str                               # a paragraph under the heading: why, and what each answer does
+    submit_label: str                         # the button words; empty ⇒ Send / Cancel
+    cancel_label: str
+    assist_agent: str                         # AI Assist: this agent follows setup and answers the SAME question
+    until_answered: bool                      # no deadline — refuses alongside timeout_seconds
+    recheck: bool                             # Send runs the completion check; until it holds the question stays open
+    auto_continue: bool                       # the check re-runs while open and closes it by itself; needs recheck + confirm, or choices
+    choices: list[AskChoiceSpec]              # several ways to answer, the person picks one (a ONE_OF credential)
+
+class Rung(DataSpec):                         # compute_op.rung — one further attempt, same shape as the op's own
+    subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]  # never ask
+    exe_data: CliOp | PromptOp | AgentOp
+
+class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
+    name: str
+    label: str
+    description: str
+    subkind: OpSubkind                        # navigate | cli | decision | prompt | agent | ask | python
+    exe_data: NavigateOp | CliOp | DecisionOp | PromptOp | AgentOp | AskOp | PythonOp
+    input: ShapeForm | None                  # named, record or list input schema
+    output: ShapeForm | None                 # named, record or list output schema
+    output_spec_kind: str | None              # a registered DataSpec kind, or a primitive
+    completion_check: CliOp | None            # the SAME class as a cli op's exe_data
+    status_check: str | None                  # OR a status fact (install:<harness>), asked in-process
+    isolated_shell: bool                      # its own shell, not the run's shared one
+    attempts: list[Rung]                      # further rungs, any kind but ask, tried in order
+    not_applicable_codes: list[int]
+    setup: Text                               # setup.md — what an agent or a model is given
+    setup_timeout_seconds: float | None       # how long an assist agent gets; unset ⇒ SETUP_TIMEOUT (10 min)
+    log: CallLogSpec | None                   # every call a dataset row in temp, with its run's trace
+```
+
+```jsonc
+{ "name": "ripgrep-on-path",
+  "subkind": "cli",
+  "exe_data":         {"commands": {"darwin": "brew install ripgrep"}},
+  "completion_check": {"commands": {"darwin": "rg --version"}, "timeout_seconds": 30} }
+```
+
+## 2. Every call answers with a `ReturnedValue`
+
+```pyi
+class ReturnedValue(DataSpec):                # compute.returned
+    exit_code: ExitCode                       # OK 0 · NOT_YET 1 · NOT_APPLICABLE 3 · NOT_FOUND 4 · REFUSED 7
+    value: Any                                # an instance of output_spec_kind
+    value_present: bool | None                 # explicit null is present; None preserves legacy ambiguity
+    invocation_id: str | None                  # correlation of this call and its child work
+    detail: str                               # ONE sentence for a person
+    ran: bool                                 # False ⇒ nothing executed
+    reported: bool                            # the callee gave its own account (else detail is ours)
+    timed_out: bool                           # the wait ended before the work did
+    busy: bool                                # a held slot turned it away — retry later
+    duration_s: float
+    executor: str | None                      # 'agentic_process-<id>' | 'shell-<id>'
+    check: CliResult | None                   # the last completion-check run
+
+class CliResult(ReturnedValue):               # compute.returned.cli
+    command: str                              # as resolved for this platform
+    returncode: int | None                    # the process's own exit; None ⇒ never finished
+    stdout: str
+    stderr: str
+
+class PromptResult(ReturnedValue):            # compute.returned.prompt — a prompt AND an agent
+    text: str                                 # the full reply, beside the declared value
+    files: list[str]                          # what an agentic run left in its output folder
+    endpoint: str | None                      # the LLM endpoint that answered a prompt op
+
+class AskResult(ReturnedValue):               # compute.returned.ask
+    cancelled: bool
+
+class WizardResult(ReturnedValue):            # compute.returned.wizard
+    steps: dict[str, ReturnedValue]           # step id → that step's OWN answer
+    stopped_at: str                           # the step whose on_fail: stop ended the run early
+
+class DecisionVerdict(ReturnedValue):         # compute.returned.decision
+    met: bool                                 # every requirement held
+    confidence: float                         # the least sure requirement's own probability
+    reason: str                               # the requirement that held, or the first that did not
+    answers: dict[str, Any]                   # every question's answer, as the API gave it
+    unavailable: str | None                   # the closed DecisionError.reason when it could not be asked
+    endpoint: str                             # 'api_endpoint-<id>'
+    latency_ms: float
+```
+
+| subkind    | answers with      | `executor`                                              |
+| ---------- | ----------------- | ------------------------------------------------------- |
+| `cli`      | `CliResult`       | `None`, or `shell-<id>` when it ran in a terminal       |
+| `decision` | `DecisionVerdict` | `None` — the verdict is its own proof, never re-checked |
+| `prompt`   | `PromptResult`    | `None`                                                  |
+| `agent`    | `PromptResult`    | `agentic_process-<id>`                                  |
+| `ask`      | `AskResult`       | `None`                                                  |
+
+A caller that only composes reads the base; a caller that knows what it called
+reads the rest. There is no wrapper. A NESTED answer — a wizard step's, a
+check's — is `Tagged`: its dump carries `spec_kind`, so it reads back as the
+same subclass.
+
+## 3. One call, a re-check, and the evidence on the answer
+
+```python
+install = ComputeOpSpec(
+    name="marker",
+    subkind="cli",
+    exe_data=CliOp(commands={"darwin": "touch done.txt", "linux": "touch done.txt"}),
+    completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}, timeout_seconds=30),
+)
+first = await run_op(install, trusted=True, workdir=tmp)
+type(first) is CliResult                  # True
+first.exit_code, first.ran                # (ExitCode.OK, True)
+first.returncode, first.command           # (0, 'touch done.txt')
+first.executor                            # None — a plain subprocess
+first.check.command                       # 'test -f done.txt' — the re-check that decided it
+
+again = await run_op(install, trusted=True, workdir=tmp)
+again.exit_code, again.ran                # (ExitCode.OK, False) — the check held; nothing ran
+
+
+broken = ComputeOpSpec(
+    name="build",
+    subkind="cli",
+    exe_data=CliOp(commands={"darwin": "echo 'error: missing header' >&2; exit 2", "linux": "echo 'error: missing header' >&2; exit 2"}),
+)
+answer = await run_op(broken, trusted=True, workdir=tmp)
+answer.exit_code                          # ExitCode.NOT_YET
+answer.returncode                         # 2
+answer.stderr                             # 'error: missing header\n'
+answer.detail                             # 'The command exited 2.' — one sentence
+
+
+slow = ComputeOpSpec(name="slow", subkind="cli",
+                     exe_data=CliOp(commands={"darwin": "sleep 5", "linux": "sleep 5"}, timeout_seconds=0.2))
+answer = await run_op(slow, trusted=True, workdir=tmp)
+answer.exit_code, answer.timed_out        # (ExitCode.NOT_YET, True) — a fact, not an exit code
+```
+
+## 4. The output is a named DataSpec
+
+```python
+class Greeting(DataSpec):
+    spec_kind: ClassVar[str] = "snippet.greeting"
+    text: str
+
+hello = ComputeOpSpec(name="hello", subkind="cli",
+                      exe_data=CliOp(commands={"darwin": "echo '{\"text\": \"hi\"}'", "linux": "echo '{\"text\": \"hi\"}'"}),
+                      output_spec_kind="snippet.greeting")
+answer = await run_op(hello, trusted=True, workdir=tmp)
+type(answer.value) is Greeting            # True — not an anonymous class
+answer.value.text                         # 'hi'
+
+try:
+    ComputeOpSpec(name="x", subkind="cli", exe_data=CliOp(commands={"darwin": "true", "linux": "true"}),
+                  output_spec_kind="snippet.greetin")
+except ValidationError as refused:
+    reason = str(refused)
+"unknown kind 'snippet.greetin'" in reason    # True — refused at read, never Any
+```
+
+That `class Greeting(DataSpec)` is the registration: a kind exists once the
+module declaring it has been imported. So a kind is nameable here — in flow\_sdk,
+or in an asset that ships a module, like a data source. A Python-backed op
+imports its code within the owning namespace after approval; its public input
+and output kinds must be independently discoverable through data-schema assets
+or SDK modules. Schema discovery does not import `call.py`. The ownership and
+registration rule is in [ontology](../ontology.md).
+
+Nested lists/maps preserve DataSpec tags too. A required-value chain consumes
+only `OK` with `has_value`; `.ok` alone also accepts a skipped operation.
+`value_present=True` marks a produced nullable value, while false means no
+output. Legacy unmarked null is not silently treated as data. Empty lists,
+zero and false are values. `CollectionResult` retains indexed item answers for
+explicit maps; partial failure has no consumable aggregate output list.
+
+## 5. Nothing raises for an outcome
+
+Refused, busy, never started, timed out, failed: all returned. Only bad input
+(`ValidationError`, above) and a broken system raise. A caller who would rather
+raise opts in, and the exception carries the answer.
+
+```python
+import sys
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, OpNotReached
+
+tmp = Path(tempfile.mkdtemp())
+broken = ComputeOpSpec(name="build", subkind="cli",
+                       exe_data=CliOp(commands={sys.platform: "exit 2"}))
+
+refused = await run_op(broken, trusted=False, workdir=tmp)
+refused.exit_code, refused.ran            # (ExitCode.REFUSED, False) — not approved; nothing ran
+type(refused) is CliResult                # True — the subkind's own class, even here
+
+try:
+    (await run_op(broken, trusted=True, workdir=tmp)).raise_for_status()
+except OpNotReached as failed:
+    carried = failed.answer
+carried.returncode                        # 2 — the exception CARRIES the result
+```
+
+| what happened                                                  | `exit_code` | `ran` | how a caller tells                                       |
+| -------------------------------------------------------------- | ----------- | ----- | -------------------------------------------------------- |
+| not approved                                                   | `REFUSED`   | False | never retry                                              |
+| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET`   | False | `busy` — try later; the only case an edge answers 409    |
+| never started (no harness, spawn failed)                       | `NOT_YET`   | False | not `busy` — `detail` says why; retrying changes nothing |
+| still running when the wait ended                              | `NOT_YET`   | True  | `timed_out` — do not re-run on top of it                 |
+| ended in error / interrupted                                   | `NOT_YET`   | True  | the process, via `executor`                              |
+| a reply that is not the declared kind                          | `NOT_YET`   | True  | `text` keeps the reply                                   |
+
+Waiting on a person is an `ask` op in progress, like any other op — there is no
+`PENDING`. Error vs interrupted is not copied onto the answer; the process row
+has it, through `executor`.
+
+## 6. A timeout is resolved by the role a call plays
+
+One class serves as both the completion check and a cli op's work, so the
+default belongs to the READER. An explicit value always wins; nothing is raised.
+
+```python
+CliOp(commands={"darwin": "true", "linux": "true"}).timeout()                  # 600.0 — CLI_TIMEOUT, as the work
+CliOp(commands={"darwin": "true", "linux": "true"}).timeout(CHECK_TIMEOUT)     # 30.0 — as a completion check
+CliOp(commands={"darwin": "true", "linux": "true"}, timeout_seconds=5).timeout(CHECK_TIMEOUT)   # 5 — explicit wins
+PromptOp(prompt="hi").timeout()                               # 120.0 — PROMPT_TIMEOUT
+AgentOp(agent="provisioner").timeout()                        # 1800.0 — AGENT_TIMEOUT
+AskOp(prompt="token").timeout()                               # 60.0 — ASK_TIMEOUT_SECONDS
+```
+
+A person gets the SHORTEST of what the op asks for, what the caller allows and
+`ASK_TIMEOUT_SECONDS` — a caller may shorten it, never lengthen it.
+
+## 7. A person's answer, asked once
+
+The check decides whether to ASK. A valid answer is the verdict — a person, not
+a command, verified it — so an ask is not re-checked. Storing it is the
+caller's cli op, the value travelling in `env`, never templated into a command.
+
+```python
+class ApiToken(DataSpec):
+    spec_kind: ClassVar[str] = "snippet.api_token"
+    token: str
+
+get_key = ComputeOpSpec(
+    name="get-api-key", subkind="ask",
+    exe_data=AskOp(prompt="Service X API token"),
+    completion_check=CliOp(commands={"darwin": "cat token.json", "linux": "cat token.json"}),
+    output_spec_kind="snippet.api_token",
+)
+store_key = ComputeOpSpec(
+    name="store-api-key", subkind="cli",
+    exe_data=CliOp(commands={"darwin": 'printf \'{"token": "%s"}\' "$TOKEN" > token.json', "linux": 'printf \'{"token": "%s"}\' "$TOKEN" > token.json'}),
+)
+
+key = await run_op(get_key, trusted=True, workdir=tmp)       # a person types sk-live-1
+type(key) is AskResult                    # True
+key.exit_code, key.ran                    # (ExitCode.OK, True)
+key.value.token                           # 'sk-live-1'
+stored = await run_op(store_key, trusted=True, workdir=tmp, env={"TOKEN": key.value.token})
+stored.ok                                 # True
+
+again = await run_op(get_key, trusted=True, workdir=tmp)
+again.ran, again.value.token              # (False, 'sk-live-1') — read off the check; nobody asked
+```
+
+A cancel and a silence are both "no value": `NOT_YET`, told apart by
+`cancelled` and `timed_out`. An answer that is not the declared kind never
+reaches the op — the window gets a 422 and the question stays open.
+
+## 8. A wizard answers with its steps' own answers
+
+A wizard sequences calls. Its answer is a `WizardResult` whose `steps` are the
+ops' own results; a step never reached is absent. This is also how a fallback
+is written: a cli op, then an agent op with the same check — when the first
+reached the goal, the second's check holds and it does nothing.
+
+```python
+install = ComputeOpSpec(name="marker", subkind="cli",
+                        exe_data=CliOp(commands={"darwin": "touch done.txt", "linux": "touch done.txt"}),
+                        completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}))
+broken = ComputeOpSpec(name="build", subkind="cli",
+                       exe_data=CliOp(commands={"darwin": "echo 'error: missing header' >&2; exit 2", "linux": "echo 'error: missing header' >&2; exit 2"}))
+ops = {"marker": install, "build": broken}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="setup", steps=[
+        WizardStepSpec(id="make", ref="marker"),
+        WizardStepSpec(id="compile", ref="build"),
+        WizardStepSpec(id="deploy", ref="marker"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+type(result) is WizardResult              # True
+result.exit_code                          # ExitCode.NOT_YET
+result.detail                             # 'The command exited 2.' — the step that stopped it
+type(result.steps["make"]) is CliResult   # True — the op's OWN answer
+result.steps["compile"].stderr            # 'error: missing header\n'
+"deploy" in result.steps                  # False — never reached (on_fail: abort)
+stored = WizardResult.model_validate(result.model_dump(mode="json"))   # what run.json reads back
+type(stored.steps["compile"]) is CliResult   # True — restored by its spec_kind
+stored.steps["compile"].returncode           # 2
+```
+
+`run.json` is this dump plus `approved`. `Wizard.run_state` serves it without
+step output (stdout, stderr, text, value); `run-detail` serves it whole.
+
+## 9. An agent names its process, and a caller continues it
+
+```python
+# long tier — needs a real agent harness (tests/long_tests/test_call_returns_live.py)
+fix = ComputeOpSpec(name="marker-agent", subkind="agent",
+                    exe_data=AgentOp(agent="provisioner", prompt="Create an empty file named done.txt here."),
+                    completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}))
+
+first = await run_op(fix, trusted=True, workdir=tmp)
+type(first) is PromptResult               # True
+first.exit_code                           # ExitCode.OK — the agent made the check hold
+first.executor.startswith("agentic_process-")   # True
+
+# A follow-up has no completion check: with one that already holds, nothing
+# would run — a satisfied op never calls anything, continued or not.
+follow_up = ComputeOpSpec(name="which-file", subkind="agent",
+                          exe_data=AgentOp(agent="provisioner", prompt="Which file did you just create? One word."))
+second = await run_op(follow_up, trusted=True, workdir=tmp, executor=first.executor)
+second.ran                                # True
+second.executor == first.executor         # True — the same process, the same session
+"done" in second.text.lower()             # True — it remembers: the session carried over
+```
+
+The op says WHAT; `executor` says WHERE. A caller's retry is exactly this — the
+op never loops. The session, the models and the token use live on the process:
+`AgenticProcess.get_by_typeid(first.executor)`.
+
+## 10. A model, no tools
+
+```python
+# long tier — needs an API-capable LLM source on this box
+summary = ComputeOpSpec(name="summary", subkind="prompt",
+                        exe_data=PromptOp(prompt="Say the single word: pong"))
+answer = await run_op(summary, trusted=True, workdir=tmp)
+type(answer) is PromptResult              # True
+"pong" in answer.text.lower()             # True
+```
+
+The box's default LLM source answers. A box with no API-capable source (only a
+signed-in vendor CLI) answers `NOT_YET`, `ran=False`.
+
+***
+
+## The 23 sites, and what each became
+
+| #  | site                             | became                                                                                        |
+| -- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1  | `WizardRunResult.returned()`     | deleted — `WizardResult` IS a `ReturnedValue`                                                 |
+| 2  | `check_op`                       | the check's `CliResult`, its `exit_code` the verdict                                          |
+| 3  | `flow op run`                    | exits `returned.exit_code`; a bad document or a 500 exits 2, never `REFUSED`                  |
+| 4  | `ComputeOp.run_action`           | 200 with the answer for every exit code, `REFUSED` included                                   |
+| 5  | `ComputeOp.run`                  | returns `REFUSED`                                                                             |
+| 6  | `hook_models._exec_script`       | `CliResult`                                                                                   |
+| 7  | `Shell.run` (REST)               | `CliResult`, `executor='shell-<id>'`                                                          |
+| 8  | `Wizard.run`                     | `WizardResult`                                                                                |
+| 9  | `_agent_attempt`                 | deleted — the `agent` subkind → `PromptResult` + `executor`                                   |
+| 10 | `CommandExecutor.run`            | `CliResult`                                                                                   |
+| 11 | `ComputeNodeCommandExecutor.run` | `CliResult`; a missing exit stays `None`; a given timeout is enforced                         |
+| 12 | `_attempt` (command rung)        | deleted — the `cli` subkind → `CliResult`                                                     |
+| 13 | `_ask_attempt`                   | the `ask` subkind → `AskResult`                                                               |
+| 14 | `run_shell`                      | `CliResult`                                                                                   |
+| 15 | `run_op`                         | one call → the subkind's answer; `REFUSED` returned                                           |
+| 16 | `launch_step_process`            | `PromptResult` + `executor`                                                                   |
+| 17 | `Shell.run_and_capture`          | `CliResult`, `executor='shell-<id>'`, `timed_out`                                             |
+| 18 | `run_wizard`                     | `WizardResult`; no `PENDING`; `REFUSED` returned                                              |
+| 19 | `AgenticProcess.run`             | `PromptResult`; no `ProcessError`                                                             |
+| 20 | `_AgentRunner.run`               | `PromptResult`; no `RuntimeError`                                                             |
+| 21 | `routes/ask.py`                  | unchanged — the HTTP edge a window delivers an answer through                                 |
+| 22 | `execute_wizard`                 | `WizardResult`; busy → `NOT_YET`, `ran=False`                                                 |
+| 23 | `AgenticProcess.prompt`          | `send_turn()` → `PromptResult`; busy → `NOT_YET`, `ran=False` (the HTTP action keeps its 409) |

@@ -3,6 +3,7 @@
 Handles WebSocket connections and message routing following the original FlowPad pattern.
 """
 
+import asyncio
 import contextvars
 import json
 import logging
@@ -13,6 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from flow_sdk import toplog
 from flow_sdk.core.network.connection_manager import set_external_connection_lookup
 from flow_sdk.core.network.connections import (
     add_connection as add_registry_connection,
@@ -41,10 +43,26 @@ class ConnectionInfo:
     """
 
     ws: WebSocket
+    #: Whether this connection has identified itself as a browser TAB, by sending one of the
+    #: two messages only the UI sends (``presence`` / ``browser_context``). Everything that
+    #: targets "the tab the user is looking at" filters on this.
+    #:
+    #: It exists because a socket is not a tab. The CLI opens one to WAIT for backend frames,
+    #: and with ``visible``/``focused`` defaulting to true it instantly outranked every real
+    #: window: ``flow llm set auto`` connected, asked "is a tab open, send it to the chooser",
+    #: was handed ITS OWN socket, reported "Opened the LLM setup in Flowpad" and then blocked
+    #: forever on a window that had never been created.
+    #:
+    #: Safe to require: `use-presence-reporter.ts` sends `presence` forcibly from its `on_open`
+    #: handler, so a real tab sets this within a round-trip of connecting.
+    is_tab: bool = False
     visible: bool = True
     focused: bool = True
     last_presence_at: float = field(default_factory=time.monotonic)
     browser_context: dict = field(default_factory=dict)
+    #: Whether `app.tab.ready` was already emitted for this connection — its first
+    #: `browser_context` frame is the moment; every later one is just a navigation.
+    tab_ready_announced: bool = False
 
 
 # Store active connections (id -> ConnectionInfo).
@@ -100,8 +118,9 @@ def get_connection_infos() -> Dict[str, ConnectionInfo]:
 
 
 def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
-    """Same selection rule as ``get_active_connection`` but returns the full
-    ``ConnectionInfo`` so callers can read presence + browser_context.
+    """The 'active' connection with its full ``ConnectionInfo`` (presence +
+    browser_context). This is where the selection rule lives; see
+    ``get_active_connection`` for the socket-only form and the rule itself.
     """
     if not _active_connections:
         return None
@@ -111,6 +130,11 @@ def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
         _cid, info = kv
         return (info.last_presence_at, _cid)
 
+    # Tabs only. A non-UI socket (the CLI's event listener) is not somewhere a user can be
+    # shown anything, and treating one as the active tab silently sends a navigation nowhere.
+    items = [kv for kv in items if kv[1].is_tab]
+    if not items:
+        return None
     visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
     if visible_focused:
         return max(visible_focused, key=_rank)
@@ -118,6 +142,20 @@ def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
     if visible:
         return max(visible, key=_rank)
     return max(items, key=_rank)
+
+
+def get_request_connection_info() -> Optional["ConnectionInfo"]:
+    """The tab the current request came from: the one it names (``X-Flow-Connection-Id`` over
+    HTTP, ``carries_initiator`` over WS), else the active tab. "The active tab" is only a guess --
+    with two windows open it is the other one."""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    named = _active_connections.get(request_info.initiator_connection_id) if request_info else None
+    if named is not None:
+        return named
+    active = get_active_connection_info()
+    return active[1] if active else None
 
 
 def get_active_connection() -> Optional[tuple[str, WebSocket]]:
@@ -130,29 +168,14 @@ def get_active_connection() -> Optional[tuple[str, WebSocket]]:
       3. Any connection, newest ``last_presence_at``.
     Ties on ``last_presence_at`` are broken by ``connection_id`` (lexicographic).
     Returns ``None`` only when no connections are open.
+
+    Same selection as ``get_active_connection_info``; this drops the
+    ``ConnectionInfo`` and hands back the socket.
     """
-    if not _active_connections:
+    selected = get_active_connection_info()
+    if selected is None:
         return None
-
-    items = list(_active_connections.items())
-
-    def _rank(kv):
-        # max() picks the largest tuple; connection_id as secondary key
-        # is a deterministic tie-break.
-        _cid, info = kv
-        return (info.last_presence_at, _cid)
-
-    visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
-    if visible_focused:
-        cid, info = max(visible_focused, key=_rank)
-        return cid, info.ws
-
-    visible = [kv for kv in items if kv[1].visible]
-    if visible:
-        cid, info = max(visible, key=_rank)
-        return cid, info.ws
-
-    cid, info = max(items, key=_rank)
+    cid, info = selected
     return cid, info.ws
 
 
@@ -253,6 +276,52 @@ async def send_entity_notification(entity_type: str, entity_id: str, op: str, en
         logger.error(f"Error sending entity notification: {e}", exc_info=True)
 
 
+_tab_ready_tasks: "set[asyncio.Task]" = set()
+
+
+def _announce_tab_ready(connection_id: str, info: ConnectionInfo) -> None:
+    """Emit `app.tab.ready` for a connection the first time it reports a context.
+
+    `browser_context` is the right frame, not `presence`: `presence` goes out the
+    instant the socket opens, while `browser_context` carries the current URL and
+    is re-sent on every navigation (`App.tsx`) — so the first one means a route
+    has actually loaded, not merely that the app started mounting.
+
+    Detached: the emit waits for the system content index (`system_content_ready`),
+    which may still be running for the first tab of a boot, and the socket loop
+    must not stall behind it.
+    """
+    if info.tab_ready_announced:
+        return
+    info.tab_ready_announced = True
+    task = asyncio.get_running_loop().create_task(_emit_tab_ready(connection_id))
+    _tab_ready_tasks.add(task)  # a task nobody references can be collected mid-flight
+    task.add_done_callback(_tab_ready_tasks.discard)
+
+
+async def _emit_tab_ready(connection_id: str) -> None:
+    try:
+        from flow_sdk.server.routes.bootstrap import system_content_ready
+        from flow_sdk.tags import target_of
+        from flow_sdk.tags.bus import make_tag_event, publish_tag
+        from flow_sdk.utils.machine_id import local_entity_id
+
+        await system_content_ready.wait()
+        info = _active_connections.get(connection_id)
+        if info is None:
+            return  # the tab went away while the index was still landing
+        event = publish_tag(
+            make_tag_event(
+                "app.tab.ready",
+                target_of("compute_node", local_entity_id("compute_node")),
+                {"connection_id": connection_id, "url": str(info.browser_context.get("url") or "")},
+            )
+        )
+        logger.info("[app.tab.ready] emitted event_id=%s connection=%s", event.id, connection_id)
+    except Exception:
+        logger.exception("app.tab.ready signal failed")
+
+
 async def handle_binary_message(connection_id: str, websocket: WebSocket, data: bytes) -> None:
     """Handle incoming binary WebSocket message (STREAM_MSG).
 
@@ -329,9 +398,11 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
             # this via ``flow context list``.
             info = _active_connections.get(connection_id)
             if info is not None:
+                info.is_tab = True  # only the UI sends this
                 ctx = message_data.get("context")
                 if isinstance(ctx, dict):
                     info.browser_context = ctx
+                    _announce_tab_ready(connection_id, info)
                     # Mirror remote entities in this context to hub watches so
                     # the hub fans their updates back to us (cross-user live
                     # updates). Cloud-facing + best-effort; never breaks the WS.
@@ -347,6 +418,7 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
             # use a follow-up `ping` (which echoes a `pong`).
             info = _active_connections.get(connection_id)
             if info is not None:
+                info.is_tab = True  # only the UI sends this
                 visible = message_data.get("visible")
                 focused = message_data.get("focused")
                 if isinstance(visible, bool):
@@ -517,6 +589,11 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     # the peer sent a proper close frame; 1006/receive-error means the TCP
     # connection died without one (the client may not know it's gone).
     disconnect_reason = "endpoint_exit"
+    # `pty` toplog: slow messages block this connection's whole lane (every later
+    # keystroke/resize waits behind them). Logged at most once a second, with the
+    # count of slow messages folded in.
+    slow_logged_at = 0.0
+    slow_since_log = 0
     try:
         while True:
             # Receive message (text or binary)
@@ -560,7 +637,35 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
                 continue
 
             # Handle message
+            handle_t0 = time.monotonic() if toplog.is_on("pty") else 0.0
             continue_loop = await handle_json_message(connection_id, websocket, message_data)
+            if handle_t0:
+                handle_ms = (time.monotonic() - handle_t0) * 1000
+                if handle_ms > 100:
+                    slow_since_log += 1
+                    if time.monotonic() - slow_logged_at >= 1.0:
+                        slow_logged_at = time.monotonic()
+                        # ``sub_path`` + the body's ``shell_id``, never the body
+                        # itself: a ``terminal-command`` body carries the user's
+                        # keystrokes. Without these two the line could not say
+                        # which terminal stalled, or whether it was input or a
+                        # resize — ``api_path`` was never a field on a
+                        # ``rest_api_msg`` and always logged as None.
+                        body = message_data.get("body")
+                        shell_id = body.get("shell_id") if isinstance(body, dict) else None
+                        toplog.log(
+                            "pty",
+                            "ws_slow_message connection=%s type=%s action=%s sub_path=%s shell=%s "
+                            "ms=%.0f slow_in_window=%s",
+                            connection_id,
+                            message_data.get("message_type"),
+                            message_data.get("action"),
+                            message_data.get("sub_path"),
+                            shell_id,
+                            handle_ms,
+                            slow_since_log,
+                        )
+                        slow_since_log = 0
             if not continue_loop:
                 disconnect_reason = "send_failed_client_gone"
                 break
@@ -580,6 +685,12 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         from flow_sdk.app.actions.watch_registry import cleanup_connection
 
         cleanup_connection(connection_id)
+
+        # A file watch owns a task and a thread, not just a registry row: end
+        # the folder loops this connection was the last to listen to.
+        from flow_sdk.actions.fs.file_watch import release_unwatched
+
+        release_unwatched()
 
         # Release this connection's hub context-watches (unwatch any entity no
         # other connection still holds in context).

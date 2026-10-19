@@ -1,0 +1,120 @@
+{
+ "conversations": [
+  {
+   "id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "created_date": "2026-08-05 09:59:31.718674",
+   "updated_date": "2026-08-05 11:43:05.040794",
+   "title": "Add sign-in and saved progress to the game",
+   "remote": true,
+   "message_count": 5,
+   "shared_context_entities": [
+    "claude_session-aaaaaaaa-0000-4000-8000-000000000010",
+    "agentic_process-aaaaaaaa-0000-4000-8000-000000000011"
+   ]
+  },
+  {
+   "id": "bbbbbbbb-0000-4000-8000-000000000002",
+   "created_date": "2026-08-05 09:20:52.951079",
+   "updated_date": "2026-08-05 09:38:33.707255",
+   "title": "Explain how the Initech portal handles sign-in",
+   "remote": true,
+   "message_count": 4,
+   "shared_context_entities": [
+    "claude_session-bbbbbbbb-0000-4000-8000-000000000010",
+    "agentic_process-bbbbbbbb-0000-4000-8000-000000000011"
+   ]
+  }
+ ],
+ "messages": [
+  {
+   "id": "cccccccc-0000-4000-8000-000000000001",
+   "created_date": "2026-08-05 10:25:36.856859",
+   "updated_date": "2026-08-05 11:43:05.040794",
+   "conversation_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "sender_name": "Alice Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000001",
+   "text": "Use the new sign-in, not the Initech portal one.\nWho creates the account - the owner or a member?",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000002",
+   "created_date": "2026-08-05 10:12:01.918458",
+   "updated_date": "2026-08-05 10:12:03.874052",
+   "conversation_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "sender_name": "Erin Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000002",
+   "text": "Can someone help with these decisions? You or the assistant.",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000003",
+   "created_date": "2026-08-05 10:11:00.297015",
+   "updated_date": "2026-08-05 10:11:01.389217",
+   "conversation_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "sender_name": "Alice Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000001",
+   "text": "Is there anything I can help with?",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000004",
+   "created_date": "2026-08-05 10:10:47.222414",
+   "updated_date": "2026-08-05 10:10:59.304807",
+   "conversation_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "sender_name": "Alice Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000001",
+   "text": "Here is the first draft of the plan.",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000005",
+   "created_date": "2026-08-05 09:59:35.145355",
+   "updated_date": "2026-08-05 09:59:45.207938",
+   "conversation_id": "aaaaaaaa-0000-4000-8000-000000000001",
+   "sender_name": "Erin Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000002",
+   "text": "Thanks, reading it now.",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000006",
+   "created_date": "2026-08-05 09:38:31.447285",
+   "updated_date": "2026-08-05 09:38:33.707255",
+   "conversation_id": "bbbbbbbb-0000-4000-8000-000000000002",
+   "sender_name": "Alice Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000001",
+   "text": "Which tables hold the accounts?",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000007",
+   "created_date": "2026-08-05 09:31:38.452205",
+   "updated_date": "2026-08-05 09:31:40.242201",
+   "conversation_id": "bbbbbbbb-0000-4000-8000-000000000002",
+   "sender_name": "Erin Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000002",
+   "text": "Accounts live in one table, sessions in another.",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000008",
+   "created_date": "2026-08-05 09:26:38.792079",
+   "updated_date": "2026-08-05 09:26:46.128387",
+   "conversation_id": "bbbbbbbb-0000-4000-8000-000000000002",
+   "sender_name": "Alice Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000001",
+   "text": "Can you share the diagram?",
+   "delivery_status": "received"
+  },
+  {
+   "id": "cccccccc-0000-4000-8000-000000000009",
+   "created_date": "2026-08-05 09:21:05.640726",
+   "updated_date": "2026-08-05 09:21:11.791991",
+   "conversation_id": "bbbbbbbb-0000-4000-8000-000000000002",
+   "sender_name": "Erin Example",
+   "sender_id": "dddddddd-0000-4000-8000-000000000002",
+   "text": "Shared - see the attached notes.",
+   "delivery_status": "received"
+  }
+ ]
+}

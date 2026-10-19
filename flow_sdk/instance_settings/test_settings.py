@@ -27,11 +27,14 @@ from .base_settings import (
     ENV_FLOWPAD_CLAUDE_HOME,
     ENV_FLOWPAD_CLOUD_API_KEY,
     ENV_FLOWPAD_CLOUD_API_URL,
+    ENV_FLOWPAD_COPILOT_HOME,
     ENV_FLOWPAD_DOCKER_PUBLIC_URL,
     ENV_FLOWPAD_HUB_URL,
     ENV_FS_RECORD_PATH,
     ENV_MINIHUB_RELOAD,
     ENV_SQLITE_DATABASE_PATH,
+    ENV_XDG_CONFIG_HOME,
+    ENV_XDG_DATA_HOME,
     BaseInstanceSettings,
 )
 
@@ -41,6 +44,17 @@ DEFAULT_TEST_PORT = 9009
 
 class TestInstanceSettings(BaseInstanceSettings):
     """Test-mode settings. All paths anchored under a sandbox dir."""
+
+    @property
+    def workspace_root(self) -> Path:
+        """The sandbox's own ``Flowpad workspace`` — follows ``user_home``, so a test
+        that points ``user_home`` somewhere gets its workspace there too."""
+        return self.user_home / "Flowpad workspace"
+
+    @property
+    def workspaces_home(self) -> Path:
+        """New workspaces' default parent — follows ``user_home`` like ``workspace_root``."""
+        return self.user_home / "Flowpad"
 
     @classmethod
     def from_env(cls) -> "TestInstanceSettings":
@@ -55,12 +69,27 @@ class TestInstanceSettings(BaseInstanceSettings):
         claude_home = Path(claude_home_env) if claude_home_env else sandbox / ".claude"
         codex_home_env = os.environ.get(ENV_CODEX_HOME)
         codex_home = Path(codex_home_env) if codex_home_env else sandbox / ".codex"
+        copilot_home_env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
+        copilot_home = Path(copilot_home_env) if copilot_home_env else sandbox / ".copilot"
+        # OpenCode follows XDG, so the sandbox redirects those roots.
+        opencode_data_env = os.environ.get(ENV_XDG_DATA_HOME)
+        opencode_data_dir = (
+            Path(opencode_data_env) if opencode_data_env else sandbox / ".local" / "share"
+        ) / "opencode"
+        opencode_config_env = os.environ.get(ENV_XDG_CONFIG_HOME)
+        opencode_config_dir = (
+            Path(opencode_config_env) if opencode_config_env else sandbox / ".config"
+        ) / "opencode"
         flow_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
         codex_home.mkdir(parents=True, exist_ok=True)
+        copilot_home.mkdir(parents=True, exist_ok=True)
         for sub in ("skills", "agents", "projects", "commands", "plans", "workflows", "docs", "tasks"):
             (claude_home / sub).mkdir(parents=True, exist_ok=True)
         (codex_home / "sessions").mkdir(parents=True, exist_ok=True)
+        (copilot_home / "session-state").mkdir(parents=True, exist_ok=True)
+        opencode_data_dir.mkdir(parents=True, exist_ok=True)
+        opencode_config_dir.mkdir(parents=True, exist_ok=True)
 
         # Tests can still override via FS_RECORD_PATH / SQLITE_DATABASE_PATH for
         # per-test isolation on top of the sandbox.
@@ -80,6 +109,8 @@ class TestInstanceSettings(BaseInstanceSettings):
             server_json_path=flow_home / "server.json",
             server_pid_path=flow_home / "server.pid",
             server_lock_path=flow_home / "server.lock",
+            monitor_pid_path=flow_home / "server.monitor.pid",
+            monitor_lock_path=flow_home / "server.monitor.lock",
             server_log_path=flow_home / "server.log",
             flow_home=flow_home,
             records_root=records_root,
@@ -91,7 +122,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             records_data_dir=flow_home / "records_data",
             logs_dir=flow_home / "instances" / "test" / "logs",
             monitor_log_path=flow_home / "monitor.log",
-            inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
+            stream_inbox_last_fetch_path=flow_home / ".stream_inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".conversation_last_sync.json",
             transcript_cursors_path=flow_home / "transcript_cursors.json",
             worker_history_cache_path=flow_home / "worker_history_cache.sqlite",
@@ -105,7 +136,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            claude_docs_dir=claude_home / "docs",
+            user_docs_dir=sandbox / "docs",
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
@@ -116,6 +147,11 @@ class TestInstanceSettings(BaseInstanceSettings):
             codex_config_path=codex_home / "config.toml",
             codex_history_path=codex_home / "history.jsonl",
             codex_session_index_path=codex_home / "session_index.jsonl",
+            copilot_home=copilot_home,
+            copilot_session_state_dir=copilot_home / "session-state",
+            copilot_config_path=copilot_home / "config.json",
+            opencode_data_dir=opencode_data_dir,
+            opencode_config_dir=opencode_config_dir,
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),

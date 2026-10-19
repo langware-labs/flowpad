@@ -1,7 +1,7 @@
-"""Named identity-capsule policy through ``TypeInfo.mint_id``.
+"""The markdown miss-policy through ``reconcile`` over the frontmatter carrier.
 
-The universal miss-policy for shareable file entities: adopt a valid v4/v5 id
-from legacy frontmatter, else mint a random v4 into the named comment capsule
+Adopt a valid v4/v5 frontmatter ``id:``, else mint a random v4 INTO the
+frontmatter
 (never derive uuid5(path) as the persisted id — that collides across
 machines on share). uuid5(path) survives only as the read-only-file fallback.
 """
@@ -13,15 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import (
+from flow_sdk.assets import Asset
+from flow_sdk.assets.frontmatter import (
     _extract_frontmatter,
     _yaml_load,
-    read_frontmatter_id,
 )
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_id
+from flow_sdk.capsules import AssetCapsule
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import frontmatter_id, resolve_id
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "seed"))
@@ -31,7 +31,7 @@ V7 = "018f0000-0000-7000-8000-000000000000"  # valid syntax, foreign version
 def _mint(ref: FSRef) -> str:
     info = SchemaRegistry.get("markdown")
     assert info is not None
-    return info.mint_id(ref)
+    return resolve_id(info, ref)
 
 
 def _ver(u: str) -> int:
@@ -44,6 +44,7 @@ def _fm_id(p: Path):
 
 
 def _capsule_id(p: Path):
+    """The legacy markdown capsule — must stay absent: nothing writes it any more."""
     data = AssetCapsule.from_path(p).read("identity")
     return data.data.get("id") if data else None
 
@@ -93,8 +94,8 @@ def test_no_id_mints_v4_and_persists(tmp_path: Path) -> None:
     got = _mint(FSRef(p))
     assert _ver(got) == 4
     assert got != str(uuid.uuid5(uuid.NAMESPACE_URL, str(p.resolve()))), "not uuid5(path)"
-    assert _fm_id(p) is None
-    assert _capsule_id(p) == got
+    assert _fm_id(p) == got
+    assert _capsule_id(p) is None, "the capsule is legacy: nothing writes it"
     assert "# body only" in p.read_text(encoding="utf-8")
 
 
@@ -114,7 +115,7 @@ def test_peek_adopts_v4_without_writing(tmp_path: Path) -> None:
     p = tmp_path / "a.md"
     _write(p, "body", fm=f"id: {V4}")
     mtime = p.stat().st_mtime
-    assert markdown_id(FSRef(p)) == V4
+    assert Asset.from_path(p).typeid.id == V4
     assert p.stat().st_mtime == mtime
 
 
@@ -122,7 +123,7 @@ def test_peek_on_miss_returns_derive_key_no_write(tmp_path: Path) -> None:
     p = tmp_path / "a.md"
     p.write_text("body", encoding="utf-8")
     before = p.read_text(encoding="utf-8")
-    got = markdown_id(FSRef(p))
+    got = Asset.from_path(p).typeid.id
     assert got == str(uuid.uuid5(uuid.NAMESPACE_URL, str(p.resolve())))
     assert p.read_text(encoding="utf-8") == before, "peek must never touch disk"
 
@@ -133,7 +134,7 @@ def test_helper_write_back_false_never_writes(tmp_path: Path) -> None:
     p = tmp_path / "a.md"
     p.write_text("no id here", encoding="utf-8")
     before = p.read_text(encoding="utf-8")
-    got = read_frontmatter_id(p)
+    got = frontmatter_id(p)
     assert got is None
     assert p.read_text(encoding="utf-8") == before
 

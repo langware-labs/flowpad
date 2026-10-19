@@ -1,5 +1,5 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { BrowseableTree, ToolbarButton } from '@src/components/browseable-tree/BrowseableTree';
 import { TreeSelectionContext, useTreeSelection } from '@src/components/browseable-tree/useTreeSelection';
@@ -8,6 +8,25 @@ import { SelectionActionBar } from './SelectionActionBar';
 import type { NavigatorDescriptor, NavigatorWidth } from './types';
 
 const DEFAULT_WIDTH: NavigatorWidth = { default: 224, min: 160, max: 560 };
+
+/**
+ * How the HOST wants its navigator's open/closed state handled. The host that
+ * owns the layout decides (ContentPanel, for a `win/` popout: start collapsed,
+ * keep toggles local); the panel only follows it and never reads the route.
+ */
+export interface NavigatorCollapsePolicy {
+  /** Start collapsed regardless of the stored choice. */
+  startCollapsed: boolean;
+  /** Write toggles to localStorage (shared by every window of this origin). */
+  persist: boolean;
+}
+
+export const DEFAULT_NAVIGATOR_POLICY: NavigatorCollapsePolicy = { startCollapsed: false, persist: true };
+/** A tab opened in its own window: the window is for the content, and its
+ *  toggles must not rewrite the main window's stored choice. */
+export const POPOUT_NAVIGATOR_POLICY: NavigatorCollapsePolicy = { startCollapsed: true, persist: false };
+
+export const NavigatorCollapsePolicyContext = createContext<NavigatorCollapsePolicy>(DEFAULT_NAVIGATOR_POLICY);
 
 /** This navigator's own persisted open/closed choice, or `null` if never set,
  *  so the default (open) applies only on first sight — an explicit '0' (open)
@@ -50,8 +69,9 @@ export function NavigatorPanel({
   const { t } = useLingui();
 
   // Open by default on first sight; an explicit choice (incl. '0' = open) is
-  // remembered across reloads.
-  const [collapsed, setCollapsed] = useState(() => readCollapsed(id) ?? false);
+  // remembered across reloads — unless the host's policy says otherwise.
+  const { startCollapsed, persist } = useContext(NavigatorCollapsePolicyContext);
+  const [collapsed, setCollapsed] = useState(() => startCollapsed || (readCollapsed(id) ?? false));
   const [width, setWidth] = useState<number>(() => readWidth(id, bounds, legacyKeys));
   const [isResizing, setIsResizing] = useState(false);
 
@@ -112,9 +132,9 @@ export function NavigatorPanel({
   }, [selectionEnabled]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !persist) return;
     window.localStorage.setItem(`navigator:${id}:collapsed`, collapsed ? '1' : '0');
-  }, [id, collapsed]);
+  }, [id, collapsed, persist]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -154,6 +174,7 @@ export function NavigatorPanel({
     <BrowseableTree
       roots={descriptor.roots ?? []}
       activePointer={descriptor.activePointer ?? null}
+      activeResourcePointer={descriptor.activeResourcePointer ?? null}
       activeKey={descriptor.activeKey}
       isLoading={descriptor.isLoading}
       onNavigate={descriptor.onNavigate}
@@ -163,7 +184,7 @@ export function NavigatorPanel({
 
   if (collapsed) {
     return (
-      <div className="flex w-9 flex-shrink-0 flex-col items-center border-r py-1.5">
+      <div className="flex w-9 flex-shrink-0 flex-col items-center border-e py-1.5">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -186,7 +207,7 @@ export function NavigatorPanel({
     <TreeSelectionContext.Provider value={selectionEnabled ? selection : null}>
       <div
         ref={panelRef}
-        className="flex-shrink-0 overflow-hidden border-r"
+        className="flex-shrink-0 overflow-hidden border-e"
         style={{ width }}
         data-testid={`navigator-panel-${id}`}
       >
@@ -216,7 +237,7 @@ export function NavigatorPanel({
                     </span>
                   )}
                   {(header.headerRight || (header.toolbar && header.toolbar.length > 0) || search.searchIcon) && (
-                    <div className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                    <div className="ms-auto flex flex-shrink-0 items-center gap-0.5">
                       {search.searchIcon}
                       {header.headerRight}
                       {header.toolbar?.map((a) => (

@@ -52,25 +52,32 @@ export function VerdictBanner({ data }: { data: VerdictBannerData }) {
       <span className="text-sm font-semibold tabular-nums" title={t`Total cost`}>
         {data.cost_usd != null ? `$${data.cost_usd.toFixed(2)}` : '—'}
       </span>
-      <span className="text-[11px] uppercase tracking-wide opacity-70"><Trans>total</Trans></span>
+      <span className="text-[11px] uppercase tracking-wide opacity-70">
+        <Trans>total</Trans>
+      </span>
       {data.maxCostPerHour != null && data.maxCostPerHour > 0 && (
         <>
-          <span className="ml-2 text-sm font-semibold tabular-nums" title={t`Peak spend rate`}>
+          <span className="ms-2 text-sm font-semibold tabular-nums" title={t`Peak spend rate`}>
             ${data.maxCostPerHour.toFixed(2)}/h
           </span>
-          <span className="text-[11px] uppercase tracking-wide opacity-70"><Trans>peak</Trans></span>
+          <span className="text-[11px] uppercase tracking-wide opacity-70">
+            <Trans>peak</Trans>
+          </span>
         </>
       )}
       {hasVerdict && (
-        <span className="ml-2 rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ring-1 ring-current/30">
+        <span className="ring-current/30 ms-2 rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ring-1">
           {data.verdict}
         </span>
       )}
       {hasVerdict && data.verdict_reason && (
         <span className="min-w-0 flex-1 truncate text-sm">{data.verdict_reason}</span>
       )}
-      <span className="ml-auto flex-shrink-0 text-xs opacity-80">
-        <Trans>{data.issue_count} issues · {data.divergence_count} divergences · {data.lane_count} lanes · {data.duration_ms ? formatDuration(data.duration_ms) : '—'}</Trans>
+      <span className="ms-auto flex-shrink-0 text-xs opacity-80">
+        <Trans>
+          {data.issue_count} issues · {data.divergence_count} divergences · {data.lane_count} lanes ·{' '}
+          {data.duration_ms ? formatDuration(data.duration_ms) : '—'}
+        </Trans>
       </span>
     </div>
   );

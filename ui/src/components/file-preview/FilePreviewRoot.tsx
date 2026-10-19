@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FilePreviewSheet } from './FilePreviewSheet';
-import { useFilePreviewStore, type FilePreviewTarget } from './file-preview';
+import { closeFilePreview, useFilePreviewStore, type FilePreviewTarget } from './file-preview';
 
 /**
  * Global host for `openFilePreview(target)`. Mounted once near the app root
@@ -11,8 +11,8 @@ import { useFilePreviewStore, type FilePreviewTarget } from './file-preview';
  * Owns "Open in editor" too — the sheet itself stays presentation-only.
  */
 export function FilePreviewRoot() {
-  const target = useFilePreviewStore((s) => s.target);
-  const close = useFilePreviewStore((s) => s.close);
+  const target = useFilePreviewStore((s) => s.payload);
+  const close = closeFilePreview;
   const { navigation } = useDockNavigation();
 
   const openInEditor = useCallback(

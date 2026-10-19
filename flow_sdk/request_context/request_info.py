@@ -7,20 +7,20 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI
 from starlette.requests import Request
 
-from flow_sdk.config import default_service_config
-from flow_sdk.flowpad_types.enums import ExpansionType
-from flow_sdk.api.type_id import TypeId
 from flow_sdk.actions.action_registry import get_action_from_method
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.request_context.request_utils import align_request_typeids
-from flow_sdk.core.urls.service_urls import urls_service
-
-from flow_sdk.utils import starlett_query_brackets_to_dict
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.config import default_service_config
 from flow_sdk.core.policy import PolicyResolver
-from .auth_info import AuthContext, AuthResult
+from flow_sdk.core.urls.service_urls import urls_service
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.flowpad_types.enums import ExpansionType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.request_context.request_utils import align_request_typeids
 from flow_sdk.request_context.transaction_handler import TransactionHandler
+from flow_sdk.utils import starlett_query_brackets_to_dict
+
+from .auth_info import AuthContext, AuthResult
 
 
 class RequestInfo:
@@ -55,6 +55,10 @@ class RequestInfo:
         # the ``Hub-Reflect`` HTTP header, or from the ``hub_reflect`` field of a
         # ``rest_api_msg`` on the WS-REST path (see server/routes/ws_rest.py).
         self.hub_reflect: bool = False
+        # The browser tab (WebSocket connection id) that sent this request, when the
+        # client marked it as starting something the server must answer back to —
+        # an authorization flow confirms in the screen that asked. Empty otherwise.
+        self.initiator_connection_id: str = ""
         self.immediate_commit = False
         self.request: Request | None = None
         self.request_parameters: Dict[str, Any] = {}
@@ -107,22 +111,6 @@ class RequestInfo:
         )
 
     @property
-    def is_post(self) -> bool:
-        return self.method == "post"
-
-    @property
-    def is_get(self) -> bool:
-        return self.method == "get"
-
-    @property
-    def is_put(self) -> bool:
-        return self.method == "put"
-
-    @property
-    def is_delete(self) -> bool:
-        return self.method == "delete"
-
-    @property
     def method(self) -> str:
         if self.request is None:
             return ""
@@ -166,39 +154,6 @@ class RequestInfo:
     def someone_typeid(self) -> TypeId | None:
         return self.user.typeid if self.user else self.visitor_typeid
 
-    def parse_external_domain_micro_app_request(self, micro_app_id: str):
-        self._lock = True
-        self.target_entity_typeid = TypeId(type=BuiltinEntityType.MICRO_APP.value, id=micro_app_id)
-        self.action = default_service_config.micro_app_domain_config.view_action if default_service_config.micro_app_domain_config else None
-        self.sub_path = (self.request.url.path if self.request.url.path != "/" else None) if self.request else None
-
-    def is_micro_app_request(self) -> bool:
-        if not self.request:
-            return False
-        if not default_service_config.micro_app_domain_config:
-            return False
-        host = self.request.headers.get("x-forwarded-host") or self.request.headers.get("host") or ""
-        if not host:
-            return False
-        is_api_prefix: bool = self.request.url.path.startswith(urls_service.api.api_prefix)
-        is_app_host: bool = self.request.url.hostname == urls_service.app.app_hostname
-        is_micro_app_host: bool = default_service_config.micro_app_domain_config.is_micro_app_host(host)
-
-        return bool(not (is_api_prefix or is_app_host) or is_micro_app_host)
-
-    def parse_micro_app_request(self):
-        if not self.request:
-            return
-        if not default_service_config.micro_app_domain_config:
-            return
-        _micro_app_id = default_service_config.micro_app_domain_config.get_micro_app_id_from_host(
-            self.request.headers.get("host")
-        )
-        if not _micro_app_id:
-            return
-        self.target_entity_typeid = TypeId(type=BuiltinEntityType.MICRO_APP.value, id=_micro_app_id)
-        self.action = default_service_config.micro_app_domain_config.view_action
-
     async def parse_from_request(self, request: Request):
         if self._lock:
             raise ValueError("RequestInfo is locked and cannot be modified")
@@ -206,13 +161,11 @@ class RequestInfo:
         # Per-call hub-reflection opt-in (default False). The header is a local
         # routing directive only — CloudProxy strips it before forwarding to the hub.
         self.hub_reflect = request.headers.get("Hub-Reflect", "").strip().lower() in ("true", "1", "yes")
+        self.initiator_connection_id = request.headers.get("X-Flow-Connection-Id", "").strip()
         visitor_id = request.cookies.get(default_service_config.visitor_cookie_name) or request.cookies.get(
             default_service_config.visitor_session_cookie_name
         )
         self.visitor_typeid = TypeId(type=BuiltinEntityType.VISITOR.value, id=visitor_id) if visitor_id else None
-        if self.is_micro_app_request():
-            self.parse_micro_app_request()
-            return
         await self._parse_request_parameters(request)
         await self.parse_api_path(request.url.path)
         if not self.action:
@@ -236,18 +189,10 @@ class RequestInfo:
         utm = {k: v for k, v in self.request_parameters.items() if k.startswith("utm_")}
         self.utm = utm if utm else None
 
-        # For POST/PUT/PATCH/DELETE requests, merge form data into request_parameters
-        # Only merge form data, not JSON data, as JSON is typically complex structured data
-        if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
-            content_type = request.headers.get("content-type", "")
-            if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
-                await self._parse_request_body()
-                if self._post_data and isinstance(self._post_data, dict):
-                    # Merge form data including UploadFile objects
-                    for key, value in self._post_data.items():
-                        # Include strings, lists, and UploadFile objects
-                        if isinstance(value, (str, list)) or hasattr(value, "filename"):
-                            self.request_parameters[key] = value
+        # Request bodies are deliberately not consumed in middleware. The graph
+        # dispatcher parses them once when binding handler arguments. This also
+        # lets a Git-backed remote FS request take the early CloudProxy branch
+        # with its original multipart/streaming body intact.
 
     @property
     def api_request(self) -> APIRequest:

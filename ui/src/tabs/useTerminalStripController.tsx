@@ -1,3 +1,5 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
 /**
  * useTerminalStripController — the terminal-strip CHROME (docs/tab-management.md
  * Part 3 §6). After the Tab-entity cutover the strip itself is the shared
@@ -5,64 +7,64 @@
  * the terminal body is `TabbedTerminal`; both derive order/label/active from the
  * one backend source. This hook owns only the chrome neither of them computes:
  *
- *   - spawn flows (claude/codex/copilot/terminal/sandbox/docker) + harness gating
+ *   - spawn flows (claude/codex/copilot/terminal/sandbox) + harness gating
  *   - the opener toolbar (`trailing`), the new-tab menu, and the empty-state
  *     spawn handlers
- *   - the `ProjectsCounterChip` (`leading`)
  *   - the history / resume / install modals
  *
  * It holds NO session list, active-key, or close/rename/select handlers — those
- * are URL-first in `UnifiedTabStrip`. Spawns navigate directly to the new
+ * are URL-first in `UnifiedTabStrip`. Nor any project switcher or history
+ * controls: both live in the top navigation bar (`RuntimeChip`), the app's one
+ * browser-style chrome, so the strip's band is all tabs. Spawns navigate directly to the new
  * terminal (no host callback round-trip).
  */
 import {
   AgenticProcess,
-  capabilityManager,
   CapabilityKinds,
   ContextEntitiesEnum,
+  InstallState,
   dataContext,
   GraphContext,
-  HARNESS_CAPABILITY_KINDS,
+  ViewType,
   type ComputeNode,
 } from '@sdk';
-import { type UseCapabilityResult } from '@sdk/react/hooks';
-import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useHarnessAvailability } from '@src/components/workers/harness-availability';
+import { harnessStatus } from '@src/components/status/use-status-record';
+import { useIsAdvanced, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { useEnsureProject } from '@src/components/project-selector';
+import { projectScope } from '@src/lib/scope-filter';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { type TabStripContextMenuItem } from '@src/components/tabs/TabStrip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Cloud, Container, History, SquareTerminal } from 'lucide-react';
+import { openNewChat } from '@src/navigation/open-new-chat';
+import { Cloud, History, Sparkles, SquareTerminal } from 'lucide-react';
+import { FlowIcon } from '@sdk/react/FlowIcon';
+import { useContext } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
-import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
-import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
+import { useHarnessInstallPrompt } from '@src/components/terminal/openers/use-harness-install-prompt';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
+import { HARNESS_CAPABILITY_BY_WORKER, type WorkerType } from '@src/components/workers/worker-types';
 
+/** Claude, badged to say this opener RESUMES a session rather than starting one.
+ *
+ *  The badge is composed, not drawn: `brands.claude.restore` is the same icon
+ *  with a `restore` role, so a fifth vendor's resume glyph is a pack entry
+ *  rather than another hand-rolled span. */
 const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <span className={`relative inline-flex items-center justify-center ${className ?? ''}`}>
-    <ClaudeIcon className="!h-4 !w-4 text-orange-500" />
-    <History className="absolute -bottom-0.5 -right-0.5 !h-2.5 !w-2.5 text-foreground/80" strokeWidth={3} />
-  </span>
+  <FlowIcon
+    icon="brands.claude"
+    role="restore"
+    className={`h-4 w-4 text-orange-500 ${className ?? ''}`}
+    badgeClassName="text-foreground/80"
+  />
 );
-
-/** Opener warning for a harness: set when its backend capability check ran and failed. */
-function harnessWarning(capability: UseCapabilityResult): string | null {
-  if (!capability.checked || capability.available) return null;
-  return capability.result?.message ?? 'This harness is not available on this machine.';
-}
-
-/** WorkerType → the controller's per-vendor kind token (pending-label key). */
-const kindForWorker = (worker: ProjectWorkerType): 'claude' | 'codex' | 'copilot' =>
-  worker === 'claude_code' ? 'claude' : worker;
 
 export interface TerminalStripControllerOptions {
   /** Whether to expose the "Add Tab" opener toolbar as `trailing`. */
@@ -76,13 +78,11 @@ export interface TerminalStripController {
   tabsProjectId: string | null;
   newTabMenuItems: TabStripContextMenuItem[];
   closeShortcutLabel: string;
-  /** Leading fixed node (ProjectsCounterChip). */
-  leading: React.ReactNode;
   /** Trailing opener toolbar (null unless `addTabButton`). */
   trailing: React.ReactNode;
   /**
    * The spawn openers as descriptors (claude/codex/copilot/terminal/sandbox/
-   * docker/history/…). Exposed so a surface can render a *subset* itself —
+   * history/…). Exposed so a surface can render a *subset* itself —
    * e.g. the project home's launcher takes only `terminal` — instead of
    * re-deriving a button's label/icon/pending state from the raw handlers.
    */
@@ -93,8 +93,6 @@ export interface TerminalStripController {
   isClaudeCreationPending: boolean;
   isTerminalCreationPending: boolean;
   handleStartClaude: () => Promise<void> | void;
-  /** Generic vendor launch — the `WorkerToolbar.onLaunch` contract. */
-  startWorker: (worker: ProjectWorkerType) => Promise<void> | void;
   handleStartTerminal: () => Promise<void> | void;
   handleOpenHistory: () => void;
 }
@@ -105,25 +103,25 @@ export function useTerminalStripController({
 }: TerminalStripControllerOptions = {}): TerminalStripController {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  useRuntimeInfo();
+  const { sandboxComputeNode } = useContext();
   const isAdvanced = useIsAdvanced();
   // Per-type icon from the backend TypeInfo registry (never hardcode a glyph).
   // Memoized so it stays referentially stable and doesn't churn the openers /
   // newTabMenuItems memos on every render.
   const ContextIcon = useMemo(() => iconForType(GraphContext.type), []);
   const tabsProjectId = spawnProjectId ?? dataContext.project?.id ?? null;
-  const currentProjectName = spawnProjectId
-    ? null
-    : (dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null);
 
   const tabCreationLockRef = useRef(false);
   const [pendingTabCreation, setPendingTabCreation] = useState<
-    'claude' | 'codex' | 'copilot' | 'terminal' | null
+    'claude' | 'codex' | 'copilot' | 'opencode' | 'terminal' | null
   >(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
-  const { claude: claudeCapability, codex: codexCapability, copilot: copilotCapability } = useHarnessCapabilities();
-  const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
-  const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
+  const { warnings, record } = useHarnessAvailability();
+  // Shared with the vibe chat's first prompt — the other route that discovers a
+  // missing harness (see use-harness-install-prompt).
+  const { promptToInstall, confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
   const { resumeInTerminal } = useResumeInTerminal();
 
   const clearPending = useCallback(() => {
@@ -132,76 +130,63 @@ export function useTerminalStripController({
   }, []);
 
   // "Start <vendor>" — create the AgenticProcess then navigate to its terminal.
-  // `launch` overrides the project the process is pinned to (projects-chip path).
   const startAgenticTab = useCallback(
-    async (
-      kind: 'claude' | 'codex' | 'copilot',
-      workerType?: 'claude_code' | 'codex' | 'copilot',
-      launch?: { projectId: string; cwd?: string | null },
-    ) => {
+    async (kind: 'claude' | 'codex' | 'copilot' | 'opencode', workerType?: WorkerType, mode?: ViewMode) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
+      // Gate on the vendor the user actually clicked, else the default harness — read off the
+      // status record, so a missing binary is reported against the right one.
+      const requiredKind = workerType ? HARNESS_CAPABILITY_BY_WORKER[workerType] : CapabilityKinds.Harness;
+      // The lock is released in `finally` and NOWHERE else: an unhandled throw
+      // used to strand it set, which left a permanent spinner on the opener and
+      // made every later click a silent no-op until the page reloaded.
       try {
-        const requiredKind =
-          workerType === 'codex'
-            ? CapabilityKinds.Codex
-            : workerType === 'claude_code'
-              ? CapabilityKinds.ClaudeCode
-              : CapabilityKinds.Harness;
-        const harness = await capabilityManager.ensureChecked(requiredKind);
-        if (harness.checked && !harness.available) {
-          askInstallOneOf([...HARNESS_CAPABILITY_KINDS]);
-          clearPending();
+        // Status not read yet (no record) fails open — it never blocks tab creation.
+        const kind = workerType ? requiredKind : record?.default_harness;
+        if (kind && harnessStatus(record, kind)?.install === InstallState.NotInstalled) {
+          promptToInstall();
           return;
         }
-      } catch {
-        // Capability API unavailable (older backend) — don't block tab creation.
-      }
-      const launchProjectId = launch?.projectId ?? spawnProjectId;
-      const result = await navigation.openNewClaudeProcess({
-        ...(launchProjectId ? { projectId: launchProjectId } : {}),
-        ...(launch?.cwd ? { cwd: launch.cwd } : {}),
-        ...(workerType ? { workerType } : {}),
-      });
-      if (!result) {
+        // openNewChat creates AND navigates — it owns the chat-mode propagation,
+        // so a second openShellProcess here would re-navigate the same dock
+        // without `?viewMode` and strip the mode back off the URL.
+        // The strip's openers start a terminal (PTY) session, whatever mode is
+        // on screen — a tab beside the current one, never another Vibe ("New
+        // Vibe" is its own opener). Only `launchIn` (the quick-launch slot)
+        // names another shape.
+        await openNewChat(navigation, {
+          ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
+          ...(workerType ? { workerType } : {}),
+          mode: mode ?? ViewMode.Advanced,
+        });
+      } catch (error: unknown) {
+        // The spawn failed. ASK what is wrong rather than assuming, because the
+        // two likely causes want different screens and the pre-flight cannot
+        // tell them apart: it reads the capability row, which is what let us
+        // through here.
+        //
+        // A harness gone from disk gets the install dialog. A harness that is
+        // PRESENT but has nothing to run on — no sign-in, no key, no budget —
+        // gets the sign-in modal; sending that one to the Capabilities view (an
+        // inventory of what is installed) offered a re-check and an installer
+        // for something already installed, which is what a real Windows report
+        // looked like. Anything else keeps the Capabilities view rather than
+        // being mislabelled as either.
+        confirmMissingThen(requiredKind, error, () =>
+          navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind }),
+        );
+      } finally {
         clearPending();
-        return;
       }
-      // URL-first: navigate to the new process's terminal; the loader materializes
-      // its Tab and the strip/body re-render from the one source.
-      await navigation.openShellProcess(result.processId);
-      clearPending();
     },
-    [askInstallOneOf, clearPending, navigation, spawnProjectId],
+    [confirmMissingThen, promptToInstall, clearPending, navigation, spawnProjectId, record],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
   const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
-  const startWorker = useCallback(
-    (worker: ProjectWorkerType) => startAgenticTab(kindForWorker(worker), worker),
-    [startAgenticTab],
-  );
-
-  const ensureProject = useEnsureProject();
-  const handleLaunchProjectPath = useCallback(
-    async (cwd: string, workerType: ProjectWorkerType) => {
-      try {
-        const project = await ensureProject(cwd, { select: false });
-        await startAgenticTab(kindForWorker(workerType), workerType, {
-          projectId: project.id,
-          cwd: project.fs_storage_mount_path,
-        });
-      } catch (error) {
-        notify.error({
-          title: t`Failed to open project`,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-    [ensureProject, startAgenticTab],
-  );
+  const handleStartOpenCode = useCallback(() => startAgenticTab('opencode', 'opencode'), [startAgenticTab]);
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
@@ -217,13 +202,19 @@ export function useTerminalStripController({
         clearPending();
         return;
       }
-      await navigation.openShell(result.shellId);
+      // A top-level tab, never a child of the Vibe tab on screen.
+      await navigation.openShell(result.shellId, { topLevel: true });
       clearPending();
     },
     [clearPending, navigation, spawnProjectId],
   );
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
+  // "New Vibe": the tabless Vibe home, whose prompt opens the next Vibe tab.
+  const handleNewVibe = useCallback(() => {
+    const home = DockPointer.root().withViewMode(ViewMode.Vibe);
+    return navigation.openDock(spawnProjectId ? home.withScopeFilter(projectScope(spawnProjectId)) : home);
+  }, [navigation, spawnProjectId]);
 
   // "Open Context" — freeze the current global context (the ContextEntitiesEnum
   // slots) into a new GraphContext entity and open it in a tab. URL-first: we
@@ -257,12 +248,12 @@ export function useTerminalStripController({
     navigation.openDock(DockPointer.forGraphContext(gc.typeId.id));
   }, [navigation]);
 
-  const handleStartSandbox = useCallback(() => {
+  const handleStartSandbox = useCallback(async () => {
+    await lazyAssets.load(LazyAsset.RuntimeInfo);
     const sandboxNode = dataContext.sandboxComputeNode;
     if (!sandboxNode) return;
     return startTerminalTab(sandboxNode);
   }, [startTerminalTab]);
-  const handleStartDocker = useCallback((dockerNode: ComputeNode) => startTerminalTab(dockerNode), [startTerminalTab]);
 
   // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux (label only).
   const osPlatform: string =
@@ -273,23 +264,31 @@ export function useTerminalStripController({
   const isClaudeCreationPending = pendingTabCreation === 'claude';
   const isCodexCreationPending = pendingTabCreation === 'codex';
   const isCopilotCreationPending = pendingTabCreation === 'copilot';
+  const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
-  const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
-  const dockerNodes = dataContext.dockerComputeNodes;
-  const claudeWarning = harnessWarning(claudeCapability);
-  const codexWarning = harnessWarning(codexCapability);
-  const copilotWarning = harnessWarning(copilotCapability);
+  const sandboxAvailable = !!sandboxComputeNode;
 
   const openers = useMemo<OpenerDescriptor[]>(
     () => [
+      {
+        // The tabless Vibe home: sending its prompt opens the next Vibe tab.
+        id: 'vibe',
+        label: t`New Vibe`,
+        Icon: Sparkles,
+        onActivate: handleNewVibe,
+        available: true,
+        disabled: isTabCreationPending,
+      },
       {
         id: 'claude',
         label: t`Start Claude`,
         Icon: PROVIDER_META.claude.Icon,
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
+        launchIn: (mode) => void startAgenticTab('claude', 'claude_code', mode),
         available: true,
-        warning: claudeWarning,
+        warning: warnings.claude_code,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.claude_code,
         pendingInline: isClaudeCreationPending,
         disabled: isTabCreationPending,
       },
@@ -299,8 +298,10 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.codex.Icon,
         iconClassName: PROVIDER_META.codex.iconClassName,
         onActivate: () => void handleStartCodex(),
+        launchIn: (mode) => void startAgenticTab('codex', 'codex', mode),
         available: true,
-        warning: codexWarning,
+        warning: warnings.codex,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.codex,
         pendingInline: isCodexCreationPending,
         disabled: isTabCreationPending,
       },
@@ -310,9 +311,24 @@ export function useTerminalStripController({
         Icon: PROVIDER_META.copilot.Icon,
         iconClassName: PROVIDER_META.copilot.iconClassName,
         onActivate: () => void handleStartCopilot(),
+        launchIn: (mode) => void startAgenticTab('copilot', 'copilot', mode),
         available: true,
-        warning: copilotWarning,
+        warning: warnings.copilot,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.copilot,
         pendingInline: isCopilotCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'opencode',
+        label: t`Start OpenCode`,
+        Icon: PROVIDER_META.opencode.Icon,
+        iconClassName: PROVIDER_META.opencode.iconClassName,
+        onActivate: () => void handleStartOpenCode(),
+        launchIn: (mode) => void startAgenticTab('opencode', 'opencode', mode),
+        available: true,
+        warning: warnings.opencode,
+        capabilityKind: HARNESS_CAPABILITY_BY_WORKER.opencode,
+        pendingInline: isOpenCodeCreationPending,
         disabled: isTabCreationPending,
       },
       {
@@ -343,20 +359,6 @@ export function useTerminalStripController({
         disabled: isTabCreationPending,
       },
       {
-        id: 'docker',
-        label: t`Open docker terminal`,
-        Icon: Container,
-        iconClassName: 'text-blue-500',
-        onActivate: () => {
-          if (dockerNodes.length === 1) void handleStartDocker(dockerNodes[0]);
-        },
-        onDockerNodeSelect: (dockerNode) => void handleStartDocker(dockerNode),
-        available: dockerNodes.length > 0,
-        pendingInline: isTerminalCreationPending,
-        disabled: isTabCreationPending,
-        dockerNodes,
-      },
-      {
         id: 'history',
         label: t`Open from history`,
         Icon: History,
@@ -375,60 +377,48 @@ export function useTerminalStripController({
     ],
     [
       modLabel,
+      handleNewVibe,
+      startAgenticTab,
       handleStartClaude,
       handleStartCodex,
       handleStartCopilot,
+      handleStartOpenCode,
       handleStartTerminal,
       handleStartSandbox,
-      handleStartDocker,
       handleOpenContext,
       isAdvanced,
       ContextIcon,
       sandboxAvailable,
-      dockerNodes,
-      claudeWarning,
-      codexWarning,
-      copilotWarning,
+      warnings,
       isClaudeCreationPending,
       isCodexCreationPending,
       isCopilotCreationPending,
+      isOpenCodeCreationPending,
       isTerminalCreationPending,
       isTabCreationPending,
     ],
   );
 
   const trailing = useMemo(
-    () => (addTabButton ? <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} /> : null),
+    () =>
+      addTabButton ? <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} /> : null,
     [addTabButton, openers, isTabCreationPending],
   );
 
   const newTabMenuItems = useMemo<TabStripContextMenuItem[]>(
     () => [
+      { label: t`New Vibe`, onSelect: handleNewVibe },
       { label: t`New Claude Session`, onSelect: () => void handleStartClaude() },
       { label: t`New Terminal`, shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
       // Advanced-only: freeze the current context into a GraphContext and open it.
-      ...(isAdvanced
-        ? [{ label: t`Open Context`, Icon: ContextIcon, onSelect: () => void handleOpenContext() }]
-        : []),
+      ...(isAdvanced ? [{ label: t`Open Context`, Icon: ContextIcon, onSelect: () => void handleOpenContext() }] : []),
     ],
-    [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
-  );
-
-  const leading = useMemo(
-    () => (
-      <ProjectsCounterChip
-        currentProjectId={tabsProjectId}
-        currentProjectName={currentProjectName}
-        onLaunchProjectPath={handleLaunchProjectPath}
-        onOpenHistory={() => setHistoryModalOpen(true)}
-      />
-    ),
-    [tabsProjectId, currentProjectName, handleLaunchProjectPath],
+    [modLabel, handleNewVibe, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
   const modals = (
     <>
-      <AskInstallOneOfDialog kinds={installChoiceKinds} onClose={() => setInstallChoiceKinds(null)} />
+      {installDialog}
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
@@ -449,6 +439,7 @@ export function useTerminalStripController({
                 });
                 return;
               }
+              // No mode: the session reopens in the one it was last shown in (`last_mode`).
               await navigation.openShellProcess(processId);
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);
@@ -463,7 +454,9 @@ export function useTerminalStripController({
         description={t`Paste a Claude CLI session id (UUID) to resume it in a new tab.`}
         placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
         confirmLabel={t`Resume`}
-        onConfirm={(sessionId) => resumeInTerminal(sessionId)}
+        onConfirm={(sessionId) =>
+          resumeInTerminal(sessionId, undefined, undefined, undefined, { viewMode: ViewMode.Advanced })
+        }
       />
     </>
   );
@@ -472,7 +465,6 @@ export function useTerminalStripController({
     tabsProjectId,
     newTabMenuItems,
     closeShortcutLabel: `${modLabel}+W`,
-    leading,
     trailing,
     openers,
     modals,
@@ -480,7 +472,6 @@ export function useTerminalStripController({
     isClaudeCreationPending,
     isTerminalCreationPending,
     handleStartClaude,
-    startWorker,
     handleStartTerminal,
     handleOpenHistory: () => setHistoryModalOpen(true),
   };

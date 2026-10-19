@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, ExternalLink, Presentation } from 'lucide-react';
 import { FSRef, type Deck } from '@sdk';
@@ -30,17 +31,6 @@ interface DeckViewerProps {
   deck?: Deck;
 }
 
-/** Resolve a `../`-containing relative path against a base dir → clean segments. */
-function resolveRel(baseDir: string, rel: string): string {
-  const segs = baseDir.split('/').filter(Boolean);
-  for (const part of rel.split('/')) {
-    if (part === '' || part === '.') continue;
-    if (part === '..') segs.pop();
-    else segs.push(part);
-  }
-  return segs.join('/');
-}
-
 export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +40,8 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
   const [numSlides, setNumSlides] = useState<number | null>(null);
   const [templateVpath, setTemplateVpath] = useState<string | null>(null);
   const deckAreaRef = useRef<HTMLDivElement>(null);
+  // Object URL for the pop-out tab: one per loaded `html`, made on first use.
+  const popOutUrlRef = useRef<string | null>(null);
   const { navigation } = useDockNavigation();
 
   // Re-read when the deck is rebuilt (updated_date advances on reindex).
@@ -65,23 +57,25 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         if (!ref) {
           const files = await fsRef.ls();
           ref =
-            files.find(
-              (f) => f.path.toLowerCase().endsWith('.html') && !f.path.toLowerCase().endsWith('.mcp.html'),
-            ) ?? null;
+            files.find((f) => f.path.toLowerCase().endsWith('.html') && !f.path.toLowerCase().endsWith('.mcp.html')) ??
+            null;
         }
         if (!ref) throw new Error('No deck HTML in this folder.');
         // deck.json is nice-to-have (slide count + provenance) — a missing/invalid
         // one leaves those unset, never fails the deck itself.
         const [text, manifest] = await Promise.all([
           ref.read(),
-          fsRef.child('deck.json').read().then(JSON.parse).catch(() => null),
+          fsRef
+            .child('deck.json')
+            .read()
+            .then(JSON.parse)
+            .catch(() => null),
         ]);
         if (cancelled) return;
         setHtml(text);
         setNumSlides(Array.isArray(manifest?.slides) ? manifest.slides.length : null);
         if (manifest && typeof manifest.template === 'string' && manifest.template) {
-          const tplPath = resolveRel(fsRef.path.replace(/^\//, ''), manifest.template);
-          setTemplateVpath(`${fsRef.typeId.toString()}/${tplPath}`);
+          setTemplateVpath(fsRef.resolve(manifest.template).vpath);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -95,12 +89,24 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
 
   const title = deck?.name || deck?.title || 'Deck';
 
+  // The pop-out URL lives as long as the `html` it wraps. The tab is opened
+  // `noopener`, so there is no window handle to hear its load from — the viewer
+  // owns the URL and releases it when the html is replaced or the viewer unmounts.
+  // A tab that already loaded the deck keeps showing it after the revoke.
+  useEffect(
+    () => () => {
+      if (popOutUrlRef.current) URL.revokeObjectURL(popOutUrlRef.current);
+      popOutUrlRef.current = null;
+    },
+    [html],
+  );
+
   const openInNewTab = () => {
     if (!html) return;
     // The portable, self-contained file — opened in a real tab it is unrestricted
     // (fullscreen, presenter view, keyboard all work).
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    window.open(url, '_blank', 'noopener');
+    popOutUrlRef.current ??= URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    window.open(popOutUrlRef.current, '_blank', 'noopener');
   };
 
   // Provenance nav uses the template FOLDER resolved from deck.json — the deck
@@ -125,12 +131,12 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         {numSlides && numSlides > 0 ? (
           <span className="shrink-0 text-xs text-neutral-500">{numSlides} slides</span>
         ) : null}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           {templateVpath ? (
             <button
               type="button"
               onClick={openTemplate}
-              title="Open the source template"
+              title={t`Open the source template`}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
             >
               <Presentation className="h-3.5 w-3.5" />
@@ -140,7 +146,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
           <button
             type="button"
             onClick={openInNewTab}
-            title="Open in a new browser tab"
+            title={t`Open in a new browser tab`}
             className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
           >
             <ExternalLink className="h-4 w-4" />
@@ -148,7 +154,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
           <button
             type="button"
             onClick={() => void deckAreaRef.current?.requestFullscreen?.()}
-            title="Fullscreen"
+            title={t`Fullscreen`}
             className="rounded p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
           >
             <Maximize2 className="h-4 w-4" />

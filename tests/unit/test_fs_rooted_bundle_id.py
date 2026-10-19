@@ -1,6 +1,6 @@
 """FS-rooted bundle capsule transport.
 
-Workflow + whiteboard are filesystem-primary assets whose indexer ids are
+Workflow + chart are filesystem-primary assets whose indexer ids are
 path/name-derived. Existing-source bundles copy the asset and its identity
 capsule verbatim; they never rewrite a conflicting id during pack. Source-less
 rendering persists the proposed entry id through TypeInfo separately.
@@ -12,11 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.flow_message_bundle import (
-    _ASSET_PACK_IGNORE,
-    _extended_length_path,
-    _pack_file_backed_attachment,
-)
+from flow_sdk.assets.materialize import extended_length_path, materialize_asset_sync
+from flow_sdk.assets.transfer import _ASSET_PACK_IGNORE
+from flow_sdk.builtin.flow_message_bundle import _pack_file_backed_attachment
 from flow_sdk.schema.types import EntityType
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -25,12 +23,12 @@ ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
 SOURCE_ID = "11111111-2222-4333-8444-555555555555"
 
 
-def test_agent_and_whiteboard_are_file_backed():
+def test_agent_and_chart_are_file_backed():
     # The unified packer routes by the FAMILY predicate (TypeInfo.main_subdir is
     # not None), not a hardcoded type set — else their bytes never ride the
     # bundle and the receiver has nothing to materialize.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    for t in (EntityType.AGENT.value, EntityType.WHITEBOARD.value):
+    for t in (EntityType.SUBAGENT.value, EntityType.CHART.value):
         info = SchemaRegistry.get(t)
         assert info is not None and info.main_subdir is not None, f"{t} must be file-backed"
 
@@ -80,10 +78,10 @@ def test_asset_pack_ignore_drops_env_and_cache_trees(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows extended-length path semantics")
 def test_extended_length_path_prefixes_and_is_idempotent(tmp_path):
-    out = str(_extended_length_path(tmp_path))
+    out = str(extended_length_path(tmp_path))
     assert out.startswith("\\\\?\\")
     # Re-wrapping an already-prefixed path must not double-prefix.
-    assert _extended_length_path(_extended_length_path(tmp_path)) == _extended_length_path(tmp_path)
+    assert extended_length_path(extended_length_path(tmp_path)) == extended_length_path(tmp_path)
 
 
 # The bug, captured at the extraction primitive (real zip, real FS, no mocks).
@@ -122,8 +120,8 @@ def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
     ext_root = tmp_path / "on"
     ext_root.mkdir()
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(_extended_length_path(ext_root))
-    landed = Path(str(_extended_length_path(ext_root)) + os.sep + deep_arc.replace("/", os.sep))
+        zf.extractall(extended_length_path(ext_root))
+    landed = Path(str(extended_length_path(ext_root)) + os.sep + deep_arc.replace("/", os.sep))
     assert landed.exists()
     assert landed.read_bytes() == b"x"
 
@@ -132,7 +130,7 @@ def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
 #
 # The two tests below drive the REAL ``_pack_file_backed_attachment`` (not the
 # copy primitives in isolation) for both shapes of the file-backed
-# family: a FOLDER asset (whiteboard/skill) and SINGLE-FILE assets (a workflow
+# family: a FOLDER asset (chart/skill) and SINGLE-FILE assets (a workflow
 # ``.md`` vs. a dynamic_workflow ``.js``). The real packer routes through
 # ``_resolve_file_backed_source`` → real ``TypeInfo`` (layout / main_subdir /
 # main_file / main_ext) → ``shutil.copytree(ignore=_ASSET_PACK_IGNORE)``.
@@ -172,12 +170,12 @@ def _stub_file_backed_lookup(monkeypatch, asset_ref: str, name: str = "asset"):
 
 @pytest.mark.asyncio
 async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
-    # FOLDER asset (whiteboard): a real on-disk folder with the main doc + a
+    # FOLDER asset (chart): a real on-disk folder with the main doc + a
     # noise dir (.venv / __pycache__). The bundle must keep the real files and
     # capsule, and drop ignored trees via the real _ASSET_PACK_IGNORE.
     src = tmp_path / "src" / "my-board"
     src.mkdir(parents=True)
-    (src / "WHITE_BOARD.md").write_text("---\nname: my-board\n---\n\n# Board\n", encoding="utf-8")
+    (src / "CHART.md").write_text("---\nname: my-board\n---\n\n# Board\n", encoding="utf-8")
     (src / "scene.excalidraw").write_text("{}", encoding="utf-8")  # real asset file
     capsule_bytes = ("{\n  \"version\": 1,\n  \"data\": {\n"
                      f"    \"id\": \"{SOURCE_ID}\"\n  }}\n}}\n").encode()
@@ -195,23 +193,23 @@ async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
 
     attachment_dir = tmp_path / "bundle"
     attachment_dir.mkdir()
-    await _pack_file_backed_attachment(EntityType.WHITEBOARD.value, ENTITY_ID, attachment_dir)
+    await _pack_file_backed_attachment(EntityType.CHART.value, ENTITY_ID, attachment_dir)
 
     base = (
         attachment_dir
-        / f"{EntityType.WHITEBOARD.value}-{ENTITY_ID}"
-        / ".claude" / "whiteboards" / "my-board"
+        / f"{EntityType.CHART.value}-{ENTITY_ID}"
+        / "agentic-assets" / "chart" / "my-board"
     )
     # Real source preserved.
-    assert (base / "WHITE_BOARD.md").exists()
+    assert (base / "CHART.md").exists()
     assert (base / "scene.excalidraw").exists()
     # Ignored trees dropped — proven through the real packer, not a bare copytree.
     assert not (base / ".venv").exists()
     assert not (base / "__pycache__").exists()
     assert not list(base.rglob("*.pyc"))
     # Existing source bytes are never rewritten during packing.
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-    fields = _yaml_load(_extract_frontmatter((base / "WHITE_BOARD.md").read_text(encoding="utf-8")))
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
+    fields = _yaml_load(_extract_frontmatter((base / "CHART.md").read_text(encoding="utf-8")))
     assert "id" not in fields
     assert fields["name"] == "my-board"  # other frontmatter preserved
     assert (base / ".flow" / "capsules" / "identity.json").read_bytes() == capsule_bytes
@@ -231,10 +229,10 @@ async def test_pack_single_file_copies_md_and_js_byte_for_byte(tmp_path, monkeyp
     _stub_file_backed_lookup(monkeypatch, str(md_src), name="deploy")
     att_md = tmp_path / "bundle_md"
     att_md.mkdir()
-    await _pack_file_backed_attachment(EntityType.AGENT.value, ENTITY_ID, att_md)
+    await _pack_file_backed_attachment(EntityType.SUBAGENT.value, ENTITY_ID, att_md)
     md_dest = (
         att_md
-        / f"{EntityType.AGENT.value}-{ENTITY_ID}"
+        / f"{EntityType.SUBAGENT.value}-{ENTITY_ID}"
         / ".claude" / "agents" / "deploy.md"
     )
     assert md_dest.exists()
@@ -260,3 +258,25 @@ async def test_pack_single_file_copies_md_and_js_byte_for_byte(tmp_path, monkeyp
     # No injected "id:" line and the sender id never appears in the JS body.
     assert b"id:" not in js_dest.read_bytes()
     assert ENTITY_ID not in js_dest.read_text(encoding="utf-8")
+
+
+# Found by a live session against a Windows host: staging (``.asset-install-*/new``,
+# ``.../previous``) sits ~30 chars deeper than the destination, so a legal final path
+# crossed MAX_PATH while copied (``Errno 2``) and again while cleaned up (``WinError 145``).
+@pytest.mark.skipif(os.name != "nt", reason="MAX_PATH (260) is a Windows-only limit")
+def test_materialize_copies_a_tree_that_crosses_max_path_only_while_staged(tmp_path):
+    leaf = "attachment/prompt-3550afd9-dfee-4e14-ad80-336f0070de33/agentic-assets/prompt/what_is_6_times_7__reply_with_just_the_.md"
+    source = tmp_path / "src"
+    (source / leaf).parent.mkdir(parents=True)
+    (source / leaf).write_text("6 x 7")
+    # A destination whose own final path stays under 260, so only staging crosses it.
+    pad = "d" * max(1, 236 - len(str(tmp_path / "x" / leaf)))
+    destination = tmp_path / pad / "unpacked"
+    assert len(str(destination / leaf)) < 260 < len(str(destination.parent / ".asset-install-xxxxxxxx" / "new" / "unpacked" / leaf))
+
+    materialize_asset_sync(source, destination, overwrite=True)
+    # Again: the overwrite moves the first tree to ``.asset-install-*/previous`` and
+    # deletes it there — the same depth, so the same MAX_PATH crossing on cleanup.
+    materialize_asset_sync(source, destination, overwrite=True)
+
+    assert (destination / leaf).read_text() == "6 x 7"

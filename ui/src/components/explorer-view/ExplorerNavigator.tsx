@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useMemo } from 'react';
 import { Layers, User as UserIcon } from 'lucide-react';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
@@ -19,16 +20,14 @@ export function ExplorerNavigator() {
   const ProjectIcon = useMemo(() => iconForType('project'), []);
   const options = useMemo<ScopeBarOption<ExplorerScopeMode>[]>(
     () => [
-      { value: 'all', label: 'All', icon: Layers, title: 'Whole computer' },
-      { value: 'user', label: 'User', icon: UserIcon, title: 'User home folder' },
+      { value: 'all', label: t`All`, icon: Layers, title: t`Whole computer` },
+      { value: 'user', label: t`User`, icon: UserIcon, title: t`User home folder` },
       {
         value: 'project',
-        label: 'Project',
+        label: t`Project`,
         icon: ProjectIcon,
         disabled: m.projectDisabled,
-        title: m.projectDisabled
-          ? 'No current project'
-          : `Project${m.projectName ? `: ${m.projectName}` : ''}`,
+        title: m.projectDisabled ? 'No current project' : `Project${m.projectName ? `: ${m.projectName}` : ''}`,
       },
     ],
     [ProjectIcon, m.projectDisabled, m.projectName],
@@ -41,17 +40,10 @@ export function ExplorerNavigator() {
     roots: m.roots,
     activePointer: m.activePointer,
     onNavigate: m.navigate,
-    search: { recordTypes: ['markdown'], placeholder: 'Search files…' },
+    search: { recordTypes: ['markdown'], placeholder: t`Search files…` },
     header: {
-      title: 'Files',
-      filterBar: (
-        <ScopeBar
-          variant="icon"
-          value={m.scopeMode}
-          options={options}
-          onChange={m.handleSelectMode}
-        />
-      ),
+      title: t`Files`,
+      filterBar: <ScopeBar variant="icon" value={m.scopeMode} options={options} onChange={m.handleSelectMode} />,
     },
   };
 

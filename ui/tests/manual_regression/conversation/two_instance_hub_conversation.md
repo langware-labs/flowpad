@@ -194,7 +194,7 @@ regressed (`_user_key()` not actually consulted by `set_user`/`get_user`).
 Each user holds their own JWT; alice creates a hub-side Project and starts a
 guest conversation addressed to bob by id. Recipient is auto-added as
 participant + granted `member` role on the conversation entity (see
-`test_flowpad/FlowPad/flowpad/hub/builtin/project.py:188-211`).
+the hub's project share handler).
 
 ```bash
 ALICE_TOK=$(uv run python3 -c "import keyring; print(keyring.get_password('Flowpad.ai.app_secrets','flowpad_api_key:dev'))")
@@ -321,7 +321,7 @@ PASS when:
 | Step 4: both `/cloud/status` return same user | Fix B regression — `app_config.py` ignoring `_user_key()` | grep `'user'` literal in `flow_sdk/cli/app_config.py` get_user/set_user/clear_user |
 | Step 9: A flips back to alice after B logout | Fix A regression — same keyring slot | confirm `_api_key_name()` returns `flowpad_api_key:dev` for dev instance |
 | Step 6: bob's `GET /conversation` returns `[]` | Running hub predates WIP code | restart hub: kill PID on `:8093`, re-run `flowpad/run.py` |
-| Step 6: bob gets 401 on `/conversation/$CONV` | `flow_message` entity policy missing `member.read` | inspect `flowpad/hub/app/policies.json` |
+| Step 6: bob gets 401 on `/conversation/$CONV` | `flow_message` entity policy missing `member.read` | inspect `hub policies.json` |
 | Step 2/3: avatar click does not open dropdown | Synthetic click vs Radix UI | use `dispatchEvent(new MouseEvent('click', …))` rather than HTMLElement.click() |
 | Step 1: backend exits with "Server already running" | Stale singleton lock | kill PID in `~/.flow/dev_server.json` (or `~/.flow/server.json`) and retry |
 | Step 4: Step works but step 5 sees `EMPTY` keyring slot | macOS Keychain not unlocked / not approved for the test process | manually unlock Keychain Access; re-run after the prompt |

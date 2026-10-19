@@ -4,6 +4,7 @@
  * (StatTile grid + verdictStyle status chip) so it reads consistently with the
  * rest of the agentic-execution UI.
  */
+import { t } from '@lingui/core/macro';
 import { Workflow } from 'lucide-react';
 
 import { StatTile } from '@src/components/assets/editor/agent-trace/simple/SimpleSessionReport';
@@ -64,24 +65,31 @@ export function WorkflowRunSummary({ payload, label }: Props) {
         <span className="shrink-0 text-muted-foreground">{label} run</span>
         {workflowName && <span className="min-w-0 truncate font-semibold text-foreground">{workflowName}</span>}
         {status && (
-          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${verdictStyle(statusTone(status))}`}>
+          <span
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${verdictStyle(statusTone(status))}`}
+          >
             {status}
           </span>
         )}
-        {modelProvider && <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">{modelProvider}</span>}
+        {modelProvider && (
+          <span className="ms-auto shrink-0 truncate text-[11px] text-muted-foreground">{modelProvider}</span>
+        )}
       </div>
       {source && (
-        <div className="mb-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="wf-run-source">
+        <div
+          className="mb-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
+          data-testid="wf-run-source"
+        >
           <span className="shrink-0">Source:</span>
           <span className="min-w-0 truncate font-medium text-foreground">{source.file}</span>
           {source.skill && <span className="shrink-0">· skill: {source.skill}</span>}
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <StatTile label="Agents" value={formatNumber(num(payload.agentCount))} />
-        <StatTile label="Tokens" value={formatNumber(num(payload.totalTokens))} />
-        <StatTile label="Tool calls" value={formatNumber(num(payload.totalToolCalls))} />
-        <StatTile label="Duration" value={formatDuration(num(payload.durationMs))} />
+        <StatTile label={t`Agents`} value={formatNumber(num(payload.agentCount))} />
+        <StatTile label={t`Tokens`} value={formatNumber(num(payload.totalTokens))} />
+        <StatTile label={t`Tool calls`} value={formatNumber(num(payload.totalToolCalls))} />
+        <StatTile label={t`Duration`} value={formatDuration(num(payload.durationMs))} />
       </div>
     </div>
   );

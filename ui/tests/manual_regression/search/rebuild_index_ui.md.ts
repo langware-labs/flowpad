@@ -1,25 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-import { apiBase } from '../_shared/api';
+import { waitForIndexerIdle, apiBase } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 const API = apiBase();
 
 // Poll the backend's authoritative activity-status until the indexer is idle
 // (data === null). Bounded so it never silently rides past the per-test cap.
-async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000) {
-  const deadline = Date.now() + budgetMs;
-  while (Date.now() < deadline) {
-    const res = await request
-      .get(`${API}/api/v1/graph/compute_node/@local/fs-records/activity-status`)
-      .catch(() => null);
-    if (res && res.ok()) {
-      const body = await res.json().catch(() => ({}));
-      if (body?.data == null) return true;
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  return false;
-}
 
 // Rebuild-index UI in the search view. The rebuild is explicit-click-only.
 //
@@ -38,21 +25,20 @@ async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000)
 async function openSearch(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // The footer indexing indicator (footer-indexing-indicator) is wrapped in
-    // <AdvancedOnly> — it does not exist in the default Standard view.
-    localStorage.setItem('viewMode', 'advanced');
   });
-  await page.goto('/dock/search');
-  await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  // View mode is now a backend-owned preference (`preferences.ui.view_mode`);
-  // the legacy `viewMode` localStorage key above is only adopted when the backend
-  // file doesn't already provide a value, so it is overridden the moment bootstrap
-  // reconciles an explicit backend value (e.g. Standard). Force Advanced through
-  // the live setter AFTER bootstrap so it wins, then wait for the DOM to reflect it.
-  await page.evaluate(() => {
-    (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
-  });
+  // The footer indexing indicator (footer-indexing-indicator) is wrapped in
+  // <AdvancedOnly> — it does not exist in the default view. The mode is put on
+  // the URL (URL-first): the address outranks the stored preference from first
+  // paint. A localStorage seed or a `window.setView()` after load does not hold —
+  // preferences.json lands after networkidle and its stored mode (a previous
+  // file's Standard) wins over the device seed, by design.
+  await page.goto(withViewMode('/dock/search', 'advanced'));
   await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
+  // Since host tabs (71e9272c6) <AdvancedOnly> follows the developer switch
+  // (`useIsAdvanced() === useIsDev()`), which the URL's `viewMode` no longer
+  // turns on. Flip it through the app's own `window.setDev`, the call the
+  // avatar double-click makes.
+  await page.evaluate(() => (window as any).setDev(true));
 }
 
 const rebuildBtn = (page: Page) => page.locator('[data-testid="rebuild-index"]');

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
 
 from starlette.responses import StreamingResponse
 
@@ -15,6 +14,13 @@ from flow_sdk.core.flow.models.flow_data import FlowData, FlowDataType, FlowElem
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+
+def _exit_code_attr(cmd) -> dict[str, str]:
+    """The final chunk's ``exit-code``, only when there is one. A command whose
+    end was lost has none, and ``str(None)`` put the word ``None`` on the wire,
+    which a client parsed as NaN."""
+    return {} if cmd.exit_code is None else {"exit-code": str(cmd.exit_code)}
 
 
 class OpsActionsMixin:
@@ -77,22 +83,6 @@ class OpsActionsMixin:
                 return ApiFailResponse(message="Failed to pause compute node")
             return ApiSuccessResponse(data=result)
         except Exception as e:
-            return ApiFailResponse(message=str(e))
-
-    async def _setup_lm_proxy_op(self) -> ApiResponse:
-        """Setup LM proxy access for the compute node."""
-        from flow_sdk.builtin.compute_node import ComputeNode
-        try:
-            # Reload the node from DB to ensure all fields are hydrated
-            hydrated: ComputeNode = await ComputeNode.get_by_id(self.id)
-            if not hydrated:
-                return ApiFailResponse(message="Compute node not found in DB.")
-            api_key = await hydrated.setup_lm_proxy_access()
-            return ApiSuccessResponse(data={"message": "LM proxy access configured", "key_prefix": api_key[:8] + "..."})
-        except Exception as e:
-            import traceback
-
-            logging.error(f"_setup_lm_proxy_op error: {e}\n{traceback.format_exc()}")
             return ApiFailResponse(message=str(e))
 
     async def _resume_op(self) -> ApiResponse:
@@ -256,7 +246,7 @@ class OpsActionsMixin:
                     "element-type": FlowElementType.SHELL_OUTPUT,
                     "data-type": FlowDataType.TEXT,
                     "group-id": group_id,
-                    "exit-code": str(cmd.exit_code),
+                    **_exit_code_attr(cmd),
                     "stdout": cmd.all_stdout,  # Fallback for clients
                     "stderr": cmd.all_stderr,  # Fallback for clients
                     "final": "true",  # Flag indicating group completion
@@ -324,7 +314,7 @@ class OpsActionsMixin:
                     "element-type": FlowElementType.SHELL_OUTPUT,
                     "data-type": FlowDataType.TEXT,
                     "group-id": group_id,
-                    "exit-code": str(cmd.exit_code),
+                    **_exit_code_attr(cmd),
                     "final": "true",  # Flag indicating group completion
                 },
             )
@@ -406,8 +396,6 @@ class OpsActionsMixin:
                 return await self._status_op()
             elif op == "command":
                 return await self._command_op()
-            elif op == "setup-lm-proxy":
-                return await self._setup_lm_proxy_op()
             elif op == "metrics":
                 return await self._get_metrics_op()
             elif op == "logs":

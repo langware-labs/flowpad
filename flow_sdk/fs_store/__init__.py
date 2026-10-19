@@ -37,7 +37,6 @@ from .record_ref import RecordRef as RecordRef
 from .record_types import RecordType as RecordType
 from .record_types import SkillitRecordType as SkillitRecordType
 from .scope import Scope as Scope
-from .storage_layout import StorageLayout as StorageLayout
 from .sync_protocol import RefType as RefType
 from .sync_protocol import ResourceType as ResourceType
 from .sync_protocol import SyncOperation as SyncOperation

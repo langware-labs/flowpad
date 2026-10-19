@@ -423,10 +423,10 @@ async def test_agentic_process_recovery_no_http(tmp_path):
     The ClaudeSessionRecord written to disk during the first session is the
     recovery anchor — open() detects the dead PTY and passes --resume to Claude.
     """
-    from flow_sdk.db.database import init_db
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.db.database import init_db
     from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
-    from flow_sdk.fs_store.record_paths import set_default_records_root, get_default_records_root
+    from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
     from flow_sdk.server.routes.bootstrap import get_or_create_local_compute_node
 
     await init_db()

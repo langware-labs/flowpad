@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { FilePlus, FolderPlus, Trash2 } from 'lucide-react';
 import { fsManager, fsStore, TypeId } from '@sdk';
@@ -25,9 +26,21 @@ const COMPUTE_NODE_ID = new TypeId('compute_node', DEFAULT_WIKI_SPACE);
 
 // Extension → lucide icon name. Module-level so it isn't rebuilt per file row.
 const FILE_EXT_ICONS: Record<string, string> = {
-  py: 'FileCode', js: 'FileCode', ts: 'FileCode', tsx: 'FileCode', jsx: 'FileCode',
-  json: 'FileJson', md: 'FileText', txt: 'FileText', yaml: 'FileText', yml: 'FileText',
-  png: 'FileImage', jpg: 'FileImage', jpeg: 'FileImage', gif: 'FileImage', svg: 'FileImage',
+  py: 'FileCode',
+  js: 'FileCode',
+  ts: 'FileCode',
+  tsx: 'FileCode',
+  jsx: 'FileCode',
+  json: 'FileJson',
+  md: 'FileText',
+  txt: 'FileText',
+  yaml: 'FileText',
+  yml: 'FileText',
+  png: 'FileImage',
+  jpg: 'FileImage',
+  jpeg: 'FileImage',
+  gif: 'FileImage',
+  svg: 'FileImage',
 };
 
 export function skillFolderNodeId(absPath: string): string {
@@ -56,11 +69,11 @@ export function skillCreateActions(absPath: string, selfId: string): ToolbarActi
     {
       id: `new-file:${absPath}`,
       icon: <FilePlus />,
-      label: 'New file',
+      label: t`New file`,
       run: () =>
         showInputPrompt({
-          title: 'Create File',
-          placeholder: 'Enter file name',
+          title: t`Create File`,
+          placeholder: t`Enter file name`,
           onConfirm: async (name) => {
             await fsManager.writeFile(COMPUTE_NODE_ID, `${rel}/${name}`.replace(/\/+/g, '/'), '');
             refreshNode(selfId);
@@ -71,11 +84,11 @@ export function skillCreateActions(absPath: string, selfId: string): ToolbarActi
     {
       id: `new-folder:${absPath}`,
       icon: <FolderPlus />,
-      label: 'New folder',
+      label: t`New folder`,
       run: () =>
         showInputPrompt({
-          title: 'Create Folder',
-          placeholder: 'Enter folder name',
+          title: t`Create Folder`,
+          placeholder: t`Enter folder name`,
           onConfirm: async (name) => {
             await fsManager.mkdir(COMPUTE_NODE_ID, `${rel}/${name}`.replace(/\/+/g, '/'));
             refreshNode(selfId);
@@ -92,7 +105,7 @@ function deleteAction(absPath: string, label: string, parentRefreshId: string): 
   return {
     id: `delete:${absPath}`,
     icon: <Trash2 />,
-    label: `Delete ${label}`,
+    label: t`Delete ${label}`,
     run: () =>
       showDeleteAssetModal({
         name: label,
@@ -136,9 +149,7 @@ export function skillFolderListChildren(
       fsStore.getState().invalidate(COMPUTE_NODE_ID, rel, 'browse');
     }
     const entries = await fsStore.getState().listDirectory(COMPUTE_NODE_ID, rel);
-    const items = [...(entries.items ?? [])]
-      .filter((item) => !(item.name ?? '').startsWith('.'))
-      .slice(0, pageSize);
+    const items = [...(entries.items ?? [])].filter((item) => !(item.name ?? '').startsWith('.')).slice(0, pageSize);
     items.sort((a, b) => {
       if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return (a.name ?? '').localeCompare(b.name ?? '');

@@ -2,16 +2,16 @@
 
 Creates a fresh hub project + conversation, seeds 8 messages that walk through
 a real-feeling incident together, attaches typed-entity chips + text. The
-conversation is reachable from both instances' inboxes:
+conversation is reachable from both instances' stream inboxes:
 
-  Alice: http://localhost:4098/dock/inbox  → click the new row
-  Bob:   http://localhost:4099/dock/inbox  → click the new row
+  Alice: http://localhost:4098/dock/stream_inbox  → click the new row
+  Bob:   http://localhost:4099/dock/stream_inbox  → click the new row
 
 Requires:
-  - Local hub on $FLOWPAD_HUB_URL (default http://localhost:8093) — see
-    test_flowpad/FlowPad
+  - Local hub on $FLOWPAD_HUB_URL (default http://localhost:8093) — the hub is
+    a separate service; run it from your hub checkout
   - alice@local.test + bob@local.test seeded on the hub
-    (test_flowpad/FlowPad/ops/scripts/setup_test_users.sh)
+    (ops/scripts/setup_test_users.sh in the hub checkout)
   - flowpad-oss BE on $OSS_BE_PORT (default 9008) — alice
   - flowpad-app BE on $APP_BE_PORT (default 9009) — bob
   - Both BEs logged in (POST /cloud/login fires env-mode auto-login from
@@ -28,7 +28,6 @@ import time
 from typing import Any
 
 import httpx
-
 
 HUB = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:8093")
 OSS_BE = os.environ.get("OSS_BE", "http://localhost:9008")

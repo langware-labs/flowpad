@@ -19,6 +19,7 @@ Operations tested:
 """
 
 import pytest
+
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -27,7 +28,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 from flow_sdk.responses.response import ApiResponse
-
 
 # ---------------------------------------------------------------------------
 # Constants

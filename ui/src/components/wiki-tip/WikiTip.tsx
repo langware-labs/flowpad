@@ -1,3 +1,4 @@
+import { useLingui } from '@lingui/react/macro';
 import type { ReactNode } from 'react';
 import {
   HoverCard,
@@ -15,12 +16,24 @@ interface WikiTipProps {
   label?: ReactNode;
   /** Accessible label / hover title for the W-button. Defaults to the wiki word. */
   buttonLabel?: string;
+  /** Heading slug to deep-link into a section of the page. */
+  fragment?: string;
+  /**
+   * Render the wiki affordance as a "Learn more" text link rather than the
+   * W-square — for tips whose `label` is a sentence, where a bare glyph reads as
+   * decoration. The wording lives here so no caller has to translate it.
+   */
+  learnMore?: boolean;
   /** Hover dwell before the tip opens. Raise it on dense surfaces (a grid of
    *  tipped tiles pops a card under every tile the pointer crosses). */
   openDelay?: number;
   /** Which side of the trigger the card opens on. Defaults to "top"; rail
    *  buttons pass "right" to match the rail's regular tooltips. */
   side?: 'top' | 'right' | 'bottom' | 'left';
+  /** Controls to render on a second row, under the label line — e.g. the
+   *  project list's "open this folder in a real terminal" launchers. Present
+   *  ⇒ the card stacks; absent ⇒ it stays the one-line tip it has always been. */
+  actions?: ReactNode;
 }
 
 /**
@@ -32,7 +45,8 @@ interface WikiTipProps {
  * `children` must forward its ref and spread props onto a DOM node — the
  * trigger is `asChild`, so a component that swallows them leaves the tip inert.
  */
-export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 200, side = 'top' }: WikiTipProps) {
+export function WikiTip({ wikiword, children, label, buttonLabel, fragment, learnMore, openDelay = 200, side = 'top', actions }: WikiTipProps) {
+  const { t } = useLingui();
   return (
     <HoverCard openDelay={openDelay} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
@@ -42,12 +56,20 @@ export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 20
         // pointer-events-auto: the card portals to <body>, which a modal Radix
         // Dialog marks pointer-events:none — without this the W-button renders
         // but can't be clicked when the tip is used inside a dialog.
-        className="pointer-events-auto flex w-auto max-w-md items-center gap-2 px-3 py-1.5"
+        className="pointer-events-auto flex w-auto max-w-md flex-col gap-1.5 px-3 py-1.5"
       >
-        {label != null && (
-          <span className="truncate text-xs text-muted-foreground">{label}</span>
-        )}
-        <WikiButton wikiword={wikiword} label={buttonLabel} />
+        <div className="flex items-center gap-2">
+          {label != null && (
+            <span className="truncate text-xs text-muted-foreground">{label}</span>
+          )}
+          <WikiButton
+            wikiword={wikiword}
+            label={buttonLabel}
+            fragment={fragment}
+            linkText={learnMore ? t`Learn more` : undefined}
+          />
+        </div>
+        {actions}
       </HoverCardContent>
     </HoverCard>
   );

@@ -2,10 +2,11 @@ import json
 from datetime import datetime, timezone
 
 import dpath
-from fastapi.encoders import jsonable_encoder
 
 
 def type_safe_json(jsonable_object, **kwargs):
+    from fastapi.encoders import jsonable_encoder
+
     exclude_none = kwargs.pop("exclude_none", True)
     return jsonable_encoder(jsonable_object, exclude_none=exclude_none, **kwargs)
 
@@ -23,8 +24,37 @@ def iso_to_datetime(iso: datetime | str) -> datetime:
     return datetime.fromisoformat(iso)
 
 
+def epoch_to_iso_utc(epoch: float | int) -> str:
+    """A Unix epoch as the canonical aware-UTC ISO string (``+00:00`` form).
+
+    The one epoch→ISO conversion — drivers kept re-writing this inline
+    (slack's private ``_iso``, hackernews, telegram) and the whole point of a
+    canonical time form is that nobody formats it independently.
+    """
+    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat()
+
+
+def iso_to_utc(iso: datetime | str | None) -> datetime | None:
+    """``iso`` as an aware UTC datetime, or None when it is absent/unparseable.
+
+    The forgiving twin of :func:`iso_to_datetime`, for the many callers that
+    hold an optional timestamp of unknown provenance and want a comparable value
+    or nothing. Both halves are the part that kept getting rewritten: tolerating
+    a ``Z`` suffix (3.10's ``fromisoformat`` rejects it), and reading a NAIVE
+    timestamp as UTC rather than local — which is what every stored timestamp in
+    this repo means.
+    """
+    if iso is None or iso == "":
+        return None
+    try:
+        parsed = iso_to_datetime(iso)
+    except (ValueError, TypeError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def now_epoch_ms() -> int:
-    """Current UTC time in epoch-milliseconds (the ``last_active_at`` wire format)."""
+    """Current UTC time in the entity activity fields' epoch-ms wire format."""
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 

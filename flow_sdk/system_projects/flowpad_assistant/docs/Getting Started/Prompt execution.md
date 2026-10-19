@@ -6,66 +6,53 @@ title: Prompt execution
 # Prompt execution
 
 When someone you're collaborating with sends a **prompt** into a shared
-conversation, Flowpad does not run it silently. Instead it asks you first —
-**"Allow {name} to run prompt on this computer"** — because running a received
-prompt means running it **on your machine, with your local agent and your
-permissions**.
+conversation, it opens a **live session** on your machine. Flowpad does not run
+it silently: the prompt shows up in the conversation with a session card that
+asks you first — **Approve** or **Decline** — because running it means running
+it **on your computer, with your local agent and your permissions**.
 
-Only allow prompts from people you trust. **Never run prompts from untrusted
+Only approve sessions from people you trust. **Never run prompts from untrusted
 sources.** A prompt is instructions for an AI agent that can read and write files
 in the active project, run tools, and take actions on your behalf. Treat an
-incoming prompt the same way you'd treat a script someone asked you to run: if you
-don't trust the sender, decline it.
+incoming session the same way you'd treat a script someone asked you to run: if
+you don't trust the sender, decline it.
 
 ## The trust boundary
 
-- The prompt runs in the **shared session** on **your** computer, not the
-  sender's.
+- Every turn of the session runs on **your** computer, not the sender's.
 - It executes with the **same access your own prompts have** — the current
   project's files, connected tools, and any MCP servers you've configured.
-- Declining (**Cancel**) is always safe: nothing runs, and nothing is remembered.
-- **Allow** runs the prompt once. If you also want to stop being asked for this
-  sender, use **Don't ask again** (or the Advanced options below).
+- **Decline** is always safe: nothing runs, the session ends, and nothing is
+  remembered.
+- **Approve** runs the prompt that opened the session and every follow-up the
+  sender types into it, until you **Pause** or **Disconnect**. Follow-ups and
+  replies live inside the session view, not in the conversation thread.
 
-## Auto-run
+## One session, one approval
 
-**Don't ask again** grants this sender an *auto-run* permission so their future
-prompts run without a confirmation dialog. By default it is scoped to **this
-project only** — the safest choice — so trust you extend in one project doesn't
-leak into the others. When the conversation isn't tied to a project, it applies
-globally instead.
+A session is approved once. While it is active the sender can keep working
+through the session view without asking again. **Pause** holds the session —
+new prompts bounce with a visible line until you **Resume**. **Disconnect** ends
+it for good; the sender has to send a fresh prompt to start another.
 
-Expand **Advanced** for the full control:
+## Always allow sessions from someone
 
-- **Auto-run prompts from {name} for this project** — future prompts from this
-  sender run automatically, but only inside the current project. This is what
-  "Don't ask again" toggles.
-- **Auto-run prompts from {name} (all projects)** — future prompts run
-  automatically everywhere. Grant this only to a sender you fully trust across
-  all your work.
+Ticking **Always allow sessions from {name}** when you approve grants a standing
+permission: their future sessions start approved without asking. By default it
+is scoped to **this project only** — the safest choice — so trust you extend in
+one project doesn't leak into the others. Choose **everywhere** only for a
+sender you fully trust across all your work.
 
-Auto-run is a standing grant. You can review or revoke it at any time from the
-contact's permissions.
+A standing permission is remembered as a per-contact permission. You can review
+or revoke it at any time from the contact's permissions, or from any session's
+header. Revoking returns you to being asked when their next session opens.
 
-## Auto-reply
+## Replies: auto-send or review
 
-Some collaborations expect a reply to flow back to the sender after a prompt
-runs. The **Auto-reply** options control whether — and how automatically — that
-happens:
+Each session has a reply policy, proposed by the sender on the first prompt and
+editable by either side in the session view:
 
-- **Send the reply for just this message** — a one-time reply for this prompt
-  only. Nothing is remembered.
-- **Always auto-reply to {name} for this project** — replies are sent back
-  automatically for this sender, within this project.
-- **Always auto-reply to {name} (all projects)** — replies are sent back
-  automatically for this sender everywhere.
-
-The project-scoped options are the conservative default; the global options apply
-across every project and should be reserved for senders you fully trust.
-
-## Reviewing and revoking
-
-Every grant made here is remembered as a per-contact permission. To see what a
-contact is allowed to do — or to take a permission back — open that contact's
-permissions and remove the entry. Revoking returns you to being asked before each
-prompt runs.
+- **Auto-send** (default) — every reply goes back into the session as soon as
+  the agent finishes.
+- **Review before sending** — replies land as drafts inside the session view;
+  you read them and press Send. Nothing leaves your machine until you do.

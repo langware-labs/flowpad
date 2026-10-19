@@ -21,6 +21,7 @@ export type PrivacyMode = 'local' | 'connected';
 class PrivacyManager extends EventEmitter {
   private _mode: PrivacyMode = 'connected';
   private _initialized = false;
+  private _subscriptions: Promise<void> | null = null;
 
   get mode(): PrivacyMode {
     return this._mode;
@@ -31,16 +32,27 @@ class PrivacyManager extends EventEmitter {
   }
 
   /** Seed initial state from bootstrapInfo.privacy_mode. Called once from main.ts. */
-  async bootstrap(seedMode: PrivacyMode | string | null | undefined) {
+  seedBootstrap(seedMode: PrivacyMode | string | null | undefined) {
     if (this._initialized) return;
     this._initialized = true;
     this._apply(seedMode === 'local' ? 'local' : 'connected');
+  }
 
+  startSubscriptions(): Promise<void> {
+    return this._subscriptions ??= this._startSubscriptions();
+  }
+
+  private async _startSubscriptions(): Promise<void> {
     const { ConnectionManager } = await import('../websocket');
     const cm = ConnectionManager.getInstance();
     cm.on('on_privacy_mode_msg', (msg: PrivacyModeMessage) => {
       this._apply(msg.privacy_mode === 'local' ? 'local' : 'connected');
     });
+  }
+
+  async bootstrap(seedMode: PrivacyMode | string | null | undefined): Promise<void> {
+    this.seedBootstrap(seedMode);
+    await this.startSubscriptions();
   }
 
   /** Toggle to the other mode and persist. */

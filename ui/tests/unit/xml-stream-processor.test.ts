@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FlowData,
+  FlowDataAttribute,
   FlowDataEvents,
   FlowDataType,
   FlowElementTypes,
@@ -9,6 +10,9 @@ import {
   FlowStreamProcessor,
 } from '@sdk';
 import { collectAllChunks, createMockStreamer, verifyChunksReconstruct } from './mock_flow_streamer_test_utils';
+
+/** Every element the stream processor builds is stamped with its client channel (FLOWPAD-2042). */
+const STREAM_STAMP = { [FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE]: 'FlowStreamProcessor' };
 
 // Initialize pseudo-random seed at module level
 const SEED = 42;
@@ -466,7 +470,7 @@ describe('XML Stream Processor', () => {
       const processor = new FlowStreamProcessor();
 
       let eventEndFired = false;
-      processor.on(FlowEvents.DATA_END, (_flowEvent: FlowData) => {
+      processor.on(FlowEvents.DATA_END, () => {
         eventEndFired = true;
       });
 
@@ -482,7 +486,7 @@ describe('XML Stream Processor', () => {
       const processor = new FlowStreamProcessor();
 
       let eventEndFired = false;
-      processor.on(FlowEvents.DATA_END, (_flowEvent: FlowData) => {
+      processor.on(FlowEvents.DATA_END, () => {
         eventEndFired = true;
       });
 
@@ -713,7 +717,7 @@ describe('XML Stream Processor', () => {
     it('tag_chunk_boundary test: should validate exact element count with chunk boundaries breaking tags', () => {
       // Test XML with chunk boundary breaking within tag name
       const xmlContent =
-        '<flow-state key="current_mode" data-type="object">{"mode":"Agent"}</flow-||state>||<flow-text>Hello world</flow-text>||<flow-text>Second message</flow-text>';
+        '<flow-state key="current_mode" data-type="object">{"mode":"SubAgent"}</flow-||state>||<flow-text>Hello world</flow-text>||<flow-text>Second message</flow-text>';
 
       // Create mock streamer with chunk markers
       const streamer = createMockStreamer(xmlContent);
@@ -760,7 +764,7 @@ describe('XML Stream Processor', () => {
       expect(textElements).toHaveLength(2); // Should have exactly 2 text elements
 
       // Validate element contents
-      expect(stateElements[0].data).toEqual({ mode: 'Agent' });
+      expect(stateElements[0].data).toEqual({ mode: 'SubAgent' });
       expect(textElements[0].content).toBe('Hello world');
       expect(textElements[1].content).toBe('Second message');
 
@@ -924,7 +928,7 @@ describe('XML Stream Processor', () => {
       expect(elements[0].content).toBe('some  tex t here');
 
       // Verify attributes parsing worked despite being broken across chunks
-      expect(elements[0].attributes).toEqual({ id: '123', 'data-type': 'string' });
+      expect(elements[0].attributes).toEqual({ id: '123', 'data-type': 'string', ...STREAM_STAMP });
 
       // Verify stream events occurred
       expect(streamEvents).toHaveLength(1);
@@ -991,7 +995,7 @@ describe('XML Stream Processor', () => {
         expect(elements[0].elementType).toBe(testCase.expectedType);
 
         // Verify attributes parsing
-        expect(elements[0].attributes).toEqual(testCase.expectedAttrs);
+        expect(elements[0].attributes).toEqual({ ...testCase.expectedAttrs, ...STREAM_STAMP });
 
         console.log(`Test case ${index + 1} (${testCase.description}): PASSED`);
       });

@@ -22,3 +22,6 @@ class WikiLink:
     target_type: str | None = None
     target_id: str | None = None
     id: int | None = None
+    # Explicit Wiki namespace carried by canonical dock URLs. Bare links and
+    # legacy one-segment local URLs leave resolution project-scoped.
+    wiki_ref: str | None = None

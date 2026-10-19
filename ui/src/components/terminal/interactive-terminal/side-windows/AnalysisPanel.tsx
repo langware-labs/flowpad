@@ -24,7 +24,6 @@ import { createdMs } from '@src/components/lens-viewer/shared/transcript-feature
 import { projectedRunSavingsUsd } from './analysis-improvements';
 import { useAnalysisImprovements } from './useAnalysisImprovements';
 import { ImprovementResultsModal } from './ImprovementResultsModal';
-import { AnalysisContextButton } from './AnalysisContextButton';
 
 interface AnalysisPanelProps {
   /** The agentic process whose session is analyzed. */
@@ -241,7 +240,6 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ process }) => {
                     >
                       <ExternalLink className="h-3.5 w-3.5" /> <Trans>Report</Trans>
                     </button>
-                    <AnalysisContextButton trace={t} process={process} />
                   </div>
                 </div>
               );

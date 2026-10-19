@@ -19,7 +19,8 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -95,7 +96,7 @@ async def _install_fresh(env, fm, zip_path, parent_id, *, scope):
 
     receiver = env / "receiver"
     receiver.mkdir(exist_ok=True)
-    project = Project(name="dst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
 
     await unpack_bundle(zip_path, "local-user-id")
@@ -229,6 +230,53 @@ async def test_idempotent_reinstall(env):
 
 
 # --------------------------------------------------------------------------- #
+# a task's attachment (a screenshot) rides inside its folder and lands as-is
+# --------------------------------------------------------------------------- #
+async def test_task_attachment_travels_in_its_folder(env):
+    from io import BytesIO
+
+    from flow_sdk.api.fs.fs_api import VFSPath
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.responses.response import ApiSuccessResponse
+    from flow_sdk.storage import get_entity_storage
+
+    png = b"\x89PNG\r\n\x1a\n" + bytes(range(64))
+    home = env / "home"
+    task = Task(title="Help With Screenshot", status="to_do")
+    await task.save(notify=False)
+    # Stored the way the UI stores it: the task's own file storage (its folder).
+    storage = get_entity_storage(task.typeid, entity=task)
+    await storage.upload(BytesIO(png), VFSPath.from_entity_path(task.typeid, "attachments/shot.png").abs_vfspath)
+    sender_folder = Path(task.asset_ref)
+    assert (sender_folder / "attachments" / "shot.png").read_bytes() == png
+    task.artifacts = [{"vfs": "attachments/shot.png", "label": "shot.png"}]
+    await task.save(notify=False)
+
+    await _reindex_home(home)
+    fm, zip_path = await _pack(task.id, env / "out")
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+    assert any(n.endswith(f"/{sender_folder.name}/attachments/shot.png") for n in names), names
+
+    # Fresh receiver: no shared DB row, no shared filesystem.
+    await (await Task.get_one({"id": task.id})).destroy()
+    shutil.rmtree(home / AGENTIC_ASSETS_DIR)
+
+    receiver, _, res, _ = await _install_fresh(env, fm, zip_path, task.id, scope="project")
+    assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
+
+    got = await Task.get_one({"id": task.id})
+    assert got is not None and got.asset_ref, "receiver never indexed the task"
+    folder = Path(got.asset_ref)
+    assert str(receiver) in str(folder), "task not placed in the receiver project"
+    assert (folder / "attachments" / "shot.png").read_bytes() == png, "screenshot not restored as-is"
+    assert got.artifacts == [{"vfs": "attachments/shot.png", "label": "shot.png"}]
+    # …and the receiver's own task storage resolves it (what the UI opens).
+    rstorage = get_entity_storage(got.typeid, entity=got)
+    assert await rstorage.exists(VFSPath.from_entity_path(got.typeid, "attachments/shot.png").abs_vfspath)
+
+
+# --------------------------------------------------------------------------- #
 # corner: file-backed (markdown) shape — a non-folder asset's metadata travels
 # --------------------------------------------------------------------------- #
 async def test_file_backed_markdown_shape(env):
@@ -259,7 +307,7 @@ async def test_file_backed_markdown_shape(env):
 
     receiver = env / "mdrecv"
     receiver.mkdir()
-    project = Project(name="mddst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("mddst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
     await unpack_bundle(zip_path, "local-user-id")
     ma = await MessageAttachment.get_one(
@@ -277,11 +325,11 @@ async def test_file_backed_markdown_shape(env):
 # corner: raw non-entity FILE — bytes travel, no spurious entities.json entry
 # --------------------------------------------------------------------------- #
 async def test_raw_file_no_entities_entry(env):
+    import uuid as _uuid
+
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.builtin.flow_message_bundle import pack_bundle
     from flow_sdk.storage import get_entity_embedded_storage
-
-    import uuid as _uuid
 
     fm = FlowMessage(id=str(_uuid.uuid4()), text="carrier")
     # stage a raw blob in the FM's embedded storage, reference it as a FILE
@@ -389,7 +437,7 @@ async def test_multi_attachment_bundle(env):
 
     receiver = env / "multirecv"
     receiver.mkdir()
-    project = Project(name="multidst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("multidst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
     await unpack_bundle(zip_path, "local-user-id")
     # install each attachment separately (the first install overlays only its own
@@ -492,7 +540,7 @@ async def test_git_transport_body_plus_overlay(env):
     assert ent_map[f"skill-{skill_id}"]["parent_type_id"] == "task-ghost", "metadata axis must travel in git mode"
 
     await (await Skill.get_one({"id": skill_id})).destroy()
-    project = Project(name="gitdst", fs_storage_mount_path=str(recv))
+    project = Project(name=unique_project_name("gitdst"), fs_storage_mount_path=str(recv))
     await project.save(notify=False)
     await unpack_bundle(zip_path, "local-user-id")
     ma = await MessageAttachment.get_one(

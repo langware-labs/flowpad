@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 
@@ -38,4 +38,4 @@ class Spreadsheet(Entity):
 
     # Absolute path of the backing file on disk, stamped by the indexer /
     # ``Entity.from_fs_ref``. A plain string, mirrors MARKDOWN.
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)

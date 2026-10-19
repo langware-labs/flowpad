@@ -68,9 +68,11 @@ export function EventListPanel({
       <div className="flex items-center gap-4 border-b border-border px-1 pb-2">
         <FilterMaskIndicator mask={mask} onRemove={onMaskRemove} onClearAll={onMaskClearAll} />
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-muted-foreground"><Trans>Scope</Trans></span>
+          <span className="text-[10px] font-medium text-muted-foreground">
+            <Trans>Scope</Trans>
+          </span>
           <div className="flex items-center rounded-md border bg-muted/50">
-            {([SnifferScope.All, SnifferScope.Project]).map((value, i) => (
+            {[SnifferScope.All, SnifferScope.Project].map((value, i) => (
               <button
                 key={value}
                 className={cn(
@@ -78,8 +80,8 @@ export function EventListPanel({
                   filters.scope === value
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
-                  i === 0 && 'rounded-l-[5px]',
-                  i === 1 && 'rounded-r-[5px]',
+                  i === 0 && 'rounded-s-[5px]',
+                  i === 1 && 'rounded-e-[5px]',
                 )}
                 onClick={() => onFilterChange({ scope: value })}
               >
@@ -89,9 +91,11 @@ export function EventListPanel({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-muted-foreground"><Trans>Level</Trans></span>
+          <span className="text-[10px] font-medium text-muted-foreground">
+            <Trans>Level</Trans>
+          </span>
           <div className="flex items-center rounded-md border bg-muted/50">
-            {([SnifferLevel.Info, SnifferLevel.Debug]).map((value, i) => (
+            {[SnifferLevel.Info, SnifferLevel.Debug].map((value, i) => (
               <button
                 key={value}
                 className={cn(
@@ -99,8 +103,8 @@ export function EventListPanel({
                   filters.level === value
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
-                  i === 0 && 'rounded-l-[5px]',
-                  i === 1 && 'rounded-r-[5px]',
+                  i === 0 && 'rounded-s-[5px]',
+                  i === 1 && 'rounded-e-[5px]',
                 )}
                 onClick={() => onFilterChange({ level: value })}
               >
@@ -112,23 +116,22 @@ export function EventListPanel({
       </div>
       {/* Event list */}
       {displayEvents.length === 0 ? (
-        <p className="px-1 py-2 text-center text-xs text-muted-foreground"><Trans>No events yet</Trans></p>
+        <p className="px-1 py-2 text-center text-xs text-muted-foreground">
+          <Trans>No events yet</Trans>
+        </p>
       ) : (
         displayEvents.map((event) => {
           const Icon = getEventIcon(event.event_type, event);
           return (
             <Tooltip key={event.id}>
               <TooltipTrigger asChild>
-                <div className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent">
+                <div className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start transition-colors hover:bg-accent">
                   <Icon className={cn('h-3.5 w-3.5 shrink-0', getEventColor(event))} />
                   <Badge variant="secondary" className="shrink-0 text-[10px]">
                     {event.event_type}
                   </Badge>
-                  <EventOneLiner
-                    event={event}
-                    className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground"
-                  />
-                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                  <EventOneLiner event={event} className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground" />
+                  <div className="ms-auto flex shrink-0 items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">
                       {new Date(event.timestamp).toLocaleTimeString()}
                     </span>
@@ -151,7 +154,9 @@ export function EventListPanel({
                           <FileText className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom"><Trans>View transcript</Trans></TooltipContent>
+                      <TooltipContent side="bottom">
+                        <Trans>View transcript</Trans>
+                      </TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -177,7 +182,9 @@ export function EventListPanel({
                           <Webhook className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom"><Trans>View hook</Trans></TooltipContent>
+                      <TooltipContent side="bottom">
+                        <Trans>View hook</Trans>
+                      </TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -200,7 +207,9 @@ export function EventListPanel({
                           <ScrollText className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom"><Trans>View trigger log</Trans></TooltipContent>
+                      <TooltipContent side="bottom">
+                        <Trans>View trigger log</Trans>
+                      </TooltipContent>
                     </Tooltip>
                   </div>
                 </div>

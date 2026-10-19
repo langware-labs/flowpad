@@ -13,6 +13,24 @@
  */
 import { ProcessStatus, WorkerStatus } from './agentic-types';
 
+/**
+ * The label a worker status should READ AS, preferring the CLI's own sentence.
+ *
+ * ``ERROR`` is one token, and the CLI usually already wrote something far more
+ * useful behind it — ``"Not logged in · Please run /login"``, ``"You've hit your
+ * session limit · resets 7:50pm"``. The backend recovers that sentence into
+ * ``worker_status_detail`` (see ``worker_status.tail_status_detail``); this is
+ * where it wins over the generic word, so no surface has to decide for itself.
+ *
+ * Falls back to the table whenever there is no detail, which is every status
+ * except a terminal error.
+ */
+export function workerStatusText(status: WorkerStatus | string | undefined, detail?: string | null): string {
+  const trimmed = detail?.trim();
+  if (trimmed) return trimmed;
+  return WORKER_STATUS_LABEL[status as WorkerStatus] ?? WORKER_STATUS_LABEL[WorkerStatus.UNKNOWN];
+}
+
 /** Raw worker status ("what we found") → user label. */
 export const WORKER_STATUS_LABEL: Record<WorkerStatus, string> = {
   [WorkerStatus.INITIALIZING]: 'Initializing',

@@ -23,7 +23,7 @@ test.describe('home prompt navigates to a session', () => {
     // submitFromLanding fills + submits the home input, then waits for the
     // /dock/shell/ navigation.
     await submitFromLanding(page, 'hi');
-    expect(page.url()).toContain('/dock/shell/');
+    expect(page.url()).toContain('/dock/vibe/agentic_process-');
 
     // The vibe workspace (creator surface) is now mounted — its build-session
     // toolbar (the "New build" control, testid entity-execution-new) is the

@@ -36,7 +36,7 @@ async def open_in_os(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Api
     #         status_code=404,
     #     )
 
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Open action requires GET method")
 
     if not fs_info.vpath.typeid:

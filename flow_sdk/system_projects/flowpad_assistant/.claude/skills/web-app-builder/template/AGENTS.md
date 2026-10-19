@@ -8,6 +8,11 @@
 > skill first** and follow its references. They encode the project's
 > contracts; ad-hoc approaches drift from them.
 
+
+## FlowCall integration
+
+When integrating Flowpad processing, load the shipped FlowCall guide through the docs-browse skill. A FlowCall block is a ComputeOp with declared input/output and, for Python work, call.py:call. Use the entity SDK call, preserve ReturnedValue outcomes and explicit output presence, and correlate each invocation independently. Standalone app endpoints retain their own contracts.
+
 ## Stack (fixed by design — don't swap pieces)
 
 Next.js 16 (App Router, TypeScript) · Tailwind v4 + shadcn/ui · FastAPI ·
@@ -40,3 +45,19 @@ supabase start                      # optional local DB (Docker)
   `frontend/lib/db/schema.ts` is the typed mirror — keep them in sync.
 - New tables get RLS enabled in their creation migration.
 - `frontend/lib/db` (Drizzle, bypasses RLS) is server-only.
+
+## `components/ui/` — what is real shadcn and what is not
+
+`button` and `card` are shadcn. `input`, `label` and `checkbox` are **lookalikes**:
+same import path and prop names, but native elements, because the template carries
+no radix packages beyond `@radix-ui/react-slot`. So `checkbox` has no
+`indeterminate`, and its checked colour is `accent-*`, not `data-[state=checked]:*`.
+
+Need anything else — dialog, table, select, form — do NOT hand-write it:
+
+```bash
+cd frontend && npx shadcn@latest add dialog table select form
+```
+
+That pulls the real component and its radix dependency. Verified working from the
+exec sandbox.

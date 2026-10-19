@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import secrets
 import ssl
 import uuid
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 import websockets
@@ -20,12 +22,22 @@ from websockets.exceptions import (
     InvalidStatus,
 )
 
-from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login, set_connection_status
 from flow_sdk.cloud_client.auth_status import HubConnectionStatus
 from flow_sdk.cloud_client.client import ApiConfig
 from flow_sdk.cloud_client.client_hooks import attach_machine_id
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
+
+if TYPE_CHECKING:
+    from flow_sdk.cli.auth.credentials import UserHubCredentials
+
+
+def load_credentials() -> "UserHubCredentials | None":
+    # Lazy: flow_sdk.cli imports cloud_client; a module-level import would close the cycle.
+    from flow_sdk.cli.auth.credentials import load_credentials as _load
+
+    return _load()
+
 
 InboundHandler = Callable[[dict], Awaitable[None]]
 HUB_WS_REQUEST_DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -52,8 +64,8 @@ class HubWebSocketVerificationError(RuntimeError):
     """Raised when hub WebSocket verification fails without invalidating login."""
 
 
-def build_hub_ws_url(api_base_url: str | None = None, connection_id: str | None = None) -> str:
-    """Build the hub WebSocket URL from an API base URL."""
+def build_hub_ws_path_url(api_base_url: str | None, path: str) -> str:
+    """``https://hub/api/v1`` + ``/some/ws/path`` → ``wss://hub/api/v1/some/ws/path``."""
     base_url = api_base_url or ApiConfig.from_env().api_base_url
     if not base_url:
         raise ValueError("hub API base URL is not configured")
@@ -68,8 +80,12 @@ def build_hub_ws_url(api_base_url: str | None = None, connection_id: str | None 
     else:
         raise ValueError(f"unsupported hub URL scheme: {parsed.scheme}")
 
-    path = f"{parsed.path.rstrip('/')}/connect/ws/{connection_id or uuid.uuid4()}"
-    return urlunsplit((scheme, parsed.netloc, path, "", ""))
+    return urlunsplit((scheme, parsed.netloc, f"{parsed.path.rstrip('/')}/{path.lstrip('/')}", "", ""))
+
+
+def build_hub_ws_url(api_base_url: str | None = None, connection_id: str | None = None) -> str:
+    """Build the hub WebSocket URL from an API base URL."""
+    return build_hub_ws_path_url(api_base_url, f"/connect/ws/{connection_id or uuid.uuid4()}")
 
 
 @lru_cache(maxsize=1)
@@ -146,13 +162,24 @@ async def connect_hub_websocket(
     *,
     connection_id: str | None = None,
     open_timeout: float = 10.0,
+    credentials: UserHubCredentials | None = None,
 ):
     """Connect to the authenticated hub WebSocket with stored credentials."""
-    creds = await _load_ws_credentials()
+    creds = credentials or await _load_ws_credentials()
 
     api_base_url = (config or ApiConfig.from_env()).api_base_url
     url = build_hub_ws_url(api_base_url, connection_id)
-    headers = {"Authorization": f"Bearer {creds.api_key}"}
+    # ``X-Flowpad-Client: desktop`` tells the hub this socket is a desktop
+    # BACKEND, not a browser tab — the hub routes "install on my desktop"
+    # requests only to sockets that say so.
+    headers = {"Authorization": f"Bearer {creds.api_key}", "X-Flowpad-Client": "desktop"}
+    # Which instance this is: a webhook claim that targets ONE desktop is delivered on this socket only.
+    try:
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+        headers["X-Flowpad-Instance"] = instance_uid()
+    except Exception:  # noqa: BLE001 — never let the id stop the socket; such a desktop just gets no claim deliveries
+        pass
     # Workspace sandboxes carry a machine-bound login key; the hub's WS auth
     # requires the same X-Machine-ID header as HTTP (fails closed without it).
     attach_machine_id(headers)
@@ -165,7 +192,11 @@ async def connect_hub_websocket(
             url,
             additional_headers=headers,
             open_timeout=open_timeout,
-            proxy=None,
+            # Honor the standard HTTPS_PROXY/WSS proxy discovery used by the
+            # REST client. Hardened cloud sandboxes intentionally have no
+            # direct DNS or Internet route; forcing proxy=None made HTTPS login
+            # work while the matching Hub WebSocket failed before handshake.
+            proxy=True,
             ssl=ssl_context,
         ) as websocket:
             # The hub accepts the WS upgrade FIRST, then either sends a
@@ -182,8 +213,15 @@ async def connect_hub_websocket(
                 pass  # no greeting within the window (older hub) — proceed
             except (ConnectionClosedError, ConnectionClosed) as exc:
                 if getattr(exc, "code", None) in AUTH_WS_CLOSE_CODES:
-                    creds = load_credentials()
-                    reason = "expired" if (creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
+                    current_creds = load_credentials()
+                    # A login can rotate the machine-bound API key while an
+                    # older socket is still open. Its expected 1008 close must
+                    # never erase the newer login that replaced it.
+                    if current_creds and not secrets.compare_digest(current_creds.api_key, creds.api_key):
+                        raise
+                    reason = (
+                        "expired" if (current_creds and current_creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
+                    )
                     await invalidate_hub_login(reason)
                     raise HubWebSocketAuthError("hub websocket auth rejected") from exc
                 raise
@@ -193,6 +231,117 @@ async def connect_hub_websocket(
         if _exception_status_code(exc) in AUTH_WS_STATUS_CODES:
             raise HubWebSocketAuthError("hub websocket auth rejected") from exc
         raise
+
+
+async def _catch_up_after_reconnect() -> None:
+    """Pull messages the hub announced while this client's socket was down.
+
+    The hub fans each message out once and never replays, so a reconnect that
+    only re-registers watches leaves a permanent hole. ``handle_conversation_list``
+    is the same entry point the conversation view uses on open — reusing it keeps
+    one (already idempotent) sync path instead of inventing a second.
+
+    The same hole exists for LLM endpoints, and it is worse there because the state it
+    leaves behind is acted on rather than merely displayed: the hub announces a budget
+    being deleted exactly once, so a box that was down for that frame goes on pointing
+    every spawn at a row the hub now answers ``Entity ... not found`` for -- retried to
+    exhaustion, because a bound endpoint outranks an unproven device login. Re-reading the
+    listing here is what closes it, and it is also what makes the resolver's own staleness
+    check able to fire at all: that check needs a listing NEWER than the binding before it
+    will treat an absence as an answer, and on a fresh process there is none.
+
+    The socket coming back is also a moment the hub became reachable, so what this machine still
+    owes it goes out first (``catchup.flush_pending_outbox``).
+
+    Best-effort: a catch-up hiccup must never take down the connection that just
+    came back. Each part is guarded separately so one failing does not skip the others.
+    """
+    try:
+        from flow_sdk.stream_inbox.catchup import flush_pending_outbox
+
+        await flush_pending_outbox("ws reconnect")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect outbox flush failed (non-fatal): %s", e)
+
+    try:
+        from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+        from flow_sdk.builtin.user import User
+
+        user = await User.get_local()
+        if user is not None:
+            await handle_conversation_list(user.typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
+
+    try:
+        from flow_sdk.app.actions.membership_sync import sync_remote_memberships
+        from flow_sdk.builtin.user import User
+
+        user = await User.get_local()
+        await sync_remote_memberships(user.typeid if user else None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect membership catch-up failed (non-fatal): %s", e)
+
+    try:
+        from flow_sdk.instance_settings.llm_endpoint import (
+            fetch_hub_llm_endpoints,
+            invalidate_endpoint_listing,
+        )
+
+        invalidate_endpoint_listing()  # the memo predates the outage; do not answer from it
+        await fetch_hub_llm_endpoints()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect LLM endpoint catch-up failed (non-fatal): %s", e)
+
+
+def _renew_stale_worker_credentials() -> None:
+    """Replace a spent worker-CLI credential HERE, where nobody is waiting.
+
+    The alternative is the first turn after the gap, where somebody is: a worker
+    CLI's stored token can expire on a far shorter clock than a hibernated
+    sandbox's idle window, so a wake commonly lands on a dead one and the renewal
+    used to be paid for by whoever typed first.
+
+    This connect is the right place because it is the box's OWN signal. A sandbox
+    resumed from hibernation reconnects this socket within seconds of waking,
+    whatever woke it — and only one of the several paths that can wake a sandbox
+    also logs it in, so a hub-side login hook would miss the rest.
+
+    Not a poll, and no cadence is added: the call returns without doing anything
+    on a healthy credential, and this socket already reconnects on a ~10-minute
+    production cadence for its own reasons.
+
+    WHICH workers this covers, and what each one's credential looks like, is the
+    driver layer's business and deliberately not visible from here — see
+    ``cli_drivers.credential_renewal``.
+
+    Local import: the driver layer imports this package, so binding it at module
+    scope would close the cycle.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.credential_renewal import (
+        renew_stale_worker_credentials,
+    )
+
+    try:
+        renew_stale_worker_credentials()
+    except Exception as e:  # noqa: BLE001 — a credential errand must never fell the socket
+        logger.warning("worker credential renewal check failed (non-fatal): %s", e)
+
+
+def _is_reply(raw_message: str | bytes) -> bool:
+    """A frame answering a request: a ``response_msg`` envelope, or a bare ApiResponse.
+    Anything else on the socket is a push. Unparseable counts as a reply, so the caller's
+    own JSON check reports it."""
+    from flow_sdk.api.messages import WSMessageType  # noqa: PLC0415 — same lazy import as its caller
+
+    try:
+        frame = json.loads(raw_message)
+    except (TypeError, ValueError):
+        return True
+    if not isinstance(frame, dict):
+        return True
+    kind = frame.get("message_type")
+    return kind is None or kind == WSMessageType.RESPONSE_MSG.value
 
 
 class HubWebSocketManager:
@@ -293,7 +442,27 @@ class HubWebSocketManager:
 
     @property
     def is_running(self) -> bool:
-        return self._task is not None and not self._task.done()
+        return self._live_task() is not None
+
+    def _live_task(self) -> asyncio.Task | None:
+        """The run task IF it is ours and alive — the only way to read ``_task``.
+
+        A handle from another (typically closed) event loop can never complete
+        here and raises when awaited; ``_run_forever``'s own ``finally`` never
+        ran for it, so it is dropped on read instead.
+        """
+        task = self._task
+        if task is None or task.done():
+            return None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return task  # sync caller: nothing to compare against
+        if task.get_loop() is not loop:
+            self._task = None
+            self._outbound = None
+            return None
+        return task
 
     @property
     def is_connected(self) -> bool:
@@ -350,7 +519,12 @@ class HubWebSocketManager:
                 try:
                     await asyncio.wait_for(self._connected_event.wait(), timeout=HUB_WS_START_TIMEOUT_SECONDS)
                 except asyncio.TimeoutError:
-                    await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Timed out connecting hub WebSocket.")
+                    await self._set_state(
+                        HubConnectionStatus.ERROR,
+                        connected=False,
+                        verified=False,
+                        error="Timed out connecting hub WebSocket.",
+                    )
             return self.status_payload()
 
         try:
@@ -370,19 +544,20 @@ class HubWebSocketManager:
             try:
                 await asyncio.wait_for(self._connected_event.wait(), timeout=HUB_WS_START_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
-                await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Timed out connecting hub WebSocket.")
+                await self._set_state(
+                    HubConnectionStatus.ERROR,
+                    connected=False,
+                    verified=False,
+                    error="Timed out connecting hub WebSocket.",
+                )
         return self.status_payload()
 
     async def stop(self) -> dict[str, Any]:
         self.request_stop()
-        task = self._task
-        if not task or task.done() or asyncio.current_task() is task:
-            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
-            return self.status_payload()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        task = self._live_task()
+        if task is not None and asyncio.current_task() is not task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
         return self.status_payload()
 
@@ -396,14 +571,19 @@ class HubWebSocketManager:
         Mutates in-memory state only; the connection-status broadcast is
         emitted by callers (``stop()`` calls ``_set_state`` after; the logout
         path in ``clear_cloud_credentials`` broadcasts DISCONNECTED itself).
+
+        This is the call that is safe from ANYWHERE in the WS task tree —
+        including the reader loop's token-rejection path, which reaches
+        ``clear_cloud_credentials``. ``stop()`` is not: awaiting the run task
+        from one of its own children deadlocks.
         """
         self._stop_requested = True
         self._connected = False
         self._verified = False
         self._status = HubConnectionStatus.DISCONNECTED
         self._last_error = None
-        task = self._task
-        if not task or task.done():
+        task = self._live_task()
+        if task is None:
             return
 
         try:
@@ -430,12 +610,21 @@ class HubWebSocketManager:
         try:
             while not self._stop_requested:
                 try:
-                    await self._set_state(HubConnectionStatus.CONNECTING, connected=False, verified=False, error=None)
+                    # ``verified`` is left alone on a reconnect: the same credentials can only
+                    # name the same user, and a refused key ends this loop as AUTH_REJECTED
+                    # below. Only ``stop()`` (logout, login's restart) forgets who the hub named
+                    # -- otherwise the ~10-minute drop signs the box out of every hub endpoint.
+                    await self._set_state(HubConnectionStatus.CONNECTING, connected=False, error=None)
                     # Fresh id every connect attempt — never reuse (see
                     # ``_connection_id`` doc: a reused id collides with a stale
                     # hub-side ghost handler and is rejected as a duplicate).
                     self._connection_id = str(uuid.uuid4())
-                    async with connect_hub_websocket(self.config, connection_id=self._connection_id) as websocket:
+                    connection_credentials = await _load_ws_credentials()
+                    async with connect_hub_websocket(
+                        self.config,
+                        connection_id=self._connection_id,
+                        credentials=connection_credentials,
+                    ) as websocket:
                         backoff = self.reconnect_initial_seconds
                         attempts_at_level = 0
                         await self._set_state(
@@ -451,6 +640,30 @@ class HubWebSocketManager:
                         from flow_sdk.cloud_client.context_watch import browser_context_watch
 
                         asyncio.create_task(browser_context_watch.resync())
+                        # A desktop webhook's deliveries that waited on the hub while this was away.
+                        from flow_sdk.cloud_client import webhook_relay
+
+                        asyncio.create_task(webhook_relay.catch_up())
+                        # Re-READ what arrived while the socket was down.
+                        #
+                        # The hub announces each FlowMessage exactly ONCE, live, to
+                        # whoever is connected at that instant
+                        # (``Conversation._fanout_message``) — there is no replay and
+                        # no ack. Re-registering watches above only restores FUTURE
+                        # frames; without this, every disconnect is a window whose
+                        # messages are lost to this client until the user happens to
+                        # open that conversation. Production drops this socket on a
+                        # ~10-minute cadence, so that window is routine, not exotic.
+                        #
+                        # Same catch-up the conversation view runs on open, so a
+                        # reconnect converges on exactly the state a manual refresh
+                        # would have produced.
+                        logger.info(
+                            "Hub WS connected (conn=%s) — syncing messages missed while down",
+                            self._connection_id,
+                        )
+                        asyncio.create_task(_catch_up_after_reconnect())
+                        _renew_stale_worker_credentials()
                         # Fresh queue per connection — prior queued frames from
                         # a dead session don't leak across reconnects.
                         self._outbound = asyncio.Queue(maxsize=HUB_WS_OUTBOUND_QUEUE_MAX)
@@ -482,20 +695,27 @@ class HubWebSocketManager:
                     raise
                 except HubWebSocketLoginRequiredError as exc:
                     self._fail_pending(exc)
-                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=str(exc))
+                    await self._set_state(
+                        HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=str(exc)
+                    )
                     return
                 except HubWebSocketAuthError as exc:
                     self._fail_pending(exc)
                     # Hub rejected our credentials at the WS layer. Stop the
                     # reconnect loop and surface AUTH_REJECTED — login state
                     # is left alone (see `_handle_ws_auth_exception`).
-                    await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error=str(exc))
+                    await self._set_state(
+                        HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error=str(exc)
+                    )
                     return
                 except (ConnectionClosedError, ConnectionClosed) as exc:
                     self._fail_pending(exc)
-                    if await self._handle_closed_connection(exc):
+                    if await self._handle_closed_connection(
+                        exc,
+                        rejected_api_key=connection_credentials.api_key,
+                    ):
                         return
-                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
+                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, error=None)
                 except Exception as exc:
                     self._fail_pending(exc)
                     logger.info("Hub WS listener disconnected: %s", exc)
@@ -515,9 +735,17 @@ class HubWebSocketManager:
             if self._stop_requested:
                 await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
 
-    async def _handle_closed_connection(self, exc: ConnectionClosed) -> bool:
+    async def _handle_closed_connection(
+        self,
+        exc: ConnectionClosed,
+        *,
+        rejected_api_key: str | None = None,
+    ) -> bool:
         if exc.code in AUTH_WS_CLOSE_CODES:
             creds = load_credentials()
+            if rejected_api_key and creds and not secrets.compare_digest(creds.api_key, rejected_api_key):
+                logger.info("Ignoring auth close for a superseded Hub API key; reconnecting with the current key")
+                return False
             locally_expired = bool(creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS))
             reason = "expired" if locally_expired else "rejected"
             # Hub-side auth close — treat as canonical credential loss whether
@@ -542,17 +770,32 @@ class HubWebSocketManager:
         local_user = get_user() or {}
         local_user_id = local_user.get("id")
         if not local_user_id:
-            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error="Cloud login required before connecting hub WebSocket.")
+            await self._set_state(
+                HubConnectionStatus.DISCONNECTED,
+                connected=False,
+                verified=False,
+                error="Cloud login required before connecting hub WebSocket.",
+            )
             raise HubWebSocketLoginRequiredError("Cloud login required before connecting hub WebSocket.")
 
         try:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
-                await websocket.send(APIMessage(direct_resource_type="user").model_dump_json())
+                await websocket.send(APIMessage(action="current-user").model_dump_json())
                 # The hub's opening ``ws_ready_msg`` greeting is consumed by
-                # ``connect_hub_websocket`` — the next frame is the reply.
-                raw_message = await asyncio.wait_for(websocket.recv(), timeout=HUB_WS_VERIFY_TIMEOUT_SECONDS)
+                # ``connect_hub_websocket``. The reply is the first frame that IS
+                # one: the hub may fan out pushes (a ``data_op_msg`` for a
+                # conversation just shared, …) to this socket first, and reading
+                # one of those as the reply failed verification.
+                async with asyncio.timeout(HUB_WS_VERIFY_TIMEOUT_SECONDS):
+                    while not _is_reply(raw_message := await websocket.recv()):
+                        pass
         except HubWebSocketAuthError:
-            await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error="Hub WebSocket authentication failed.")
+            await self._set_state(
+                HubConnectionStatus.AUTH_REJECTED,
+                connected=False,
+                verified=False,
+                error="Hub WebSocket authentication failed.",
+            )
             raise
         except Exception as exc:
             await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(exc))
@@ -561,7 +804,9 @@ class HubWebSocketManager:
         try:
             response = json.loads(raw_message)
         except json.JSONDecodeError as exc:
-            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Hub WebSocket returned invalid JSON.")
+            await self._set_state(
+                HubConnectionStatus.ERROR, connected=False, verified=False, error="Hub WebSocket returned invalid JSON."
+            )
             raise HubWebSocketVerificationError("Hub WebSocket returned invalid JSON.") from exc
 
         # The hub wraps rest_api_msg replies in a response_msg envelope;
@@ -576,7 +821,9 @@ class HubWebSocketManager:
 
         data = response.get("data")
         hub_users = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
-        matching_user = next((user for user in hub_users if isinstance(user, dict) and user.get("id") == local_user_id), None)
+        matching_user = next(
+            (user for user in hub_users if isinstance(user, dict) and user.get("id") == local_user_id), None
+        )
         if not matching_user:
             hub_ids = [user.get("id") for user in hub_users if isinstance(user, dict) and user.get("id")]
             message = f"Hub WebSocket user mismatch: local={local_user_id}, hub={hub_ids or 'none'}"

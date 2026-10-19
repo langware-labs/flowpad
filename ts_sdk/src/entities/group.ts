@@ -1,7 +1,6 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type AnyEntity } from '../APIEntity';
 import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
-import { IEntity } from '../IEntity';
-import { ActionInfo } from '../models/ActionInfo';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * Group — generic folder-like container entity (docs/entities-groups.md).
@@ -43,28 +42,21 @@ async function queryEntities<T extends IEntity>(type: string, match: ExpressionN
   return dataManager.query<any>(new QueryRequest({ type, query: new QueryFilter({ type, match }) }));
 }
 
+// `implements IGroup` only checks the class; it contributes no members, so every
+// field declared solely on IGroup read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// `icon` is omitted: `APIEntity` owns it as an accessor pair, and an
+// optional `icon?:` here is not identical to that required accessor, which
+// the merged interface cannot inherit from both sides.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Group extends EntityMerge<IGroup> {}
+
 @registerEntity
 export class Group extends APIEntity<Group> implements IGroup {
   static type: string = 'group';
 
   name: string = '';
   group_namespace: string = '';
-  private _icon: string | null = null;
-
-  /**
-   * Per-instance icon. The base ``APIEntity.icon`` is a getter-only accessor
-   * (the static type icon), so this overrides it as an accessor PAIR — and
-   * the constructor additionally mirrors it as an OWN enumerable accessor so
-   * toJSON's own-enumerable iterator serializes it (the ``_icon`` backing
-   * field is underscore-skipped) and deepAssign can set it.
-   */
-  get icon(): string | null {
-    return this._icon;
-  }
-
-  set icon(v: string | null) {
-    this._icon = v ?? null;
-  }
   color?: string | null;
   project_id?: string | null;
 
@@ -72,14 +64,6 @@ export class Group extends APIEntity<Group> implements IGroup {
     super(entity);
     this.name = entity.name ?? '';
     this.group_namespace = entity.group_namespace ?? '';
-    Object.defineProperty(this, 'icon', {
-      enumerable: true,
-      configurable: true,
-      get: () => this._icon,
-      set: (v: string | null | undefined) => {
-        this._icon = v ?? null;
-      },
-    });
     this.icon = entity.icon ?? null;
     this.color = entity.color ?? null;
     this.project_id = entity.project_id ?? null;
@@ -156,9 +140,9 @@ export class Group extends APIEntity<Group> implements IGroup {
    * adapters to turn a drag payload back into the entity whose
    * ``setGroup``/``move`` must run — resolution is SDK logic, not tsx.
    */
-  static async resolveEntity(type: string, id: string): Promise<APIEntity<any> | null> {
+  static async resolveEntity(type: string, id: string): Promise<AnyEntity | null> {
     const { TypeId } = await import('../models/TypeId');
-    return (await dataManager.getByTypeId<any>(new TypeId(type, id))) as APIEntity<any> | null;
+    return (await dataManager.getByTypeId<any>(new TypeId(type, id))) as AnyEntity | null;
   }
 
   async rename(name: string): Promise<Group> {
@@ -174,14 +158,11 @@ export class Group extends APIEntity<Group> implements IGroup {
 
   /** Cycle-checked re-parent (null = move to the namespace root). */
   async move(parentGroupId: string | null): Promise<void> {
-    const info = new ActionInfo('move', Group.type, this.id, 'POST');
-    info.bodyParameters = { group_id: parentGroupId };
-    await dataManager.callAction(info);
+    await this.post('move', { group_id: parentGroupId });
   }
 
   /** Delete this folder; its children move up to this folder's parent. */
   async deleteGroup(): Promise<void> {
-    const info = new ActionInfo('delete-group', Group.type, this.id, 'POST');
-    await dataManager.callAction(info);
+    await this.post('delete-group');
   }
 }

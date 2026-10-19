@@ -381,3 +381,87 @@ async def test_reinit_db_rebinds_lazy_db_driver(
     assert DBRelationship._db is rebound_driver, (
         "DBRelationship._db still points at the pre-reinit driver — split-brain"
     )
+
+
+def as_instance(name: str):
+    """This run's settings, as the instance called ``name`` (the same home, flow home and ports)."""
+    import dataclasses
+
+    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
+
+    current = get_instance_settings()
+    return BaseInstanceSettings(**{**{f.name: getattr(current, f.name) for f in dataclasses.fields(current)}, "instance_name": name})
+
+
+def test_only_prod_places_projects_in_the_users_flowpad_workspace():
+    """``~/Flowpad workspace`` is prod's. Any other instance sharing the user's home
+    (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>`` — nothing a dev instance or a test
+    run creates lands among real projects, and a project can live there (nothing
+    under ``flow_home`` can)."""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    current = get_instance_settings()
+    users_workspace = current.user_home / "Flowpad workspace"
+    assert as_instance("prod").workspace_root == users_workspace
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = as_instance(name)
+        assert settings.workspace_root == current.user_home / "Flowpad workspaces" / name
+        assert users_workspace not in (settings.workspace_root, *settings.workspace_root.parents)
+        assert settings.flow_home not in settings.workspace_root.parents
+
+
+def test_only_prod_keeps_user_docs_in_the_users_home(tmp_path, monkeypatch):
+    """``~/docs`` is prod's user vault. Any other instance keeps its user docs in its
+    own instance dir, so a test that leaves a document behind never lands in the
+    user's real vault (906 test files had piled up in ~/docs by 2026-09-28)."""
+    from flow_sdk.instance_settings.base_settings import ENV_FLOW_HOME, BaseInstanceSettings
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv(ENV_FLOW_HOME, str(tmp_path / ".flow"))
+
+    assert BaseInstanceSettings.from_env("prod").user_docs_dir == tmp_path / "docs"
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = BaseInstanceSettings.from_env(name)
+        assert settings.user_docs_dir == tmp_path / ".flow" / "instances" / name / "docs"
+        assert tmp_path / "docs" not in (settings.user_docs_dir, *settings.user_docs_dir.parents)
+
+
+def test_only_prod_keeps_repo_assets_in_the_users_home(tmp_path, monkeypatch):
+    """``~/agentic-assets`` is prod's. Any other instance keeps its user-scope repo
+    assets in its own folder — the hub tiers on ``dev-1``/``dev-2`` had left 188
+    test specs, agents and prompts there for prod to list. Not under ``flow_home``,
+    where nothing may be deleted (``is_protected_path``)."""
+    from flow_sdk.fs_store.path_utils import is_protected_path
+    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+    from flow_sdk.instance_settings.base_settings import ENV_FLOW_HOME, BaseInstanceSettings
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv(ENV_FLOW_HOME, str(tmp_path / ".flow"))
+
+    assert BaseInstanceSettings.from_env("prod").user_asset_root == tmp_path
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = BaseInstanceSettings.from_env(name)
+        own = settings.user_asset_root
+        assert own == tmp_path / "Flowpad workspaces" / ".home" / name
+        assert settings.user_home == tmp_path  # harness dirs stay shared
+        assert settings.flow_home not in own.parents
+        monkeypatch.setattr("flow_sdk.instance_settings.get_instance_settings", lambda s=settings: s)
+        assert not is_protected_path(own / "agentic-assets" / "spec" / "x")
+    reset_instance_settings()
+    get_instance_settings()
+
+
+def test_the_bootstrap_offers_this_instances_workspace_not_prods(monkeypatch):
+    """The UI places a new project (and a session with no project) at ``desktop_info.paths.workspace``. It was
+    a literal ``~/Flowpad workspace`` — prod's — so every dev and test instance offered prod's folder."""
+    import flow_sdk.instance_settings as instance_settings
+    from flow_sdk.server.routes.bootstrap import build_app_paths
+
+    home = str(instance_settings.get_instance_settings().user_home).lstrip("/")
+
+    for name, expected in (("prod", f"{home}/Flowpad workspace"), ("fsvc-7", f"{home}/Flowpad workspaces/fsvc-7")):
+        settings = as_instance(name)
+        monkeypatch.setattr(instance_settings, "get_instance_settings", lambda s=settings: s)
+        paths = build_app_paths()
+        assert (paths.workspace, paths.skills) == (expected, f"{expected}/.claude/skills"), name

@@ -7,7 +7,7 @@ import React from 'react';
  */
 export function CountChip({ count, title }: { count: number; title?: string }) {
   return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title={title}>
+    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground" title={title}>
       {count > 999 ? '999+' : count}
     </span>
   );

@@ -20,8 +20,14 @@ in the same viewer components:
    Grammar owned by `DockPointer` (`ui/src/navigation/DockPointer.ts`);
    master render switch `content-panel.tsx:230-402`.
 2. **Agent show targets** (`flow show`): `show entity|file|webapp →
-   resolve_display_target (typeid | path | port) → AgenticProcess.on_show →
-   display_stack/last_shown → VibeWorkspace routing → viewer`.
+   resolve_display_target (typeid | path | port | artifact_id) →
+   AgenticProcess.on_show → display_stack/last_shown → VibeWorkspace routing →
+   viewer`. `DisplayTargetKind` includes `entity`, `vfs`, `webapp`,
+   `app` (artifact-addressed, runtime derived per-resolve so a stale port never
+   becomes an app's identity), `shell`, `dock`, and `url` — the CLI exposes
+   entity/file/webapp and screen targets; `app` and `shell` are reached through `flow app` and
+   `flow terminal`. Outside vibe the same targets mint a tab instead of pinning a
+   pane (`docs/tabs/display.md` §5).
    Resolver `flow_sdk/core/display_target.py:43-98`; FSM
    `agentic_process.py:2084-2146`; frontend routing
    `vibe-workspace.tsx:369-524`.
@@ -31,10 +37,29 @@ carries icon (`TypeInfo.icon`, consumed by `iconForType`), `browseable_by`
 view-mode, and filesystem-shape hints (`main_layout`/`main_file`/`main_ext`)
 — but **no viewer/editor hint**.
 
+### Terminal links
+
+Both terminal surfaces use xterm's web-link addon, OSC 8 handler, and a shared
+file-link provider. Detection examines only the hovered logical line, with a
+bounded scan for wrapped output; it makes no backend requests. Activation calls
+the source entity's `resolve-display-target` action, which interprets the link
+and reuses `resolve_display_target` for file discovery and entity resolution.
+Relative files resolve against the shell's configured workdir, then its project;
+live shell `cd` tracking and remote-machine file resolution are not supported.
+
+The resolved target passes through `dockForDisplayTarget` and `presentDockTab`,
+the same tab placement and highlight path used by agent shows. User clicks then
+navigate to focus the destination. File positions reach the existing editors;
+registered assets retain their type-specific viewers. HTTP(S) pages have durable
+URL-based pointers in the web-app viewer, with an **Open in browser** control
+available even when the destination refuses iframe embedding.
+
 ## 2. Files by extension
 
 The extension→viewer rule is ONE registry — `EXT_TO_EDITOR` +
-`editorForPath` in `ts_sdk/src/models/asset-editor.ts` — and every raw-file
+`editorForPath` in `ts_sdk/src/models/asset-editor.ts` (mirrored for the
+backend in `flow_sdk/core/asset_editor.py`, see [§9](#9-deep-links-from-the-backend))
+— and every raw-file
 surface routes through it: `dockPointerForFile` (openFile / explorer / chat
 attachments), the vibe display's `vfsEditorEl`, and `assetPointerForTarget`
 (display history). `dockPointerForFile` also carries a requested line across the
@@ -49,7 +74,7 @@ same way on every surface.
 |---|---|---|
 | `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
 | `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
-| `.html` / `.htm` | HTML | `HtmlPreview` (live sandboxed srcDoc, `allow-scripts` only) |
+| `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url, `allow-same-origin`) |
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
@@ -71,20 +96,22 @@ overlay rather than navigation and no caller mounts its own.
 
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).
-Whiteboards have **no** `.excalidraw` extension handling — they are
+Charts have **no** `.excalidraw` extension handling — they are
 folder-backed entities opened by TypeId. Folders are browsed
 (`ViewType.ASSETS` folder/fs pointers), never "opened". Entities always win
 over extensions: a path that resolves to an entity opens its type's editor.
 
 ## 3. Assets / entities
 
-Three registries decide how an entity opens, kept in agreement **manually**:
+Four registries decide how an entity opens, kept in agreement **manually** —
+the fourth is `flow_sdk/core/asset_editor.py`, the backend's type→editor mirror
+of (1), pinned to it by a shared fixture rather than by hand (see [§9](#9-deep-links-from-the-backend)):
 
 1. **`EDITOR_TYPES` / `TYPE_TO_EDITOR`** (`ts_sdk/src/models/asset-editor.ts:24-47`)
    — record type → AssetEditor. Editors: code, markdown (markdown, claude_md,
    claude_memory, claude_rules, command, plan, prompt), agent, skill, task,
-   workflow, whiteboard, agent_trace, dynamic_workflow, usage_report,
-   asset_cleanup_report. Rendered by `AssetEditorRouter.tsx:153`.
+   workflow, chart, agent_trace, dynamic_workflow, usage_report,
+   asset_cleanup_report, mcp. Rendered by `AssetEditorRouter`.
 2. **Per-entity `dockPointer` getters** (SDK) — `APIEntity.dockPointer`
    default is `ViewType.HOME` (`APIEntity.ts:481`); asset types override via
    `assetEditorPointer` (`:503`); process/shell/conversation/etc. have bespoke
@@ -95,7 +122,8 @@ Three registries decide how an entity opens, kept in agreement **manually**:
 
 Addressing grammar: `editor/<AssetEditor>/<vfs|typeid>/<value>`
 (`AssetDocPointer`), plus browser-only pointers `list/<type>`,
-`folder/<type>/<typeid>/<relPath>`, `fs/<relPath>`, `wiki/<space>/<name>`,
+`folder/<type>/<typeid>/<relPath>`, `fs/vfs/<absVfsPath>`,
+`wiki/<space>/<name>`,
 `project-home` (`AssetsPage.tsx:82-124`). Read/write channel: entity
 `asset_ref` → `FSRef` (+`useEntityByPath`), never raw fsManager calls.
 
@@ -105,31 +133,59 @@ api_keys, ai_config, hooks, artifacts, docs, plan, assistance, machine,
 explorer, triggers/cron, capabilities, execute_flow, **show**, **apps**,
 graph, k-browser, **lens** (9 sub-lenses), tasks (redirect), settings,
 preferences, desktop, search, workflows, agentic_process, **display** (vibe
-layout only), assets, project, inbox, conversation, spec, graph_context,
+layout only), assets, project, stream_inbox, conversation, spec, graph_context,
 diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 ## 4. Webapps & artifacts
 
-- `flow show webapp --port N` → `{kind: webapp, port}` → `PersistentIframe`
-  (src via `get-host` action redirect; global iframe registry keyed by src;
-  liveness = client-side fetch probe only).
-- `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
+- `flow show webapp --port N` → registers a `proxy` ROUTE (`port-N`) on the local
+  placement's `app` proxy (`--admin`: its `admin` one) →
+  `{kind: app, typeid: service_endpoint-<id>, route: "port-N", runtime: dev}` →
+  the APP dock (`?route=port-N`) → `PersistentIframe` (src = the route's `direct-url`; global
+  iframe registry keyed by src; liveness = client-side fetch probe, diagnosis =
+  the endpoint's `probe`). A frame whose tab is not shown is PARKED — kept
+  mounted, hidden with CSS — which its guest cannot see, so the registry tells
+  it: `flowpad:visibility {hidden}` on every park and show, and in answer to a
+  guest's `flowpad:visibility-please`; the SDK (`adoptHostVisibility`, installed
+  by a served app's `initSdk`) folds that into the guest's own `document.hidden`
+  / `visibilityState` and fires `visibilitychange`, so a parked app's timers and
+  polls rest like a hidden page's.
+- `flow app open` → a project app (`webapp.json`) comes up through `bring_up` (validate → load → setup → fix, `flow_sdk/core/setup/load.py`); a folder with no `webapp.json` is discovered/started ad hoc → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
-- HTML deliverables (`.html` via show) are display-only; they are NOT
-  artifacts and have no registration/restart story.
+- `flow artifact file|entity|webapp` registers a deliverable as an `Artifact`
+  carrying `generated_by`, and presents it by default (`--no-show` suppresses).
+  So an `.html` report is no longer display-only: it gets the same durable
+  registration a webapp always had. `flow show` remains the display-only verb —
+  the two are distinct contracts, not one folded into the other.
 
 ## 5. Foreign HTML — the four trust tiers
 
 | Tier | Surface | Origin model | Powers |
 |---|---|---|---|
-| 1 (most locked) | `HtmlPreview` — shown `.html` | `srcDoc` + `sandbox="allow-scripts"` only → **opaque origin** | scripts only; no network to API (no CORS), no storage, no bridge |
+| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
-| 3 | `PersistentIframe` — webapp by port | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
+| 3 | `PersistentIframe` — an app's route on its placement's audience proxy (a dev server's `direct-url`, or a `static` route's `service/<mount>/` path) | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |
 
 No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 2's network is always fully closed in practice.
+
+**Tier 1 is no longer meaningfully locked, and the reason is worth recording.**
+It shipped withholding `allow-same-origin`, on the reasoning that an opaque
+origin costs only `localStorage` while keeping an agent-written page away from
+the API. On a **cookie-gated** instance that is wrong: an opaque origin's *site
+for cookies* is null, so every request the document itself makes is cross-site
+and the `__Host-grant` cookie (`SameSite=None; Partitioned`, keyed to the
+top-level site) is withheld. The frame's
+first load is parent-initiated and carries the cookie, so the page renders —
+then its own images and its own link clicks each come back as the gate's
+Forbidden page. The host is identical; the host is not what the browser decides
+on. A desktop install is never gated, so **no local test can see this**.
+
+Withholding the flag therefore does not buy isolation, it buys a broken page.
+Genuine isolation for shown HTML needs a separate, un-gated origin to serve
+from — see [§8](#8-open-questions) Q1.
 
 ## 6. Backend serving surfaces
 
@@ -137,10 +193,18 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
   (`ui.py:49-74`, `app.py:601`).
 - `/assets/*` hashed bundle; explicit public root files (favicon/logo/ws-test).
 - `/mcp-sandbox/sandbox_proxy.html` — the only CSP-bearing surface.
-- **`MicroApp.view`** (`faas/micro_app.py:145`) — the ONLY raw-bytes/MIME
-  path in the backend (ETag/304, streaming, `<base>` injection for HTML,
-  traversal-guarded). `view_external_domain` + `WebDomain` host routing are a
-  cloud seam with **no OSS caller**.
+- **a `static` route's `service/<mount>/` path** (or a `static` ServiceEndpoint's own)
+  (`server/routes/service_endpoint.py`) and **`fs/serve`**
+  (`actions/fs/fs_actions.py`) — the two raw-bytes/MIME paths, and both are
+  thin callers of the one implementation, `serve_app_bytes` (ETag/304,
+  streaming, utf-8 html read, API-origin injection, traversal-guarded). They
+  differ in three flags, one per way "an app" and "a file" are not the same
+  thing: `<base>` injection (an app is served under a path that is not its
+  own; `fs/serve`'s url IS the file's path), the `index.html` fallback (an
+  app's router owns unknown paths, a file has no router), and caching (an
+  hour for a release, `no-cache` for a webapp asset under edit, `no-store` for
+  a file being edited). Own-origin hosts (`<endpoint-id>.<app_domain>`, a
+  `WebDomain`) are the hub's; the desktop serves none.
 - `/sdk` mount (`app.py:582`) — **dead**: `server/static/sdk/` is empty; no
   build step populates it (intended `/sdk/flowpad-sdk.js`).
 - Everything else (fs-records, assets.py, transcripts, docs-graph) serves
@@ -169,8 +233,10 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    `TypeInfo.icon` but viewer/tab icons from a separate hardcoded
    `VIEWER_REGISTRY` — parallel systems kept aligned by hand.
 6. **No unified refresh contract**: webapp iframe reloads on
-   `showNonce+refreshStamp`; Html/McpApp previews only on React key remount;
-   asset editors on turn-edge remount.
+   `showNonce+refreshStamp`; `HtmlPreview` on the FS store's per-path
+   `revision` carried in its src query (the response is `no-store`, but a
+   frame keeps its document until src changes); McpApp preview on React key
+   remount; asset editors on turn-edge remount.
 7. **`show` is fire-and-forget**: exit 0 ≠ presented (documented), no
    feedback channel to the agent; port targets are never liveness-checked at
    resolve time.
@@ -178,18 +244,70 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    retained for persisted-pointer back-compat.
 9. **MCP host duplication**: ShowView and AppHost share near-identical
    AppRenderer scaffolding; both stub `onCallTool`.
-10. **`/sdk` mount dead**; `view_external_domain` vestigial in OSS.
+10. **`/sdk` mount dead**.
+11. ~~**Agents can only address entities and files — never a screen.**~~
+    **RESOLVED** — screens are addressable. `flow_sdk/core/dock_address.py`
+    mirrors the frontend's `ViewType` vocabulary, pinned by
+    `tests/fixtures/dock_address_contract.json` (the same hand-authored,
+    neither-side-generates-it pattern as `asset_editor_contract.json`). On top of
+    it: a `DisplayTargetKind.DOCK` target, a fourth `ui_command` kind
+    `navigate_dock`, and the verbs `flow show view <address>` /
+    `flow navigate view <address>`, where an address is
+    `<viewType>[/<pointer>][?<opts>]`. `flow schema views` enumerates what is
+    openable — the view half of the vocabulary `flow schema list` covers for
+    entities. Each row carries `label` (the screen's name as a person says it),
+    `aliases` (the other things they call it), `page`, and the pointer rule. The
+    address is validated server-side before the UI is touched, so an unknown view
+    or a missing required pointer is a clean exit 2 and an entity-shaped pointer
+    naming nothing is exit 4; an unknown view's error names the closest labels.
+
+    **Addressable is not the same as findable.** Being able to *say* an address
+    does not help an agent that does not know the screen's name, and for a while
+    it did not: the catalogue published bare slugs, the navigation skill listed
+    nine of 57 destinations in prose, and an agent asked for "the connections
+    page" ran `flow show view data-sources`, got exit 0, and showed the wrong
+    screen. `label`/`aliases` and the full table in the `flowpad-navigation`
+    skill are the fix; `tests/unit/test_agent_schema_views.py` and the skill's
+    own contract test are what stop the vocabulary rotting again.
+
+    Still open, deliberately out of that scope: an agent cannot switch view mode,
+    and cannot manage tabs (the `Tab` actions exist but have no CLI surface).
+
+    Presentation differs by mode and is worth knowing: outside vibe a shown dock
+    mints a top-level tab after the calling process; in vibe it becomes a
+    workspace CHILD chip beside the Display, so the agent's pinned deliverable is
+    not evicted. That required widening the child-adoption allow-list — a dock
+    the agent SHOWED is workspace content by intent, while a dock the USER
+    navigated to keeps the narrower test (`isAdoptableChildDock`'s `shown` flag,
+    mirrored by `_pointer_is_adoptable_child` in `tab.py`). Workspace anchors
+    stay denied either way.
 
 ## 8. Open questions
 
 1. **Trust tiers as a first-class concept?** Should the display address carry
    an explicit trust/serving tier (preview | sandboxed-app | served-app |
-   native) instead of inferring it from extension+surface? Concretely: a
-   `flow show file <x.html> --serve` (or `served-html` DisplayTargetKind)
-   that mounts the file on the backend origin (ephemeral MicroApp) and
-   renders via the tier-3 iframe — enabling SDK-powered HTML apps — while
-   plain `show file *.html` stays tier 1. (Origin discussion: SDK-in-HTML
-   demo analysis, 2026-07.)
+   native) instead of inferring it from extension+surface?
+
+   The `--serve` half of this is **answered, and the answer was that no new
+   address was needed**. Every shown `.html` is now served from `fs/serve`, so
+   the file has a real url and its relative pages, assets and anchors resolve —
+   the whole class of "the preview has no address" bugs. No flag, no
+   `served-html` kind, no ephemeral WebApp: the frontend already knows a path
+   is HTML from its extension, so nothing had to change in `resolve_display_target`.
+
+   `allow-same-origin` IS granted, after shipping once without it. Withholding
+   it gives the frame an opaque origin, whose *site for cookies* is null, so a
+   gated instance withholds the `SameSite=Lax` gate cookie from everything the
+   document itself requests — broken images and a Forbidden page on every link
+   ([§5](#5-foreign-html--the-four-trust-tiers)). It bought no isolation, only a
+   broken page.
+
+   So the real remaining question is unchanged and now unavoidable: **isolating
+   shown HTML requires a separate, un-gated origin to serve it from.** A distinct
+   host cannot carry the `__Host-` gate cookie, so that origin has to be either
+   outside the gate or admitted by it explicitly — plus the port/subdomain and
+   e2b exposure that come with it. Until then, a shown `.html` runs with the
+   same powers as a `flow app serve` app.
 2. **Should tier 2 ever get network?** The `csp`/`connectDomains` lever
    exists end-to-end but is never used. Is a scoped grant (backend origin
    only, token-limited API) the sanctioned way for MCP apps to read data, or
@@ -204,10 +322,53 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    (`vfsEditorEl`), and the explorer all route through it. Adding a viewer =
    one enum value + one table row + one `AssetEditorRouter` case.
    (`.jsonl` stays lens-routed by design.)
-5. **HTML deliverables as artifacts?** Webapps get registration, restart, and
-   history via WEBAPP artifacts; shown `.html` files get nothing. Should
-   there be an HTML/report artifact kind with the same lifecycle?
+5. ~~**HTML deliverables as artifacts?**~~ **ANSWERED — implemented.**
+   `flow artifact` registers any deliverable — file, entity or port — as an
+   `Artifact` with a `generated_by` edge back to the producing run, so an
+   `.html` report now has the registration and history a webapp always had.
+   Restart remains webapp-only, and deliberately: a file has nothing to restart.
+   See [agentic_process_outputs.md](agentic_process_outputs.md).
 6. **`/sdk` publishing**: build+ship `flowpad-sdk.js` into `server/static/sdk`
    (plus a slim non-React entry), or delete the mount?
 7. **Show feedback**: should `on_show` report back whether a display actually
    mounted (watcher count), so agents can tell a deliverable was presented?
+
+## 9. Deep links from the backend
+
+Everything above is the *frontend* deciding how to display something it already
+navigated to. One case runs the other way: an agent that has just written a file
+wants to hand the **user** a URL. `flow record url <path|typeid>` prints it.
+
+The URL grammar `/dock/assets/editor/<editor>/typeid/<type>-<id>` is authored in
+two places now — `assetEditorPointer` (`ts_sdk/src/APIEntity.ts`) and `dock_url`
+(`flow_sdk/core/display_target.py`) — because the backend cannot reach the TS
+map. The editor tables they read are pinned against each other by
+`tests/fixtures/asset_editor_contract.json`, which *neither side generates*:
+both `tests/unit/test_asset_editor_contract.py` and
+`ui/tests/unit/asset-editor-contract.test.ts` assert against it, so a one-sided
+change fails that side's suite and a fixture change fails both.
+
+Three decisions worth not re-litigating:
+
+* **`url` is not on the wire.** It is deliberately absent from the DisplayTarget
+  payloads that `resolve_display_target` returns, even though it would be free
+  there. Those payloads are persisted in display history and cross the hub, so a
+  baked `http://localhost:<port>/…` goes wrong the moment a port changes — and a
+  frontend that started preferring a wire `url` would put the grammar's two
+  owners on opposite sides of a version boundary, where a shipped Electron build
+  can pin a stale one. The wire carries the **address**; the client builds the
+  **URL**.
+* **The server builds it, not the CLI.** The UI is served by Vite on a different
+  port than the API in every dev instance, and the CLI's `_discover_port()`
+  finds the API's. `InstanceSettings.ui_port` owns that vite-or-api rule; the
+  notification redirect reads the same property.
+* **`POST /api/v1/display/url` is side-effect free.** It passes `discover=False`,
+  because `resolve_display_target`'s recovery step for an unindexed path parses
+  the file and `sync_to_db`s it — right for `flow show` ("display this thing I
+  just made"), wrong for a query. An unindexed path answers `NOT_INDEXED` and
+  the caller is told to index it first. `tests/api/test_display_url_route.py`
+  pins this by making the recovery function raise.
+
+VFS (unindexed) paths get no URL yet: that pointer form depends on
+`normalizeAssetVfsPath`, which has no Python twin. Mirroring it — with
+`vfs_cases` added to the contract fixture — is the follow-up.

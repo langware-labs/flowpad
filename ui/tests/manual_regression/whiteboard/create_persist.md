@@ -12,7 +12,7 @@ tags: [whiteboard, create, persistence]
 
 ### C1: Quick-create via UI
 * Navigate to `${APP_URL}/`.
-* On the landing page, locate the quick-create surface (MiniDesktop). It's a row of asset-type buttons or a "+" / "New" button — click the trigger to open the dropdown menu.
+* On the landing page, locate the quick-create surface . It's a row of asset-type buttons or a "+" / "New" button — click the trigger to open the dropdown menu.
   * If no menu opens, fall back to navigating directly to `${APP_URL}/dock/assets/list/whiteboard` and using the asset-list page's "Create" / "+" affordance.
 * Find a row labelled "Whiteboard" with a Palette icon.
 * Click "Whiteboard". A name input dialog appears.
@@ -28,23 +28,23 @@ tags: [whiteboard, create, persistence]
 * Validate `WHITE_BOARD.md` exists.
 * Validate `board.json` either exists OR will be created on first save (the editor lazy-creates it).
 
-### C3: Frontmatter id stamped (after index)
-* Right after first save, WHITE_BOARD.md has the BEGIN/END mermaid block but NO frontmatter — the editor's autosave only splices the mermaid block; the frontmatter `id:` is stamped by the indexer (`whiteboard_gen_id`), not on save. Validate the BEGIN/END mermaid markers are present in the file body at this point.
-* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`; wait ~3s.
-* `cat <folder>/WHITE_BOARD.md` → frontmatter MUST now contain `id:` (a valid v5/v4 UUID). The BEGIN/END mermaid markers MUST survive the frontmatter stamp.
+### C3: Frontmatter id (minted at create)
+* The whiteboard's identity carrier is WHITE_BOARD.md's frontmatter (`identity_carrier=frontmatter_identity()`; the folder capsule is not used). The id is minted at create, so right after the first save `cat <folder>/WHITE_BOARD.md` → frontmatter MUST contain `id:` (a valid v4/v5 UUID) equal to the entity id returned by the create, and the BEGIN/END mermaid markers MUST be present in the body.
+* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`.
+* `cat <folder>/WHITE_BOARD.md` → the frontmatter `id:` MUST be unchanged, and the BEGIN/END mermaid markers MUST survive.
 
 ### C4: Draw + autosave + thumbnail
 * In the editor tab, run via `browser_evaluate`:
   ```js
   const lib = window.__excalidrawLib;
-  const api = window.__whiteboardApi;
+  const api = window.__chartApi;
   const els = lib.convertToExcalidrawElements([
     { type: 'rectangle', id: 'R1', x: 50, y: 50, width: 140, height: 60, label: { text: 'A' } },
     { type: 'rectangle', id: 'R2', x: 280, y: 50, width: 140, height: 60, label: { text: 'B' } },
     { type: 'arrow', x: 190, y: 80, width: 90, height: 0, points: [[0,0],[90,0]], start: { id: 'R1' }, end: { id: 'R2' } },
   ]);
   api.updateScene({ elements: els });
-  window.__whiteboardOnChange(els, api.getAppState(), api.getFiles());
+  window.__chartOnChange(els, api.getAppState(), api.getFiles());
   ```
 * Wait 1500ms past debounce.
 * Validate `<folder>/board.json` mtime updated AND parses as JSON with `kind: "excalidraw"` and `data.elements.length >= 2`.
@@ -53,7 +53,7 @@ tags: [whiteboard, create, persistence]
 ### C5: Reload preserves content
 * Navigate away (`${APP_URL}/`), then back to the editor URL.
 * Wait up to 5s for the editor + canvas to remount.
-* `window.__whiteboardApi.getSceneElements().length` >= 2 (the rectangles + arrow from C4).
+* `window.__chartApi.getSceneElements().length` >= 2 (the rectangles + arrow from C4).
 * No React error boundary visible (the `appState.collaborators` Map regression would surface here).
 
 ## Pass criteria
@@ -63,3 +63,6 @@ C1–C5 all pass. C2's "board.json missing right after create" is acceptable (FI
 ## Cleanup
 
 * `rm -rf <folder>` after the test completes.
+
+## Teardown
+* Every board created above (including C1's) is deleted — `DELETE ${API_URL}/api/v1/graph/whiteboard/<id>` and its folder removed — whether the test passed or failed.

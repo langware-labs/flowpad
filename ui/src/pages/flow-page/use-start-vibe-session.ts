@@ -1,28 +1,56 @@
-import { Agent, AgentKind, AgenticProcess, apiClient, ComputeNode, dataContext, ProcessKind, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import {
+  SubAgent,
+  AgentKind,
+  AgenticProcess,
+  apiClient,
+  capabilityManager,
+  CapabilityKinds,
+  ComputeNode,
+  dataContext,
+  ProcessKind,
+  Project,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+} from '@sdk';
 import { useProject } from '@sdk/react/hooks';
+import { HARNESS_CAPABILITY_BY_WORKER } from '@src/components/workers/worker-types';
+import { holdLaunchWatch, releaseLaunchWatch } from '@src/components/agents/launch-watch';
+import { useHarnessInstallPrompt } from '@src/components/terminal/openers/use-harness-install-prompt';
+import { errorDetail } from '@src/lib/error-message';
+
+/** The umbrella kind: 'whichever harness this box is set to use'. */
+const HARNESS = CapabilityKinds.Harness;
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
+import { appendUploadedFileRefs } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
-import { useCallback } from 'react';
-import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
-import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
+import { useCallback, type ReactNode } from 'react';
+import { systemSubagentRef, systemVibeKindSubagentRefs } from './vibe-personas';
+import { chatTargetForProject } from '@src/lib/chat-target';
+import { VIBE_MODEL_DEFAULT, type VibeModelChoice } from './vibe-model-select';
+import type { WorkerType } from '@src/components/workers/worker-types';
 
-// The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
-// reuse across builds. Raw graph route (not useEntitiesQuery) because system
-// (SDK-shipped) agents only surface with include_system=true. Failed lookups
-// are NOT cached so a late-indexed agent is picked up on the next submit.
-let vibeAgentRefCache: string | null = null;
-async function resolveVibeAgentRef(): Promise<string | null> {
-  if (vibeAgentRefCache) return vibeAgentRefCache;
-  const rows = await apiClient.get<{ name?: string; asset_ref?: string }[]>(
-    '/graph/agent?include_system=true',
-  );
-  vibeAgentRefCache = (rows ?? []).find((r) => r.name === 'vibe')?.asset_ref ?? null;
-  return vibeAgentRefCache;
-}
-
+// The vibe sub-agent's asset_ref is stable for the app's lifetime — resolve
+// once, reuse across builds. Raw graph route (not useEntitiesQuery) because
+// system (SDK-shipped) sub-agents only surface with include_system=true. Failed
+// lookups are NOT cached so a late-indexed sub-agent is picked up on the next
+// submit.
+//
+// The SUBAGENT named `vibe` (`.claude/agents/vibe.md`) — the persona carrying
+// the `flow show` presentation contract — NOT the `agent` of the same name.
+// Both exist and the old `/graph/agent` lookup matched on the bare name, so the
+// moment the internal-agents family shipped a launchable `vibe` Agent (a ~20
+// line haiku front for the same subagent), every vibe session silently started
+// riding THAT: a generic "you are the project assistant" prompt with no
+// presentation rules. The visible symptom was the agent presenting its
+// deliverable by shelling `open <file>` — straight into the user's browser —
+// instead of `flow show`. `scope: 'system'` pins it to the SDK-shipped asset so
+// a project subagent someone names `vibe` can't shadow it. This also matches
+// what the seam expects: `load_embedded_subagent_action` parses the file with
+// `extract_subagent_from_path`, and the Agent asset has no subagent `name`, so
+// it materialized as a nameless "you are the 'agent' agent".
 /** Minimal navigation surface the launcher needs (from useDockNavigation). */
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
 
@@ -31,46 +59,62 @@ type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMo
  * (creator routing + the `flow show` presentation contract) is active. Shared
  * by BOTH vibe process-creation paths — the vibe-home launcher here and the
  * in-workspace `New` control (EntityExecutionPanel's onProcessCreated hook) —
- * so a process born either way carries the same persona. An un-indexed agent
+ * so a process born either way carries the same persona. An un-indexed sub-agent
  * degrades to a plain assistant session (logged, never thrown).
+ *
+ * `asPersona: false` embeds vibe as a LAYER instead of the identity — for a
+ * session opened as an Agent (`prepareAgentSession`), whose own system prompt is
+ * the identity. Declaring vibe the persona there renders "You are the 'vibe'
+ * agent … for every reply" after the agent's prompt, and the agent answers as vibe.
  */
-export async function embedVibeAgent(proc: AgenticProcess): Promise<void> {
+export async function embedVibeSubagent(
+  proc: AgenticProcess,
+  { asPersona = true }: { asPersona?: boolean } = {},
+): Promise<void> {
   try {
-    const vibeRef = await resolveVibeAgentRef();
-    if (vibeRef) await proc.loadEmbeddedAgent(vibeRef);
-    else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
+    const vibeRef = await systemSubagentRef('vibe');
+    // By default the vibe sub-agent IS the session's persona; the kind==vibe
+    // layers embedded below must not claim that identity.
+    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef, asPersona);
+    else console.warn('[Vibe] vibe sub-agent not indexed; continuing without persona');
   } catch (e) {
-    console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
+    console.warn('[Vibe] failed to embed vibe sub-agent; continuing without persona', e);
   }
-  // Layer the project's kind==vibe agents ON TOP of the standard vibe agent.
-  // Embedding after the vibe agent, in created-date order, makes them render
+  // Layer the project's kind==vibe sub-agents ON TOP of the standard vibe
+  // sub-agent. Embedding after it, in created-date order, makes them render
   // after it in the instructions (embed order == render order, see backend
   // _load_materialized_agents_json). Best-effort — a failed extra embed degrades.
   try {
-    await embedVibeKindAgents(proc);
+    await embedVibeKindSubagents(proc);
   } catch (e) {
-    console.warn('[Vibe] failed to embed kind==vibe agents', e);
+    console.warn('[Vibe] failed to embed kind==vibe sub-agents', e);
   }
 }
 
 /**
- * Embed the "relevant ones only" — the project's `kind==vibe` agent assets, in
- * created-date order — as extra personas after the standard vibe agent. Part of
+ * Embed the "relevant ones only" — the project's `kind==vibe` sub-agent assets,
+ * in created-date order — as extra personas after the standard vibe sub-agent. Part of
  * the generic vibe process start; a plain query (not the process's special-asset
  * list), scoped to the process's project.
  */
-async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
+async function embedVibeKindSubagents(proc: AgenticProcess): Promise<void> {
+  // SDK-shipped personas first (e.g. `data-integrations`): they ride every vibe
+  // session, and only surface with include_system=true — the same raw route
+  // the standard vibe persona is resolved through.
+  // `false` -- a layer rides ON TOP of the vibe persona and must never claim
+  // the identity. `data-integrations` inheriting it is the reported bug.
+  await Promise.all((await systemVibeKindSubagentRefs()).map((ref) => proc.loadEmbeddedSubagent(ref, false)));
   const projectId = proc.project_id;
   if (!projectId) return;
   const req = new QueryRequest({
-    type: Agent.type,
+    type: SubAgent.type,
     scope: [new TypeId(Project.type, projectId)],
     name: `vibeAgents:${projectId}`,
     query: new QueryFilter({ match: { kind: AgentKind.Vibe }, order_by: { created_date: 'asc' } }),
   });
-  const agents = await Agent.query<Agent>(req);
+  const agents = await SubAgent.query<SubAgent>(req);
   for (const agent of agents) {
-    if (agent.asset_ref) await proc.loadEmbeddedAgent(agent.asset_ref);
+    if (agent.asset_ref) await proc.loadEmbeddedSubagent(agent.asset_ref, false);
   }
 }
 
@@ -85,17 +129,18 @@ async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
 export async function createVibeProcessForProject(opts: {
   projectId: string;
   workdir?: string;
+  /** Stable entity TypeId or compute-node VFS path used for process reuse. */
+  targetVfsPath?: string;
   navigation?: OpenShell;
   /** Open the process's workspace after creating it (default true). */
   open?: boolean;
-  model?: VibeModelTier;
+  model?: VibeModelChoice;
   workerType?: WorkerType;
+  /** Entity TypeIds the session starts with in its context. */
+  sharedContextEntities?: string[];
 }): Promise<AgenticProcess> {
-  const { projectId, workdir, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType = DEFAULT_WORKER_TYPE } = opts;
-  // Key the session to the project's id-based TypeId (NOT project.typeId, the
-  // uname form `project-@local`) — VibeWorkspace's chat target must match this
-  // exact string to attach to the same process.
-  const target = new TypeId(Project.type, projectId).toString();
+  const { projectId, workdir, targetVfsPath, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType } = opts;
+  const target = targetVfsPath ?? chatTargetForProject(projectId);
 
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');
@@ -108,21 +153,35 @@ export async function createVibeProcessForProject(opts: {
       loadFlowpadAssistant: true,
       outputFormat: 'stream-json',
       model,
-      workerType,
+      ...(workerType ? { workerType } : {}),
+      ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
     },
     // Headless JSON-stream transport — the vibe chat is a side panel, not a
     // terminal; PTY transport would pre-fill (not run) the first prompt.
-    { pty_mode: false },
+    // `watchProcess: false` = don't AWAIT the watch inside createProcess (a
+    // second round trip that gated navigation); it is established below.
+    { pty_mode: false, watchProcess: false },
   );
-  await embedVibeAgent(proc);
+  // A lease the workspace (or the process's end) gives back — see launch-watch.ts.
+  holdLaunchWatch(proc);
+  // The URL only needs the id, and the persona only has to be embedded before
+  // the first prompt — which every caller awaits — so neither belongs ahead of
+  // the navigation.
   if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
+  try {
+    await embedVibeSubagent(proc);
+  } catch (e) {
+    // With `open: false` no workspace mounts to give the lease back.
+    if (!open) releaseLaunchWatch(proc.id);
+    throw e;
+  }
   return proc;
 }
 
 /**
  * Start a Vibe session bound to a SPECIFIC project (not necessarily the active
  * one): lazily create a headless Chat process, embed the SDK-shipped `vibe`
- * persona agent, open its workspace in Vibe mode, then fire the first prompt.
+ * persona (a SubAgent), open its workspace in Vibe mode, then fire the first prompt.
  * The `vibe` persona rides every turn so the driver's directive (creator
  * routing + the mcp-ui / `flow show` presentation contract) is active; an
  * un-indexed agent degrades to a plain assistant session.
@@ -138,31 +197,67 @@ export async function createVibeProcessForProject(opts: {
 export async function launchVibeSessionForProject(opts: {
   projectId: string;
   workdir?: string;
+  targetVfsPath?: string;
   message: string;
   files?: File[];
   navigation: OpenShell;
-  model?: VibeModelTier;
+  model?: VibeModelChoice;
   workerType?: WorkerType;
   /** Called when attachment upload fails (session still opens, text-only). */
   onAttachmentError?: () => void;
+  sharedContextEntities?: string[];
 }): Promise<string> {
-  const { projectId, workdir, message, files, navigation, model, workerType, onAttachmentError } = opts;
-  const proc = await createVibeProcessForProject({ projectId, workdir, navigation, model, workerType });
+  const { projectId, workdir, targetVfsPath, message, files, navigation, model, workerType, onAttachmentError } = opts;
+  const proc = await createVibeProcessForProject({
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+    sharedContextEntities: opts.sharedContextEntities,
+  });
   // Attachments (if any) must land in the process input dir BEFORE the first
   // turn starts — the agent reads the referenced paths immediately. Upload
   // failure degrades to a text-only prompt rather than losing the message.
-  let refLines: string[] = [];
-  if (files?.length) {
-    try {
-      refLines = await uploadFilesToProcessInputDir(proc.id, files);
-    } catch (e) {
-      console.error('[Vibe] attachment upload failed', e);
-      onAttachmentError?.();
-    }
+  let fullMessage = message;
+  try {
+    fullMessage = await appendUploadedFileRefs(proc.id, message, files);
+  } catch (e) {
+    console.error('[Vibe] attachment upload failed', e);
+    onAttachmentError?.();
   }
-  const fullMessage = refLines.length ? `${message}\n${refLines.join('\n')}` : message;
   proc.prompt(fullMessage).catch((e) => console.error('[Vibe] prompt failed', e));
   return proc.id;
+}
+
+/**
+ * Continue a Vibe conversation with an explicitly selected worker.
+ *
+ * Transcript extraction and prompt composition belong to AgenticProcess; this
+ * application service only forwards that durable handoff prompt through the
+ * existing create/embed/open/first-prompt path.
+ */
+export async function continueVibeSessionForProject(opts: {
+  sourceProcess: AgenticProcess;
+  projectId: string;
+  workdir?: string;
+  targetVfsPath?: string;
+  navigation: OpenShell;
+  model: VibeModelChoice;
+  workerType: WorkerType;
+}): Promise<string> {
+  const { sourceProcess, projectId, workdir, targetVfsPath, navigation, model, workerType } = opts;
+  const message = await sourceProcess.continuationPrompt();
+  return launchVibeSessionForProject({
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+    message,
+  });
 }
 
 /**
@@ -170,35 +265,108 @@ export async function launchVibeSessionForProject(opts: {
  * {@link launchVibeSessionForProject} that resolves the active project + its
  * workdir and surfaces errors as toasts.
  */
-export function useStartVibeSession(): (message: string, files?: File[], model?: VibeModelTier, workerType?: WorkerType) => void {
+export interface StartVibeSession {
+  /** Submit the first prompt and open the session. */
+  start: (message: string, files?: File[], model?: VibeModelChoice, workerType?: WorkerType) => void;
+  /**
+   * The "install a harness" dialog, which a failed start may raise. Render it
+   * — a caller that drops it silently loses the only recovery this failure has.
+   */
+  installDialog: ReactNode;
+}
+
+export function useStartVibeSession(): StartVibeSession {
   const { project } = useProject();
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
+  const { promptToInstall, confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
 
-  return useCallback(
-    (message: string, files?: File[], model?: VibeModelTier, workerType?: WorkerType) => {
+  const start = useCallback(
+    (message: string, files?: File[], model?: VibeModelChoice, workerType?: WorkerType) => {
       if (!project?.id) {
-        notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
+        // forceToast: this is the ONLY feedback the submit produces — without it
+        // the prompt silently vanishes and the send button reads as broken.
+        notify.error({
+          title: t`Project Required`,
+          message: t`Please select or create a project first.`,
+          forceToast: true,
+        });
         return;
       }
       const paths = dataContext.bootstrapInfo?.desktop_info?.paths;
       const workdir = project.fs_storage_mount_path || project.name || paths?.workspace || undefined;
+      const kind = workerType ? (HARNESS_CAPABILITY_BY_WORKER[workerType] ?? HARNESS) : HARNESS;
+      // Bound here, not read inside `launch`: the guard above narrowed `project`,
+      // but that narrowing does not survive into a nested function.
+      const projectId = project.id;
 
-      void launchVibeSessionForProject({
-        projectId: project.id,
-        workdir,
-        message,
-        files,
-        model,
-        workerType,
-        navigation,
-        onAttachmentError: () =>
-          notify.error({ title: t`Attachment upload failed`, message: t`Starting the session without the attached files.` }),
-      }).catch((error) => {
-        console.error('[Vibe] Failed to start vibe session:', error);
-        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
-      });
+      // PRE-FLIGHT on what is ALREADY KNOWN, and nothing else.
+      //
+      // A missing harness should raise the install dialog rather than take a
+      // doomed launch, which is what the terminal strip's openers do. But this
+      // must not WAIT to find out. `ensureChecked` probes when no verdict
+      // exists, and on a cold manager with nothing installed that is one
+      // backend probe per harness, in series — the first vibe prompt of a
+      // session sat through all of them with no spinner and no feedback, which
+      // read as "nothing happened". Opening a terminal first warmed the cache
+      // and made the next prompt instant, which is exactly how it was reported.
+      //
+      // `getSnapshot` is a synchronous read of that same cache, so a known
+      // answer is acted on immediately and an unknown one costs nothing: the
+      // launch goes ahead and the failure path routes it. That path is not a
+      // fallback of last resort — it is the one the terminal already proves,
+      // and it carries the reason the pre-flight would never have.
+      const known = capabilityManager.getSnapshot(kind);
+      if (known.checked && !known.available) {
+        promptToInstall();
+        return;
+      }
+      launch();
+
+      function launch() {
+        void launchVibeSessionForProject({
+          projectId,
+          workdir,
+          message,
+          files,
+          model,
+          workerType,
+          navigation,
+          onAttachmentError: () =>
+            notify.error({
+              title: t`Attachment upload failed`,
+              message: t`Starting the session without the attached files.`,
+            }),
+        }).catch((error: unknown) => {
+          console.error('[Vibe] Failed to start vibe session:', error);
+          // The backend explains itself here — `createProcess` refuses a missing
+          // harness with "<name> is not installed on this machine."
+          // (flow_sdk/builtin/faas/scan_actions.py). That sentence used to be
+          // replaced by a fixed "Failed to start the build session", so the one
+          // thing the user could act on reached the console and nowhere else.
+          //
+          // A missing harness is not a message problem though — it is a thing to
+          // FIX, so it raises the install dialog (with its "Try auto install")
+          // exactly as the terminal strip's openers do. `confirmMissingThen`
+          // re-probes rather than trusting the stale capability row, so anything
+          // that failed for another reason falls through to its real message
+          // instead of being mislabelled as an uninstalled harness.
+          confirmMissingThen(kind, error, () =>
+            notify.error({
+              title: t`Could not start`,
+              // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
+              // whose own message is the boilerplate "Request failed with status
+              // code 4xx". Taking the envelope ONLY means a failure the server did
+              // not explain falls back to our wording instead of putting a status
+              // line in front of the user as if it were an explanation.
+              message: errorDetail(error) || t`Failed to start the build session.`,
+            }),
+          );
+        });
+      }
     },
-    [project?.id, project?.fs_storage_mount_path, project?.name, navigation, t],
+    [project?.id, project?.fs_storage_mount_path, project?.name, navigation, t, confirmMissingThen, promptToInstall],
   );
+
+  return { start, installDialog };
 }

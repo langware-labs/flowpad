@@ -50,15 +50,14 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="text-sm font-medium"><Trans>Prompt Queue</Trans></span>
-        <Switch
-          checked={enabled}
-          onCheckedChange={(v) => void live.setQueueEnabled(v)}
-        />
+        <span className="text-sm font-medium">
+          <Trans>Prompt Queue</Trans>
+        </span>
+        <Switch checked={enabled} onCheckedChange={(v) => void live.setQueueEnabled(v)} />
         <span className="text-xs text-muted-foreground">{enabled ? t`on` : t`off`}</span>
         {entries.length > 0 && (
           <button
-            className="ml-auto text-[10px] text-muted-foreground hover:text-destructive"
+            className="ms-auto text-[10px] text-muted-foreground hover:text-destructive"
             onClick={() => void live.clearQueue()}
           >
             <Trans>Clear</Trans>
@@ -76,12 +75,14 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
           <div className="divide-y">
             {entries.map((entry, i) => (
               <div key={entry.id} className="flex items-start gap-2 px-3 py-2 text-xs hover:bg-muted/30">
-                <span className="mt-0.5 w-4 shrink-0 text-right text-muted-foreground">{i + 1}.</span>
+                <span className="mt-0.5 w-4 shrink-0 text-end text-muted-foreground">{i + 1}.</span>
                 <p className="min-w-0 flex-1 break-words leading-relaxed">{entry.prompt}</p>
                 <button
                   className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-destructive"
                   onClick={() => void live.dequeue(entry.id)}
-                >×</button>
+                >
+                  ×
+                </button>
               </div>
             ))}
           </div>
@@ -89,15 +90,15 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
       </div>
 
       {/* Add new entry */}
-      <div className="border-t p-3 space-y-2">
+      <div className="space-y-2 border-t p-3">
         <textarea
-          className="w-full rounded-md border bg-background px-2.5 py-2 text-xs resize-none h-20 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="h-20 w-full resize-none rounded-md border bg-background px-2.5 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
           placeholder={t`Next prompt — injected when the agent next goes idle. Press Enter to add.`}
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           onKeyDown={handleKeyDown}
         />
-        <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!promptText.trim()}>
+        <Button size="sm" className="h-7 w-full text-xs" onClick={handleAdd} disabled={!promptText.trim()}>
           <Trans>Add to Queue</Trans>
         </Button>
       </div>

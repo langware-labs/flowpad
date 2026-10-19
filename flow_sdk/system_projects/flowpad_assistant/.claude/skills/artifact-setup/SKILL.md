@@ -68,14 +68,22 @@ flow app open "<artifact name>" --root "<artifact folder>"
   with `python3 -m http.server`. If discovery misses it, do it explicitly:
 
   ```bash
-  cd "<artifact folder>" && python3 -m http.server 8000 &   # background
-  flow show webapp --port 8000                              # renders it in the Vibe display (run ONCE)
+  PORT=$(flow app free-dev-port --bare)                     # never pick a number — other builds are serving too
+  (cd "<artifact folder>" && "$(command -v python3 || command -v python)" -m http.server $PORT >/dev/null 2>&1 &)
+  curl -fsS "http://localhost:$PORT/index.html" > /dev/null || exit 1   # PROVE it answers first
+  flow show webapp --port $PORT                             # renders it in the Vibe display (run ONCE)
   ```
+
+  On Windows use PowerShell and `py -3` — `python3` is a dangling Store alias there, and
+  the launch reports success even when nothing starts. See the **building-deliverables**
+  skill for the PowerShell form. Either way, the `curl`/`Invoke-WebRequest` line is not
+  optional: without it a dead server is indistinguishable from a live one.
 
 ## 3. Confirm it shows
 
-`flow show webapp --port <p>` (or `flow app open`'s `show:True`) pushes the running app
-onto this process's display stack — the Vibe preview then renders it. Run the show
+`flow show webapp --port <p>` (or `flow app open`'s `show:True`) registers the running
+server as a `ServiceEndpoint` of this project's placement and pushes that endpoint onto
+this process's display stack — the Vibe preview then renders it. Run the show
 driver **exactly once** (exit 0 = done). Report the URL you served.
 
 ## Claude Design handoff bundles

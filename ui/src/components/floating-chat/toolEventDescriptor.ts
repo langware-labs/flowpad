@@ -1,8 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { FlowData, isTypeId, type ReceiveShowTarget, TypeId } from '@sdk';
-import {
-  describeToolInput,
-  describeToolName,
-} from '@src/components/flowdata-renderer/ToolCallMessageComponent';
+import { describeToolInput, describeToolName } from '@src/components/flowdata-renderer/ToolCallMessageComponent';
 import {
   Bot,
   FileDiff,
@@ -17,6 +15,10 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react';
+
+import { transcriptEntry } from './transcriptEntry';
+
+export { transcriptEntry } from './transcriptEntry';
 
 /**
  * What a chip opens when clicked, or null when it opens nothing (the row stays
@@ -41,21 +43,14 @@ export interface EventDescriptor {
   target: ChipTarget;
 }
 
-/** The typed entry the backend attached to this frame, when there is one. */
-export function transcriptEntry(fd: FlowData): Record<string, unknown> | null {
-  const pe = fd.processEntry;
-  if (!pe || typeof pe !== 'object') return null;
-  const entry = (pe as { transcript_entry?: unknown }).transcript_entry;
-  return entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
-}
-
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
  * The three file kinds differ only in glyph and verb — everything else (the
- * path, the file target) is one rule, so it lives in one place.
+ * path, the file target) is one rule, so it lives in one place. Exported so the
+ * per-turn file chips (`TurnFilesChips`) draw the same glyph for the same kind.
  */
-const FILE_OPS: Record<string, [LucideIcon, string]> = {
+export const FILE_OPS: Record<string, [LucideIcon, string]> = {
   file_read: [FileText, 'Read'],
   file_write: [FilePlus, 'Write'],
   file_edit: [FileDiff, 'Edit'],
@@ -99,7 +94,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Sparkles,
-        label: 'Using skill',
+        label: t`Using skill`,
         detail: name,
         // Display-only here: the clickable skill affordance is the top-level
         // meta chip (which has the skill's folder path to resolve with).
@@ -110,7 +105,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Terminal,
-        label: 'Run',
+        label: t`Run`,
         detail: str(entry?.command) || describeToolInput(fd.data),
         target: null,
       };
@@ -126,17 +121,17 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Globe,
-        label: 'Fetch',
+        label: t`Fetch`,
         detail: str(entry?.url) || str(entry?.query) || describeToolInput(fd.data),
         target: null,
       };
     case 'todo_update':
-      return { kind, icon: ListTodo, label: 'Todos', detail: '', target: null };
+      return { kind, icon: ListTodo, label: t`Todos`, detail: '', target: null };
     case 'agent_spawn':
       return {
         kind,
         icon: Bot,
-        label: 'Agent',
+        label: t`SubAgent`,
         detail: str(entry?.agent_type) || str(entry?.description),
         target: null,
       };
@@ -154,9 +149,15 @@ export function describeEvent(fd: FlowData): EventDescriptor {
 }
 
 /**
- * `flow show entity <typeid>` opens that entity; `flow show file <path>` opens
- * the file. Anything else (a bare `flow record`, an unrecognized target) stays
- * a payload popover rather than guessing a destination.
+ * `flow <verb> entity <typeid>` opens that entity and `… file <path>` opens the
+ * file — two of the addressing forms `_TARGETED` derives
+ * (flow_sdk/transcript_analyzer/derive.py). `… webapp <port>` has no chip target:
+ * a port is not an address (the show registered an ENDPOINT, whose id the command
+ * line never names), so it stays a payload popover like anything else
+ * unrecognized, rather than guessing a destination.
+ *
+ * For `flow artifact` the target is the REFERENCED asset, never the Artifact
+ * row that records it: the artifact is the receipt, the chip opens the thing.
  */
 function flowTarget(subverb: string, target: string): ChipTarget {
   if (!target) return null;

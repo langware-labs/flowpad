@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import shutil
 import traceback
-import uuid
 from datetime import datetime, timezone
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -16,7 +16,7 @@ def from_exception(record, exc: Exception, trigger: str = "unknown") -> FSRecord
     tb_str = "".join(tb[-3:])
     return FSRecord(
         type=RecordType.RECORD_ERROR,
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         source_record_id=getattr(record, "id", None),
         source_record_type=getattr(record, "type", None) or getattr(record, "_record_type", None),
         error_message=str(exc),

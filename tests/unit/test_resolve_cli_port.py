@@ -16,9 +16,7 @@ def test_resolve_cli_port_returns_server_json_port(monkeypatch):
     monkeypatch.setattr(
         disc,
         "read_server_info",
-        lambda: FlowpadServerInfo(
-            port=9008, webhook_path="/w", health_path="/h", url="http://localhost:9008/w"
-        ),
+        lambda: FlowpadServerInfo(port=9008),
     )
     assert resolve_cli_port() == 9008
 

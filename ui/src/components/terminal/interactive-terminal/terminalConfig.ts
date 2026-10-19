@@ -1,55 +1,55 @@
 /**
  * Single source of truth for xterm visual config + viewport-size estimates.
  *
- * The xterm constructor in InteractiveTerminal/SidecarShellTerminal reads
- * FONT_FAMILY and FONT_SIZE_PX. The route loader uses estimateCols/Rows to
- * seed the PTY's initial winsize close to the actual rendered grid, so the
- * worker's first paint isn't wrapped at 80 cols on a wide viewport. The
- * InteractiveTerminal still issues an authoritative shell.resize(term.cols,
- * term.rows) once fit.fit() has run — this seed only needs to be in the right
- * ballpark.
+ * The xterm constructor in InteractiveTerminal/ShellTerminal reads
+ * FONT_FAMILY and FONT_SIZE_PX. The terminal panel uses estimateCols/Rows to
+ * seed a NEW PTY's initial winsize close to the actual rendered grid, so the
+ * worker's first paint isn't wrapped at 80 cols on a wide viewport. It is a
+ * spawn seed only: it ignores sidebars and side panels, so it must never be
+ * asserted on a live PTY — the view's shell.resize(term.cols, term.rows) after
+ * fit.fit() is the authoritative size, and every attach asserts that.
  */
+
+import type { WorkerCliVendor } from './process-cli-presentation';
 
 export const FONT_FAMILY = '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
-
-/**
- * Click handler for the xterm WebLinksAddon.
- *
- * The addon's default handler opens a blank window first and then assigns
- * location.href. In Electron, setWindowOpenHandler sees `about:blank`
- * (not http/https), denies it, window.open() returns null and the click
- * silently does nothing. Passing the real URL to window.open() lets the
- * Electron handler route it to shell.openExternal, and keeps the same
- * new-tab behavior in a regular browser.
- */
-export function openTerminalLink(_event: MouseEvent, uri: string): void {
-  window.open(uri, '_blank', 'noopener');
-}
 
 export const FONT_SIZE_PX = 14;
 
 /**
- * Restore the character-grid contract for RTL text on Windows.
+ * Restore the character-grid contract for RTL text, for the PTY apps that need it.
  *
- * PTY apps that compensate for bidi-less terminals emit Hebrew/Arabic
- * pre-reversed into VISUAL order (Claude Code does this on Windows,
- * matching Windows Terminal/conhost, which paint cells strictly
- * left-to-right). xterm's DOM renderer breaks that contract: row spans are
- * real DOM text, so the browser's Unicode bidi algorithm reorders the RTL
- * run a SECOND time and the words/letters display in reverse reading order.
- * The class added here (styled in styles/xterm.css) forces glyphs to paint
- * in buffer order, matching every native Windows terminal.
+ * Some PTY apps compensate for bidi-less terminals by emitting Hebrew/Arabic
+ * pre-reversed into VISUAL order (Claude Code does this on Windows, matching
+ * Windows Terminal/conhost, which paint cells strictly left-to-right). xterm's
+ * DOM renderer breaks that contract: row spans are real DOM text, so the
+ * browser's Unicode bidi algorithm reorders the RTL run a SECOND time and the
+ * words/letters display in reverse reading order. The class toggled here
+ * (styled in styles/xterm.css) forces glyphs to paint in buffer order.
  *
- * macOS PTY apps emit logical-order RTL text (native terminals there have
- * real bidi engines), and the browser's single reordering is exactly right
- * — so the override must NOT apply there. Client platform is used as the
- * proxy for the PTY host platform: the desktop provider always spawns PTYs
- * on the machine the UI runs on.
+ * The contract is a property of the APP as much as of the host, and the two
+ * are independent:
+ *
+ *              macOS                     Windows
+ *   claude     logical → browser bidi    pre-reversed → buffer order
+ *   codex      logical → browser bidi    logical → browser bidi
+ *
+ * codex links `unicode-width` but no bidi crate and has no reordering path, so
+ * it emits logical order everywhere; painting it in buffer order puts letters
+ * AND words left-to-right. Deciding from `navigator.platform` alone therefore
+ * has to get one of the two apps wrong on Windows.
+ *
+ * Only apps PROVEN to pre-reverse are listed below — everything else, known or
+ * unknown, gets the browser's bidi algorithm, which is what a program emitting
+ * logical order needs. Don't add a vendor here without a capture from that app
+ * on Windows showing pre-reversed bytes.
+ *
+ * Client platform stays the proxy for the PTY host platform: the desktop
+ * provider always spawns PTYs on the machine the UI runs on.
  */
-export function applyRtlGridContract(container: HTMLElement): void {
-  if (navigator.platform.toLowerCase().includes('win')) {
-    container.classList.add('xterm-rtl-grid');
-  }
+export function applyRtlGridContract(container: HTMLElement, vendor: WorkerCliVendor): void {
+  const isWindows = navigator.platform.toLowerCase().includes('win');
+  container.classList.toggle('xterm-rtl-grid', isWindows && vendor === 'claude');
 }
 
 /**
@@ -109,3 +109,19 @@ export function estimateCols(innerWidth: number): number {
 export function estimateRows(innerHeight: number): number {
   return Math.max(24, Math.floor((innerHeight - RESERVED_Y_PX) / cellH));
 }
+
+
+/** The options every terminal view opens its xterm with; each passes its own `scrollback`. */
+export const XTERM_BASE_OPTIONS = {
+  convertEol: true,
+  cursorBlink: true,
+  scrollOnUserInput: true,
+  disableStdin: false,
+  cursorStyle: 'block',
+  fontFamily: FONT_FAMILY,
+  fontSize: FONT_SIZE_PX,
+  fontWeight: '400',
+  fontWeightBold: '700',
+  allowTransparency: true,
+  allowProposedApi: true,
+} as const;

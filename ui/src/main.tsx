@@ -1,5 +1,5 @@
 import '@src/i18n-init';
-import { toplog } from '@sdk';
+import { setLaunchSurface, toplog } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -7,48 +7,30 @@ import { ThemeProvider } from 'next-themes';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router';
-import '@src/contexts/dev-mode-context';
 import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
 import { LocaleProviders } from '@src/contexts/LocaleProviders';
+import { DiagnoseErrorModal } from '@src/notifications';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
+import { NavigationActions } from '@src/navigation/NavigationActions';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import './styles/highlightjs.css';
 
-
 function defineGlobals() {
-  import('@sdk').then(sdk => {
+  void import('@sdk').then((sdk) => {
     (window as any).AgenticProcess = sdk.AgenticProcess;
     (window as any).Shell = sdk.Shell;
   });
 }
 
-// Mouse back/forward buttons (X1/X2) → history navigation. Real browsers map
-// these natively in their own UI layer (not the web platform), so Electron
-// windows never get it — wire it up ourselves, Electron only, to avoid
-// double-navigation in the browser.
-function bindMouseNavButtons() {
-  if (!(window as any).electronAPI) return;
-  window.addEventListener('mouseup', e => {
-    if (e.button === 3) {
-      e.preventDefault();
-      toplog.log(
-        'navigation',
-        'mouse X1 (back) → history.back()',
-        { url: location.pathname + location.search, historyLen: window.history.length },
-      );
-      window.history.back();
-    } else if (e.button === 4) {
-      e.preventDefault();
-      toplog.log(
-        'navigation',
-        'mouse X2 (forward) → history.forward()',
-        { url: location.pathname + location.search, historyLen: window.history.length },
-      );
-      window.history.forward();
-    }
-  });
-}
+// NOTE: the renderer deliberately does NOT bind the X1/X2 mouse buttons.
+// The Electron main process is the single navigator for them
+// (`electron/main.js`: macOS `input-event` + `swipe`, Windows/Linux
+// `app-command`). A renderer-side `mouseup` button 3/4 handler used to exist
+// here on the assumption that macOS never delivers the raw button to the web
+// layer — false on hardware that sends a real X1: BOTH fired and one press
+// stepped history twice. One gesture, one navigator.
 
 // Ground-truth trace of every history transition the renderer sees — fires for
 // real back/forward (browser, Electron gesture, mouse buttons) AND for the
@@ -56,12 +38,32 @@ function bindMouseNavButtons() {
 // after a pushState. A single "back" gesture that produces two of these (or a
 // did-navigate pair in the Electron `[nav]` log) is the double-navigation bug.
 function bindNavigationTrace() {
-  window.addEventListener('popstate', e => {
-    toplog.log(
-      'navigation',
-      'popstate',
-      { url: location.pathname + location.search, state: e.state, historyLen: window.history.length },
-    );
+  window.addEventListener('popstate', (e) => {
+    toplog.log('navigation', 'popstate', {
+      url: location.pathname + location.search,
+      state: e.state,
+      historyLen: window.history.length,
+    });
+    // A real history step — the nav bar's Back/Forward, the browser, the
+    // Electron gesture — starts a tab switch. Our own synthetic popstate
+    // (commitDetached) is untrusted and already logged its start.
+    if (e.isTrusted) NavigationActions.logTabSwitchStart('popstate', null);
+  });
+}
+
+// Anything thrown outside a React boundary or a loader — a rejected promise in a
+// mount effect, a throw in a timer — shows up only here. Attributed to the switch
+// in flight so a broken tab's error lands in its own trail.
+function bindUncaughtErrorTrace() {
+  window.addEventListener('error', (e) => {
+    // Chrome reports a ResizeObserver callback that resized its own target as
+    // an error with no Error attached; xterm's fit does that on every resize.
+    // It is a notification, not a failure, and would flood the trail.
+    if (!toplog.isOn('tab_switch') || (!e.error && e.message.startsWith('ResizeObserver loop'))) return;
+    toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=error err:`, e.error ?? e.message);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    if (toplog.isOn('tab_switch')) toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=rejection err:`, e.reason);
   });
 }
 
@@ -70,9 +72,12 @@ function bindNavigationTrace() {
 // loader-gated subtree (see `RootLayout` in `router.tsx`) so its hooks only
 // mount after `loadRoot` has finished `initSdk()`.
 async function init() {
+  // Every process this app launches is an app launch — the backend gives it the
+  // COMMON_UI system-prompt layer (`common_ui.md`). Set before anything can launch.
+  setLaunchSurface('app');
   defineGlobals();
-  bindMouseNavButtons();
   bindNavigationTrace();
+  bindUncaughtErrorTrace();
   await initDesktopBackend(sdkConfig);
   // Seed toplog state + subscribe to live tag toggles. Without this the
   // frontend `toplog.log(...)` calls (incl. the `navigation` tag) are no-ops
@@ -89,14 +94,21 @@ async function init() {
         <LocaleProviders>
           <RouterProvider
             router={router}
-            unstable_onError={(error) => {
+            onError={(error) => {
               console.error('Error loading session:', error);
+              toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=router_on_error err:`, error);
             }}
           />
+          {/* Outside the router on purpose: the root `errorElement`
+              (`<ErrorScreen/>`) REPLACES `<RootLayout>`, so anything mounted
+              inside `<App>` is gone exactly when a route blows up — which is
+              when the error screen's stethoscope needs this host. One instance
+              here serves both the app and every error boundary. */}
+          <DiagnoseErrorModal />
         </LocaleProviders>
       </ThemeProvider>
     </React.StrictMode>,
   );
 }
 
-init();
+void init();

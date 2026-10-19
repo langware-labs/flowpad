@@ -27,7 +27,6 @@ from flow_sdk.builtin.flow_message import (
     FlowMessage,
 )
 
-
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 

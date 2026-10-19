@@ -1,14 +1,14 @@
-"""RemoteWorkerSession / PromptResult invariants.
+"""RemoteWorkerSession / PromptCompletion invariants.
 
 Covers the two things the host/guest execution refactor must guarantee without a
 worker or DB: (1) host/guest role derivation, and (2) the loop-break — a
-``prompt_result`` attachment must NOT count as a runnable prompt, so a host's
+``prompt_completion`` attachment must NOT count as a runnable prompt, so a host's
 reply can never re-trigger a run on the guest (no Claude↔Claude loop).
 """
 from __future__ import annotations
 
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType
-from flow_sdk.builtin.prompt_result import PromptResult
+from flow_sdk.builtin.prompt_completion import PromptCompletion
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 
 
@@ -20,21 +20,21 @@ def test_host_guest_roles():
     assert rws.is_host(None) is False
 
 
-def test_prompt_result_shape():
-    pr = PromptResult(prompt_id="p1", text="42", result_preview="42", asset_refs=["markdown-x"])
+def test_prompt_completion_shape():
+    pr = PromptCompletion(prompt_id="p1", text="42", result_preview="42", asset_refs=["markdown-x"])
     dumped = pr.model_dump(mode="json")
-    assert dumped["type"] == "prompt_result"
+    assert dumped["type"] == "prompt_completion"
     assert dumped["result_preview"] == "42"
     assert dumped["asset_refs"] == ["markdown-x"]
     assert pr.status == "complete"
 
 
-def test_prompt_result_attachment_is_not_a_runnable_prompt():
-    """The inbound auto-run gate must ignore prompt_result attachments."""
+def test_prompt_completion_attachment_is_not_a_runnable_prompt():
+    """The inbound auto-run gate must ignore prompt_completion attachments."""
     from flow_sdk.app.actions.notification_action import _is_prompt_attachment
     from flow_sdk.cloud_client.hub_bridge import _has_prompt_attachment
 
-    result_att = Attachment(attachment_type=AttachmentType.TYPE_ID, data="prompt_result-abc")
+    result_att = Attachment(attachment_type=AttachmentType.TYPE_ID, data="prompt_completion-abc")
     prompt_att = Attachment(attachment_type=AttachmentType.TYPE_ID, data="prompt-abc")
 
     assert _is_prompt_attachment(result_att) is False

@@ -1,60 +1,37 @@
 import uuid
 from enum import Enum
-from flow_sdk._compat import StrEnum
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from flow_sdk.api.api_types.api_request import APIRequest
-from flow_sdk.api.api_types.type_id import TypeId
-# TODO: AuthContext not available locally, need to implement or stub
-# from request_context.auth_info import AuthContext
-
-class AuthContext:
-    """Stub implementation of AuthContext"""
-    def __init__(self):
-        self.scope = None
-        self.method = None
-        self.target_type = None
-        self.target_id = None
-        self.direct_resource_type = None
-        self.action = None
-        self.sub_path = None
-        self.query_params = None
-        self.body = None
+from flow_sdk.api.api_request import APIRequest
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class WSMessageType(Enum):
-    ECHO = "echo"
     BROADCAST = "broadcast"
     PING = "ping"
     PONG = "pong"
-    HANGUP = "hangup"
     ENTITY_MSG = "entity_msg"
     DATA_OP_MSG = "data_op_msg"
     REST_API_MSG = "rest_api_msg"
-    STREAM_MSG = "stream_msg"
-    TRANSCRIPT = "transcript_msg"
-    EXE_MSG = "exe_msg"
-    CONTROL_MSG = "control_msg"
     OAUTH_MSG = "oauth_msg"
     RESPONSE_MSG = "response_msg"
-    CMD_STATUS_MSG = "cmd_status_msg"
-    CLIENT_NODE_READY_MSG = "client_node_ready_msg"
     PTY_OUTPUT_MSG = "pty_output_msg"
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
+    LLM_CONFIG_MSG = "llm_config_msg"
+    FLOW_DATA_MSG = "flow_data_msg"
     HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
     AUTH_EXPIRED_MSG = "auth_expired_msg"
-
-
-class ExeMessageSubType(StrEnum):
-    CONTROL = "control"
-    EXECUTION = "execution"
-
-
-class CtlMessageSubType(StrEnum):
-    READY = "ready"
-    START_SESSION = "session_start"
+    CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
+    CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
+    PRIVACY_MODE_MSG = "privacy_mode_msg"
+    TOPLOG_STATE_MSG = "toplog_state_msg"
+    # A status fact changed (harness install/login, a stored key, the hub login): re-read
+    # ``status`` and ``funding``. A signal, not a payload -- the GET stays the one reader.
+    STATUS_CHANGED_MSG = "status_changed_msg"
+    # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
+    TAG_MSG = "tag_msg"
 
 
 class BaseMessage(BaseModel):
@@ -85,11 +62,6 @@ class BaseMessage(BaseModel):
         return cls._counter
 
 
-class EchoMessage(BaseMessage):
-    message_type: str = WSMessageType.ECHO.value
-    text: str
-
-
 class PingMessage(BaseMessage):
     message_type: str = WSMessageType.PING.value
     text: str
@@ -100,30 +72,24 @@ class PongMessage(BaseMessage):
     text: str
 
 
-class HangupMessage(BaseMessage):
-    message_type: str = WSMessageType.HANGUP.value
-    text: str
-
-
-class StreamMessage(BaseMessage):
-    message_type: str = WSMessageType.STREAM_MSG.value
-    stream_id: int
-
-
-class TranscriptMessage(StreamMessage):
-    message_type: str = WSMessageType.TRANSCRIPT.value
-    text: str
-
-
 class OAuthMessageStatus(Enum):
     SUCCESS = "success"
     ERROR = "error"
+    # The hub's vocabulary already has it; a declined consent is not an error.
+    CANCELLED = "cancelled"
 
 
 class OAuthMessage(BaseMessage):
     message_type: str = WSMessageType.OAUTH_MSG.value
     oauth_request_id: str
     status: OAuthMessageStatus
+    message: Optional[str] = None
+    user: Optional[Dict[str, Any]] = None
+    # Carried so the initiating screen can confirm without a follow-up read.
+    # Optional: older senders omit them and older clients ignore them.
+    provider: Optional[str] = None
+    identity: Optional[str] = None
+    code: Optional[str] = None
 
 
 class HubClientErrorMessage(BaseMessage):
@@ -150,6 +116,15 @@ class OperationType(Enum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    # Subtree ops — vocabulary and values identical to the hub's
+    # ``flowpad/hub/api/messages.py`` so a frame means the same thing on both
+    # sides of the bridge. The envelope INVERTS relative to the ops above:
+    # ``to_entity`` is the PARENT, ``from_entity`` is the changed child, and
+    # ``data`` is the child — so watchers of a parent learn about its subtree
+    # without subscribing to every child.
+    CHILD_CREATED = "child_created"
+    CHILD_UPDATED = "child_updated"
+    CHILD_DELETED = "child_deleted"
 
 
 class HttpMethod(Enum):
@@ -171,56 +146,17 @@ class DataOpMessage(EntityMessage):
 
 class APIMessage(BaseMessage, APIRequest):
     message_type: str = WSMessageType.REST_API_MSG.value
-
-    @property
-    def auth_info(self) -> AuthContext:
-        auth_context = AuthContext()
-        auth_context.scope = self.scope
-        auth_context.method = self.method
-        auth_context.target_type = self.target_typeid.type if self.target_typeid else None
-        auth_context.target_id = self.target_typeid.id if self.target_typeid else None
-        auth_context.direct_resource_type = self.direct_resource_type
-        auth_context.action = self.action
-        auth_context.sub_path = self.sub_path
-        auth_context.query_params = self.query_params
-        auth_context.body = self.body
-        return auth_context
+    # Per-call hub-reflection opt-in for the WS-REST path (the HTTP path uses the
+    # ``Hub-Reflect`` header). Default False — do not reflect.
+    hub_reflect: bool = False
+    # This call names its own socket as the initiator of a flow the server answers
+    # back to (the HTTP path sends ``X-Flow-Connection-Id``).
+    carries_initiator: bool = False
 
 
 class ComputeMessage(BaseMessage):
     session_id: Optional[str] = None
     ack_required: bool = False
-
-
-class ComputeExeMessage(ComputeMessage):
-    message_type: str = WSMessageType.EXE_MSG.value
-    session_id: Optional[str] = None
-    cmd: str
-
-
-class ComputeCtrlMessage(ComputeMessage):
-    message_type: str = WSMessageType.CONTROL_MSG.value
-    subtype: CtlMessageSubType
-    content: str
-
-
-class CommandStatusMessage(ComputeMessage):
-    """
-    Represents a message that contains the status of a command execution.
-    This can be used to report the status of a command execution back to the client.
-    """
-
-    message_type: str = WSMessageType.CMD_STATUS_MSG.value
-    command_message_id: str
-    exit_code: Optional[int] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-
-
-class ClientReadyMessage(ComputeMessage):
-    message_type: str = WSMessageType.CLIENT_NODE_READY_MSG.value
-    node_id: str
-    default_session_id: Optional[str] = None
 
 
 class PtyOutputMessage(BaseMessage):

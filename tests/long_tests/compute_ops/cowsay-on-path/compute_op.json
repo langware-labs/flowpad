@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "name": "cowsay-on-path",
+  "label": "cowsay",
+  "description": "The cowsay command runs from a plain shell.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "python3 -m pip install --quiet --user cowsay"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "command -v cowsay"
+    }
+  }
+}

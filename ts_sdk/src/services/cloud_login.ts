@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 /**
  * Cloud login — single owner of cloud auth on the SDK side.
  *
@@ -16,7 +17,9 @@ import { sdkConfig } from '../config/index';
 import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
+import { IUser } from '../entities/user-types';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
+import { resolveLoginCallbackUrl } from './login_callback';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
 import { OAUTH_PROVIDERS } from './oauth/oauth-service';
 import { privacyManager } from './privacy_mode';
@@ -28,13 +31,34 @@ import {
   HubLoginStatus,
   LocalConnectionStatus,
   LoginSlot,
+  LogoutReason,
   isHubConnected,
   makeConnectionSlot,
   makeLoginSlot,
 } from './cloud_status';
 
-let _dataManagerCache: any = null;
-async function _dataManager() {
+/** Static page a popup sign-in lands on — `ui/public/auth-popup-done.html`. */
+const LOGIN_POPUP_CALLBACK = '/auth-popup-done.html';
+/** Named so a second click reuses the window it already opened. */
+const LOGIN_POPUP_NAME = 'flowpad-login';
+const LOGIN_POPUP_FEATURES = 'popup=yes,width=520,height=680';
+/** Stamped by the callback page. THE completion signal — see `_awaitLoginPopup`. */
+const LOGIN_POPUP_STORAGE_KEY = 'flowpad_login_complete';
+/** How often the opener asks whether the popup went away. There is no event for
+ *  `window.closed`, and a user who dismisses the window sends nothing. */
+const LOGIN_POPUP_POLL_MS = 300;
+
+/** What a popup sign-in attempt did.
+ *
+ *  Three states rather than a boolean because the caller must treat two of the
+ *  failures differently: `blocked` means the popup never opened and a full-page
+ *  navigation is still owed, while `cancelled` means the user closed it — and
+ *  redirecting them anyway would override the choice they just made. */
+export type LoginPopupOutcome = 'signed-in' | 'cancelled' | 'blocked';
+
+type DataManagerRef = (typeof import('../APIEntity'))['dataManager'];
+let _dataManagerCache: DataManagerRef | null = null;
+async function _dataManager(): Promise<DataManagerRef> {
   if (!_dataManagerCache) _dataManagerCache = (await import('../APIEntity')).dataManager;
   return _dataManagerCache;
 }
@@ -65,6 +89,7 @@ export type HubWsStatus = HubConnectionStatus;
 interface DesktopInfoSeed {
   cloud_login_available?: boolean;
   cloud_url?: string | null;
+  cloud_app_url?: string | null;
   // New nested shape (preferred).
   login?: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null };
   connection?: { status: HubConnectionStatus; error: string | null };
@@ -77,7 +102,7 @@ interface DesktopInfoSeed {
 
 /** The cloud-relevant slice of the graph bootstrap response. */
 export interface CloudBootstrapSeed {
-  user?: User | Record<string, unknown> | null;
+  user?: IUser | Record<string, unknown> | null;
   desktop_info?: DesktopInfoSeed | null;
 }
 
@@ -117,6 +142,12 @@ export interface CloudWsControlResult {
   };
 }
 
+/** Convert the SDK API base to the browser-app origin used for dock links. */
+export function hubAppUrlFromApiUrl(apiUrl: string | null | undefined): string {
+  const normalized = (apiUrl ?? '').replace(/\/+$/, '');
+  return normalized.endsWith(API_PREFIX) ? normalized.slice(0, -API_PREFIX.length) : normalized;
+}
+
 function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResult>): HubConnectionStatus | null {
   if (d.hub_ws_status) return d.hub_ws_status as HubConnectionStatus;
   if (d.hub_ws_verified) return 'verified';
@@ -124,17 +155,50 @@ function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResul
   return null;
 }
 
+/** What a pending `login()` rejects with when the person cancelled it (`cancelLogin`). */
+export const LOGIN_CANCELLED = 'Sign-in cancelled';
+/** What a pending `login()` rejects with when a newer `login()` replaced it ("Open the page again"). */
+export const LOGIN_SUPERSEDED = 'superseded by new login attempt';
+
+/** A `login()` rejection that was the person's choice -- cancelled, or replaced by a newer attempt --
+ *  not a failure to report. */
+export function isQuietLoginError(error: unknown): boolean {
+  return error instanceof Error && (error.message === LOGIN_CANCELLED || error.message === LOGIN_SUPERSEDED);
+}
+
 class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;
+  /**
+   * STICKY — unlike `_login`, which the very next broadcast (the incoming
+   * person's LOGGED_IN) overwrites within milliseconds. A tab left open
+   * through a switch (FLOWPAD-2151) must keep blocking through that
+   * transition, not just for the instant `_login.reason` happens to read
+   * `LogoutReason.SwitchedOut`. Cleared only by `login()` starting a LOCALLY
+   * initiated login (`_applyLoginStatus('logging_in', ...)`, below) — a
+   * remote switch never produces that status on this tab, so this can't be
+   * cleared by someone else's login racing in.
+   */
+  private _takenOver = false;
   private _cloudUrl = '';
+  private _cloudAppUrl = '';
   private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
   private _lastHubError: HubClientErrorInfo | null = null;
-  private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null = null;
+  private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null =
+    null;
   private _initialized = false;
+  private _subscriptions: Promise<void> | null = null;
 
-  /** Seed initial state from the graph bootstrap response. Called once from main.ts. */
-  async bootstrap(bootstrap: CloudBootstrapSeed) {
+  /** Adopt known identity without fetching status or starting live services.
+   *
+   *  `allowAnonymous` suppresses the hub's sign-out redirect for the routes that
+   *  are meant to be reachable by a stranger — today the `/launch` landing,
+   *  which has to be able to SHOW the repository it is offering before it can
+   *  ask anyone to sign in for it. The caller decides, because the route table
+   *  is the app's and not the SDK's; `main-loader` already draws the same line
+   *  for the dock ("entry routes … stay reachable anonymously") and this is what
+   *  makes that true one layer earlier. */
+  async seedBootstrap(bootstrap: CloudBootstrapSeed, opts?: { allowAnonymous?: boolean }) {
     if (this._initialized) return;
     this._initialized = true;
 
@@ -142,12 +206,13 @@ class CloudManager extends EventEmitter {
       // Hub-mode API traffic uses the configured hub origin directly. Keep the
       // status tooltip truthful when the UI is served by a separate Vite port.
       this._cloudUrl = sdkConfig.apiUrl;
+      // In Hub mode the browser is already on the application origin. This is
+      // also correct for the mandated split local harness (UI :4098, API
+      // :8093), where deriving an app URL from the API origin would be wrong.
+      this._cloudAppUrl = window.location.origin;
 
       const { ConnectionManager } = await import('../websocket');
       const cm = ConnectionManager.getInstance();
-      cm.on('connection_status_changed', (slot: ConnectionSlot<LocalConnectionStatus>) => {
-        this._applyConnectionStatus(slot.status, slot.error);
-      });
       const localConnection = cm.connectionSlot;
       this._applyConnectionStatus(localConnection.status, localConnection.error, false);
 
@@ -155,16 +220,44 @@ class CloudManager extends EventEmitter {
         await this._setLoggedIn(bootstrap.user as unknown as Record<string, unknown>);
       } else {
         await this._setLoggedOut();
+        // The hub surface has no anonymous mode: a session-less load (first
+        // visit, expired or cleared cookie, post-logout reload) goes straight
+        // to the provider login instead of rendering a signed-out shell.
+        //
+        // Except on the entry routes that exist to be opened by someone who is
+        // not signed in yet. Those render, and start the login from a CLICK —
+        // which is the only place a popup can be opened, so it is also the only
+        // way the user keeps this tab and the URL that brought them here.
+        //
+        // The redirect never resolves: the page is leaving, and letting the app
+        // keep rendering lets a route's own 401 handling start a SECOND login.
+        // Two concurrent Auth0 authorizations overwrite each other's `state` in
+        // the session, so the callback fails its CSRF check and lands on `/`
+        // instead of the page the user opened.
+        if (!opts?.allowAnonymous) {
+          window.location.assign(this._hubLoginUrl());
+          await new Promise<never>(() => {});
+        }
       }
       return;
     }
 
     const seed = bootstrap.desktop_info;
     this._cloudUrl = seed?.cloud_url ?? '';
+    this._cloudAppUrl = seed?.cloud_app_url ?? hubAppUrlFromApiUrl(this._cloudUrl);
 
     if (seed?.login) {
-      this._applyLoginStatus(seed.login.status, seed.login.user, seed.login.reason, false);
+      // Adopt the identity at FIRST PAINT, not one round trip later. This branch
+      // used to call `_applyLoginStatus` directly, which records a status and
+      // leaves `dataContext.cloudUser` null — and the UI renders
+      // `cloudUser ?? localUser`, so a cloud sandbox painted the template's own
+      // "E2B Local" account until an async /cloud/status corrected it. On a cold
+      // resume that call loses the race against a still-waking backend.
+      await this._applyLoginBlock(seed.login, false);
     } else if (seed?.cloud_login_available) {
+      // No identity to adopt: an older server that only answers "could you log
+      // in from here". Status only, user null — the shape that caused the bug
+      // above, kept solely so a new client still works against an old server.
       this._applyLoginStatus('logged_in', null, null, false);
     }
     if (seed?.connection) {
@@ -174,11 +267,25 @@ class CloudManager extends EventEmitter {
       if (legacy) this._applyConnectionStatus(legacy, seed?.hub_ws_error ?? null, false);
     }
     await this._mirrorToContext();
+  }
 
-    const dm = await _dataManager();
-    dm.on('on_oauth_msg', (msg: OAuthMessage) => this._onOAuthMessage(msg));
+  /** Register live listeners before the SDK proactively connects its socket. */
+  startSubscriptions(): Promise<void> {
+    return (this._subscriptions ??= this._startSubscriptions());
+  }
+
+  private async _startSubscriptions(): Promise<void> {
     const { ConnectionManager } = await import('../websocket');
     const cm = ConnectionManager.getInstance();
+    if (isHubOnly()) {
+      cm.on('connection_status_changed', (slot: ConnectionSlot<LocalConnectionStatus>) => {
+        this._applyConnectionStatus(slot.status, slot.error);
+      });
+      this._applyConnectionStatus(cm.connectionSlot.status, cm.connectionSlot.error);
+      return;
+    }
+    const dm = await _dataManager();
+    dm.on('on_oauth_msg', (msg: OAuthMessage) => this._onOAuthMessage(msg));
     // The cloud login/connection status pushes are emitted on the
     // ConnectionManager — NOT re-emitted by the dataManager (which only
     // forwards on_oauth_msg & friends, see store.ts attach_connection_manager).
@@ -204,18 +311,219 @@ class CloudManager extends EventEmitter {
     // Resync after a local-WS reconnect: connection-status broadcasts that
     // landed while the socket was down would otherwise be lost forever,
     // leaving the avatar stuck on whatever state we saw last.
-    cm.on('on_reconnected', () => { void this._refreshFromStatus(); });
-
-    // Always verify login on load, even when the bootstrap seed says logged-out:
-    // a freshly-booted sandbox whose auto-login failed seeds logged-out and would
-    // otherwise never run a check, so the footer cloud-disconnected warning (with
-    // its sign-in action) wouldn't surface. This IS the "login check first" on open.
-    await this._refreshFromStatus();
+    cm.on('on_reconnected', () => {
+      void this.refreshStatus().catch(() => {});
+    });
   }
 
-  async login(): Promise<CloudLoginResult | void> {
+  /** Compatibility entry point for callers that want the complete startup. */
+  async bootstrap(bootstrap: CloudBootstrapSeed): Promise<void> {
+    await this.seedBootstrap(bootstrap);
+    await this.startSubscriptions();
+    await this.refreshStatus();
+  }
+
+  /**
+   * Adopt a `{status, user, reason}` login block — the shape both the graph
+   * bootstrap seed and `GET /cloud/status` carry, from the same server builder.
+   *
+   * One handler for both, because the alternative is what caused the bug this
+   * exists to fix: two places deciding "who am I" drift, and the one that drifted
+   * only applied a STATUS while leaving `dataContext.cloudUser` empty — so the UI
+   * fell back to the box's own local account.
+   *
+   * `_setLoggedIn` is the load-bearing call: `_applyLoginStatus` sets the login
+   * slot and nothing else, so a `logged_in` block WITH a user must not go through
+   * it alone.
+   */
+  private async _applyLoginBlock(
+    login: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null },
+    emit = true,
+  ): Promise<void> {
+    if (login.status === 'logged_in' && login.user) {
+      await this._setLoggedIn(login.user);
+    } else if (login.status === 'logged_out') {
+      await this._setLoggedOut();
+    } else {
+      this._applyLoginStatus(login.status, login.user, login.reason, emit);
+    }
+  }
+
+  /** Hub-mode login URL. Carries where to come back to as ``target_path`` so the
+   *  provider round-trip lands the browser back there — the hub validates the
+   *  value against its open-redirect allowlist (``AuthProvider.safe_target_path``)
+   *  and falls back to `/` otherwise.
+   *
+   *  That is usually the current SPA location, but NOT on the load that follows
+   *  an email verification: there the current location is the app root Auth0
+   *  returns every verified account to, and using it stranded a first-time
+   *  invitee on hub home holding a role nothing had told them about. Measured on
+   *  staging — the invitation's accept url rode `target_path` all the way to
+   *  `email-verification.html`, which stored it, and this line then replaced it
+   *  with `/?success=true&message=…`. `resolveLoginCallbackUrl` is what hands it
+   *  back. */
+  private _hubLoginUrl(popup = false): string {
+    const here = `${window.location.pathname || ''}${window.location.search || ''}`;
+    const target = resolveLoginCallbackUrl(here);
+    // A popup must NOT be sent to the app: the SPA would boot a second copy
+    // inside a 520px window, bootstrapping as the user who has just appeared.
+    // It lands on the static callback page instead, which closes itself. The
+    // real destination rides along as `next` so that page can put it back into
+    // `loginCallbackUrl` — `email-verification.html` overwrites that key with
+    // whatever `target_path` it was handed, which here is the callback page.
+    if (popup) {
+      const next = !target || target === '/' ? '/' : target;
+      return `${API_PREFIX}/login?${new URLSearchParams({
+        target_path: `${LOGIN_POPUP_CALLBACK}?${new URLSearchParams({ next })}`,
+      })}`;
+    }
+    if (!target || target === '/') return `${API_PREFIX}/login`;
+    return `${API_PREFIX}/login?${new URLSearchParams({ target_path: target })}`;
+  }
+
+  /**
+   * Hub-mode sign-in that keeps the caller's tab.
+   *
+   * MUST be called synchronously from a user gesture: `window.open` without
+   * transient activation is refused, and that is reported as `'blocked'` so the
+   * caller can still owe the full-page navigation. It is deliberately NOT wired
+   * into `seedBootstrap` for exactly this reason — that path runs from
+   * `initSdk` inside the root loader, where a cold page load has no activation
+   * and every popup would be blocked.
+   *
+   * On success the page RELOADS by default — the tab and URL survive, which is
+   * the point: a `/launch` link's `?repo=` is its entire payload. With
+   * `refresh: 'session'` it instead adopts the session in place
+   * (`refreshSession`): one fresh bootstrap, the user-dependent context re-applied,
+   * no reload. Opt-in because views that loaded their data anonymously are only
+   * right afterwards if they re-query on a user change; any failure there falls
+   * back to the reload.
+   */
+  async loginPopup(opts?: { refresh?: 'reload' | 'session' }): Promise<LoginPopupOutcome> {
+    if (!isHubOnly()) return 'blocked';
+    const startedAt = Date.now();
+    let popup: Window | null = null;
+    try {
+      popup = window.open(this._hubLoginUrl(true), LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);
+    } catch {
+      popup = null;
+    }
+    if (!popup || popup.closed) return 'blocked';
+    if (!(await this._awaitLoginPopup(popup, startedAt))) return 'cancelled';
+    // Opt-in: adopt the session in place instead of reloading. Lazily imported —
+    // session-refresh imports this module, so a static import would be a cycle.
+    // Any failure falls through to the reload, which is the known-good path.
+    if (opts?.refresh === 'session') {
+      const { refreshSession } = await import('../session-refresh');
+      if (await refreshSession()) return 'signed-in';
+    }
+    window.location.reload();
+    return 'signed-in';
+  }
+
+  /**
+   * Resolve true once the callback page reports a completed sign-in.
+   *
+   * The contract is the localStorage stamp, not an event. The callback page
+   * writes it synchronously BEFORE it closes, and a same-origin write is
+   * visible to this document the moment it lands — so observing `popup.closed`
+   * and then re-reading the key cannot miss a sign-in that happened. That is
+   * what removes the race a message-passing design would have here, where
+   * `postMessage`/`BroadcastChannel` delivery and window teardown are two
+   * independent queues and the close can win.
+   *
+   * The `storage` listener is a latency shortcut on top of that, not the
+   * contract — it saves up to one poll interval and nothing depends on it.
+   *
+   * KNOWN GAP: this believes the popup reached `auth-popup-done.html`. It does
+   * not when a second `/api/v1/login` from any other tab overwrites the OAuth
+   * `state` in the one browser-wide session cookie Authlib keeps it in — the
+   * popup's callback then fails CSRF and the hub sends it to `/` instead. The
+   * sign-in itself SUCCEEDS (the hub logs `callback, Success`); nothing writes
+   * the stamp, so this reports a cancel and the opener does not reload.
+   */
+  private _awaitLoginPopup(popup: Window, startedAt: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const stamped = (): boolean => {
+        try {
+          const at = Number(window.localStorage.getItem(LOGIN_POPUP_STORAGE_KEY));
+          return Number.isFinite(at) && at >= startedAt;
+        } catch {
+          // Storage unavailable (private mode): the stamp can never be read, so
+          // a sign-in is indistinguishable from a dismissal. Report the
+          // dismissal — the user is signed in either way, and the next load
+          // picks it up; claiming success would reload on a genuine cancel.
+          return false;
+        }
+      };
+
+      let settled = false;
+      const finish = (signedIn: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.clearInterval(poll);
+        window.removeEventListener('storage', onStorage);
+        try {
+          if (signedIn) window.localStorage.removeItem(LOGIN_POPUP_STORAGE_KEY);
+        } catch {
+          // Nothing to clear if it could not be written in the first place.
+        }
+        // Close it from HERE. `window.close()` lives only in the callback page,
+        // so a popup that drifted anywhere else — the app root, after the CSRF
+        // bounce above — stays open forever, showing a whole second copy of the
+        // app in a 520px window. This side opened it and is same-origin with
+        // it, so this side is allowed to close it, and unlike the page's own
+        // close this does not depend on where it landed.
+        if (signedIn && !popup.closed) {
+          try {
+            popup.close();
+          } catch {
+            // Blocked by the browser: the user closes it, the flow is unharmed.
+          }
+        }
+        resolve(signedIn);
+      };
+
+      const onStorage = (e: StorageEvent) => {
+        if (e.key === LOGIN_POPUP_STORAGE_KEY && stamped()) finish(true);
+      };
+      window.addEventListener('storage', onStorage);
+
+      const poll = window.setInterval(() => {
+        if (stamped()) finish(true);
+        else if (popup.closed) finish(false);
+      }, LOGIN_POPUP_POLL_MS);
+    });
+  }
+
+  /**
+   * @param opts.popup Hub mode: try a popup before navigating away. Defaults to
+   *   true, which is right for every caller that is a CLICK — the popup keeps
+   *   their tab and its URL. A caller that is not a click passes `false`: it has
+   *   no activation to spend, and a caller that has already committed to going
+   *   away (`main-loader` halts its load on the promise) would otherwise leave
+   *   the page stuck behind a window it did not expect.
+   * @param opts.browserProfile Desktop mode: open the sign-in page in this
+   *   browser profile (ids from `/api/v1/browser-profiles`) instead of the
+   *   system default browser.
+   */
+  async login(opts?: {
+    popup?: boolean;
+    refresh?: 'reload' | 'session';
+    browserProfile?: { browser: string; profile: string };
+  }): Promise<CloudLoginResult | void> {
+    // Any locally-initiated login attempt — including a click on
+    // `SessionTakenOverOverlay`'s own button — dismisses the sticky
+    // takeover block immediately, regardless of which branch below runs or
+    // whether the attempt ultimately succeeds.
+    this._takenOver = false;
     if (isHubOnly()) {
-      window.location.assign(`${API_PREFIX}/login`);
+      // Popup first, so a sign-in started by a click keeps the tab the user is
+      // looking at. Only `'blocked'` falls through to the navigation: a popup
+      // the user dismissed is a decision, and redirecting past it would take
+      // the page away from them anyway — the outcome they just declined.
+      if (opts?.popup !== false && (await this.loginPopup({ refresh: opts?.refresh })) !== 'blocked') return;
+      window.location.assign(this._hubLoginUrl());
       return;
     }
 
@@ -230,11 +538,7 @@ class CloudManager extends EventEmitter {
       throw new Error('Login canceled');
     }
 
-    if (this._pending) {
-      this._pending.off();
-      this._pending.reject(new Error('superseded by new login attempt'));
-      this._pending = null;
-    }
+    this._rejectPending(LOGIN_SUPERSEDED);
 
     this._applyLoginStatus('logging_in', null, null);
 
@@ -249,18 +553,39 @@ class CloudManager extends EventEmitter {
     });
 
     try {
-      await apiClient.post('/cloud/login');
+      const started = await apiClient.post<{ url?: string; present_in_browser?: boolean }>(
+        '/cloud/login',
+        opts?.browserProfile,
+      );
+      if (started?.present_in_browser && started.url) {
+        const popup = window.open(started.url, LOGIN_POPUP_NAME, LOGIN_POPUP_FEATURES);
+        if (!popup) throw new Error('Allow popups to complete sandbox sign-in.');
+      }
     } catch (err: any) {
       const message = err?.response?.data?.message ?? err?.message ?? 'Login request failed';
       this._applyLoginStatus('login_failed', null, message);
       await this._pushFailureWarning(message);
-      this._pending?.off();
-      this._pending?.reject(new Error(message));
-      this._pending = null;
+      this._rejectPending(message);
       throw new Error(message);
     }
 
     return promise;
+  }
+
+  /**
+   * Stop waiting on a browser sign-in: the login page may never have shown, or the person closed it,
+   * and the only way out used to be the backend's 5-minute timeout. The pending `login()` rejects
+   * with {@link LOGIN_CANCELLED} (callers treat that as a choice, not an error) and the backend
+   * retires the attempt so its timer cannot later fail a new one.
+   */
+  async cancelLogin(): Promise<void> {
+    this._rejectPending(LOGIN_CANCELLED);
+    try {
+      await apiClient.post('/cloud/login/cancel');
+    } catch {
+      /* an older backend has no such route; the status still leaves "logging in" below */
+    }
+    this._applyLoginStatus('logged_out', null, null);
   }
 
   /**
@@ -271,9 +596,19 @@ class CloudManager extends EventEmitter {
    */
   async logout(returnTo?: string): Promise<void> {
     if (isHubOnly()) {
-      window.location.assign(
-        returnTo ? `${API_PREFIX}/logout?returnTo=${encodeURIComponent(returnTo)}` : `${API_PREFIX}/logout`,
-      );
+      // Hub server: logout MUST be a top-level navigation through the hub's
+      // redirect chain, not an XHR. The chain is hub /logout (clears the hub
+      // cookies) → Auth0 /v2/logout (ends the IdP SSO session) → returnTo.
+      // An XHR can't ride the cross-origin Auth0 hop — the browser won't
+      // send Auth0's cookies on it — so the SSO session survived and the
+      // very next /login silently re-authenticated the same account: logout
+      // appeared to do nothing (landed back on home, no login form), and the
+      // wrong-account re-auth flow could never switch users. Custom-JWT hubs
+      // ride the same chain, just without the IdP hop. `returnTo` goes to
+      // the hub as a query param — the server owns its validation/wrapping.
+      await this._setLoggedOut();
+      const qs = returnTo ? `?${new URLSearchParams({ returnTo })}` : '';
+      window.location.assign(`${API_PREFIX}/logout${qs}`);
       return;
     }
 
@@ -338,7 +673,7 @@ class CloudManager extends EventEmitter {
   }
 
   async refreshStatus(): Promise<CloudStatusData | null> {
-    return this._refreshFromStatus();
+    return lazyAssets.refresh(LazyAsset.CloudStatus);
   }
 
   /** @deprecated Listen to login_status_changed / connection_status_changed instead. */
@@ -358,6 +693,9 @@ class CloudManager extends EventEmitter {
   get cloudUrl() {
     return this._cloudUrl;
   }
+  get cloudAppUrl() {
+    return this._cloudAppUrl;
+  }
   /** Manual bridge controls exist only on the desktop backend. */
   get connectionControlsAvailable() {
     return !isHubOnly();
@@ -369,6 +707,10 @@ class CloudManager extends EventEmitter {
   }
   get loginSlot(): Readonly<LoginSlot<HubLoginStatus>> {
     return this._login;
+  }
+  /** See `_takenOver` — sticky across the incoming person's LOGGED_IN, unlike `loginSlot`. */
+  get takenOver(): boolean {
+    return this._takenOver;
   }
   get connectionStatus(): HubConnectionStatus {
     return this._connection.status;
@@ -395,6 +737,7 @@ class CloudManager extends EventEmitter {
       logged_in: this.isLoggedIn,
       user: this._currentUser ? (this._currentUser as unknown as Record<string, unknown>) : null,
       cloud_url: this._cloudUrl,
+      cloud_app_url: this._cloudAppUrl,
       // new nested
       login: { status: this._login.status, user: this._login.user, reason: this._login.reason },
       connection: { status: this._connection.status, error: this._connection.error },
@@ -433,6 +776,20 @@ class CloudManager extends EventEmitter {
     }
   }
 
+  /**
+   * Detach and reject the in-flight login promise, if any. A method rather than
+   * inline statements so the `_pending` read is a fresh one: the object is
+   * assigned inside the `new Promise` executor, which the compiler's flow
+   * analysis cannot see through.
+   */
+  private _rejectPending(message: string): void {
+    const pending = this._pending;
+    if (!pending) return;
+    pending.off();
+    pending.reject(new Error(message));
+    this._pending = null;
+  }
+
   private async _handleOAuthCompletion(
     msg: OAuthMessage,
     resolve: (r: CloudLoginResult) => void,
@@ -453,10 +810,23 @@ class CloudManager extends EventEmitter {
     }
   }
 
+  /** Adopt a user the hub has just authenticated, without a page reload — what
+   *  `refreshSession` calls once the fresh bootstrap names the user. Public
+   *  wrapper so nothing outside this class reaches into `_setLoggedIn`. */
+  adoptSignedInUser(userDict: Record<string, unknown>): Promise<User> {
+    return this._setLoggedIn(userDict);
+  }
+
   private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
     const dm = await _dataManager();
-    const cloudUser = dm.updateEntityFromJson<User>({ type: User.type, ...userDict });
-    if (this.isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
+    // `type` LAST, deliberately. The hub answers /current-user with the principal
+    // it actually authenticated, which for a deployed agent is `"type": "identity"`
+    // — a type `EntityFactory` has no constructor for, so a spread landing after
+    // `type` makes this throw and the sandbox silently falls back to its own local
+    // user. The cloud principal is always modelled here as a User; only its FIELDS
+    // (name, avatar, id) vary by principal kind.
+    const cloudUser = dm.updateEntityFromJson<User>({ ...userDict, type: User.type });
+    if (this.isLoggedIn && this._currentUser && this._currentUser.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
     }
     cloudUser.markAsExpanded();
@@ -469,15 +839,31 @@ class CloudManager extends EventEmitter {
     return cloudUser;
   }
 
-  private async _setLoggedOut() {
+  private async _setLoggedOut(reason: string | null = null) {
     this._currentUser = null;
     const ctx = await _dataContext();
     await ctx.setContextEntityTypeId(await _currentUserKey(), null);
     ctx.setCloudLoggedIn?.(false);
-    this._applyLoginStatus('logged_out', null, null);
+    this._applyLoginStatus('logged_out', null, reason);
+    this._takenOver = reason === LogoutReason.SwitchedOut;
+    // Only a real cross-account switch on a shared sandbox (FLOWPAD-2151)
+    // warrants dropping every cached entity/query — Task, Project, Agent,
+    // everything, not just the outgoing account's hub-derived rows. Every
+    // OTHER path here (a plain "no cloud user yet" bootstrap, an explicit
+    // self-logout) must NOT do this: it doesn't just clear stale cloud data,
+    // it wipes the whole app's local cache mid-render, which is exactly what
+    // broke tests/headless/agent_auto_launch.test.tsx — the test's local,
+    // never-cloud-logged-in backend hit this path on plain boot and lost the
+    // Project/Agent it had just fetched. A prior commit worked around the CI
+    // failure by disabling this call outright (do not resurrect that — it
+    // silently brings back the stale-UI half of the FLOWPAD-2151 bug).
+    if (reason === LogoutReason.SwitchedOut) {
+      const dm = await _dataManager();
+      dm.adoptReadScope('anonymous');
+    }
     // Connection state is owned by its own channel; logout-driven
     // DISCONNECTED arrives via cloud_connection_status_msg.
-    this.emit('logout_complete');
+    this.emit('logout_complete', { reason });
   }
 
   /** Apply a new login slot value. Emits login_status_changed + cloud_status_changed. */
@@ -497,11 +883,7 @@ class CloudManager extends EventEmitter {
   }
 
   /** Apply a new connection slot value. Emits connection_status_changed + cloud_status_changed. */
-  private _applyConnectionStatus(
-    status: HubConnectionStatus,
-    error: string | null,
-    emit = true,
-  ) {
+  private _applyConnectionStatus(status: HubConnectionStatus, error: string | null, emit = true) {
     const prev = this._connection.status;
     const prevError = this._connection.error;
     this._connection = { status, error };
@@ -527,44 +909,40 @@ class CloudManager extends EventEmitter {
     ctx.setCloudLoggedIn?.(this.isLoggedIn);
   }
 
-  private async _refreshFromStatus(): Promise<CloudStatusData | null> {
+  async fetchStatus(isCurrent: () => boolean = () => true): Promise<CloudStatusData | null> {
     // No cloud layer to refresh in these modes, so don't hit `/cloud/status`:
     //  - Hub mode: the hub backend has no such route (404).
     //  - Local (private) data-privacy mode: the cloud is off-limits by contract
     //    (see login()'s hard gate). Gating here — not just at the callers — keeps
     //    bootstrap's unconditional on-load refresh and on_reconnected both correct.
     if (isHubOnly() || privacyManager.isLocal) return null;
-    try {
-      const data = await apiClient.get<CloudStatusData>('/cloud/status');
-      if (data?.cloud_url) this._cloudUrl = data.cloud_url;
+    const data = await apiClient.get<CloudStatusData>('/cloud/status');
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    if (data?.cloud_url) this._cloudUrl = data.cloud_url;
+    if (data?.cloud_app_url) this._cloudAppUrl = data.cloud_app_url;
+    else if (data?.cloud_url) this._cloudAppUrl = hubAppUrlFromApiUrl(data.cloud_url);
 
-      // Prefer nested shape; fall back to legacy aliases.
-      if (data?.connection) {
-        this._applyConnectionStatus(data.connection.status, data.connection.error ?? null, false);
-      } else {
-        const legacy = legacyConnectionStatus(data ?? {});
-        if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null, false);
-      }
-
-      if (data?.login) {
-        if (data.login.status === 'logged_in' && data.login.user) {
-          await this._setLoggedIn(data.login.user);
-        } else if (data.login.status === 'logged_out') {
-          await this._setLoggedOut();
-        } else {
-          this._applyLoginStatus(data.login.status, data.login.user, data.login.reason);
-        }
-      } else if (data?.logged_in && data.user) {
-        await this._setLoggedIn(data.user);
-      } else if (data?.logged_in === false) {
-        await this._setLoggedOut();
-      } else {
-        this.emit('cloud_status_changed', this.cloudStatus);
-      }
-      return data;
-    } catch {
-      return null;
+    // Prefer nested shape; fall back to legacy aliases. EMIT: this is a refresh,
+    // not a seed. Silent here, a changed slot reached no listener — the login
+    // block below only emits when LOGIN changes, so a signed-in account whose
+    // socket came up kept rendering "Not connected" until an unrelated push.
+    if (data?.connection) {
+      this._applyConnectionStatus(data.connection.status, data.connection.error ?? null);
+    } else {
+      const legacy = legacyConnectionStatus(data ?? {});
+      if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null);
     }
+
+    if (data?.login) {
+      await this._applyLoginBlock(data.login);
+    } else if (data?.logged_in && data.user) {
+      await this._setLoggedIn(data.user);
+    } else if (data?.logged_in === false) {
+      await this._setLoggedOut();
+    } else {
+      this.emit('cloud_status_changed', this.cloudStatus);
+    }
+    return data;
   }
 
   private async _onCloudLoginStatusMsg(msg: CloudLoginStatusMessage) {
@@ -574,7 +952,7 @@ class CloudManager extends EventEmitter {
     if (status === 'logged_in' && user) {
       await this._setLoggedIn(user);
     } else if (status === 'logged_out') {
-      await this._setLoggedOut();
+      await this._setLoggedOut(reason);
     } else if (status === 'login_failed') {
       this._applyLoginStatus('login_failed', null, reason);
       this.emit('login_failed', { message: reason ?? 'Login failed' });

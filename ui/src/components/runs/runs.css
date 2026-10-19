@@ -1,0 +1,403 @@
+/* Runs — master–detail. The list is a scannable index; the detail is mostly
+   the artifact, because that is what people came for. */
+
+.runs {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .runs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .runs-detail {
+    display: none;
+  }
+}
+
+.runs-list {
+  border-inline-end: 1px solid var(--border-color, #2a2a2a);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.runs-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  flex: 0 0 auto;
+}
+.runs-bar-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* Facets are a triage row, not a form — they read as counts you can click. */
+.runs .facet {
+  font: inherit;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--border-color, #2a2a2a);
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.runs .facet:hover {
+  opacity: 0.9;
+}
+.runs .facet.on {
+  opacity: 1;
+  border-color: currentColor;
+}
+.runs .facet b {
+  font-weight: 600;
+  opacity: 0.7;
+  margin-inline-start: 2px;
+}
+.runs .facet.b-failed.on {
+  color: #f87171;
+}
+.runs .facet.b-running.on {
+  color: #60a5fa;
+}
+.runs .facet.b-done.on {
+  color: #4ade80;
+}
+.runs .facet.b-queued.on {
+  color: #94a3b8;
+}
+.runs .facet.select {
+  opacity: 0.75;
+  max-width: 160px;
+}
+.runs .chip.scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #38bdf8;
+  border-color: currentColor;
+  opacity: 1;
+}
+.runs .chip-x {
+  display: inline-flex;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+}
+.runs .chip-x:hover {
+  opacity: 1;
+}
+/* Dialog-hosted: no room for a 62vh viewer or a 340px master column. */
+.runs.compact {
+  grid-template-columns: 260px minmax(0, 1fr);
+  font-size: 11px;
+}
+.runs.compact .viewer-frame,
+.runs.compact .viewer-src {
+  height: 34vh;
+  max-height: 34vh;
+}
+.runs-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #2a2a2a);
+  background: transparent;
+  color: inherit;
+}
+.runs-count {
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+.runs-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+.runs-empty {
+  opacity: 0.6;
+  font-size: 11px;
+  line-height: 1.55;
+  padding: 10px;
+}
+.runs-empty.pad {
+  padding: 24px;
+}
+
+.run-row {
+  border-inline-start: 2px solid transparent;
+}
+.run-row.b-running {
+  border-inline-start-color: #3b82f6;
+}
+.run-row.b-done {
+  border-inline-start-color: #22c55e;
+}
+.run-row.b-failed {
+  border-inline-start-color: #ef4444;
+}
+.run-row.b-queued {
+  border-inline-start-color: #94a3b8;
+}
+.run-row.on {
+  background: var(--bg-subtle, rgba(127, 127, 127, 0.12));
+}
+
+.run-row > button {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.run-row > button:hover {
+  background: var(--bg-subtle, rgba(127, 127, 127, 0.08));
+}
+.run-row .g {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+.run-row.b-running .g {
+  color: #60a5fa;
+}
+.run-row.b-done .g {
+  color: #4ade80;
+}
+.run-row.b-failed .g {
+  color: #f87171;
+}
+.run-row .t {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-row .when {
+  flex: 0 0 auto;
+  opacity: 0.45;
+  font-size: 10px;
+}
+.run-fail {
+  margin: 0 10px 6px 18px;
+  font-size: 10px;
+  color: #f87171;
+  line-height: 1.45;
+}
+
+.runs .chip {
+  flex: 0 0 auto;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #2a2a2a);
+  opacity: 0.8;
+  white-space: nowrap;
+}
+.runs .chip.agent {
+  color: #a78bfa;
+  border-color: currentColor;
+}
+.runs .chip.flow {
+  color: #38bdf8;
+  border-color: currentColor;
+}
+
+/* ── detail ───────────────────────────────────────────────────────────── */
+
+.runs-detail {
+  overflow-y: auto;
+  min-height: 0;
+}
+.run-detail {
+  padding: 14px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.run-detail header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.run-detail header h2 .g {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+}
+.run-detail .b-done {
+  color: #4ade80;
+}
+.run-detail .b-failed {
+  color: #f87171;
+}
+.run-detail .b-running {
+  color: #60a5fa;
+}
+.run-detail .b-queued {
+  color: #94a3b8;
+}
+.run-detail .meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 5px;
+  font-size: 10.5px;
+  opacity: 0.65;
+}
+
+.run-detail h3 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.6;
+  display: flex;
+  gap: 6px;
+}
+.runs .muted {
+  opacity: 0.55;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.filelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.filelist button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  background: none;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  text-align: start;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.filelist button:hover:not(:disabled) {
+  background: var(--bg-subtle, rgba(127, 127, 127, 0.1));
+}
+.filelist button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.filelist button.on {
+  border-inline-start-color: #3b82f6;
+  background: var(--bg-subtle, rgba(127, 127, 127, 0.12));
+}
+.filelist .fn {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filelist .sz {
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+/* The artifact itself — the reason the page exists, so it gets the room. */
+.viewer {
+  border: 1px solid var(--border-color, #2a2a2a);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.viewer-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+}
+.viewer-bar .fn {
+  font-weight: 600;
+}
+.viewer-bar .path {
+  margin-inline-start: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+  font-size: 9.5px;
+}
+.runs .lnk {
+  background: none;
+  border: 0;
+  color: #60a5fa;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  padding: 0;
+}
+.viewer-frame {
+  display: block;
+  width: 100%;
+  height: 62vh;
+  border: 0;
+  background: #fff;
+}
+.viewer-src {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 62vh;
+  overflow: auto;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.raw > summary {
+  cursor: pointer;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.55;
+}
+.raw > summary:hover {
+  opacity: 0.85;
+}
+.raw .viewer-src {
+  border: 1px solid var(--border-color, #2a2a2a);
+  border-radius: 4px;
+  margin: 8px 0;
+  max-height: 240px;
+}

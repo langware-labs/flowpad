@@ -8,6 +8,13 @@ export interface LmApiKeySummary {
   provider: string;
   configured: boolean;
   created_at?: string | null;
+  /** True for a provider the user cannot key by hand (the FlowPad hub endpoint,
+   *  bound by the hub and authenticated by the box's hub login). */
+  managed?: boolean;
+  /** Human-readable detail for a managed row (the endpoint typeid). */
+  detail?: string | null;
+  /** The bound endpoint's display name (managed rows only). */
+  name?: string | null;
 }
 
 export interface LmApiKeyValidation {

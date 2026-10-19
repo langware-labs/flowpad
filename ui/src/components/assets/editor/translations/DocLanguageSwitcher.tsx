@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useMemo, useState } from 'react';
 import { Check, Languages, Loader2 } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -66,7 +67,7 @@ export function DocLanguageSwitcher({
       <PopoverTrigger asChild>
         <button
           type="button"
-          title="Translations"
+          title={t`Translations`}
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
             className,
@@ -78,15 +79,11 @@ export function DocLanguageSwitcher({
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-0">
         <Command>
-          <CommandInput placeholder="Search languages…" />
+          <CommandInput placeholder={t`Search languages…`} />
           <CommandList>
             <CommandEmpty>No languages found.</CommandEmpty>
-            <CommandGroup heading="This document">
-              <CommandItem
-                value="original Original"
-                onSelect={() => switchTo(null)}
-                className="cursor-pointer gap-2"
-              >
+            <CommandGroup heading={t`This document`}>
+              <CommandItem value="original Original" onSelect={() => switchTo(null)} className="cursor-pointer gap-2">
                 <span className="flex-1">Original</span>
                 {activeLang === null && <Check className="h-4 w-4" />}
               </CommandItem>
@@ -115,7 +112,7 @@ export function DocLanguageSwitcher({
             {available.length > 0 && (
               <>
                 <CommandSeparator />
-                <CommandGroup heading="Translate to">
+                <CommandGroup heading={t`Translate to`}>
                   {available.map((target) => (
                     <CommandItem
                       key={target.code}

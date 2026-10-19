@@ -16,6 +16,10 @@ from flow_sdk.core.capabilities.models import (
     CapabilityValue,
     capability_kind_matches,
 )
+from flow_sdk.flowpad_types.vendors import VENDORS, vendor_by
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+from flow_sdk.utils.kind_registry import KindRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +37,12 @@ class CapabilityRunner(ABC):
         return CapabilityValue(
             kind=self.spec.kind,
             value=None,
-            value_type=self.spec.value_type,
+            spec=self.spec.value_spec,
             message="No discoverable value for this capability.",
         )
 
     @abstractmethod
-    async def test(self, scope=None) -> CapabilityResult:
-        ...
+    async def test(self, scope=None) -> CapabilityResult: ...
 
     async def setup(self, scope=None) -> CapabilityResult:
         """Default install: start the capability's install agentic process.
@@ -49,6 +52,7 @@ class CapabilityRunner(ABC):
         refreshes the capability row after the worker reaches a terminal state.
         """
         return await run_capability_install_process(self.spec)
+
 
 class CliCapabilityRunner(CapabilityRunner):
     def __init__(
@@ -69,30 +73,47 @@ class CliCapabilityRunner(CapabilityRunner):
         # worker_type) rather than parsed back out of the kind string.
         self.worker_type = worker_type
 
-    async def discover(self, probe: dict) -> CapabilityValue:
-        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
-        env probe against the terminal PATH (PATH order = tie-break). The
-        folder — not the binary — is the value: prepended to a spawn PATH it
-        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+    def locate_on_process_path(self) -> str | None:
+        """The executable as THIS process can find it, with no sweep — what the spawn path's
+        lazy resolution asks (``discovery.resolve_capability_value``)."""
+        return shutil.which(self.executable)
+
+    def value_from_executable_path(self, resolved: str | None, *, source: str = "the terminal PATH") -> CapabilityValue:
+        """This capability's typed value for an already-resolved executable path.
+
+        Split out of :meth:`discover` and deliberately SYNC: the work is a
+        dirname and an ``FSRef``, and the spawn path needs to build the same
+        value without a sweep and without an event loop (see
+        ``discovery.resolve_capability_value``). One construction, so a lazily
+        resolved value and a swept one are the same shape by definition.
+
+        ``source`` only names where the path came from, for the message.
+        """
         import os
 
         from flow_sdk.fs_store.fs_ref import FSRef
 
-        resolved = (probe.get("executables") or {}).get(self.executable)
         if not resolved:
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
-                value_type=self.spec.value_type,
-                message=f"{self.executable} CLI was not found on the terminal PATH.",
+                spec=self.spec.value_spec,
+                message=f"{self.executable} CLI was not found on {source}.",
             )
         folder = os.path.dirname(resolved)
         return CapabilityValue(
             kind=self.spec.kind,
             value=FSRef(folder).to_dict(),
-            value_type=self.spec.value_type,
+            spec=self.spec.value_spec,
             message=f"{self.executable} CLI found in {folder}.",
         )
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
+        env probe against the terminal PATH (PATH order = tie-break). The
+        folder — not the binary — is the value: prepended to a spawn PATH it
+        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+        return self.value_from_executable_path((probe.get("executables") or {}).get(self.executable))
 
     def _discovered_folder(self) -> str | None:
         """The discovered bin folder from the capability value (None = absent)."""
@@ -184,6 +205,58 @@ class CliCapabilityRunner(CapabilityRunner):
             return None
 
 
+class PythonModuleCapabilityRunner(CliCapabilityRunner):
+    """A harness that is a Python package run as ``python -m <module>``, not a binary on PATH.
+
+    Installed ⇔ every distribution in ``requires`` is present in THIS interpreter's environment;
+    the executable is this interpreter. The value keeps the CLI runner's shape — the bin FOLDER —
+    so every reader of it (``worker_bin_folder``, the spawn PATH pin, ``test``) is unchanged.
+
+    Presence is read from package metadata, never by importing: a harness like deepagents takes
+    seconds to import, and this answers on the spawn path.
+    """
+
+    def __init__(self, *, spec: CapabilitySpec, module: str, requires: tuple[str, ...], worker_type: str | None = None) -> None:
+        import sys
+        from pathlib import Path
+
+        super().__init__(
+            spec=spec,
+            executable=Path(sys.executable).name,
+            test_args=["-m", module, "--version"],
+            worker_type=worker_type,
+        )
+        self.module = module
+        self.requires = tuple(requires)
+
+    def missing_distributions(self) -> list[str]:
+        from importlib import metadata
+
+        missing = []
+        for name in self.requires:
+            try:
+                metadata.version(name)
+            except metadata.PackageNotFoundError:
+                missing.append(name)
+        return missing
+
+    def locate_on_process_path(self) -> str | None:
+        import sys
+
+        return None if self.missing_distributions() else sys.executable
+
+    def value_from_executable_path(self, resolved: str | None, *, source: str = "this Python environment") -> CapabilityValue:
+        value = super().value_from_executable_path(resolved, source=source)
+        if not resolved:
+            missing = ", ".join(self.missing_distributions()) or ", ".join(self.requires)
+            value.message = f"{self.spec.name} is not installed in {source} (missing: {missing})."
+        return value
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """The terminal-PATH probe has nothing to say about a package: ask the environment."""
+        return self.value_from_executable_path(self.locate_on_process_path())
+
+
 class CapabilityReferenceRunner(CapabilityRunner):
     """A capability that is a pointer to another capability.
 
@@ -223,7 +296,7 @@ class CapabilityReferenceRunner(CapabilityRunner):
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
-                value_type=self.spec.value_type,
+                spec=self.spec.value_spec,
                 message=failure.message,
             )
         target = get_capability_value(reference)
@@ -231,13 +304,13 @@ class CapabilityReferenceRunner(CapabilityRunner):
             return CapabilityValue(
                 kind=self.spec.kind,
                 value=None,
-                value_type=self.spec.value_type,
+                spec=self.spec.value_spec,
                 message=f"Referenced capability {reference!r} has no discovered value.",
             )
         return CapabilityValue(
             kind=self.spec.kind,
             value=target.value,
-            value_type=target.value_type or self.spec.value_type,
+            spec=target.spec or self.spec.value_spec,
             message=f"Mirrors {reference}: {target.message}",
         )
 
@@ -427,33 +500,16 @@ class GithubAccountRunner(CapabilityRunner):
         self.spec = spec
 
     async def _oauth_token(self) -> str | None:
-        # Request-user first; background contexts (discovery sweep, the OAuth
-        # poll task) have no request user — fall back to the local user's SOD
-        # entry so the check doesn't go blind off-request. Never raises.
-        try:
-            from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
+        # request user → local user → hub; background contexts (discovery
+        # sweep, the OAuth poll task) have no request user. Never raises.
+        from flow_sdk.core.oauth.provider_registry import GITHUB, token_for  # noqa: PLC0415
 
-            token, error = await _get_github_token_for_current_user()
-            if token:
-                return token
-        except Exception:
-            pass
-        try:
-            from flow_sdk.builtin.user import User
-            from flow_sdk.request_context.methods import get_user_credentials
-
-            user = await User.get_local()
-            if user is None:
-                return None
-            # Same FK convention as _save_github_token_to_sod's write side.
-            return await get_user_credentials(user, "github_credentials", user.id)
-        except Exception:
-            return None
+        return await token_for(GITHUB)
 
     async def test(self, scope=None) -> CapabilityResult:
         if scope is not None and getattr(scope, "scope_type", None) == "project":
-            from flow_sdk.builtin.git_origin import GitOrigin
             from flow_sdk.builtin.project import Project
+            from flow_sdk.fs_store.origin.git_origin import GitOrigin
             from flow_sdk.utils.git import git_remote_access
 
             project = await Project.get_by_id(scope.scope_id)
@@ -479,9 +535,7 @@ class GithubAccountRunner(CapabilityRunner):
                 ok=True,
                 available=accessible,
                 message=(
-                    "Project GitHub remote is accessible."
-                    if accessible
-                    else "Project GitHub remote is not accessible."
+                    "Project GitHub remote is accessible." if accessible else "Project GitHub remote is not accessible."
                 ),
                 details={
                     "scope_type": "project",
@@ -521,6 +575,7 @@ class GithubAccountRunner(CapabilityRunner):
             details={},
         )
 
+
 GH_INSTALL_PROMPT = (
     "Install the GitHub CLI (`gh`) on this machine using the appropriate "
     "package manager (brew on macOS, apt/dnf on Linux, winget on Windows) and "
@@ -543,6 +598,22 @@ DEFAULT_INSTALL_PROMPT = (
 _INSTALL_MONITOR_TASKS: set[asyncio.Task] = set()
 
 
+def install_prompt_for_spec(spec: CapabilitySpec) -> str:
+    """The full prompt the install worker runs: WHAT to install, then how.
+
+    The body alone says "this capability" with no antecedent — the worker was
+    being asked to install something without being told what. The kind is the
+    unambiguous handle (``harness.codex.cli``), the name is what the user sees,
+    and the homepage is where the real install instructions live. Prepended to
+    the connector-supplied ``spec.install_prompt`` too, so a custom prompt gets
+    the same identity without every catalog entry having to restate it.
+    """
+    target = f"Capability to install: {spec.name} ({spec.kind})."
+    if spec.homepage_url:
+        target += f" Official page with install instructions: {spec.homepage_url}"
+    return f"{target}\n\n{spec.install_prompt or DEFAULT_INSTALL_PROMPT}"
+
+
 async def resolve_default_harness_kind() -> str:
     """Resolve the user-selected default harness capability to a concrete leaf."""
     check = await get_capability_registry().test(CapabilityKind.HARNESS.value)
@@ -552,24 +623,71 @@ async def resolve_default_harness_kind() -> str:
     return reference
 
 
-def build_install_worker_config(harness_kind: str) -> tuple[str, dict[str, Any]]:
-    """Return AgenticProcess worker_type + cli_config for a harness leaf kind."""
-    if harness_kind == CapabilityKind.CLAUDE_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
+async def resolve_default_worker_type() -> str:
+    """Resolve the persisted default-harness reference to a process worker type.
 
-        return WorkerType.CLAUDE_CODE.value, ClaudeCliOptions(permission_mode="bypassPermissions").to_json()
-    if harness_kind == CapabilityKind.CODEX_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
+    Unlike ``resolve_default_harness_kind`` this is a selection lookup, not an
+    availability probe: process creation must honor the user's selected
+    harness, while the worker launch path reports installation/auth failures.
+    """
+    registry = get_capability_registry()
+    runner = registry.get(CapabilityKind.HARNESS.value)
+    if not isinstance(runner, CapabilityReferenceRunner):
+        raise RuntimeError("Default harness capability is not a reference")
+    harness_kind = await runner.resolve_reference_kind()
+    if not harness_kind:
+        raise RuntimeError("Default harness does not reference a concrete capability")
+    worker_type = registry.worker_type_for_kind(harness_kind)
+    if not worker_type:
+        raise RuntimeError(f"Default harness {harness_kind!r} has no process worker type")
+    return worker_type
 
-        return WorkerType.CODEX.value, CodexCliOptions(permission_mode="bypassPermissions").to_json()
-    if harness_kind == CapabilityKind.COPILOT_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
 
-        return WorkerType.COPILOT.value, CopilotCliOptions(permission_mode="bypassPermissions").to_json()
-    raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
+def bootstrap_worker_type() -> str | None:
+    """The installed ``Vendor.bootstrap`` worker, or None.
+
+    The worker of last resort for a BUILTIN process: a harness that ships inside FlowPad's own
+    environment and needs only an LLM endpoint, so a box with no CLI installed can still run the
+    process that installs one.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_is_installed
+
+    return next((v.worker_type for v in VENDORS if v.bootstrap and worker_is_installed(v.key)), None)
+
+
+async def resolve_builtin_worker_type() -> str:
+    """The worker a BUILTIN process (a capability install, a wizard step) runs on.
+
+    The user's selected harness whenever it is actually installed — it is their tool, and their
+    login funds it. Only when it is not does the bootstrap worker step in. With neither, the
+    selected worker is returned anyway so the launch path reports "not installed" by name.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_is_installed
+
+    try:
+        selected = await resolve_default_worker_type()
+    except Exception:
+        fallback = bootstrap_worker_type()
+        if fallback is None:
+            raise
+        return fallback
+    if worker_is_installed(selected):
+        return selected
+    return bootstrap_worker_type() or selected
+
+
+def install_worker_type(harness_kind: str) -> str:
+    """The AgenticProcess ``worker_type`` for a harness leaf kind.
+
+    Only the worker is decided here. The rest of the install bundle
+    (permissions, model, system prompt) belongs to the `capability-installer`
+    Agent — this used to also build a whole vendor options object whose only
+    content was ``permission_mode``, which the Agent now declares.
+    """
+    vendor = vendor_by("capability_kind", harness_kind)
+    if vendor is None:
+        raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
+    return vendor.worker_type
 
 
 def _schedule_install_monitor(process_id: str, kind: str) -> None:
@@ -601,10 +719,11 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
             raise RuntimeError(f"Install process {process_id} was not found.")
         await process.wait()
         # Re-discover before checking: a fresh install may live in a PATH dir
-        # (or new version-manager dir) the previous sweep didn't know about.
-        from flow_sdk.core.capabilities.discovery import run_discovery
+        # (or new version-manager dir) the previous sweep didn't know about. The
+        # status layer's refresh, so the install reaches every status reader.
+        from flow_sdk.core.status import refresh_status
 
-        await run_discovery([kind])
+        await refresh_status([kind])
         check = await get_capability_registry().test(kind)
         capability.last_check = check.result.model_dump(mode="json")
         started, started_details = _last_setup_parts(capability)
@@ -616,17 +735,19 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
             # install-START write (same process_id) — setupCapability waits on it.
             details={**started_details, **check.result.details, "install_finalized": True},
             process_id=process_id,
+            answer=started.get("answer"),
         ).model_dump(mode="json")
         capability.state = capability.derive_state(check.result, attempted=True)
         await capability.save(notify=True)
     except Exception as exc:
-        _, started_details = _last_setup_parts(capability)
+        started, started_details = _last_setup_parts(capability)
         capability.last_setup = CapabilityResult(
             ok=False,
             available=False,
             message=f"Install process failed: {exc}",
             details={**started_details, "error": str(exc), "install_finalized": True},
             process_id=process_id,
+            answer=started.get("answer"),
             state=CapabilityState.ERROR.value,
         ).model_dump(mode="json")
         capability.state = CapabilityState.ERROR.value
@@ -636,171 +757,197 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
 async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResult:
     """Start a capability's install as a headless agentic process.
 
-    The worker runs the spec's ``install_prompt`` (or
-    ``DEFAULT_INSTALL_PROMPT``) using the default harness selected by the
+    The worker runs ``install_prompt_for_spec(spec)`` — the target capability
+    named up front, then the spec's ``install_prompt`` (or
+    ``DEFAULT_INSTALL_PROMPT``) — using the default harness selected by the
     ``harness`` capability. The result carries ``process_id`` immediately so UI
     surfaces can show/open the run while it is still active.
     """
-    from pathlib import Path
 
-    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.capability import capability_id_for_kind
+    from flow_sdk.builtin.deployment import AgentUnavailable
     from flow_sdk.instance_settings import get_instance_settings
-    from flow_sdk.responses.response import ApiFailResponse
 
-    prompt = spec.install_prompt or DEFAULT_INSTALL_PROMPT
-    workdir = Path(get_instance_settings().flow_home) / "capability-installs"
+    prompt = install_prompt_for_spec(spec)
+    workdir = get_instance_settings().instance_dir / "capability-installs"
     workdir.mkdir(parents=True, exist_ok=True)
 
     try:
-        harness_kind = await resolve_default_harness_kind()
-        worker_type, cli_config = build_install_worker_config(harness_kind)
+        try:
+            # An availability PROBE (unlike the wizard's selection lookup in
+            # ``resolve_builtin_worker_type``): an install must run on a harness that works NOW.
+            harness_kind = await resolve_default_harness_kind()
+            worker_type = install_worker_type(harness_kind)
+        except Exception:
+            # No harness is available — the fresh-install case this process exists for. The
+            # bootstrap worker needs no CLI, so it can run the install that provides one.
+            worker_type = bootstrap_worker_type()
+            if worker_type is None:
+                raise
+            harness_kind = vendor_by("worker_type", worker_type).capability_kind
     except Exception as exc:
-        return CapabilityResult(
-            ok=False,
-            available=False,
-            message=f"Install process could not start: {exc}",
-            details={"prompt": prompt},
+        return _install_failed(
+            "Install process could not start",
+            PromptResult.not_yet(f"No harness can run the install: {exc}", ran=False),
+            {"prompt": prompt},
         )
 
     target_typeid_str = f"capability-{capability_id_for_kind(spec.kind)}"
-    process = AgenticProcess(
-        name=f"Install {spec.name}",
-        workdir=str(workdir),
-        visible=False,
-        worker_type=worker_type,
-        cli_config=cli_config,
-        context_data={
-            "capability_kind": spec.kind,
-            "install_prompt": prompt,
-            "install_harness_kind": harness_kind,
-        },
-        target_typeid_str=target_typeid_str,
-    )
-    await process.save(notify=True)
+    # Identity (permissions, model, system prompt) comes from the named
+    # `capability-installer` Agent; only the WORKER is decided here, because it
+    # follows whichever harness the `harness` capability resolved — which the
+    # agent cannot know in advance. create_process() keeps the two-step shape below:
+    # save with notify, then prompt, so the caller can report either failure
+    # separately and hand back process_id even when the start fails.
+    deployment = await get_agent_local_deployment("capability-installer")
+    details = {"prompt": prompt, "harness_kind": harness_kind, "worker_type": worker_type}
     try:
-        start_result = await process.prompt(prompt)
-    except Exception as exc:
-        return CapabilityResult(
-            ok=False,
-            available=False,
-            message=f"Install process failed: {exc}",
-            details={"prompt": prompt},
-            process_id=process.id,
+        process = await deployment.create_process(
+            prompt,
+            worker_type=worker_type,
+            name=f"Install {spec.name}",
+            workdir=str(workdir),
+            context_data={
+                "capability_kind": spec.kind,
+                "install_prompt": prompt,
+                "install_harness_kind": harness_kind,
+            },
+            target_typeid_str=target_typeid_str,
         )
-    if isinstance(start_result, ApiFailResponse):
-        return CapabilityResult(
-            ok=False,
-            available=False,
-            message=f"Install process failed to start: {start_result.message}",
-            details={"prompt": prompt, "harness_kind": harness_kind, "worker_type": worker_type},
-            process_id=process.id,
-        )
+    except AgentUnavailable as gone:
+        return _install_failed("Install process could not start", gone.answer(), details)
+    await process.save(notify=True)
+    started = await process.send_turn(prompt)
+    if not started.ok:
+        return _install_failed("Install process failed to start", started, details, process.id)
 
     _schedule_install_monitor(process.id, spec.kind)
     return CapabilityResult(
         ok=True,
         available=False,
         message="Install process started.",
-        details={
-            "prompt": prompt,
-            "harness_kind": harness_kind,
-            "worker_type": worker_type,
-            "start": start_result.data or {},
-        },
+        details=details,
         process_id=process.id,
+        answer=started,
+    )
+
+
+def _install_failed(
+    what: str, answer: PromptResult, details: dict, process_id: str | None = None
+) -> CapabilityResult:
+    return CapabilityResult(
+        ok=False,
+        available=False,
+        message=f"{what}: {answer.detail}",
+        details=details,
+        process_id=process_id,
+        answer=answer,
     )
 
 
 async def run_chrome_authenticated_probe() -> CapabilityResult:
     import secrets
-    from pathlib import Path
 
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
     from flow_sdk.builtin.capability import capability_id_for_kind
+    from flow_sdk.builtin.deployment import AgentUnavailable
     from flow_sdk.instance_settings import get_instance_settings
 
     nonce = f"flowpad-capability-{secrets.token_hex(8)}"
-    probe_dir = Path(get_instance_settings().flow_home) / "capability-probes"
+    probe_dir = get_instance_settings().instance_dir / "capability-probes"
     probe_dir.mkdir(parents=True, exist_ok=True)
     probe_file = probe_dir / "chrome-authenticated-probe.html"
     probe_file.write_text(
-        "<!doctype html><html><body>"
-        f"<main id=\"flowpad-capability-probe\">{nonce}</main>"
-        "</body></html>",
+        f'<!doctype html><html><body><main id="flowpad-capability-probe">{nonce}</main></body></html>',
         encoding="utf-8",
     )
 
-    cli_options = ClaudeCliOptions(
-        chrome=True,
-        permission_mode="bypassPermissions",
-    )
     target_typeid_str = f"capability-{capability_id_for_kind(CapabilityKind.CHROME_AUTHENTICATED.value)}"
-    process = AgenticProcess(
-        name="Chrome authenticated browsing capability probe",
-        workdir=str(probe_dir),
-        visible=False,
-        cli_config=cli_options.to_json(),
-        context_data={
-            "capability_kind": CapabilityKind.CHROME_AUTHENTICATED.value,
-            "probe_url": probe_file.as_uri(),
-            "expected_value": nonce,
-        },
-        target_typeid_str=target_typeid_str,
-    )
-    await process.save(notify=True)
     prompt = (
         "Use Chrome browsing to open this URL and read the exact text inside "
         f"#flowpad-capability-probe: {probe_file.as_uri()}\n"
         f"Return only the exact text. Expected value: {nonce}"
     )
-    try:
-        result = await AgenticProcess.run(
-            prompt,
-            id=process.id,
-            name=process.name,
-            workdir=str(probe_dir),
-            cli_config=cli_options.to_json(),
-            context_data=process.context_data,
-            target_typeid_str=target_typeid_str,
-            visible=False,
-        )
-    except Exception as exc:
+    # The `chrome-auth` Agent declares the whole bundle — including
+    # `cli_options: {chrome: true}`, the Claude-specific flag this probe exists
+    # to exercise. Built here but run through AgenticProcess.run below, which is
+    # what returns the reply text the nonce check needs.
+    deployment = await get_agent_local_deployment("chrome-auth")
+
+    def _failed(answer: PromptResult, process_id: str | None = None) -> CapabilityResult:
         return CapabilityResult(
             ok=False,
             available=False,
-            message=f"Authenticated Chrome browsing probe failed: {exc}",
+            message=f"Authenticated Chrome browsing probe failed: {answer.detail}",
             details={"expected": nonce, "probe_url": probe_file.as_uri()},
-            process_id=process.id,
+            process_id=process_id,
+            answer=answer,
         )
+
+    try:
+        process = await deployment.create_process(
+            prompt,
+            name="Chrome authenticated browsing capability probe",
+            workdir=str(probe_dir),
+            context_data={
+                "capability_kind": CapabilityKind.CHROME_AUTHENTICATED.value,
+                "probe_url": probe_file.as_uri(),
+                "expected_value": nonce,
+            },
+            target_typeid_str=target_typeid_str,
+        )
+    except AgentUnavailable as gone:
+        return _failed(gone.answer())
+    await process.save(notify=True)
+
+    result = await AgenticProcess.run(
+        prompt,
+        id=process.id,
+        name=process.name,
+        workdir=str(probe_dir),
+        cli_config=process.cli_config,
+        context_data=process.context_data,
+        target_typeid_str=target_typeid_str,
+        visible=False,
+        # The probe drives the interactive transport on purpose; ``run`` is headless by default.
+        pty_mode=True,
+    )
+    if not result.ok:
+        return _failed(result, process.id)
     text = (result.text or "").strip()
     ok = nonce in text
+    # The session lives on the process that ran it — the answer names it, never copies it.
+    ran = await AgenticProcess.get_by_id(process.id)
     return CapabilityResult(
         ok=ok,
         available=ok,
-        message="Authenticated Chrome browsing probe passed." if ok else "Authenticated Chrome browsing probe returned the wrong value.",
+        message="Authenticated Chrome browsing probe passed."
+        if ok
+        else "Authenticated Chrome browsing probe returned the wrong value.",
         details={
             "expected": nonce,
             "actual": text[:1000],
             "probe_url": probe_file.as_uri(),
-            "session_id": result.session_id,
+            "session_id": getattr(ran, "session_id", "") or "",
         },
         process_id=process.id,
+        answer=result,
     )
 
 
 def get_default_capability_specs() -> list[CapabilitySpec]:
     # Harness CLI values are typed as FOLDER (RecordType.FOLDER): the value is
     # the discovered bin directory (FSRef dict) workers prepend to spawn PATH.
-    _FOLDER = "folder"
+    _FOLDER = DataSpec.parse("fs_ref")  # the value is an FSRef dict
     return [
         CapabilitySpec(
             name="Default harness",
             kind=CapabilityKind.HARNESS.value,
             description="The harness used by default. References a concrete harness capability.",
             icon="Link",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             reference_kind=CapabilityKind.CLAUDE_CLI.value,
         ),
         CapabilitySpec(
@@ -808,24 +955,124 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.CLAUDE_CLI.value,
             description="Claude Code command-line harness.",
             icon="Bot",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://docs.anthropic.com/en/docs/claude-code/getting-started",
+            # Anthropic's native installers: they fetch a signed binary into
+            # ``~/.local/bin`` and need NOTHING preinstalled — no node, no npm,
+            # no Homebrew. curl ships with macOS and with Windows 10 1803+.
+            #
+            # Each one re-exports the bin dir onto PATH before verifying,
+            # because the installer edits the shell rc / the user's registry
+            # PATH and neither reaches the shell that is already running.
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://claude.ai/install.sh | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && claude --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://claude.ai/install.sh | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && claude --version'
+                ),
+                "win32": (
+                    "irm https://claude.ai/install.ps1 | iex; "
+                    '$env:Path = "$env:USERPROFILE\\.local\\bin;$env:Path"; claude --version'
+                ),
+            },
         ),
         CapabilitySpec(
             name="Codex CLI",
             kind=CapabilityKind.CODEX_CLI.value,
             description="Codex command-line harness.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://openai.com/codex/",
+            # OpenAI's standalone installers — NOT `npm i -g @openai/codex`,
+            # which needs a Node runtime this machine is assumed not to have.
+            # Install dirs read off the scripts themselves: `$HOME/.local/bin`
+            # on unix (install.sh `BIN_DIR`), `%LOCALAPPDATA%\Programs\OpenAI\
+            # Codex\bin` on Windows (install.ps1 `$defaultVisibleBinDir`).
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && codex --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && codex --version'
+                ),
+                "win32": (
+                    "irm https://chatgpt.com/codex/install.ps1 | iex; "
+                    '$env:Path = "$env:LOCALAPPDATA\\Programs\\OpenAI\\Codex\\bin;$env:Path"; codex --version'
+                ),
+            },
         ),
         CapabilitySpec(
             name="Copilot CLI",
             kind=CapabilityKind.COPILOT_CLI.value,
             description="GitHub Copilot command-line harness.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
+            # GitHub's install script, which lands in `$PREFIX/bin` — `$HOME/
+            # .local` for a non-root user, which is what a Flowpad terminal is.
+            #
+            # Windows is the odd one out: GitHub publishes NO PowerShell
+            # installer, only WinGet and npm. WinGet is the lesser evil (it is
+            # in-box from Windows 10 1809 via App Installer, where npm implies a
+            # whole Node runtime), and it puts `copilot` on PATH itself, so
+            # there is no PATH line and no verify tail to append — the shim
+            # directory is already on the running shell's PATH.
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://gh.io/copilot-install | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && copilot --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://gh.io/copilot-install | bash"
+                    ' && export PATH="$HOME/.local/bin:$PATH" && copilot --version'
+                ),
+                "win32": "winget install GitHub.Copilot",
+            },
+        ),
+        CapabilitySpec(
+            name="OpenCode CLI",
+            kind=CapabilityKind.OPENCODE_CLI.value,
+            description="OpenCode open-source command-line harness.",
+            icon="Terminal",
+            value_spec=_FOLDER,
+            homepage_url="https://opencode.ai/docs/",
+            # Installs to its OWN directory — `$HOME/.opencode/bin`, not the
+            # `~/.local/bin` the other three share (install script INSTALL_DIR).
+            #
+            # No Windows entry ON PURPOSE. OpenCode ships no PowerShell
+            # installer and no plain download command; every Windows route it
+            # documents (Chocolatey, Scoop, npm, mise, Docker) needs a tool
+            # installed first, which is exactly the machine this affordance
+            # exists for. A missing key hides the button, which is the honest
+            # outcome — the homepage link is still there.
+            install_commands={
+                "darwin": (
+                    "curl -fsSL https://opencode.ai/install | bash"
+                    ' && export PATH="$HOME/.opencode/bin:$PATH" && opencode --version'
+                ),
+                "linux": (
+                    "curl -fsSL https://opencode.ai/install | bash"
+                    ' && export PATH="$HOME/.opencode/bin:$PATH" && opencode --version'
+                ),
+            },
+        ),
+        CapabilitySpec(
+            name="Deep Agents",
+            kind=CapabilityKind.DEEPAGENTS_CLI.value,
+            description=(
+                "The builtin worker: LangChain's deepagents harness as a Python package beside "
+                "FlowPad. Needs no vendor CLI and no account — only an LLM endpoint."
+            ),
+            icon="Bot",
+            value_spec=_FOLDER,
+            homepage_url="https://docs.langchain.com/oss/python/deepagents/overview",
+            # No ``install_commands``: it is a dependency of FlowPad's own environment, not
+            # something a shell one-liner in the user's terminal could put there.
         ),
         CapabilitySpec(
             name="Chrome Authenticated Browsing",
@@ -833,6 +1080,9 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             description="Agent-driven Chrome browsing with authenticated browser state.",
             icon="Globe",
             dependent_capability_kinds=[CapabilityKind.CLAUDE_CLI.value],
+            # Its test() drives a REAL Claude agent through a browse-and-report
+            # round trip. That is an explicit-verb probe, not a badge refresh.
+            sweepable_test=False,
         ),
         CapabilitySpec(
             name="GitHub",
@@ -846,47 +1096,43 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.GITHUB_GH.value,
             description="The GitHub CLI, installed and authenticated.",
             icon="Terminal",
-            value_type=_FOLDER,
+            value_spec=_FOLDER,
             homepage_url="https://cli.github.com",
             install_prompt=GH_INSTALL_PROMPT,
         ),
     ]
 
 
-class CapabilityRegistry:
+class CapabilityRegistry(KindRegistry[CapabilityRunner]):
+    """Runners keyed by ``spec.kind`` (every kind is already lowercase — the
+    static enum and ``mcp_capability_kind`` both guarantee it — so the shared
+    normalize is a no-op here)."""
+
     def __init__(self) -> None:
-        self._runners: dict[str, CapabilityRunner] = {}
+        super().__init__("capability")
 
-    def register(self, runner: CapabilityRunner) -> None:
-        self._runners[runner.spec.kind] = runner
-
-    def unregister(self, kind: str) -> None:
-        """Drop a runner (no-op if absent). Used to prune stale dynamic kinds."""
-        self._runners.pop(kind, None)
+    def register(self, runner: CapabilityRunner) -> CapabilityRunner:  # type: ignore[override]
+        return super().register(runner, runner.spec.kind)
 
     def kinds(self) -> list[str]:
-        return list(self._runners.keys())
+        """Registration order, not sorted: the summary/UI list follows it
+        (harness first, then the CLIs, then connectors, then dynamic MCP)."""
+        return list(self._items)
 
     def worker_type_for_kind(self, kind: str) -> str | None:
         """The worker whose driver serves this kind (None ⇔ not a harness
         CLI). Reads the runner's registration-time worker_type — never parses
         the kind string."""
-        return getattr(self._runners.get(kind), "worker_type", None)
-
-    def get(self, kind: str) -> CapabilityRunner:
-        try:
-            return self._runners[kind]
-        except KeyError as exc:
-            raise KeyError(f"Unknown capability kind: {kind}") from exc
+        return getattr(self.get_or_none(kind), "worker_type", None)
 
     def runners(self) -> list[CapabilityRunner]:
-        return list(self._runners.values())
+        return list(self._items.values())
 
     def specs(self) -> list[CapabilitySpec]:
-        return [runner.spec for runner in self._runners.values()]
+        return [runner.spec for runner in self.runners()]
 
     def matching_specs(self, query_kind: str) -> list[CapabilitySpec]:
-        return [runner.spec for runner in self._runners.values() if runner.spec.matches(query_kind)]
+        return [spec for spec in self.specs() if spec.matches(query_kind)]
 
     async def test(self, kind: str, *, include_dependencies: bool = True, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
@@ -926,6 +1172,7 @@ class CapabilityRegistry:
         runner = self.get(kind)
         return CapabilityCheck(kind=kind, result=await runner.setup(scope))
 
+
 def _build_default_registry() -> CapabilityRegistry:
     registry = CapabilityRegistry()
     specs = {spec.kind: spec for spec in get_default_capability_specs()}
@@ -935,27 +1182,18 @@ def _build_default_registry() -> CapabilityRegistry:
             allowed_query=CapabilityKind.HARNESS.value,
         )
     )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.CLAUDE_CLI.value],
-            executable="claude",
-            worker_type="claude",
-        )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.CODEX_CLI.value],
-            executable="codex",
-            worker_type="codex",
-        )
-    )
-    registry.register(
-        CliCapabilityRunner(
-            spec=specs[CapabilityKind.COPILOT_CLI.value],
-            executable="copilot",
-            worker_type="copilot",
-        )
-    )
+    for vendor in VENDORS:
+        spec = specs[vendor.capability_kind]
+        if vendor.python_module:
+            runner: CliCapabilityRunner = PythonModuleCapabilityRunner(
+                spec=spec,
+                module=vendor.python_module,
+                requires=vendor.python_requires,
+                worker_type=vendor.worker_type,
+            )
+        else:
+            runner = CliCapabilityRunner(spec=spec, executable=vendor.key, worker_type=vendor.worker_type)
+        registry.register(runner)
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))
     registry.register(GithubAccountRunner(specs[CapabilityKind.GITHUB.value]))
     registry.register(

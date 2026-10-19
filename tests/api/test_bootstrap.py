@@ -50,7 +50,17 @@ async def test_bootstrap_returns_local_user_and_schemas(client):
     assert data["domain"] is None
     assert data["visitor"] is None
 
-    _assert_local_entity(data["default_project"], "project")
+    # NOT `_assert_local_entity`: `default_project` is the project the client
+    # opens, and @local is only its FLOOR — a pending opening instruction, or the
+    # project this machine was last used in, both outrank it (see
+    # `bootstrap.py::_with_runtime` and `test_default_project_once.py`, which owns
+    # that ordering). Pinning `uname == "local"` here made this test pass or fail
+    # on the order the suite happened to run in: any earlier test that activated a
+    # project changed the answer. What is invariant is that it is a well-formed
+    # project the caller can open.
+    default_project = data["default_project"]
+    assert default_project["id"]
+    assert default_project["type"] == "project"
     _assert_local_entity(data["default_workspace"], "workspace")
 
     env = data["env"]
@@ -59,17 +69,17 @@ async def test_bootstrap_returns_local_user_and_schemas(client):
 
     desktop_info = data["desktop_info"]
     assert isinstance(desktop_info, dict)
-    assert isinstance(desktop_info["llm_providers"], list)
-    assert isinstance(desktop_info["installed_agents"], list)
-    assert isinstance(desktop_info["cloud_login_available"], bool)
+    assert data["info_available"] is True
+    assert "installed_agents" not in desktop_info
+    assert "cloud_login_available" not in desktop_info
     assert isinstance(desktop_info["paths"], dict)
     assert "workspace" in desktop_info["paths"]
 
-    harness_state = data["harness_state"]
-    assert isinstance(harness_state, dict)
-    assert isinstance(harness_state["show_harness_select"], bool)
-    assert isinstance(harness_state["harnesses"], list)
-    assert any(h["kind"] == "harness.claude.cli" for h in harness_state["harnesses"])
+    status = (await client.get("/api/v1/graph/info")).json()["data"]
+    assert isinstance(status["desktop_info"]["llm_providers"], list)
+    assert isinstance(status["desktop_info"]["installed_agents"], list)
+    assert isinstance(status["desktop_info"]["cloud_login_available"], bool)
+    assert "paths" not in status["desktop_info"]
 
 
 async def test_bootstrap_is_idempotent_for_local_entities(client):

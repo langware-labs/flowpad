@@ -1,14 +1,11 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { TypeId, launchWizard, type Project } from '@sdk';
 import { notify } from '@src/notifications';
-import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
-import { useGitPush } from '@src/hooks/use-git-push';
-import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
-import {
-  gitShareGateState,
-  type GitShareGateState,
-} from '@src/components/share-to-conversation/git-share-gate-state';
-import type { ContextFolderTarget } from '@src/hooks/use-context-folder-for-rel';
+import { invalidateGitPreflight, runGitShareFix, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
+import { gitShareGateState, type GitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
+import type { DependencyFolderTarget } from '@src/hooks/use-dependency-for-rel';
 
 export interface GitShareGate {
   /** Which face the gate renders — `checking` until the backend answers. */
@@ -24,51 +21,57 @@ export interface GitShareGate {
 }
 
 /**
- * The pre-share gate for a context folder: preflight → remediate → re-check.
+ * The pre-share gate for a folder (a dependency, or a folder of the project's own): preflight → remediate → re-check.
  *
  * Re-checking is EVENT-driven, never polled: each remediation calls the
  * preflight's `refetch` once it settles — one re-check, on an explicit
  * completion. No interval, no backoff, no retry budget.
  */
 export function useGitShareGate(
-  folder: ContextFolderTarget | null,
+  folder: DependencyFolderTarget | null,
   project: Project | null | undefined,
   enabled: boolean,
 ): GitShareGate {
   const [setupBusy, setSetupBusy] = useState(false);
-  const { addPaths, remove } = useProjectContextFolders(project);
+  const { add } = useProjectDependencies(project, { fetchStates: false });
 
   const ref = useMemo(() => (folder?.typeid ? new TypeId(folder.typeid) : undefined), [folder?.typeid]);
   const preflight = useGitSharePreflight(ref, enabled);
 
-  // `push` owns its own busy state and re-entrancy guard — don't shadow it.
-  const { push, busy: pushBusy } = useGitPush(
-    folder?.computeNodeId ?? '@local',
-    folder?.workdir ?? null,
-    preflight.refetch,
-  );
-
-  // ONE action: stage-all → commit → pull --rebase → push. The receiver clones
-  // the origin, so an unpushed commit is unreachable — a commit without the
-  // push would leave the share just as broken.
-  const runCommit = useCallback(() => push(), [push]);
+  // ONE action, scoped to the shared folder: commit + push only its path (or
+  // push what is already committed). The person's other work in the repo is
+  // never swept in, and nothing is forced — a conflict is reported back.
+  const [pushBusy, setPushBusy] = useState(false);
+  const runCommit = useCallback(async () => {
+    if (!ref) return;
+    setPushBusy(true);
+    try {
+      const res = await runGitShareFix(ref, preflight.fix ?? 'commit');
+      if (!res.ok) notify.error({ title: t`Could not commit and push`, message: res.message });
+    } catch (e) {
+      notify.error({ title: t`Could not commit and push`, message: String(e) });
+    } finally {
+      setPushBusy(false);
+      preflight.refetch();
+    }
+  }, [ref, preflight]);
 
   const runSetup = useCallback(async () => {
     if (!folder || !project) return;
     setSetupBusy(true);
     try {
-      const result = await launchWizard<{ path?: string }>('git-context-folder', {
-        title: 'Set up Git for sharing',
+      const result = await launchWizard<{ path?: string }>('git-dependency', {
+        title: t`Set up Git for sharing`,
         targetTypeId: project.typeId.toString(),
         payload: {
           projectId: project.id,
-          scope: 'private',
+          optional: !folder.required,
           mode: 'adopt',
           path: folder.workdir,
           name: folder.name,
         },
         prompt:
-          `The user wants to share the context folder "${folder.name}" (${folder.workdir}), but it ` +
+          `The user wants to share the folder "${folder.name}" (${folder.workdir}), but it ` +
           `isn't backed by a git repository with an "origin" remote yet, so it can't be shared. ` +
           `Adopt THAT EXACT FOLDER in place — do not clone it, copy it, or create a repository ` +
           `anywhere else. Initialize git in ${folder.workdir} if needed, commit its current ` +
@@ -76,23 +79,32 @@ export function useGitShareGate(
           `origin remote and a pushed commit.`,
       });
       if (result.status === 'error') {
-        notify.error({ title: 'Could not set up Git', message: result.errorStr ?? undefined });
+        notify.error({ title: t`Could not set up Git`, message: result.errorStr ?? undefined });
         return;
       }
       if (result.status !== 'done') return;
       // Re-register so the backend re-runs `detect_origin`: a Folder's identity
       // IS its origin key, so a now-git directory must be re-minted, not mutated
       // in place — otherwise it keeps its stale LocalOrigin forever and every
-      // later preflight re-probes a folder the graph still calls local.
-      await remove(folder.workdir);
-      await addPaths([folder.workdir], 'private');
+      // later preflight re-probes a folder the graph still calls local. A
+      // dependency is re-added from its folder (a folder inside git is written
+      // as its repo, under the same name); a folder of the project's own is
+      // only re-minted — sharing it must not make it a dependency.
+      if (folder.dependency) {
+        await add(folder.workdir, folder.local ? 'local' : folder.required ? 'required' : 'optional');
+      } else {
+        await project.folderForPath(folder.workdir);
+      }
     } catch (e) {
-      notify.error({ title: 'Could not set up Git', message: String(e) });
+      notify.error({ title: t`Could not set up Git`, message: String(e) });
     } finally {
       setSetupBusy(false);
+      // This gate's own answer, and every other surface looking at the same
+      // folder — the git state changed on disk, which nothing else announces.
       preflight.refetch();
+      invalidateGitPreflight(ref);
     }
-  }, [folder, project, addPaths, remove, preflight]);
+  }, [folder, project, add, preflight, ref]);
 
   const busy = pushBusy || setupBusy;
   return {

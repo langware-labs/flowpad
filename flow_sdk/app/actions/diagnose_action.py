@@ -1,7 +1,7 @@
 """`diagnose` graph action — run the flow-diagnose skill from the UI.
 
 Same functionality as the `flow diagnose` CLI command, exposed as a **null-entity
-graph service action** (like ``inbox-list``) so the footer's Diagnose modal reaches
+graph service action** (like ``stream-inbox-search``) so the footer's Diagnose modal reaches
 it the normal way — ``dataManager.callAction(new ActionInfo('diagnose', null, null,
 'POST'))`` → ``/api/v1/graph/diagnose``. It runs ``_run_diagnose`` (the exact CLI
 runner) headless and streams the worker's narration as SSE, so the modal shows the
@@ -24,13 +24,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
+import tempfile
+from pathlib import Path
 
 from starlette.responses import StreamingResponse
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
 from flow_sdk.cli.commands.diagnose_cmd import _run_diagnose
-from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.request_context.methods import get_current_request_info, request_fields
+from flow_sdk.sources.files import safe_name
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +44,38 @@ logger = logging.getLogger(__name__)
 _PENDING_RUNS: set[asyncio.Task] = set()
 
 
+async def _save_uploads(files) -> Path | None:
+    """Write what the user attached (screenshots of the issue) where the diagnose agent can read it."""
+    if not files:
+        return None
+    attach_dir = Path(tempfile.mkdtemp(prefix="flow-diagnose-attached-"))
+    for n, upload in enumerate(files if isinstance(files, list) else [files], start=1):
+        # Numbered, so two files of one name both arrive; streamed off the loop, so a large one stalls nothing.
+        with (attach_dir / f"{n}-{safe_name(upload.filename, fallback='attachment')}").open("wb") as out:
+            await asyncio.to_thread(shutil.copyfileobj, upload.file, out)
+    return attach_dir
+
+
+def _attached_prompt(attach_dir: Path) -> str:
+    paths = "\n".join(f"- {path}" for path in sorted(attach_dir.iterdir()))
+    return (
+        "The user attached these files to show the issue (screenshots are images -- open each with "
+        f"the Read tool before diagnosing, and use what they show):\n{paths}"
+    )
+
+
 @action.post(action_name="diagnose", types=None)
 async def diagnose() -> StreamingResponse:
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info else None
-    message = (body.get("message") or "").strip() if isinstance(body, dict) else ""
+    fields = request_fields(body)
+    message = (fields.get("message") or "").strip()
     # The active project the user was in when they triggered the diagnosis — stamped
     # onto the record as its origin project so "Open in terminal" can reopen there.
-    project_id = (body.get("project_id") or None) if isinstance(body, dict) else None
+    project_id = fields.get("project_id") or None
+    # Read the uploads now: the request is gone by the time the detached run starts.
+    attach_dir = await _save_uploads(body.get("files") if isinstance(body, dict) else None)
+    prompt_extra = _attached_prompt(attach_dir) if attach_dir else ""
 
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -59,7 +87,9 @@ async def diagnose() -> StreamingResponse:
         try:
             # Every completed run posts its own Home-Feed card (issue card or no-issue
             # summary card) — same as the CLI — so the result always reaches the feed.
-            await _run_diagnose(message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit, project_id=project_id)
+            await _run_diagnose(
+                message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit, project_id=project_id, prompt_extra=prompt_extra
+            )
         except Exception as e:  # surface the failure into the stream, never 500 silently
             emit({"type": "error", "text": f"diagnose error: {e}"})
             emit({
@@ -67,6 +97,8 @@ async def diagnose() -> StreamingResponse:
                 "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
             })
         finally:
+            if attach_dir:
+                shutil.rmtree(attach_dir, ignore_errors=True)
             emit(None)  # sentinel: end of stream
 
     task = asyncio.create_task(_run())
@@ -76,7 +108,7 @@ async def diagnose() -> StreamingResponse:
     async def _events():
         # Immediate acknowledgment — bootstrap + agent spin-up before the first
         # "Diagnosing (session=…)" line can take several seconds (mirrors the CLI).
-        ack = ("Running a full diagnostic sweep" if not message else "Diagnosing your issue") + \
+        ack = ("Diagnosing your issue" if message or attach_dir else "Running a full diagnostic sweep") + \
             " — spinning up the agent (this can take a few seconds)…"
         yield f"data: {json.dumps({'type': 'status', 'text': ack})}\n\n"
         while True:

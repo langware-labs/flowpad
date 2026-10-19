@@ -1,0 +1,212 @@
+"""``Agent.auto_launch_for`` — the once-per-project selection.
+
+The session itself is stubbed (``Agent.use`` → a fake process with a fake
+queue): what is under test is WHICH agent, WHEN, whether it asks ``use()`` for
+the auto prompt, and the project marker — not the worker spawn. Queueing the
+prompt is ``use()``'s job (FLOWPAD-2180), covered through the real route in
+``tests/api/test_agent_use_queues_auto_launch_prompt.py``.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.core import Entity
+from tests.unit._project_deps import link_context_dirs
+from tests.unit.agent._seed import checkout_agent, seed_agent as _agent, seed_project as _project
+
+
+class _FakeQueue:
+    def __init__(self):
+        self.entries: list[tuple[str, str]] = []
+
+    def enqueue(self, prompt: str, source: str = "ui"):
+        self.entries.append((prompt, source))
+
+
+class _FakeProcess:
+    def __init__(self, agent: Agent, project_id: str | None, auto_prompt: bool):
+        self.id = f"proc-{agent.name}"
+        self.typeid = f"agentic_process-{self.id}"
+        self.agent = agent
+        self.project_id = project_id
+        self.auto_prompt = auto_prompt
+        self.queue = _FakeQueue()
+
+
+@pytest.fixture
+def used(monkeypatch):
+    """Stub ``Agent.use`` and capture every session it would have opened."""
+    opened: list[_FakeProcess] = []
+
+    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
+        proc = _FakeProcess(self, project_id, auto_prompt)
+        opened.append(proc)
+        return proc
+
+    monkeypatch.setattr(Agent, "use", _use)
+    return opened
+
+
+async def test_single_candidate_launches_and_queues_its_prompt(tmp_path, used):
+    root = tmp_path / "p1"
+    project = await _project(root)
+    agent = await _agent(root, "greeter", auto_launch=True, auto_launch_prompt="  Say hello  ")
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None
+    payload = outcome.to_payload()
+    assert payload["agent_id"] == agent.id and payload["process_id"] == used[0].id
+    assert payload["cancelled"] == [] and payload["prompt_queued"] is True
+    assert used[0].project_id == project.id
+    assert used[0].auto_prompt is True and used[0].queue.entries == []
+    assert Agent.auto_launched_ids(project.id) == [agent.id]
+
+
+async def test_second_open_never_launches_again(tmp_path, used):
+    root = tmp_path / "p2"
+    project = await _project(root)
+    await _agent(root, "greeter", auto_launch=True, auto_launch_prompt="go")
+
+    assert await Agent.auto_launch_for(project.id) is not None
+    assert await Agent.auto_launch_for(project.id) is None
+    assert len(used) == 1
+
+
+async def test_oldest_wins_and_the_rest_are_cancelled_for_good(tmp_path, used):
+    root = tmp_path / "p3"
+    project = await _project(root)
+    now = datetime.now(timezone.utc)
+    # Saved NEWEST first so row order alone would pick the wrong one.
+    newer = await _agent(root, "b-newer", when=now, auto_launch=True, auto_launch_prompt="b")
+    oldest = await _agent(root, "c-oldest", when=now - timedelta(days=2), auto_launch=True, auto_launch_prompt="c")
+    middle = await _agent(root, "a-middle", when=now - timedelta(days=1), auto_launch=True, auto_launch_prompt="a")
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None and outcome.agent.id == oldest.id
+    assert [a.id for a in outcome.cancelled] == [middle.id, newer.id]
+    assert used[0].auto_prompt is True
+    assert set(Agent.auto_launched_ids(project.id)) == {oldest.id, middle.id, newer.id}
+    # Cancelled means cancelled: the next open does not fall through to them.
+    assert await Agent.auto_launch_for(project.id) is None
+    assert len(used) == 1
+
+
+async def test_same_age_ties_break_on_folder_name(tmp_path, used):
+    root = tmp_path / "p4"
+    project = await _project(root)
+    when = datetime.now(timezone.utc)
+    zeta = await _agent(root, "zeta", when=when, auto_launch=True)
+    alpha = await _agent(root, "alpha", when=when, auto_launch=True)
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None and outcome.agent.id == alpha.id
+    assert [a.id for a in outcome.cancelled] == [zeta.id]
+
+
+async def test_disabled_off_and_foreign_agents_are_not_candidates(tmp_path, used):
+    root = tmp_path / "p5"
+    other = tmp_path / "p5-other"
+    project = await _project(root)
+    await _project(other)
+    await _agent(root, "off", auto_launch=False)
+    await _agent(root, "disabled", auto_launch=True, enabled=False)
+    await _agent(other, "foreign", auto_launch=True)
+
+    assert await Agent.auto_launch_for(project.id) is None
+    assert used == []
+    assert Agent.auto_launched_ids(project.id) == []
+
+
+async def test_context_root_agents_are_in_scope(tmp_path, used):
+    root = tmp_path / "p6"
+    content = tmp_path / "p6-content"
+    content.mkdir()
+    project = await _project(root)
+    await link_context_dirs(project, [content])
+    vendor = await _agent(content, "vendor-onboarding", auto_launch=True, auto_launch_prompt="hi")
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None and outcome.agent.id == vendor.id
+
+
+async def test_empty_prompt_opens_the_session_without_a_first_turn(tmp_path, used):
+    root = tmp_path / "p7"
+    project = await _project(root)
+    await _agent(root, "quiet", auto_launch=True, auto_launch_prompt="   ")
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None and outcome.prompt_queued is False
+    assert used[0].queue.entries == []
+
+
+async def test_unknown_project_is_a_no_op(used):
+    assert await Agent.auto_launch_for("00000000-0000-4000-8000-00000000dead") is None
+    assert used == []
+
+
+async def test_reset_lets_the_agent_launch_again_and_keeps_other_marks(tmp_path, used):
+    root = tmp_path / "p6"
+    project = await _project(root)
+    now = datetime.now(timezone.utc)
+    first = await _agent(root, "first", when=now - timedelta(days=1), auto_launch=True, auto_launch_prompt="go")
+    second = await _agent(root, "second", when=now, auto_launch=True)
+    assert await Agent.auto_launch_for(project.id) is not None
+    assert set(Agent.auto_launched_ids(project.id)) == {first.id, second.id}
+
+    await Agent.reset_auto_launch(project.id, first.id)
+
+    assert Agent.auto_launched_ids(project.id) == [second.id]
+    outcome = await Agent.auto_launch_for(project.id)
+    assert outcome is not None and outcome.agent.id == first.id
+    assert len(used) == 2
+
+
+async def test_a_failed_session_open_leaves_the_mark_unset_so_the_next_open_retries(tmp_path, monkeypatch, used):
+    """The once-only mark is a promise that the agent DID launch.
+
+    Marking before the session opened meant a `use()` that raised — no worker
+    binary, no funding, anything transient — spent the project's single chance
+    and the agent never auto-launched again on that machine.
+    """
+    root = tmp_path / "p7"
+    project = await _project(root)
+    agent = await _agent(root, "tutor", auto_launch=True, auto_launch_prompt="open the lesson")
+
+    working = Agent.use  # the fixture's stub, restored for the retry below
+
+    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False, launch_surface=None):
+        raise RuntimeError("no worker binary")
+
+    monkeypatch.setattr(Agent, "use", _boom)
+    with pytest.raises(RuntimeError, match="no worker binary"):
+        await Agent.auto_launch_for(project.id)
+
+    assert Agent.auto_launched_ids(project.id) == [], "a failed launch must not burn the mark"
+
+    # The retry is the point: with a working session the agent still launches.
+    monkeypatch.setattr(Agent, "use", working)
+    outcome = await Agent.auto_launch_for(project.id)
+    assert outcome is not None and outcome.agent.id == agent.id
+    assert Agent.auto_launched_ids(project.id) == [agent.id]
+
+
+async def test_a_never_indexed_agent_launches_on_the_first_open(tmp_path, used):
+    """A fresh checkout's first open: the row does not exist yet, and only the agent
+    that launches itself is indexed for it — the rest wait for the walk."""
+    root = tmp_path / "fresh"
+    project = await _project(root)
+    launcher = checkout_agent(root, "launcher", auto_launch=True)
+    plain = checkout_agent(root, "plain")
+
+    outcome = await Agent.auto_launch_for(project.id)
+
+    assert outcome is not None and f"agent-{outcome.agent.id}" == launcher
+    assert await Entity.get_by_typeid(plain) is None

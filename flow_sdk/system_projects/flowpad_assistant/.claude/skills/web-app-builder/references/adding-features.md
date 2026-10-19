@@ -1,5 +1,10 @@
 # Adding features
 
+
+## FlowCall integration
+
+In a Flowpad SDK app, reusable processing belongs in a ComputeOp and is called with its SDK action; see the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md). The standalone Next/FastAPI endpoint recipes below still apply to standalone apps. Do not duplicate block result validation or invent a shared request/status-file protocol in the UI.
+
 ## Adding a page
 
 Next.js App Router: a folder under `frontend/app/` with a `page.tsx`.
@@ -48,7 +53,7 @@ The template ships `button` and `card`. Add more shadcn/ui components with the
 CLI (the template includes `components.json`, so it lands in the right place):
 
 ```bash
-cd frontend && npx shadcn@latest add dialog table input form
+cd frontend && npx shadcn@latest add dialog table select form
 ```
 
 Components arrive in `frontend/components/ui/` as editable source — restyle
@@ -58,7 +63,7 @@ the `cn` helper from `@/lib/utils` for conditional classes.
 ## Adding an API endpoint — Next route handler vs FastAPI
 
 Both are reachable from the browser under `/api/*` (route handlers win;
-everything else is rewritten to FastAPI on :8080).
+everything else is rewritten to FastAPI on `BACKEND_URL`, i.e. :<be-port>).
 
 Pick **Next.js route handler** (`frontend/app/api/<name>/route.ts`) when the
 endpoint is thin web glue: session/auth-coupled reads, form submissions,
@@ -88,7 +93,7 @@ async def echo(req: EchoRequest) -> dict:
 ```
 
 FastAPI hot-reloads (`--reload`) and self-documents at
-http://localhost:8080/docs.
+http://localhost:<be-port>/docs.
 
 ## Calling APIs from the client
 
@@ -99,5 +104,5 @@ const res = await fetch("/api/health");
 const data = await res.json();
 ```
 
-Never hardcode `localhost:8080` in frontend code; that breaks the deployed
+Never hardcode `localhost:<be-port>` in frontend code; that breaks the deployed
 app (the rewrite destination comes from `BACKEND_URL`).

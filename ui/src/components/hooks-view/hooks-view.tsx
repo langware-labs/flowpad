@@ -291,10 +291,14 @@ export function HooksView() {
             <div>
               <div className="flex items-center gap-2">
                 <Webhook className="h-6 w-6" />
-                <h2 className="text-2xl font-bold text-foreground"><Trans>Hooks</Trans></h2>
+                <h2 className="text-2xl font-bold text-foreground">
+                  <Trans>Hooks</Trans>
+                </h2>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                <Trans>Configure Claude Code hooks to automate workflows with custom scripts and AI-powered decisions</Trans>
+                <Trans>
+                  Configure Claude Code hooks to automate workflows with custom scripts and AI-powered decisions
+                </Trans>
               </p>
             </div>
 
@@ -302,14 +306,14 @@ export function HooksView() {
               <label htmlFor="import-hooks">
                 <Button variant="outline" className="cursor-pointer" asChild>
                   <span>
-                    <Upload className="mr-2 h-4 w-4" />
+                    <Upload className="me-2 h-4 w-4" />
                     <Trans>Import</Trans>
                   </span>
                 </Button>
                 <input id="import-hooks" type="file" accept=".json" className="hidden" onChange={handleImport} />
               </label>
               <Button variant="outline" onClick={handleExport}>
-                <Download className="mr-2 h-4 w-4" />
+                <Download className="me-2 h-4 w-4" />
                 <Trans>Export</Trans>
               </Button>
             </div>
@@ -318,7 +322,9 @@ export function HooksView() {
           {/* Hooks Browser */}
           <div className="rounded-lg border bg-card p-4">
             <div className="mb-3">
-              <h3 className="text-sm font-semibold text-foreground"><Trans>Hooks Browser</Trans></h3>
+              <h3 className="text-sm font-semibold text-foreground">
+                <Trans>Hooks Browser</Trans>
+              </h3>
               <p className="text-xs text-muted-foreground">
                 <Trans>Scans all hook resources from the system profile and lists every hook with full details.</Trans>
               </p>
@@ -329,7 +335,9 @@ export function HooksView() {
           {/* Toggle between Table and Editor */}
           {isLoading ? (
             <div className="flex items-center justify-center rounded-lg border p-12">
-              <p className="text-sm text-muted-foreground"><Trans>Loading hooks...</Trans></p>
+              <p className="text-sm text-muted-foreground">
+                <Trans>Loading hooks...</Trans>
+              </p>
             </div>
           ) : showEditor ? (
             <HookEditor

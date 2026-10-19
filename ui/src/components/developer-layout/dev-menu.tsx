@@ -12,12 +12,12 @@ interface DevMenuItem {
 const DEV_MENU_ITEMS: DevMenuItem[] = [
   {
     path: '/main',
-    icon: <TerminalIcon className="mr-2 h-4 w-4" />,
+    icon: <TerminalIcon className="me-2 h-4 w-4" />,
     label: 'Sessions',
   },
   {
     path: '/hooks',
-    icon: <Webhook className="mr-2 h-4 w-4" />,
+    icon: <Webhook className="me-2 h-4 w-4" />,
     label: 'Hooks',
   },
 ];
@@ -30,8 +30,10 @@ export function DevMenu() {
   };
 
   return (
-    <nav className="flex w-64 flex-col gap-2 border-r bg-background p-4">
-      <h2 className="mb-2 px-2 text-lg font-semibold text-foreground"><Trans>Developer Tools</Trans></h2>
+    <nav className="flex w-64 flex-col gap-2 border-e bg-background p-4">
+      <h2 className="mb-2 px-2 text-lg font-semibold text-foreground">
+        <Trans>Developer Tools</Trans>
+      </h2>
       <div className="flex flex-col gap-1">
         {DEV_MENU_ITEMS.map((item) => (
           <Button

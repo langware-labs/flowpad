@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionInfo, dataManager, type TypeId } from '@sdk';
+import { ActionInfo, dataManager, type GitOrigin, type TypeId } from '@sdk';
 
 /**
  * Backend-owned Git-sharing eligibility for one asset. The Share dialog's Git
@@ -17,6 +17,18 @@ export interface GitSharePreflight {
   /** Stable machine code for the state (tests / branching). */
   code: string | null;
   /**
+   * The one-click fix the backend offers for `code`: `commit` (commit + push
+   * ONLY this asset's path) or `push` (push the commits already made, staging
+   * nothing). Null when there is none.
+   */
+  fix: GitShareFix | null;
+  /**
+   * The repo this asset comes from, when one could be derived — present even
+   * when `available` is false (a dirty tree still has an origin). Null only
+   * when there is genuinely no repo/remote to name.
+   */
+  origin: GitOrigin | null;
+  /**
    * True once the backend has answered for the current ref. IDLE and "available"
    * both carry `code: null`, so callers that branch on the code need this to
    * tell "not asked yet" from "asked, and it's fine".
@@ -31,21 +43,84 @@ export interface GitSharePreflight {
   refetch: () => void;
 }
 
+export type GitShareFix = 'commit' | 'push';
+
 interface PreflightResponse {
   available: boolean;
   reason: string | null;
   code: string | null;
+  fix?: GitShareFix | null;
   git_origin: Record<string, unknown> | null;
+}
+
+/**
+ * The one parse seam for the backend's `git_origin` payload. Returns the shared
+ * `GitOrigin` model rather than a local mirror of it, so a new backend field is
+ * added in one place (the model) instead of here as well.
+ */
+function toOrigin(raw: Record<string, unknown> | null | undefined): GitOrigin | null {
+  if (!raw) return null;
+  const { provider, owner, name, branch, head_commit, rel_path } = raw as Record<
+    string,
+    string | null | undefined
+  >;
+  if (!provider || !owner || !name) return null;
+  return {
+    kind: 'git',
+    provider,
+    owner,
+    name,
+    branch: branch ?? '',
+    head_commit: head_commit ?? null,
+    rel_path: rel_path ?? '.',
+  };
 }
 
 type PreflightState = Omit<GitSharePreflight, 'refetch'>;
 
-const IDLE: PreflightState = { loading: false, available: false, reason: null, code: null, answered: false };
+/**
+ * Live preflight subscribers, keyed by the ref they are asking about.
+ *
+ * Git state is FILESYSTEM state, so no entity update announces it — a wizard
+ * that gives a project a remote leaves every mounted consumer of this hook
+ * holding a stale answer, and there are seven of them (the project chip, the
+ * cloud-link button, both share surfaces, the deploy checklist, the share gate,
+ * the asset git link). `refetch` only ever helped the ONE component that also
+ * owned the remediation. This is the channel for the rest: whoever CHANGED the
+ * git state says so, and everyone looking at it asks again.
+ */
+const subscribers = new Map<string, Set<() => void>>();
+
+/**
+ * Tell every mounted preflight for `ref` to ask the backend again — call it
+ * after something changed git state (a repo was created, a remote added, a
+ * merge pushed). Omit `ref` to refresh all of them, which is the honest default
+ * for a wizard that may have touched a folder shared by several refs.
+ *
+ * Event-driven by contract: call it when a remediation SETTLES, never on a timer.
+ */
+export function invalidateGitPreflight(ref?: TypeId | string): void {
+  const key = ref ? ref.toString() : null;
+  const targets = key === null ? [...subscribers.values()] : [subscribers.get(key)];
+  for (const set of targets) set?.forEach((fn) => fn());
+}
+
+const IDLE: PreflightState = {
+  loading: false,
+  available: false,
+  reason: null,
+  code: null,
+  fix: null,
+  origin: null,
+  answered: false,
+};
 const FAILED: PreflightState = {
   loading: false,
   available: false,
   reason: 'Could not check Git eligibility.',
   code: 'status-failure',
+  fix: null,
+  origin: null,
   answered: true,
 };
 
@@ -64,6 +139,18 @@ export function useGitSharePreflight(
   const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   const refKey = ref ? ref.toString() : '';
+
+  // Subscribe to the shared invalidation channel for this ref.
+  useEffect(() => {
+    if (!enabled || !refKey) return;
+    const set = subscribers.get(refKey) ?? new Set<() => void>();
+    subscribers.set(refKey, set);
+    set.add(refetch);
+    return () => {
+      set.delete(refetch);
+      if (set.size === 0) subscribers.delete(refKey);
+    };
+  }, [refKey, enabled, refetch]);
   useEffect(() => {
     mountedRef.current = true;
     if (!enabled || !ref) {
@@ -87,6 +174,8 @@ export function useGitSharePreflight(
           available: !!res.available,
           reason: res.reason ?? null,
           code: res.code ?? null,
+          fix: res.fix ?? null,
+          origin: toOrigin(res.git_origin),
           answered: true,
         });
       })
@@ -102,4 +191,27 @@ export function useGitSharePreflight(
   }, [refKey, enabled, nonce]);
 
   return { ...state, refetch };
+}
+
+/** What `git_share_fix` answers: the push outcome, then the fresh preflight. */
+export interface GitShareFixResult {
+  ok: boolean;
+  kind: string;
+  message: string;
+  conflicted: string[];
+}
+
+/**
+ * Apply the backend's one-click fix for `ref` (see `GitSharePreflight.fix`),
+ * then tell every preflight looking at `ref` to ask again. A conflict comes
+ * back as `kind: 'conflict'` with its paths — never forced.
+ */
+export async function runGitShareFix(ref: TypeId, fix: GitShareFix): Promise<GitShareFixResult> {
+  const action = new ActionInfo('git_share_fix', ref.type, ref.id, 'POST');
+  action.bodyParameters = { fix };
+  try {
+    return await dataManager.callAction<{ fix: GitShareFix }, GitShareFixResult>(action);
+  } finally {
+    invalidateGitPreflight(ref);
+  }
 }

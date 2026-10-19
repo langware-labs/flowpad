@@ -25,11 +25,16 @@ from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
 from flow_sdk.builtin.agentic_process.turn_abort import turn_events_path
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiSuccessResponse
+from tests.utils.harness_installed import funding_not_under_test  # noqa: F401 — a fixture
+
+# Spawn mechanics, not funding: CI has no vendor CLI signed in (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("funding_not_under_test")
 
 _DRIVERS = [
     ("flow_sdk.builtin.agentic_process.cli_drivers.claude.driver", "ClaudeDriver"),
     ("flow_sdk.builtin.agentic_process.cli_drivers.codex.driver", "CodexDriver"),
     ("flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver", "CopilotDriver"),
+    ("flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver", "OpenCodeDriver"),
 ]
 
 
@@ -140,3 +145,37 @@ async def test_forced_cancel_writes_exactly_one_sidecar_marker(tmp_path, monkeyp
     assert marker_path.exists()
     lines = [ln for ln in marker_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) == 1
+
+
+async def _mock_agent(tmp_path, monkeypatch):
+    """A saved agent whose worker is the repo's MockDriver (docs/snippets/processes.md §3)."""
+    from flow_sdk.builtin.agent import Agent
+    from tests.utils.mock_worker import MockDriver
+
+    worker = MockDriver(tmp_path / "mock-transcripts")
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: worker)
+    agent = Agent(name=f"exit-probe-{mint_uuid()[:8]}", worker_type="claude")
+    await agent.save()
+    return agent
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wait", [True, False], ids=["after-turn", "in-flight"])
+async def test_exit_stops_a_headless_process(tmp_path, monkeypatch, wait):
+    """processes.md: ``agent.launch(..., wait=True)``, resolve the process from the
+    answer's ``executor``, then ``await proc.exit()``.
+
+    After the turn no worker/turn is registered and there is no shell; in flight, exit
+    joins the turn. Either way the process ends STOPPED, never "No active shell session".
+    """
+    agent = await _mock_agent(tmp_path, monkeypatch)
+    answer = await agent.launch("Summarize today's inbox in three bullets.", wait=wait)
+    proc = await AgenticProcess.get_by_typeid(answer.executor)
+    in_flight = ap_mod._PROMPT_TASKS.get(proc.id) is not None
+    assert in_flight is (not wait), "precondition: the turn is over iff we waited for it"
+
+    resp = await proc.exit()
+
+    assert isinstance(resp, ApiSuccessResponse), getattr(resp, "message", resp)
+    assert (await AgenticProcess.get_by_id(proc.id)).status == ProcessStatus.STOPPED.value
+    assert ap_mod._PROMPT_TASKS.get(proc.id) is None and ap_mod._PROMPT_WORKERS.get(proc.id) is None

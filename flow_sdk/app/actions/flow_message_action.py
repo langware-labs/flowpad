@@ -1,6 +1,7 @@
 """HTTP actions for FlowMessage file transport.
 
 POST /api/v1/graph/flow-message-upload      — upload .flowmsg (multipart, global action)
+POST /api/v1/graph/flow-message-export      — pack entities into a .flowmsg with no conversation (global action)
 GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg (entity-scoped)
 GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
@@ -12,19 +13,22 @@ import logging
 import os
 import re
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, NamedTuple, Optional
+from weakref import WeakValueDictionary
 
+from flow_sdk import stream_inbox
 from flow_sdk._compat import UTC
-from flow_sdk import inbox
 from flow_sdk.actions.action_registry import action
+from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
+from flow_sdk.builtin.flow_message import BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email
+from flow_sdk.cloud_client.transport.hub_http import hub_request, rows_of
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
@@ -42,12 +46,45 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
+from flow_sdk.stream_inbox.agent_scope import (
+    AgentStreamInboxScope,
+    AgentStreamInboxScopeError,
+    resolve_agent_stream_inbox_scope,
+    resolve_local_stream_inbox_scope,
+)
+from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post
+from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
 
+# Same-message body pulls can arrive concurrently from the conversation sync and
+# the eager hub bridge. ``unpack_bundle`` replaces one shared staging directory,
+# so those callers must not run its rmtree/copytree sequence at the same time.
+# Locks are loop-scoped (asyncio locks cannot cross pytest/server event loops)
+# and weakly held so a long-lived backend does not retain one per message.
+_BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = WeakValueDictionary()
+
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
+    from flow_sdk.schema.data_spec.open_link_spec import MessageOpenLinkSpec
+
+
+async def _optional_agent_stream_inbox_scope(agent_id: object) -> AgentStreamInboxScope | None:
+    """Resolve an explicitly requested Agent scope; blank preserves legacy behavior."""
+    value = str(agent_id or "").strip()
+    return await resolve_agent_stream_inbox_scope(value) if value else None
+
+
+async def _bulk_stream_inbox_scope(agent_id: object) -> AgentStreamInboxScope:
+    """The stream inbox a BULK verb acts on: the Agent's when one is named, else the local
+    user's — never every row on the machine (see ``resolve_local_stream_inbox_scope``)."""
+    return await _optional_agent_stream_inbox_scope(agent_id) or await resolve_local_stream_inbox_scope()
+
+
+def _body_status_value(status: str | BodyStatus | None) -> str | None:
+    return status.value if isinstance(status, BodyStatus) else status
 
 
 def _meaningful_name(title: str) -> str:
@@ -169,14 +206,25 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
         tmp_path.unlink(missing_ok=True)
 
     task_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.TASK.value), None)
-    conv_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.CONVERSATION.value), None)
+    conv_id = next(
+        (c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.CONVERSATION.value),
+        None,
+    ) or (getattr(fm, "conversation_id", None) or None)
 
+    # What the file staged, so a caller with no conversation to open (an offline
+    # export uploaded from project home) can review and install it directly.
+    from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: PLC0415
+
+    staged = await MessageAttachment.get_all({"flow_message_id": fm.id})
     return ApiSuccessResponse(
         data={
             "message_id": fm.id,
             "task_id": task_id,
             "conversation_id": conv_id,
             "was_new_task": True,
+            "attachments": [
+                {"id": ma.id, "asset_type": ma.asset_type, "asset_id": ma.asset_id, "name": ma.name} for ma in staged
+            ],
         }
     )
 
@@ -203,6 +251,83 @@ async def handle_download_flow_message(fm_id: str) -> ApiResponse:
     )
 
 
+async def handle_export_flow_message(body: dict) -> ApiResponse:
+    """Pack ``asset_references`` into one .flowmsg without a conversation or a row.
+
+    The message is built in memory and never saved: an offline export is a file
+    handed to someone, not a message this machine sent. Assets are packed in the
+    canonical ``<main_subdir>/<leaf>`` layout (``mirror_repo_layout=False``) — the
+    receiver has no clone of the sender's repo to mirror. A reference that names
+    nothing is refused rather than silently dropped from the file.
+    """
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.schema.data_spec.flow_message_export_spec import FlowMessageExportSpec
+
+    try:
+        spec = FlowMessageExportSpec.model_validate(body or {})
+    except Exception as exc:  # noqa: BLE001 — pydantic's message is the reason
+        return ApiFailResponse(message=f"not an export request: {exc}", status_code=400)
+    if not spec.asset_references:
+        return ApiFailResponse(message="nothing to export: asset_references is empty", status_code=400)
+
+    missing: list[str] = []
+    refs: list[str] = []
+    for raw in spec.asset_references:
+        try:
+            tid = TypeId(raw)
+        except Exception:  # noqa: BLE001
+            missing.append(raw)
+            continue
+        cls = SchemaRegistry.get_entity_cls(tid.type) if tid.type else None
+        if cls is None or await cls.get_one({"id": tid.id}) is None:
+            missing.append(raw)
+            continue
+        if str(tid) not in refs:
+            refs.append(str(tid))
+    if missing:
+        return ApiFailResponse(message=f"not found: {', '.join(missing)}", status_code=404, data={"missing": missing})
+
+    if not spec.include_gitignored:
+        from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
+
+        if refused := await refuse_gitignored([TypeId(r) for r in refs]):
+            return refused
+    sender = await User.current_sender_participant(None)
+    fm = FlowMessage(
+        id=FlowMessage.allocate_id({}),
+        text=spec.text,
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=ref) for ref in refs],
+        sender_id=sender.get("user_id") or None,
+        sender_name=sender.get("name") or "",
+    )
+    zip_path = await pack_bundle(fm, mirror_repo_layout=False)
+    who = re.sub(r"[^a-z0-9]+", "-", (fm.sender_name or "unknown").lower()).strip("-")[:30] or "unknown"
+    filename = f"{who}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.flowmsg"
+    return FileResponse(
+        str(zip_path),
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(lambda: os.unlink(zip_path) if zip_path.exists() else None),
+    )
+
+
+@action.post(action_name="flow-message-export", types=None)
+async def export_flow_message() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info found")
+        return await handle_export_flow_message(await request_info.get_post_data() or {})
+    except Exception as e:
+        logger.error(f"[flow_message_action] export error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"Export failed: {str(e)}")
+
+
 @action.post(action_name="flow-message-upload", types=None)
 async def upload_flow_message() -> ApiResponse:
     try:
@@ -226,9 +351,11 @@ async def upload_flow_message() -> ApiResponse:
         return ApiFailResponse(message=f"Upload failed: {str(e)}")
 
 
-async def handle_open_flow_message(fm_id: str) -> ApiResponse:
-    """Fetch FlowMessage from hub, materialise bundle if needed, delegate to deep-link handler."""
-    from flow_sdk.server.routes.notify import handle_notification_deep_link
+async def open_flow_message_params(fm_id: str, someone_typeid: str | None = None) -> "MessageOpenLinkSpec":
+    """Deep-link resolver for a message (``FlowMessage.resolve_open``): fetch it
+    from the hub, materialise its bundle and conversation, and return the
+    ``action=open`` params that send the UI into the conversation."""
+    from flow_sdk.server.routes.notify import message_deep_link_params
 
     data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     meta = (data or {}).get("metadata") or {}
@@ -246,6 +373,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
                 fm_id,
                 attachment_filename,
                 body_status=(data or {}).get("body_status"),
+                hub_updated=(data or {}).get("updated_date"),
             )
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
@@ -284,8 +412,6 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     # text-only first messages ship without a bundle).
     if conversation_id:
         try:
-            request_info = get_current_request_info()
-            someone_typeid = request_info.someone_typeid if request_info else None
             if someone_typeid:
                 await _ensure_local_conversation_synced(conversation_id, someone_typeid)
         except Exception as e:
@@ -299,7 +425,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         task_id,
     )
 
-    return await handle_notification_deep_link(
+    return message_deep_link_params(
         fm_id=fm_id,
         conversation_id=conversation_id,
         task_id=task_id,
@@ -307,19 +433,6 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
         title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
     )
-
-
-@action.get(action_name="open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def open_flow_message() -> ApiResponse:
-    """Deep-link handler: fetch FlowMessage from hub and redirect to IncomingTaskDialog."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_open_flow_message(str(request_info.target_entity_typeid.id))
-    except Exception as e:
-        logger.error("[flow_message_action] open error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Open failed: {str(e)}")
 
 
 @action.get(action_name="create-and-download-local-flowmsg", types=["flow_message"])
@@ -388,7 +501,7 @@ async def handle_upload_body(fm_id: str, *, transfer_mode: str = "copy") -> ApiR
     return ApiSuccessResponse(
         data={
             "flow_message_id": fm.id,
-            "body_status": fm.body_status.value if hasattr(fm.body_status, "value") else fm.body_status,
+            "body_status": _body_status_value(fm.body_status),
             "attachment_filename": fm.attachment_filename,
         }
     )
@@ -433,7 +546,7 @@ async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiRes
     return ApiSuccessResponse(
         data={
             "flow_message_id": fm.id,
-            "body_status": fm.body_status.value if hasattr(fm.body_status, "value") else fm.body_status,
+            "body_status": _body_status_value(fm.body_status),
         }
     )
 
@@ -557,8 +670,8 @@ async def handle_create_project_conversation(
 
 async def handle_conversation_dismiss(conversation_id: str, someone_typeid: str) -> ApiResponse:
     """Stamp ``Conversation.dismissed_at = now()`` so the Recent strip hides
-    this row until a FlowMessage newer than the stamp arrives. The Inbox
-    ignores ``dismissed_at`` — Inbox dismissal is a separate concept driven
+    this row until a FlowMessage newer than the stamp arrives. The stream
+    inbox ignores ``dismissed_at`` — stream inbox dismissal is a separate concept driven
     by per-message ``is_archived``.
     """
     conversation_id = (conversation_id or "").strip()
@@ -591,10 +704,15 @@ async def conversation_dismiss() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
-async def handle_conversation_archive(conversation_id: str, someone_typeid: str) -> ApiResponse:
+async def handle_conversation_archive(
+    conversation_id: str,
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Stamp ``Conversation.archived_at = now()``.
 
-    Both Inbox and Recent strip hide the row when set; a FlowMessage newer
+    Both the stream inbox and the Recent strip hide the row when set; a FlowMessage newer
     than the stamp auto-revives it. Conversation-level archive — does NOT
     touch ``FlowMessage.is_read`` (those are per-message and remain
     independent). Idempotent: re-archiving already-archived row is a
@@ -604,12 +722,14 @@ async def handle_conversation_archive(conversation_id: str, someone_typeid: str)
     conversation_id = (conversation_id or "").strip()
     if not conversation_id:
         return ApiFailResponse(message="conversation_id required")
+    if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
+        return ApiFailResponse(message="Conversation is not in this Agent stream inbox", status_code=404)
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = datetime.now(UTC)
     await conv.save(someone_typeid)
-    inbox.touch("conversation-archive")
+    stream_inbox.touch("conversation-archive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -618,7 +738,12 @@ async def handle_conversation_archive(conversation_id: str, someone_typeid: str)
     )
 
 
-async def handle_conversation_unarchive(conversation_id: str, someone_typeid: str) -> ApiResponse:
+async def handle_conversation_unarchive(
+    conversation_id: str,
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Clear ``Conversation.archived_at`` (back to ``None``).
 
     The manual inverse of :func:`handle_conversation_archive` — the same effect
@@ -629,12 +754,14 @@ async def handle_conversation_unarchive(conversation_id: str, someone_typeid: st
     conversation_id = (conversation_id or "").strip()
     if not conversation_id:
         return ApiFailResponse(message="conversation_id required")
+    if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
+        return ApiFailResponse(message="Conversation is not in this Agent stream inbox", status_code=404)
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = None
     await conv.save(someone_typeid)
-    inbox.touch("conversation-unarchive")
+    stream_inbox.touch("conversation-unarchive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -643,7 +770,11 @@ async def handle_conversation_unarchive(conversation_id: str, someone_typeid: st
     )
 
 
-async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
+async def handle_conversation_archive_all(
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Stamp ``archived_at = now()`` on every Conversation that isn't
     already archived.
 
@@ -653,6 +784,8 @@ async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
     that were freshly archived.
     """
     convs = await Conversation.get_all({})
+    if allowed_conversation_ids is not None:
+        convs = [conv for conv in convs if conv.id in allowed_conversation_ids]
     now = datetime.now(UTC)
     archived = 0
     for conv in convs or []:
@@ -661,7 +794,7 @@ async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
         conv.archived_at = now
         await conv.save(someone_typeid)
         archived += 1
-    inbox.touch("conversation-archive-all")
+    stream_inbox.touch("conversation-archive-all")
     return ApiSuccessResponse(
         data={
             "archived": archived,
@@ -679,7 +812,14 @@ async def conversation_archive() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
-        return await handle_conversation_archive(conv_id, request_info.someone_typeid)
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_archive(
+            conv_id,
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -693,7 +833,14 @@ async def conversation_unarchive() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
-        return await handle_conversation_unarchive(conv_id, request_info.someone_typeid)
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_unarchive(
+            conv_id,
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-unarchive error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -705,7 +852,14 @@ async def conversation_archive_all() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_conversation_archive_all(request_info.someone_typeid)
+        body = await request_info.get_post_data() or {}
+        scope = await _bulk_stream_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_archive_all(
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids,
+        )
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive-all error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -849,15 +1003,8 @@ async def _find_invitation_for_conversation(conv_id: str) -> Optional["Invitatio
 
 
 def _is_hub_target_missing(e: "HubError") -> bool:
-    """True when the hub's answer means "there is nothing there for you":
-    a plain 404, or the authorizer's ``target_not_found`` error code —
-    emitted both when the entity is gone and when the caller holds no role
-    on it (masked so entity existence doesn't leak). Either way there is
-    nothing left to do remotely, so a delete may proceed locally.
-    """
-    from flow_sdk.utils.hub import HubErrorCode  # noqa: PLC0415
-
-    return e.status_code == 404 or e.code == HubErrorCode.TARGET_NOT_FOUND
+    """Nothing left to do remotely, so a delete may proceed locally."""
+    return e.is_target_missing
 
 
 async def _decline_linked_invitation(conv_id: str) -> None:
@@ -923,7 +1070,11 @@ async def _hub_leave_conversation(conv_id: str) -> None:
     )
 
 
-async def handle_conversation_delete_archived(someone_typeid: str) -> ApiResponse:
+async def handle_conversation_delete_archived(
+    someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Best-effort bulk delete: classify each archived conversation, apply
     the correct hub-side action, then hard-delete locally for items that
     succeeded hub-side — including the "hub has nothing for us" answer
@@ -937,6 +1088,8 @@ async def handle_conversation_delete_archived(someone_typeid: str) -> ApiRespons
       }
     """
     convs = await Conversation.get_all({})
+    if allowed_conversation_ids is not None:
+        convs = [conv for conv in convs if conv.id in allowed_conversation_ids]
     targets = [c for c in (convs or []) if c.archived_at is not None]
     cloud_user_id = await _current_cloud_user_id()
 
@@ -977,6 +1130,11 @@ async def handle_conversation_delete_archived(someone_typeid: str) -> ApiRespons
                     # intent is removal, so clean up the linked invitation
                     # and proceed with the local delete.
                     await _decline_linked_invitation(conv.id)
+            # The hub mutation is committed (or this is local-only). Block any
+            # already-queued inbound materializer before removing the parent.
+            from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+            hub_ws_bridge.suppress_conversation_materialization(conv.id)
             await _hard_delete_local_conversation(conv)
             deleted.append(conv.id)
         except HubError as e:
@@ -999,7 +1157,14 @@ async def conversation_delete_archived() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_conversation_delete_archived(request_info.someone_typeid)
+        body = await request_info.get_post_data() or {}
+        scope = await _bulk_stream_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_delete_archived(
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids,
+        )
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete-archived error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -1009,6 +1174,8 @@ async def handle_conversation_delete(
     conversation_id: str,
     mode: str,
     someone_typeid: str,
+    *,
+    allowed_conversation_ids: frozenset[str] | None = None,
 ) -> ApiResponse:
     """Per-row delete with explicit semantics (mode in {delete_for_all, leave, local}).
 
@@ -1025,6 +1192,8 @@ async def handle_conversation_delete(
         return ApiFailResponse(message=f"Unknown delete mode: {mode}")
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
+    if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
+        return ApiFailResponse(message="Conversation is not in this Agent stream inbox", status_code=404)
 
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
@@ -1056,6 +1225,13 @@ async def handle_conversation_delete(
                 message=f"Hub {e.status_code}: {e.reason}",
             )
 
+    # The hub mutation is committed (or this is local-only). A detached hub
+    # message materializer may still be queued, so establish the tombstone
+    # before the local cascade removes its parent. The generic graph DELETE has
+    # the same guard; the canonical conversation lifecycle must own it too.
+    from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+    hub_ws_bridge.suppress_conversation_materialization(conversation_id)
     await _hard_delete_local_conversation(conv)
     return ApiSuccessResponse(data={"id": conversation_id, "mode": mode})
 
@@ -1069,7 +1245,15 @@ async def conversation_delete() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
         mode = (body.get("mode") or "").strip()
-        return await handle_conversation_delete(conv_id, mode, request_info.someone_typeid)
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
+        return await handle_conversation_delete(
+            conv_id,
+            mode,
+            request_info.someone_typeid,
+            allowed_conversation_ids=scope.conversation_ids if scope else None,
+        )
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -1145,6 +1329,19 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
                 data={"id": fm_id, "hub_status": e.status_code},
                 message=f"Hub {e.status_code}: {e.reason}",
             )
+
+    # Detach the child edge BEFORE destroying the row. Membership is the edge
+    # now, so pruning only the jsonl pointer would leave the message in the
+    # projection — the reproject reads edges. Order matters twice over: after
+    # ``destroy()`` the child no longer resolves, so ``detach_child`` would find
+    # nothing to remove and announce nothing.
+    if conv_id:
+        try:
+            conv_for_detach = await Conversation.get_one({"id": conv_id})
+            if conv_for_detach is not None:
+                await conv_for_detach.detach_child(fm.typeid, notify=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[remove-message] child detach failed fm=%s conv=%s: %s", fm_id, conv_id, e)
 
     # Purge the local existence (DB row + relationships + on-disk record folder
     # + staging data/MessageAttachment rows, via the FlowMessage lifecycle).
@@ -1292,157 +1489,108 @@ async def conversation_create() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
-# Community / support-center actions
+# Help-desk (support) actions
 # ---------------------------------------------------------------------------
 
 
-async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
-    """Authenticated HTTP call to a hub action; returns the parsed ApiResponse
-    envelope (``{"status","message","data"}``) or ``None`` on transport failure.
+class HelpdeskTarget(NamedTuple):
+    """Which help desk a request should be routed to.
 
-    Community queue/ticket actions are request/response project actions — HTTP is
-    a better fit (and more robust) than the message-fanout WS bridge, which is
-    reserved for the add_message fast-path. Mirrors the authed-httpx pattern in
-    ``notification_action._hub_knows_conversation``."""
-    try:
-        import httpx  # noqa: PLC0415
-
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig  # noqa: PLC0415
-
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            return None
-        url = ApiConfig.from_env()._get_full_url(path)
-        headers = {
-            "Authorization": f"Bearer {creds.api_key}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        async with httpx.AsyncClient(timeout=timeout) as h:
-            r = await h.request(method, url, headers=headers, json=None if method == "GET" else (body or {}))
-            return r.json()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[community] hub %s %s failed: %s", method, path, e)
-        return None
-
-
-_COMMUNITY_PROJECT_ID_CACHE: Optional[str] = None
-
-
-async def _resolve_community_project_id() -> Optional[str]:
-    """The fixed community/support project id, learned from the hub's
-    ``/version`` (``community_project_id``). ``None`` when the hub is
-    unreachable or doesn't advertise one. See CommunityConfig and the hub's
-    ``ensure_community_project``.
-
-    Cached for the process lifetime once resolved — it's a deployment constant,
-    so re-fetching ``/version`` on every ticket open / queue poll is wasted I/O.
-    A miss is not cached, so a transient hub outage retries next call."""
-    global _COMMUNITY_PROJECT_ID_CACHE
-    if _COMMUNITY_PROJECT_ID_CACHE:
-        return _COMMUNITY_PROJECT_ID_CACHE
-    try:
-        from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
-
-        info = await get_info() or {}
-        cid = info.get("community_project_id")
-        if isinstance(cid, str) and cid.strip():
-            _COMMUNITY_PROJECT_ID_CACHE = cid
-            return cid
-        return None
-    except Exception:  # noqa: BLE001
-        return None
-
-
-@action.post(action_name="community-start-ticket", types=None)
-async def community_start_ticket() -> ApiResponse:
-    """Open a support ticket — a guest-authored ``community`` conversation under
-    the hub's fixed community project.
-
-    Routes through the hub (``Project.start_guest_conversation``), then
-    materializes the conversation + first message locally as a hub-mirrored
-    ``kind=community`` row so it appears in the guest's UI immediately (the hub
-    fanout skips the sender, so the local backend is this row's source of
-    truth). Returns the new conversation id for navigation.
+    ``project_id`` is the hub project that owns the ticket queue;
+    ``portal_git_url`` is that desk's help-content repo (may be ``None`` — a
+    desk can answer tickets without publishing a portal).
     """
+
+    project_id: str
+    portal_git_url: Optional[str] = None
+
+
+#: Instance preference holding the last default desk the hub advertised — what a desk resolves to
+#: while the hub cannot be asked (an ask for help typed offline, the guides opened offline).
+LAST_KNOWN_DESK_PREF = "helpdesk.default"
+
+
+def _last_known_desk() -> Optional[HelpdeskTarget]:
+    from flow_sdk.preferences import read_instance_pref  # noqa: PLC0415
+
+    known = read_instance_pref(LAST_KNOWN_DESK_PREF, None)
+    if isinstance(known, dict) and isinstance(known.get("project_id"), str) and known["project_id"].strip():
+        return HelpdeskTarget(known["project_id"], known.get("portal_git_url") or None)
+    return None
+
+
+async def _hub_default_helpdesk() -> Optional[HelpdeskTarget]:
+    """The deployment's default help desk, from the hub's ``/version`` — or, when the hub cannot be
+    reached, the last one it advertised here.
+
+    ``None`` when the hub says it has none, or it was never reached from this instance. This is the
+    terminal fallback for :func:`resolve_helpdesk` — the end of every support chain. See the hub's
+    ``ensure_helpdesk_project``.
+    """
+    from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
+    from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
+
     try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-        someone_typeid = request_info.someone_typeid
-
-        body = await request_info.get_post_data() or {}
-        text = (body.get("text") or body.get("message") or "").strip()
-        if not text:
-            return ApiFailResponse(message="text is required")
-
-        community_id = await _resolve_community_project_id()
-        if not community_id:
-            return ApiFailResponse(message="Community support is unavailable on this hub")
-
-        resp = await _hub_action("POST", f"/graph/project/{community_id}/start_guest_conversation", {"text": text})
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            # 502, not the default 500: the failure is the UPSTREAM hub rejecting
-            # or not resolving the community project (e.g. an unseeded community
-            # hub returns 401 "Entity project-<id> not found") — our backend is
-            # healthy, so a 500 Internal Server Error misattributes it to us.
-            return ApiFailResponse(message=f"Could not open support ticket: {msg}", status_code=502)
-        conv_data = resp.get("data") or {}
-        conv_id = conv_data.get("id")
-        if not conv_id:
-            return ApiFailResponse(message="Hub did not return a conversation")
-
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
-
-        hub_ws_bridge.remember_hub_conversation(conv_id)
-
-        from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
-        from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
-
-        title = text if len(text) <= 60 else f"{text[:60].rstrip()}…"
-        # Hub-owned conversation: no local project_id (mirrors how received
-        # remote conversations materialize); carry the community project as the
-        # remote project identity for traceability.
-        await ensure_conversation_entity(
-            conv_id,
-            parent_typeid=None,
-            remote_project_id=community_id,
-            title=title,
-            someone_typeid=someone_typeid,
+        info = await get_info()
+    except Exception:  # noqa: BLE001
+        info = None
+    if info is None:
+        return _last_known_desk()
+    pid = info.get("helpdesk_project_id")
+    if not (isinstance(pid, str) and pid.strip()):
+        return None
+    portal = info.get("helpdesk_portal_git_url")
+    target = HelpdeskTarget(pid, portal if isinstance(portal, str) and portal.strip() else None)
+    if target != _last_known_desk():
+        write_instance_pref(
+            LAST_KNOWN_DESK_PREF, {"project_id": target.project_id, "portal_git_url": target.portal_git_url}
         )
+    return target
 
-        # Pull the first (guest) message from the hub into the local store. Do
-        # this BEFORE stamping kind/remote — the message sync re-materializes the
-        # conversation from the hub and would otherwise clobber kind back to the
-        # default. Our stamp must be the LAST write.
-        try:
-            await _fetch_conversation_messages(conv_id, someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[community-start-ticket] message sync failed (non-fatal): %s", e)
 
-        conv = await Conversation.get_one({"id": conv_id})
-        if conv:
-            conv.kind = ConversationKind.COMMUNITY
-            conv.remote = True
-            # Carry the hub owner VERBATIM when present; never mask a genuinely
-            # null hub owner with a stale local value. Reflection keeps the
-            # save from re-stamping updated_by with the local user.
-            if conv_data.get("initiated_by") is not None:
-                conv.created_by = conv_data["initiated_by"]
-            with remote_reflection():
-                await conv.save(someone_typeid, notify=False)
+async def resolve_desk_here(project_id: Optional[str] = None) -> Optional[HelpdeskTarget]:
+    """The nearest desk WITHOUT asking the network: the project's own or adopted desk, else the last
+    one the hub advertised. For capturing a request — which must never wait on the hub."""
+    if project_id:
+        adopted = await resolve_adopted_helpdesk(project_id)
+        if adopted is not None:
+            return HelpdeskTarget(adopted.queue_project_id)
+    return _last_known_desk()
 
-        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": community_id})
-    except Exception as e:
-        logger.error("[flow_message_action] community-start-ticket error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
+
+async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[HelpdeskTarget]:
+    """Which help desk serves ``project_id`` (or the app at large when None).
+
+    Resolution order — nearest desk wins, so support chains terminate:
+
+    1. the Helpdesk manifest indexed from the Project root or one of its direct
+       context folders
+    2. the hub's default desk (``/version``)
+
+    Deliberately NOT memoized. The pre-rename implementation cached one id for
+    the process lifetime on the premise that the desk was a deployment
+    constant. Once resolution depends on the calling project that premise is
+    false, and a process-global memo would serve one project's desk to another.
+    ``get_info`` is a single cheap GET on a cold path (ticket open / queue
+    poll), so re-resolving is the correct trade.
+    """
+    if project_id:
+        adopted = await resolve_adopted_helpdesk(project_id)
+        if adopted is not None:
+            return HelpdeskTarget(adopted.queue_project_id)
+    return await _hub_default_helpdesk()
+
+
+def _ticket_title(text: str) -> str:
+    """A ticket's title for a hub that does not title it: the first line, cut to 60 and "…"
+    — the hub's own rule (``Project.start_guest_conversation``)."""
+    line = next((part.strip() for part in text.splitlines() if part.strip()), text)
+    return line if len(line) <= 60 else f"{line[:60].rstrip()}…"
 
 
 @action.post(action_name="conversation-pickup", types=None)
 async def conversation_pickup() -> ApiResponse:
-    """Staff-side: pick up (join) a community ticket so the caller starts
+    """Staff-side: pick up (join) a helpdesk ticket so the caller starts
     receiving its messages and can reply. Proxies to the hub ``pickup`` action,
     then syncs the conversation's messages locally. Hub gates on project
     membership."""
@@ -1457,14 +1605,31 @@ async def conversation_pickup() -> ApiResponse:
         if not conv_id:
             return ApiFailResponse(message="conversation_id is required")
 
-        resp = await _hub_action("POST", f"/graph/conversation/{conv_id}/pickup", {})
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            return ApiFailResponse(message=f"Could not pick up conversation: {msg}")
+        try:
+            await hub_request("POST", BuiltinEntityType.CONVERSATION, conv_id, "pickup", payload={})
+        except HubError as e:
+            return e.fail_response("Could not pick up conversation")
 
         from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
 
         hub_ws_bridge.remember_hub_conversation(conv_id)
+
+        # Take the hub's metadata before syncing messages. Pickup used to
+        # create the local row as a side effect of the message sync
+        # (``ensure_conversation_entity``), which knows nothing about the hub
+        # conversation and therefore left ``kind`` at its default — so a
+        # support ticket materialized on the STAFF side as an ordinary
+        # ``direct`` chat and the desk's queue view could not recognise it.
+        # Pickup is a hub-authoritative materialization; it takes the same
+        # metadata seam every other sync path uses (mirrors invitation-accept:
+        # join → fetch → upsert).
+        try:
+            data = await hub_request("GET", BuiltinEntityType.CONVERSATION, conv_id)
+            if isinstance(data, dict) and data.get("id"):
+                await _upsert_hub_conversation_metadata(data, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conversation-pickup] metadata sync failed (non-fatal): %s", e)
+
         try:
             await _fetch_conversation_messages(conv_id, someone_typeid)
         except Exception as e:  # noqa: BLE001
@@ -1475,50 +1640,116 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
-@action.post(action_name="community-tickets-list", types=None)
-async def community_tickets_list() -> ApiResponse:
-    """Staff triage queue: list the community project's tickets (members-only on
+@action.post(action_name="conversation-settle", types=None)
+async def conversation_settle() -> ApiResponse:
+    """Close or reopen a helpdesk ticket. Proxies to the hub's ``close`` /
+    ``reopen`` actions and mirrors the settled row locally.
+
+    Authorization is the hub's (see ``Conversation._set_settlement``); this adds
+    none of its own. The local mirror matters as much as the hub write — the
+    requester's portal reads the LOCAL row, so an unmirrored close still
+    presents as open on the surface it was clicked from.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        someone_typeid = request_info.someone_typeid
+
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id is required")
+        # The verb is the hub action name; anything else is a typo, not a state.
+        verb = (body.get("verb") or "close").strip().lower()
+        if verb not in ("close", "reopen"):
+            return ApiFailResponse(message="verb must be 'close' or 'reopen'")
+
+        try:
+            settled_data = await hub_request("POST", BuiltinEntityType.CONVERSATION, conv_id, verb, payload={})
+        except HubError as e:
+            return e.fail_response(f"Could not {verb} ticket")
+
+        # The write response IS the settled conversation (the hub action returns
+        # `data=self`), so there is nothing to re-read — and mirroring what the
+        # hub actually stored beats mapping the verb back to a status ourselves,
+        # which would be a second copy of the hub's own rule.
+        data = settled_data
+        status = None
+        if isinstance(data, dict) and data.get("id"):
+            status = data.get("status")
+            try:
+                await _upsert_hub_conversation_metadata(data, someone_typeid)
+            except Exception as e:  # noqa: BLE001 -- the hub is authoritative; a
+                # local mirror miss is a stale row, not a failed close.
+                logger.warning("[conversation-settle] local mirror failed (non-fatal): %s", e)
+
+        return ApiSuccessResponse(data={"conversation_id": conv_id, "status": status})
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-settle error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to settle ticket: {str(e)}")
+
+
+@action.post(action_name="helpdesk-tickets-list", types=None)
+async def helpdesk_tickets_list() -> ApiResponse:
+    """Staff triage queue: list the helpdesk project's tickets (members-only on
     the hub). Returns the lightweight rows verbatim so the UI can render an
     "unpicked" queue — unpicked tickets don't fan out to non-participants, so
     this is the only way staff discover them. Picking one up materializes it
-    locally (see ``conversation-pickup``)."""
+    locally (see ``conversation-pickup``).
+
+    Two callers with opposite questions share this action:
+
+    * a REQUESTER asks "which desk serves me?" — pass ``project_id`` (the
+      project they are working in) and the desk is resolved from it.
+    * STAFF ask "what is queued on MY desk?" — pass ``desk_project_id``, the
+      hub project that owns the queue, and it is used verbatim.
+
+    Staff need the second form because resolution only ever answers the first
+    question: a desk owner's own project has no desk of its own, so resolving
+    from it walks past their queue to whatever desk serves *them* (the hub's
+    default), and they get "no valid access for role ['guest']" against a desk
+    that isn't theirs. Their own tickets were unreachable from the app.
+    """
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
 
-        community_id = await _resolve_community_project_id()
-        if not community_id:
-            return ApiFailResponse(message="Community support is unavailable on this hub")
+        body = await request_info.get_post_data() or {}
+        # Explicit desk wins: the staff surface already knows which desk it is
+        # rendering, and asking it to be re-derived is what broke the case.
+        desk_project_id = (body.get("desk_project_id") or "").strip()
+        if desk_project_id:
+            helpdesk_id = desk_project_id
+        else:
+            project_id = (body.get("project_id") or "").strip()
+            target = await resolve_helpdesk(project_id or None)
+            if not target:
+                return ApiFailResponse(message="Help desk is unavailable on this hub")
+            helpdesk_id = target.project_id
 
-        resp = await _hub_action("GET", f"/graph/project/{community_id}/community_conversations")
-        # Propagate a hub authorization/transport failure instead of synthesizing
-        # an empty success. A non-staff caller gets a FAIL envelope here ("no
-        # valid access for role ['guest']"); collapsing that to {tickets: []}
-        # makes "unauthorized" indistinguishable from "empty queue" — it hid a
-        # real staff-UI robustness gap and defeated the community_two_client
-        # skip-guard (its try/catch never fired on a non-staff hub).
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            # 502: upstream hub rejected/could not resolve the community queue
-            # (non-staff caller → "no valid access"), not an internal error here.
-            return ApiFailResponse(message=f"Could not list community tickets: {msg}", status_code=502)
-        rows = resp.get("data") or []
+        # A hub refusal stays a refusal, never an empty queue: a non-staff caller is told
+        # "no valid access", which is what lets the staff UI tell the two apart.
+        try:
+            rows = await hub_request("GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations")
+        except HubError as e:
+            return e.fail_response("Could not list help desk tickets")
         if not isinstance(rows, list):
             rows = []
-        return ApiSuccessResponse(data={"tickets": rows, "project_id": community_id})
+        return ApiSuccessResponse(data={"tickets": rows, "project_id": helpdesk_id})
     except Exception as e:
-        logger.error("[flow_message_action] community-tickets-list error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to list community tickets: {str(e)}")
+        logger.error("[flow_message_action] helpdesk-tickets-list error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to list help desk tickets: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
-# Inbox actions
+# Stream inbox actions
 # ---------------------------------------------------------------------------
 
 
 def _last_fetch_path() -> Path:
-    return get_instance_settings().inbox_last_fetch_path
+    return get_instance_settings().stream_inbox_last_fetch_path
 
 
 def _load_last_fetch() -> Optional[str]:
@@ -1536,6 +1767,16 @@ def _save_last_fetch(ts: str) -> None:
     _last_fetch_path().write_text(_json.dumps({"last_fetch": ts}))
 
 
+def _bundle_download_lock(fm_id: str) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    key = (loop, fm_id)
+    lock = _BUNDLE_DOWNLOAD_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _BUNDLE_DOWNLOAD_LOCKS[key] = lock
+    return lock
+
+
 async def _download_and_unpack_bundle(
     fm_id: str,
     attachment_filename: str,
@@ -1544,6 +1785,7 @@ async def _download_and_unpack_bundle(
     overwrite: bool = False,
     raise_on_conflict: bool = False,
     on_progress=None,
+    hub_updated: str | None = None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
@@ -1553,7 +1795,7 @@ async def _download_and_unpack_bundle(
     SINGLE backend gate: when it's anything other than READY there is no bundle
     on the hub to pull (``na`` = none was ever uploaded, ``uploading`` = not yet
     landed), so we skip the GET entirely rather than 404. Every implicit caller
-    (open / inbox-open / conversation-sync / invitation-accept / catch-up / the
+    (open / stream-inbox-open / conversation-sync / invitation-accept / catch-up / the
     eager-pull bridge) forwards what it already read from the hub payload; the
     explicit ``download_body`` path forwards its own READY status. ``None`` means
     "caller did not supply a status" and proceeds unchanged (back-compat).
@@ -1565,20 +1807,80 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
+    if body_status is not None and _body_status_value(body_status) != BodyStatus.READY.value:
+        logger.debug(
+            "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
+            fm_id,
+            _body_status_value(body_status),
+        )
+        return False
+    async with _bundle_download_lock(fm_id):
+        # Already fully staged: a second pull of the SAME bundle cannot add
+        # anything, and re-unpacking replaces the staging tree wholesale
+        # (``materialize_asset_sync`` swaps ``unpacked/`` in one move). A
+        # serialization landing inside that swap sees the tree as unpacked but
+        # its entries as gone, and publishes "downloaded, but arrived short" —
+        # a false warning with nothing to retract it, which ALSO filters the
+        # attachment chip out of the bubble and so hides the review dialog that
+        # owns "Select project". The redundant pull is not merely wasted bytes;
+        # it is what opens that window. This matters in practice because the
+        # auto-pull on conversation-open and the user's own Download click
+        # routinely land within the same second.
+        staged = await FlowMessage.get_one({"id": fm_id})
+        if staged is not None and staged.is_body_complete():
+            logger.debug("[bundle] skip download fm=%s — already staged in full", fm_id)
+            await _notify_settled(fm_id)
+            return True
+        try:
+            return await _download_and_unpack_bundle_locked(
+                fm_id,
+                attachment_filename,
+                body_status=body_status,
+                overwrite=overwrite,
+                raise_on_conflict=raise_on_conflict,
+                on_progress=on_progress,
+                hub_updated=hub_updated,
+            )
+        finally:
+            # The LAST word the client hears is always the settled state.
+            # ``body_downloaded`` / ``body_missing_attachments`` are derived
+            # from disk at serialize time, so an UPDATE that raced this unpack
+            # can strand the UI on a half-state that only a manual page reload
+            # cleared. Notifying on EVERY exit — success, skip, conflict,
+            # crash — and from inside the lock (no concurrent swap can be in
+            # flight) makes the client converge on its own.
+            await _notify_settled(fm_id)
+
+
+async def _notify_settled(fm_id: str) -> None:
+    """Fan a fresh UPDATE carrying the message's settled local body state.
+
+    Never raises: this is a convergence courtesy on top of whatever the caller
+    is already reporting, and must not turn a completed unpack into a failure.
+    """
+    try:
+        fm = await FlowMessage.get_one({"id": fm_id})
+        if fm is not None:
+            await fm.notify_updated()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[bundle] settled notify failed fm=%s: %s", fm_id, e)
+
+
+async def _download_and_unpack_bundle_locked(
+    fm_id: str,
+    attachment_filename: str,
+    *,
+    body_status: "str | BodyStatus | None" = None,
+    overwrite: bool = False,
+    raise_on_conflict: bool = False,
+    on_progress=None,
+    hub_updated: str | None = None,
+) -> bool:
     from flow_sdk.builtin.flow_message_bundle import (
         FlowMessageExistsError,
         unpack_bundle,
     )
 
-    if body_status is not None:
-        bs = body_status.value if isinstance(body_status, BodyStatus) else body_status
-        if bs != BodyStatus.READY.value:
-            logger.debug(
-                "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
-                fm_id,
-                bs,
-            )
-            return False
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE,
         fm_id,
@@ -1596,13 +1898,11 @@ async def _download_and_unpack_bundle(
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
-        await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite)
-        # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
-        # is computed lazily by the model serializer from disk state, so the
-        # cached browser entity still reads ``local_path=null`` from the
-        # earlier WS create. Fan a fresh UPDATE so subscribers re-render with
-        # the populated path — without this, image attachments stay as a
-        # generic file chip until a manual refresh re-fetches the FM.
+        await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite, hub_updated=hub_updated)
+        # Bundle bytes are on disk now. Stamp the hub-authoritative body_status
+        # so the row stops advertising the sender's pack-time value. The UPDATE
+        # that tells subscribers about it is the caller's unconditional
+        # ``_notify_settled`` — which is why this saves with ``notify=False``.
         try:
             refreshed = await FlowMessage.get_one({"id": fm_id})
             if refreshed:
@@ -1612,23 +1912,16 @@ async def _download_and_unpack_bundle(
                 # .flowmsg BEFORE flipping READY (and ``merge_hub_payload`` treats
                 # body_status as local-only state, so the hub's READY never lands
                 # via the metadata sync). We only reach this success path when the
-                # hub advertised body_status=READY (the gate above) and the body is
-                # now on disk — so the row IS downloadable. Stamp READY so the
+                # hub advertised body_status=READY (the caller's gate) and the body
+                # is now on disk — so the row IS downloadable. Stamp READY so the
                 # receiver reflects that instead of the stale pack-time UPLOADING.
-                target_bs = (
-                    body_status.value if isinstance(body_status, BodyStatus) else body_status
-                ) or BodyStatus.READY.value
-                current_bs = (
-                    refreshed.body_status.value
-                    if isinstance(refreshed.body_status, BodyStatus)
-                    else refreshed.body_status
-                )
+                target_bs = _body_status_value(body_status) or BodyStatus.READY.value
+                current_bs = _body_status_value(refreshed.body_status)
                 if current_bs != target_bs:
                     refreshed.body_status = BodyStatus(target_bs)
                     await refreshed.save(notify=False)
-                await refreshed.notify_updated()
         except Exception as nerr:
-            logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)
+            logger.warning("[bundle] post-unpack body_status stamp failed fm=%s: %s", fm_id, nerr)
         return True
     except FlowMessageExistsError:
         # A GENUINE collision: a different asset already occupies the receiver's
@@ -1663,43 +1956,6 @@ async def _download_and_unpack_bundle(
         tmp_path.unlink(missing_ok=True)
 
 
-async def handle_inbox_list() -> ApiResponse:
-    """Return non-archived received FlowMessages whose Conversation exists locally, newest first.
-
-    FMs whose ``conversation_id`` does not resolve to a locally-known Conversation
-    are filtered out so the sidebar badge stays aligned with what InboxView can
-    actually render (which iterates Conversation entities). Without this gate the
-    badge counted orphan FMs the user had no way to open or dismiss.
-    """
-    from flow_sdk.db.drivers.query import QueryFilter
-
-    # Self-sent exclusion must check BOTH the cloud and local user ids —
-    # sends stamp the cloud id when logged in, the local id otherwise.
-    # Comparing against the local id alone let cloud-stamped self-sends
-    # through, inflating the sidebar badge on every message the user sent.
-    self_ids = await User.self_ids()
-    flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
-    all_messages = await FlowMessage.get_all(flt)
-    conv_flt = QueryFilter(type=BuiltinEntityType.CONVERSATION.value)
-    known_conv_ids = {c.id for c in await Conversation.get_all(conv_flt)}
-    messages = [
-        m
-        for m in all_messages
-        if not m.is_archived and m.sender_id not in self_ids and m.conversation_id in known_conv_ids
-    ]
-    messages.sort(key=lambda m: m.created_date or "", reverse=True)
-    return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
-
-
-@action.get(action_name="inbox-list", types=None)
-async def inbox_list() -> ApiResponse:
-    try:
-        return await handle_inbox_list()
-    except Exception as e:
-        logger.error("[flow_message_action] inbox-list error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to list inbox: {str(e)}")
-
-
 async def _fetch_raw_messages_from_hub(since: str | None) -> list[dict] | None:
     """Call hub for FlowMessages newer than `since`.
 
@@ -1727,6 +1983,8 @@ async def _process_single_hub_message(raw: dict) -> str | None:
          locally-sent messages never produce a bundle) and every pure-text
          reply from a peer.
     """
+    from flow_sdk.app.actions.materialize_flow_message import mirror_referenced_projects  # noqa: PLC0415
+
     fm_id = (raw.get("id") or "").strip()
     if not fm_id:
         return None
@@ -1748,23 +2006,58 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 fm_id,
                 attachment_filename,
                 body_status=raw.get("body_status"),
+                # The hub's own ``updated_date`` — the delivery clock the stream inbox
+                # sorts on. Handing it to the unpack means a legacy bundle's row
+                # is born with the right recency instead of being stamped with
+                # the send-time and corrected a beat later, which is what made
+                # conversations dive ~10 positions and snap back.
+                hub_updated=raw.get("updated_date"),
             )
-            if success and existing is None:
-                # unpack materialized the FM row itself (body + the real entity
-                # data carried in the bundle) — nothing left to persist.
-                return fm_id
+            if success:
+                # Unpack owns the durable row and may have changed local-only
+                # fields (notably stamping body_status=READY). Refresh before
+                # the metadata merge below: reusing the pre-download object
+                # would preserve its stale HUB_WRITE values and overwrite the
+                # freshly unpacked state.
+                existing = await FlowMessage.get_one({"id": fm_id})
+                if existing is None:
+                    # A no-row success means unpack materialized the message;
+                    # there is no separate header write left to perform.
+                    return fm_id
+                await mirror_referenced_projects(existing, None)
             # Download failed (body still uploading, a transient hub error, or —
             # the receiver pre-accept case — the recipient can't pull the bundle
             # body yet). Do NOT return empty: fall through to materialize the FM
             # HEADER from the hub payload (metadata only, no body), exactly like
             # the bundle-less/text branch below. Without this an artifact- or
             # git-share message's latest FlowMessage never resolves locally
-            # pre-body, so the inbox's latest-pointer gate hides the whole
+            # pre-body, so the stream inbox's latest-pointer gate hides the whole
             # invitation row and previews/ordering break — while a plain text
             # message (no attachment_filename) materialized its header fine. The
             # body stays un-downloaded (is_body_downloaded()=False), so the next
             # sync pass re-attempts the bundle through this same branch: the
             # download gate above is keyed on body-presence, not row existence.
+        hub_body_status = _body_status_value(raw.get("body_status"))
+        if existing is not None and hub_body_status == BodyStatus.READY.value:
+            local_body_status = _body_status_value(existing.body_status)
+            if existing.is_body_downloaded() and local_body_status != BodyStatus.READY.value:
+                # READY is monotonic once the receiver has the body. This also
+                # heals rows left at pack-time UPLOADING after a missed bridge
+                # UPDATE; never apply the inverse downgrade from stale hub data.
+                existing.body_status = BodyStatus.READY
+                if not FlowMessage.is_stale(existing, raw):
+                    await existing.save(notify=False)
+                    await existing.notify_updated()
+                    return fm_id
+    # Birth-time repair, AHEAD of the staleness gate — the same rule Conversation
+    # applies (``_upsert_hub_conversation_metadata``). A message re-materialized
+    # from a bundle that carried no send-time is stamped ``now()``, which makes it
+    # look NEWER than the hub, so ``is_stale`` is False and the gate below returns
+    # before any merge could fix it: the wrong value defends itself. Adopting here
+    # is idempotent, so converged rows write nothing.
+    if adopt_hub_created_date(existing, raw):
+        with remote_reflection():
+            await existing.save(notify=False)
     if existing is not None and not FlowMessage.is_stale(existing, raw):
         # Metadata current (body handled above).
         return fm_id
@@ -1785,13 +2078,62 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             payload["remote"] = True
         else:
             payload = {**raw, "remote": True}
+        # Local parentage. The hub has no ``parent_type_id`` on FlowMessage (only
+        # its Comment declares one), so a hub payload never carries it and
+        # ``merge_hub_payload`` — which restores only PRIVATE / HUB_WRITE fields —
+        # would drop ours on every LWW refresh. Rather than reclassify the field
+        # globally (it is SHARED, and the hub-child path deliberately lets a
+        # payload's own value win), write it unconditionally: it is DERIVED from
+        # the conversation we are syncing, so re-deriving it each pass is both
+        # cheap and self-healing.
+        _conv_id = (raw.get("conversation_id") or "").strip()
+        if _conv_id:
+            payload["parent_type_id"] = f"{Conversation.get_type()}-{_conv_id}"
         fm = FlowMessage.model_validate(payload)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
         return None
+    await mirror_referenced_projects(fm, None)
     conv_id = (raw.get("conversation_id") or "").strip()
     if conv_id:
+        # Set before the edge block so the announcement below is well-defined
+        # even if that block raises (it is caught and logged, not fatal).
+        conv_for_edge = None
+        announce_child = False
+        try:
+            # The message IS a child of the conversation — make that a real local
+            # edge, the way the hub already models it (``Conversation.add_child``
+            # in ``add_message``).
+            #
+            # notify=True, and this is THE announcement for a synced message.
+            # It cannot be deferred to the reconcile's projection write: that
+            # writer only announces when it detects a change, and this loop has
+            # already made the change — the exact swallow that let a message land
+            # in SQLite with the open conversation never told. Riding the edge
+            # instead of the projection is the whole point of modelling messages
+            # as children.
+            #
+            # Volume is bounded by the new-edge guard: only a genuinely new edge
+            # emits, so the every-sync re-convergence passes are silent and a
+            # backlog of N new messages costs N frames — the same order as the N
+            # flow_message CREATEs that already fire alongside them.
+            conv_for_edge = await Conversation.get_one({"id": conv_id})
+            if conv_for_edge is not None:
+                # Attach SILENTLY here and announce after the projection below.
+                # Announcing at attach time is a race the client always loses:
+                # its handler re-reads the conversation the moment the frame
+                # lands, but ``message_ids``/``message_count`` are still the
+                # pre-arrival values until the projection write further down —
+                # so the refetch returns a row without this message, and the
+                # projection write is silent, so nobody ever corrects it. That
+                # is the "message synced but the open view never updated"
+                # report, reproduced live: the client's refetch fired in the
+                # same second as the announcement and came back stale.
+                announce_child = not await conv_for_edge._has_child_edge(fm)
+                await conv_for_edge.attach_child(fm, notify=False)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[fm-process] child edge conv=%s fm=%s failed: %s", conv_id[:8], fm_id[:8], e)
         try:
             # Canonical write path for the message_ids / message_count
             # projection — same pattern materialize_flow_message uses on
@@ -1811,7 +2153,19 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 ts = raw.get("created_date") or ""
                 append_message_pointer(rec, fm_id, ts)
                 await rec.sync_to_db(notify=False)
+                # notify=False — and it stays correct, unlike before. The
+                # announcement now rides the CHILD EDGE, not this projection
+                # write, so suppressing it here no longer loses the event. The
+                # reconcile announces the conversation once at the end of the
+                # batch.
                 await project_pointers_to_entity(rec, notify=False)
+                # NOW the parent is worth re-reading: the projection carries
+                # this message. Announcing here rather than at attach time is
+                # what makes the client's refetch return the new message.
+                if announce_child and conv_for_edge is not None:
+                    from flow_sdk.api.api_types.messages import OperationType  # noqa: PLC0415
+
+                    await conv_for_edge.emit_child_op(fm, OperationType.CHILD_CREATED)
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[fm-process] pointer-append for conv=%s fm=%s failed: %s",
@@ -1822,7 +2176,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     return fm_id
 
 
-async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
+async def handle_stream_inbox_fetch(someone_typeid: str) -> ApiResponse:
     """**Deprecated** — prefer ``conversation-list``.
 
     Still wired up for the in-process ``notification_scanner`` background
@@ -1845,17 +2199,18 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
             if processed_id:
                 created_ids.append(processed_id)
         except Exception as e:
-            logger.warning("[inbox-fetch] failed to process fm=%s: %s", (raw.get("id") or "?"), e)
+            logger.warning("[stream-inbox-fetch] failed to process fm=%s: %s", (raw.get("id") or "?"), e)
 
     _save_last_fetch(fetch_started)
     return ApiSuccessResponse(data={"created": len(created_ids), "ids": created_ids})
 
 
-async def handle_inbox_open(fm_id: str) -> ApiResponse:
+async def handle_stream_inbox_open(fm_id: str) -> ApiResponse:
     """Materialise the task for a FlowMessage and return {task_id, conversation_id}."""
 
-    # Prefer local FM (reply messages are local-only); hub is fallback for inbox messages.
+    # Prefer local FM (reply messages are local-only); hub is fallback for stream inbox messages.
     local_fm = await FlowMessage.get_one({"id": fm_id})
+    hub_updated = None
     if local_fm:
         attachment_filename = (local_fm.attachment_filename or "").strip()
         body_status = local_fm.body_status
@@ -1864,6 +2219,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
         hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
         body_status = (hub_data or {}).get("body_status")
+        hub_updated = (hub_data or {}).get("updated_date")
         # Tolerate both new and legacy hub field names during transition.
         raw_context = (hub_data or {}).get("shared_context_entities") or (hub_data or {}).get("context_entities") or []
 
@@ -1882,38 +2238,38 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     needs_task_bundle = bool(task_id) and not await Task.get_one({"id": task_id})
     needs_fm_bundle = local_fm is None
     if attachment_filename and (needs_task_bundle or needs_fm_bundle):
-        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
+        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status, hub_updated=hub_updated)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
 
 
-@action.get(action_name="inbox-open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def inbox_open() -> ApiResponse:
+@action.get(action_name="stream-inbox-open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def stream_inbox_open() -> ApiResponse:
     """Materialize the task referenced by a FlowMessage (downloads bundle if needed)."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
             return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_inbox_open(str(request_info.target_entity_typeid.id))
+        return await handle_stream_inbox_open(str(request_info.target_entity_typeid.id))
     except Exception as e:
-        logger.error("[flow_message_action] inbox-open error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-open error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Open failed: {str(e)}")
 
 
-@action.post(action_name="inbox-fetch", types=None)
-async def inbox_fetch() -> ApiResponse:
+@action.post(action_name="stream-inbox-fetch", types=None)
+async def stream_inbox_fetch() -> ApiResponse:
     """Fetch new FlowMessages from hub since last check."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_inbox_fetch(request_info.someone_typeid)
+        return await handle_stream_inbox_fetch(request_info.someone_typeid)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-fetch error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-fetch error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Fetch failed: {str(e)}")
 
 
-async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> ApiResponse:
+async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> ApiResponse:
     """Apply is_read / is_archived patch to a single FlowMessage."""
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
@@ -1923,12 +2279,144 @@ async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> A
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
-    inbox.touch("inbox-update")
+    stream_inbox.touch("stream-inbox-update")
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
-@action.post(action_name="inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def inbox_update() -> ApiResponse:
+@action.post(action_name="stream-inbox-search", types=None)
+async def stream_inbox_search() -> ApiResponse:
+    """Full-stream-inbox body search → conversation ids. Body: ``{"q": "<substring>"}``.
+
+    Two lanes because bodies live in two places under the reference model:
+    a channel message's text is on its SourceItem (the FlowMessage row is a
+    blank reference), a hub-native message's is on the row. Reference rows
+    can't false-match the second query — their stored ``text`` is ``""``.
+    Substring (`$LIKE`) on both lanes, matching the search this replaces.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data() or {}
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
+        needle = str(body.get("q") or "").strip()
+        if not needle:
+            return ApiSuccessResponse(data={"conversation_ids": []})
+        like = f"%{needle}%"
+
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # The two lanes are independent — run them together.
+        items, native = await asyncio.gather(
+            SourceItem.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.OR,
+                        operands=[
+                            ExpressionNode(op=QueryOp.LIKE, operands=["body", like]),
+                            ExpressionNode(op=QueryOp.LIKE, operands=["name", like]),
+                        ],
+                    )
+                )
+            ),
+            FlowMessage.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
+                hydrate=False,
+            ),
+        )
+        conversation_ids: set[str] = {str(m.conversation_id) for m in native if m.conversation_id}
+        if items:
+            refs = await FlowMessage.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.IN,
+                        operands=["source_item_id", [str(i.id) for i in items]],
+                    )
+                ),
+                hydrate=False,
+            )
+            conversation_ids |= {str(m.conversation_id) for m in refs if m.conversation_id}
+        if scope is not None:
+            conversation_ids &= scope.conversation_ids
+        return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
+    except Exception as e:
+        logger.error("[flow_message_action] stream-inbox-search error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Search failed: {str(e)}")
+
+
+async def load_older(*, before: datetime, page_size: int, agent_id: Optional[str] = None, source_id: Optional[str] = None) -> dict:
+    """Ask a stream inbox's sources for their page of messages older than ``before`` — the step a paged
+    list takes past its oldest held row. ``source_id`` asks that one source; ``agent_id`` the Agent's
+    (its resolved scope); else the local user's. Only a source that reads backwards is asked.
+    ``exhausted``: no source has anything older to give."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.ingest.sync import read_older  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import default_owner, owner_of  # noqa: PLC0415
+
+    if source_id:
+        rows = [row for row in [await DataSource.get_by_id(source_id)] if row is not None]
+    elif scope := await _optional_agent_stream_inbox_scope(agent_id):
+        rows = [row for sid in sorted(scope.source_ids) if (row := await DataSource.get_by_id(sid)) is not None]
+    else:
+        mine = str(await default_owner() or "")
+        rows = [
+            row for row in await DataSource.get_all({"status": SourceStatus.ACTIVE.value}) or []
+            if str(await owner_of(row) or "") == mine
+        ]
+    backward = {}
+    for provider in {row.provider for row in rows}:
+        driver = await DataDriver.find(provider)
+        backward[provider] = driver is not None and driver.cls.pages_backward
+    sources = [row for row in rows if backward[row.provider]]
+    answers = await asyncio.gather(*(read_older(row, before, page_size) for row in sources), return_exceptions=True)
+    fetched, exhausted = 0, True
+    for row, answer in zip(sources, answers):
+        if isinstance(answer, BaseException):
+            # A source that failed may still hold older messages: never report the list as exhausted for it.
+            logger.warning("[stream-inbox] load-older %s failed: %s", row.id, answer)
+            exhausted = False
+            continue
+        fetched += answer[0]
+        exhausted = exhausted and answer[1]
+    if fetched:
+        stream_inbox.touch("stream-inbox-load-older")
+    return {"fetched": fetched, "exhausted": exhausted}
+
+
+@action.post(action_name="stream-inbox-load-older", types=None)
+async def stream_inbox_load_older() -> ApiResponse:
+    """One page older than ``before`` from the stream inbox's sources. Body: ``{"before": "<iso>",
+    "agent_id"?: "<id>", "source_id"?: "<id>", "page_size"?: n}`` → ``{"fetched": n, "exhausted": bool}``."""
+    from flow_sdk.sources.values.page import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE  # noqa: PLC0415
+
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data() or {}
+        before = iso_to_utc(body.get("before")) if body.get("before") else None
+        if before is None:
+            return ApiFailResponse(message="'before' (an ISO time) is required", status_code=400)
+        page_size = min(max(int(body.get("page_size") or DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE)
+        return ApiSuccessResponse(data=await load_older(
+            before=before, page_size=page_size, agent_id=body.get("agent_id") or None,
+            source_id=body.get("source_id") or None,
+        ))
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
+    except Exception as e:
+        logger.error("[flow_message_action] stream-inbox-load-older error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Load older failed: {str(e)}")
+
+
+@action.post(action_name="stream-inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def stream_inbox_update() -> ApiResponse:
     """Update is_read / is_archived on a single FlowMessage."""
     try:
         request_info = get_current_request_info()
@@ -1938,9 +2426,14 @@ async def inbox_update() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         fm_id = str(request_info.target_entity_typeid.id)
         patch = await request_info.get_post_data() or {}
-        return await handle_inbox_update(fm_id, patch, request_info.someone_typeid)
+        scope = await _optional_agent_stream_inbox_scope(patch.pop("agent_id", None))
+        if scope is not None:
+            scope.require_message(fm_id)
+        return await handle_stream_inbox_update(fm_id, patch, request_info.someone_typeid)
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-update error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Update failed: {str(e)}")
 
 
@@ -2000,6 +2493,7 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         _notify_ui_conversation_updated,
         _send_conversation_message_header,
     )
+    from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import is_logged_in
 
     fm = await FlowMessage.get_one({"id": fm_id})
@@ -2015,23 +2509,36 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
 
     fm.is_draft = False
+    # Sent from here: the outbox's "mine" from now on.
+    fm.outbound = True
 
     # For remote conversations, attempt the hub send BEFORE committing any
-    # local state. ``_send_conversation_message_header`` returns False on
-    # any failure; in that case we abort cleanly — the FM row stays as a
+    # local state. ``_send_conversation_message_header`` answers WHY on any
+    # failure; in that case we abort cleanly — the FM row stays as a
     # draft in DB (the in-memory ``is_draft=False`` is discarded), no
     # pointer is appended, and the user can retry. This prevents the
     # phantom "local says sent, hub doesn't know" state and avoids
     # orphaning a pointer to a still-draft row.
-    if getattr(conv, "remote", False) and is_logged_in():
-        if not await _send_conversation_message_header(conv, fm):
+    is_remote_send = bool(getattr(conv, "remote", False)) and is_logged_in()
+    if is_remote_send and fm.has_body():
+        # A body-bearing draft (a session reply carries its prompt_completion
+        # attachment + the session carrier) must announce UPLOADING so the hub
+        # gates receivers until the bundle lands — exactly as a fresh send does.
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
+        fm.body_status = BodyStatus.UPLOADING
+    if is_remote_send:
+        failure = await _send_conversation_message_header(conv, fm)
+        if failure is not None:
             return ApiFailResponse(
-                message="Hub send failed; draft preserved for retry",
+                message=f"Hub send failed; draft preserved for retry: {failure.message}",
                 status_code=503,
+                data={"error_code": failure.kind.value, "hub_status": failure.status},
             )
         # Hub confirmed. Mark the local row as a hub mirror so re-sync
         # treats it as a refreshable counterpart (same as received messages).
         fm.remote = True
+        fm.delivery_status = DeliveryStatus.SENT.value
 
     # Persist the finalised FM (is_draft=False, possibly remote=True) BEFORE
     # appending the pointer, so the pointer projection sees the sent state
@@ -2045,6 +2552,23 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     )
 
     _notify_ui_conversation_updated(conv.id, "", fm.id)
+
+    if is_remote_send:
+        conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
+
+    # A drafted STARTING prompt sat at DRAFT on the sender's session row;
+    # sending it is the request for access.
+    sid = getattr(fm, "remote_worker_session_id", None)
+    if sid:
+        from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+        )
+
+        session = await RemoteWorkerSession.resolve_state(sid)
+        if session is not None and session.status == RemoteWorkerSessionStatus.DRAFT:
+            session.mark_activity(RemoteWorkerSessionStatus.PENDING)
+            await session.save(someone_typeid)
 
     return ApiSuccessResponse(
         data={
@@ -2077,12 +2601,19 @@ async def send_draft() -> ApiResponse:
         return ApiFailResponse(message=f"Send draft failed: {str(e)}")
 
 
-async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiResponse:
+async def handle_stream_inbox_bulk_update(
+    patch: dict,
+    someone_typeid: str,
+    *,
+    allowed_flow_message_ids: frozenset[str] | None = None,
+) -> ApiResponse:
     """Apply is_read / is_archived patch to all FlowMessages."""
     from flow_sdk.db.drivers.query import QueryFilter
 
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     messages = await FlowMessage.get_all(flt)
+    if allowed_flow_message_ids is not None:
+        messages = [message for message in messages if message.id in allowed_flow_message_ids]
     count = 0
     for fm in messages:
         changed = False
@@ -2095,21 +2626,28 @@ async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiRespo
         if changed:
             await fm.save(someone_typeid)
             count += 1
-    inbox.touch("inbox-bulk-update")
+    stream_inbox.touch("stream-inbox-bulk-update")
     return ApiSuccessResponse(data={"updated": count})
 
 
-@action.post(action_name="inbox-bulk-update", types=None)
-async def inbox_bulk_update() -> ApiResponse:
+@action.post(action_name="stream-inbox-bulk-update", types=None)
+async def stream_inbox_bulk_update() -> ApiResponse:
     """Bulk update is_read / is_archived across all FlowMessages."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         patch = await request_info.get_post_data() or {}
-        return await handle_inbox_bulk_update(patch, request_info.someone_typeid)
+        scope = await _bulk_stream_inbox_scope(patch.pop("agent_id", None))
+        return await handle_stream_inbox_bulk_update(
+            patch,
+            request_info.someone_typeid,
+            allowed_flow_message_ids=scope.flow_message_ids,
+        )
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-bulk-update error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-bulk-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Bulk update failed: {str(e)}")
 
 
@@ -2149,19 +2687,6 @@ def _invitation_common_fields(hub_inv: dict) -> dict:
     }
 
 
-# Membership-invitation targets that get a pre-accept local mirror. Exactly
-# the container types whose local entity displays by ``name`` and has no
-# on-disk asset folder — the only shape the {id, name, icon} mirror payload
-# fits (see the allowlist rationale at the call site).
-_PRE_ACCEPT_MIRROR_TYPES: frozenset[str] = frozenset(
-    {
-        BuiltinEntityType.ORGANIZATION.value,
-        BuiltinEntityType.TEAM.value,
-        BuiltinEntityType.PROJECT.value,
-    }
-)
-
-
 def _membership_cls(target_type: str | None):
     """Entity class for a membership target type (organization / team / project / …).
 
@@ -2187,12 +2712,13 @@ async def _materialize_membership_invitation(
 
     The target may be ANY shareable entity type (organization, team,
     workspace, project, skill, …). Unlike conversation invitations, these
-    have no backing conversation: the inbox renders a generic row straight
+    have no backing conversation: the stream inbox renders a generic row straight
     off the Invitation's ``target_*`` fields. We also mirror the target
     entity locally so the row can show its name/icon and so accept resolves
     a real entity.
     """
     from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
+        MEMBERSHIP_MIRROR_TYPES,
         materialize_remote_membership_entity,
     )
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
@@ -2213,7 +2739,7 @@ async def _materialize_membership_invitation(
     # the Invitation row alone carries the display name until accept
     # materializes the real entity (e.g.
     # ``materialize_accepted_task_invitation`` for tasks).
-    if target_type in _PRE_ACCEPT_MIRROR_TYPES:
+    if target_type in MEMBERSHIP_MIRROR_TYPES:
         try:
             cls = _membership_cls(target_type)
             await materialize_remote_membership_entity(
@@ -2273,7 +2799,7 @@ async def _materialize_invitation(
     # Conversation-less invitations carry a ``target`` descriptor — ANY
     # shareable entity type (organization, team, workspace, project, a
     # message, a skill, …). Materialize the Invitation with its target
-    # metadata so the inbox renders a generic "<inviter> invited you to
+    # metadata so the stream inbox renders a generic "<inviter> invited you to
     # <Name>" row. Gated on the ABSENCE of an embedded conversation: a
     # conversation-backed invitation always rides the thread path below, and
     # its riding asset grants must not hijack it (the hub already keeps
@@ -2360,7 +2886,7 @@ async def _materialize_invitation(
     # button. notify=False here too — the explicit CREATE ops below
     # announce the FlowMessage and Conversation together, in load-bearing
     # order, only once the conversation already carries its
-    # invitation-kind first message. Without this the strip/inbox briefly
+    # invitation-kind first message. Without this the strip/stream inbox briefly
     # render a navigable row.
     preview = hub_inv.get("preview_message")
     invitation_typeid = f"{LocalInvitation.get_type()}-{inv_id}"
@@ -2412,11 +2938,30 @@ async def _materialize_invitation(
         # live message materialization — a "now" clock would sort the notice
         # AFTER the first real message (the UI orders bubbles by pointer ts).
         # Backdate to the invitation's own hub clock (conv clock as fallback).
-        invite_ts = (
-            str(hub_inv.get("created_date") or "").strip()
-            or str(embedded_conv.get("created_date") or "").strip()
-            or None
-        )
+        # The EARLIER of the two clocks, not the first non-empty one. The notice
+        # is the recipient's entry point and must sort first, but an invite into
+        # an EXISTING conversation is created long after that thread's first
+        # message — ordering by the invitation's own clock would file the Accept
+        # gate below messages the recipient cannot read yet. Taking the minimum
+        # is monotone and idempotent, and now that ordering comes from
+        # ``created_date`` (not a separately-clamped pointer ts) it is the only
+        # thing deciding where the notice lands.
+        # Compared as datetimes, not strings — the two clocks can differ in
+        # offset spelling ("Z" vs "+00:00") and precision, where a lexical min
+        # silently picks the wrong one.
+        _invite_candidates = [
+            (Conversation._as_datetime(s), s)
+            for s in (
+                str(hub_inv.get("created_date") or "").strip(),
+                str(embedded_conv.get("created_date") or "").strip(),
+            )
+            if s
+        ]
+        _parsed = [(dt, s) for dt, s in _invite_candidates if dt is not None]
+        if _parsed:
+            invite_ts = min(_parsed, key=lambda pair: pair[0])[1]
+        else:
+            invite_ts = _invite_candidates[0][1] if _invite_candidates else None
         synth_payload = {
             "id": synth_fm_id,
             "text": (message_text or "You've been invited to a conversation"),
@@ -2446,12 +2991,12 @@ async def _materialize_invitation(
 
     # Announce to the UI in load-bearing order — FlowMessage CREATE first so
     # the bubble row exists, then the Conversation CREATE. The conversation
-    # now already carries its kind='invitation' pointer, so the strip/inbox
+    # now already carries its kind='invitation' pointer, so the strip/stream inbox
     # render it as a gated invitation row on the very first paint (no
     # navigable window before the Accept gate appears).
     if notify:
         try:
-            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+            from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
             from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
             if inv_fm is not None:
@@ -2480,7 +3025,7 @@ async def _materialize_invitation(
 # ---------------------------------------------------------------------------
 # Unified conversation-list pipeline
 #
-# Single endpoint replacing the prior `conversation-sync` + `inbox-fetch` split.
+# Single endpoint replacing the prior `conversation-sync` + `stream-inbox-fetch` split.
 # Reads local SQLite first (instant), pulls hub conversations + invitations in
 # parallel, upserts hub metadata locally, and fans out per-conversation
 # background message fetches keyed off the `message_count` delta. The hub WS
@@ -2490,8 +3035,9 @@ async def _materialize_invitation(
 
 # Process-local single-flight registry for per-conversation message fetches.
 # Keyed by conversation id. Prevents rapid Refresh clicks from piling up
-# duplicate bundle downloads for the same conversation.
-_conv_fetch_locks: dict[str, asyncio.Lock] = {}
+# duplicate bundle downloads for the same conversation. Weak-valued
+# (``stream_inbox/_locks``): an entry lives only while a fetch holds or awaits it.
+_conv_fetch_locks = new_registry()
 # Conversations already claimed by a detached batch. Unlike ``Lock.locked()``,
 # membership can be checked and claimed without an intervening await, so two
 # drains dispatched in the same event-loop turn cannot both queue the same id
@@ -2506,13 +3052,22 @@ _conv_fetch_inflight: set[str] = set()
 _BG_FETCH_CONCURRENCY = 8
 
 
-async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+async def _drain_conversation_message_fetches(pending: dict[str, Optional[datetime]], someone_typeid: str) -> None:
     """Catch up message state for many conversations, bounded concurrency.
 
     Runs as ONE detached task OFF the request path, so the list handler returns
     before any fetch starts (no event-loop contention with the foreground
     reconcile). The process-local claim set preserves per-conversation
     single-flight across overlapping batches.
+
+    ``pending`` maps conversation id → the hub parent ``updated_date`` that
+    justified the fetch. On success that value becomes the conversation's new
+    ``hub_updated_date`` watermark — stamping it HERE, and only here, is what
+    makes the watermark mean "reconciled through this hub revision". Recording
+    it up-front (when the list merely SAW the row) would let a swallowed fetch
+    failure certify a convergence that never happened, and a count-neutral
+    change — a message edit, a delivery/body-status flip — would then stay
+    invisible until the hub moved again.
     """
     sem = asyncio.Semaphore(_BG_FETCH_CONCURRENCY)
 
@@ -2522,28 +3077,63 @@ async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typei
         _conv_fetch_inflight.add(cid)
         try:
             async with sem:
-                await _fetch_conversation_messages(cid, someone_typeid)
+                if await _fetch_conversation_messages(cid, someone_typeid):
+                    await _record_hub_watermark(cid, pending.get(cid), someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-drain] %s failed: %s", cid[:8], e)
         finally:
             _conv_fetch_inflight.discard(cid)
 
-    await asyncio.gather(*[_one(c) for c in conv_ids], return_exceptions=True)
+    # Newest hub revision first. The semaphore admits waiters in creation order,
+    # so this order IS the fetch order. The hub lists conversations oldest-first,
+    # and a cold catch-up (a new device, a rebuilt DB) can be hundreds of
+    # conversations deep: in hub order, the one that just got a message waited
+    # behind every stale one before it (~470 deep: >10s on a local hub).
+    await asyncio.gather(*[_one(c) for c in _newest_first(pending)], return_exceptions=True)
 
 
-def _dispatch_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+def _newest_first(pending: dict[str, Optional[datetime]]) -> list[str]:
+    """Conversation ids by hub ``updated_date``, newest first; unknown clocks last."""
+
+    def _key(cid: str) -> float:
+        ts = pending.get(cid)
+        if ts is None:
+            return float("-inf")
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.timestamp()
+
+    return sorted(pending, key=_key, reverse=True)
+
+
+async def _record_hub_watermark(conv_id: str, hub_updated: Optional[datetime], someone_typeid: str) -> None:
+    """Advance one conversation's reconciled-through watermark. Best-effort."""
+    if hub_updated is None:
+        return
+    try:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None or Conversation._as_datetime(conv.hub_updated_date) == hub_updated:
+            return
+        conv.hub_updated_date = hub_updated
+        with remote_reflection():
+            await conv.save(someone_typeid, notify=False)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[conv-msg-drain] %s watermark not recorded: %s", conv_id[:8], e)
+
+
+def _dispatch_conversation_message_fetches(pending: dict[str, Optional[datetime]], someone_typeid: str) -> None:
     """Fire-and-forget a whole catch-up batch as one detached, bounded drain.
 
-    Deferred + bounded: the caller collects the drifted conv ids during its
+    Deferred + bounded: the caller collects the drifted conversations during its
     foreground work and dispatches them all here at the very end, so the fetches
     neither interleave with the reconcile loop nor flood the loop all at once.
     """
-    if not conv_ids:
+    if not pending:
         return
     try:
         asyncio.create_task(
-            _drain_conversation_message_fetches(conv_ids, someone_typeid),
-            name=f"conv-msg-drain-{len(conv_ids)}",
+            _drain_conversation_message_fetches(pending, someone_typeid),
+            name=f"conv-msg-drain-{len(pending)}",
         )
     except RuntimeError:
         # No running loop (e.g. a sync call context) — nothing to schedule.
@@ -2578,15 +3168,7 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
     # hub row and served only on request — without this the pull materializes
     # children with EMPTY bodies (the live-push path carries them; catch-up must too).
     children = await hub_get(parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"})
-    child_list: list[dict] = []
-    if isinstance(children, list):
-        child_list = children
-    elif isinstance(children, dict):
-        for k in ("data", "items", "results"):
-            v = children.get(k)
-            if isinstance(v, list):
-                child_list = v
-                break
+    child_list = rows_of(children)
     parent_ref = f"{parent_tid.type}-{parent_tid.id}"
     hub_ids: set[str] = set()
     for raw in child_list:
@@ -2775,7 +3357,7 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
     ]
 
 
-async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
     Lists the conversation's child FlowMessages via the children-list route
@@ -2792,9 +3374,13 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
     FM dicts, so the per-id GET loop is gone.
 
     All exceptions are logged and swallowed — this runs as a detached task and
-    must never crash the event loop.
+    must never crash the event loop. Returns True only when the reconcile
+    actually completed, so the caller can decide whether it may advance the
+    conversation's ``hub_updated_date`` watermark (see
+    ``_drain_conversation_message_fetches``). A swallowed failure must NOT be
+    allowed to certify convergence.
     """
-    lock = _conv_fetch_locks.setdefault(conv_id, asyncio.Lock())
+    lock = keyed_loop_lock(_conv_fetch_locks, conv_id)
     async with lock:
         try:
             # Children-list route, primary source: returns the conversation's
@@ -2812,26 +3398,38 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             # through the authoritative reconcile below.
             if children is None:
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
-                return
-            child_list: list[dict] = []
-            if isinstance(children, list):
-                child_list = children
-            elif isinstance(children, dict):
-                for k in ("data", "items", "results"):
-                    v = children.get(k)
-                    if isinstance(v, list):
-                        child_list = v
-                        break
-            child_list = [m for m in child_list if isinstance(m, dict) and m.get("id")]
-            # Oldest first — the pointer index is conversation order.
-            child_list.sort(key=lambda m: m.get("created_date") or "")
+                return False
+            child_list = [m for m in rows_of(children) if m.get("id")]
+            child_list = fetch_order(child_list)
             synced = 0
             for raw_fm in child_list:
                 fm_id = raw_fm["id"]
-                # Cheap skip: already-current rows need no work (and no body
-                # re-download). is_stale(None, ...) is True so new ids pass.
+                # Cheap skip: already-current rows need no metadata work, but
+                # READY-body recovery is independent. Push is best-effort; an
+                # exact pull must still download a missing body or heal a local
+                # pack-time UPLOADING marker after the Hub reached READY.
                 local = await FlowMessage.get_one({"id": fm_id})
-                if not FlowMessage.is_stale(local, raw_fm):
+                hub_body_status = _body_status_value(raw_fm.get("body_status"))
+                local_body_status = _body_status_value(getattr(local, "body_status", None))
+                attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
+                needs_body_reconcile = bool(
+                    local is not None
+                    and attachment_filename
+                    and hub_body_status == BodyStatus.READY.value
+                    and (local_body_status != BodyStatus.READY.value or not local.is_body_downloaded())
+                )
+                # ``hub_created_drift`` is OR-ed in for the same reason the
+                # conversation list OR-s ``_created_drift`` into its upsert gate: a
+                # birth-time repair CANNOT ride ``is_stale``. A row re-materialized
+                # from a send-time-less bundle carries ``now()``, which outranks the
+                # hub clock, so this gate would ``continue`` past the very rows that
+                # need repairing and the fix inside _process_single_hub_message would
+                # never be reached.
+                if (
+                    not FlowMessage.is_stale(local, raw_fm)
+                    and not needs_body_reconcile
+                    and not hub_created_drift(local, raw_fm)
+                ):
                     continue
                 try:
                     # Hub's FM payload doesn't carry conversation_id (the graph
@@ -2925,14 +3523,16 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                 synced,
                 len(child_list),
             )
+            return True
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
+            return False
 
 
 async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
     """Make sure the local DB has the conv + its messages.
 
-    Idempotent. Used by deep-link handlers (``handle_open_flow_message``) for
+    Idempotent. Used by deep-link resolvers (``open_flow_message_params``) for
     flows where the FM ships without a body bundle (e.g. text-only first
     message from a fresh share) and the recipient would otherwise see a
     placeholder or an empty conv.
@@ -3020,22 +3620,74 @@ async def _sync_conversation_messages(
             continue
         if not download_bundles:
             continue
-        attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
-        if not attachment_filename:
-            continue
-        try:
-            await _download_and_unpack_bundle(
-                raw_fm["id"],
-                attachment_filename,
-                body_status=raw_fm.get("body_status"),
-            )
-        except Exception as b_err:  # noqa: BLE001
-            logger.warning(
-                "[conv-sync] conv=%s fm=%s bundle download failed: %s",
-                conv_id[:8],
-                raw_fm.get("id"),
-                b_err,
-            )
+        await _pull_bundle_for_hub_fm(conv_id, raw_fm)
+
+
+async def _pull_bundle_for_hub_fm(conv_id: str, raw_fm: dict) -> None:
+    """Download + unpack one hub FlowMessage's bundle body. Never raises.
+
+    The single implementation of "pull this message's body", shared by the
+    inline ``_sync_conversation_messages`` loop and the deferred
+    ``_pull_conversation_bundles`` below. ``_download_and_unpack_bundle``
+    self-gates on ``body_status`` (no-op unless READY) and ``unpack_bundle`` is
+    idempotent, so calling it twice for the same message is harmless.
+    """
+    attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
+    if not attachment_filename:
+        return
+    try:
+        await _download_and_unpack_bundle(
+            raw_fm["id"],
+            attachment_filename,
+            body_status=raw_fm.get("body_status"),
+            # Hub's delivery clock — see the note at the other catch-up call site.
+            # Without it a legacy bundle lands with its send-time as recency and
+            # the conversation dives until the following merge corrects it.
+            hub_updated=raw_fm.get("updated_date"),
+        )
+    except Exception as b_err:  # noqa: BLE001
+        logger.warning(
+            "[conv-sync] conv=%s fm=%s bundle download failed: %s",
+            conv_id[:8],
+            raw_fm.get("id"),
+            b_err,
+        )
+
+
+async def _pull_conversation_bundles(conv_id: str) -> None:
+    """Deferred body pull for a whole conversation — the bytes half of
+    ``_sync_conversation_messages``, run on its own after the metadata half.
+
+    Invitation-accept syncs metadata with ``download_bundles=False`` to keep the
+    Accept request off the filesystem. But accept is the ONLY pass that ever
+    sees the inviter's pre-accept messages (the hub WS fanouts from join-time
+    forward), so skipping the download there skipped it outright: a body-less
+    first message, no staged MessageAttachment rows, no entity chip. This runs
+    the same pull immediately after the response instead of during it.
+    """
+    hub_msgs = await hub_get(
+        BuiltinEntityType.FLOW_MESSAGE,
+        scope=[("conversation", conv_id)],
+    )
+    for raw_fm in hub_msgs or []:
+        if isinstance(raw_fm, dict) and raw_fm.get("id"):
+            await _pull_bundle_for_hub_fm(conv_id, raw_fm)
+
+
+def _schedule_conversation_bundle_pull(conv_id: str) -> None:
+    """Fire-and-forget ``_pull_conversation_bundles`` off the request path.
+
+    Mirrors ``_schedule_conversation_message_fetches``: accept stays a pure
+    membership+metadata call, the filesystem work runs after it returns.
+    """
+    try:
+        asyncio.create_task(
+            _pull_conversation_bundles(conv_id),
+            name=f"conv-bundle-pull-{conv_id[:8]}",
+        )
+    except RuntimeError:
+        # No running loop (e.g. a sync call context) — nothing to schedule.
+        pass
 
 
 _UNSET = object()  # sentinel: distinguishes "existing not provided" from "known absent (None)"
@@ -3047,8 +3699,14 @@ async def _upsert_hub_conversation_metadata(
     *,
     notify: bool = True,
     existing=_UNSET,
+    learned_rosters: Optional[set[str]] = None,
 ) -> Optional[Conversation]:
     """Upsert a hub-side Conversation into the local SQLite table.
+
+    ``learned_rosters`` is a per-batch memo of rosters already pushed into the
+    address book: a hub account's conversations mostly share one roster, and
+    without the memo a fresh mirror learned the same two contacts once per
+    conversation (two DB reads each). The batch caller owns the set.
 
     ``existing`` lets a caller that already holds the local row (e.g. the
     conversation-list bulk-read cache) pass it in to skip the per-row
@@ -3065,7 +3723,7 @@ async def _upsert_hub_conversation_metadata(
     ``notify=False`` saves the row without broadcasting the entity op — used
     by the invitation pipeline, which must materialize the conversation's
     ``kind='invitation'`` first message *before* the UI ever sees the
-    conversation (otherwise the strip/inbox briefly render it as a normal,
+    conversation (otherwise the strip/stream inbox briefly render it as a normal,
     navigable row). The caller emits the CREATE op itself once the row is
     fully formed.
     """
@@ -3097,14 +3755,33 @@ async def _upsert_hub_conversation_metadata(
     roster = hub_conv.get("participants")
     if isinstance(roster, list) and roster:
         norm_roster = _normalize_participants(roster)
-        if existing is None or (existing.members or []) != norm_roster:
+        roster_key = _json.dumps(norm_roster, sort_keys=True, default=str)
+        if (existing is None or (existing.members or []) != norm_roster) and (
+            learned_rosters is None or roster_key not in learned_rosters
+        ):
             try:
                 await _learn_normalized_participants(norm_roster)
+                if learned_rosters is not None:
+                    learned_rosters.add(roster_key)
             except Exception as learn_err:  # noqa: BLE001
                 logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s", conv_id[:8], learn_err)
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
-        for k in ("title", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
+        # ``kind`` is hub-authoritative for a hub-owned conversation. Omitting
+        # it filed every picked-up support ticket as an ordinary ``direct``
+        # chat on the STAFF side — the hub said ``helpdesk``, the local row
+        # said otherwise, and the desk's own queue view could not recognise its
+        # own tickets. The requester side had been papering over this by
+        # re-stamping HELPDESK after the fact; pickup had no such workaround.
+        for k in (
+            "title",
+            "kind",
+            "status",
+            "participants",
+            "remote_project_id",
+            "remote_project_name",
+            "shared_context_entities",
+        ):
             if hub_conv.get(k) is not None:
                 payload[_local_roster_key(k)] = (
                     _normalize_participants(hub_conv[k])
@@ -3152,7 +3829,7 @@ async def _upsert_hub_conversation_metadata(
             return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
-    for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+    for k in ("title", "kind", "status", "participants", "remote_project_id", "remote_project_name"):
         v = hub_conv.get(k)
         if k == "participants" and isinstance(v, list):
             v = _normalize_participants(v)
@@ -3181,20 +3858,16 @@ async def _upsert_hub_conversation_metadata(
     if not existing.remote:
         existing.remote = True
         changed = True
-    # Always-adopt the hub's created_date (hub-authoritative birth time). This
-    # is idempotent — once converged, subsequent echoes are no-ops — and it
-    # repairs rows that were re-created locally with a bogus created_date
-    # (e.g. after a DB rebuild).
-    hub_created = Conversation._as_datetime(hub_conv.get("created_date"))
-    if hub_created is not None and Conversation._as_datetime(existing.created_date) != hub_created:
-        existing.created_date = hub_created
+    # Always-adopt the hub's created_date (hub-authoritative birth time) — repairs
+    # rows re-created locally with a bogus created_date (e.g. after a DB rebuild).
+    if adopt_hub_created_date(existing, hub_conv):
         changed = True
-    # Deliberately NOT adopting the hub parent ``updated_date``: the hub re-stamps
-    # it on bare touches (a child's body re-download), which would surface a
-    # days-old conversation as "just now". Recency is owned by
+    # Deliberately NOT adopting the hub parent ``updated_date`` as local recency:
+    # the hub re-stamps it on bare touches (a child's body re-download), which
+    # would surface a days-old conversation as "just now". Recency stays owned by
     # ``project_pointers_to_entity`` (derived from messages' real-change clocks).
-    # ``_should_fetch_messages`` still consults the hub clock transiently to gate
-    # the reconcile; it's just never persisted as local recency.
+    # The hub clock IS persisted, as ``Conversation.hub_updated_date`` — but by the
+    # drain, once the reconcile it justified has actually succeeded, never here.
     if changed:
         # We just refreshed this row from a hub payload — stamp the boundary.
         existing.fetched_at = datetime.now(UTC)
@@ -3205,15 +3878,40 @@ async def _upsert_hub_conversation_metadata(
     return existing
 
 
-def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -> bool:
+def fetch_order(hub_messages: list[dict]) -> list[dict]:
+    """Order a conversation's hub messages for materializing: NEWEST first.
+
+    A conversation's stream inbox recency is ``max(message.updated_date)``, so the newest
+    message alone decides its position. Materialize that one first and the row
+    lands in its final slot on the first write; every older message that follows
+    leaves the max untouched and moves nothing.
+
+    Oldest-first — what this used to do — left the recency wrong until the very
+    last arrival and nudged the conversation up the list on every single one: N
+    visible moves per conversation instead of one. Measured on a real backlog
+    pull, the flip took the churn from 21 moving frames down to 4.
+
+    Processing order ONLY. The stored order stays chronological: the authoritative
+    reconcile rewrites ``conversation.jsonl`` in ``created_date`` order, and
+    ``project_pointers_to_entity`` reads the child edges with
+    ``order_by={"created_date": "asc"}``.
+    """
+    return sorted(hub_messages, key=lambda m: m.get("created_date") or "", reverse=True)
+
+
+def _should_fetch_messages(
+    local_conv: Optional[Conversation], hub_conv: dict, *, clock_moved: bool | None = None
+) -> bool:
     """Out-of-sync detection for one conversation — the dispatch gate of the
     list pipeline. Two independent signals, OR-ed (the hub is the source of
     truth; either one firing invalidates the local copy via the authoritative
     reconcile in ``_fetch_conversation_messages``):
 
-    - ``updated_date`` LWW (``Entity.is_stale``): the hub bumps the parent on
-      child add/edit/delete AND on delivery/body status changes, so one cheap
-      parent compare catches every content/status change.
+    - hub-clock watermark (``Conversation.hub_clock_moved``): the hub bumps the
+      parent on child add/edit/delete AND on delivery/body status changes, so one
+      cheap parent compare catches every content/status change. NOT
+      ``Entity.is_stale`` — see ``Conversation.hub_updated_date`` for why that
+      comparison never converges on this type.
     - ``message_count`` mismatch, BIDIRECTIONAL: catches drift the date can't
       prove — e.g. a local row re-created bare from the hub (carries the hub's
       updated_date, so is_stale says current, but reports 0 messages), or a
@@ -3225,10 +3923,20 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
     (single-flight, cheap) fetch and let the authoritative reconcile settle
     it. A genuinely empty conversation just reconciles to empty again; once
     the hub ships counts this branch never fires.
+
+    A hub-deleted conversation is a hard "no" before any of the above: the
+    user deleted it, so ``local_conv`` is (correctly) always None going
+    forward, which would otherwise read as "never synced" forever and
+    re-dispatch a fetch that resurrects its full message history on every
+    single list call.
     """
+    if hub_conv.get("deleted_at"):
+        return False
     if local_conv is None:
         return True
-    if Conversation.is_stale(local_conv, hub_conv):
+    if clock_moved is None:
+        clock_moved = Conversation.hub_clock_moved(local_conv, Conversation._as_datetime(hub_conv.get("updated_date")))
+    if clock_moved:
         return True
     raw_hub_count = hub_conv.get("message_count")
     if raw_hub_count is None:
@@ -3255,8 +3963,16 @@ async def _local_only_conversation_list(*, auth_required: bool, user_id: str | N
     )
 
 
-async def handle_conversation_list(someone_typeid) -> ApiResponse:
+async def handle_conversation_list(someone_typeid, *, announce_invitations: bool = False) -> ApiResponse:
     """Unified conversation list: local SQLite + hub catch-up + background message fetch.
+
+    ``announce_invitations`` says whether a client refetch rides behind this
+    call. The UI action path leaves it False: the caller refetches its own
+    query once when the response lands, so broadcasting each materialized
+    invitation individually would only churn the stream inbox order mid-catch-up.
+    The backend-initiated sweeps (``stream_inbox.catchup``) have no such refetch —
+    nobody asked for this call — so they pass True and the invitation rows
+    reach the already-mounted UI.
 
     Pipeline (all stages run inside the request handler unless noted):
 
@@ -3283,7 +3999,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # Logged out → every hub conversation/invitation call would 401 and surface
     # a "Cloud Request Failed" warning (and feed the hub-error suppression
     # window). Return local-only with auth_required, exactly like
-    # _start_inbox_catchup skips the same calls at startup.
+    # _start_stream_inbox_catchup skips the same calls at startup.
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
 
     if not hub_auth_available():
@@ -3332,7 +4048,12 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # delivery/body status, membership), so ``is_stale`` is a complete change
     # signal — see _should_fetch_messages. Skipping the unchanged majority avoids
     # a per-row get_one + save for every conversation on every list call.
-    bg_fetch_dispatched: list[str] = []
+    # conv id -> the hub revision that justified its fetch; the drain stamps it
+    # as the new watermark only if the reconcile actually succeeds.
+    bg_fetch_pending: dict[str, Optional[datetime]] = {}
+    # A per-batch memo so a hub account's many conversations (mostly one
+    # shared roster) learn their contacts once, not once per conversation.
+    learned_rosters: set[str] = set()
     for hub_conv in hub_convs:
         conv_id = (hub_conv.get("id") or "").strip()
         if not conv_id:
@@ -3353,23 +4074,27 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
         # correct comparison baseline. Capture the fetch decision BEFORE the
         # upsert mutates ``existing.updated_date``.
         existing = local_index.get(conv_id)
-        should_fetch = _should_fetch_messages(existing, hub_conv)
+        # Parsed once and reused by the fetch gate, the upsert gate and the
+        # watermark below — it is the same hub string in all three.
+        _hub_updated = Conversation._as_datetime(hub_conv.get("updated_date"))
+        _clock_moved = existing is None or Conversation.hub_clock_moved(existing, _hub_updated)
+        should_fetch = _should_fetch_messages(existing, hub_conv, clock_moved=_clock_moved)
         # ``created_date`` is hub-authoritative and corruptible locally (a DB
         # rebuild re-stamps it) without ever moving ``updated_date`` — so it can't
         # ride is_stale. Compare it here against the cache (free, in-memory) so the
         # repair branch in _upsert still runs; converged rows match and skip.
-        _hub_created = Conversation._as_datetime(hub_conv.get("created_date"))
-        _created_drift = (
-            existing is not None
-            and _hub_created is not None
-            and Conversation._as_datetime(existing.created_date) != _hub_created
-        )
-        if existing is None or not existing.remote or Conversation.is_stale(existing, hub_conv) or _created_drift:
+        _created_drift = hub_created_drift(existing, hub_conv)
+        # Same converging watermark as the fetch gate. With ``is_stale`` here the
+        # local metadata write also re-fired on every call for every already-synced
+        # conversation — a save + a WS ``data_op`` per conversation per call, which
+        # is what made the client re-list the whole stream inbox dozens of times per login.
+        if existing is None or not existing.remote or _clock_moved or _created_drift:
             try:
                 await _upsert_hub_conversation_metadata(
                     hub_conv,
                     someone_typeid,
                     existing=existing,
+                    learned_rosters=learned_rosters,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-list] upsert conv=%s failed: %s", conv_id[:8], e)
@@ -3377,7 +4102,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
         if should_fetch:
             # Collect now; dispatch the whole batch off-path at the end so these
             # fetches don't steal event-loop time from the reconcile above.
-            bg_fetch_dispatched.append(conv_id)
+            bg_fetch_pending[conv_id] = _hub_updated
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
@@ -3385,15 +4110,17 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     invitation_conv_ids: set[str] = set()
     for inv in hub_invs:
         try:
-            # The HTTP response is followed by one local query refetch in the
-            # UI. Suppress per-entity broadcasts while reconciling the batch:
-            # emitting every historical invitation one by one continuously
-            # reorders Inbox rows and can make an otherwise enabled action
-            # physically unclickable until the catch-up finishes.
+            # On the UI path the HTTP response is followed by one local query
+            # refetch, so per-entity broadcasts are suppressed while reconciling
+            # the batch: emitting every historical invitation one by one
+            # continuously reorders stream inbox rows and can make an otherwise enabled
+            # action physically unclickable until the catch-up finishes. A
+            # backend-initiated sweep has no refetch behind it — see
+            # ``announce_invitations``.
             _local_inv, conv_id = await _materialize_invitation(
                 inv,
                 someone_typeid,
-                notify=False,
+                notify=announce_invitations,
             )
             if conv_id:
                 invitation_conv_ids.add(conv_id)
@@ -3408,11 +4135,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # render reflects reality.
     pruned_ids: list[str] = []
     if hub_reachable:
-        seen_ids = {
-            c.get("id")
-            for c in hub_convs
-            if c.get("id") and not c.get("deleted_at")
-        }
+        seen_ids = {c.get("id") for c in hub_convs if c.get("id") and not c.get("deleted_at")}
         seen_ids.update(invitation_conv_ids)
         # Re-read local state because the upsert + invitation steps may have
         # added rows that didn't exist when we snapshotted earlier.
@@ -3427,14 +4150,14 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
 
     # (f) one unread reconcile for the whole batch — invitations materialized
     # in (d) and conversations pruned in (e) both change the projection.
-    inbox.touch("conversation-list")
+    stream_inbox.touch("conversation-list")
 
     # return the freshly-merged list.
     merged = await Conversation.get_all({})
     response = ApiSuccessResponse(
         data={
             "conversations": [c.model_dump(mode="json") for c in merged],
-            "bg_fetch_dispatched": bg_fetch_dispatched,
+            "bg_fetch_dispatched": list(bg_fetch_pending),
             "pruned_ids": pruned_ids,
             "hub_reachable": hub_reachable,
             "auth_required": auth_required,
@@ -3446,7 +4169,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # fetches start as the response is sent (never contending with the loop above)
     # and only a few run at once. Their writes heal through the authoritative
     # reconcile in _fetch_conversation_messages and stream in via WS data_op.
-    _dispatch_conversation_message_fetches(bg_fetch_dispatched, someone_typeid)
+    _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
     return response
 
 
@@ -3487,6 +4210,66 @@ async def conversation_summary() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
+@action.post(action_name="conversation-transcript", types=None)
+async def conversation_transcript() -> ApiResponse:
+    """Unabridged read of one conversation — ``Conversation.transcript()``:
+    full text, timestamps, message ids, you/them, threads, attachments with
+    their local paths. ``thread`` (a thread id, or a message in it), ``last``
+    and ``since`` (ISO) narrow it. Same row gate as
+    ``conversation-summary``; local reads only."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id required")
+        raw_since = str(body.get("since") or "").strip()
+        since = iso_to_utc(raw_since) if raw_since else None
+        if raw_since and since is None:
+            return ApiFailResponse(message=f"since is not an ISO-8601 datetime: {raw_since!r}")
+        last = body.get("last")
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None:
+            return ApiFailResponse(message="conversation not found", status_code=404)
+        thread_ref = str(body.get("thread") or "").strip()
+        thread_id = await conv.resolve_thread_id(thread_ref) if thread_ref else None
+        if thread_ref and thread_id is None:
+            return ApiFailResponse(message=f"no thread {thread_ref!r} in this conversation", status_code=400)
+        data = await conv.transcript(
+            self_ids=await User.self_ids(),
+            last=int(last) if last is not None else None,
+            since=since,
+            thread_id=thread_id,
+        )
+        return ApiSuccessResponse(data=data)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="conversation-message-read", types=None)
+async def conversation_message_read() -> ApiResponse:
+    """Unabridged read of ONE message — ``FlowMessage.read_entry()`` plus the
+    files of its unpacked body, when it has been pulled. Local reads only."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        msg_id = (body.get("message_id") or "").strip()
+        if not msg_id:
+            return ApiFailResponse(message="message_id required")
+        fm = await FlowMessage.get_one({"id": msg_id})
+        if fm is None:
+            return ApiFailResponse(message="message not found", status_code=404)
+        return ApiSuccessResponse(data=fm.read_entry(await User.self_ids(), list_body=True))
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-message-read error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
 async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     """**Deprecated** — delegates to ``handle_conversation_list``.
 
@@ -3512,15 +4295,15 @@ async def _announce_new_invitations(fresh_invitations: list) -> None:
     The Layer-2 invitation consumer of the generic notification service: a
     pending invite rides the invitation op — it never reaches the inbound
     flow_message notify path. One banner per new invite; clicking opens the
-    Inbox (where Accept lives). Re-syncs of already-known invitations stay
+    stream inbox (where Accept lives). Re-syncs of already-known invitations stay
     silent (callers pass only newly-materialized rows). Failure-isolated:
     a notify hiccup never fails the sync that discovered the invitation.
     """
     if not fresh_invitations:
         return
     with contextlib.suppress(Exception):
-        from flow_sdk.inbox import invitation_is_pending, viewer_email
         from flow_sdk.notifications import notify_desktop
+        from flow_sdk.stream_inbox import invitation_is_pending, viewer_email
 
         email = viewer_email()
         now = datetime.now(UTC)
@@ -3536,16 +4319,35 @@ async def _announce_new_invitations(fresh_invitations: list) -> None:
                 "invitation",
                 title=f"{inviter} invited you",
                 body=body,
-                click_target={"view_type": "inbox"},
+                click_target={"view_type": "stream_inbox"},
             )
 
 
-async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
-    """Pull pending invitations only — no inbox-fetch.
+def _invitation_matches_target(hub_inv: dict, target_id: str | None) -> bool:
+    """Whether one pending invitation points at the caller's known target.
+
+    Conversation invitations carry an embedded ``conversation``; generic
+    membership invitations carry ``target``. ``target_url_path`` keeps older
+    hub payloads targetable without weakening the exact-id comparison.
+    """
+    if not target_id:
+        return True
+    conversation = hub_inv.get("conversation")
+    if isinstance(conversation, dict) and conversation.get("id") == target_id:
+        return True
+    target = hub_inv.get("target")
+    if isinstance(target, dict) and target.get("id") == target_id:
+        return True
+    target_path = str(hub_inv.get("target_url_path") or "").rstrip("/")
+    return bool(target_path) and target_path.rsplit("/", 1)[-1] == target_id
+
+
+async def handle_invitation_sync(someone_typeid: str, *, target_id: str | None = None) -> ApiResponse:
+    """Pull pending invitations only — no stream-inbox-fetch.
 
     Realtime callers (vitest ping-pong, mobile poll-then-accept) need to
     discover a fresh invitation quickly. ``conversation-sync`` also runs the
-    cursor-based inbox-fetch, which retries 404'd bundle downloads from
+    cursor-based stream-inbox-fetch, which retries 404'd bundle downloads from
     prior FlowMessages and adds seconds of latency. This variant skips
     that, returning the moment invitations are mirrored.
     """
@@ -3556,6 +4358,8 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
     invitations = await hub_get(BuiltinEntityType.INVITATION, action="pending") or []
     if not isinstance(invitations, list):
         invitations = []
+    if target_id:
+        invitations = [inv for inv in invitations if _invitation_matches_target(inv, target_id)]
 
     # Snapshot known invitation ids BEFORE materializing so we can tell a
     # newly-arrived invitation (→ OS notification below) from a re-synced one.
@@ -3563,9 +4367,8 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
     with contextlib.suppress(Exception):
         from flow_sdk.builtin.invitation import Invitation as _LocalInvitation
         from flow_sdk.db.drivers.query import QueryFilter as _QF
-        known_inv_ids = {
-            row.id for row in await _LocalInvitation.get_all(_QF(type=BuiltinEntityType.INVITATION.value))
-        }
+
+        known_inv_ids = {row.id for row in await _LocalInvitation.get_all(_QF(type=BuiltinEntityType.INVITATION.value))}
 
     fresh_invitations = []
     for inv in invitations:
@@ -3578,7 +4381,7 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
         except Exception as e:
             logger.warning("[invitation-sync] upsert failed: %s", e)
     await _prune_expired_invitations()
-    inbox.touch("invitation-sync")
+    stream_inbox.touch("invitation-sync")
 
     await _announce_new_invitations(fresh_invitations)
     return ApiSuccessResponse(data={"invitations": inv_count})
@@ -3589,8 +4392,8 @@ async def _prune_expired_invitations() -> None:
 
     The hub keeps expired Invitation rows as an audit trail but no longer
     returns them from ``pending``, so nothing ever updates the local mirror
-    again — without this prune a dead invitation sits in the inbox forever
-    (the v0.2.9x "10 phantom Organization invitations" incident). Only
+    again — without this prune a dead invitation sits in the stream inbox
+    forever. Only
     ``remote`` (hub-mirrored) rows are touched: the hub's audit copy stays;
     accepted rows are memberships now and are never invitations to prune.
     """
@@ -3642,12 +4445,23 @@ async def conversation_message_sync() -> ApiResponse:
         conv_id = (body.get("conversation_id") or "").strip()
         if not conv_id:
             return ApiFailResponse(message="conversation_id required")
-        # Authorization: require a local Conversation row for this id. Without
-        # this gate any authenticated caller could trigger a hub fetch + local
-        # store write under any conv_id they happen to know.
+        # A bridge reconnect can miss the assignment frame that normally
+        # materializes this row. Heal that exact cache miss from the hub before
+        # syncing children. The hub's GET is the authorization gate: it only
+        # returns a conversation the logged-in user may read, so a guessed id
+        # cannot trigger a local write.
         local_conv = await Conversation.get_one({"id": conv_id})
         if local_conv is None:
-            return ApiFailResponse(message="conversation not found", status_code=404)
+            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            if not isinstance(hub_conv, dict) or not hub_conv.get("id"):
+                return ApiFailResponse(message="conversation not found", status_code=404)
+            local_conv = await _upsert_hub_conversation_metadata(
+                hub_conv,
+                request_info.someone_typeid,
+                existing=None,
+            )
+            if local_conv is None:
+                return ApiFailResponse(message="conversation not found", status_code=404)
         # A local-only conversation (remote=False) has no hub counterpart —
         # asking the hub is guaranteed to fail (and its 401 surfaces as a
         # spurious "Cloud sign-in expired" toast). Nothing to catch up.
@@ -3670,7 +4484,9 @@ async def invitation_sync() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_invitation_sync(request_info.someone_typeid)
+        body = await request_info.get_post_data() or {}
+        target_id = str(body.get("target_id") or body.get("conversation_id") or "").strip() or None
+        return await handle_invitation_sync(request_info.someone_typeid, target_id=target_id)
     except Exception as e:
         logger.error("[flow_message_action] invitation-sync error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
@@ -3679,7 +4495,7 @@ async def invitation_sync() -> ApiResponse:
 async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiResponse:
     """Accept a pending invitation on the hub and download just the unlocked bundle.
 
-    Three steps, no broad inbox sync:
+    Three steps, no broad stream inbox sync:
       1. POST hub ``/members/accept`` — grants reader role on the linked FlowMessage.
       2. Mark the local Invitation as accepted so the strip's pending block
          drops the row on its next refetch.
@@ -3721,16 +4537,15 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         #   302 — post-accept landing redirect: ``Location`` points at
         #         ``/flow_message/<id>`` or ``/conversation/<id>``. The hub
         #         became browser-friendly and redirects the user to the
-        #         unlocked entity after a successful accept. Verified on
-        #         2026-05-28 with a real invitation against app.flowpad.ai.
+        #         unlocked entity after a successful accept.
         #   409 — already accepted (recipient clicked the email link first).
         #         No usable body, but server-side state is what we want and
         #         local cleanup still has work to do (mark accepted, sync).
         #
         # A 302 from this endpoint ALWAYS means the hub bounced us to
         # ``/login.html`` because the request was unauthenticated — the
-        # accept did NOT execute. Probed against app.flowpad.ai on
-        # 2026-05-28: 302 → ``/login.html?target_path=...`` for both
+        # accept did NOT execute. The hub answers
+        # 302 → ``/login.html?target_path=...`` for both
         # missing and invalid Authorization headers. Earlier this code
         # accepted 302 as success and ran local cleanup, which wrote
         # ``accepted=True`` locally for an invitation the hub never
@@ -3741,7 +4556,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 location = resp.headers.get("location") or resp.headers.get("Location") or ""
                 low = location.lower()
                 # A redirect to a login page IS the unauthenticated bounce
-                # (e.g. app.flowpad.ai → /login.html). The accept did NOT run.
+                # (e.g. ``/login.html``). The accept did NOT run.
                 if "login" in low:
                     return ApiFailResponse(
                         message=(
@@ -3798,7 +4613,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         try:
             target = None
             body_text = (resp.text or "").strip()
-            if body_text.startswith("{") or body_text.startswith("["):
+            if body_text.startswith(("{", "[")):
                 target = (resp.json() or {}).get("data")
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
             conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"
@@ -3909,6 +4724,13 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     someone_typeid,
                     download_bundles=False,
                 )
+                # ...but the bytes still have to arrive. Accept is the only pass
+                # that ever sees the pre-accept messages (see above), so skipping
+                # the download here skipped it entirely — the payload never
+                # landed and the chip stayed in its pre-download hidden state.
+                # Pull it right AFTER the response instead: same work, still off
+                # the request path, so accept keeps its latency.
+                _schedule_conversation_bundle_pull(linked_conv_id)
                 conversation_synced = True
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
@@ -3919,7 +4741,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     membership_target: Optional["Invitation"] = None
     try:
         from flow_sdk.builtin.invitation import Invitation as LocalInvitation
-        from flow_sdk.inbox import accept_mark_preview_read
+        from flow_sdk.stream_inbox import accept_mark_preview_read
 
         existing = await LocalInvitation.get_one({"id": inv_id})
         if existing:
@@ -3939,11 +4761,11 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # target locally as remote=True so the Organization tab / member list shows
     # it immediately, and notify so the UI repaints.
     if membership_target is not None and membership_target.target_type == BuiltinEntityType.TASK.value:
-        # Member-task invitation: pull the real task (+ its group parent) from
-        # the hub — the generic membership mirror below only carries name/icon
-        # and would materialize a husk.
+        # Task invitation: pull the real task (+ its group parent, if it has one)
+        # from the hub — the generic membership mirror below only carries
+        # name/icon and would materialize a husk.
         try:
-            from flow_sdk.app.actions.group_task_action import (  # noqa: PLC0415
+            from flow_sdk.app.actions.task_receive import (  # noqa: PLC0415
                 materialize_accepted_task_invitation,
             )
 
@@ -4002,7 +4824,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             if ent is not None:
                 if (
                     membership_target.target_type == BuiltinEntityType.PROJECT.value
-                    and getattr(ent, "git_origin", None) is not None
+                    and getattr(ent, "origin", None) is not None
                 ):
                     try:
                         await ent.setup_from_git_origin()
@@ -4043,6 +4865,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     linked_fm_id,
                     attachment_filename,
                     body_status=(hub_fm or {}).get("body_status"),
+                    hub_updated=(hub_fm or {}).get("updated_date"),
                 )
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
@@ -4095,158 +4918,4 @@ async def invitation_accept() -> ApiResponse:
         return await handle_invitation_accept(body, request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Per-message Private Context actions
-#
-#   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
-#     FILE attachment, spawn a Claude session pre-loaded with that transcript
-#     path and ask for a brief analysis. The new AgenticProcess pins
-#     `target_typeid_str = <fm typeid>` so the frontend query picks it up.
-#
-# The action returns immediately with `process_id`; the entity-query channel
-# delivers updates to the UI as the run progresses.
-# ---------------------------------------------------------------------------
-
-
-async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Optional[str]]:
-    """Async variant — pulls task.project_root + project_id where available."""
-    project_id: Optional[str] = None
-    workdir = ""
-    conv_id = fm.conversation_id
-    if conv_id:
-        conv = await Conversation.get_one({"id": conv_id})
-        if conv:
-            project_id = conv.project_id or project_id
-            task_typeid = (
-                conv.first_context_of_type(BuiltinEntityType.TASK.value)
-                if hasattr(conv, "first_context_of_type")
-                else None
-            )
-            if task_typeid:
-                task = await Task.get_one({"id": task_typeid.id})
-                if task:
-                    project_id = task.project_id or project_id
-                    workdir = (task.project_root or "").strip() or workdir
-    if project_id and not workdir:
-        from flow_sdk.builtin.project import Project
-
-        project = await Project.get_one({"id": project_id})
-        if project:
-            workdir = (project.fs_storage_mount_path or "").strip() or workdir
-    return workdir, project_id
-
-
-async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Resolve transcript path + spawn info for a Claude session derived from this FM.
-
-    Spawning the AgenticProcess is intentionally left to the frontend
-    (mirrors `useMyProcess`'s pattern: ``AgenticProcess.spawn(..., { visible: true })``
-    + ``process.start({ instruction })``) so we get a real PTY-backed shell
-    the user can interact with — a backend-spawned ``visible=false`` worker
-    has no PTY to attach to and the dock's shell route falls back when
-    navigated to.
-    """
-    fm = await FlowMessage.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    transcript = None
-    for att in fm.attachment or []:
-        if att.attachment_type == AttachmentType.FILE and att.data.endswith("conversation.jsonl"):
-            transcript = att
-            break
-    if not transcript:
-        return ApiFailResponse(message="No transcript attachment on this message")
-
-    transcript_path = transcript.local_path or transcript.data
-    workdir, project_id = await _resolve_workdir_and_project_async(fm)
-
-    return ApiSuccessResponse(
-        data={
-            "transcript_path": transcript_path,
-            "workdir": workdir,
-            "project_id": project_id,
-        }
-    )
-
-
-@action.post(action_name="start-cc-from-transcript", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def start_cc_from_transcript() -> ApiResponse:
-    """Headless: start a Claude session from this FM's transcript attachment."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        return await handle_start_cc_from_transcript(
-            fm_id=str(request_info.target_entity_typeid.id),
-            someone_typeid=request_info.someone_typeid,
-        )
-    except Exception as e:
-        logger.error("[flow_message_action] start-cc-from-transcript error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Start CC failed: {str(e)}")
-
-
-# ---------------------------------------------------------------------------
-# Approve & Execute draft persistence
-#
-# After the headless run completes, the new ``useApproveAndExecute`` hook calls
-# this action to persist the assistant reply as a draft ``FlowMessage`` on the
-# scoped conversation. Doing the construction server-side avoids the gap where
-# ``new FlowMessage().save()`` on the frontend drops the ``text`` field during
-# its first serialization, which the server then rejects.
-#
-# The wrap pattern ``Prompt response: "<text>"`` is the contract ``MessageBubble``
-# uses to italicise the quoted middle — the user edits the draft and the
-# pattern naturally breaks, falling through to plain rendering.
-# ---------------------------------------------------------------------------
-
-_PROMPT_RESPONSE_PREFIX = 'Prompt response: "'
-_PROMPT_RESPONSE_SUFFIX = '"'
-
-
-def _wrap_as_claude_quote(text: str) -> str:
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f"{_PROMPT_RESPONSE_PREFIX}{escaped}{_PROMPT_RESPONSE_SUFFIX}"
-
-
-@action.post(action_name="save-prompt-response-draft", types=[BuiltinEntityType.CONVERSATION.value])
-async def save_prompt_response_draft() -> ApiResponse:
-    """Persist ``text`` as a draft FlowMessage on this conversation.
-
-    Body: ``{text: str}``. Returns ``{flow_message_id}`` of the saved draft.
-    Used by the Approve & Execute frontend hook.
-    """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        conv_id = str(request_info.target_entity_typeid.id)
-        body = await request_info.get_post_data() or {}
-        text = (body.get("text") or "").strip()
-        if not text:
-            return ApiFailResponse(message="text is required")
-
-        sender_id, sender_name = await User.local_sender_identity()
-        fm = FlowMessage.model_validate(
-            {
-                "text": _wrap_as_claude_quote(text),
-                "attachment": [],
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "conversation_id": conv_id,
-                "is_draft": True,
-            }
-        )
-        fm.id = FlowMessage.allocate_id(fm.model_dump())
-        await fm.save(request_info.someone_typeid)
-        return ApiSuccessResponse(data={"flow_message_id": fm.id})
-    except Exception as e:
-        logger.error("[flow_message_action] save-prompt-response-draft error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")

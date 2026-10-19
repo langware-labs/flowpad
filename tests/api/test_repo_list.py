@@ -83,13 +83,13 @@ async def test_repo_list_page1_returns_summaries(bootstrapped_client, github_use
         },
         {
             "name": "Engine",
-            "full_name": "GadiTunes1/Engine",
-            "owner": {"login": "GadiTunes1"},
+            "full_name": "octo-dev/Engine",
+            "owner": {"login": "octo-dev"},
             "private": True,
             "default_branch": "master",
             "pushed_at": "2023-12-28T00:00:00Z",
             "permissions": {"admin": False, "push": True, "pull": True},
-            "html_url": "https://github.com/GadiTunes1/Engine",
+            "html_url": "https://github.com/octo-dev/Engine",
             "description": None,
             "fork": False,
         },
@@ -123,7 +123,7 @@ async def test_repo_list_page1_returns_summaries(bootstrapped_client, github_use
         "html_url": "https://github.com/langware-labs/flowpad",
         "description": "Flowpad",
         "fork": False,
-        "git_origin": {**_git_origin(), "project_id": ""},
+        "git_origin": _git_origin(),
     }
     # role mapping: admin=False, push=True → "write"
     assert data["repos"][1]["role"] == "write"
@@ -149,6 +149,49 @@ async def test_repo_list_parses_next_page_from_link_header(bootstrapped_client, 
         )
     assert r.status_code == 200
     assert r.json()["data"]["next_page"] == 2
+
+
+@pytest.mark.asyncio
+async def test_repo_create_is_private_initialized_and_returns_picker_contract(
+    bootstrapped_client,
+    github_user_with_token,
+):
+    user = github_user_with_token
+    created = {
+        "name": "support-demo",
+        "full_name": "globex/support-demo",
+        "owner": {"login": "globex"},
+        "private": True,
+        "default_branch": "main",
+        "html_url": "https://github.com/globex/support-demo",
+    }
+    with patch.object(ra.requests, "post", return_value=_mock_response(201, json_body=created)) as create:
+        response = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/create",
+            json={"provider": "github", "name": "support-demo"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert create.call_args.kwargs["json"] == {
+        "name": "support-demo",
+        "private": True,
+        "auto_init": True,
+    }
+    repo = response.json()["data"]["repo"]
+    assert repo["role"] == "admin"
+    assert repo["git_origin"]["branch"] == "main"
+
+
+@pytest.mark.asyncio
+async def test_repo_create_rejects_unsafe_name_before_github(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    with patch.object(ra.requests, "post", side_effect=AssertionError("should not reach GitHub")):
+        response = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/create",
+            json={"provider": "github", "name": "owner/repo"},
+        )
+
+    assert response.status_code == 400
 
 
 # do not increase timeout without approval
@@ -370,3 +413,95 @@ async def test_invitation_accept_invalid_id_returns_400(bootstrapped_client, git
     )
     assert r.status_code == 400
     assert "invitation_id" in r.json()["message"].lower()
+
+
+# ── the owner select: orgs, and one org's repos ─────────────────────────────
+
+
+def _by_url(routes: dict):
+    """A ``requests.get`` answering by URL — each test names exactly what GitHub says."""
+
+    def get(url, **_kwargs):
+        return routes[url]
+
+    return get
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_orgs_names_the_viewer_and_the_orgs_github_reports(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    routes = {
+        "https://api.github.com/user": _mock_response(200, json_body={"login": "octocat"}),
+        "https://api.github.com/user/orgs": _mock_response(
+            200, json_body=[{"login": "langware-labs", "avatar_url": "https://a/1"}]
+        ),
+    }
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(f"/api/v1/graph/user/{user.id}/repo/orgs", json={"provider": "github"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == {"login": "octocat", "orgs": [{"login": "langware-labs", "avatar_url": "https://a/1"}]}
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_orgs_repos_are_listed_as_the_picker_lists_repos(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    repo = {"name": "api", "full_name": "acme-corp/api", "owner": {"login": "acme-corp"}, "private": True,
+            "default_branch": "main", "pushed_at": "2026-09-29T00:00:00Z",
+            "permissions": {"admin": False, "push": True, "pull": True}, "html_url": "", "description": "", "fork": False}
+    routes = {"https://api.github.com/orgs/acme-corp/repos": _mock_response(200, json_body=[repo])}
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "acme-corp"}
+        )
+
+    data = r.json()["data"]
+    assert [x["full_name"] for x in data["repos"]] == ["acme-corp/api"] and data["repos"][0]["role"] == "write"
+    assert data["restricted"] is False and data["next_page"] is None
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_org_that_shows_nothing_is_reported_as_restricted(bootstrapped_client, github_user_with_token):
+    """What an org with OAuth App access restrictions answers: 200, and an empty list."""
+    user = github_user_with_token
+    routes = {"https://api.github.com/orgs/acme-corp/repos": _mock_response(200, json_body=[])}
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "acme-corp"}
+        )
+
+    assert r.json()["data"]["restricted"] is True
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_org_github_does_not_know_is_said_so(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    routes = {"https://api.github.com/orgs/no-such-org/repos": _mock_response(404, json_body={}, text="Not Found")}
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "no-such-org"}
+        )
+
+    body = r.json()
+    assert body["status"] != "SUCCESS" and "no organization named no-such-org" in body["message"]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_unsafe_owner_never_reaches_github(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    with patch.object(ra.requests, "get", side_effect=AssertionError("reached GitHub")):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "../user"}
+        )
+
+    assert r.status_code == 400

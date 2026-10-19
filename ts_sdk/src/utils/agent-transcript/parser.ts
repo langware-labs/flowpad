@@ -1,5 +1,5 @@
 import type { GenericEntry, ParsedTranscript } from './entries';
-import { TranscriptFormat, TranscriptSource } from '../../transcript-analyzer';
+import { TranscriptFormat, TranscriptSource } from './entries';
 
 /**
  * Validate and cast the server response to a `ParsedTranscript`.

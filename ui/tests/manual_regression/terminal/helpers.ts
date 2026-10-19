@@ -1,4 +1,6 @@
 import { type Page, type Locator, test, expect } from '@playwright/test';
+import { apiOrigin } from '../_shared/api';
+import { selectViewMode, withViewMode } from '../_shared/view-mode';
 
 /**
  * Live-env (host PTY exhaustion) detection + sanctioned conditional skip.
@@ -42,6 +44,25 @@ async function isPtyExhausted(page: Page): Promise<boolean> {
  * from a nav helper's catch block: a genuine app breakage still throws its own
  * error; only the host-capacity case is skipped (with proof in the reason).
  */
+/**
+ * Sandbox preflight: fail loud and fast when this backend cannot open an e2b
+ * sandbox. Without it a sandbox spec clicks "sandbox", no tab ever appears, and
+ * it dies on its 60s budget with nothing naming the cause. `/graph/info` omits
+ * `sandbox_available` when the probe itself failed — that is unavailable too.
+ * A hard failure, not a skip: the prerequisite is part of the Phase 11 env.
+ */
+export async function requireSandbox(): Promise<void> {
+  const res = await fetch(`${apiOrigin()}/api/v1/graph/info`);
+  const body = (await res.json().catch(() => ({}))) as { data?: { sandbox_available?: boolean } };
+  if (body.data?.sandbox_available !== true) {
+    throw new Error('sandbox unavailable: backend lacks the e2b SDK or E2B_KEY');
+  }
+}
+
+/** The ribbon's button container under the terminal (TerminalBottomRibbon). One
+ * selector change here used to be a six-file sweep — keep it single-sourced. */
+export const RIBBON_TABS = '[data-testid="terminal-ribbon-tabs"]';
+
 export async function skipIfPtyExhausted(page: Page) {
   if (await isPtyExhausted(page)) {
     test.skip(
@@ -59,39 +80,26 @@ export async function dismissSetupModal(page: Page) {
   watchForPtyExhaustion(page);
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // Terminal scenarios assert the xterm surface, the side ribbon, and the
-    // full ProcessToolbar — all Advanced-view surfaces. The default Standard
-    // view overlays the Claude pane with the simple chat instead.
-    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
 /**
- * Force Advanced view at runtime.
- *
- * The `localStorage.viewMode='advanced'` seed set in {@link dismissSetupModal}
- * no longer wins on its own: view_mode is now a backend-owned pref
- * (`preferences.ui.view_mode` in preferences.json) and InstancePreferences
- * `_doLoadJson` REPLACES the boot-seeded in-memory value with the backend's
- * (Standard) once the compute node is wired. The TerminalBottomRibbon + the
- * unified side-window panels (Git / Prompts / …) only render in Advanced/Dev,
- * so we must flip the pref through the app's own `window.setView` AFTER boot
- * (loadJson done → the set won't be clobbered). Poll until `setView` exists and
- * the document root reflects `data-view="advanced"`.
+ * Put the tab on the Terminal surface AND turn the developer switch on.
+ * Since host tabs (71e9272c6) "Advanced" is not a view mode: the footer control
+ * only picks the surface, and every advanced-only piece of UI (the ribbon's
+ * power-user side tabs, the annotation gutter) follows the Dev switch
+ * (`useIsAdvanced() === useIsDev()`). The switch is flipped through the app's
+ * own `window.setDev`, the same call the avatar double-click makes.
  */
 export async function ensureAdvancedView(page: Page) {
-  await expect(async () => {
-    const view = await page.evaluate(() => {
-      const w = window as unknown as {
-        setView?: (v: string) => void;
-        getView?: () => string;
-      };
-      if (typeof w.setView !== 'function') return null;
-      if (w.getView?.() !== 'advanced') w.setView('advanced');
-      return document.documentElement.getAttribute('data-view');
-    });
-    expect(view).toBe('advanced');
-  }).toPass({ timeout: 10_000 });
+  // The footer control acts on the dock the APP has committed, which trails the
+  // address bar by a render after a tab opens: clicked in that gap it re-opens
+  // the PREVIOUS tab in the requested mode. Act once the active panel is the
+  // one the URL names.
+  const pointer = new URL(page.url()).pathname.match(/\/dock\/shell\/((?:shell|agentic_process)-[0-9a-f-]+)/)?.[1];
+  if (pointer) await expect(activePanel(page)).toHaveAttribute('data-session-id', pointer);
+  await selectViewMode(page, 'advanced');
+  await page.evaluate(() => window.setDev(true));
 }
 
 /**
@@ -99,7 +107,7 @@ export async function ensureAdvancedView(page: Page) {
  * This creates a fresh interactive PTY terminal and waits for it to be ready.
  */
 export async function gotoShell(page: Page) {
-  await page.goto('/dock/shell/new_terminal');
+  await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
 
   // Handle setup modal (DesktopSetupModal) if it appears
   const skipButton = page.getByRole('button', { name: 'Skip' });
@@ -140,6 +148,7 @@ export async function gotoShell(page: Page) {
  * Falls back to a tooltip-based lookup if the direct click fails.
  */
 export async function gotoShellViaSidebar(page: Page) {
+  await ensureAdvancedView(page);
   // Try tooltip-based lookup first (SidebarMenuButton sets title/aria-label from tooltip prop)
   const shellByTitle = page.locator('button[title="Shell"]');
   const shellByLabel = page.getByRole('button', { name: 'Shell' });
@@ -195,10 +204,7 @@ export async function sendCommand(page: Page, cmd: string) {
   // data-active="true" to be absent and panels to briefly unmount. We use 'attached' state
   // (DOM presence, not CSS visibility) so rapid command loops don't stall when React is
   // mid-re-render. The force:true click below handles any remaining visibility issues.
-  await page
-    .locator('[data-testid="terminal-panel"]')
-    .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+  await page.locator('[data-testid="terminal-panel"]').first().waitFor({ state: 'attached', timeout: 10_000 });
   await terminalPanel.click({ force: true });
 
   // Small delay to ensure focus is set
@@ -235,11 +241,16 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
  * only render when the opener has been pinned; the always-present affordance
  * is the plus button + dropdown menu row.
  */
-export async function openTabViaMenu(page: Page, openerId: 'claude' | 'terminal' | 'sandbox' | 'docker' | 'history' | 'claude-resume-by-id') {
+export async function openTabViaMenu(
+  page: Page,
+  openerId: 'claude' | 'terminal' | 'sandbox' | 'history' | 'claude-resume-by-id',
+) {
   const inline =
     openerId === 'terminal'
       ? page.locator('[data-testid="open-terminal-tab-button"]')
-      : page.locator(`[data-testid="opener-inline-${openerId}"]`);
+      : openerId === 'sandbox'
+        ? page.locator('[data-testid="open-sandbox-tab-button"]')
+        : page.locator(`[data-testid="opener-inline-${openerId}"]`);
   if (await inline.isVisible({ timeout: 500 }).catch(() => false)) {
     await inline.click();
     return;
@@ -314,13 +325,16 @@ export async function getActiveTabName(page: Page): Promise<string> {
 
 /**
  * Navigate to Home via the sidebar Home button (client-side React Router nav).
- * Selects by lucide icon class to avoid positional-index drift (Refresh/Inbox
+ * Selects by lucide icon class to avoid positional-index drift (Refresh/Stream Inbox
  * shifted indices in the sidebar). Click-path is required because this
  * scenario verifies that no-reload nav preserves React state including active
  * xterm.js terminal sessions.
  */
 export async function goHome(page: Page) {
-  const homeSidebarBtn = page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)');
+  // Home is a TOP-BAR control, not a rail slot: `RailItemId` (rail-visibility.ts)
+  // has no 'home' member, so the old `[data-rail-item="home"]` locator could
+  // never resolve and every caller burned the full test timeout on the click.
+  const homeSidebarBtn = page.locator('[data-testid="top-nav-home"]');
   await homeSidebarBtn.click();
   await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
 
@@ -333,13 +347,12 @@ export async function goHome(page: Page) {
 }
 
 /**
- * Navigate to the Shell view via the sidebar Shell button (client-side React
- * Router nav). Selects by lucide icon class — Shell is in mainNavItems
- * (always visible), so no chevron hover is needed.
+ * Navigate to the Shell view (the terminal host). The rail's former Chats entry
+ * is now "Tabs" — back to the last active tab, shown only while tabs are open —
+ * so the shell host is reached by its own address.
  */
 export async function gotoShellView(page: Page) {
-  const shellSidebarBtn = page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)');
-  await shellSidebarBtn.click();
+  await page.goto('/dock/shell?viewMode=advanced');
   await page.waitForURL(/\/dock\/shell/, { timeout: 10_000 });
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
 }
@@ -358,13 +371,18 @@ export function activePanel(page: Page) {
   return page.locator('[data-testid="terminal-panel"][data-active="true"]');
 }
 
+/** Terminal chips in the unified strip, keyed by DockPointer.tabHash. */
+export function terminalTabChips(page: Page) {
+  return page.locator('[data-terminal-target^="shell|"]');
+}
+
 /**
  * The side window container, scoped to the active panel: every open tab keeps
  * its terminal panel mounted, each with its own side-window container — an
  * unscoped locator resolves to 2+ elements and trips strict mode.
  */
 export function getSideWindow(page: Page) {
-  return activePanel(page).locator('.w-80.flex-col.border-l');
+  return activePanel(page).locator('.w-80.flex-col.border-s');
 }
 
 /**
@@ -374,8 +392,11 @@ export function getSideWindow(page: Page) {
  */
 export async function ensureSideTabOpen(page: Page, buttonIndex: number, tabLabel: string) {
   const tabStrip = getSideWindow(page).locator('.border-b').first();
-  const already = await tabStrip.getByText(tabLabel, { exact: true }).isVisible({ timeout: 1_000 }).catch(() => false);
-  if (!already) await activePanel(page).locator('.border-t .ml-auto button').nth(buttonIndex).click();
+  const already = await tabStrip
+    .getByText(tabLabel, { exact: true })
+    .isVisible({ timeout: 1_000 })
+    .catch(() => false);
+  if (!already) await activePanel(page).locator(`${RIBBON_TABS} button`).nth(buttonIndex).click();
   await tabStrip.getByText(tabLabel, { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
 }
 

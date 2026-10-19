@@ -1,0 +1,293 @@
+import {
+  Agent,
+  ComputeNodeSize,
+  ComputeProviderType,
+  Deployment,
+  type AgentReadiness,
+  type AgentTokenAllocation,
+  type CloudDeployProvider,
+  type IDeployment,
+} from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { useEffect, useState } from 'react';
+import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
+
+import { describeApiError, errorMessage } from '@src/lib/error-message';
+import { cn } from '@src/lib/utils';
+import { notify } from '@src/notifications';
+import { Button } from '@src/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Input } from '@src/components/ui/input';
+import { Label } from '@src/components/ui/label';
+import { useDeployProviders } from '@src/hooks/use-deploy-providers';
+
+import { AgentDeployChecklist } from './AgentDeployChecklist';
+import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
+import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES, AGENT_MONTHLY_MACHINE_SIZE_LABELS } from './agent-vocabularies';
+
+/** A cloud machine's credential environment when nobody names one. */
+const DEFAULT_CLOUD_ENVIRONMENT = 'production';
+const ENVIRONMENT_RE = /^[a-z][a-z0-9_-]{0,39}$/;
+const RESERVED_ENVIRONMENTS = new Set(['project', 'user', 'development']);
+
+/** What a deploy refused by the readiness gate carries (409 `not_ready`). */
+interface NotReadyData {
+  readiness?: AgentReadiness;
+  deployment?: IDeployment;
+}
+
+/** A cloud machine: the hub provider it lands on and its size, e.g. `e2b-sm`. */
+type CloudMachine = `${CloudDeployProvider}-${ComputeNodeSize}`;
+
+/** `local`, or a cloud machine. */
+type DeploymentType = 'local' | CloudMachine;
+
+function cloudMachine(type: CloudMachine): { provider: CloudDeployProvider; size: ComputeNodeSize } {
+  // The size is the last segment: a provider is the hub's name and may itself hold a '-'.
+  const cut = type.lastIndexOf('-');
+  return { provider: type.slice(0, cut), size: type.slice(cut + 1) as ComputeNodeSize };
+}
+
+/**
+ * How each provider's machines read: billed hourly, or monthly with the machine's strength. A provider
+ * the hub offers that is missing here still gets its rows, hinted by its bare name.
+ */
+const PROVIDER_HINTS: Partial<Record<CloudDeployProvider, Record<ComputeNodeSize, string>>> = {
+  [ComputeProviderType.E2B]: AGENT_MACHINE_SIZE_LABELS,
+  [ComputeProviderType.GCP_VM]: AGENT_MONTHLY_MACHINE_SIZE_LABELS,
+};
+
+interface NewDeploymentDialogProps {
+  agent: Agent;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Saves the cloud machine size into agent.json (the hub sizes the box from it). Resolves once written. */
+  onMachineSize?: (size: string) => Promise<unknown>;
+  /** Called with the new deployment's id once launched. */
+  onLaunched: (deploymentId?: string) => void | Promise<void>;
+}
+
+/**
+ * New deployment: pick where the agent runs — this computer, or a cloud machine of a size — see
+ * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
+ * (it runs the published definition) and a credential environment; this computer needs neither.
+ */
+export function NewDeploymentDialog({
+  agent,
+  open,
+  onOpenChange,
+  onMachineSize,
+  onLaunched,
+}: NewDeploymentDialogProps) {
+  const { t } = useLingui();
+  const [type, setType] = useState<DeploymentType>('local');
+  const [launching, setLaunching] = useState(false);
+  // Tri-state from the checklist: `null` (still checking) never disables Launch.
+  const [ready, setReady] = useState<boolean | null>(null);
+  const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
+  // `null`: unchecked — the deployed agent spends its owner's capped default.
+  const [tokenAllocation, setTokenAllocation] = useState<AgentTokenAllocation | null>(null);
+  const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
+  // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
+  // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
+  const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
+  const machine = type === 'local' ? null : cloudMachine(type);
+  const cloud = machine !== null;
+  // The hub publishes which providers a deployment may use; only those get rows.
+  const { providers, isLoading: providersLoading } = useDeployProviders();
+  useEffect(() => {
+    for (const provider of providers) {
+      if (!PROVIDER_HINTS[provider]) console.log(`[NewDeploymentDialog] no display for hub provider '${provider}'`);
+    }
+  }, [providers]);
+
+  // Every cloud row reads "Cloud machine"; which provider runs it is not the user's concern — only how it
+  // bills: hourly, or monthly with the machine's strength.
+  const cloudRows = (provider: CloudDeployProvider) =>
+    AGENT_MACHINE_SIZES.map((size) => ({
+      value: `${provider}-${size}` satisfies CloudMachine,
+      label: t`Cloud machine`,
+      hint: PROVIDER_HINTS[provider]?.[size] ?? provider,
+      Icon: Cloud,
+    }));
+  const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
+    // One more each time: every local deployment is its own process on this computer.
+    { value: 'local', label: t`This computer`, hint: t`Free · runs while this computer is awake`, Icon: Laptop },
+    ...providers.flatMap(cloudRows),
+  ];
+
+  const launch = async () => {
+    setLaunching(true);
+    try {
+      let data;
+      if (!machine) {
+        data = await agent.deploy(undefined, 'local');
+        notify.success({ title: t`${agent.name} now runs on this computer` });
+      } else {
+        // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
+        await onMachineSize?.(machine.size);
+        data = await agent.deploy(environment, machine.provider, tokenAllocation);
+        if (data.agent_definition_error) {
+          notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
+        } else if (data.reused) {
+          notify.info({ title: t`${agent.name} already has a cloud machine` });
+        } else {
+          notify.success({ title: t`${agent.name} now runs on a cloud machine` });
+        }
+      }
+      onOpenChange(false);
+      await onLaunched(data.deployment?.id);
+    } catch (e) {
+      if (describeApiError(e).code === 'not_ready') {
+        // The refusal names the planned placement and what it lacks; its fixes go there.
+        const data = (e as { response?: { data?: { data?: NotReadyData } } }).response?.data?.data;
+        if (data?.readiness && data.deployment) {
+          setRefused({ readiness: data.readiness, deployment: new Deployment(data.deployment) });
+          return;
+        }
+      }
+      notify.error({
+        title: t`Could not launch the deployment`,
+        message: errorMessage(e, t`Launch failed.`),
+        forceToast: true,
+      });
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  const blocked =
+    !agent.enabled ||
+    launching ||
+    (cloud &&
+      (ready === false ||
+        !environmentValid ||
+        !tokenAllocationComplete(tokenAllocation) ||
+        refused?.readiness.ready === false));
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !launching && onOpenChange(next)}>
+      <DialogContent className="max-w-lg" data-testid="new-deployment-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            <Trans>New deployment</Trans>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={t`Deployment type`}>
+          {choices.map(({ value, label, hint, Icon }) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={type === value}
+              disabled={launching}
+              onClick={() => {
+                setType(value);
+                setRefused(null);
+              }}
+              className={cn(
+                'flex items-center gap-3 rounded-md border px-3 py-2 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                type === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
+              )}
+              data-testid={`new-deployment-type-${value}`}
+            >
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 text-sm">{label}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{hint}</span>
+            </button>
+          ))}
+          {providersLoading ? (
+            <p className="px-3 text-xs text-muted-foreground" data-testid="new-deployment-providers-loading">
+              <Trans>Loading cloud machines…</Trans>
+            </p>
+          ) : (
+            providers.length === 0 && (
+              <p className="px-3 text-xs text-muted-foreground" data-testid="new-deployment-no-cloud">
+                <Trans>Sign in to the hub to deploy to a cloud machine.</Trans>
+              </p>
+            )
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t pt-3" data-testid="new-deployment-details">
+          {machine ? (
+            <>
+              <AgentDeployChecklist agent={agent} onReadinessChange={setReady} />
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="new-deployment-environment" className="text-xs">
+                  <Trans>Environment</Trans>
+                </Label>
+                <Input
+                  id="new-deployment-environment"
+                  className="h-8 w-40 font-mono text-xs"
+                  value={environment}
+                  disabled={launching}
+                  onChange={(e) => {
+                    setEnvironment(e.target.value.trim().toLowerCase());
+                    setRefused(null);
+                  }}
+                  aria-invalid={!environmentValid}
+                  data-testid="new-deployment-environment"
+                />
+                <span className="text-xs text-muted-foreground">
+                  {environmentValid ? (
+                    <Trans>The machine reads this environment's credentials.</Trans>
+                  ) : (
+                    <Trans>Lowercase letters, digits, - and _ (not development).</Trans>
+                  )}
+                </span>
+              </div>
+              <TokenAllocationField
+                agent={agent}
+                environment={environment}
+                provider={machine.provider}
+                value={tokenAllocation}
+                onChange={setTokenAllocation}
+                disabled={launching}
+              />
+              {refused && (
+                <DeploymentSecretsGate
+                  agent={agent}
+                  deployment={refused.deployment}
+                  readiness={refused.readiness}
+                  onChange={(readiness) => setRefused({ ...refused, readiness })}
+                />
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground" data-testid="new-deployment-local-details">
+              <Trans>
+                Runs as a process on this computer with your own credentials, only while it is awake. Nothing is
+                published.
+              </Trans>
+            </p>
+          )}
+        </div>
+
+        <DialogFooter className="items-center gap-2">
+          {launching && machine && (
+            <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-starting">
+              {/* A monthly machine is a full VM: creating and enrolling it takes longer than a sandbox. */}
+              {machine.provider === ComputeProviderType.GCP_VM ? (
+                <Trans>Starting a machine — this takes a couple of minutes.</Trans>
+              ) : (
+                <Trans>Starting a machine — this takes a minute.</Trans>
+              )}
+            </span>
+          )}
+          <Button
+            disabled={blocked}
+            title={cloud && ready === false ? t`Finish the setup above first` : undefined}
+            onClick={() => void launch()}
+            data-testid="new-deployment-launch"
+          >
+            {launching ? <Loader2 className="me-1.5 h-4 w-4 animate-spin" /> : <Rocket className="me-1.5 h-4 w-4" />}
+            <Trans>Launch</Trans>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

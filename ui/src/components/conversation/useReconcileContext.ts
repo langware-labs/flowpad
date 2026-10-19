@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { APIEntity, ActionInfo, dataManager, TypeId } from '@sdk';
+import { APIEntity, ActionInfo, dataManager, TypeId, type AnyEntity } from '@sdk';
 
 /**
  * Fires the backend ``reconcile-context`` action once per holder, on view-open,
@@ -14,7 +14,7 @@ import { APIEntity, ActionInfo, dataManager, TypeId } from '@sdk';
  */
 const reconciledHolders = new Set<string>();
 
-export function useReconcileContext(holder: APIEntity<any> | null | undefined): void {
+export function useReconcileContext(holder: AnyEntity | null | undefined): void {
   const holderKey = holder?.typeId?.toString() ?? null;
   const hasRefs =
     (holder?.sharedContextEntities?.length ?? 0) > 0 ||

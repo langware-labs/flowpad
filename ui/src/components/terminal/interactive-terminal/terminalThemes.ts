@@ -1,5 +1,5 @@
 // Shared xterm color themes for both the main InteractiveTerminal
-// and the SidecarShellTerminal. Keep these as plain hex literals — xterm's
+// and the ShellTerminal. Keep these as plain hex literals — xterm's
 // theme option does not resolve CSS variables.
 
 import type { ITheme } from '@xterm/xterm';

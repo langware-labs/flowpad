@@ -20,6 +20,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 
 
@@ -44,25 +45,32 @@ async def _index_single_file(
 
 async def _index_single_plan(plan_md_path: Path) -> None:
     """``~/.claude/plans/<name>.md`` → root = ``~`` (parents[2])."""
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
     await _index_single_file(
-        plan_md_path.parents[2], claude_plan_fn, RecordType.PLAN,
+        plan_md_path.parents[2], walker_for("plan"), RecordType.PLAN,
     )
 
 
 async def _index_single_markdown(md_path: Path) -> None:
-    """``<root>/.claude/docs/**/*.md`` → root = ``<root>`` (parents[2]).
+    """``<root>/docs/**/*.md`` → root = the parent of the ``docs`` segment.
 
-    v1.2 wires the ``.claude/docs/`` layout used by ``markdown_flat_fn``.
+    Wires the DOCS family mount of markdown's declared walk (was
+    ``.claude/docs`` before markdown became ``AssetClass.DOCS``). The root is
+    found by walking UP to the ``docs`` segment rather than a fixed
+    ``parents[N]``: the walk is recursive, so the file may be nested any
+    number of levels below ``docs/`` — a fixed index silently picks the wrong
+    root for ``docs/sub/a.md``.
+
     Project-scoped markdown (under a project's tree, picked up by
     ``markdown_in_folder_fn`` via the folder walker) needs a different
     walker setup and is not handled here — those rows are populated by
     the regular project walks.
     """
-    from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
-    await _index_single_file(
-        md_path.parents[2], markdown_flat_fn, RecordType.MARKDOWN,
-    )
+    from flow_sdk.assets.placement import DOCS_FAMILY
+
+    root = next((p.parent for p in md_path.parents if p.name == DOCS_FAMILY), None)
+    if root is None:
+        return
+    await _index_single_file(root, walker_for("markdown"), RecordType.MARKDOWN)
 
 
 async def _index_single_skill(skill_path: Path) -> None:
@@ -72,10 +80,9 @@ async def _index_single_skill(skill_path: Path) -> None:
     Normalize to the skill DIR, then root = ``<root>`` (parents[2] of the
     skill dir, i.e. parents[3] of the file).
     """
-    from flow_sdk.fs_store.indexer.functions.skill import skill_fn
     skill_dir = skill_path.parent if skill_path.is_file() else skill_path
     await _index_single_file(
-        skill_dir.parents[2], skill_fn, RecordType.SKILL,
+        skill_dir.parents[2], walker_for("skill"), RecordType.SKILL,
     )
 
 
@@ -99,14 +106,20 @@ async def _index_single_claude_md(md_path: Path) -> None:
     )
 
 
-async def _index_single_claude_session(jsonl_path: Path) -> None:
-    """``~/.claude/projects/<encoded>/<sessionId>.jsonl`` → root = the encoded
-    project dir (the PROJECT node ``claude_sessions_fn`` expands)."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
-    await _index_single_file(
-        jsonl_path.parent, claude_sessions_fn, RecordType.CLAUDE_SESSION,
-        root_record_type=RecordType.PROJECT,
-    )
+async def index_session_file(session_type: str, path: Path) -> str | None:
+    """Index ONE worker session transcript (claude/codex/copilot) and return its
+    entity id, or None when the file is not that type's asset. The type is named
+    because session files share an extension and classify to nothing from a bare
+    path; only this file is read, never its siblings."""
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    try:
+        resolved = await resolve_asset(path, write=False, type_name=session_type)
+    except NotAnAsset:
+        return None
+    if resolved.owner is None:  # resolve_asset already looked the row up by path
+        await index_one(resolved)
+    return resolved.id
 
 
 async def _index_single_claude_memory(memory_path: Path) -> None:
@@ -119,15 +132,13 @@ async def _index_single_claude_memory(memory_path: Path) -> None:
 
 async def _index_single_claude_rules(rules_path: Path) -> None:
     """``<root>/.claude/rules/<name>.md`` → root = ``<root>`` (parents[2])."""
-    from flow_sdk.fs_store.indexer.functions.claude_rules import claude_rules_fn
     await _index_single_file(
-        rules_path.parents[2], claude_rules_fn, RecordType.CLAUDE_RULES,
+        rules_path.parents[2], walker_for("claude_rules"), RecordType.CLAUDE_RULES,
     )
 
 
 async def _index_single_command(command_path: Path) -> None:
     """``<root>/.claude/commands/<name>.md`` → root = ``<root>`` (parents[2])."""
-    from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     await _index_single_file(
-        command_path.parents[2], command_fn, RecordType.COMMAND,
+        command_path.parents[2], walker_for("command"), RecordType.COMMAND,
     )

@@ -116,7 +116,7 @@ terminal's re-attach) — see [Findings](#findings).
   returns the existing) AP bound to that session; a second call with the same `sessionId`
   returns the **same** AP id. Once a session has started, a later upsert with a different
   `workdir`/`projectId` is a **no-op** — the `(workdir, project_id)` binding is frozen to keep
-  the record aligned with where the transcript lives (incident 4c5bd6e4).
+  the record aligned with where the transcript lives.
 - `GET /api/v1/graph/compute_node/{cn}/terminals/get_by_worker_id/{sessionId}` →
   auto-discovers the on-disk Claude/Codex transcript, **atomically upserts** an AP *and*
   spawns its linked Shell (`shell_id` populated), returning the descriptor;
@@ -225,7 +225,7 @@ optional CLI keys). `worker_type` is keyed to the **driver name** (`"claude"`), 
 `.value` — not Python's default `"WorkerType.CLAUDE_CODE"` `__str__` form (the original
 ~700ms-after-start false flip).
 
-Tracked signals include `cli_config.*`, `additional_dirs`, `embedded_agent_ids`,
+Tracked signals include `cli_config.*`, `additional_dirs`, `embedded_subagent_ids`,
 `shell_mode`, `load_flowpad_assistant` (rides on worker `add_dirs`), and `pty_mode` for Codex
 (interactive vs `codex exec --json` shapes differ). Explicitly **not** tracked: `name`,
 `tags`, `labels`, `visible`, `plan_path`, `favorite_index`. `workdir` is frozen post-start
@@ -372,8 +372,8 @@ the inject test) — the success field doesn't distinguish "sent" from "no-op sk
 <a id="fork"></a>
 ## #fork — fork a session
 
-Branch a session into a sibling process that inherits history. **Browser-only coverage** — no
-Python or SDK integration test exists.
+Branch a session into a sibling process that inherits history. The executable browser contract is
+the process-toolbar flow below.
 
 **From the process toolbar** (`processtoolbar_fork.md`, Advanced view only):
 1. Fork button (GitFork) is **disabled** before the first assistant turn — tooltip
@@ -383,12 +383,9 @@ Python or SDK integration test exists.
 4. A new sibling tab is added (old tab stays); the new tab's transcript lens shows the prior
    history (fork copies it).
 
-**From the global search dock-menu** (`fork_action_from_search_dock.md`):
-1. Fork action (branch icon) on a `claude_session` search result.
-2. Creates a new `AgenticProcess` with `workdir == source session cwd`; the `createProcess`
-   payload includes `{ visible: true, watchProcess: false }`.
-3. The new shell tab mounts an **interactive** xterm (typing `echo hi` prints `hi`).
-   Pre-fix failure signature: created `visible: false`, PTY never attaches / blank terminal.
+The `claude_session` global-search action is also labelled **Fork**, but it currently discovers the
+source session's cwd and calls `openNewChat(...)`. It opens a fresh chat rooted at that cwd; it does
+not invoke the history-inheriting process-toolbar fork contract.
 
 **`conversation_view_three_spawn_branches.md` is stale** — flagged TEST-ISSUE (2026-06-04):
 it describes a `ConversationView.tsx` / `taskSessionCache` / `agentic_session_id` trio that no
@@ -457,12 +454,19 @@ full worker-status state machine.
 ### #ready-for-input — can a caller send a prompt?
 
 `is_ready_for_input(process, worker_status=None)`
-(`flow_sdk/builtin/agentic_process/status_predicates.py:72`) is the gate every send/enqueue path
+(`flow_sdk/builtin/agentic_process/status_predicates.py:203`) is the gate every send/enqueue path
 consults. Contract (truth-tabled in both the pytest and vitest suites):
 
 ```
-is_ready_for_input(p)  ⇔  p.status == RUNNING  AND  worker_status ∈ {IDLE, COMPLETE, INTERRUPTED}
+is_ready_for_input(p)  ⇔  not is_turn_busy(p)  AND  (
+    p.status == RUNNING
+    OR (p.status == NEW      AND not p.pty_mode)                  # fresh headless
+    OR (p.status == STOPPED  AND not p.pty_mode AND p.session_id)  # headless-idle
+)
 ```
+
+`is_turn_busy` is the busy axis: the prompt lock, a registered print-mode worker,
+`_turn_in_flight`, or — PTY transport only — a mid-turn `worker_status`.
 
 Special case: `worker_status is None` means the transcript hasn't been discovered yet — a RUNNING
 process with no derivable status is *spawned-and-idle* (ready for its first prompt) unless a turn
@@ -524,14 +528,10 @@ the same `visible` split that routes [#prompt-streaming](#prompt-streaming) and
 
 ### Non-slick flows
 
-1. **Fork has no callable API contract — only browser assertions.** Every other flow here can
-   be driven from Python or the TS SDK; fork can only be observed through the UI
-   (`processtoolbar_fork.md`, `fork_action_from_search_dock.md`), and its one concrete
-   contract — the `createProcess` body `{ visible: true, watchProcess: false }` with
-   `workdir == source cwd` — is captured as a DevTools Network assertion, not a test a CI run
-   executes. A caller wanting to fork programmatically has to reverse-engineer it from
-   `useMyProcess.ts`/`useApproveAndExecute.ts`, and the one scenario that *did* describe the
-   spawn logic is stale (`conversation_view_three_spawn_branches.md`).
+1. **The two UI actions labelled Fork do not share a contract.** The process-toolbar action
+   (`processtoolbar_fork.md`) forks the current process and inherits its history. The
+   `claude_session` search-result action instead calls `openNewChat(...)` with the discovered cwd,
+   producing a fresh chat. Callers cannot infer one action's semantics from the other.
 
 2. **The mode toggle is asymmetric — one direction is `switch-mode`, the other is `open`.**
    `switchMode(WorkerMode.CLI)` calls the `switch-mode` action, but
@@ -573,12 +573,9 @@ vs `POST /graph/shell`).
 - **Fork has no Python/SDK integration test** (browser-only, per above). The
   `visible: true` create-payload contract (the exact bug the search-dock scenario guards) is
   never exercised by an automated run.
-- **`tests/api/test_agentic_process_execute.py` is an empty file (0 bytes).** The headless
-  execute path has TS long-test coverage (`agentic_process_execute.test.ts`) but **zero** Python
-  API coverage despite the file existing as a placeholder.
-- **`findSession`/`get_by_worker_id` for Codex are gated on the `codex` binary**
-  (`requires_codex`, `test_pty_process_e2e.py:22-25`), so the Codex discovery+upsert path is
-  skipped on any host without the optional CLI — Claude is the only always-exercised sibling.
+- **Codex `get_by_worker_id` is gated on the `codex` binary** (`requires_codex`
+  in `test_pty_process_e2e.py`) because its upsert launches a real Shell and PTY.
+  Codex `findSession` is a read-only lookup and runs without the optional CLI.
 - **`recovery` mixes on-demand `open()` resume with a visible-AP watchdog**, but no single test
   proves the two don't double-spawn (one revives on load, one revives on a ~5s watchdog tick);
   `test_pty_recovery_on_demand.py` proves the *global* sweep is gone, and the TS tests prove the

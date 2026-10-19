@@ -18,10 +18,8 @@ import pytest
 from flow_sdk.builtin.agentic_process import (
     AgenticProcess,
     ProcessStatus,
-    WorkerStatus,
 )
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
-
 
 # ---------------------------------------------------------------------------
 # /status action shape

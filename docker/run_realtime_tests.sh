@@ -7,7 +7,7 @@
 # Prereqs:
 #   - Docker Desktop running (or Docker Engine >= 20.10 on Linux)
 #   - Hub backend running on host at http://localhost:8093 (run from
-#     the sibling test_flowpad/FlowPad checkout)
+#     your hub checkout — the hub is a separate service)
 #   - flowpad-app sibling repo (../flowpad-app next to this checkout)
 #     with its UI deps installed (for bob's vitest)
 set -euo pipefail

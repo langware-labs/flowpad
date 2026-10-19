@@ -7,7 +7,7 @@ import { GitStatusModal } from '@src/components/status-bar/GitStatusModal';
 import { PushContextFolderDialog } from './PushContextFolderDialog';
 
 interface ContextFolderGitBadgeProps {
-  /** Absolute path of the git context folder (the repo workdir). */
+  /** Absolute path of the git dependency folder (the repo workdir). */
   workdir: string;
   /** Compute node id whose git-ops back the status/push. */
   computeNodeId: string;
@@ -95,6 +95,7 @@ export function ContextFolderGitBadge({
           if (!o) void refresh();
         }}
         folderName={folderName}
+        workdir={workdir}
         branch={status?.branch ?? null}
         projectId={projectId}
         folderTypeId={folderTypeId}

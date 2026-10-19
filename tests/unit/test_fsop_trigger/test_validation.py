@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.trigger import Trigger, TriggerType, _validate_watch_path
-
+from flow_sdk.builtin.trigger import Trigger, _validate_watch_path
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)

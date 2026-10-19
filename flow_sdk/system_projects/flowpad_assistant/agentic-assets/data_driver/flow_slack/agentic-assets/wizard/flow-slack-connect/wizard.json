@@ -1,0 +1,22 @@
+{
+  "name": "flow-slack-connect",
+  "description": "Link your Slack account to Flowpad — press Connect Slack, add the Flowpad app to your workspace, send the code in its DM. Your messages then arrive in Flowpad.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "connect",
+      "label": "Connect Slack",
+      "kind": "compute",
+      "ref": "flow-slack-connect",
+      "bind": "connect"
+    },
+    {
+      "id": "ask-connected",
+      "label": "Send it to Flow in Slack",
+      "kind": "compute",
+      "ref": "flow-slack-ask-connected"
+    }
+  ]
+}

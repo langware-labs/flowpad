@@ -1,0 +1,215 @@
+import React from 'react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AgenticProcess } from '@sdk';
+
+const mocks = vi.hoisted(() => ({
+  openShellProcess: vi.fn(),
+  openVibeTabBeside: vi.fn(),
+  panelProps: null as Record<string, unknown> | null,
+  createProcess: vi.fn().mockResolvedValue({}),
+  continueProcess: vi.fn().mockResolvedValue('continued-process'),
+  startNewSession: vi.fn(),
+  sourceProcess: {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    target_typeid_str: 'markdown-cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    worker_type: 'claude_code',
+    session_id: 'session-with-turns',
+  },
+}));
+
+vi.mock('@src/contexts/agent-context', () => ({
+  useAgentContext: () => ({
+    project: {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      fs_storage_mount_path: '/workspace',
+    },
+  }),
+}));
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({
+    navigation: { openShellProcess: mocks.openShellProcess, openVibeTabBeside: mocks.openVibeTabBeside },
+  }),
+}));
+vi.mock('@src/components/entity-execution-panel', () => ({
+  EntityExecutionPanel: (props: Record<string, unknown>) => {
+    mocks.panelProps = props;
+    const leadingSlot = props.leadingSlot as
+      | React.ReactNode
+      | ((actions: { startNewSession: () => void }) => React.ReactNode)
+      | undefined;
+    return (
+      <>
+        {typeof leadingSlot === 'function' ? leadingSlot({ startNewSession: mocks.startNewSession }) : leadingSlot}
+        <button
+          data-testid="pick-history"
+          onClick={() =>
+            (props.onProcessSelected as ((id: string) => void) | undefined)?.('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+          }
+        />
+        <button
+          data-testid="switch-worker-empty"
+          onClick={() =>
+            (props.onActiveWorkerChange as ((args: Record<string, unknown>) => void) | undefined)?.({
+              workerType: 'copilot',
+              activeProcess: { ...mocks.sourceProcess, session_id: null },
+              model: null,
+              projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              workdir: '/source-workspace',
+            })
+          }
+        />
+        <button
+          data-testid="switch-worker"
+          onClick={() =>
+            (props.onActiveWorkerChange as ((args: Record<string, unknown>) => void) | undefined)?.({
+              workerType: 'codex',
+              activeProcess: mocks.sourceProcess,
+              model: null,
+              projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              workdir: '/source-workspace',
+            })
+          }
+        />
+      </>
+    );
+  },
+}));
+vi.mock('@src/components/help/AskForHelpButton', () => ({
+  AskForHelpButton: () => null,
+}));
+vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
+  createVibeProcessForProject: mocks.createProcess,
+  continueVibeSessionForProject: mocks.continueProcess,
+  embedVibeSubagent: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { VibeChatPane } from '@src/pages/flow-page/vibe-chat-pane';
+
+afterEach(() => {
+  cleanup();
+  mocks.openShellProcess.mockReset();
+  mocks.openVibeTabBeside.mockReset();
+  mocks.createProcess.mockClear();
+  mocks.continueProcess.mockClear();
+  mocks.startNewSession.mockClear();
+  mocks.panelProps = null;
+});
+
+describe('VibeChatPane', () => {
+  it('binds history to the project chat target and rebinds selection through navigation', () => {
+    // Deliberately NOT the project's own id: a runner-minted session's target
+    // (e.g. a diagnosis) must not leak into the composer's history key. The
+    // panel binds to the PROJECT's chat target (FLOWPAD-2054) regardless of
+    // what the open process itself is keyed to.
+    const process = {
+      id: '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      target_typeid_str: 'markdown-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      typeId: null,
+    } as AgenticProcess;
+
+    render(<VibeChatPane process={process} />);
+
+    expect(mocks.panelProps?.target).toBe('project-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(mocks.panelProps?.initialProcessId).toBe(process.id);
+    fireEvent.click(screen.getByTestId('pick-history'));
+    // Recent opens the picked session as a Vibe tab BESIDE this one.
+    expect(mocks.openVibeTabBeside).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+  });
+
+  it('FLOWPAD-2027: "New" eagerly creates a fresh session and rebinds navigation', async () => {
+    const process = hostProcess();
+    render(<VibeChatPane process={process} />);
+
+    fireEvent.click(screen.getByTestId('entity-execution-new'));
+
+    // Instant visual feedback while the real process spins up.
+    expect(mocks.startNewSession).toHaveBeenCalled();
+
+    // The real create+navigate must run — NOT deferred to a later send. This
+    // is what keeps a sibling surface (Terminal view mode), which reads the
+    // same dock URL, from reusing the old already-used session when the user
+    // switches there before typing anything.
+    await waitFor(() =>
+      expect(mocks.createProcess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          workdir: '/workspace',
+        }),
+      ),
+    );
+    expect(mocks.continueProcess).not.toHaveBeenCalled();
+  });
+
+  it('offers exactly start new, continue, and cancel outcomes', () => {
+    render(<VibeChatPane process={hostProcess()} />);
+    fireEvent.click(screen.getByTestId('switch-worker'));
+
+    const dialog = screen.getByTestId('vibe-worker-switch-dialog');
+    expect(
+      within(dialog)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Cancel', 'Start new', 'Continue this conversation']);
+  });
+
+  it('switches an empty chat straight to the new worker — nothing to continue, no question', async () => {
+    render(<VibeChatPane process={hostProcess()} />);
+    fireEvent.click(screen.getByTestId('switch-worker-empty'));
+
+    expect(screen.queryByTestId('vibe-worker-switch-dialog')).toBeNull();
+    await waitFor(() => expect(mocks.createProcess).toHaveBeenCalledWith(expect.objectContaining({ workerType: 'copilot' })));
+    expect(mocks.continueProcess).not.toHaveBeenCalled();
+  });
+
+  it('starts a blank selected-worker chat with the source target', async () => {
+    render(<VibeChatPane process={hostProcess()} />);
+    fireEvent.click(screen.getByTestId('switch-worker'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start new' }));
+
+    await waitFor(() =>
+      expect(mocks.createProcess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workerType: 'codex',
+          targetVfsPath: mocks.sourceProcess.target_typeid_str,
+        }),
+      ),
+    );
+    expect(mocks.continueProcess).not.toHaveBeenCalled();
+  });
+
+  it('continues from the exact callback source process', async () => {
+    render(<VibeChatPane process={hostProcess()} />);
+    fireEvent.click(screen.getByTestId('switch-worker'));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue this conversation' }));
+
+    await waitFor(() =>
+      expect(mocks.continueProcess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceProcess: mocks.sourceProcess,
+          workerType: 'codex',
+          targetVfsPath: mocks.sourceProcess.target_typeid_str,
+        }),
+      ),
+    );
+    expect(mocks.createProcess).not.toHaveBeenCalled();
+  });
+
+  it('cancels without creating or continuing a process', () => {
+    render(<VibeChatPane process={hostProcess()} />);
+    fireEvent.click(screen.getByTestId('switch-worker'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByTestId('vibe-worker-switch-dialog')).toBeNull();
+    expect(mocks.createProcess).not.toHaveBeenCalled();
+    expect(mocks.continueProcess).not.toHaveBeenCalled();
+  });
+});
+
+function hostProcess(): AgenticProcess {
+  return {
+    id: '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    target_typeid_str: 'markdown-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    typeId: null,
+  } as AgenticProcess;
+}

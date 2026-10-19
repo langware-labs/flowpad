@@ -11,7 +11,6 @@ from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.utils.hub import hub_get, hub_post, hub_put
 
-
 pytestmark = pytest.mark.hub
 
 

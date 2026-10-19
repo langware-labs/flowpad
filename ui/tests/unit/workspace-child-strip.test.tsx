@@ -5,12 +5,11 @@
  * the process dock (the workspace home), never an arbitrary sibling.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { Tab, type ITab } from '@sdk';
+import { Tab, tabManager, type ITab } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs, getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { ViewType } from '@src/types/ViewType';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
@@ -18,6 +17,7 @@ const openDock = vi.fn();
 let currentDock: DockPointer | null = null;
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock, navigation: { openDock } }),
+  useCurrentDock: () => currentDock,
 }));
 
 import { WorkspaceChildStrip } from '@src/pages/flow-page/workspace-child-strip';
@@ -45,6 +45,21 @@ function row(id: string, overrides: Partial<ITab> = {}): ITab {
   };
 }
 
+/** A child row shaped like the workspace's OWN active display (FLOWPAD-2096):
+ *  `materializeTab` adopts a `flow show` preview target as a child of the process
+ *  tab, but the fixed Display header already represents it — so it gets no chip. */
+function activeDisplayRow(id: string): ITab {
+  return row(id, {
+    pointer: JSON.stringify({
+      viewType: 'assets',
+      pointer: 'editor/html/vfs/compute_node-@local/index.html',
+      options: { activeDisplay: '1' },
+      tabHash: `activeDisplay|${AP}`,
+      workspaceContent: true,
+    }),
+  });
+}
+
 function processTab(): Tab {
   return new Tab({
     id: PROCESS_TAB_ID,
@@ -59,14 +74,14 @@ function processTab(): Tab {
 const processDock = () => new DockPointer(ViewType.SHELL, `agentic_process-${AP}`);
 
 beforeEach(() => {
-  vi.spyOn(Tab, 'listAll').mockImplementation(async () => getAllTabsSnapshot());
+  vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve([...tabManager.getSnapshot()]));
 });
 
 afterEach(() => {
   cleanup();
   openDock.mockReset();
   currentDock = null;
-  applyAllTabs([]);
+  tabManager.adoptGlobal([]);
   vi.restoreAllMocks();
 });
 
@@ -77,7 +92,7 @@ describe('WorkspaceChildStrip', () => {
       parent_tab_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     });
     const topLevel = row('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', { parent_tab_id: null });
-    applyAllTabs([processTab(), child, foreign, topLevel]);
+    tabManager.adoptGlobal([processTab(), child, foreign, topLevel]);
 
     render(
       // The Close-workspace control renders a radix Tooltip, which needs an
@@ -94,8 +109,40 @@ describe('WorkspaceChildStrip', () => {
     expect(screen.queryByText('child eeee')).toBeNull();
   });
 
+  it('excludes the workspace\'s own active-display row (FLOWPAD-2096), but still renders an ordinary child', () => {
+    const child = row('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    const display = activeDisplayRow('ffffffff-ffff-4fff-8fff-ffffffffffff');
+    tabManager.adoptGlobal([processTab(), child, display]);
+
+    render(
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText('child bbbb')).toBeTruthy();
+    expect(screen.queryByText('child ffff')).toBeNull();
+  });
+
+  it('highlights the Display header when the current dock IS the active display, even off the process tabHash', () => {
+    tabManager.adoptGlobal([processTab()]);
+    // The active-display dock is keyed by ACTIVE_DISPLAY_HASH_NS + host, not by
+    // the process's own tabHash, so a plain tabHash comparison would miss it.
+    currentDock = new DockPointer(ViewType.ASSETS, 'editor/html/vfs/compute_node-@local/index.html', {
+      activeDisplay: '1',
+    });
+
+    render(
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('workspace-display-tab').getAttribute('aria-current')).toBe('true');
+  });
+
   it('clicking the Display header navigates to the process dock', () => {
-    applyAllTabs([processTab()]);
+    tabManager.adoptGlobal([processTab()]);
     render(
       // The Close-workspace control renders a radix Tooltip, which needs an
       // ambient TooltipProvider — the real app supplies one at its root
@@ -112,7 +159,7 @@ describe('WorkspaceChildStrip', () => {
 
   it('closing the ACTIVE child returns to the process dock', () => {
     const child = row('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
-    applyAllTabs([processTab(), child]);
+    tabManager.adoptGlobal([processTab(), child]);
     // Make the child the active dock so close must bounce home.
     currentDock = new DockPointer(new Tab(child).dockPointer!);
     vi.spyOn(Tab, 'closeById').mockResolvedValue([]);

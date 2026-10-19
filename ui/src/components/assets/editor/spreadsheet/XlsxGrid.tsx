@@ -3,14 +3,13 @@ import { useTheme } from 'next-themes';
 import { RevoGrid } from '@revolist/react-datagrid';
 import * as XLSX from 'xlsx';
 import type { FSRef } from '@sdk';
-import { fsManager } from '@sdk';
 import { matrixToGrid, type GridData } from './grid-data';
 
 interface XlsxGridProps {
   /** FSRef to the .xlsx file (binary). */
   fsRef: FSRef;
   /** Entity `updated_date`-derived token — re-reads on out-of-band change. */
-  reloadKey: string | number;
+  reloadKey: string | number | undefined;
 }
 
 interface Workbook {
@@ -21,7 +20,7 @@ interface Workbook {
 /**
  * Read-only XLSX viewer. XLSX is binary, so it can't ride the plain-text
  * `useFSRefContent` path — we read the bytes directly via
- * `fsManager.download(..., { asBlob: true })`, parse with SheetJS, and render
+ * `FSRef.readBlob()`, parse with SheetJS, and render
  * each sheet in a RevoGrid (read-only) behind a sheet-tab switcher.
  *
  * Keyed on `[path, reloadKey]` so an out-of-band change (an agent turn-end
@@ -40,7 +39,6 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
   const [loading, setLoading] = useState(true);
 
   const path = fsRef.path;
-  const typeId = fsRef.typeId;
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +46,7 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
     setError(null);
     const load = async () => {
       try {
-        const blob = await fsManager.download(typeId, path, { asBlob: true });
+        const blob = await fsRef.readBlob();
         const buf = blob instanceof Blob ? await blob.arrayBuffer()
           : new TextEncoder().encode(String(blob)).buffer;
         if (cancelled) return;
@@ -62,7 +60,7 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
             defval: '',
             blankrows: true,
           });
-          gridBySheet[name] = matrixToGrid(matrix as string[][], /* readonly */ true);
+          gridBySheet[name] = matrixToGrid(matrix, /* readonly */ true);
         }
         if (cancelled) return;
         setWorkbook({ gridBySheet });
@@ -76,7 +74,7 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
     };
     void load();
     return () => { cancelled = true; };
-    // typeId is derived from the same fsRef as path; keying on path + reloadKey
+    // the blob is read through the same fsRef as path; keying on path + reloadKey
     // is the stable signal (see useFSRefContent's path-keying rationale).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, reloadKey]);

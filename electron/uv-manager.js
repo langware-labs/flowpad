@@ -3,13 +3,195 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
+const https = require('https');
+const crypto = require('crypto');
 const { SEMVER_RE, isNewer } = require('./semver');
+const updateTest = require('./update-test');
+const { createProgressWatchdog } = require('./progress-watchdog');
+const { showFailureDialog } = require('./failure-dialog');
+const runtimeRepair = require('./runtime-repair');
+// The dependencies that ship native wheels (scripts/native_deps_from_lock.py): the only ones Windows
+// application control can refuse, so the only ones that get the reputation margin (see EXCLUDE_NEWER_MARGIN_DAYS).
+const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
 
 const execFileAsync = promisify(execFile);
 
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
+
+// Astral's installer, fetched to a FILE and run — not `curl … | sh`. In a pipeline sh reads an empty
+// stdin when curl fails (offline, DNS, blocked host, curl missing) and exits 0, so the caller only
+// ever saw "Failed to install uv: Command failed: uv --version", never the network error. Here curl's
+// own stderr is the error (-f: HTTP errors fail; -S: show them), and a 200 that is not a shell script
+// (a captive portal or proxy login page) is caught before it is executed.
+const UV_INSTALL_SH =
+  'set -eu; f="$(mktemp)"; trap \'rm -f "$f"\' EXIT; ' +
+  'curl -LsSf https://astral.sh/uv/install.sh -o "$f"; ' +
+  'head -n 1 "$f" | grep -q \'^#!\' || { echo "astral.sh did not return the uv installer script (captive portal or proxy login page?)" >&2; exit 1; }; ' +
+  'sh "$f"';
+
+// Windows PowerShell 5.1 negotiates TLS 1.0/1.1 by default and astral.sh refuses it, so force 1.2
+// first. Full cmdlet names, not the irm/iex aliases (some hosts remove the aliases).
+const UV_INSTALL_PS1 =
+  '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ' +
+  '$ErrorActionPreference = \'Stop\'; ' +
+  'Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression';
+
+/** An Error that carries the child's stderr/exit code the way execFile errors do, so the startup panel can show them. */
+function installFailure(message, { stderr = '', code = null } = {}) {
+  const err = new Error(message);
+  err.stderr = stderr;
+  err.code = code;
+  return err;
+}
+
+/** Total bytes of every regular file under `dir` (symlinks not followed). 0 for a missing dir. */
+function dirSizeBytes(dir, skip = []) {
+  let total = 0;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of entries) {
+    if (skip.includes(e.name)) continue; // top level only: our own mktemp wrapper dir (.bin)
+    const full = path.join(dir, e.name);
+    try {
+      if (e.isDirectory()) total += dirSizeBytes(full);
+      else if (e.isFile()) total += fs.lstatSync(full).size;
+    } catch { /* vanished mid-scan: the installer is cleaning up */ }
+  }
+  return total;
+}
+
+// macOS's `mktemp -d` IGNORES $TMPDIR (it uses the per-user temp dir), so on a Mac the installer would
+// download into a directory we cannot watch. This wrapper, placed first on the installer's PATH, forces
+// template-less calls (`mktemp`, `mktemp -d` — what install.sh uses for the archive) under $TMPDIR, and
+// passes anything with an explicit template through unchanged. `realMktemp` is the system tool.
+function mktempShimSource(realMktemp) {
+  return [
+    '#!/bin/sh',
+    '# Flowpad: keep the uv installer\'s temp files under $TMPDIR (macOS mktemp -d ignores it) so the',
+    '# download can be watched for progress. Explicit templates are passed through untouched.',
+    'for a in "$@"; do',
+    '  case "$a" in -*) : ;; *) exec ' + JSON.stringify(realMktemp) + ' "$@" ;; esac',
+    'done',
+    'exec ' + JSON.stringify(realMktemp) + ' "$@" "${TMPDIR%/}/tmp.XXXXXXXXXX"',
+    '',
+  ].join('\n');
+}
+
+// Async twins of the above for sampling during `uv tool install`: a scan of a big directory must not
+// block the Electron main process (a full recursive scan of a real 8 GB uv cache took ~9 s of synchronous
+// work — measured 2026-09-30 — so the global cache is only ever fingerprinted at its TOP level).
+async function dirSizeBytesAsync(dir) {
+  let total = 0;
+  let entries;
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    try {
+      if (e.isDirectory()) total += await dirSizeBytesAsync(full);
+      else if (e.isFile()) total += (await fs.promises.lstat(full)).size;
+    } catch { /* vanished mid-scan */ }
+  }
+  return total;
+}
+
+/**
+ * Cheap change-detector for a big directory: the names + mtimes of its TOP level entries, plus the
+ * recursive size of the dot-entries (`.tmp*`, `.temp`: where uv keeps downloads that are still in
+ * flight). Moves when uv adds/finishes an entry or a download grows. 'none' when the dir is missing.
+ */
+async function topFingerprintAsync(dir) {
+  let entries;
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return 'none'; }
+  const parts = [];
+  let dot = 0;
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    try {
+      const st = await fs.promises.lstat(full);
+      parts.push(`${e.name}:${Math.round(st.mtimeMs)}`);
+      if (e.name.startsWith('.')) dot += e.isDirectory() ? await dirSizeBytesAsync(full) : st.size;
+    } catch { /* vanished mid-scan */ }
+  }
+  return `${parts.sort().join('|')}#${dot}`;
+}
+
+// Windows PowerShell 5.1's own module search path. A parent that is PowerShell 7 (an app started from a
+// pwsh terminal, or from an ssh/pwsh session) leaves PSModulePath pointing at pwsh's modules, and then
+// powershell.exe cannot load its built-in ones: the uv installer dies with "The 'Get-ExecutionPolicy'
+// command was found in the module 'Microsoft.PowerShell.Security', but the module could not be loaded",
+// and the venv-process drain (Get-CimInstance) silently does nothing. Reproduced on the Windows VM
+// 2026-09-30: installer exit 1 with the inherited path, exit 0 with this one.
+function windowsPowerShellModulePath(env = process.env) {
+  const w = path.win32;
+  return [
+    w.join(env.USERPROFILE || os.homedir(), 'Documents', 'WindowsPowerShell', 'Modules'),
+    w.join(env.ProgramFiles || 'C:\\Program Files', 'WindowsPowerShell', 'Modules'),
+    w.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'Modules'),
+  ].join(';');
+}
+
+// Python settings that break a managed venv's interpreter if a user's shell exports them (a global
+// PYTHONHOME/PYTHONPATH makes the venv import the wrong stdlib/site-packages). The app's children —
+// uv, the flow CLI, the backend — must never inherit them. UV_* is left alone: that is user config.
+const POISONOUS_PYTHON_ENV = ['PYTHONHOME', 'PYTHONPATH'];
+
+function cleanPythonEnv(env, log) {
+  for (const key of POISONOUS_PYTHON_ENV) {
+    if (key in env) {
+      if (log) log.warn(`[uv] not passing ${key} to child processes (it would break the flowpad venv)`);
+      delete env[key];
+    }
+  }
+  return env;
+}
+
+// What the OS / cmd.exe / uv say when Windows application control (WDAC, Device Guard,
+// AppLocker) refuses to run a binary. Three shapes, all seen or documented:
+//   * cmd.exe (shell:true):  "This program is blocked by group policy…"
+//   * uv:                    "Failed to spawn: `flow` … An Application Control policy has blocked
+//                             this file. (os error 4551)"
+//   * CreateProcess direct:  Node reports `spawn UNKNOWN` (errno -4094) with no stderr at all.
+const POLICY_BLOCK_TEXT =
+  /Device Guard|Application Control|blocked by (your organization|group policy|an administrator|your administrator)|os error 4551|policy has blocked|administrator has blocked|This program is blocked/i;
+
+/** True when `err` (from execFile/spawn) reads as an application-control block. */
+/** `flow stop` said the instance is temporarily owned (a monitor is mid-start): `service_busy` on stderr. */
+function isInstanceBusyError(err) {
+  return /service_busy/.test(String((err && (err.stderr || err.stdout || err.message)) || ''));
+}
+
+// Win32 ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION (4551) as a process exit code, also as the HRESULT
+// 0x800711C7 an installer (the python.org bootstrapper, seen under an enforced policy on the VM) exits
+// with: 2147946951 unsigned, -2147020345 as a signed 32-bit value. No stderr accompanies it.
+const POLICY_BLOCK_EXIT_CODES = new Set([4551, 2147946951, -2147020345]);
+
+function isPolicyBlockError(err) {
+  if (!err) return false;
+  const text = [err.stderr, err.stdout, err.message].filter(Boolean).map(String).join('\n');
+  if (POLICY_BLOCK_TEXT.test(text)) return true;
+  if (typeof err.code === 'number' && POLICY_BLOCK_EXIT_CODES.has(err.code)) return true;
+  return err.code === 'UNKNOWN' || /spawn UNKNOWN/.test(text);
+}
+
+// `flow` without its console-script exe: the same entry point the exe calls
+// (pyproject: flow = "flow_sdk.cli:cli_main"), driven by the venv's python. Used when
+// application control blocks the generated flow.exe. No quotes/semicolons-in-args trouble:
+// callers run it with shell:false.
+const PY_FLOW_ENTRY = 'import sys; sys.argv[0] = "flow"; from flow_sdk.cli import cli_main; cli_main()';
+
+function policyBlockedError(tried) {
+  const paths = tried.map((t) => t.path);
+  const err = new Error(
+    'This computer’s application-control policy (Windows Defender Application Control / Device Guard) ' +
+    'blocks the programs Flowpad needs to start its engine.'
+  );
+  err.policyBlocked = true;
+  err.blockedPaths = paths;
+  err.tried = tried;
+  return err;
+}
 
 /**
  * Decide whether to spawn `cmd` through cmd.exe on Windows.
@@ -19,7 +201,7 @@ const PATH_SEP = IS_WIN ? ';' : ':';
  * launch via direct CreateProcess (manifests as "spawn UNKNOWN").
  *
  * The one case where shell:true breaks is an .exe path containing whitespace:
- * cmd.exe splits on the space, so `C:\Users\avi tal\.local\bin\flow.exe`
+ * cmd.exe splits on the space, so `C:\Users\jane doe\.local\bin\flow.exe`
  * becomes `C:\Users\avi`. For that case only, fall back to shell:false and
  * let Node's CreateProcess handle the path natively.
  */
@@ -37,6 +219,88 @@ function needsShellOnWin(cmd) {
  */
 function quoteWinCmd(cmd) {
   return /\s/.test(cmd) ? `"${cmd}"` : cmd;
+}
+
+/**
+ * Quote the ARGUMENTS the same way when the command goes through cmd.exe (shell:true): Node then
+ * concatenates them unescaped, so `--python C:\Users\Jane Doe\…\python.exe` reached uv as two
+ * arguments and the install failed with "unexpected argument". Seen on the Windows VM the first
+ * time the runtime repair pinned an interpreter path (user "test 11"). No-op off the shell path,
+ * for arguments without whitespace, and for arguments already quoted.
+ */
+function quoteWinArgs(args, useShell) {
+  if (!useShell || !IS_WIN) return args;
+  return args.map((a) => (/\s/.test(a) && !/^".*"$/.test(a) ? `"${a}"` : a));
+}
+
+// ── `--exclude-newer`: the engine's dependencies are frozen in time ──────────────────────────
+// A fresh `uv tool install flowpad==X` resolves every dependency to the newest release on PyPI at
+// install time, so a user installing today gets wheels the release was never tested with — and, under
+// Windows Smart App Control, wheels released days ago have no cloud reputation yet and are blocked
+// (FLOWPAD-2231: pydantic-core 2.50.0, two days old, blocked on a developer's PC). Three cut-offs, tried
+// in order, each one less strict than the last:
+//   1. the engine's release time for everything, AND `now - EXCLUDE_NEWER_MARGIN_DAYS` for the packages
+//      that ship native wheels (native-deps.json): those must be old enough to have reputation. Pure-Python
+//      packages carry nothing application control looks at, and a global margin is impossible anyway —
+//      pyproject floors younger than the margin (deepagents>=0.7.15 on 2026-10-10) leave no solution;
+//   2. the engine's release time only: nothing newer than what existed when the release was made;
+//   3. no cut-off (the behaviour before this existed).
+// Pre-releases are disallowed under a cut-off (uv picked pydantic 2.14.0b1 once the final was cut off).
+// The engine itself is always allowed by `--exclude-newer-package flowpad=<its release + 1 min>`. A
+// cut-off that leaves the resolver without a solution falls through to the next, logged; a uv too old for
+// the flags skips them; an unknown release time (offline) skips them entirely. This is a safety net for
+// the days after a dependency release, not a lock: the real fix is installing with constraints from the
+// tested lock (FLOWPAD-2237).
+const EXCLUDE_NEWER_MARGIN_DAYS = 60;
+
+/** The engine version an install asks for: `flowpad==1.2.3` → '1.2.3'; `flowpad` / `flowpad@latest` → null. */
+function engineVersionFromInstallArgs(args) {
+  for (const a of args || []) {
+    const m = /^flowpad==([0-9][0-9A-Za-z.+-]*)$/.exec(String(a));
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * The flag sets to try, strictest first, ending with no flags. `releaseUploadedAt` is the engine
+ * release's PyPI upload time (ms since epoch); null → [[]] (no cut-off is known).
+ */
+function excludeNewerFlagSets({ releaseUploadedAt, now = Date.now(), marginDays = EXCLUDE_NEWER_MARGIN_DAYS, nativePackages = NATIVE_DEPS }) {
+  if (!releaseUploadedAt) return [{ label: 'none', flags: [] }];
+  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const release = releaseUploadedAt + 60 * 1000;
+  const base = ['--exclude-newer', iso(release), '--exclude-newer-package', `${PYPI_PACKAGE}=${iso(release)}`, '--prerelease', 'disallow'];
+  const margin = Math.min(release, now - marginDays * 24 * 60 * 60 * 1000);
+  const sets = [];
+  if (margin < release && nativePackages.length) {
+    sets.push({
+      label: `${marginDays}-day margin on native packages`,
+      flags: [...base, ...nativePackages.flatMap((pkg) => ['--exclude-newer-package', `${pkg}=${iso(margin)}`])],
+    });
+  }
+  sets.push({ label: 'release date', flags: base });
+  sets.push({ label: 'none', flags: [] });
+  return sets;
+}
+
+/** A uv too old to know the cut-off flags (`--exclude-newer-package`): "unexpected argument". The app installs
+ *  uv only when it is missing, so a user's own older uv stays — then the cut-off is skipped, not the install. */
+function isUnknownFlagError(err) {
+  const text = String((err && (err.stderr || err.stdout || err.message)) || '');
+  return /unexpected argument '--exclude-newer/.test(text);
+}
+
+/**
+ * uv found no set of versions under the cut-off (as opposed to a network, disk or policy failure).
+ * Decided on uv's OWN words only: `_runStreaming` errors start with `Command failed: uv … --exclude-newer …`,
+ * so matching the flag's name there would make every failure under a cut-off "a resolution failure" and
+ * send a policy block through all the fallbacks, hiding the real cause behind the last attempt's.
+ */
+function isResolutionError(err) {
+  const own = err && (err.stderr || err.stdout);
+  const text = String(own || String((err && err.message) || '').replace(/^Command failed:[^\n]*\n?/, ''));
+  return /No solution found when resolving|no versions of [^\n]* are available|were excluded because they were published after/i.test(text);
 }
 
 /**
@@ -69,11 +333,92 @@ function parseNetstatPids(stdout, port) {
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
-// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.10,
-// but uv would otherwise pick the system default (e.g. 3.12). Pin every
-// `uv tool install` to 3.10 so the backend always runs on the supported
-// interpreter; uv auto-downloads a managed CPython 3.10 if none is present.
-const PYTHON_VERSION = '3.10';
+// Update-cycle harness (FLOWPAD_UPDATE_TEST=1, update-test.js): what install/upgrade/repair resolve instead of
+// the unpinned default (`flowpad`, `flowpad@latest`), e.g. "flowpad==0.2.213", so a scenario controls which
+// engine lands. Normal runs keep the given default.
+function engineSpec(defaultSpec) {
+  return (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) || defaultSpec;
+}
+
+// Python interpreter flowpad's tool venv must run on: the `>=` floor of
+// `requires-python` in the repo's pyproject.toml (">=3.11" → "3.11"). It is
+// READ, not hand-pinned, so the desktop shell can never drift from what the
+// package declares — v0.2.44 shipped a hand-pinned 3.10 after the package had
+// already moved to 3.11, and uv silently resolved a stale flowpad for it.
+// uv would otherwise pick the system default (e.g. 3.12); with the pin it
+// auto-downloads a managed CPython of that minor if none is present.
+//
+// pyproject.toml is bundled as an extraResource (electron-builder.json), so a
+// packaged app reads `<resources>/pyproject.toml`; a dev checkout (`electron .`,
+// the tests) reads the repo-root file directly.
+function pythonFloor(requiresPython) {
+  const floor = String(requiresPython || '').match(/>=\s*(\d+\.\d+)/);
+  return floor ? floor[1] : null;
+}
+
+function pythonVersionFromPyproject(text) {
+  const m = text.match(/^\s*requires-python\s*=\s*"([^"]*)"/m);
+  if (!m) throw new Error('pyproject.toml has no `requires-python`');
+  const floor = pythonFloor(m[1]);
+  if (!floor) {
+    throw new Error(`pyproject.toml requires-python "${m[1]}" has no ">=" floor to pin uv to`);
+  }
+  return floor;
+}
+
+// The higher of two "<major>.<minor>" Python versions; a null side loses.
+function maxPythonVersion(a, b) {
+  if (!a || !b) return a || b || null;
+  const [am, an] = a.split('.').map(Number);
+  const [bm, bn] = b.split('.').map(Number);
+  return (bm > am || (bm === am && bn > an)) ? b : a;
+}
+
+// Resolved LAZILY, on the first install/upgrade that needs it — never at
+// module load. A build that somehow lacks the bundled file is broken, but a
+// user whose install is already healthy takes the fast path and needs no pin;
+// failing at require() time would stop every launch for a file only the
+// installer reads. The failure surfaces where it belongs: as the install
+// error (→ the startup panel), with a message that names the build as the
+// cause so nobody chases their network.
+let _pythonVersion = null;
+function getPythonVersion() {
+  if (_pythonVersion) return _pythonVersion;
+  const candidates = [
+    process.resourcesPath && path.join(process.resourcesPath, 'pyproject.toml'),
+    path.join(__dirname, '..', 'pyproject.toml'),
+  ].filter(Boolean);
+  for (const file of candidates) {
+    if (fs.existsSync(file)) {
+      _pythonVersion = pythonVersionFromPyproject(fs.readFileSync(file, 'utf8'));
+      return _pythonVersion;
+    }
+  }
+  throw new Error(
+    `This Flowpad build is missing its bundled pyproject.toml (looked in ${candidates.join(', ')}), ` +
+    'so the Python version to install cannot be determined. Reinstall the desktop app.'
+  );
+}
+
+// The pin for display (a copy-pasteable command in a dialog): null when the
+// build is broken, so the dialog can still render instead of throwing.
+function tryPythonVersion() {
+  try { return getPythonVersion(); } catch { return null; }
+}
+
+// True when a process with this pid exists (signal 0 = existence probe; EPERM = exists,
+// owned by someone else).
+function isPidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+// The recovery command shown to the user, mirroring installLatest()/upgrade(). `python` is the
+// repaired runtime's interpreter when there is one (runtime-repair.js): the command the user
+// pastes must pin the same interpreter the app does, or it puts the engine back on the blocked one.
+function upgradeCommand(python) {
+  const pin = python ? `"${python}"` : tryPythonVersion();
+  return `uv tool install ${PYPI_PACKAGE}@latest${pin ? ` --python ${pin}` : ''} --force`;
+}
 
 const API_PREFIX = '/api/v1';
 
@@ -93,10 +438,77 @@ const UpdateStatus = Object.freeze({
   NOT_REQUIRED: 'not_required',
 });
 
+/**
+ * Which `uv tool install` output lines are worth showing on the loading
+ * screen. uv (non-TTY) prints one line per step — "Downloading flowpad
+ * (34.6MiB)", "Resolved 132 packages in 23.96s", "Building pybars3==0.9.7",
+ * "Installed 132 packages in 2.1s" — plus warnings/errors that belong in the
+ * log and the failure dialog, not in a one-line status ticker.
+ */
+const INSTALL_PROGRESS_RE =
+  /^(Downloading|Downloaded|Resolved|Prepared|Building|Built|Installing|Installed|Uninstalled|Updating|Updated|Fetching|Fetched|Bytecode compiled)\b/;
+function isInstallProgressLine(line) {
+  return INSTALL_PROGRESS_RE.test(String(line || '').trim());
+}
+
+/**
+ * A chunk-to-line adapter for a child's stdout/stderr: buffers partial lines
+ * across chunks and calls `onLine` once per complete, trimmed, non-empty line.
+ */
+function splitLines(onLine) {
+  let buf = '';
+  return (chunk) => {
+    buf += chunk.toString();
+    let nl;
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).replace(/\r$/, '').trim();
+      buf = buf.slice(nl + 1);
+      if (line) onLine(line);
+    }
+  };
+}
+
+/** Thrown by a start or install asked for after the app began quitting (UvManager.close()). */
+class QuitInProgressError extends Error {
+  constructor(what) {
+    super(`not starting: the app is quitting (${what})`);
+    this.name = 'QuitInProgressError';
+    this.quitInProgress = true;
+  }
+}
+
 class UvManager {
-  constructor(log) {
+  constructor(log, { stateDir = null } = {}) {
     this.log = log;
+    // Where the "install in progress" marker lives. null → marker disabled
+    // (unit tests, tools that must not touch the user's home).
+    this._stateDir = stateDir;
+    // Lets native failure dialogs offer "Send Report" (set by main.js; null in tests → "OK" only).
+    this._failureSharer = null;
+    this._installing = false;
+    this._installChild = null;
+    this._installAborted = false;
+    this._keepMarker = false;
+    this._spawned = false;
+    this._progressTickMs = 5000; // elapsed-time line during the uv download (display only)
+    // Stall watchdog for the uv download (progress-watchdog.js): 30 s windows, 3 quiet ones in a row.
+    // Overridable per instance for tests only.
+    this._watchdogWindowMs = undefined;
+    this._watchdogStrikes = undefined;
+    this._timers = { setInterval, clearInterval, setTimeout, clearTimeout };
+    // Wall-clock cap for the uv download ONLY when the stall watchdog cannot be armed (no trustworthy
+    // progress signal on this machine). Approved by the user, 2026-09-30: 200 s. Never applies when the
+    // watchdog is running — a moving download is not capped at all.
+    this._fallbackCapMs = 200 * 1000;
+    // Same idea for `uv tool install flowpad` (install/upgrade/reinstall): a wall-clock cap that applies ONLY
+    // while the progress signal has not been shown to work. Approved by the user, 2026-09-30: 240 s.
+    this._toolInstallCapMs = 240 * 1000;
+    this._uvDirsPromise = null;
     this.isShuttingDown = false;
+    // Set once by close() when the app quits, and never cleared: from then on
+    // nothing new is spawned. Separate from isShuttingDown, which start() resets
+    // for a restart/retry.
+    this._closed = false;
     this._flowBin = null;
     // Set to true when the uv-generated flow.exe shim is blocked by Windows
     // Device Guard / WDAC. We then route every flow invocation through
@@ -104,50 +516,98 @@ class UvManager {
     // through the unsigned shim.
     this._useUvToolRun = false;
     this._probedShim = false;
+    // Which way to run `flow`: 'shim' (default), 'uv' (`uv tool run`) or 'python' (the venv's
+    // python, no console-script exe) — chosen by _probeFlowBinOnce on machines whose policy
+    // blocks the shim. _policyBlocked is set when every way is blocked.
+    this._launcher = 'shim';
+    this._policyBlocked = null;
+  }
+
+  _isWindows() {
+    return IS_WIN;
+  }
+
+  /** The venv's python.exe (Windows), or null when it is not there. */
+  _venvPython() {
+    const py = path.join(this._toolVenvDir(), 'Scripts', 'python.exe');
+    return fs.existsSync(py) ? py : null;
   }
 
   /**
-   * Build the spawn command for invoking the flow CLI. When the uv shim
-   * is blocked by Device Guard we route through `uv tool run` which
-   * launches the venv's signed python directly.
+   * Build the spawn command for invoking the flow CLI: { cmd, args, shell? }. `shell` is only set
+   * when a launcher needs a specific value (the python launcher passes one big -c argument and
+   * must NOT go through cmd.exe, which does not quote arguments).
    */
   _flowCmd(args) {
-    if (this._useUvToolRun) {
+    if (this._launcher === 'python') {
+      return { cmd: this._venvPython() || 'python', args: ['-c', PY_FLOW_ENTRY, ...args], shell: false };
+    }
+    if (this._launcher === 'uv' || this._useUvToolRun) {
       return { cmd: 'uv', args: ['tool', 'run', '--from', PYPI_PACKAGE, 'flow', ...args] };
     }
     return { cmd: this._flowBin, args };
   }
 
   /**
-   * Probe the flow shim once. On Windows machines with Device Guard / WDAC,
-   * `uv tool install` writes an unsigned shim that's blocked from executing.
-   * If we detect that here, swap to the `uv tool run` fallback for the rest
-   * of this session. No-op on non-Windows.
+   * On Windows machines with application control (WDAC / Device Guard / AppLocker), the exe that
+   * `uv tool install` generates for `flow` (an unsigned trampoline) can be blocked from running.
+   * Find a way that works, once per session, trying in order:
+   *   1. the flow shim                      (the normal way)
+   *   2. `uv tool run --from flowpad flow`  (uv.exe itself is often allowed — but uv then spawns
+   *                                          the SAME entry-point exe, so this can be blocked too)
+   *   3. the venv's python.exe running the entry point directly (no generated exe involved)
+   * If every way is blocked, `_policyBlocked` is set and start() fails with a clear message
+   * instead of a bare "flow start exited with code 2". No-op on non-Windows.
    *
-   * Timeout is deliberately SHORT: a Device Guard / WDAC block fails the
-   * process launch *instantly* (the OS rejects CreateProcess), so the only
-   * thing we're waiting for is that fast rejection. A shim that's merely slow
-   * to print `--help` (cold Python import on first run after install/AV scan)
-   * tells us nothing — it works — so there's no reason to wait it out. On
-   * timeout we fall through and let the real `flow start` proceed normally.
-   * Do NOT widen this to "give --help time to finish": that just re-adds the
-   * old multi-second tax to every cold launch for zero detection benefit.
+   * Each probe keeps the short budget the original single probe had: a policy block fails the
+   * process launch *instantly* (the OS rejects CreateProcess), so the only thing waited for is that
+   * fast rejection. A slow `--help` (cold Python import, AV scan) means it works. Do NOT widen it.
    */
   async _probeFlowBinOnce() {
-    if (this._probedShim || !IS_WIN || !this._flowBin) return;
+    if (this._probedShim || !this._isWindows() || !this._flowBin) return;
     this._probedShim = true;
-    try {
-      await this._run(this._flowBin, ['--help'], { timeout: 2000 });
-    } catch (err) {
-      const stderr = (err.stderr || err.message || '').toString();
-      if (/Device Guard|Application Control|blocked by your organization/i.test(stderr)) {
-        this.log.warn(
-          '[uv] flow shim blocked by Windows Device Guard — falling back to `uv tool run`'
-        );
-        this._useUvToolRun = true;
+    const tried = [];
+    // 'ok' | 'slow' (timed out: it runs) | 'blocked' | 'failed' (some other error)
+    const attempt = async (launcher, cmd, args, shell) => {
+      try {
+        await this._run(cmd, args, { timeout: 2000, ...(shell === undefined ? {} : { shell }) });
+        return 'ok';
+      } catch (err) {
+        if (isPolicyBlockError(err)) { tried.push({ launcher, path: cmd, detail: String(err.stderr || err.message).split('\n')[0] }); return 'blocked'; }
+        if (err && err.killed && err.signal) return 'slow';
+        tried.push({ launcher, path: cmd, detail: String(err && (err.stderr || err.message)).split('\n')[0] });
+        return 'failed';
       }
-      // Other failures will surface naturally on the real call below.
+    };
+
+    const shim = await attempt('shim', this._flowBin, ['--help']);
+    if (shim !== 'blocked') { tried.length = 0; return; } // works, or fails for a reason the real call will report
+    this.log.warn('[uv] flow shim blocked by Windows application control — looking for a launcher that is allowed');
+
+    const viaUv = await attempt('uv tool run', 'uv', ['tool', 'run', '--from', PYPI_PACKAGE, 'flow', '--help']);
+    if (viaUv === 'ok' || viaUv === 'slow') {
+      this.log.warn('[uv] using `uv tool run` to launch flow');
+      this._launcher = 'uv';
+      this._useUvToolRun = true;
+      return;
     }
+
+    const py = this._venvPython();
+    if (py) {
+      const viaPython = await attempt('venv python', py, ['-c', 'import sys'], false);
+      if (viaPython === 'ok' || viaPython === 'slow') {
+        this.log.warn('[uv] using the venv python to launch flow (the flow.exe shim and `uv tool run` are blocked)');
+        this._launcher = 'python';
+        return;
+      }
+    }
+    this._policyBlocked = { tried };
+    this.log.error(`[uv] every way of launching flow is blocked by application control: ${JSON.stringify(tried)}`);
+  }
+
+  /** Throws a clear, actionable error when application control blocks every launcher. */
+  _assertNotPolicyBlocked() {
+    if (this._policyBlocked) throw policyBlockedError(this._policyBlocked.tried);
   }
 
   // ---------------------------------------------------------------------------
@@ -229,16 +689,16 @@ class UvManager {
    * resolve correctly. On Unix we call the binary directly.
    */
   async _run(cmd, args, options = {}) {
-    const env = {
+    const env = cleanPythonEnv({
       ...process.env,
       PATH: this._enrichedPath(),
       ...options.env,
-    };
+    });
     this.log.info(`[uv] Running: ${cmd} ${args.join(' ')}`);
-    const useShell = needsShellOnWin(cmd);
+    const useShell = options.shell !== undefined ? options.shell : needsShellOnWin(cmd);
     const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     try {
-      const { stdout, stderr } = await execFileAsync(cmdToRun, args, {
+      const { stdout, stderr } = await execFileAsync(cmdToRun, quoteWinArgs(args, useShell), {
         env,
         timeout: options.timeout || 60000,
         cwd: options.cwd || os.homedir(),
@@ -263,6 +723,97 @@ class UvManager {
   }
 
   /**
+   * Run a command with NO wall-clock cap, streaming each output line to
+   * `options.onLine` as it arrives. Resolves/rejects with the same shape as
+   * `_run` ({stdout, stderr} / Error with .code/.signal/.stdout/.stderr and a
+   * "Command failed: …" message), so every caller's error classifier
+   * (isCorruptEnvError, isToolDirLockedError, main.js's details) is unchanged.
+   *
+   * This is the runner for `uv tool install`. Its duration is bounded by the
+   * user's bandwidth (a first install pulls ~60 MiB: CPython + the flowpad wheel
+   * + deps), not by any stall, so a fixed cap on our side can only kill a
+   * healthy slow install — which it did (RCA: a 120s cap SIGTERMed a first
+   * install on a slow link mid-download, after uv had already resolved and was
+   * fetching wheels; stderr showed pure progress and no error). A dead or
+   * stalled network is uv's job: it aborts a transfer itself after
+   * UV_HTTP_TIMEOUT (default 30s) of *no data* and fails with a real message,
+   * which is what we want in the dialog instead of a silent kill.
+   */
+  _runStreaming(cmd, args, options = {}) {
+    const env = cleanPythonEnv({
+      ...process.env,
+      PATH: this._enrichedPath(),
+      ...options.env,
+    });
+    const useShell = options.shell !== undefined ? options.shell : needsShellOnWin(cmd);
+    const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
+    const onLine = typeof options.onLine === 'function' ? options.onLine : null;
+    this.log.info(`[uv] Running (streaming, no cap): ${cmd} ${args.join(' ')}`);
+
+    return new Promise((resolve, reject) => {
+      let child;
+      try {
+        child = spawn(cmdToRun, quoteWinArgs(args, useShell), {
+          env,
+          cwd: options.cwd || os.homedir(),
+          shell: useShell,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      if (typeof options.onChild === 'function') options.onChild(child);
+
+      let stdout = '';
+      let stderr = '';
+      const feed = (isErr) => {
+        const lines = splitLines((line) => {
+          if (isErr) this.log.warn(`[uv] ${line}`); else this.log.info(`[uv] ${line}`);
+          if (onLine) {
+            try { onLine(line); } catch { /* a UI hiccup must never fail the install */ }
+          }
+        });
+        return (chunk) => {
+          const text = chunk.toString();
+          if (isErr) stderr += text; else stdout += text;
+          lines(text);
+        };
+      };
+      const onData = typeof options.onData === 'function' ? options.onData : null;
+      const feedOut = feed(false);
+      const feedErr = feed(true);
+      child.stdout.on('data', (c) => { if (onData) onData(c); feedOut(c); });
+      child.stderr.on('data', (c) => { if (onData) onData(c); feedErr(c); });
+
+      child.on('error', (err) => {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+      });
+      child.on('close', (code, signal) => {
+        if (code === 0) {
+          resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+          return;
+        }
+        // Mirror execFile's error shape so classifiers and the dialog see the
+        // same fields they do for `_run`.
+        const err = new Error(`Command failed: ${cmd} ${args.join(' ')}\n${stderr}`);
+        err.code = code;
+        err.signal = signal;
+        err.killed = false;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        this.log.error(`[uv] Command failed: ${cmd} ${args.join(' ')}`);
+        this.log.error(`[uv] exit code=${code} signal=${signal}`);
+        reject(err);
+      });
+    });
+  }
+
+  /**
    * Run a `uv` subcommand.
    */
   async _uv(subArgs, options = {}) {
@@ -273,11 +824,66 @@ class UvManager {
   // uv bootstrap (first-time install only)
   // ---------------------------------------------------------------------------
 
+  /** Write the mktemp wrapper into `<tmpRoot>/.bin`. Returns its path, or null if no system mktemp is found. */
+  _installMktempShim(tmpRoot) {
+    const dirs = this._enrichedPath().split(path.delimiter).filter(Boolean);
+    const real = dirs.map((d) => path.join(d, 'mktemp')).find((f) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile(); } catch { return false; } });
+    if (!real) return null;
+    try {
+      const dir = path.join(tmpRoot, '.bin');
+      fs.mkdirSync(dir, { recursive: true });
+      const shim = path.join(dir, 'mktemp');
+      fs.writeFileSync(shim, mktempShimSource(real), { mode: 0o755 });
+      fs.chmodSync(shim, 0o755);
+      return shim;
+    } catch (err) {
+      this.log.warn(`[uv] could not write the mktemp wrapper: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Does the uv installer, started with `env`, put its temp files under `tmpRoot`? Asks the same
+   * primitive the installer scripts use (`mktemp -d` on Unix, [IO.Path]::GetTempPath() on Windows).
+   * False on any doubt — the caller then leaves the stall watchdog off.
+   */
+  async _installerHonorsTempDir(tmpRoot, env) {
+    try {
+      const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+      const root = real(tmpRoot);
+      const norm = (p) => (IS_WIN ? p.toLowerCase() : p);
+      if (IS_WIN) {
+        const { stdout } = await this._run('powershell.exe', ['-NoProfile', '-Command', '[System.IO.Path]::GetTempPath()'], { env, shell: false });
+        return norm(real(stdout.trim())).startsWith(norm(root));
+      }
+      const { stdout } = await this._run('sh', ['-c', 'mktemp -d'], { env });
+      const made = stdout.trim();
+      const inside = !!made && norm(real(made)).startsWith(norm(root) + path.sep);
+      if (made) try { fs.rmSync(made, { recursive: true, force: true }); } catch { /* ignore */ }
+      return inside;
+    } catch (err) {
+      this.log.warn(`[uv] could not verify the installer's temp dir: ${err.message}`);
+      return false;
+    }
+  }
+
   /**
    * Ensure uv is available. If not found, install it automatically.
-   * Only called during first-time setup.
+   * Only called during first-time setup (and repair).
+   *
+   * The download has NO wall-clock cap. It used to (120s), which killed a slow-but-working download on
+   * a weak link and reported "process was killed (SIGTERM)" — its duration is the user's bandwidth,
+   * not something we can bound without also killing good installs. What is bounded is SILENCE: a
+   * progress watchdog (progress-watchdog.js) stops it only after 3 consecutive 30 s windows with no new
+   * byte (output or downloaded), and any new byte resets it. And it is never invisible or unstoppable:
+   *   - the caller's progress line shows the installer's own output plus an elapsed-time tick
+   *     (display only — it never aborts anything), so a long download is visibly alive;
+   *   - `isInstalling()` covers it, so quitting mid-download asks first, and `abortInstall()` kills the
+   *     installer's process tree — the user can always get out;
+   *   - a failed download fails FAST with the real cause (see UV_INSTALL_SH): DNS, refused, a login
+   *     page — none of those hang, only a stalled-but-open connection does.
    */
-  async ensureUv() {
+  async ensureUv({ onProgress } = {}) {
     // Check if uv is already available
     try {
       await this._uv(['--version']);
@@ -287,56 +893,108 @@ class UvManager {
       this.log.info('[uv] uv not found, installing...');
     }
 
-    // Install uv
+    // Install uv. Windows: powershell.exe directly, shell:false (cmd.exe would not quote the -Command
+    // script); full cmdlet names, not the irm/iex aliases (see UV_INSTALL_PS1).
+    const [cmd, args, shell] = IS_WIN
+      ? ['powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', UV_INSTALL_PS1], false]
+      : ['sh', ['-c', UV_INSTALL_SH], undefined];
+    this._assertOpen('install uv');
+    this._installing = true;
+    this._installAborted = false;
+    const startedAt = Date.now();
+
+    // A private temp dir for the installer. Astral's scripts download the archive (the slow part) into
+    // `mktemp -d` / [IO.Path]::GetTempPath() — both honour TMPDIR / TEMP+TMP — SILENTLY (curl -s,
+    // WebClient.DownloadFile), so output bytes say nothing about a download in progress; the growth of
+    // this directory does. Checked against the real install.sh / install.ps1 (2026-09-30).
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-uv-'));
+    const tmpEnv = { TMPDIR: tmpRoot, TEMP: tmpRoot, TMP: tmpRoot };
     if (IS_WIN) {
-      // Must use full PowerShell cmdlet names (not aliases like irm/iex)
-      // and spawn powershell.exe directly without shell: true
-      await new Promise((resolve, reject) => {
-        const ps = spawn('powershell.exe', [
-          '-NoProfile',
-          '-ExecutionPolicy', 'Bypass',
-          '-Command',
-          'Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression',
-        ], {
-          shell: false,
-          stdio: 'pipe',
-          windowsHide: true,
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        ps.stdout.on('data', (d) => {
-          const text = d.toString();
-          stdout += text;
-          this.log.info(`[uv] ${text.trim()}`);
-        });
-        ps.stderr.on('data', (d) => {
-          const text = d.toString();
-          stderr += text;
-          this.log.warn(`[uv] ${text.trim()}`);
-        });
-
-        ps.on('close', (code) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`uv install failed (exit ${code})\n${stderr}`));
-          }
-        });
-
-        ps.on('error', reject);
-
-        // Timeout after 120s
-        setTimeout(() => {
-          try { ps.kill(); } catch {}
-          reject(new Error('uv install timed out after 120s'));
-        }, 120000);
-      });
+      tmpEnv.PSModulePath = windowsPowerShellModulePath();
     } else {
-      await this._run('sh', [
-        '-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh',
-      ], { timeout: 120000 });
+      const shimPath = this._installMktempShim(tmpRoot);
+      if (shimPath) tmpEnv.PATH = `${path.dirname(shimPath)}${path.delimiter}${this._enrichedPath()}`;
+    }
+    let outBytes = 0;
+    let stall = null;
+    const downloaded = () => dirSizeBytes(tmpRoot, ['.bin']); // the installer's files, not our own wrapper
+    const sample = () => outBytes + downloaded();
+    const tick = onProgress
+      ? this._timers.setInterval(() => {
+        const got = downloaded();
+        onProgress(`still downloading uv (${Math.round((Date.now() - startedAt) / 1000)}s${got ? `, ${(got / 1048576).toFixed(1)} MB` : ''})`);
+      }, this._progressTickMs)
+      : null;
+    if (tick && tick.unref) tick.unref();
+    let watchdog = null;
+    let capTimer = null;
+    let capped = false;
+    try {
+      // Arm the stall watchdog ONLY if the signal is trustworthy: if this machine's installer would not
+      // use our temp dir, a flat directory would look like a stall while the download is healthy — the
+      // old 120 s cap's mistake in a new form. Then fall back to "no cap, visible, abortable".
+      if (await this._installerHonorsTempDir(tmpRoot, tmpEnv)) {
+        watchdog = createProgressWatchdog({
+          sample,
+          windowMs: this._watchdogWindowMs,
+          strikes: this._watchdogStrikes,
+          timers: this._timers,
+          log: this.log,
+          onStall: (info) => {
+            stall = info;
+            this._killInstallChild(this._installChild, `uv download made no progress for ${info.misses} x ${info.windowMs / 1000}s — stopping it`);
+          },
+        }).start();
+      } else {
+        // No signal we can trust, so silence cannot be told from a healthy silent download. Fall back to
+        // a plain wall-clock cap (200 s, user-approved) — the only case where one is used.
+        this.log.warn(`[uv] the uv installer would not use our temp dir — stall watchdog disabled; using a ${this._fallbackCapMs / 1000}s cap instead`);
+        capTimer = this._timers.setTimeout(() => {
+          capped = true;
+          this._killInstallChild(this._installChild, `uv download exceeded the ${this._fallbackCapMs / 1000}s fallback cap — stopping it`);
+        }, this._fallbackCapMs);
+        if (capTimer && capTimer.unref) capTimer.unref();
+      }
+      // An abort asked for while the temp dir was being verified (before any child exists) must still stop us.
+      if (this._installAborted || this._closed) throw new Error('install aborted before the uv download started');
+      await this._runStreaming(cmd, args, {
+        shell,
+        env: tmpEnv,
+        onChild: (child) => { this._installChild = child; },
+        onData: (chunk) => { outBytes += chunk.length; },
+        onLine: (line) => { if (onProgress) onProgress(line); },
+      });
+    } catch (err) {
+      if (capped) {
+        const e = installFailure(
+          `The uv download did not finish within ${this._fallbackCapMs / 1000} seconds. ` +
+          'Check your internet connection, then click Retry.',
+          { stderr: '', code: null },
+        );
+        e.timedOut = true;
+        throw e;
+      }
+      if (stall) {
+        const seconds = (stall.misses * stall.windowMs) / 1000;
+        const e = installFailure(
+          `The uv download stalled: no new data for ${seconds} seconds (${stall.misses} checks of ${stall.windowMs / 1000} s). ` +
+          'Check your internet connection, then click Retry.',
+          { stderr: '', code: null },
+        );
+        e.stalled = true;
+        throw e;
+      }
+      throw installFailure(
+        `Could not install uv (${err.signal ? `killed by ${err.signal}` : `exit ${err.code}`})`,
+        { stderr: err.stderr || err.message, code: err.code },
+      );
+    } finally {
+      if (watchdog) watchdog.stop();
+      if (capTimer) this._timers.clearTimeout(capTimer);
+      if (tick) this._timers.clearInterval(tick);
+      this._installing = false;
+      this._installChild = null;
+      try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* best effort */ }
     }
 
     // Verify
@@ -346,6 +1004,16 @@ class UvManager {
     } catch (error) {
       throw new Error(`Failed to install uv: ${error.message}`);
     }
+
+    // Put uv itself on the user's *terminal* PATH now, not only after the
+    // flowpad install succeeds. Astral's installer skips its own rc-file edit
+    // when the install dir is already on PATH — and it always is here, because
+    // _enrichedPath() prepends ~/.local/bin to every command we run. Without
+    // this, a first-time setup that dies after this point (e.g. the flowpad
+    // install is interrupted) leaves the user with a working ~/.local/bin/uv
+    // that `uv` in a fresh terminal can't find, so the recovery command we
+    // show them fails with "command not found".
+    await this._ensureShimOnPath();
   }
 
   // ---------------------------------------------------------------------------
@@ -501,6 +1169,12 @@ class UvManager {
     await this.start();
   }
 
+  /** Remember which flow binary a later start() runs, without starting it (the fatal-record path of
+   *  installAndStartBackend shows the panel first; its "Retry anyway" then calls start()). */
+  useFlowBin(flowBin) {
+    this._flowBin = flowBin;
+  }
+
   /**
    * Absolute path to the flowpad uv tool venv. The backend interpreter and every
    * agentic-process worker it spawns run this venv's python, so matching on this
@@ -547,7 +1221,7 @@ class UvManager {
           `Get-CimInstance Win32_Process | ` +
           `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
           `Select-Object -ExpandProperty ProcessId`,
-        ], { timeout: 8000, windowsHide: true });
+        ], { timeout: 8000, windowsHide: true, env: { ...process.env, PSModulePath: windowsPowerShellModulePath() } });
         const pids = stdout.split(/\r?\n/)
           .map((s) => parseInt(s.trim(), 10))
           .filter((p) => p > 0);
@@ -641,13 +1315,126 @@ class UvManager {
    *     RCA fad616fc). We quarantine the corrupt dir aside (renamed, not deleted,
    *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
-  async _uvToolInstallForce(installArgs) {
+  async _uvToolInstallForce(installArgs, { onProgress } = {}) {
+    this._assertOpen('install flowpad');
+    this._installing = true;
+    this._installAborted = false;
+    this._keepMarker = false;
+    this._spawned = false;
+    this._writeInstallMarker(installArgs);
+    try {
+      return await this._uvToolInstallForceAttempts(installArgs, { onProgress });
+    } catch (err) {
+      // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
+      // half-written tool dir: the venv may be half-replaced, so keep the marker.
+      if (err && (err.signal || err.killedByGuard || this.isToolDirLockedError(err) || this.isCorruptEnvError(err))) {
+        this._keepMarker = true;
+      }
+      throw err;
+    } finally {
+      this._installing = false;
+      this._installChild = null;
+      // A finished install — success OR a clean uv failure — leaves the tool dir in a state
+      // uv itself reports on. Only a KILLED install is unknown, and only if uv had started:
+      // an abort during the drain, before the spawn, changed nothing.
+      const keep = (this._installAborted || this._keepMarker) && this._spawned;
+      if (!keep) this._clearInstallMarker();
+    }
+  }
+
+  async _uvToolInstallForceAttempts(installArgs, { onProgress } = {}) {
+    // Compile the venv's bytecode here, in the install, not on the first boot.
+    // uv leaves .py files uncompiled by default, so the first boot after an
+    // install compiles ~2,000 modules while importing them — the slowest phase
+    // of a cold boot on a weak machine, doubled, and under an AV scanner on
+    // Windows far worse. The install is guarded against stalls (see
+    // _runToolInstallGuarded) and reports this step ("Bytecode compiled N
+    // files in Xs"); the boot has both.
+    //
+    // Never build `cryptography` from source. A fresh `uv tool install` ignores uv.lock and takes
+    // the newest release, and from 49.0.0 PyPI ships no Intel-Mac wheel — uv then compiles it with
+    // Rust and fails on every Mac without the Xcode tools. With this flag uv skips a release that
+    // has no wheel for this machine and settles on the newest one that has. (pyproject.toml also
+    // bounds it on Intel Mac; this covers the next platform to lose its wheel.)
+    const baseArgs = [...installArgs];
+    if (!baseArgs.includes('--compile-bytecode')) baseArgs.push('--compile-bytecode');
+    if (!baseArgs.includes('--no-build-package')) baseArgs.push('--no-build-package', 'cryptography');
+    // Dependencies frozen in time (see EXCLUDE_NEWER_MARGIN_DAYS): strictest cut-off first, the next
+    // one when uv finds no solution under it. A caller that already chose a cut-off keeps it.
+    const strategies = baseArgs.includes('--exclude-newer')
+      ? [{ label: 'caller', flags: [] }]
+      : await this._excludeNewerStrategies(baseArgs);
+    for (let s = 0; s < strategies.length; s++) {
+      const args = [...baseArgs, ...strategies[s].flags];
+      if (strategies[s].flags.length) this.log.info(`[uv] dependencies cut off at ${strategies[s].flags[1]} (${strategies[s].label})`);
+      try {
+        return await this._uvToolInstallAttemptLoop(args, { onProgress });
+      } catch (err) {
+        const next = strategies[s + 1];
+        if (next && strategies[s].flags.length && isUnknownFlagError(err)) {
+          this.log.warn('[uv] this uv does not know --exclude-newer-package — installing without a dependency cut-off');
+          s = strategies.length - 2; // the last strategy has no flags
+          continue;
+        }
+        if (next && strategies[s].flags.length && isResolutionError(err)) {
+          this.log.warn(`[uv] no solution under the ${strategies[s].label} cut-off — retrying with ${next.label}: ${String(err.message).split('\n')[0]}`);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('unreachable: no install strategy ran');
+  }
+
+  /** The `--exclude-newer` flag sets for `installArgs` (see excludeNewerFlagSets), from the engine release's PyPI upload time. */
+  async _excludeNewerStrategies(installArgs) {
+    const version = engineVersionFromInstallArgs(installArgs) || (await this._latestEngineVersion());
+    const releaseUploadedAt = version ? await this._releaseUploadedAt(version) : null;
+    if (!releaseUploadedAt) this.log.info('[uv] engine release time unknown — installing without a dependency cut-off');
+    return excludeNewerFlagSets({ releaseUploadedAt, now: this._now() });
+  }
+
+  _now() { return Date.now(); }
+
+  async _latestEngineVersion() {
+    const info = await this._getLatestPypiInfo();
+    return (info && info.version) || null;
+  }
+
+  /** PyPI upload time (ms) of the engine release `version`'s first file, memoized; null when unknown. */
+  async _releaseUploadedAt(version) {
+    this._releaseTimes = this._releaseTimes || new Map();
+    if (this._releaseTimes.has(version)) return this._releaseTimes.get(version);
+    let at = null;
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/${encodeURIComponent(version)}/json`, { headers: { Accept: 'application/json' } });
+      if (res.ok) {
+        const data = await res.json();
+        const times = ((data && data.urls) || []).map((u) => Date.parse(u.upload_time_iso_8601 || u.upload_time)).filter(Number.isFinite);
+        if (times.length) at = Math.min(...times);
+      } else {
+        this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: HTTP ${res.status}`);
+      }
+    } catch (err) {
+      this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: ${err.message}`);
+    }
+    this._releaseTimes.set(version, at);
+    return at;
+  }
+
+  async _uvToolInstallAttemptLoop(args, { onProgress } = {}) {
     const MAX_RETRIES = 3;
     const HANDLE_RELEASE_WAIT_MS = 1500;
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
+      if (this._installAborted || this._closed) throw new Error('install aborted before uv started');
       try {
-        return await this._uv(installArgs, { timeout: 120000 });
+        // No wall-clock cap while it makes progress — see _runToolInstallGuarded. Progress lines go
+        // to the caller (the loading window) so a long slow install is visibly alive.
+        return await this._runToolInstallGuarded(args, {
+          onProgress,
+          onChild: (child) => { this._installChild = child; this._spawned = true; },
+        });
       } catch (err) {
         if (attempt >= MAX_RETRIES) throw err;
         if (this.isCorruptEnvError(err)) {
@@ -672,11 +1459,319 @@ class UvManager {
   }
 
   /**
+   * uv's cache, python and tool directories (`uv cache dir` etc.) — the places a running `uv tool install`
+   * writes to. Memoized. null when they cannot be resolved, or when UV_NO_CACHE is set (uv then works in a
+   * throw-away cache we cannot watch): callers treat null as "no trustworthy signal".
+   */
+  _uvDirs() {
+    if (!this._uvDirsPromise) {
+      this._uvDirsPromise = (async () => {
+        if (process.env.UV_NO_CACHE) return null;
+        try {
+          const ask = async (sub) => (await this._run('uv', [sub, 'dir'])).stdout.trim();
+          const [cache, python, tools] = [await ask('cache'), await ask('python'), await ask('tool')];
+          return cache && python && tools ? { cache, python, tools } : null;
+        } catch (err) {
+          this.log.warn(`[uv] could not resolve uv's directories: ${err.message}`);
+          return null;
+        }
+      })();
+    }
+    return this._uvDirsPromise;
+  }
+
+  /**
+   * Run `uv tool install` under a progress guard. There is NO wall-clock cap while it makes progress: a
+   * 100 MB install on a slow link is bounded by bandwidth, and a cap kills it every time (the mistake
+   * already removed once). What is bounded is SILENCE, and only once the signal has proven itself:
+   *
+   *  - signal = bytes on uv's output + change in (uv cache dir top level, uv python dir top level, the
+   *    flowpad tool venv being built). Each is cheap to sample (top-level fingerprints; one bounded async
+   *    scan) — a full scan of a real 8 GB cache would freeze the app for ~9 s, measured.
+   *  - the signal is TRUSTED once the directories are seen to move during this install. Only then do
+   *    3 quiet 30 s windows (90 s) stop the install; any new byte resets it.
+   *  - until it is trusted (or if the dirs cannot be resolved / UV_NO_CACHE) a plain 240 s wall-clock cap
+   *    applies instead (user-approved 2026-09-30, the same for install, upgrade and reinstall). The
+   *    first observed movement removes that cap: a moving install is never capped.
+   *  A wrong "trusted" can only come from ANOTHER process moving those dirs, which only ever delays a
+   *  stop; it can never kill a healthy install.
+   */
+  async _runToolInstallGuarded(args, { onProgress, onChild }) {
+    const dirs = await this._uvDirs();
+    const startedAt = Date.now();
+    let outBytes = 0;
+    let stall = null;
+    let capped = false;
+    let trusted = false;
+    let lastDirFp = null;
+    let capTimer = null;
+    const toolDir = dirs ? path.join(dirs.tools, PYPI_PACKAGE) : null;
+
+    const sample = async () => {
+      const dirFp = `${await topFingerprintAsync(dirs.cache)}#${await topFingerprintAsync(dirs.python)}#${await dirSizeBytesAsync(toolDir)}`;
+      if (!trusted && lastDirFp !== null && dirFp !== lastDirFp) {
+        trusted = true;
+        this.log.info('[uv] the install is writing to uv\'s directories — progress signal trusted, wall-clock cap removed');
+        if (capTimer) { this._timers.clearTimeout(capTimer); capTimer = null; }
+      }
+      lastDirFp = dirFp;
+      return `${outBytes}|${dirFp}`;
+    };
+
+    const tick = onProgress
+      ? this._timers.setInterval(() => onProgress(`still installing (${Math.round((Date.now() - startedAt) / 1000)}s)`), this._progressTickMs)
+      : null;
+    if (tick && tick.unref) tick.unref();
+    let watchdog = null;
+    try {
+      capTimer = this._timers.setTimeout(() => {
+        capped = true;
+        this._killInstallChild(this._installChild, `flowpad install exceeded the ${this._toolInstallCapMs / 1000}s cap while its progress signal was not trusted — stopping it`);
+      }, this._toolInstallCapMs);
+      if (capTimer && capTimer.unref) capTimer.unref();
+      if (dirs) {
+        watchdog = createProgressWatchdog({
+          sample,
+          canStall: () => trusted,
+          windowMs: this._watchdogWindowMs,
+          strikes: this._watchdogStrikes,
+          timers: this._timers,
+          log: this.log,
+          onStall: (info) => {
+            stall = info;
+            this._killInstallChild(this._installChild, `flowpad install made no progress for ${info.misses} x ${info.windowMs / 1000}s — stopping it`);
+          },
+        }).start();
+      } else {
+        this.log.warn(`[uv] no directories to watch — the flowpad install is bounded by the ${this._toolInstallCapMs / 1000}s cap only`);
+      }
+      return await this._runStreaming('uv', args, {
+        onChild,
+        onData: (chunk) => { outBytes += chunk.length; },
+        onLine: (line) => { if (onProgress && isInstallProgressLine(line)) onProgress(line); },
+      });
+    } catch (err) {
+      if (capped || stall) {
+        // We killed uv mid-install: its tool venv may be half-replaced. killedByGuard keeps the
+        // install-in-progress marker so the next launch repairs it (see _uvToolInstallForce).
+        const e = installFailure(
+          capped
+            ? `The Flowpad install did not finish within ${this._toolInstallCapMs / 1000} seconds. Check your internet connection, then click Retry.`
+            : `The Flowpad install stalled: no new data for ${(stall.misses * stall.windowMs) / 1000} seconds (${stall.misses} checks of ${stall.windowMs / 1000} s). Check your internet connection, then click Retry.`,
+          { stderr: '', code: null },
+        );
+        e.killedByGuard = true;
+        if (capped) e.timedOut = true; else e.stalled = true;
+        throw e;
+      }
+      throw err;
+    } finally {
+      if (watchdog) watchdog.stop();
+      if (capTimer) this._timers.clearTimeout(capTimer);
+      if (tick) this._timers.clearInterval(tick);
+    }
+  }
+
+  _installMarkerPath() {
+    return this._stateDir ? path.join(this._stateDir, 'desktop-install-in-progress.json') : null;
+  }
+
+  _writeInstallMarker(installArgs) {
+    const file = this._installMarkerPath();
+    if (!file) return;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ startedAt: new Date().toISOString(), pid: process.pid, args: installArgs }));
+    } catch (err) {
+      this.log.warn(`[uv] could not write the install-in-progress marker: ${err.message}`);
+    }
+  }
+
+  _clearInstallMarker() {
+    const file = this._installMarkerPath();
+    if (!file) return;
+    try { fs.rmSync(file, { force: true }); } catch { /* best effort */ }
+  }
+
+  /**
+   * True when a previous run died (or was told to quit) in the middle of a
+   * `uv tool install`: the marker is written before uv starts and removed the
+   * moment it finishes, so finding it at launch means the tool venv may be
+   * half-replaced and should be repaired before the backend is started.
+   */
+  hadInterruptedInstall() {
+    const file = this._installMarkerPath();
+    if (!file || !fs.existsSync(file)) return false;
+    // A marker owned by ANOTHER LIVE process is an install in flight, not an interrupted
+    // one — repairing now would run a second `uv tool install` over it. (A dead owner's pid
+    // that the OS reused reads as alive: we skip the repair until it exits, never race it.)
+    try {
+      const { pid } = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (pid && pid !== process.pid && isPidAlive(pid)) return false;
+    } catch { /* unreadable marker → treat as interrupted */ }
+    return true;
+  }
+
+  /** True when the install-in-progress marker file exists (whoever wrote it). */
+  hasInstallMarker() {
+    const file = this._installMarkerPath();
+    return !!file && fs.existsSync(file);
+  }
+
+  /** True while a `uv tool install` (drain, spawn or retry) is running. */
+  isInstalling() {
+    return this._installing;
+  }
+
+  /**
+   * Stop a running install because the app is quitting. The marker is kept, so
+   * the next launch repairs the venv. Returns false when nothing was running.
+   * No waiting: the child is signalled and the app is free to exit.
+   */
+  abortInstall() {
+    if (!this._installing) return false;
+    this._installAborted = true;
+    this._killInstallChild(this._installChild, 'aborting the running install');
+    return true;
+  }
+
+  /**
+   * The app is quitting: refuse every later start/install and abort a running
+   * install. Never undone — a quit does not come back. The startup chain keeps
+   * running after the user quits (it is a chain of awaits nobody cancels); this
+   * is what stops it from launching `flow start` after the backend stop has
+   * already run, which left a detached monitor and server behind the app.
+   */
+  close() {
+    if (this._closed) return;
+    this._closed = true;
+    this.log.info('[uv] closed — nothing new will be started');
+    this.abortInstall();
+  }
+
+  isClosed() {
+    return this._closed;
+  }
+
+  _assertOpen(what) {
+    if (this._closed) throw new QuitInProgressError(what);
+  }
+
+  /** Signal an install child and its tree. No waiting: it is signalled and we move on. */
+  _killInstallChild(child, why) {
+    this._killChildTree(child, why);
+  }
+
+  /**
+   * Signal a child we spawned, with its whole tree on Windows: a child started
+   * through cmd.exe (shell:true) is the shell, and killing only that leaves the
+   * real process running. No waiting: it is signalled and we move on.
+   */
+  _killChildTree(child, why) {
+    if (!child || child.exitCode !== null || !child.pid) return;
+    this.log.warn(`[uv] ${why} (pid ${child.pid})`);
+    try {
+      if (process.platform === 'win32') {
+        execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
+      } else {
+        child.kill('SIGTERM');
+      }
+    } catch (err) {
+      this.log.warn(`[uv] could not signal pid ${child.pid}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Repair a tool venv left half-replaced by an interrupted install (see
+   * hadInterruptedInstall). Keeps the marker if the repair itself fails, so the
+   * next launch tries again. Returns true when a repair ran.
+   */
+  async repairIfInterrupted({ onProgress } = {}) {
+    if (!this.hadInterruptedInstall()) return false;
+    this.log.warn('[uv] previous install was interrupted — repairing the tool environment');
+    await this.ensureUv({ onProgress });
+    try {
+      await this.reinstall({ onProgress });
+    } catch (err) {
+      this._writeInstallMarker(['repair-failed']);
+      throw err;
+    }
+    return true;
+  }
+
+  /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
-  async installLatest() {
+  /**
+   * FIRST-install preflight (Windows): can the interpreter uv will build the engine on even RUN?
+   *
+   * Application control (Smart App Control, an organization's App Control policy) refuses the unsigned
+   * CPython of uv's python-build-standalone as a whole or module by module. `uv tool install` finds out only
+   * after it has resolved, downloaded and unpacked ~160 packages — and then FAILS, and the signed runtime
+   * (runtime-repair.js) is installed afterwards. Running the interpreter once first (`python -I -c pass`,
+   * a few seconds) tells at once: a blocked interpreter throws the same error the install would have
+   * (`fromInstall`, the policy text in `stderr`), which the caller sends to the repair directly.
+   *
+   * Anything else — offline, uv's python install failing, a timeout — is NOT a verdict: the real install runs
+   * and reports its own error. Never throws for those; returns `{ ok: true, skipped: true }`.
+   */
+  async probeManagedInterpreter() {
+    if (!(this._isWin !== undefined ? this._isWin : IS_WIN)) return { ok: true, skipped: true };
+    const pin = await this._pythonPinForUpgrade();
+    if (path.win32.isAbsolute(String(pin))) return { ok: true, skipped: true, why: 'a repaired runtime is the pin' };
+    let python;
+    try {
+      // `--no-bin`: no python3.x.exe shims in ~/.local/bin (they would collide with the user's own).
+      try {
+        await this._uv(['python', 'install', pin, '--no-bin'], { timeout: 240000 });
+      } catch (err) {
+        if (!/unexpected argument '--no-bin/.test(String(err.stderr || err.message))) throw err;
+        await this._uv(['python', 'install', pin], { timeout: 240000 }); // an old uv without --no-bin
+      }
+      const found = await this._uv(['python', 'find', pin, '--managed-python'], { timeout: 30000 });
+      python = String(found.stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop();
+    } catch (err) {
+      // `uv python find` QUERIES the interpreter itself, so under a policy that refuses the whole interpreter
+      // it is the step that fails (seen on the VM, 2026-10-14): that is the verdict too.
+      if (isPolicyBlockError({ stderr: err.stderr, stdout: err.stdout, message: err.message, code: err.code }) && POLICY_BLOCK_TEXT.test(`${err.stderr || ''}\n${err.message || ''}`)) {
+        this.log.warn('[uv] interpreter preflight: Windows application control blocks the uv-managed Python (uv could not query it)');
+        const blocked = new Error(`Command failed: preflight of the uv-managed Python\n${String(err.stderr || err.message)}`);
+        blocked.stderr = String(err.stderr || err.message);
+        blocked.code = 2;
+        blocked.preflight = true;
+        throw blocked;
+      }
+      this.log.info(`[uv] interpreter preflight skipped: ${String(err.message || err).split('\n')[0]}`);
+      return { ok: true, skipped: true };
+    }
+    if (!python || !fs.existsSync(python)) return { ok: true, skipped: true };
+    try {
+      await (this._execFile || execFileAsync)(python, ['-I', '-c', 'pass'], { timeout: 20000, windowsHide: true });
+      this.log.info(`[uv] interpreter preflight: ${python} runs`);
+      return { ok: true, python };
+    } catch (err) {
+      if (!isPolicyBlockError(err)) {
+        this.log.info(`[uv] interpreter preflight inconclusive (${String(err.message || err).split('\n')[0]}): the install decides`);
+        return { ok: true, skipped: true };
+      }
+      this.log.warn(`[uv] interpreter preflight: Windows application control blocks ${python}`);
+      // The shape of uv's own message for it, so the one detector (policyBlockFromInstallError) reads it like the real thing.
+      const text = `error: Failed to query Python interpreter at \`${python}\`\n  cause: An Application Control policy has blocked this file. (os error 4551)`;
+      const blocked = new Error(`Command failed: preflight of the uv-managed Python\n${text}`);
+      blocked.stderr = text;
+      blocked.code = 2;
+      blocked.preflight = true;
+      throw blocked;
+    }
+  }
+
+  async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force']);
+    const pin = await this._pythonPinForUpgrade();
+    await this._uvToolInstallForce(
+      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--force'],
+      { onProgress },
+    );
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
@@ -784,12 +1879,14 @@ class UvManager {
         throw new Error('flow binary not set — call startWithBin() or installLatest() first');
       }
 
+      this._assertOpen('start the backend');
       this.isShuttingDown = false;
       this.log.info('[uv] Starting backend via flow start...');
 
       // On Windows, probe whether the uv shim is blocked by Device Guard.
       // If so, _useUvToolRun gets set and _flowCmd() routes around it.
       await this._probeFlowBinOnce();
+      this._assertNotPolicyBlocked();
 
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
@@ -814,7 +1911,12 @@ class UvManager {
         MINIHUB_RELOAD: 'false',
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
+        // `flow start` reports its boot phases on stdout (flow_sdk/boot_progress.py)
+        // so the startup gate can tell a slow launcher from a hung one. The CLI
+        // consumes the variable; nothing it spawns inherits it.
+        FLOWPAD_BOOT_PROGRESS: '1',
       };
+      cleanPythonEnv(env, this.log);
       if (sodKey) {
         // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
         // Python's `sod_key` property reads this and short-circuits any
@@ -833,10 +1935,10 @@ class UvManager {
       }
 
       // shell:true on Windows breaks paths with spaces (e.g.
-      // "C:\Users\avi tal\…\flow.exe" gets split on the space). Use shell
+      // "C:\Users\jane doe\…\flow.exe" gets split on the space). Use shell
       // only when actually needed — see needsShellOnWin().
-      const { cmd: flowCmd, args: flowArgs } = this._flowCmd(['start']);
-      const useShell = needsShellOnWin(flowCmd);
+      const { cmd: flowCmd, args: flowArgs, shell: flowShell } = this._flowCmd(['start']);
+      const useShell = flowShell !== undefined ? flowShell : needsShellOnWin(flowCmd);
       const cmdToRun = useShell ? quoteWinCmd(flowCmd) : flowCmd;
       // Ensure the app-owned workspace exists so spawn() doesn't ENOENT on the
       // cwd, and so the backend never falls back to walking the home tree.
@@ -845,6 +1947,9 @@ class UvManager {
       } catch (e) {
         this.log.warn(`[uv] could not create backend cwd ${BACKEND_CWD}: ${e.message}`);
       }
+      // Every await above is a point where the user may have quit and the stop
+      // may already have run: a `flow start` launched now would outlive the app.
+      this._assertOpen('start the backend');
       const child = spawn(cmdToRun, flowArgs, {
         env,
         cwd: BACKEND_CWD,
@@ -856,100 +1961,133 @@ class UvManager {
 
       this._backendProcess = child;
 
-      let stderr = '';
-      let stdout = '';
-
-      child.stdout.on('data', (data) => {
-        const text = data.toString();
-        stdout += text;
-        this.log.info(`[flow stdout] ${text.trim()}`);
+      // The launch handle: what `flow start` has said so far, and whether it
+      // has exited. The startup gate (main.js waitForBackend) reads it — a line
+      // on this pipe is evidence that the launcher stage (CLI import, migrations,
+      // monitor spawn) is still moving, and a non-zero exit ends the wait at once
+      // with the launcher's own words. No fixed window here: the old 3s "give it
+      // a chance to fail" was a wait that hid a slow CLI import behind it.
+      const TAIL_CHARS = 4000;
+      const launch = {
+        startedAt: Date.now(),
+        lines: 0,
+        lastLine: '',
+        lastLineAt: null,
+        exit: null, // { code, signal } once the process has ended
+        stdout: '',
+        stderr: '',
+        tail: () => `stdout:\n${launch.stdout.slice(-1000)}\n\nstderr:\n${launch.stderr.slice(-1000)}`,
+      };
+      const feed = (isErr) => splitLines((line) => {
+        launch.lines += 1;
+        launch.lastLine = line;
+        launch.lastLineAt = Date.now();
+        if (isErr) {
+          launch.stderr = (launch.stderr + line + '\n').slice(-TAIL_CHARS);
+          this.log.warn(`[flow stderr] ${line}`);
+        } else {
+          launch.stdout = (launch.stdout + line + '\n').slice(-TAIL_CHARS);
+          this.log.info(`[flow stdout] ${line}`);
+        }
       });
-
-      child.stderr.on('data', (data) => {
-        const text = data.toString();
-        stderr += text;
-        this.log.warn(`[flow stderr] ${text.trim()}`);
-      });
-
+      child.stdout.on('data', feed(false));
+      child.stderr.on('data', feed(true));
       child.on('error', (err) => {
-        this.log.error(`[uv] Failed to spawn flow start: ${err.message}`);
+        this.log.error(`[uv] flow start error: ${err.message}`);
       });
-
-      // Wait for the process to exit or give it a short window to fail
-      await new Promise((resolve, reject) => {
-        let settled = false;
-
-        const timer = setTimeout(() => {
-          settled = true;
-          resolve();
-        }, 3000);
-
+      launch.exited = new Promise((resolve) => {
         child.once('exit', (code, signal) => {
-          if (settled) return;
-          clearTimeout(timer);
-          settled = true;
-
+          launch.exit = { code, signal };
           if (code === 0) {
-            // flow start completed successfully (spawned monitor and exited)
-            resolve();
+            this.log.info('[uv] flow start exited 0 (monitor spawned)');
           } else {
-            reject(new Error(
-              `flow start exited with code ${code}, signal ${signal}\n` +
-              `stdout:\n${stdout.slice(-1000)}\n\nstderr:\n${stderr.slice(-1000)}`
-            ));
+            this.log.error(`[uv] flow start exited with code ${code}, signal ${signal}\n${launch.tail()}`);
           }
-        });
-
-        child.once('error', (err) => {
-          if (settled) return;
-          clearTimeout(timer);
-          settled = true;
-          reject(err);
+          resolve(launch.exit);
         });
       });
+      this._lastLaunch = launch;
 
-      this.log.info('[uv] flow start launched successfully');
+      // A spawn failure (ENOENT, EACCES) is known at once and is an error, not
+      // something to wait out; everything slower than that is the gate's job.
+      await new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
+
+      this.log.info('[uv] flow start launched');
+      return launch;
+    }
+
+    /** The handle of the most recent `flow start` (see start()), or null. */
+    lastLaunch() {
+      return this._lastLaunch || null;
     }
 
   /**
    * Stop the backend: flow stop, then kill all processes on port 9007.
    */
-    async stop() {
-      if (this.isShuttingDown) return;
+    stop() {
+      // Re-entrant: a second caller (e.g. quit while the startup-timeout panel's
+      // fire-and-forget stop is still running) awaits the SAME in-flight stop
+      // instead of returning immediately and exiting mid-`flow stop`. Not an
+      // `async` method on purpose — that would wrap the shared promise in a new
+      // one per call.
+      if (this._stopPromise) return this._stopPromise;
+      if (this.isShuttingDown) return Promise.resolve();
       this.isShuttingDown = true;
+      this._stopPromise = this._doStop().finally(() => {
+        this._stopPromise = null;
+      });
+      return this._stopPromise;
+    }
 
+    async _doStop() {
       this.log.info('[uv] Stopping backend...');
 
-      // Kill the flow start CLI process if still running
-      if (this._backendProcess && !this._backendProcess.killed) {
-        try {
-          this._backendProcess.kill('SIGTERM');
-        } catch (e) {
-          this.log.warn(`[uv] Failed to SIGTERM backend: ${e.message}`);
-        }
-      }
+      // Kill the flow start CLI process (and, on Windows, its tree) if still
+      // running — BEFORE `flow stop`, so a monitor it managed to spawn is
+      // already there for flow stop's monitor scan to find.
+      this._killChildTree(this._backendProcess, 'stopping the running flow start');
 
       // 1. Run flow stop
-      await this._flowStop();
+      const flowStop = await this._flowStop();
 
       // 2. Kill any remaining processes on port 9007
       await this._killPort(9007);
+
+      // 3. `flow stop` refused because the instance is owned by a monitor that is still BOOTING (service_busy):
+      // nothing listens on the port yet, so step 2 found nothing and the monitor goes on to start its server
+      // under us — alive through the installer or a restart, holding the venv open. The monitor and the server
+      // it spawns live under the tool venv: end them the way an upgrade does.
+      if (flowStop && flowStop.busy) {
+        this.log.warn('[uv] flow stop found the instance still starting — ending the monitor and server by their venv');
+        await this._drainVenvProcesses();
+      }
 
       this._backendProcess = null;
     }
 
   /**
-   * Run `flow stop`. Swallows errors.
+   * Run `flow stop`. Swallows errors; reports `{ busy }` — true when it was refused because the instance is
+   * owned by a monitor that is still starting (`service_busy`).
    */
+  /** True once start() has spawned `flow start` — before that there is nothing of ours to stop. */
+  hasLaunchedBackend() {
+    return !!(this._backendProcess || this._lastLaunch);
+  }
+
   async _flowStop() {
-    const { cmd, args } = this._flowBin
+    const { cmd, args, shell } = this._flowBin
       ? this._flowCmd(['stop'])
       : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, args, { timeout: 10000 });
+      await this._run(cmd, args, { timeout: 10000, ...(shell === undefined ? {} : { shell }) });
       this.log.info('[uv] flow stop completed');
+      return { busy: false };
     } catch (error) {
       this.log.warn(`[uv] flow stop failed: ${error.message}`);
+      return { busy: isInstanceBusyError(error) };
     }
   }
 
@@ -1063,8 +2201,8 @@ class UvManager {
    */
   async _getUpgradeInfo() {
     try {
-      const { cmd, args } = this._flowCmd(['upgrade', '--info']);
-      const { stdout } = await this._run(cmd, args, { timeout: 15000 });
+      const { cmd, args, shell } = this._flowCmd(['upgrade', '--info']);
+      const { stdout } = await this._run(cmd, args, { timeout: 15000, ...(shell === undefined ? {} : { shell }) });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);
@@ -1087,8 +2225,17 @@ class UvManager {
    * pypi.org only — works even when the local backend is down.
    */
   async getLatestPypiVersion() {
+    const info = await this._getLatestPypiInfo();
+    return (info && info.version) || null;
+  }
+
+  /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
+  async _getLatestPypiInfo() {
     try {
-      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/json`, {
+      // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): "latest" comes from a local stub, so a scenario controls the verdict.
+      const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
+        || `https://pypi.org/pypi/${PYPI_PACKAGE}/json`;
+      const res = await fetch(url, {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) {
@@ -1096,11 +2243,97 @@ class UvManager {
         return null;
       }
       const data = await res.json();
-      return (data && data.info && data.info.version) || null;
+      return (data && data.info) || null;
     } catch (err) {
       this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * Interpreter minor to pin an upgrade to: the higher of the bundled pin
+   * (this desktop build's pyproject.toml) and the `requires_python` floor of
+   * the latest PyPI release. A desktop older than the release it installs
+   * would otherwise pin an interpreter the release refuses to run on
+   * ("flowpad==X depends on Python>=3.11", uv exits non-zero).
+   */
+  /** PyPI `info` of ONE release (requires_python, yanked, …), or null when unknown (offline, 404). */
+  async _getPypiVersionInfo(version) {
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/${encodeURIComponent(version)}/json`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: HTTP ${res.status}`);
+        return null;
+      }
+      const data = await res.json();
+      return (data && data.info) || null;
+    } catch (err) {
+      this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * The engine release to install when the user already agreed to a SPECIFIC version (saved when the
+   * update was offered). That version may have been yanked since — `uv` would still install it when
+   * pinned with `==` — so ask PyPI; a yanked version is replaced by the latest release. When PyPI cannot
+   * be reached the requested version is used as is (the install needs the network anyway, and the
+   * Python pin then falls back to the bundled one).
+   * @returns {Promise<{version: string, info: object|null}>}
+   */
+  async _resolveEngineTarget(version) {
+    const info = await this._getPypiVersionInfo(version);
+    if (info && info.yanked === true) {
+      this.log.warn(`[uv] ${PYPI_PACKAGE} ${version} was yanked on PyPI${info.yanked_reason ? ` (${info.yanked_reason})` : ''} — installing the latest release instead`);
+      const latest = await this._getLatestPypiInfo();
+      if (latest && latest.version) return { version: latest.version, info: latest };
+    }
+    return { version, info };
+  }
+
+  async _pythonPinForUpgrade(release) {
+    // A repaired runtime (runtime-repair.js: the official python.org interpreter installed because
+    // application control blocked the uv-managed one) is the pin from then on — `--python <path>`
+    // instead of `--python 3.11`, or the next install would silently put the engine back on the
+    // blocked interpreter. If that interpreter is gone (the user deleted the folder), say so and
+    // fall back to the minor pin: the block will be detected again and the repair offered again.
+    const repaired = this.repairedRuntimePython();
+    let minor = null;
+    try {
+      minor = await this._minorPythonPin(release);
+    } catch (e) {
+      if (!repaired) throw e;
+    }
+    if (repaired) {
+      // Not for ever: the repair installed ONE minor (3.11.9). The day the engine requires a newer
+      // one, pinning the old interpreter would fail every upgrade with no way out. Then the minor
+      // pin wins (uv-managed, as before the repair); if that build is blocked too, the block is
+      // detected again and a repair is offered again — with a manifest for the new minor once one
+      // ships (runtime-repair.js PYTHON_RUNTIME_MANIFEST).
+      const repairedMinor = this.repairedRuntimeMinor();
+      if (minor && repairedMinor && maxPythonVersion(minor, repairedMinor) !== repairedMinor) {
+        this.log.warn(`[uv] the repaired runtime is Python ${repairedMinor} but the release needs >=${minor}: not pinning to it (uv-managed ${minor} instead)`);
+        return minor;
+      }
+      this.log.info(`[uv] pinning the engine to the repaired runtime: ${repaired}`);
+      return repaired;
+    }
+    return minor;
+  }
+
+  /** The "<major>.<minor>" pin without the repaired-runtime override (the pre-repair state). */
+  async _minorPythonPin(release) {
+    // `release` undefined → the latest release's metadata; null → unknown (bundled pin only); else that release's.
+    const info = release === undefined ? await this._getLatestPypiInfo() : release;
+    const remote = pythonFloor(info && info.requires_python);
+    const pin = maxPythonVersion(tryPythonVersion(), remote);
+    if (!pin) return getPythonVersion(); // broken build and no PyPI answer: throws, naming the build
+    if (remote && pin === remote && pin !== tryPythonVersion()) {
+      this.log.info(`[uv] Latest ${PYPI_PACKAGE} needs Python >=${remote}; pinning ${pin} instead of the bundled ${tryPythonVersion()}`);
+    }
+    return pin;
   }
 
   /**
@@ -1182,9 +2415,32 @@ class UvManager {
    * Non-blocking — failures are logged and silently ignored.
    * Shows a native OS dialog if an update is required.
    */
+  /**
+   * Remember that the user answered "Later" to `version` (from any dialog), so
+   * the periodic check does not re-offer it this session.
+   */
+  deferPackageVersion(version) {
+    if (version) this._deferredPackageVersion = version;
+  }
+
+  /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
+  setFailureSharer(fn) {
+    this._failureSharer = typeof fn === 'function' ? fn : null;
+  }
+
+  /** Version offered by the package dialog currently on screen, or null. */
+  openPackageDialogVersion() {
+    return this._packageDialog ? this._packageDialog.version : null;
+  }
+
+  /** Close the open package dialog as if the user chose "Later" (a newer release supersedes it). */
+  supersedePackageDialog() {
+    if (this._packageDialog) this._packageDialog.abort.abort();
+  }
+
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -1192,29 +2448,50 @@ class UvManager {
       // so it behaves the same for healthy, broken, and offline-from-cloud
       // installs (offer the upgrade whenever PyPI is newer). Post-boot: the
       // running backend can answer the cloud `/check-update` policy, so defer
-      // to that verdict.
-      const status = beforeBackendStart
+      // to that verdict — unless the caller asks for the plain PyPI comparison
+      // (`compareWithPypi`, used by the hourly check so a newer release is
+      // offered even when the cloud policy would not *require* it).
+      const status = compareWithPypi
         ? await this._pypiUpdateStatus()
         : await this.getUpdateStatus(cloudUrl);
       if (!status || !status.required || !status.latestVersion) return false;
 
       const latest = status.latestVersion;
+      // The user already answered "Later" for this exact version in this
+      // session — don't ask again every hour. A new release, or the next launch
+      // (fresh process), asks again.
+      if (latest === this._deferredPackageVersion) {
+        this.log.info(`[uv] Update ${latest} available but deferred by the user earlier this session`);
+        return false;
+      }
       this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Update Available',
-        message: `A new version of FlowPad is available (${latest}).`,
-        detail: status.currentVersion
-          ? `You are running version ${status.currentVersion}.`
-          : 'Your current installation could not be verified and may be incomplete.',
-        buttons: ['Upgrade', 'Later'],
-        defaultId: 0,
-      });
+      // Abortable: a newer release found while this is on screen closes it (as
+      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
+      // version, is ever shown.
+      this._packageDialog = { version: latest, abort: new AbortController() };
+      let response;
+      try {
+        response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
+        if (response === null) ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Update Available',
+          message: `A new version of FlowPad is available (${latest}).`,
+          detail: status.currentVersion
+            ? `You are running version ${status.currentVersion}.`
+            : 'Your current installation could not be verified and may be incomplete.',
+          buttons: ['Upgrade', 'Later'],
+          defaultId: 0,
+          cancelId: 1, // Esc / close = Later, never an implicit Upgrade
+          signal: this._packageDialog.abort.signal,
+        }));
+      } finally {
+        this._packageDialog = null;
+      }
+      if (response !== 0) this._deferredPackageVersion = latest;
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
-
       // User chose Upgrade — show loading screen and wait for its IPC listener.
       const loadingPath = require('path').join(__dirname, 'loading.html');
       await mainWindow.loadFile(loadingPath);
@@ -1242,8 +2519,12 @@ class UvManager {
       if (sendStatus) sendStatus('Waiting for server');
       // 120s window — matches the upgrade() subprocess ceiling and gives
       // the freshly-installed backend room to boot before the user sees
-      // a false "failed to start" error.
-      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+      // a false "failed to start" error. A backend that never gets healthy is
+      // a failed upgrade: fall into the recovery path below instead of loading
+      // a dead URL.
+      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
+        throw new Error('upgraded backend did not become healthy');
+      }
 
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);
@@ -1262,17 +2543,25 @@ class UvManager {
           mainWindow, { waitForBackend, backendUrl, sendStatus }
         );
         if (!restored && mainWindow && !mainWindow.isDestroyed()) {
-          await require('electron').dialog.showMessageBox(mainWindow, {
+          await showFailureDialog({
+            dialog: require('electron').dialog,
+            parent: mainWindow,
             type: 'error',
             title: 'Update failed',
             message: 'FlowPad couldn’t finish updating and couldn’t restart automatically.',
             detail:
+              `${err && err.message ? `Cause: ${err.message}\n\n` : ''}` +
               'Please quit and reopen FlowPad. If it keeps happening, run:\n\n' +
-              `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force\n\n` +
+              `${upgradeCommand()}\n\n` +
               'then reopen FlowPad, or run "flow diagnose".',
-            buttons: ['OK'],
-            defaultId: 0,
+            share: this._failureSharer,
+            log: this.log,
           });
+          // The window still shows "Upgrading Flowpad…" over a dead backend: replace it with the in-app panel
+          // (Share, Copy, Open logs, Quit) so the user is not left on a splash that will never finish.
+          if (onUnrecovered && mainWindow && !mainWindow.isDestroyed()) {
+            try { await onUnrecovered(err); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
+          }
         }
       }
       return false;
@@ -1311,7 +2600,9 @@ class UvManager {
         await this.reinstall();
         await this.start();
       }
-      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
+        throw new Error('restored backend did not become healthy');
+      }
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);
       }
@@ -1326,12 +2617,27 @@ class UvManager {
   /**
    * Upgrade flowpad to the latest version via `uv tool install flowpad@latest`.
    */
-  async upgrade() {
-    this.log.info('[uv] Upgrading flowpad...');
-    await this._uvToolInstallForce(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force']);
+  async upgrade({ onProgress, version } = {}) {
+    // `version`: the exact release the user agreed to (update offered earlier) instead of "whatever is latest now".
+    let spec = engineSpec(`${PYPI_PACKAGE}@latest`);
+    let pin;
+    if (version) {
+      const target = await this._resolveEngineTarget(version);
+      spec = `${PYPI_PACKAGE}==${target.version}`;
+      pin = await this._pythonPinForUpgrade(target.info); // that release's own requires_python
+      this.log.info(`[uv] Upgrading flowpad to ${target.version}${target.version !== version ? ` (${version} was withdrawn)` : ''}...`);
+    } else {
+      pin = await this._pythonPinForUpgrade();
+      this.log.info('[uv] Upgrading flowpad...');
+    }
+    await this._uvToolInstallForce(
+      ['tool', 'install', spec, '--python', pin, '--force'],
+      { onProgress },
+    );
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
+    updateTest.event('engine-upgraded', { engine: this.getInstalledVersionSync() || null, spec });
   }
 
   /**
@@ -1341,12 +2647,425 @@ class UvManager {
    * `--reinstall` recreates the tool venv and reinstalls every package (not
    * just a metadata refresh), then we re-resolve the freshly written shim.
    */
-  async reinstall() {
+  async reinstall({ onProgress } = {}) {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
-    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force']);
+    const pin = await this._pythonPinForUpgrade();
+    await this._uvToolInstallForce(
+      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--reinstall', '--force'],
+      { onProgress },
+    );
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Windows runtime repair (runtime-repair.js): application control blocked a
+  // native module of the uv-managed Python the engine runs on. The pure flow
+  // lives in runtime-repair.js; these are its effects on the real machine.
+  // ---------------------------------------------------------------------------
+
+  /** `<stateDir>/desktop-runtime.json` as an object ({} when absent or unreadable). */
+  _runtimeState() {
+    if (!this._stateDir) return {};
+    return runtimeRepair.readRuntimeState((p) => fs.readFileSync(p, 'utf8'), this._stateDir);
+  }
+
+  _saveRuntimeState(state) {
+    if (!this._stateDir) return;
+    fs.mkdirSync(this._stateDir, { recursive: true });
+    runtimeRepair.writeRuntimeState((p, text) => fs.writeFileSync(p, text, 'utf8'), this._stateDir, state);
+  }
+
+  /**
+   * The interpreter a previous repair installed, when it is still there — the `--python` every
+   * later install must reuse. Null otherwise (never repaired, or the folder was removed: logged,
+   * and the engine goes back to the minor pin until the block is detected and repaired again).
+   */
+  /** "<major>.<minor>" of the repaired runtime (`desktop-runtime.json` records the full version), or null. */
+  repairedRuntimeMinor() {
+    const state = this._runtimeState();
+    const m = String(state.version || '').match(/^(\d+\.\d+)/);
+    return m ? m[1] : null;
+  }
+
+  repairedRuntimePython() {
+    const state = this._runtimeState();
+    if (!state.python) return null;
+    if (fs.existsSync(state.python)) return state.python;
+    this.log.warn(`[uv] the repaired runtime recorded in desktop-runtime.json is gone (${state.python}); using the minor pin`);
+    return null;
+  }
+
+  /** Delete a file OR a directory tree (the rejected runtime is a tree). Throws when it is still there. */
+  _removePath(p) {
+    fs.rmSync(p, { force: true, recursive: true });
+    if (fs.existsSync(p)) throw new Error(`${p} still exists`);
+  }
+
+  /** Where the repair puts things: `%LOCALAPPDATA%\Flowpad\runtime\{python-<ver>,downloads}`. */
+  _runtimePaths() {
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const runtimeDir = path.join(local, 'Flowpad', 'runtime');
+    return { runtimeDir, downloadsDir: path.join(runtimeDir, 'downloads') };
+  }
+
+  /**
+   * Repair the engine's Python runtime after an application-control block (see
+   * runtime-repair.js for the steps and the guarantees). `versions` = { appVersion,
+   * engineVersion } bounds the attempt to one per version; `startBackend` and `healthCheck`
+   * are the caller's (main.js owns the health gate). Resolves the repair result; rejects with
+   * `.step`, `.rolledBack`, `.policyBlocked` set, after recording the attempt.
+   */
+  async repairRuntime({ versions, onProgress = () => {}, startBackend, healthCheck } = {}) {
+    if (!IS_WIN) throw new Error('the runtime repair is Windows-only');
+    this._assertOpen('repair the runtime');
+    const paths = this._runtimePaths();
+    fs.mkdirSync(paths.downloadsDir, { recursive: true });
+    const io = {
+      existingPythonOrgInstall: () => this._existingPythonOrgInstall(runtimeRepair.PYTHON_RUNTIME_MANIFEST.minor),
+      download: (url, dest, onPct) => this._downloadToFile(url, dest, onPct),
+      extractRuntime: (zip, targetDir, manifest) => this._extractRuntime(zip, targetDir, manifest),
+      verifyRuntimeSignatures: (dir, signers) => this._verifyRuntimeSignatures(dir, signers),
+      validateInterpreter: (python, mods) => this._validateInterpreter(python, mods),
+      stageEngine: (python) => this._stageEngine(python, paths.runtimeDir),
+      installEngine: (python) => this._installEngineOn(python),
+      rollbackEngine: () => this._rollbackEngine(),
+      finalizeEngine: () => this._finalizeEngine(),
+      startBackend: () => startBackend(),
+      healthCheck: () => healthCheck(),
+      remove: async (p) => this._removePath(p),
+    };
+    return runtimeRepair.performRuntimeRepair({
+      io,
+      paths,
+      versions,
+      state: this._runtimeState(),
+      saveState: (s) => this._saveRuntimeState(s),
+      onProgress,
+      log: this.log,
+    });
+  }
+
+  /**
+   * An official python.org CPython of `minor` already registered for this user or machine
+   * (PEP 514: HKCU/HKLM\Software\Python\PythonCore\<minor>\InstallPath, 64-bit key only), whose
+   * python.exe carries a Valid signature by the Python Software Foundation. Null otherwise.
+   * Reusing it means never running an installer over an existing installation.
+   */
+  async _existingPythonOrgInstall(minor) {
+    for (const hive of ['HKCU', 'HKLM']) {
+      const key = `${hive}\\Software\\Python\\PythonCore\\${minor}\\InstallPath`;
+      let out;
+      try {
+        ({ stdout: out } = await this._run('reg.exe', ['query', key, '/v', 'ExecutablePath'], { shell: false, timeout: 15000 }));
+      } catch {
+        continue;
+      }
+      const m = /ExecutablePath\s+REG_SZ\s+(.+)$/m.exec(out);
+      const exe = m ? m[1].trim() : null;
+      if (!exe || !fs.existsSync(exe)) continue;
+      const sig = await this._verifyAuthenticode(exe).catch(() => null);
+      if (sig && sig.status === 'Valid' && sig.subjectCN === runtimeRepair.PYTHON_RUNTIME_MANIFEST.signerSubjectCN) {
+        return { python: exe, hive };
+      }
+      this.log.warn(`[runtime-repair] ${key} points at ${exe} but it is not a PSF-signed interpreter (${sig ? sig.status : 'unreadable'}); ignoring`);
+    }
+    return null;
+  }
+
+  /** GET `url` (following redirects) into `dest`, hashing on the fly. Resolves the SHA-256 hex. */
+  _downloadToFile(url, dest, onPct, redirects = 0) {
+    return new Promise((resolve, reject) => {
+      const partial = `${dest}.partial`;
+      const req = https.get(url, { headers: { 'User-Agent': 'flowpad-desktop' } }, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          res.resume();
+          if (redirects >= 5) return reject(new Error('too many redirects'));
+          return resolve(this._downloadToFile(new URL(res.headers.location, url).toString(), dest, onPct, redirects + 1));
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${res.statusCode}`));
+        }
+        const total = Number(res.headers['content-length']) || 0;
+        const hash = crypto.createHash('sha256');
+        const out = fs.createWriteStream(partial);
+        let received = 0;
+        let lastPct = -1;
+        res.on('data', (chunk) => {
+          hash.update(chunk);
+          received += chunk.length;
+          if (total) {
+            const pct = Math.floor((received / total) * 100);
+            if (pct !== lastPct) { lastPct = pct; onPct(pct); }
+          }
+        });
+        res.on('error', (e) => { out.destroy(); reject(e); });
+        out.on('error', reject);
+        res.pipe(out);
+        out.on('finish', () => {
+          try {
+            fs.rmSync(dest, { force: true });
+            fs.renameSync(partial, dest);
+            resolve(hash.digest('hex'));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      req.on('error', reject);
+    });
+  }
+
+  /** Authenticode status and signer CN of `file`, via Windows PowerShell. */
+  async _verifyAuthenticode(file) {
+    const escaped = String(file).replace(/'/g, "''");
+    const { stdout } = await this._run('powershell.exe', [
+      '-NoProfile', '-Command',
+      `$s = Get-AuthenticodeSignature -LiteralPath '${escaped}'; ` +
+      `Write-Output ($s.Status.ToString() + '|' + [string]$s.SignerCertificate.Subject)`,
+    ], { shell: false, timeout: 60000, env: { PSModulePath: windowsPowerShellModulePath() } });
+    const [status, subject = ''] = String(stdout).trim().split('|');
+    const cn = /CN=([^,]+)/.exec(subject);
+    return { status, subjectCN: cn ? cn[1].trim() : null, subject };
+  }
+
+  /**
+   * Extract the runtime archive (a zip) into `targetDir`: the archive's `manifest.archiveRoot`
+   * subtree becomes targetDir, `manifest.stripDirs` are removed. Windows PowerShell's Expand-Archive
+   * (no third-party unzip, nothing executed from the archive). A policy block here is flagged.
+   */
+  async _extractRuntime(zip, targetDir, manifest) {
+    const scratch = `${targetDir}.extract`;
+    fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    const esc = (s) => String(s).replace(/'/g, "''");
+    try {
+      await this._run('powershell.exe', [
+        '-NoProfile', '-Command',
+        `$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath '${esc(zip)}' -DestinationPath '${esc(scratch)}' -Force`,
+      ], { shell: false, timeout: 10 * 60 * 1000, env: { PSModulePath: windowsPowerShellModulePath() } });
+      const root = manifest.archiveRoot ? path.join(scratch, manifest.archiveRoot) : scratch;
+      if (!fs.existsSync(path.join(root, 'python.exe'))) throw new Error(`no python.exe under ${root} after extraction`);
+      fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+      fs.renameSync(root, targetDir);
+      for (const d of manifest.stripDirs || []) fs.rmSync(path.join(targetDir, d), { recursive: true, force: true });
+    } catch (err) {
+      if (isPolicyBlockError(err)) err.policyBlocked = true;
+      throw err;
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Authenticode status of EVERY exe/dll/pyd under `dir` (Windows PowerShell, one process).
+   * Resolves { checked, invalid: [{ file, status, subjectCN }] } where `invalid` lists files that are
+   * not Valid or whose signer CN is not in `signers`.
+   */
+  async _verifyRuntimeSignatures(dir, signers) {
+    const esc = (s) => String(s).replace(/'/g, "''");
+    const { stdout } = await this._run('powershell.exe', [
+      '-NoProfile', '-Command',
+      // Filter by extension in the pipeline: -Include does not apply to a -LiteralPath without a
+      // wildcard (it then returns every file; seen on the VM: LICENSE.txt and .h files "UnknownError").
+      `Get-ChildItem -LiteralPath '${esc(dir)}' -Recurse -File | Where-Object { @('.exe','.dll','.pyd') -contains $_.Extension.ToLower() } | ForEach-Object { ` +
+      `$s = Get-AuthenticodeSignature -LiteralPath $_.FullName; ` +
+      `Write-Output ($_.FullName.Substring(${String(dir).length + 1}) + '|' + $s.Status.ToString() + '|' + [string]$s.SignerCertificate.Subject) }`,
+    ], { shell: false, timeout: 10 * 60 * 1000, env: { PSModulePath: windowsPowerShellModulePath() } });
+    const invalid = [];
+    let checked = 0;
+    for (const line of String(stdout).split(/\r?\n/)) {
+      if (!line.includes('|')) continue;
+      const [file, status, subject = ''] = line.split('|');
+      const cn = /CN=([^,]+)/.exec(subject);
+      const subjectCN = cn ? cn[1].trim() : null;
+      checked++;
+      if (status !== 'Valid' || !signers.includes(subjectCN)) invalid.push({ file, status, subjectCN });
+    }
+    return { checked, invalid };
+  }
+
+  /** `python -I -c "import …"` must exit 0; a block on a .pyd is reported as a policy block. */
+  async _validateInterpreter(python, mods) {
+    try {
+      await this._run(python, ['-I', '-c', `import ${mods.join(', ')}, sys; print(sys.version)`], { shell: false, timeout: 120000 });
+    } catch (err) {
+      if (isPolicyBlockError(err) || POLICY_BLOCK_TEXT.test(String(err.stderr || ''))) err.policyBlocked = true;
+      throw err;
+    }
+  }
+
+  /**
+   * Stage the engine on `python` in a scratch venv under the runtime dir (never the tool venv):
+   * `uv venv`, `uv pip install flowpad==<installed version>` (the exact engine the user has, from
+   * uv's cache when possible), then the imports that failed in the field — uvicorn pulls
+   * multiprocessing.connection → _multiprocessing. Rejects with `.policyBlocked` when the policy
+   * refuses a file here too; the working installation is untouched either way. The scratch venv
+   * is removed afterwards (uv's cache keeps the wheels, so the real install is fast).
+   */
+  async _stageEngine(python, runtimeDir) {
+    const staging = path.join(runtimeDir, 'staging-venv');
+    fs.rmSync(staging, { recursive: true, force: true });
+    const installed = this.getInstalledVersionSync();
+    const spec = installed ? `${PYPI_PACKAGE}==${installed}` : PYPI_PACKAGE;
+    try {
+      await this._uv(['venv', staging, '--python', python], { timeout: 120000 });
+      const stagingPython = path.join(staging, 'Scripts', 'python.exe');
+      // `uv pip install` spells "never build this one from source" --only-binary; --no-build-package is
+      // the `uv tool install` spelling and is rejected here ("unexpected argument", seen on the VM).
+      // The same dependency cut-offs as the real install (EXCLUDE_NEWER_MARGIN_DAYS), same fallback.
+      const strategies = await this._excludeNewerStrategies([spec]);
+      for (let i = 0; i < strategies.length; i++) {
+        try {
+          await this._runStreaming('uv', ['pip', 'install', '--python', stagingPython, '--only-binary', 'cryptography', ...strategies[i].flags, spec], {});
+          break;
+        } catch (err) {
+          if (strategies[i + 1] && strategies[i].flags.length && isUnknownFlagError(err)) { i = strategies.length - 2; continue; }
+          if (strategies[i + 1] && strategies[i].flags.length && isResolutionError(err)) {
+            this.log.warn(`[runtime-repair] staging: no solution under the ${strategies[i].label} cut-off — retrying with ${strategies[i + 1].label}`);
+            continue;
+          }
+          throw err;
+        }
+      }
+      await this._run(stagingPython, ['-I', '-c', 'import uvicorn, multiprocessing.connection, flow_sdk; print("engine imports ok")'], { shell: false, timeout: 180000 });
+    } catch (err) {
+      if (isPolicyBlockError(err) || POLICY_BLOCK_TEXT.test(String(err.stderr || err.stdout || ''))) err.policyBlocked = true;
+      throw err;
+    } finally {
+      fs.rmSync(staging, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Windows Code Integrity events 3077 (policy blocked a file) and 3089 (signature info) from the
+   * last `minutes`, as text lines — the exact blocked binary and the policy id, for the panel, the
+   * log and the support bundle. '' when there are none or the log cannot be read.
+   */
+  async codeIntegrityEvents(minutes = 30) {
+    if (!IS_WIN) return '';
+    try {
+      const { stdout } = await this._run('powershell.exe', [
+        '-NoProfile', '-Command',
+        `$ev = Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-CodeIntegrity/Operational'; Id=3077,3089; StartTime=(Get-Date).AddMinutes(-${Number(minutes) || 30})} -MaxEvents 40 -ErrorAction Stop; ` +
+        `foreach ($e in $ev) { Write-Output ($e.TimeCreated.ToString('s') + ' id=' + $e.Id + ' ' + ($e.Message -replace '\\s+', ' ')) }`,
+      ], { shell: false, timeout: 60000, env: { PSModulePath: windowsPowerShellModulePath() } });
+      return String(stdout || '').trim();
+    } catch (err) {
+      this.log.info(`[runtime-repair] no CodeIntegrity events to collect: ${String(err.stderr || err.message).split('\n')[0]}`);
+      return '';
+    }
+  }
+
+  /**
+   * Reinstall the engine on `python` — the same `uv tool install` as reinstall(), explicit
+   * interpreter, and the SAME engine version the user has (`flowpad==<installed>`): a repair
+   * changes the runtime, not the release. Only when the installed version cannot be read
+   * (no `_version.py`) does it fall back to whatever PyPI serves.
+   */
+  async _installEngineOn(python) {
+    const installed = this.getInstalledVersionSync();
+    const spec = installed ? `${PYPI_PACKAGE}==${installed}` : PYPI_PACKAGE;
+    // Reversible switch: the current tool venv is set ASIDE (renamed, not deleted) and a new one is
+    // built next to where it was. Until the repair is finalized (backend healthy), the previous
+    // environment is intact on disk and the rollback is a rename back — no network, and exactly
+    // the environment the user had, not a fresh install of it.
+    await this._drainVenvProcesses();
+    // Remembered for the rollback: the release to put back when the set-aside copy is not there, and whether
+    // there was an engine at all (a repair after a blocked FIRST install has nothing to put back).
+    this._preRepairEngineVersion = installed || null;
+    // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
+    // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
+    this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
+    try {
+      this._setAsidePreRepairVenv();
+    } catch (e) {
+      // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
+      // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
+      const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
+      err.nothingChanged = true;
+      throw err;
+    }
+    this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
+    await this._uvToolInstallForce(
+      ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
+    );
+    await this._ensureShimOnPath();
+    this._flowBin = await this._resolveFlowBin();
+  }
+
+  /** The blocked install was the first one: a repair that follows has no previous engine to put back. */
+  markFirstInstallBlocked() { this._firstInstallBlocked = true; }
+
+  _preRepairVenvDir() {
+    return `${this._toolVenvDir()}.pre-repair`;
+  }
+
+  /** Rename the live tool venv to `<venv>.pre-repair` (replacing an older leftover). No-op without a venv. */
+  _setAsidePreRepairVenv() {
+    const venvDir = this._toolVenvDir();
+    const aside = this._preRepairVenvDir();
+    if (!fs.existsSync(venvDir)) return;
+    fs.rmSync(aside, { recursive: true, force: true });
+    fs.renameSync(venvDir, aside);
+    this.log.info(`[runtime-repair] previous engine set aside → ${aside}`);
+  }
+
+  /** The repair held: drop the set-aside environment. Best effort; a leftover is harmless. */
+  async _finalizeEngine() {
+    const aside = this._preRepairVenvDir();
+    try {
+      fs.rmSync(aside, { recursive: true, force: true });
+      this.log.info('[runtime-repair] previous engine removed (repair finalized)');
+    } catch (e) {
+      this.log.warn(`[runtime-repair] could not remove ${aside}: ${e.message}`);
+    }
+  }
+
+  /**
+   * Put the engine back to the state before the repair. First choice: the set-aside venv, renamed
+   * back into place (exact previous environment, no network). When there is none:
+   *   - the venv in place still IS the previous engine (the set-aside rename failed, so the install
+   *     never ran): nothing to do — a "rollback" that reinstalls would change what the user asked
+   *     to keep;
+   *   - otherwise reinstall THE RELEASE THE USER HAD (`flowpad==<version before the repair>`; bare
+   *     `flowpad`, i.e. latest, only when that version could not be read) on the minor pin,
+   *     `only-managed` — with the python.org interpreter now registered (PEP 514), a bare
+   *     `--python 3.11` could resolve to IT (seen on the VM), and the rollback must land on uv's own build.
+   */
+  async _rollbackEngine() {
+    const venvDir = this._toolVenvDir();
+    const aside = this._preRepairVenvDir();
+    await this._drainVenvProcesses();
+    if (this._hadEngineBeforeRepair === false) {
+      // The repair followed a blocked first install: there was no engine to put back (what was set aside is the half-built
+      // environment of that install, not an engine), and reinstalling one on the blocked interpreter would only fail again.
+      this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
+      fs.rmSync(aside, { recursive: true, force: true });
+      return;
+    }
+    if (fs.existsSync(aside)) {
+      this.log.warn('[runtime-repair] restoring the set-aside engine');
+      fs.rmSync(venvDir, { recursive: true, force: true });
+      fs.renameSync(aside, venvDir);
+      this._flowBin = await this._resolveFlowBin();
+      return;
+    }
+    const previous = this._preRepairEngineVersion || null;
+    if (previous && fs.existsSync(venvDir) && this.getInstalledVersionSync() === previous) {
+      this.log.warn(`[runtime-repair] no set-aside engine, and the engine in place is still ${previous}: the switch never happened, nothing to roll back`);
+      this._flowBin = await this._resolveFlowBin();
+      return;
+    }
+    const pin = await this._minorPythonPin();
+    const spec = previous ? `${PYPI_PACKAGE}==${previous}` : PYPI_PACKAGE;
+    this.log.warn(`[runtime-repair] no set-aside engine; rolling back to ${spec} on --python ${pin} (uv-managed)`);
+    await this._uvToolInstallForce(
+      ['tool', 'install', spec, '--python', pin, '--python-preference', 'only-managed', '--reinstall', '--force'],
+    );
+    this._flowBin = await this._resolveFlowBin();
   }
 
   /**
@@ -1445,11 +3164,43 @@ const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 module.exports = UvManager;
 module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
+module.exports.QuitInProgressError = QuitInProgressError;
 // PyPI package + pinned interpreter, exported so main.js can surface the exact
 // `uv tool install` command to the user in the startup-timeout dialog.
 module.exports.PYPI_PACKAGE = PYPI_PACKAGE;
-module.exports.PYTHON_VERSION = PYTHON_VERSION;
+module.exports.getPythonVersion = getPythonVersion;
+module.exports.tryPythonVersion = tryPythonVersion;
+module.exports.upgradeCommand = upgradeCommand;
+module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
+module.exports.pythonFloor = pythonFloor;
+module.exports.dirSizeBytes = dirSizeBytes;
+module.exports.topFingerprintAsync = topFingerprintAsync;
+module.exports.dirSizeBytesAsync = dirSizeBytesAsync;
+module.exports.mktempShimSource = mktempShimSource;
+module.exports.windowsPowerShellModulePath = windowsPowerShellModulePath;
+module.exports.UV_INSTALL_SH = UV_INSTALL_SH;
+module.exports.UV_INSTALL_PS1 = UV_INSTALL_PS1;
+module.exports.installFailure = installFailure;
+module.exports.cleanPythonEnv = cleanPythonEnv;
+module.exports.isPolicyBlockError = isPolicyBlockError;
+module.exports.isInstanceBusyError = isInstanceBusyError;
+module.exports.PY_FLOW_ENTRY = PY_FLOW_ENTRY;
+module.exports.policyBlockedError = policyBlockedError;
+module.exports.POLICY_BLOCK_TEXT = POLICY_BLOCK_TEXT;
+module.exports.maxPythonVersion = maxPythonVersion;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;
+module.exports.quoteWinArgs = quoteWinArgs;
+module.exports.EXCLUDE_NEWER_MARGIN_DAYS = EXCLUDE_NEWER_MARGIN_DAYS;
+module.exports.NATIVE_DEPS = NATIVE_DEPS;
+module.exports.engineVersionFromInstallArgs = engineVersionFromInstallArgs;
+module.exports.excludeNewerFlagSets = excludeNewerFlagSets;
+module.exports.isResolutionError = isResolutionError;
+module.exports.isUnknownFlagError = isUnknownFlagError;
 module.exports.parseNetstatPids = parseNetstatPids;
+module.exports.isInstallProgressLine = isInstallProgressLine;
+module.exports.splitLines = splitLines;
+// The hub API prefix, shared with support-upload.js so the two callers of
+// FLOWPAD_CLOUD_URL cannot drift apart.
+module.exports.API_PREFIX = API_PREFIX;

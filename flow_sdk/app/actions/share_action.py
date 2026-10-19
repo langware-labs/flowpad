@@ -11,16 +11,22 @@ from __future__ import annotations
 
 import logging
 from json import JSONDecodeError
+from pathlib import Path
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.project import Project
+from flow_sdk.builtin.project import Project, ProjectInviteRoleError
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+# ``ShareInvitee`` is re-exported: callers import it from here.
+from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee as ShareInvitee
+from flow_sdk.schema.data_spec.share_request_spec import ShareRequestSpec, ShareVia
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +47,23 @@ def _local_mode_share_blocked() -> bool:
     return is_local_mode()
 
 
+# The roles a share invite may grant — one global list, served by ``share-roles``.
+SHARE_ROLES: tuple[str, ...] = ("guest", "editor", "member", "admin")
+
+
+@action.get(action_name="share-roles", types=None)
+async def share_roles() -> ApiResponse:
+    """``GET /api/v1/graph/share-roles`` — the roles a share invite may grant."""
+    return ApiSuccessResponse(data=list(SHARE_ROLES))
+
+
 @action.post(action_name="share", types="all")
-async def share_entity() -> ApiSuccessResponse:
+async def share_entity() -> ApiResponse:
     """Generic ``share`` — forward this entity to the hub.
 
-    Body is the client's entity dump; URL carries ``<type>/<id>``. We
-    reconstruct the entity in-process (no DB save) and call ``.share()``
-    which POSTs to the hub and flips ``remote=True``.
+    The URL identifies the authoritative local row. Git-publishable assets use
+    their owning Project's path-scoped Git publication contract; every other
+    entity preserves the legacy hub-share behavior.
     """
     if _local_mode_share_blocked():
         raise HTTPException(status_code=403, detail=LOCAL_MODE_SHARE_MESSAGE)
@@ -66,60 +82,232 @@ async def share_entity() -> ApiSuccessResponse:
     except JSONDecodeError:
         body = {}
 
-    sanitized = {k: v for k, v in body.items() if entity_model.is_api_field(k)}
-    sanitized["id"] = target.id
-    entity = entity_model.model_validate(sanitized)
-
-    # Optional ``recipients`` (list of email strings): the entity's ``share``
-    # implementation forwards each to ``POST /graph/<type>/<id>/members`` as a
+    # The share keys of the body (``ShareRequestSpec``). Each entity's ``share``
+    # forwards ``recipients`` to ``POST /graph/<type>/<id>/members`` as a
     # standard ``MembershipRequest`` — see ``Conversation.share``.
-    recipients = body.get("recipients")
-    if recipients is not None and not isinstance(recipients, list):
-        raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="share: body must be a JSON object")
+    try:
+        share_request = ShareRequestSpec.from_body(body)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"share: invalid request body: {e}")
+    invitees = list(share_request.recipients)
+    teams = list(share_request.teams)
+    note = share_request.note
+    via = share_request.via
+    if (teams or note or via is not ShareVia.GIT) and not issubclass(entity_model, Project):
+        raise HTTPException(status_code=400, detail="share: 'teams', 'note' and 'via' apply to a project share only")
 
-    # Conversation and Project both implement a ``share(recipients=...)`` fan-out
-    # (per-recipient MembershipRequest). Other types share without invites.
-    if recipients and isinstance(entity, (Conversation, Project)):
-        await entity.share(recipients=recipients)
-    else:
-        await entity.share()
+    # By-email and by-id invitees split back into the two addressing forms
+    # ``Conversation.share`` takes; ``Project.share`` takes ``invitees`` as-is
+    # (it owns role validation itself — see ``ProjectInviteRoleError`` below).
+    recipients = [inv.email for inv in invitees if inv.email] or None
+    recipient_user_ids = [inv.user_id for inv in invitees if inv.user_id] or None
+
+    # Hub-only types have no local row to look up, and nothing to push: the entity already lives
+    # on the hub and this endpoint's whole job for them is the invitation. Resolved BEFORE the
+    # local fetch below, which would otherwise 404 every share of one. An ``LLMEndpoint`` is the
+    # case that forced this — it is a read-only projection of hub state (see its module docstring).
+    if entity_model._hub_only:
+        if not recipients:
+            raise HTTPException(
+                status_code=400,
+                detail=f"share: {target.type} exists only on the hub; pass 'recipients' to invite someone",
+            )
+        # A receipt, not the entity: a transient projection would serialize ~30 defaulted fields
+        # as if they were this endpoint's real state.
+        await entity_model(id=target.id).share(recipients=recipients)
+        return ApiSuccessResponse(data={"id": target.id, "recipients": recipients})
+
+    entity = await entity_model.get_one({"id": target.id})
+    if entity is None:
+        return ApiFailResponse(
+            status_code=404,
+            message="share: local entity not found",
+            data={"code": "entity_not_found"},
+        )
+
+    # Inviting into a Project that already has its hub row is a membership grant,
+    # not a publish: it runs no publish gate (a dirty tree still invites) and
+    # does not re-push or re-stamp the row. Publishing stays the job of a share
+    # with nobody to invite — or of the first share, which publishes, then invites.
+    project_invite_only = (
+        isinstance(entity, Project) and bool(invitees or teams) and entity.remote is True and via is ShareVia.GIT
+    )
+
+    project_git_origin = None
+    if isinstance(entity, Project) and not project_invite_only:
+        # One owner for "what it takes to link a Project" — the Project Home
+        # button and `flow record share --link-project` both come through here,
+        # so they cannot enforce different preconditions.
+        from flow_sdk.app.actions.project_publish import (  # noqa: PLC0415
+            ProjectPublishBlocked,
+            assert_project_publishable,
+        )
+
+        try:
+            project_git_origin = await assert_project_publishable(entity, request_info.someone_typeid)
+        except ProjectPublishBlocked as blocked:
+            return ApiFailResponse(
+                status_code=blocked.status_code, message=blocked.message, data=blocked.data()
+            )
+        # A folder that is a clean git checkout still advertises its origin; its
+        # published assets travel through the project's hub repo either way.
+        if project_git_origin is not None:
+            entity.origin = project_git_origin
+
+    type_info = SchemaRegistry.get(target.type)
+    if type_info is not None and type_info.git_publishable:
+        if recipients or recipient_user_ids:
+            return ApiFailResponse(
+                status_code=400,
+                message="Invite members on the owning Project, not on an asset",
+                data={
+                    "code": "asset_recipients_not_allowed",
+                },
+            )
+        if not request_info.someone_typeid:
+            raise HTTPException(status_code=401, detail="share: authenticated user required")
+        from flow_sdk.assets.git_publish import AssetPublishError
+        from flow_sdk.builtin.asset_publishing import publish_git_asset
+
+        try:
+            result = await publish_git_asset(entity, request_info.someone_typeid)
+        except AssetPublishError as exc:
+            return ApiFailResponse(
+                status_code=exc.status_code,
+                message=exc.actionable,
+                data={"code": str(exc.code), **exc.data},
+            )
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    # Conversation and Project both fan out one MembershipRequest per recipient,
+    # addressable by email OR hub user id — a contact known only by id (the hub
+    # never discloses another user's email) is otherwise unreachable from either
+    # surface's address book. Other types share without invites. An empty
+    # ``invitees``/pair of empty lists is the plain hub push, same as the bare
+    # ``share()`` below.
+    try:
+        if isinstance(entity, Conversation):
+            await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
+        elif project_invite_only:
+            await entity.invite(invitees=invitees or None, teams=teams or None, note=note)
+        elif isinstance(entity, Project):
+            await entity.share(invitees=invitees or None, teams=teams or None, note=note, via=via)
+        else:
+            await entity.share()
+    except ProjectInviteRoleError as exc:
+        return ApiFailResponse(
+            status_code=400,
+            message=str(exc),
+            data={"code": "invalid_role"},
+        )
+    except Exception as exc:  # noqa: BLE001 — keep Project publish failures typed
+        if project_invite_only:
+            logger.warning("[share] inviting to Project %s failed: %s", entity.id, exc)
+            return ApiFailResponse(
+                status_code=502,
+                message="The Hub could not invite to this Project",
+                data={"code": "hub_invite_failed"},
+            )
+        if isinstance(entity, Project):
+            logger.warning("[share] publishing Project %s failed: %s", entity.id, exc)
+            return ApiFailResponse(
+                status_code=502,
+                message="The Hub could not publish this Project",
+                data={"code": "hub_publish_failed"},
+            )
+        raise
 
     # Send-side address-book reconcile (rule 4): learn every recipient — for ANY
     # shared entity type, not just conversations. A freshly-typed email carries no
     # user_id (expected); a conversation's existing roster carries user_id+email.
     # Non-fatal.
-    if recipients:
+    if recipients or recipient_user_ids:
         try:
             from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
             learn_entries: list[dict] = list(getattr(entity, "members", None) or [])
             learn_entries += [
-                {"email": r} for r in recipients if isinstance(r, str) and r.strip()
+                {"email": r} for r in (recipients or []) if isinstance(r, str) and r.strip()
+            ]
+            # A principal grantee is already a known contact (that is where the
+            # user_id came from), so this is a no-op refresh rather than a new
+            # row — but keeping both halves symmetric means the learner never
+            # has to care which path admitted someone.
+            from flow_sdk.builtin.user import recipient_user_id  # noqa: PLC0415
+            learn_entries += [
+                {"user_id": user_id}
+                for user_id in map(recipient_user_id, recipient_user_ids or [])
+                if user_id
             ]
             await _learn_address_book(learn_entries)
         except Exception as e:  # noqa: BLE001
             logger.warning("[share] address-book learning failed (non-fatal): %s", e)
 
-    # Persist ``remote=True`` on the on-disk row so downstream consumers
-    # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
-    # entity as hub-bound. ``entity`` above is a transient instance built
-    # from the request body and not bound to a DB row, so we re-load by id
-    # and save THAT.
-    if "remote" in entity_model.model_fields:
+    # A Project publication is not complete until all three canonical markers
+    # survive a reload. Project.share() mutates them before returning, so this
+    # save is deliberately unconditional (checking remote first was the bug:
+    # remote was already true and the write was skipped). An invite published
+    # nothing, so there is nothing to persist.
+    if isinstance(entity, Project) and not project_invite_only:
+        entity.origin = project_git_origin
         try:
-            local_row = await entity_model.get_one({"id": target.id})
+            await entity.save(request_info.someone_typeid)
+        except Exception:  # noqa: BLE001 — hub succeeded, local contract did not
+            logger.exception("[share] persisting published Project %s failed", entity.id)
+            return ApiFailResponse(
+                status_code=500,
+                message="Project was published, but its local publication state could not be saved",
+                data={"code": "local_persist_failed"},
+            )
+
+    # Each person invite has its own outcome (invited / skipped / failed); a
+    # failure for one does not fail the share, so the caller reads them here.
+    if isinstance(entity, Project):
+        if entity.last_share_result is not None:
+            from fastapi.encoders import jsonable_encoder  # noqa: PLC0415
+
+            return ApiSuccessResponse(
+                data={
+                    **jsonable_encoder(entity),
+                    "share_result": entity.last_share_result.model_dump(mode="json"),
+                }
+            )
+
+    # Persist ``remote=True`` on other local rows so downstream consumers
+    # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
+    # entity as hub-bound. Unconditional, like the Project save above: ``share()``
+    # already set it in memory, so a "skip if remote" check never wrote it.
+    elif "remote" in entity_model.model_fields:
+        entity.remote = True
+        try:
+            await entity.save(request_info.someone_typeid)
         except Exception as e:  # noqa: BLE001
-            logger.warning("[share] local row lookup failed (non-fatal): %s", e)
-            local_row = None
-        if local_row is not None and getattr(local_row, "remote", None) is not True:
-            local_row.remote = True
-            try:
-                await local_row.save(request_info.someone_typeid)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
-                    target.type, target.id, e,
-                )
+            logger.warning(
+                "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
+                target.type, target.id, e,
+            )
     return ApiSuccessResponse(data=entity)
+
+
+@action.post(action_name="live-session", types=["conversation"])
+async def conversation_start_live_session() -> ApiResponse:
+    """``POST /graph/conversation/<id>/live-session`` — open (or answer) the
+    conversation's live session before any prompt. Body: ``{reply_policy?}``."""
+    from flow_sdk.app.actions.notification_action import handle_start_live_session  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="live-session: target conversation typeid required")
+    if request_info.target_entity_typeid.type != "conversation":
+        raise HTTPException(status_code=400, detail="live-session: target must be a conversation")
+    if not request_info.someone_typeid:
+        return ApiFailResponse(message="No authenticated user in request context")
+    try:
+        body = await request_info.get_post_data() or {}
+    except JSONDecodeError:
+        body = {}
+    return await handle_start_live_session(request_info.target_entity_typeid.id, body, request_info.someone_typeid)
 
 
 @action.post(action_name="add_message", types=["conversation"])
@@ -137,7 +325,6 @@ async def conversation_add_message() -> ApiResponse:
     The conversation id is taken from the URL — it is the source of truth.
     """
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
@@ -156,21 +343,26 @@ async def conversation_add_message() -> ApiResponse:
     # overwrite any stale id a caller might also have put in the body.
     body["conversation_id"] = request_info.target_entity_typeid.id
 
-    # Drafts are local-only (no hub push) and stay allowed; only real sends
-    # touch the cloud — those are blocked in Local mode. When cloud login is
-    # unavailable we no longer refuse the send: the message is persisted locally
-    # as ``pending_send`` (queued, not delivered) so nothing is lost, and a
-    # later re-send (once logged in) flushes it. Local mode stays a hard block.
-    pending_send = False
-    if not bool(body.get("is_draft")):
-        if _local_mode_share_blocked():
-            return ApiFailResponse(message=LOCAL_MODE_SHARE_MESSAGE)
-        if not is_logged_in():
-            pending_send = True
-
+    blocked, pending_send = add_message_gate(body)
+    if blocked:
+        return ApiFailResponse(message=blocked)
     return await handle_add_message(
         body, request_info.someone_typeid, pending_send=pending_send,
     )
+
+
+def add_message_gate(body: dict) -> "tuple[str | None, bool]":
+    """``(refusal, pending_send)`` for one add_message body — THE send gate, for the route and
+    ``Conversation.send`` alike. Drafts are local-only (no hub push) and always pass. A real send
+    is refused in Local mode; without cloud login it is not refused but persisted locally as
+    ``pending_send`` (queued, not delivered) and flushed once logged in."""
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
+
+    if bool(body.get("is_draft")):
+        return None, False
+    if _local_mode_share_blocked():
+        return LOCAL_MODE_SHARE_MESSAGE, False
+    return None, not is_logged_in()
 
 
 @action.post(action_name="forward", types=["flow_message"])
@@ -210,3 +402,131 @@ async def flow_message_forward() -> ApiResponse:
         return ApiFailResponse(message="Cloud login required to send messages")
 
     return await handle_forward_message(body, request_info.someone_typeid)
+
+
+# ── replying into the channel a conversation came from ───────────────────────
+
+
+@action.post(action_name="send_external", types=["conversation"])
+async def conversation_send_external() -> ApiResponse:
+    """``POST /graph/conversation/<id>/send_external`` — reply into the cloud
+    thread this conversation caches.
+
+    Deliberately NOT a branch inside ``add_message``. That path is two hundred
+    lines of hub semantics — cloud-login gates, remote-send forks, body uploads,
+    delivery receipts — none of which apply to an email, and all of which would
+    be at risk from a change made for one.
+
+    Returns as soon as the send is DISPATCHED, not when it lands: an agent turn
+    is tens of seconds and the conversation must stay usable. The reply appears
+    by the ordinary ingest route once the worker records it, sorted into place
+    by its own timestamp — there is no outbound rendering path.
+    """
+    from flow_sdk.stream_inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400,
+                            detail="send_external: target conversation typeid required")
+    if request_info.target_entity_typeid.type != "conversation":
+        raise HTTPException(status_code=400,
+                            detail="send_external: target must be a conversation")
+
+    body = await request_info.get_post_data() or {}
+    text = str((body or {}).get("text") or (body or {}).get("message") or "").strip()
+    uploads = (body or {}).get("files") or []
+    if not isinstance(uploads, list):
+        uploads = [uploads]
+    if not text and not uploads:
+        return ApiFailResponse(message="send_external: an empty message is not a reply")
+    reply_to = str((body or {}).get("reply_to_id") or "").strip() or None
+
+    agent_id = str((body or {}).get("agent_id") or "").strip()
+    if agent_id:
+        from flow_sdk.stream_inbox.agent_scope import (  # noqa: PLC0415
+            AgentStreamInboxScopeError,
+            resolve_agent_stream_inbox_scope,
+        )
+
+        try:
+            scope = await resolve_agent_stream_inbox_scope(agent_id)
+            scope.require_conversation(request_info.target_entity_typeid.id)
+        except AgentStreamInboxScopeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+        if not scope.source_ids:
+            return ApiFailResponse(message="Agent stream inbox has no message source", status_code=404)
+
+    # The source is the conversation's own — the one its messages arrived through — never the
+    # agent's "first" source: an agent with a mailbox AND a channel answers each on its channel.
+    # The scope check above is what makes an agent's send legitimate: a conversation in the
+    # agent's stream inbox came through a source the agent owns.
+    files = await _keep_uploads(request_info.target_entity_typeid.id, uploads)
+    return await dispatch_channel_reply(request_info.target_entity_typeid.id, text=text, reply_to=reply_to, files=files)
+
+
+async def _keep_uploads(conversation_id: str, uploads: list) -> list[str]:
+    """Files a person attached, written where they outlive the request — the send runs after it
+    returns, and the sent copy keeps its own durable copy (``DriverRuntime._keep_sent``)."""
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+    paths = []
+    for upload in uploads:
+        if not hasattr(upload, "read"):
+            continue
+        name = Path(str(getattr(upload, "filename", "") or "file")).name or "file"
+        home = data_dir_for("conversation", conversation_id) / "outbox" / mint_uuid() / name
+        home.parent.mkdir(parents=True, exist_ok=True)
+        home.write_bytes(await upload.read())
+        paths.append(str(home))
+    return paths
+
+
+def channel_refusal(exc: Exception) -> ApiResponse:
+    """A channel's refusal as the person who clicked reads it: 404 when the message, conversation or
+    channel is gone (a provider's ``NotFound`` is one), 422 for everything the channel or its provider refused — never a 500, which
+    the client reports without the message."""
+    return ApiFailResponse(message=str(exc), status_code=404 if isinstance(exc, LookupError) else 422)
+
+
+@action.post(action_name="react", types=["flow_message"])
+async def flow_message_react() -> ApiResponse:
+    """``POST /graph/flow_message/<id>/react`` ``{emoji, remove?}`` — put (or take back) our emoji on a
+    channel message. Synchronous, so a channel's refusal ("🦄 is not a reaction this channel shows")
+    reaches the person who clicked. Answers the message's reactions after."""
+    from flow_sdk.sources.errors import SourceError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.reactions import react, unreact  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="react: target message typeid required")
+    body = await request_info.get_post_data() or {}
+    emoji = str(body.get("emoji") or "").strip()
+    remove = str(body.get("remove") or "").lower() in ("1", "true", "yes")
+    message_id = request_info.target_entity_typeid.id
+    try:
+        reactions = await (unreact(message_id, emoji) if remove else react(message_id, emoji))
+    except (SourceError, ValueError, LookupError) as exc:
+        return channel_refusal(exc)
+    return ApiSuccessResponse(data={"reactions": [r.model_dump(mode="json") for r in reactions]})
+
+
+@action.post(action_name="act", types=["conversation"])
+async def conversation_act() -> ApiResponse:
+    """``POST /graph/conversation/<id>/act`` ``{action, text?}`` — run one of the channel's actions
+    (``ChannelSpec.actions``) on the conversation. Synchronous, so the channel's refusal reaches the
+    person who clicked. Answers ``{ok, item_id}``: the record of the message the action wrote, if any."""
+    from flow_sdk.sources.errors import SourceError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.conversation_actions import act  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="act: target conversation typeid required")
+    body = await request_info.get_post_data() or {}
+    try:
+        item_id = await act(
+            request_info.target_entity_typeid.id, str(body.get("action") or "").strip(), str(body.get("text") or "")
+        )
+    except (SourceError, ValueError, LookupError) as exc:
+        return channel_refusal(exc)
+    return ApiSuccessResponse(data={"ok": True, "item_id": item_id})

@@ -1,8 +1,8 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { ChannelTransport, type IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';
@@ -20,6 +20,49 @@ export interface ConversationMessage {
  * {typeid: "flow_message-<uuid>", ts: "<ISO>"} on disk, but call sites want
  * the bare id + type + ts triple — that's what this getter returns.
  */
+/**
+ * The newest pointer by `ts`, or null for an empty list. Exported so the
+ * surfaces that hold a raw pointer array (the stream inbox list, the recent strip)
+ * all share one rule — there must be exactly one definition of "latest" in
+ * the app, and it must agree with `Conversation.latest_message_ref()` on the
+ * backend, which computes the unread BADGE while this computes the unread ROW.
+ *
+ * Unparseable timestamps sort oldest, so a corrupt entry can never win.
+ */
+export function latestPointer(
+  pointers: readonly ConversationMessagePointer[] | undefined | null,
+): ConversationMessagePointer | null {
+  let best: ConversationMessagePointer | null = null;
+  let bestAt = -Infinity;
+  for (const p of pointers ?? []) {
+    const at = Date.parse(p.ts);
+    const rank = Number.isNaN(at) ? -Infinity : at;
+    if (best === null || rank > bestAt) {
+      best = p;
+      bestAt = rank;
+    }
+  }
+  return best;
+}
+
+/**
+ * The message ids a conversation row reads — its first pointer and its latest
+ * (see `latestPointer`) — across `conversations`, deduped and sorted so a batch
+ * built from them has a stable key.
+ */
+export function conversationRowMessageIds(
+  conversations: readonly { conversationMessageIds?: readonly ConversationMessagePointer[] | null }[],
+): string[] {
+  const ids = new Set<string>();
+  for (const conv of conversations) {
+    const pointers = conv.conversationMessageIds ?? [];
+    if (pointers[0]?.id) ids.add(pointers[0].id);
+    const latest = latestPointer(pointers)?.id;
+    if (latest) ids.add(latest);
+  }
+  return [...ids].sort();
+}
+
 export interface ConversationMessagePointer {
   /** Entity id (uuid). */
   id: string;
@@ -39,21 +82,45 @@ export interface ConversationParticipant {
   email?: string | null;
   name?: string | null;
   role?: string | null;
+  /** Open like `EntityMember`, which this must stay assignable to: extra hub
+   *  keys (`status`, `invitation_id`, …) pass through untouched. Without it
+   *  Conversation fails its own `APIEntity<Conversation>` constraint. */
+  [key: string]: unknown;
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
- *  ``community`` marks a support-center ticket whose responder identity is
- *  masked behind the project's ``community.display_name``. Hub-authoritative —
- *  never set client-side. */
+ *  ``helpdesk`` marks a support ticket whose responder identity is masked
+ *  behind the project's ``helpdesk.display_name``. Hub-authoritative — never
+ *  set client-side. */
 export enum ConversationKind {
   DIRECT = 'direct',
-  COMMUNITY = 'community',
+  HELPDESK = 'helpdesk',
+}
+
+/** Mirrors ``flow_sdk.builtin.conversation.ConversationStatus``. Only these two
+ *  values exist; the hub rejects anything else. */
+export enum ConversationStatus {
+  OPEN = 'open',
+  CLOSED = 'closed',
+}
+
+/** True when a ticket has been settled and no longer awaits an answer. */
+export function isClosedConversation(status?: ConversationStatus | string | null): boolean {
+  return status === ConversationStatus.CLOSED;
+}
+
+/** True when `kind` denotes a helpdesk ticket. */
+export function isHelpdeskKind(kind?: ConversationKind | string | null): boolean {
+  return kind === ConversationKind.HELPDESK;
 }
 
 export interface IConversation extends IEntity {
   /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
-   *  ``community`` for guest-opened support tickets. */
+   *  ``helpdesk`` for guest-opened support tickets. */
   kind?: ConversationKind;
+  /** Settlement state of a ticket. Hub-authoritative, mirrored locally by
+   *  ``settleTicket`` and the hub-metadata upsert. Defaults to ``open``. */
+  status?: ConversationStatus;
   /** Local Project FK — receiver picks via the mapping dialog; sender's own
    *  project at send time. Null until the receiver maps. */
   project_id?: string | null;
@@ -64,6 +131,23 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
+  /** The channel this conversation replies through: ``flowpad`` (Flowpad's own chat) or a
+   *  data source channel (``gmail``, ``slack``, ``helpdesk``). Test ``channel_spec``, never this. */
+  channel?: string | null;
+  /** The channel's traits (chip, transport, attachments), computed by the backend. Absent on a
+   *  hub runtime, which has no such projection. */
+  channel_spec?: IChannelSpec | null;
+  /** The local DataSource feeding this conversation; never leaves the machine. */
+  channel_source_id?: string | null;
+  /** Someone other than the person answers this channel (an Agent / a deployment); `false` = their own channel. */
+  channel_answered?: boolean | null;
+  /** Who a channel conversation is with (a phone number, an email address, a chat id) — set when it
+   *  starts; private to this machine. */
+  address?: string[];
+  /** When the conversation's first message was sent or received. */
+  started_at?: string | Date | null;
+  /** When it ended: a call hung up, or a thread retired by its channel's timeout. */
+  ended_at?: string | Date | null;
   /** Hub role roster — inherited from the Entity base as ``members``. The wire
    *  key on the conversation fanout is ``participants`` (hub contract), adapted
    *  in ``onEntityUpdate``. */
@@ -79,42 +163,88 @@ export interface IConversation extends IEntity {
    */
   git_sharing_enabled?: boolean;
   /** Strip-only dismissal timestamp. Recent strip hides the row when set;
-   *  auto-revives when a FlowMessage newer than this stamp arrives. Inbox
-   *  ignores this field. Null = not dismissed. */
+   *  auto-revives when a FlowMessage newer than this stamp arrives.
+   *  Stream Inbox ignores this field. Null = not dismissed. */
   dismissed_at?: string | Date | null;
-  /** Conversation-level archive timestamp. Both Inbox and Recent strip hide
+  /** Conversation-level archive timestamp. Both Stream Inbox and Recent strip hide
    *  the row when set; auto-revives when a FlowMessage newer than this stamp
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
+  /** Whose stream inbox lists this conversation — a user or agent typeid string;
+   *  null on rows written before the field existed (the local user's). */
+  owner?: string | null;
+  /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
+   *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
+  is_unread?: boolean;
+  /** How many messages wait for the local viewer (`stream_inbox.conversation_unread_count`),
+   *  stamped beside `is_unread` by the same recompute. Render it; never recompute it. */
+  unread_count?: number;
+  /** `Conversation.is_archived()` stored by the same recompute (auto-revive included), so a paged
+   *  stream inbox filters its views in the query. */
+  archived?: boolean;
 }
+
+/**
+ * Declaration merge: `implements IConversation` only CHECKS the class, it adds no
+ * members — so every field declared solely on IConversation read as "does not exist
+ * on type Conversation", even though `deepAssign` populates them from the wire.
+ * This interface makes them part of the class type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Conversation extends EntityMerge<IConversation> {}
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   kind?: ConversationKind;
+  status?: ConversationStatus;
   project_id?: string | null;
   remote_project_id?: string | null;
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
+  channel?: string | null;
+  channel_spec?: IChannelSpec | null;
+  channel_source_id?: string | null;
+  /** Someone other than the person answers this channel (an Agent / a deployment); `false` = their own channel. */
+  channel_answered?: boolean | null;
+  address?: string[];
+  started_at?: string | Date | null;
+  ended_at?: string | Date | null;
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
   git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
+  owner?: string | null;
+  is_unread?: boolean;
+  unread_count?: number;
+  archived?: boolean;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.kind = entity.kind ?? ConversationKind.DIRECT;
+    this.status = entity.status ?? ConversationStatus.OPEN;
     this.project_id = entity.project_id;
     this.remote_project_id = entity.remote_project_id;
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
+    this.channel = entity.channel ?? null;
+    this.channel_spec = entity.channel_spec ?? null;
+    this.channel_source_id = entity.channel_source_id ?? null;
+    this.channel_answered = entity.channel_answered ?? null;
+    this.address = entity.address ?? [];
+    this.started_at = entity.started_at ?? null;
+    this.ended_at = entity.ended_at ?? null;
     this.title = entity.title;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
+    this.owner = entity.owner ?? null;
+    this.is_unread = entity.is_unread;
+    this.unread_count = entity.unread_count;
+    this.archived = entity.archived;
   }
 
   /**
@@ -163,10 +293,25 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   // arrives over the wire ready to render.
 
   /** Always open conversations in the conversation view — every entry point
-   *  (inbox, recent strip, chips, deep links) lands on the same URL. */
+   *  (stream inbox, recent strip, chips, deep links) lands on the same URL. */
   override get dockPointer(): DockPointerData {
-    if (!this.id) return new DockPointerData(ViewType.INBOX);
+    if (!this.id) return new DockPointerData(ViewType.STREAM_INBOX);
     return new DockPointerData(ViewType.CONVERSATION, this.id);
+  }
+
+  /** A conversation on an outside channel (WhatsApp, Slack, email…), mirrored here: its people are on that
+   *  channel, not on the Flowpad roster, and a reply leaves through its data source. Flowpad's own chat is not. */
+  get isChannel(): boolean {
+    return this.channel_spec?.transport === ChannelTransport.Source;
+  }
+
+  /** Run one of the channel's conversation verbs (`channel_spec.actions`). A refusal throws with
+   *  the channel's own words. */
+  async act(action: string, text = ''): Promise<{ ok: boolean; item_id?: string | null } | undefined> {
+    if (!this.id) throw new Error('act requires this.id');
+    const info = new ActionInfo('act', Conversation.type, this.id, 'POST');
+    info.bodyParameters = { action, text };
+    return dataManager.callAction<unknown, { ok: boolean; item_id?: string | null }>(info);
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {
@@ -317,7 +462,19 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   private _ensureMessageTap(): void {
     if (this._msgTapOff) return;
     const cm = ConnectionManager.getInstance();
-    const handler = (typeIdStr: string, op: string, data: any) => {
+    const handler = (typeIdStr: string, op: string, data: any, fromEntityStr?: string | null) => {
+      // child_created addressed to THIS conversation: the envelope is inverted,
+      // so the type check below would reject it (typeIdStr is the conversation,
+      // not the message). A synced message arrives this way — the local
+      // catch-up announces it as a child of its parent — so without this branch
+      // `conv.on('message')` never fires for anything pulled in a sync.
+      if (op === DataOp.CHILD_CREATED) {
+        if (typeIdStr !== this.typeId.toString()) return;
+        const childType = (fromEntityStr ?? '').split('-')[0];
+        if (childType && childType !== FlowMessage.type) return;
+        if (data) this.emit(ConversationEvents.MESSAGE, data as IFlowMessage);
+        return;
+      }
       const dash = typeIdStr.indexOf('-');
       if (dash <= 0) return;
       if (typeIdStr.slice(0, dash) !== FlowMessage.type) return;
@@ -343,7 +500,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 }
 
-export interface CreateProjectConversationParams {
+export type CreateProjectConversationParams = {
   project_id: string;
   participants: ConversationParticipant[];
   /** Optional display name. Backend falls back to a participants summary when absent. */
@@ -372,23 +529,7 @@ export async function createProjectConversation(
   return res!;
 }
 
-export interface StartCommunityTicketResult {
-  conversation_id: string;
-  project_id: string;
-}
-
-/** Open a support ticket: a guest-authored ``community`` conversation under the
- *  hub's fixed community project (resolved server-side from ``/version``). The
- *  backend routes through the hub and materializes the conversation locally,
- *  then returns its id for navigation. Requires cloud login. */
-export async function startCommunityTicket(text: string): Promise<StartCommunityTicketResult> {
-  const action = new ActionInfo('community-start-ticket', null, null, 'POST');
-  action.bodyParameters = { text };
-  const res = await dataManager.callAction<{ text: string }, StartCommunityTicketResult>(action);
-  return res!;
-}
-
-/** Staff-side: pick up (join) a community ticket so the caller receives its
+/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its
  *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
  *  conversation locally. */
 export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
@@ -398,9 +539,25 @@ export async function pickupConversation(conversationId: string): Promise<{ conv
   return res!;
 }
 
-/** One row in the staff community-ticket triage queue (lightweight; not a full
- *  Conversation entity). Sourced from the hub via the community project. */
-export interface CommunityTicket {
+/** Close or reopen a helpdesk ticket. Proxies to the hub (which owns the rule
+ *  about who may settle) and mirrors `status` onto the local row, which is what
+ *  the requester's portal reads. */
+export async function settleTicket(
+  conversationId: string,
+  verb: 'close' | 'reopen',
+): Promise<{ conversation_id: string; status: ConversationStatus }> {
+  const action = new ActionInfo('conversation-settle', null, null, 'POST');
+  action.bodyParameters = { conversation_id: conversationId, verb };
+  const res = await dataManager.callAction<
+    { conversation_id: string; verb: string },
+    { conversation_id: string; status: ConversationStatus }
+  >(action);
+  return res!;
+}
+
+/** One row in the staff helpdesk triage queue (lightweight; not a full
+ *  Conversation entity). Sourced from the hub via the helpdesk project. */
+export interface HelpdeskTicket {
   conversation_id: string;
   title?: string | null;
   /** First-message text, truncated. */
@@ -411,22 +568,45 @@ export interface CommunityTicket {
   participant_count: number;
   /** True when the calling staff user is already on the roster. */
   picked_up: boolean;
+  /** Settlement state. The default queue is all-open; only an audit listing
+   *  that asks for closed tickets sees anything else here. */
+  status?: ConversationStatus;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
-export interface ListCommunityTicketsResult {
-  tickets: CommunityTicket[];
+export interface ListHelpdeskTicketsResult {
+  tickets: HelpdeskTicket[];
   project_id: string;
 }
 
-/** Staff triage queue: list the community project's tickets, including ones the
- *  caller hasn't picked up (which don't otherwise appear in their inbox).
+/** Staff triage queue: list the helpdesk project's tickets, including ones the
+ *  caller hasn't picked up (which don't otherwise appear in their stream inbox).
  *  Members-only on the hub. */
-export async function listCommunityTickets(): Promise<ListCommunityTicketsResult> {
-  const action = new ActionInfo('community-tickets-list', null, null, 'POST');
-  action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, ListCommunityTicketsResult>(action);
+/**
+ * Tickets for a desk. Two callers, opposite questions:
+ *
+ * - a REQUESTER passes `projectId` — "which desk serves the project I'm in?"
+ * - STAFF pass `deskProjectId` — "what is queued on MY desk?" — and it is used
+ *   verbatim.
+ *
+ * Staff need the second form: a desk owner's own project has no desk of its
+ * own, so resolving from it walks past their queue to whatever desk serves
+ * *them*, and the hub rejects them as a guest on someone else's desk.
+ */
+export async function listHelpdeskTickets(
+  projectId?: string | null,
+  deskProjectId?: string | null,
+): Promise<ListHelpdeskTicketsResult> {
+  const action = new ActionInfo('helpdesk-tickets-list', null, null, 'POST');
+  action.bodyParameters = {
+    project_id: projectId ?? '',
+    desk_project_id: deskProjectId ?? '',
+  };
+  const res = await dataManager.callAction<
+    { project_id: string; desk_project_id: string },
+    ListHelpdeskTicketsResult
+  >(action);
   return res ?? { tickets: [], project_id: '' };
 }
 
@@ -453,9 +633,9 @@ export interface FetchConversationsResult {
  *  background message fetches keyed off ``message_count`` deltas. Returns
  *  fast (the merged list); new messages arrive via WS ``data_op_msg``
  *  frames as the background fetchers complete. */
-export async function fetchConversations(): Promise<FetchConversationsResult> {
+export async function fetchConversations(agentId?: string): Promise<FetchConversationsResult> {
   const action = new ActionInfo('conversation-list', null, null, 'POST');
-  action.bodyParameters = {};
+  action.bodyParameters = agentId ? { agent_id: agentId } : {};
   const res = await dataManager.callAction<Record<string, never>, FetchConversationsResult>(action);
   return res ?? { conversations: [], bg_fetch_dispatched: [], hub_reachable: false, auth_required: false };
 }
@@ -470,7 +650,7 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
   };
 }
 
-export interface AcceptInvitationParams {
+export type AcceptInvitationParams = {
   invitation_id: string;
 }
 
@@ -484,8 +664,9 @@ export interface AcceptInvitationResult {
   bundle_unpacked: boolean;
 }
 
-export interface DismissConversationParams {
+export type DismissConversationParams = {
   conversation_id: string;
+  agent_id?: string;
 }
 
 export interface DismissConversationResult {
@@ -495,7 +676,7 @@ export interface DismissConversationResult {
 
 /** Strip-only dismiss: stamps ``dismissed_at = now()`` on the conversation so
  *  the Recent strip hides it. The row auto-revives when a FlowMessage newer
- *  than the stamp arrives. Inbox ignores this field. */
+ *  than the stamp arrives. Stream Inbox ignores this field. */
 export async function dismissConversation(
   params: DismissConversationParams,
 ): Promise<DismissConversationResult> {
@@ -505,8 +686,9 @@ export async function dismissConversation(
   return res!;
 }
 
-export interface ArchiveConversationParams {
+export type ArchiveConversationParams = {
   conversation_id: string;
+  agent_id?: string;
 }
 
 export interface ArchiveConversationResult {
@@ -520,8 +702,8 @@ export interface ArchiveAllConversationsResult {
   archived_at: string;
 }
 
-/** Conversation-level archive: stamps ``archived_at = now()``. Both Inbox
- *  and Recent strip hide the row when set; auto-revives when a FlowMessage
+/** Conversation-level archive: stamps ``archived_at = now()``.
+ *  Both Stream Inbox and Recent strip hide the row when set; auto-revives when a FlowMessage
  *  newer than the stamp arrives. Per-message ``FlowMessage.is_read`` is
  *  independent and not touched. */
 export async function archiveConversation(
@@ -548,9 +730,9 @@ export async function unarchiveConversation(
 
 /** Archive every conversation that isn't already archived. Skips already-
  *  archived rows server-side, so it stays cheap on repeat clicks. */
-export async function archiveAllConversations(): Promise<ArchiveAllConversationsResult> {
+export async function archiveAllConversations(agentId?: string): Promise<ArchiveAllConversationsResult> {
   const action = new ActionInfo('conversation-archive-all', null, null, 'POST');
-  action.bodyParameters = {};
+  action.bodyParameters = agentId ? { agent_id: agentId } : {};
   const res = await dataManager.callAction<Record<string, never>, ArchiveAllConversationsResult>(action);
   return res!;
 }
@@ -568,17 +750,18 @@ export interface DeleteArchivedConversationsResult {
  *  row, the server classifies the user's role and either calls the hub
  *  delete/leave/decline action or just deletes locally. Per-item status is
  *  returned so the caller can surface partial failures. */
-export async function deleteArchivedConversations(): Promise<DeleteArchivedConversationsResult> {
+export async function deleteArchivedConversations(agentId?: string): Promise<DeleteArchivedConversationsResult> {
   const action = new ActionInfo('conversation-delete-archived', null, null, 'POST');
-  action.bodyParameters = {};
+  action.bodyParameters = agentId ? { agent_id: agentId } : {};
   const res = await dataManager.callAction<Record<string, never>, DeleteArchivedConversationsResult>(action);
   return res!;
 }
 
 export type DeleteConversationMode = 'delete_for_all' | 'leave' | 'local';
 
-export interface DeleteConversationParams {
+export type DeleteConversationParams = {
   conversation_id: string;
+  agent_id?: string;
   /** Caller picks the mode based on the user's relationship to the conv:
    *    - ``delete_for_all``: owner cascade-delete (rule 1)
    *    - ``leave``:          non-owner participant leaves (rule 3)
@@ -605,9 +788,9 @@ export async function deleteConversation(
 
 /** Thin alias: leave a shared conversation you don't own. */
 export async function leaveConversation(
-  params: { conversation_id: string },
+  params: { conversation_id: string; agent_id?: string },
 ): Promise<DeleteConversationResult> {
-  return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave' });
+  return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave', agent_id: params.agent_id });
 }
 
 /** Accept a pending invitation on the hub and download just the unlocked bundle.

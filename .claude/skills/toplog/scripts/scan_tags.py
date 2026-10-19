@@ -4,8 +4,10 @@
 The mechanical half of the `toplog` skill's `scan` (and a helper for `run` /
 `learn`). Walks the source trees, pulls the first argument of every
 ``toplog.log(...)`` / ``toplog.isOn(...)`` / ``toplog.is_on(...)`` call (a string
-literal or a ``[...]`` array of string literals), and prints each tag with its
-``file:line`` locations.
+literal, a ``[...]`` array of string literals, or a constant name bound to a
+string literal anywhere in the scanned trees) and prints each tag with its
+``file:line`` locations. Calls are matched over the whole file text, so a call
+whose tag sits on the line after ``toplog.log(`` is found too.
 
 Given the catalog (``tags.md``), it also prints the two diff sets:
   * UNDOCUMENTED — referenced in code but absent from the catalog.
@@ -36,9 +38,14 @@ EXCLUDE_SUBSTRINGS = (
     "ui/tests/unit/toplog.test.ts",
 )
 
-# toplog.<method>( <first-arg> ...   where first-arg is "x" / 'x' / [ ... ]
+# toplog.<method>( <first-arg> ...   where first-arg is "x" / 'x' / [ ... ] / NAME
 _CALL = re.compile(
-    r"toplog\.(?:log|is_on|isOn)\(\s*(\[[^\]]*\]|\"[^\"]*\"|'[^']*')",
+    r"toplog\.(?:log|is_on|isOn)\(\s*(\[[^\]]*\]|\"[^\"]*\"|'[^']*'|[A-Za-z_][\w.]*)",
+)
+# ``NAME = "tag"`` (Python) / ``const NAME = 'tag'`` (TS) — resolves a constant arg.
+_CONST = re.compile(
+    r"^\s*(?:export\s+)?(?:const\s+|let\s+)?([A-Za-z_]\w*)\s*(?::\s*[\w\[\]]+\s*)?=\s*[\"']([^\"']+)[\"']",
+    re.MULTILINE,
 )
 _STR = re.compile(r"""["']([^"']+)["']""")
 # ``### <tag>`` headings define the catalog registry.
@@ -50,9 +57,7 @@ def _tags_in_arg(arg: str) -> list[str]:
     return _STR.findall(arg)
 
 
-def scan_code(root: Path) -> dict[str, list[str]]:
-    """Map tag -> sorted list of "relpath:line" where it is referenced."""
-    found: dict[str, list[str]] = {}
+def _source_files(root: Path):
     for rel in SCAN_DIRS:
         base = root / rel
         if not base.exists():
@@ -60,17 +65,43 @@ def scan_code(root: Path) -> dict[str, list[str]]:
         for path in base.rglob("*"):
             if path.suffix not in SCAN_EXTS or not path.is_file():
                 continue
+            if "node_modules" in path.parts:
+                continue
             rel_str = str(path.relative_to(root))
             if any(ex in rel_str for ex in EXCLUDE_SUBSTRINGS):
                 continue
             try:
-                text = path.read_text(encoding="utf-8")
+                yield rel_str, path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            for i, line in enumerate(text.splitlines(), 1):
-                for m in _CALL.finditer(line):
-                    for tag in _tags_in_arg(m.group(1)):
-                        found.setdefault(tag, []).append(f"{rel_str}:{i}")
+
+
+def scan_code(root: Path) -> dict[str, list[str]]:
+    """Map tag -> sorted list of "relpath:line" where it is referenced."""
+    files = list(_source_files(root))
+    found: dict[str, list[str]] = {}
+    calls: list[tuple[str, int, str]] = []
+    # Constants: a file's own binding wins; otherwise any unambiguous binding.
+    local_consts: dict[str, dict[str, str]] = {}
+    global_consts: dict[str, set[str]] = {}
+    for rel_str, text in files:
+        for m in _CONST.finditer(text):
+            local_consts.setdefault(rel_str, {})[m.group(1)] = m.group(2)
+            global_consts.setdefault(m.group(1), set()).add(m.group(2))
+        for m in _CALL.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            calls.append((rel_str, line, m.group(1)))
+    for rel_str, line, arg in calls:
+        if arg[0] in "[\"'":
+            tags = _tags_in_arg(arg)
+        else:
+            name = arg.rsplit(".", 1)[-1]
+            value = local_consts.get(rel_str, {}).get(name)
+            if value is None and len(global_consts.get(name, ())) == 1:
+                value = next(iter(global_consts[name]))
+            tags = [value] if value else []
+        for tag in tags:
+            found.setdefault(tag, []).append(f"{rel_str}:{line}")
     return found
 
 

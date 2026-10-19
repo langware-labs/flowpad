@@ -1,0 +1,229 @@
+name: Tests
+
+# NON-BLOCKING BY DESIGN: none of these jobs may be added to the
+# branch-protection "required status checks" list — a PR can merge while they
+# are red or pending. They still report true pass/fail, because the PyPI
+# deploy gate (deploy-pypi skill → "Test gate", via `gh pr checks`) reads the
+# check conclusions on the last PR merged into the release branch to decide
+# whether to publish. Forcing these green, or making them required, would
+# break that gate.
+#
+# Consolidates the former pr-tests.yml / ui-typecheck.yml / ui-i18n.yml.
+# Needs NO repository secrets.
+#
+# Intentionally EXCLUDED tiers:
+#   - pytest tests/cli — spawns servers/PTYs and segfaults at interpreter
+#     shutdown on Linux (exit 139)
+#   - pytest tests/long_tests, tests/hub_tests, tests/migration_e2e,
+#     tests/pty_fuzz — deep/slow tiers needing real worker CLIs or a hub
+#   - vitest long / hub / hub-paired — need real workers or two backends + hub
+#   - Playwright specs tagged `@long` (a minute or more on CI hardware) — the
+#     navigation run passes --grep-invert @long; dispatch e2e-grep to run one
+#
+# NOT excluded, despite being deselected by default: tests marked `long` (>1s)
+# inside tests/unit. They are skipped only to keep the LOCAL inner loop fast,
+# so the unit job passes --long and runs them. Any new exclusion belongs in the
+# list above, not in a default-off marker.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - 'release/v*'
+  workflow_dispatch:
+    inputs:
+      backend-tests:
+        description: 'Run backend tests (pytest unit + api)'
+        type: boolean
+        required: false
+        default: true
+      frontend-tests:
+        description: 'Run frontend tests (tsc, vitest unit, i18n guards)'
+        type: boolean
+        required: false
+        default: true
+      e2e-tests:
+        description: 'Run live-backend E2E (vitest headless/api/react + Playwright)'
+        type: boolean
+        required: false
+        default: true
+      e2e-only:
+        description: 'Iterate on one E2E failure: run ONLY this tier (skips backend and frontend jobs too)'
+        type: choice
+        required: false
+        default: ''
+        options: ['', vitest, first-run-setup, dependencies, navigation]
+      e2e-grep:
+        description: 'With e2e-only: Playwright --grep (a test title substring)'
+        type: string
+        required: false
+        default: ''
+      backend-k:
+        description: 'pytest -k for the backend jobs: run only matching tests (unit + api both filter on it)'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Split into two parallel jobs so neither brushes the timeout: the api tier
+  # grew when the Claude CLI install let its worker/PTY tests actually run.
+  # Isolation is safe — jobs are separate VMs, and tests/conftest.py roots the
+  # DB/records/home under a per-process mkdtemp anyway.
+  backend-unit:
+    # Four shards, same 15-minute cap each, same `--long` coverage between them.
+    #
+    # The tier outgrew ONE runner: 12m09s green on 2026-09-06 with three
+    # minutes of headroom, then killed at the cap on every branch since. Two
+    # shards fixed that (9m03s / 7m09s) and then stopped being enough within a
+    # day — shard 2 hit 15m16s once this branch grew, because the split is
+    # round-robin over directory atoms and directories are not equal: it was
+    # already 3555 vs 5097 tests, and the new work landed on the heavy side.
+    #
+    # Four is not a guess at the current size, it is headroom for the next
+    # growth. Widening timeout-minutes is still the wrong lever: the cap is
+    # what reported both times that the tier had outgrown its runner.
+    name: backend (pytest unit) ${{ matrix.shard }}/4
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, for the ONE test that reads it:
+          # test_migration_recipes_ship_with_their_version replays each release
+          # tree to prove no migration recipe was committed after its own wheel
+          # was built. The default depth-1 checkout answers "no release commits"
+          # to every `git log -S`, so the guard concluded the debt was gone and
+          # asserted its own premise obsolete — green would have meant nothing.
+          fetch-depth: 0
+      - uses: ./.github/actions/backend-tests
+        with:
+          tier: unit
+          shard: ${{ matrix.shard }}
+          shards: '4'
+          k: ${{ inputs.backend-k }}
+
+  backend-api:
+    name: backend (pytest api)
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/backend-tests
+        with:
+          tier: api
+          k: ${{ inputs.backend-k }}
+
+  frontend-tests:
+    name: frontend (tsc + vitest unit + i18n)
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.frontend-tests && inputs.e2e-only == '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/frontend-tests
+        with:
+          tsc: false
+
+  # The desktop wrapper's own unit tests (electron/*.test.js: updater, uv install,
+  # shutdown, semver). Plain node scripts — no Electron binary is needed, so
+  # skip the postinstall/binary download (`--ignore-scripts`). Seconds to run.
+  # Linux AND Windows: the desktop wrapper's Windows-only paths (application-control
+  # detection and repair, uv install quoting, AppData layouts — FLOWPAD-2231) are
+  # exercised with the real `process.platform`, PowerShell and path semantics only on
+  # a Windows runner; on Linux they run behind a faked platform.
+  electron-tests:
+    name: electron (node unit tests, ${{ matrix.os }})
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.e2e-only == '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: electron/package-lock.json
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        working-directory: electron
+      - name: node unit tests
+        run: npm test
+        working-directory: electron
+
+  # The fast, PTY-free Python tests behind the Windows failure handling (the
+  # server monitor's stop-retry policy, the failure classifier, the native-deps
+  # manifest — FLOWPAD-2231) on a real Windows runner. Not the whole unit tier:
+  # that one spawns servers and PTYs and is sharded for Linux. The 15-minute
+  # `uv sync` dominates it on Windows (the job takes about a minute).
+  backend-unit-windows:
+    name: backend (pytest unit, windows subset)
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up uv + Python 3.11
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: '3.11'
+          enable-cache: true
+      - name: Disable Python problem matcher (annotates warnings as errors)
+        run: echo "::remove-matcher owner=python::"
+        shell: bash
+      - name: Install dependencies
+        run: uv sync --dev --frozen
+        shell: bash
+      # pytest.ini enforces --timeout=30 per test; never raise it. --long for the same
+      # reason as the Linux shards: CI is not the inner loop.
+      - name: pytest (Windows failure-handling subset)
+        run: >-
+          uv run pytest --long -q
+          tests/unit/test_failure_classification.py
+          tests/unit/test_server_launch_monitor.py
+          tests/unit/test_native_deps_manifest.py
+        shell: bash
+
+  e2e-tests:
+    name: 'e2e (live backend: vitest headless/api/react + playwright)'
+    # The Electron tests (both OSes) and the Windows Python subset gate e2e too: a desktop
+    # wrapper or a monitor that fails its unit tests is not worth a 20-minute live run.
+    needs: [backend-unit, backend-api, frontend-tests, electron-tests, backend-unit-windows]
+    # !cancelled() + per-result checks so a dispatch-toggled-off upstream job
+    # (result == 'skipped') doesn't auto-skip e2e; a FAILED upstream still does.
+    if: >-
+      ${{ !cancelled()
+          && (needs.backend-unit.result == 'success' || needs.backend-unit.result == 'skipped')
+          && (needs.backend-api.result == 'success' || needs.backend-api.result == 'skipped')
+          && (needs.frontend-tests.result == 'success' || needs.frontend-tests.result == 'skipped')
+          && (needs.electron-tests.result == 'success' || needs.electron-tests.result == 'skipped')
+          && (needs.backend-unit-windows.result == 'success' || needs.backend-unit-windows.result == 'skipped')
+          && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Burn-in ended 2026-08-19 (first full-green run, 32267242614): e2e
+    # failures now count in the PyPI deploy gate like every other job.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/e2e-tests
+        with:
+          only: ${{ inputs.e2e-only }}
+          grep: ${{ inputs.e2e-grep }}

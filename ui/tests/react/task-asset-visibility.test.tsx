@@ -13,6 +13,8 @@ import apiClient from '@sdk/client';
 let mode = 'standard';
 vi.mock('@src/contexts/view-mode-context', () => ({
   useViewMode: () => mode,
+  // `useAssetTypes` asks the TIER (Dev on lifts it); here the tier is the mode.
+  useTierMode: () => mode,
 }));
 
 import { useAssetTypes } from '@src/hooks/use-asset-types';
@@ -24,8 +26,7 @@ function taskTypeInfo() {
     creatable: true,
     icon: 'CheckSquare',
     main_subdir: 'tasks',
-    main_layout: 'folder',
-    folder_backed: true,
+    shape: { kind: 'folder', main: 'task.md' },
   };
 }
 

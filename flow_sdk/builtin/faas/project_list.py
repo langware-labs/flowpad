@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer
-from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    _is_claude_encoded_ref,
-    claude_projects_fn,
-)
+from flow_sdk.fs_store.indexer.functions.claude_projects import _is_claude_encoded_ref, claude_projects_fn
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
     codex_projects_fn,
 )
+from flow_sdk.fs_store.operations.project_cleanup import summarize
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
@@ -70,10 +73,13 @@ def _int_field(value: Any) -> int:
 
 
 def _project_id_for_cwd(cwd: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(cwd)}"))
+    # Same key + namespace as ``Project.derive_id_for_path`` (project.py). Kept as
+    # its own function because that one returns None for a non-project cwd,
+    # which this caller does not want — the FORMULA is what must not drift.
+    return mint_uuid(f"project:{canonical_posix_path(cwd)}", namespace=uuid.NAMESPACE_DNS)
 
 
-def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
+def _index_claude_dirs_by_cwd(claude_root: Path, *, include_temp: bool = False) -> dict[str, Path]:
     """Build {canonical_cwd: claude_dir} by reading each child's JSONL once.
 
     Claude's encoded-dir name is lossy (``/`` / `` `` / ``_`` → ``-``), so going
@@ -81,7 +87,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
     ground truth is each child's JSONL ``cwd`` field, which
     ``decode_claude_project_dir`` already exposes.
     """
-    from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir
+    from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
 
     out: dict[str, Path] = {}
     if not claude_root.is_dir():
@@ -90,10 +96,10 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
         if not child.is_dir():
             continue
         real = decode_claude_project_dir(child)
-        if real is None or not is_valid_project_cwd(real):
+        if real is None or not is_valid_project_cwd(real, include_temp=include_temp):
             continue
         try:
-            out[str(real.resolve())] = child
+            out[canonical_posix_path(real)] = child
         except OSError:
             continue
     return out
@@ -320,24 +326,143 @@ def _recency_ms(item: dict[str, Any]) -> float:
     return 0.0
 
 
-async def list_projects_from_indexer() -> dict[str, Any]:
+async def list_projects_from_indexer(workspace: str | None = None) -> dict[str, Any]:
     """Return one project row per canonical cwd.
 
-    Single source of truth: ``get_all_projects()`` (Claude scan ∪ Codex scan ∪
-    Project entity table, deduped + creates missing Project entities). This
-    function then enriches each row with per-worker session counts read off
-    disk — same shape the UI expected from the legacy implementation.
-    """
-    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
-    from flow_sdk.fs_store.operations.all_projects import get_all_projects
+    Single source of truth: the ``get_all_projects()`` pieces (Claude scan ∪
+    Codex scan ∪ Project entity table, deduped). Listing is deliberately
+    read-only: a picker may discover hundreds of historical worker cwds, but only
+    the path the user selects is materialized by ``useEnsureProject``. This
+    function then enriches each row with per-worker session counts read off disk
+    — same shape the UI expected from the legacy implementation.
 
-    all_projects = await get_all_projects(create_missing=True)
-    codex_activity = _codex_activity_by_cwd()
-    copilot_activity = _copilot_activity_by_cwd()
+    The disk half comes from ``_disk_snapshot`` (cached); the entity join and the
+    row dicts are rebuilt on every call, so a rename, activate or delete shows up
+    on the next request without a rescan.
+
+    ``workspace`` (a Workspace id) keeps only that workspace's projects — by
+    location, ``path_in_workspace`` — AFTER the join, so the disk snapshot
+    stays one instance-wide cache. None lists every project.
+    """
+    from flow_sdk.fs_store.operations import all_projects
+
+    snapshot = await _disk_snapshot()
+    infos = await all_projects.join_projects(snapshot.project_cwds, create_missing=False)
+    if workspace:
+        from flow_sdk.config import path_in_workspace  # noqa: PLC0415
+
+        infos = [info for info in infos if path_in_workspace(info.cwd, workspace)]
+    # ``summarize`` does one ``listdir`` per row — off the loop like the scan.
+    return await asyncio.to_thread(_build_project_rows, infos, snapshot)
+
+
+@dataclass(frozen=True)
+class _DiskSnapshot:
+    """Everything ``list-projects`` reads off disk, taken in one thread hop.
+
+    Read-only once built: rows are rebuilt from it per request, never stored in it.
+    """
+
+    project_cwds: dict[str, tuple[str, ...]]
+    codex_activity: dict[str, dict[str, Any]]
+    copilot_activity: dict[str, dict[str, Any]]
+    # canonical cwd → (claude dir name, session count, newest session mtime)
+    claude_stats: dict[str, tuple[str, int, str | None]]
+
+
+# The scan walks every historical worker cwd — 10s cold on a busy machine — and
+# nothing tells us when ``~/.claude`` / ``~/.codex`` change. Within the TTL the
+# snapshot is served as is; up to the max age it is served while one background
+# rescan refreshes it; past that (or with no snapshot) the caller waits for a
+# fresh scan rather than see a list that old.
+_SNAPSHOT_TTL_SECONDS = 60.0
+_SNAPSHOT_MAX_AGE_SECONDS = 600.0
+_now = time.monotonic
+_snapshot: tuple[float, _DiskSnapshot] | None = None
+_inflight: asyncio.Future | None = None
+
+
+def invalidate_project_list_cache() -> None:
+    """Drop the disk snapshot so the next listing rescans.
+
+    A scan already running is abandoned: it may have read the disk before the
+    change, so its result is not stored.
+    """
+    global _snapshot, _inflight
+    _snapshot = None
+    _inflight = None
+
+
+async def _disk_snapshot() -> _DiskSnapshot:
+    cached = _snapshot
+    if cached is not None:
+        taken_at, snapshot = cached
+        age = _now() - taken_at
+        if age < _SNAPSHOT_TTL_SECONDS:
+            return snapshot
+        if age < _SNAPSHOT_MAX_AGE_SECONDS:
+            _start_scan()
+            return snapshot
+    return await asyncio.shield(_start_scan())
+
+
+def _start_scan() -> asyncio.Future:
+    """Single-flight: every caller during a scan joins the one running."""
+    global _inflight
+    future = _inflight
+    if future is not None and future.get_loop() is asyncio.get_running_loop():
+        return future
+    started_at = _now()
+    future = asyncio.ensure_future(asyncio.to_thread(_scan_disk))
+
+    def _done(done: asyncio.Future) -> None:
+        global _inflight, _snapshot
+        if _inflight is not done:
+            return  # abandoned by an invalidate, or superseded
+        _inflight = None
+        if done.cancelled():
+            return
+        exc = done.exception()
+        if exc is not None:
+            # A blocking caller re-raises it; a background refresh only logs.
+            logging.warning("list-projects disk scan failed: %s", exc)
+            return
+        _snapshot = (started_at, done.result())
+
+    future.add_done_callback(_done)
+    _inflight = future
+    return future
+
+
+def _scan_disk() -> _DiskSnapshot:
+    """Blocking: the FS project scan plus per-worker activity off disk."""
+    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
+    from flow_sdk.fs_store.operations import all_projects
+
+    project_cwds = all_projects.scan_project_cwds()
     # One pass over claude_root → cwd lookup; otherwise the per-project search
     # below would re-scan and re-decode every JSONL N times (lossy encoder
     # forces JSONL inspection).
     claude_dirs = _index_claude_dirs_by_cwd(_claude_projects_dir())
+    claude_stats: dict[str, tuple[str, int, str | None]] = {}
+    for cwd, workers in project_cwds.items():
+        if "claude" not in workers:
+            continue
+        claude_dir = claude_dirs.get(str(Path(cwd).resolve()))
+        if claude_dir is not None:
+            claude_stats[cwd] = (claude_dir.name, *_claude_session_stats(claude_dir))
+    return _DiskSnapshot(
+        project_cwds=project_cwds,
+        codex_activity=_codex_activity_by_cwd(),
+        copilot_activity=_copilot_activity_by_cwd(),
+        claude_stats=claude_stats,
+    )
+
+
+def _build_project_rows(all_projects: list, snapshot: _DiskSnapshot) -> dict[str, Any]:
+    """Per-worker activity + session counts per canonical cwd; fresh row dicts."""
+    codex_activity = snapshot.codex_activity
+    copilot_activity = snapshot.copilot_activity
 
     projects_by_cwd: dict[str, dict[str, Any]] = {}
     for info in all_projects:
@@ -345,14 +470,14 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         if not is_valid_project_cwd(canonical):
             continue
         if "claude" in info.worker_types:
-            claude_dir = claude_dirs.get(str(Path(canonical).resolve()))
-            if claude_dir is not None:
-                session_count, modified_at = _claude_session_stats(claude_dir)
+            stats = snapshot.claude_stats.get(canonical)
+            if stats is not None:
+                claude_dir_name, session_count, modified_at = stats
                 _merge_project(
                     projects_by_cwd,
                     canonical,
                     claude=True,
-                    claude_dir_name=claude_dir.name,
+                    claude_dir_name=claude_dir_name,
                     session_count=session_count,
                     modified_at=modified_at,
                 )
@@ -393,9 +518,9 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         # ``activate`` action on project/asset open). Wins the recency sort
         # below; ``modified_at`` (session-file mtimes) is the fallback.
         row["last_active_at"] = info.last_active_at
-        # Declared by `ProjectListItem.system`; the picker's `includeSystem:false`
+        # Declared by `ProjectListItem.hidden`; the picker's `includeSystem:false`
         # filter compares against it, so an absent key silently disables it.
-        row["system"] = info.system
+        row["hidden"] = info.hidden
 
     projects = list(projects_by_cwd.values())
     projects.sort(key=_recency_ms, reverse=True)
@@ -414,4 +539,9 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         "copilot_count": copilot_count,
         "both_count": both_count,
         "none_count": none_count,
+        # Cleanup candidates, counted here so the footer warning costs no second
+        # call. Shallow signals only — one `listdir` per project, ~0.1s over
+        # 1,250 rows. The per-project detail (file counts, git, harness state)
+        # belongs to `project-cleanup-report`, which the user opens deliberately.
+        "cleanup": summarize(projects).model_dump(),
     }

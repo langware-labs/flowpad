@@ -1,9 +1,16 @@
-import { GitWorkdir, type GitStatus, type GitStatusFile } from '@sdk';
+import { i18n } from '@lingui/core';
+import { msg, t } from '@lingui/core/macro';
+import { AgenticProcess, GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
+  ArrowLeft,
   Check,
   Copy,
   Eye,
+  FileMinus,
+  FilePen,
+  FilePlus,
   GitBranch,
   type LucideIcon,
   PlusSquare,
@@ -16,25 +23,42 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { openExternal } from '@src/lib/open-external';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
+import type { MessageDescriptor } from '@lingui/core';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import type { WorkerType } from '@src/components/workers/worker-types';
+import { notify } from '@src/notifications';
 
 interface GitPanelProps {
   computeNodeId: string;
   workdir: string;
   /** Called after a push so an outer owner (e.g. the footer) can refresh too. */
   onPushed?: () => void;
+  /** Called after a review worker launches, so a dialog owner can close itself. */
+  onReviewLaunched?: () => void;
 }
+
+const ReviewLaunchedContext = React.createContext<(() => void) | undefined>(undefined);
 
 function statusColor(status: string): string {
   switch (status) {
-    case 'A': return 'text-green-500';
-    case 'M': return 'text-amber-500';
-    case 'D': return 'text-red-500';
-    case 'R': return 'text-blue-400';
-    case '?': return 'text-muted-foreground';
-    default:  return 'text-muted-foreground';
+    case 'A':
+      return 'text-green-500';
+    case 'M':
+      return 'text-amber-500';
+    case 'D':
+      return 'text-red-500';
+    case 'R':
+      return 'text-blue-400';
+    case '?':
+      return 'text-muted-foreground';
+    default:
+      return 'text-muted-foreground';
   }
 }
 
@@ -68,19 +92,58 @@ interface GitAction {
 
 // Per-status copy/icon for the state-aware discard action. `default` covers
 // every tracked-edit status (M/A/R/…) not given its own entry.
-const UNDO_VARIANTS: Record<string, { standard: string; advanced: string; tooltip: string; icon: LucideIcon }> = {
-  '?': { standard: 'Remove', advanced: 'Discard (delete)', tooltip: "Delete this new file — it isn't saved in git yet", icon: Trash2 },
-  D: { standard: 'Bring back', advanced: 'Restore', tooltip: 'Restore this deleted file from the last commit', icon: RotateCcw },
-  default: { standard: 'Undo changes', advanced: 'Discard', tooltip: 'Restore this file to the last saved version — your edits will be lost', icon: Undo2 },
+const UNDO_VARIANTS: Record<
+  string,
+  { standard: MessageDescriptor; advanced: MessageDescriptor; tooltip: MessageDescriptor; icon: LucideIcon }
+> = {
+  '?': {
+    standard: msg`Remove`,
+    advanced: msg`Discard (delete)`,
+    tooltip: msg`Delete this new file — it isn't saved in git yet`,
+    icon: Trash2,
+  },
+  D: {
+    standard: msg`Bring back`,
+    advanced: msg`Restore`,
+    tooltip: msg`Restore this deleted file from the last commit`,
+    icon: RotateCcw,
+  },
+  default: {
+    standard: msg`Undo changes`,
+    advanced: msg`Discard`,
+    tooltip: msg`Restore this file to the last saved version — your edits will be lost`,
+    icon: Undo2,
+  },
 };
 
-function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
+// The panel's three buckets. `bucketOf` is the ONE place a status char maps to
+// a bucket, and BUCKETS carries that bucket's chrome — so the summary chips and
+// the file lists below are driven by a single table, in this order. (Row-level
+// colour stays finer-grained: `statusColor` still gives a rename its own hue
+// even though it buckets as a change.)
+type BucketKey = 'new' | 'changed' | 'removed';
+
+function bucketOf(status: string): BucketKey {
+  if (status === '?' || status === 'A') return 'new';
+  if (status === 'D') return 'removed';
+  return 'changed';
+}
+
+const BUCKETS: { key: BucketKey; label: MessageDescriptor; icon: LucideIcon; tone: string }[] = [
+  { key: 'new', label: msg`New`, icon: FilePlus, tone: 'border-green-500/40 bg-green-500/10 text-green-500' },
+  { key: 'changed', label: msg`Changed`, icon: FilePen, tone: 'border-amber-500/40 bg-amber-500/10 text-amber-500' },
+  { key: 'removed', label: msg`Removed`, icon: FileMinus, tone: 'border-red-500/40 bg-red-500/10 text-red-500' },
+];
+
+function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAction[] {
   const view: GitAction = {
     key: 'diff',
-    label: 'View',
-    tooltip: 'View the changes in this file',
+    label: t`View`,
+    tooltip: t`View the changes in this file`,
     icon: Eye,
   };
+
+  if (readOnly) return [view];
 
   // The state-aware "undo" action — same backend op (discard-file), but its
   // label/tooltip/icon read differently per status so it always says what it
@@ -89,8 +152,11 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const u = UNDO_VARIANTS[file.status] ?? UNDO_VARIANTS.default;
   const undo: GitAction = {
     key: 'discard',
-    label: mode === 'standard' ? u.standard : u.advanced,
-    tooltip: u.tooltip,
+    // Resolved here so `GitAction.label`/`tooltip` stay plain strings — the
+    // sibling actions below build theirs with `t`, and the render sites read
+    // them directly.
+    label: i18n._(mode === 'standard' ? u.standard : u.advanced),
+    tooltip: i18n._(u.tooltip),
     icon: u.icon,
     destructive: true,
     subpath: 'discard-file',
@@ -107,22 +173,22 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const stageAction: GitAction = staged
     ? {
         key: 'unstage',
-        label: 'Unstage',
-        tooltip: 'Remove this file from the next commit (git restore --staged)',
+        label: t`Unstage`,
+        tooltip: t`Remove this file from the next commit (git restore --staged)`,
         icon: PlusSquare,
         subpath: 'unstage-file',
       }
     : {
         key: 'stage',
-        label: 'Stage',
-        tooltip: 'Include this file in the next commit (git add)',
+        label: t`Stage`,
+        tooltip: t`Include this file in the next commit (git add)`,
         icon: PlusSquare,
         subpath: 'stage-file',
       };
   const copyPath: GitAction = {
     key: 'copyPath',
-    label: 'Copy path',
-    tooltip: "Copy this file's path to the clipboard",
+    label: t`Copy path`,
+    tooltip: t`Copy path: ${file.path}`,
     icon: Copy,
   };
   return [view, stageAction, undo, copyPath];
@@ -130,7 +196,7 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
 
 /** Path the backend operates on — renames display as "old → new"; act on new. */
 function rawPath(path: string): string {
-  return path.includes(' → ') ? path.split(' → ')[1]! : path;
+  return path.includes(' → ') ? path.split(' → ')[1] : path;
 }
 
 /** A 5×5 ghost icon-button with a bottom tooltip — the one button shape every
@@ -145,24 +211,185 @@ const IconBtn: React.FC<{
 }> = ({ icon: Icon, tooltip, onClick, disabled, className }) => (
   <Tooltip>
     <TooltipTrigger asChild>
-      <Button variant="ghost" size="sm" disabled={disabled} onClick={onClick} className={`h-5 w-5 p-0 ${className ?? 'text-muted-foreground hover:text-foreground'}`}>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onClick={onClick}
+        className={`h-5 w-5 p-0 ${className ?? 'text-muted-foreground hover:text-foreground'}`}
+      >
         <Icon className="h-3.5 w-3.5" />
       </Button>
     </TooltipTrigger>
-    <TooltipContent side="bottom" className="text-xs">{tooltip}</TooltipContent>
+    <TooltipContent side="bottom" className="text-xs">
+      {tooltip}
+    </TooltipContent>
   </Tooltip>
 );
 
 // ---------------------------------------------------------------------------
 // GitPanel
+// Header chips beside the branch name: sync state, ↑ahead, ↓behind.
+const HEADER_CHIP = 'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold';
+
+const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string; children: React.ReactNode }> = ({
+  title,
+  testId,
+  className = 'bg-muted text-muted-foreground',
+  children,
+}) => (
+  <span title={title} data-testid={testId} className={`${HEADER_CHIP} ${className}`}>
+    {children}
+  </span>
+);
+
+// ---------------------------------------------------------------------------
+// Review in a worker — the message menu's launch bar, with a git-review prompt.
+// A commit hash reviews that commit; none reviews the uncommitted changes.
 // ---------------------------------------------------------------------------
 
-export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed }) => {
+function reviewPrompt(commit?: string): string {
+  return commit
+    ? `Review the changes in commit ${commit} (git show ${commit}).`
+    : 'Review the uncommitted changes in this repo, staged and unstaged (git diff HEAD).';
+}
+
+const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix: string }> = ({
+  workdir,
+  commit,
+  testIdPrefix,
+}) => {
+  const onLaunched = React.useContext(ReviewLaunchedContext);
+  const launch = useCallback(
+    async (workerType: WorkerType) => {
+      try {
+        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit), enableAssistant: true });
+        onLaunched?.();
+      } catch (err) {
+        console.error('[GitPanel] review launch failed', err);
+        notify.error({ title: t`Failed to start session` });
+      }
+    },
+    [workdir, commit, onLaunched],
+  );
+  return <WorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
+};
+
+// ---------------------------------------------------------------------------
+// ↑N badge — click to list the commits it counts (hash + one-liner). Loaded on
+// open, so the 5s status poll never pays for a `git log`.
+// ---------------------------------------------------------------------------
+
+const UnpushedCommitsBadge: React.FC<{
+  git: GitWorkdir;
+  workdir: string;
+  ahead: number;
+  onSelect: (commit: GitRevision) => void;
+}> = ({ git, workdir, ahead, onSelect }) => {
+  const [commits, setCommits] = useState<GitRevision[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setCommits(await git.unpushedCommits());
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [git]);
+
+  return (
+    <Popover onOpenChange={(open) => open && void load()}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title={t`Show unpushed commits`}
+          data-testid="git-panel-ahead"
+          className={`${HEADER_CHIP} bg-green-500/20 text-green-500 hover:bg-green-500/30`}
+        >
+          ↑{ahead}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 p-0" data-testid="git-panel-ahead-commits">
+        <div className="border-b px-3 py-1.5 text-xs font-medium">
+          <Trans>Not pushed yet</Trans>
+        </div>
+        {error ? (
+          <p className="px-3 py-2 text-xs text-red-500">{error}</p>
+        ) : commits === null ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </p>
+        ) : commits.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            <Trans>No unpushed commits</Trans>
+          </p>
+        ) : (
+          <ul className="py-1">
+            {commits.map((c) => (
+              <li
+                key={c.hash}
+                title={`${c.author} · ${new Date(c.date).toLocaleString()}`}
+                className="flex items-center gap-1 pe-2"
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelect(c)}
+                  className="flex w-full min-w-0 items-baseline gap-2 px-3 py-1 text-start text-xs hover:bg-muted focus-visible:bg-muted"
+                >
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{c.hash.slice(0, 7)}</span>
+                  <span className="truncate">{c.message}</span>
+                </button>
+                <ReviewInWorker workdir={workdir} commit={c.hash} testIdPrefix={`git-review-${c.hash.slice(0, 7)}`} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+// ---------------------------------------------------------------------------
+
+export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed, onReviewLaunched }) => {
   const [data, setData] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<GitStatusFile | null>(null);
+  const { currentDock, navigation } = useDockNavigation();
+  // One URL option carries the repo, commit and file together, so Back restores
+  // the exact review and selecting another commit cannot retain a stale file.
+  const review = useMemo(() => {
+    try {
+      const value = JSON.parse(currentDock?.options?.gitReview ?? 'null');
+      return value?.workdir === workdir && value?.node === computeNodeId ? value : null;
+    } catch {
+      return null;
+    }
+  }, [currentDock?.options?.gitReview, workdir, computeNodeId]);
+  const revision = typeof review?.revision === 'string' ? review.revision : undefined;
+  const selectedFile =
+    typeof review?.file?.path === 'string' && typeof review?.file?.status === 'string'
+      ? (review.file as Pick<GitStatusFile, 'path' | 'status'>)
+      : null;
+  const openReview = useCallback(
+    (commit?: string, file?: Pick<GitStatusFile, 'path' | 'status'>) => {
+      navigation.setOption(
+        'gitReview',
+        commit || file ? JSON.stringify({ workdir, node: computeNodeId, revision: commit, file }) : null,
+      );
+    },
+    [navigation, workdir, computeNodeId],
+  );
+  const selectFile = useCallback(
+    (file: GitStatusFile) => openReview(revision, { path: file.path, status: file.status }),
+    [openReview, revision],
+  );
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const [settingUpstream, setSettingUpstream] = useState(false);
+  const [upstreamError, setUpstreamError] = useState<string | null>(null);
   const [mode, setMode] = useState<GitMode>('standard');
   // Row currently awaiting destructive confirmation, keyed by `${path}::${key}`.
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
@@ -177,66 +404,92 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
 
   const fetchStatus = useCallback(async () => {
     if (!computeNodeId || !workdir) return;
+    const request = ++requestRef.current;
     try {
-      const result = await git.getStatus();
-      if (mountedRef.current) {
+      const result = await git.getStatus({ lineCounts: true, ...(revision ? { revision } : {}) });
+      if (mountedRef.current && request === requestRef.current) {
+        setFetchError(null);
         setData(result ?? null);
         setLoading(false);
       }
-    } catch {
-      if (mountedRef.current) setLoading(false);
+    } catch (error) {
+      if (mountedRef.current && request === requestRef.current) {
+        setFetchError(String(error));
+        setLoading(false);
+      }
     }
-  }, [computeNodeId, workdir, git]);
+  }, [computeNodeId, workdir, git, revision]);
 
-  const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => { void fetchStatus(); onPushed?.(); });
+  const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => {
+    void fetchStatus();
+    onPushed?.();
+  });
 
   // Run a per-file mutation (discard / stage / unstage), then refresh the list.
-  const runFileOp = useCallback(async (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
-    setConfirmingKey(null);
-    setBusyPath(file.path);
-    setRowError(null);
-    try {
-      const ops = {
-        'discard-file': () => git.discardFile(rawPath(file.path), file.status),
-        'stage-file': () => git.stageFile(rawPath(file.path)),
-        'unstage-file': () => git.unstageFile(rawPath(file.path)),
-      } as const;
-      const result = await ops[subpath]();
-      if (!mountedRef.current) return;
-      if (result && result.ok === false) {
-        setRowError({ path: file.path, message: result.message || 'Operation failed' });
-      } else {
-        void fetchStatus();
+  const runFileOp = useCallback(
+    async (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
+      setConfirmingKey(null);
+      setBusyPath(file.path);
+      setRowError(null);
+      try {
+        const ops = {
+          'discard-file': () => git.discardFile(rawPath(file.path), file.status),
+          'stage-file': () => git.stageFile(rawPath(file.path)),
+          'unstage-file': () => git.unstageFile(rawPath(file.path)),
+        } as const;
+        const result = await ops[subpath]();
+        if (!mountedRef.current) return;
+        if (result && result.ok === false) {
+          setRowError({ path: file.path, message: result.message || 'Operation failed' });
+        } else {
+          void fetchStatus();
+        }
+      } catch (e) {
+        if (mountedRef.current) setRowError({ path: file.path, message: String(e) });
+      } finally {
+        if (mountedRef.current) setBusyPath(null);
       }
-    } catch (e) {
-      if (mountedRef.current) setRowError({ path: file.path, message: String(e) });
-    } finally {
-      if (mountedRef.current) setBusyPath(null);
-    }
-  }, [git, fetchStatus]);
+    },
+    [git, fetchStatus],
+  );
 
-  const handleAction = useCallback((file: GitStatusFile, action: GitAction) => {
-    if (action.key === 'diff') { setSelectedFile(file); return; }
-    if (action.key === 'copyPath') { void navigator.clipboard?.writeText(rawPath(file.path)); return; }
-    if (!action.subpath) return;
-    if (action.destructive) {
-      // First click arms the inline confirm; the confirm button calls runFileOp.
-      setConfirmingKey(`${file.path}::${action.key}`);
-      return;
-    }
-    void runFileOp(file, action.subpath);
-  }, [runFileOp]);
+  const handleAction = useCallback(
+    (file: GitStatusFile, action: GitAction) => {
+      if (action.key === 'diff') {
+        selectFile(file);
+        return;
+      }
+      if (action.key === 'copyPath') {
+        void navigator.clipboard?.writeText(rawPath(file.path));
+        return;
+      }
+      if (!action.subpath) return;
+      if (action.destructive) {
+        // First click arms the inline confirm; the confirm button calls runFileOp.
+        setConfirmingKey(`${file.path}::${action.key}`);
+        return;
+      }
+      void runFileOp(file, action.subpath);
+    },
+    [runFileOp, selectFile],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
     setLoading(true);
+    setData(null);
+    setFetchError(null);
     void fetchStatus();
-    const interval = setInterval(() => { void fetchStatus(); }, 5000);
+    const interval = revision
+      ? undefined
+      : setInterval(() => {
+          void fetchStatus();
+        }, 5000);
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
     };
-  }, [fetchStatus]);
+  }, [fetchStatus, revision]);
 
   const handleGitInit = useCallback(async () => {
     if (!workdir) return;
@@ -262,25 +515,21 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const renderFileRow = (f: GitStatusFile, i: number) => {
     const name = basename(f.path);
     const dir = dirname(f.path);
-    const actions = actionsFor(f, mode);
-    const confirming = actions.find(a => confirmingKey === `${f.path}::${a.key}`);
+    const actions = actionsFor(f, mode, !!revision);
+    const confirming = actions.find((a) => confirmingKey === `${f.path}::${a.key}`);
     const busy = busyPath === f.path;
     const err = rowError?.path === f.path ? rowError.message : null;
     return (
       <div key={`${f.path}-${i}`} className="group rounded hover:bg-muted/50">
         <div className="flex w-full items-center gap-2 px-2 py-1">
           <button
-            className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
-            onClick={() => setSelectedFile(f)}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-start"
+            onClick={() => selectFile(f)}
           >
-            <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
-              {f.status}
-            </span>
+            <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>{f.status}</span>
             <div className="min-w-0 flex-1 truncate">
               <span className="text-xs font-medium">{name}</span>
-              {dir && (
-                <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
-              )}
+              {dir && <span className="ms-1 text-[10px] text-muted-foreground">{dir}</span>}
             </div>
           </button>
 
@@ -293,20 +542,23 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                 tooltip={<Trans>Confirm</Trans>}
                 disabled={busy}
                 className="text-red-500 hover:text-red-600"
-                onClick={() => { if (confirming.subpath) void runFileOp(f, confirming.subpath); }}
+                onClick={() => {
+                  if (confirming.subpath) void runFileOp(f, confirming.subpath);
+                }}
               />
-              <IconBtn icon={X} tooltip={<Trans>Cancel</Trans>} className="text-muted-foreground" onClick={() => setConfirmingKey(null)} />
+              <IconBtn
+                icon={X}
+                tooltip={<Trans>Cancel</Trans>}
+                className="text-muted-foreground"
+                onClick={() => setConfirmingKey(null)}
+              />
             </div>
           ) : (
             <>
               {/* +/- stats (hidden while the toolbar is revealed) */}
-              <div className="shrink-0 flex items-center gap-0.5 text-[10px] group-hover:hidden">
-                {f.insertions != null && f.insertions > 0 && (
-                  <span className="text-green-500">+{f.insertions}</span>
-                )}
-                {f.deletions != null && f.deletions > 0 && (
-                  <span className="text-red-500">-{f.deletions}</span>
-                )}
+              <div className="flex shrink-0 items-center gap-0.5 text-[10px] group-hover:hidden">
+                {f.insertions != null && f.insertions > 0 && <span className="text-green-500">+{f.insertions}</span>}
+                {f.deletions != null && f.deletions > 0 && <span className="text-red-500">-{f.deletions}</span>}
               </div>
               {/* Action toolbar — revealed on hover */}
               <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
@@ -315,163 +567,341 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                     key={a.key}
                     icon={a.icon}
                     disabled={busy}
-                    className={a.destructive ? 'text-muted-foreground hover:text-red-500' : 'text-muted-foreground hover:text-foreground'}
+                    className={
+                      a.destructive
+                        ? 'text-muted-foreground hover:text-red-500'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }
                     onClick={() => handleAction(f, a)}
-                    tooltip={<>
-                      <span className="font-medium">{a.label}</span>
-                      <span className="block text-muted-foreground">{a.tooltip}</span>
-                    </>}
+                    tooltip={
+                      <>
+                        <span className="font-medium">{a.label}</span>
+                        <span className="block text-muted-foreground">{a.tooltip}</span>
+                      </>
+                    }
                   />
                 ))}
               </div>
             </>
           )}
         </div>
-        {err && (
-          <p className="px-2 pb-1 text-[10px] text-red-500">{err}</p>
-        )}
+        {err && <p className="px-2 pb-1 text-[10px] text-red-500">{err}</p>}
       </div>
     );
   };
 
-  const changed = data?.files.filter(f => f.status !== '?') ?? [];
-  const newFiles = data?.files.filter(f => f.status === '?') ?? [];
+  // One pass over the files, split by BUCKETS' own classifier — the chips and
+  // the sections below both read these, so a count can never disagree with its
+  // list.
+  const buckets = BUCKETS.map((b) => ({
+    ...b,
+    label: i18n._(b.label),
+    files: data?.files.filter((f) => bucketOf(f.status) === b.key) ?? [],
+  }));
+
+  // Line totals across every file, so the chips answer "how big is this
+  // change" and not just "how many files". Binary files carry null counts and
+  // contribute nothing.
+  const sloc = (data?.files ?? []).reduce(
+    (acc, f) => ({ added: acc.added + (f.insertions ?? 0), removed: acc.removed + (f.deletions ?? 0) }),
+    { added: 0, removed: 0 },
+  );
+  const net = sloc.added - sloc.removed;
 
   return (
-    <TooltipProvider delayDuration={400}>
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate text-sm font-medium">
-            {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
-          </span>
-          {data && !data.error && data.ahead > 0 && (
-            <span className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500">
-              ↑{data.ahead}
-            </span>
+    <ReviewLaunchedContext.Provider value={onReviewLaunched}>
+      <TooltipProvider delayDuration={400}>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {revision && (
+            <div className="flex items-center gap-2 border-b px-3 py-2">
+              <Button variant="ghost" size="sm" onClick={() => openReview()} className="h-6 gap-1 px-1.5 text-xs">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <Trans>Working tree</Trans>
+              </Button>
+              <span className="text-xs font-medium">
+                <Trans>Commit</Trans> <span className="font-mono">{revision.slice(0, 7)}</span>
+              </span>
+              <div className="ms-auto">
+                <ReviewInWorker workdir={workdir} commit={revision} testIdPrefix="git-review-commit" />
+              </div>
+            </div>
           )}
-          {data && !data.error && data.behind > 0 && (
-            <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">
-              ↓{data.behind}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {!data?.error && (
-            <Tooltip>
-              <TooltipTrigger asChild>
+          {/* Header */}
+          {!revision && (
+            <div className="flex items-center justify-between border-b px-3 py-2">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-sm font-medium">
+                    {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
+                  </span>
+                  {data && !data.error && data.branch && (
+                    <CopyButton
+                      value={data.branch}
+                      title={t`Copy branch name`}
+                      testId="git-panel-copy-branch"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      copiedIconClassName="text-green-500"
+                    />
+                  )}
+                  {data && !data.error && data.branch && !data.upstream && (
+                    <>
+                      <HeaderChip
+                        title={data.upstreamCandidate ? t`Track ${data.upstreamCandidate}` : t`No upstream configured`}
+                        testId="git-panel-no-upstream"
+                      >
+                        <Trans>No upstream configured</Trans>
+                      </HeaderChip>
+                      {data.upstreamCandidate && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-5 px-1 text-xs"
+                          data-testid="git-panel-set-upstream"
+                          disabled={settingUpstream}
+                          onClick={async () => {
+                            setSettingUpstream(true);
+                            setUpstreamError(null);
+                            try {
+                              const result = await git.setUpstream(data.branch!);
+                              if (result.error) setUpstreamError(result.error);
+                              else {
+                                await fetchStatus();
+                                onPushed?.();
+                              }
+                            } catch (error) {
+                              setUpstreamError(String(error));
+                            } finally {
+                              setSettingUpstream(false);
+                            }
+                          }}
+                        >
+                          <Trans>Set it</Trans>
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {upstreamError && (
+                    <span role="alert" className="text-xs text-destructive">
+                      {upstreamError}
+                    </span>
+                  )}
+                  {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
+                    <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">
+                      <Trans>Up to date</Trans>
+                    </HeaderChip>
+                  )}
+                  {data && !data.error && data.ahead > 0 && (
+                    <UnpushedCommitsBadge
+                      git={git}
+                      workdir={workdir}
+                      ahead={data.ahead}
+                      onSelect={(commit) => openReview(commit.hash)}
+                    />
+                  )}
+                  {data && !data.error && data.behind > 0 && (
+                    <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
+                  )}
+                </div>
+                {data && !data.error && data.remoteUrl && (
+                  <div className="flex min-w-0 items-center gap-1 pl-5 text-[10px] text-muted-foreground">
+                    {data.remoteWebUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openExternal(data.remoteWebUrl!)}
+                        title={t`Open in browser`}
+                        data-testid="git-panel-open-remote"
+                        className="truncate hover:text-foreground hover:underline"
+                      >
+                        {data.remoteUrl}
+                      </button>
+                    ) : (
+                      <span className="truncate" data-testid="git-panel-remote">
+                        {data.remoteUrl}
+                      </span>
+                    )}
+                    <CopyButton
+                      value={data.remoteUrl}
+                      title={t`Copy remote URL`}
+                      testId="git-panel-copy-remote"
+                      className="shrink-0 hover:text-foreground"
+                      iconClassName="h-2.5 w-2.5"
+                      copiedIconClassName="text-green-500"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {!data?.error && (data?.files?.length ?? 0) > 0 && (
+                  <ReviewInWorker workdir={workdir} testIdPrefix="git-review-changes" />
+                )}
+                {!data?.error && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMode((m) => (m === 'standard' ? 'advanced' : 'standard'))}
+                        className="h-6 px-1.5 text-[10px] capitalize"
+                        data-testid="git-panel-mode"
+                      >
+                        {mode}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      <span className="font-medium">
+                        {mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}
+                      </span>
+                      <span className="block text-muted-foreground">
+                        {mode === 'standard' ? (
+                          <Trans>Simple actions — click to show all git operations</Trans>
+                        ) : (
+                          <Trans>All git operations — click for simplified actions</Trans>
+                        )}
+                      </span>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {!data?.error && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void push()}
+                    disabled={pushing}
+                    className="h-6 gap-1 px-1.5 text-[10px]"
+                    title="git push"
+                    data-testid="git-panel-push"
+                  >
+                    <GitPushIcon busy={pushing} />
+                    <Trans>Push</Trans>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setMode(m => (m === 'standard' ? 'advanced' : 'standard'))}
-                  className="h-6 px-1.5 text-[10px] capitalize"
-                  data-testid="git-panel-mode"
+                  onClick={() => {
+                    setLoading(true);
+                    void fetchStatus();
+                  }}
+                  className="h-6 w-6 p-0"
                 >
-                  {mode}
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">
-                <span className="font-medium">{mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}</span>
-                <span className="block text-muted-foreground">
-                  {mode === 'standard'
-                    ? <Trans>Simple actions — click to show all git operations</Trans>
-                    : <Trans>All git operations — click for simplified actions</Trans>}
+              </div>
+            </div>
+          )}
+
+          {/* Summary chips — new / changed / removed, at a glance */}
+          {data && !data.error && (
+            <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+              {buckets.map((b) => (
+                <div
+                  key={b.key}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 ${
+                    b.files.length > 0 ? b.tone : 'border-border bg-muted/40 text-muted-foreground'
+                  }`}
+                >
+                  <b.icon className="h-4 w-4 shrink-0" />
+                  <span className="text-lg font-semibold tabular-nums leading-none">{b.files.length}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{b.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Line totals — the size of the change, not just its file count */}
+          {data && !data.error && data.files.length > 0 && (
+            <div
+              className="flex shrink-0 items-center gap-3 border-b px-3 py-1.5 text-[11px] tabular-nums"
+              data-testid="git-panel-sloc"
+            >
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <Trans>Lines</Trans>
+              </span>
+              <span className="font-semibold text-green-500" data-testid="git-panel-sloc-added">
+                +{sloc.added}
+              </span>
+              <span className="font-semibold text-red-500" data-testid="git-panel-sloc-removed">
+                -{sloc.removed}
+              </span>
+              <span
+                className={`font-semibold ${net > 0 ? 'text-green-500' : net < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
+                data-testid="git-panel-sloc-net"
+              >
+                {net > 0 ? '+' : ''}
+                {net}{' '}
+                <span className="font-normal text-muted-foreground">
+                  <Trans>net</Trans>
                 </span>
-              </TooltipContent>
-            </Tooltip>
+              </span>
+            </div>
           )}
-          {!data?.error && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void push()}
-              disabled={pushing}
-              className="h-6 gap-1 px-1.5 text-[10px]"
-              title="git push"
-              data-testid="git-panel-push"
-            >
-              <GitPushIcon busy={pushing} />
-              <Trans>Push</Trans>
-            </Button>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-1">
+            {fetchError ? (
+              <p role="alert" className="p-3 text-xs text-destructive">
+                {fetchError}
+              </p>
+            ) : loading && !data ? (
+              <div className="flex flex-col gap-1.5 p-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-7 animate-pulse rounded bg-muted" />
+                ))}
+              </div>
+            ) : data?.error ? (
+              <div className="flex flex-col items-center gap-3 px-3 py-6">
+                <p className="text-center text-xs text-muted-foreground">
+                  <Trans>Not a git repository</Trans>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  disabled={initing}
+                  onClick={() => {
+                    void handleGitInit();
+                  }}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
+                </Button>
+                {initError && <p className="text-center text-[10px] text-red-500">{initError}</p>}
+              </div>
+            ) : !data || !data.files || data.files.length === 0 ? (
+              <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+                <Trans>No changes</Trans>
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {buckets
+                  .filter((b) => b.files.length > 0)
+                  .map((b) => (
+                    <div key={b.key}>
+                      <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {b.label} ({b.files.length})
+                      </p>
+                      <div className="flex flex-col gap-0.5">{b.files.map((f, i) => renderFileRow(f, i))}</div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Diff modal — rendered via portal so it's always on top */}
+          {selectedFile && (
+            <GitFileDiffModal
+              computeNodeId={computeNodeId}
+              workdir={workdir}
+              filepath={selectedFile.path}
+              status={selectedFile.status}
+              revision={revision}
+              open={!!selectedFile}
+              onClose={() => openReview(revision)}
+            />
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => { setLoading(true); void fetchStatus(); }}
-            className="h-6 w-6 p-0"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
         </div>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-1">
-        {loading && !data ? (
-          <div className="flex flex-col gap-1.5 p-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-7 animate-pulse rounded bg-muted" />
-            ))}
-          </div>
-        ) : data?.error ? (
-          <div className="flex flex-col items-center gap-3 px-3 py-6">
-            <p className="text-center text-xs text-muted-foreground"><Trans>Not a git repository</Trans></p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              disabled={initing}
-              onClick={() => { void handleGitInit(); }}
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-              {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
-            </Button>
-            {initError && (
-              <p className="text-center text-[10px] text-red-500">{initError}</p>
-            )}
-          </div>
-        ) : !data || !data.files || data.files.length === 0 ? (
-          <p className="mt-4 px-2 text-center text-xs text-muted-foreground"><Trans>No changes</Trans></p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {changed.length > 0 && (
-              <div>
-                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Trans>Changes ({changed.length})</Trans>
-                </p>
-                <div className="flex flex-col gap-0.5">
-                  {changed.map((f, i) => renderFileRow(f, i))}
-                </div>
-              </div>
-            )}
-            {newFiles.length > 0 && (
-              <div>
-                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Trans>New Files ({newFiles.length})</Trans>
-                </p>
-                <div className="flex flex-col gap-0.5">
-                  {newFiles.map((f, i) => renderFileRow(f, i))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Diff modal — rendered via portal so it's always on top */}
-      {selectedFile && (
-        <GitFileDiffModal
-          computeNodeId={computeNodeId}
-          workdir={workdir}
-          filepath={selectedFile.path}
-          status={selectedFile.status}
-          open={!!selectedFile}
-          onClose={() => setSelectedFile(null)}
-        />
-      )}
-    </div>
-    </TooltipProvider>
+      </TooltipProvider>
+    </ReviewLaunchedContext.Provider>
   );
 };

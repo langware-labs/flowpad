@@ -7,9 +7,10 @@ import {
   type StatusBearingProcess,
   TypeId,
   type FlowData,
+  type AgenticContext,
 } from '@sdk';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
-import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
+import { appendUploadedFileRefs, uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
@@ -31,30 +32,42 @@ import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { ProcessNameBar } from './ProcessNameBar';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
+import { BackgroundWorkChip } from './BackgroundWorkChip';
 import { QueueChip } from './QueueChip';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
+import { LinkScope } from '@src/components/links/LinkHandlersContext';
+import type { LinkSurface } from '@src/components/links/link-actions';
 import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
+import { useObservedTurn } from './hooks/useObservedTurn';
 import { useTurnActivity } from './hooks/useTurnActivity';
-import {
-  buildHistorySubline,
-  pickHistoryTitle,
-  timeAgo as historyTimeAgo,
-  WorkerIcon as HistoryWorkerIcon,
-} from './history-row';
+import { buildHistorySubline, pickHistoryTitle, WorkerIcon as HistoryWorkerIcon } from './history-row';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import { selectHistoryProcesses } from './history-processes';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
+import { useProcessesForProject } from './hooks/useProcessesForProject';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { ChatPlanModeProvider } from '@src/components/terminal/interactive-terminal/chat-plan-mode-context';
+import { PlanInteractionBar } from '@src/components/terminal/interactive-terminal/PlanInteractionBar';
+import { SurfaceSwitchWaitNotice } from '@src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice';
 import { AssetManagerButton } from '@src/components/asset-manager';
-import {
-  DEFAULT_WORKER_TYPE,
-  normalizeWorkerType,
-  type WorkerType,
-} from '@src/components/workers/worker-types';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { AgentIntroMessage } from '@src/components/agents/AgentIntroMessage';
+import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
 const EMPTY_TURN_GROUPS: TurnGroup[] = [];
+
+/** Newest-first, on whichever timestamp the row carries. */
+const byRecency = (processes: readonly AgenticProcess[]): AgenticProcess[] =>
+  [...processes].sort((a, b) => {
+    const ta = new Date(a.updated_date || a.created_date || 0).getTime();
+    const tb = new Date(b.updated_date || b.created_date || 0).getTime();
+    return tb - ta;
+  });
 
 const isUserMessage = (m: FlowData) =>
   m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user');
@@ -77,9 +90,19 @@ interface EntityExecutionPanelProps {
   processType: ProcessKind;
   className?: string;
   /**
+   * Optional host-owned process creation seam. Omit to keep the established
+   * local ComputeNode.createProcess flow. Deployed Agent chat injects the
+   * Hub's Agent.useDeployment flow and still returns a normal AgenticProcess.
+   */
+  createProcess?: () => Promise<AgenticProcess>;
+  /** Constrain process discovery to one cloud Deployment. */
+  deploymentId?: string;
+  /** `vibe` when this panel's process owns the vibe Display beside it: a link click shows there. */
+  linkSurface?: LinkSurface;
+  /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
-   * the first `prompt()`. Use to pre-configure the process (e.g. for agent files,
-   * `(proc) => proc.loadEmbeddedAgent(path)`). Not called when an existing process
+   * the first `prompt()`. Use to pre-configure the process (e.g. for sub-agent files,
+   * `(proc) => proc.loadEmbeddedSubagent(path)`). Not called when an existing process
    * is picked up from `useProcessesForTarget`.
    */
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
@@ -107,8 +130,26 @@ interface EntityExecutionPanelProps {
    */
   historyOnLeft?: boolean;
   /** Optional content rendered immediately after the (left-placed) history
-   *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. */
-  afterHistorySlot?: React.ReactNode;
+   *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. The
+   *  function form receives the chat on screen (the assistant's help button
+   *  offers it as the ask's transcript). */
+  afterHistorySlot?: React.ReactNode | ((state: { activeProcess: AgenticProcess | null }) => React.ReactNode);
+  /**
+   * Opt in to a PROJECT-scoped history list (`useProcessesForProject`) instead
+   * of the default target-scoped one. For a project-level composer — Vibe —
+   * "past chats" means every conversational session of the project, not only
+   * the ones sharing this panel's `target`: a session launched from a
+   * diagnosis or a transcript is keyed to THAT entity by its launcher (which
+   * needs the key to reconnect instead of spawning a duplicate), so a
+   * target-keyed list drops it for a reason the user never chose.
+   *
+   * Only the list the dropdown offers — and the delete / clear-all that act on
+   * exactly what it shows — moves. Which session the panel BINDS to, and the
+   * target new sessions are created with, stay target-scoped. Entity-scoped
+   * callers (a doc chat, an agent chat) leave this unset and are unchanged:
+   * there, "the chats of this entity" is precisely the right list.
+   */
+  historyProjectId?: string | null;
   /** Show an editable one-liner with the active process's name directly below
    *  the header (Vibe). Off by default so other consumers are unchanged. */
   showProcessNameBar?: boolean;
@@ -118,7 +159,7 @@ interface EntityExecutionPanelProps {
   noPastSessionsLabel?: string;
   /** Empty-state body shown when no process exists yet. */
   emptyStateText?: string;
-  /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
+  /** Optional header label rendered above the panel (e.g. "SubAgent execution"). Hidden when omitted. */
   headerLabel?: string;
   /**
    * Optional content rendered on the LEFT of the header action row. The
@@ -127,16 +168,29 @@ interface EntityExecutionPanelProps {
    * passed the built-in new-session icon button is hidden — one affordance,
    * not two.
    */
-  leadingSlot?:
-    | React.ReactNode
-    | ((actions: { startNewSession: () => void }) => React.ReactNode);
+  leadingSlot?: React.ReactNode | ((actions: { startNewSession: () => void }) => React.ReactNode);
+  /** Host actions rendered at the bottom of the settings popover (Vibe's "Open terminal"). */
+  settingsActions?: React.ReactNode;
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
+  /**
+   * Opt-in composer file attachments (a "+" picker, drag-and-drop, chips).
+   * Picked files upload into the process input dir at send time and ride
+   * along on the prompt as path-reference lines — the same convention as
+   * image paste. Off by default so other panel surfaces are unchanged.
+   */
+  allowAttachments?: boolean;
+  /** Whether pasted images may upload into the process input directory. */
+  allowImagePaste?: boolean;
+  /** Show the process Asset Manager control. */
+  showAssetManager?: boolean;
+  /** Show the project selector inside Settings. */
+  showProjectSetting?: boolean;
   /**
    * Render TOOL_CALL/TOOL_RESULT/REASONING/STATUS/ERROR events as compact
    * "dense" rows between text messages, with an expand toggle that reveals
    * the full payload. Default false — the asset-editor surfaces (Skill,
-   * Agent, Trigger, …) intentionally stay text-only. The floating Flowpad
+   * SubAgent, Trigger, …) intentionally stay text-only. The floating Flowpad
    * Assistant chat opts in.
    */
   dense?: boolean;
@@ -196,7 +250,7 @@ interface EntityExecutionPanelProps {
    * bypasses the current process so the send lazy-creates a fresh one — one
    * process per run, so each run is its own history entry.
    */
-  autoPrompt?: { text: string; nonce: number; newSession?: boolean } | null;
+  autoPrompt?: { text: string; nonce: number; newSession?: boolean; files?: File[] } | null;
   /**
    * Extra context prepended to the NEXT user prompt (e.g. an element the user
    * selected on a previewed web app). Rendered as a dismissible chip above the
@@ -205,6 +259,9 @@ interface EntityExecutionPanelProps {
    */
   promptContext?: { label: string; text: string } | null;
   onPromptContextConsumed?: () => void;
+  /** Called when the history picker chooses a concrete process. Hosts whose
+   * process identity is URL-bound use this to navigate/rebind the workspace. */
+  onProcessSelected?: (processId: string) => void;
   /**
    * Seed the picker to a SPECIFIC process instead of the "latest-wins" default.
    * Used when the panel must stay bound to one session across target-URL changes
@@ -212,6 +269,26 @@ interface EntityExecutionPanelProps {
    * navigates its child tabs). The picker stays fully functional afterward.
    */
   initialProcessId?: string | null;
+  /**
+   * Host-owned hard gate on the composer, OR-ed with the panel's own
+   * "has a target" check. For hosts whose process identity is URL-bound, there
+   * is a window where the pane is still bound to the PREVIOUS process while the
+   * next one is being created — anything typed and sent in it lands in the old
+   * session (FLOWPAD-2045). Such a host holds the composer shut for the
+   * duration. Not for turn-busy: a busy turn still accepts input (it enqueues).
+   */
+  composerDisabled?: boolean;
+  /**
+   * Narrows the panel to ONE context among the target's processes: only
+   * processes whose `context_key` equals it are picked, and a new process is
+   * stamped with it. The Flowpad Assistant keeps one chat per dock context this
+   * way. The history dropdown still offers every process of the target.
+   * `undefined` = no narrowing (every other host).
+   */
+  contextKey?: string;
+  /** Extra creation context merged into the lazy `createProcess` call (e.g. the
+   *  `instructions` describing the context a chat was opened on). */
+  processContext?: Pick<AgenticContext, 'instructions' | 'contextData'>;
 }
 
 /**
@@ -232,6 +309,9 @@ export function EntityExecutionPanel({
   target,
   processType,
   className,
+  createProcess,
+  deploymentId,
+  linkSurface,
   onProcessCreated,
   cursorLine,
   settingsLabel = 'Settings',
@@ -240,13 +320,19 @@ export function EntityExecutionPanel({
   historyTriggerLabel,
   historyOnLeft = false,
   afterHistorySlot,
+  historyProjectId = null,
   showProcessNameBar = false,
   pastSessionsLabel = 'Past executions',
   noPastSessionsLabel = 'No past executions',
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
   leadingSlot,
+  settingsActions,
   placeholder,
+  allowAttachments = false,
+  allowImagePaste = true,
+  showAssetManager = true,
+  showProjectSetting = true,
   dense = false,
   defaultProjectId,
   defaultWorkdir,
@@ -259,26 +345,57 @@ export function EntityExecutionPanel({
   autoPrompt,
   promptContext,
   onPromptContextConsumed,
+  onProcessSelected,
   initialProcessId,
+  composerDisabled = false,
+  contextKey,
+  processContext,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
+  const capabilityDefaultWorkerType = useDefaultWorkerType();
+  const resolvedDefaultWorkerType = defaultWorkerType ?? capabilityDefaultWorkerType;
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
-  const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr, { processType });
-  const sortedProcesses = useMemo(() => {
-    return [...processes].sort((a, b) => {
-      const ta = new Date(a.updated_date || a.created_date || 0).getTime();
-      const tb = new Date(b.updated_date || b.created_date || 0).getTime();
-      return tb - ta;
-    });
-  }, [processes]);
+  const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr, {
+    processType,
+    deploymentId,
+  });
+  const targetProcesses = useMemo(() => byRecency(processes), [processes]);
+  // What this panel binds to: the whole target, or one context of it.
+  const sortedProcesses = useMemo(
+    () => (contextKey === undefined ? targetProcesses : targetProcesses.filter((p) => p.context_key === contextKey)),
+    [targetProcesses, contextKey],
+  );
+
+  // 1b. The pool the HISTORY dropdown draws from. Same set by default; a
+  //     project-level composer opts into the project's conversational sessions
+  //     via `historyProjectId` (see the prop docs). Kept separate from
+  //     `sortedProcesses` on purpose: that one decides which session this panel
+  //     binds to and what target a new one is stamped with, and neither may
+  //     widen to the project.
+  const { processes: projectProcesses } = useProcessesForProject(historyProjectId, {
+    enabled: !!historyProjectId,
+  });
+  const sortedHistorySource = useMemo(
+    () => (historyProjectId ? byRecency(projectProcesses) : targetProcesses),
+    [historyProjectId, projectProcesses, targetProcesses],
+  );
 
   // Worker-history join — same backend action that powers the terminal's
   // full HistoryModal. The dropdown rows merge each AgenticProcess with its
   // matching entry to display the rich info (subject, project, branch, msg
   // count, worker icon) instead of bare ids and timestamps.
-  const { entries: workerHistoryEntries } = useWorkerHistory(30);
+  // A metadata JOIN, not a rendered list: `selectHistoryProcesses` needs every row
+  // to tell "empty" from "outside this 30-row window".
+  // Worker-history walks the local transcript corpora, so do not pay for it on
+  // every panel mount when its only consumer is still closed. Once requested,
+  // keep it enabled across later closes so reopening uses the same query state.
+  const [historyRequested, setHistoryRequested] = useState(false);
+  const { entries: workerHistoryEntries } = useWorkerHistory(30, {
+    enabled: historyRequested,
+    includeEmpty: true,
+  });
   const workerHistoryByProcessId = useMemo(() => {
     const map = new Map<string, WorkerHistoryEntry>();
     for (const entry of workerHistoryEntries) {
@@ -291,6 +408,11 @@ export function EntityExecutionPanel({
   //    or, when combined with startNewSession(), a fresh one on the next send.
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(initialProcessId ?? null);
   const [forceNew, setForceNew] = useState(false);
+  // `setForceNew(true)` is intentionally rendered state, but a user can click
+  // New and submit in the same browser task before React commits that render.
+  // Keep the creation intent in a ref as well so the send handler observes it
+  // synchronously and never reuses the session the user just left.
+  const forceNewRef = useRef(false);
 
   // When target changes (navigating between files), reset picker state — but
   // seed back to `initialProcessId` when the host pins a session (vibe keeps the
@@ -298,6 +420,7 @@ export function EntityExecutionPanel({
   useEffect(() => {
     setSelectedProcessId(initialProcessId ?? null);
     setForceNew(false);
+    forceNewRef.current = false;
   }, [targetStr, initialProcessId]);
 
   const pickedProcess: AgenticProcess | null = useMemo(() => {
@@ -326,13 +449,21 @@ export function EntityExecutionPanel({
   //    and tripped React's "cannot update while rendering" warning.
   const createInFlightRef = useRef(false);
   const [localProcess, setLocalProcess] = useState<AgenticProcess | null>(null);
-  const resolvedMatchesLocal = !!(
-    localProcess && resolvedProcess?.id === localProcess.id
-  );
+  const resolvedMatchesLocal = !!(localProcess && resolvedProcess?.id === localProcess.id);
 
-  const activeProcess: AgenticProcess | null = forceNew && !resolvedMatchesLocal
-    ? localProcess
-    : (resolvedProcess ?? localProcess);
+  const activeProcess: AgenticProcess | null =
+    forceNew && !resolvedMatchesLocal ? localProcess : (resolvedProcess ?? localProcess);
+
+  // Rows the dropdown OFFERS. NOT `sortedHistorySource`: that also drives
+  // clear-all and delete, which must keep seeing every process (empties
+  // included — you can still clear what the list hides).
+  const historyProcesses = useMemo(
+    () => selectHistoryProcesses(sortedHistorySource, workerHistoryByProcessId, activeProcess?.id ?? null),
+    [sortedHistorySource, workerHistoryByProcessId, activeProcess?.id],
+  );
+  // The Agent this process runs AS — signs its assistant turns. Cache-first,
+  // live (a rename / new avatar repaints); null for a plain session.
+  const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id);
 
   // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
   // call repeatedly — internally guarded by `_historyLoaded`.
@@ -353,23 +484,21 @@ export function EntityExecutionPanel({
   // dir is resolved lazily on paste (not on mount) so this shared chat surface
   // doesn't fire a per-mount GET for a rarely-used feature.
   const handlePasteImages = useCallback(
-    async (incoming: File[]): Promise<string[]> => {
+    async (incoming: File[], { initialCaption }: { initialCaption?: string } = {}): Promise<string[]> => {
       const procId = activeProcess?.id;
       if (!procId || !incoming.length) return [];
-      const files = await annotateImageFiles(incoming);
+      const { files, caption } = await annotateImageFiles(incoming, { initialCaption });
       if (!files.length) return [];
-      return uploadFilesToProcessInputDir(procId, files);
+      const refs = await uploadFilesToProcessInputDir(procId, files);
+      // The caption is the user's own prompt text — it follows the refs as-is.
+      return caption ? [...refs, caption] : refs;
     },
     [activeProcess],
   );
   const messages = useMemo(() => {
     return items.filter((d) => {
       const t: string = d.elementType;
-      return (
-        t === FlowElementTypes.USER_MESSAGE ||
-        t === FlowElementTypes.CHAT ||
-        t === FlowElementTypes.TEXT
-      );
+      return t === FlowElementTypes.USER_MESSAGE || t === FlowElementTypes.CHAT || t === FlowElementTypes.TEXT;
     });
   }, [items]);
   // Dense layout: keep the same filtered messages but interleave them with
@@ -390,6 +519,10 @@ export function EntityExecutionPanel({
   // the chat stays message-clean. Past turns keep their own inline collapsed
   // ToolEntryRow lists.
   const activity = useTurnActivity(dense ? activeProcess : null);
+  // Render a turn this panel did not start (a worker-driven turn, or one
+  // already running when the workspace opened). No-op unless such a turn is
+  // live — see useObservedTurn.
+  useObservedTurn(activeProcess);
   const { inlineGroups, liveEvents } = useMemo(
     () => splitLiveGroup(turnGroups, dense && activity.active),
     [dense, activity.active, turnGroups],
@@ -400,8 +533,7 @@ export function EntityExecutionPanel({
   // pin the process to a specific project (Flowpad Assistant) instead of
   // following the user's active project (e.g. `local`).
   const { project: activeProject } = useProject();
-  const effectiveProjectId =
-    defaultProjectId !== undefined ? defaultProjectId : (activeProject?.id ?? null);
+  const effectiveProjectId = defaultProjectId !== undefined ? defaultProjectId : (activeProject?.id ?? null);
   const effectiveWorkdir =
     defaultWorkdir !== undefined ? defaultWorkdir : (activeProject?.fs_storage_mount_path ?? undefined);
 
@@ -414,10 +546,7 @@ export function EntityExecutionPanel({
   // message count (not `messages` identity, which churns on every streamed
   // chunk) so the strip/dedup work only runs when a prompt is actually added.
   const inputHistory = useInputHistory();
-  const userMessageCount = useMemo(
-    () => messages.reduce((n, m) => n + (isUserMessage(m) ? 1 : 0), 0),
-    [messages],
-  );
+  const userMessageCount = useMemo(() => messages.reduce((n, m) => n + (isUserMessage(m) ? 1 : 0), 0), [messages]);
   useEffect(() => {
     inputHistory.seed(
       messages
@@ -437,173 +566,226 @@ export function EntityExecutionPanel({
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   const [pendingModel, setPendingModel] = useState<string | null>(defaultModel ?? null);
-  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(defaultWorkerType ?? null);
+  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(null);
   const [modelSavePending, setModelSavePending] = useState(false);
 
   const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
   const activeModel = typeof activeModelValue === 'string' && activeModelValue ? activeModelValue : null;
-  const effectiveModel = activeProcess
-    ? (activeModel ?? defaultModel ?? null)
-    : (pendingModel ?? defaultModel ?? null);
+  const effectiveModel = activeProcess ? (activeModel ?? defaultModel ?? null) : (pendingModel ?? defaultModel ?? null);
   const effectiveWorkerType = activeProcess
     ? normalizeWorkerType(activeProcess.worker_type)
-    : (pendingWorkerType ?? defaultWorkerType ?? null);
+    : (pendingWorkerType ?? resolvedDefaultWorkerType);
 
-  const handleModelChange = useCallback(async (model: string) => {
-    if (activeProcess && modelSavePending) return;
-    setPendingModel(model);
-    if (!activeProcess) return;
+  const handleModelChange = useCallback(
+    async (model: string) => {
+      if (activeProcess && modelSavePending) return;
+      setPendingModel(model);
+      if (!activeProcess) return;
 
-    const previous = activeProcess.cli_config ?? {};
-    const previousModel = typeof previous.model === 'string' && previous.model ? previous.model : null;
-    activeProcess.cli_config = { ...previous, model };
-    setModelSavePending(true);
-    try {
-      await activeProcess.save();
-    } catch (err) {
-      activeProcess.cli_config = previous;
-      setPendingModel(previousModel ?? defaultModel ?? null);
-      console.error('[EntityExecutionPanel] model save failed', err);
-      notify.error({ title: t`Model not saved`, message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setModelSavePending(false);
-    }
-  }, [activeProcess, defaultModel, modelSavePending, t]);
+      const previous = activeProcess.cli_config ?? {};
+      const previousModel = typeof previous.model === 'string' && previous.model ? previous.model : null;
+      activeProcess.cli_config = { ...previous, model };
+      setModelSavePending(true);
+      try {
+        await activeProcess.save();
+      } catch (err) {
+        activeProcess.cli_config = previous;
+        setPendingModel(previousModel ?? defaultModel ?? null);
+        console.error('[EntityExecutionPanel] model save failed', err);
+        notify.error({ title: t`Model not saved`, message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setModelSavePending(false);
+      }
+    },
+    [activeProcess, defaultModel, modelSavePending, t],
+  );
 
-  const handleWorkerChange = useCallback(async (workerType: WorkerType) => {
-    if (activeProcess) {
-      const currentWorker = normalizeWorkerType(activeProcess.worker_type);
-      if (workerType === currentWorker) return;
-      await onActiveWorkerChange?.({
-        workerType,
-        activeProcess,
-        model: effectiveModel,
-        projectId: activeProcess.project_id ?? effectiveProjectId,
-        workdir: effectiveWorkdir,
-      });
-      return;
-    }
-    setPendingWorkerType(workerType);
-  }, [activeProcess, effectiveModel, effectiveProjectId, effectiveWorkdir, onActiveWorkerChange]);
+  const handleWorkerChange = useCallback(
+    async (workerType: WorkerType) => {
+      if (activeProcess) {
+        const currentWorker = normalizeWorkerType(activeProcess.worker_type);
+        if (workerType === currentWorker) return;
+        await onActiveWorkerChange?.({
+          workerType,
+          activeProcess,
+          model: effectiveModel,
+          projectId: activeProcess.project_id ?? effectiveProjectId,
+          workdir: effectiveWorkdir,
+        });
+        return;
+      }
+      setPendingWorkerType(workerType);
+    },
+    [activeProcess, effectiveModel, effectiveProjectId, effectiveWorkdir, onActiveWorkerChange],
+  );
 
   const startNewSession = useCallback(() => {
+    forceNewRef.current = true;
     setSelectedProcessId(null);
     setLocalProcess(null);
     setForceNew(true);
     setPendingAttachedRefs([]);
     setPendingProjectId(null);
     setPendingModel(effectiveModel);
-    setPendingWorkerType(effectiveWorkerType ?? defaultWorkerType ?? DEFAULT_WORKER_TYPE);
-  }, [defaultWorkerType, effectiveModel, effectiveWorkerType]);
+    setPendingWorkerType(effectiveWorkerType ?? resolvedDefaultWorkerType);
+  }, [effectiveModel, effectiveWorkerType, resolvedDefaultWorkerType]);
 
-  const selectSession = useCallback((processId: string) => {
-    setSelectedProcessId(processId);
-    setLocalProcess(null);
-    setForceNew(false);
-  }, []);
-
-  const liveAttachedRefs = useMemo(
-    () => (activeProcess?.embedded_asset_refs ?? []).map((r) => r.toString()),
-    [activeProcess?.embedded_asset_refs],
+  const selectSession = useCallback(
+    (processId: string) => {
+      forceNewRef.current = false;
+      setSelectedProcessId(processId);
+      setLocalProcess(null);
+      setForceNew(false);
+      onProcessSelected?.(processId);
+    },
+    [onProcessSelected],
   );
-  const effectiveAttachedRefs = activeProcess ? liveAttachedRefs : pendingAttachedRefs;
 
-  const handleAttach = useCallback(async (ref: string) => {
-    if (activeProcess) {
-      await activeProcess.embeddedAssets.attach(ref);
-    } else {
-      setPendingAttachedRefs((prev) => (prev.includes(ref) ? prev : [...prev, ref]));
-    }
-  }, [activeProcess]);
+  // `pendingAttachedRefs` is still consumed when the process is created (it is
+  // attached ref-by-ref in `handleSend`); what went away is the UI that used to
+  // fill it — the asset manager is a read-only board now, not a picker.
 
-  const handleDetach = useCallback(async (ref: string) => {
-    if (activeProcess) {
-      await activeProcess.embeddedAssets.detach(ref);
-    } else {
-      setPendingAttachedRefs((prev) => prev.filter((r) => r !== ref));
-    }
-  }, [activeProcess]);
+  const scrollRef = useRef<AutoScrollContainerHandle>(null);
+  const handleSend = useCallback(
+    async (text: string, opts?: { forceNewProcess?: boolean; files?: File[] }) => {
+      if (!targetStr) return;
+      // The reader's own message always brings them back to the latest line.
+      scrollRef.current?.scrollToBottom();
+      if (text) inputHistory.addToHistory(text);
+      const mustCreateNew = opts?.forceNewProcess === true || forceNewRef.current;
 
-  const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
-    if (!targetStr) return;
-    inputHistory.addToHistory(text);
+      // The full prompt for this turn: host-supplied context first (consumed
+      // after the send so it doesn't leak into later prompts), then the typed
+      // text, then one path-reference line per composer attachment — uploaded
+      // here because it needs a live process id (i.e. AFTER lazy-create). An
+      // upload failure throws and aborts the send: silently dropping the files
+      // the user attached would be worse than a retriable error.
+      const compose = (procId: string): Promise<string> =>
+        appendUploadedFileRefs(procId, promptContext ? `${promptContext.text}\n\n${text}` : text, opts?.files);
 
-    // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
-    // owns the queue and auto-drains it as the worker frees up (the composer
-    // stays usable while busy; the queue chip shows the pending count).
-    const turnBusy = !!activeProcess && isBusy(activeProcess);
-    if (!opts?.forceNewProcess && activeProcess && (turnBusy || sending)) {
-      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
+      // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
+      // owns the queue and auto-drains it as the worker frees up (the composer
+      // stays usable while busy; the queue chip shows the pending count).
+      const turnBusy = !!activeProcess && isBusy(activeProcess);
+      if (!mustCreateNew && activeProcess && (turnBusy || sending)) {
+        try {
+          await activeProcess.enqueue(await compose(activeProcess.id));
+          if (promptContext) onPromptContextConsumed?.();
+        } catch (err) {
+          console.error('[EntityExecutionPanel] enqueue failed', err);
+          notify.error({ title: t`Message not queued`, message: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (sending) return;
+      setSending(true);
       try {
-        await activeProcess.enqueue(composed);
+        let proc = mustCreateNew ? null : activeProcess;
+        const isPtyPoll = transport === 'pty-poll';
+
+        // Lazy-create on first send.
+        if (!proc) {
+          if (selectedProcessId && !mustCreateNew) {
+            // The URL selects a process that hasn't bound yet. Creating a second
+            // process would orphan the selected one, but a silent return loses
+            // the send with no feedback — tell the user to retry once bound.
+            notify.error({
+              title: t`Message not sent`,
+              message: t`The session is still connecting — try again in a moment.`,
+            });
+            return;
+          }
+          if (createInFlightRef.current) return;
+          createInFlightRef.current = true;
+          try {
+            let newProcess: AgenticProcess;
+            if (createProcess) {
+              newProcess = await createProcess();
+            } else {
+              const computeNode = await ComputeNode.getById('@local');
+              if (!computeNode) throw new Error('No local compute node');
+              newProcess = await computeNode.createProcess(
+                {
+                  workdir: effectiveWorkdir ?? undefined,
+                  projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
+                  targetVfsPath: targetStr,
+                  processType,
+                  ...(contextKey !== undefined ? { contextKey } : {}),
+                  ...processContext,
+                  ...(effectiveModel ? { model: effectiveModel } : {}),
+                  ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
+                  // pty-poll: interactive PTY worker, no stream-json print mode.
+                  ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
+                },
+                // pty-poll: spawn the interactive PTY right away (visible=true
+                // auto-start) so the first prompt() lands on a live worker.
+                // print: declare the headless transport (pty_mode=false) — the
+                // backend defaults pty_mode to true when omitted, which would put
+                // the print-mode chat on a PTY worker.
+                isPtyPoll ? { visible: true } : { pty_mode: false },
+              );
+            }
+            if (onProcessCreated) await onProcessCreated(newProcess);
+            for (const ref of pendingAttachedRefs) {
+              try {
+                await newProcess.embeddedAssets.attach(ref);
+              } catch (err) {
+                console.error('[EntityExecutionPanel] attach on create failed', ref, err);
+              }
+            }
+            setLocalProcess(newProcess);
+            forceNewRef.current = false;
+            proc = newProcess;
+          } finally {
+            createInFlightRef.current = false;
+          }
+        }
+
+        if (!proc) throw new Error('process creation failed');
+
+        // One method, both transports: the backend's prompt action routes by the
+        // process's `visible` flag (PTY-transcript poll vs print-mode stream).
+        await proc.prompt(await compose(proc.id));
         if (promptContext) onPromptContextConsumed?.();
       } catch (err) {
-        console.error('[EntityExecutionPanel] enqueue failed', err);
-        notify.error({ title: t`Message not queued`, message: err instanceof Error ? err.message : String(err) });
+        console.error('[EntityExecutionPanel] prompt failed', err);
+        notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setSending(false);
       }
-      return;
-    }
+    },
+    [
+      activeProcess,
+      createProcess,
+      sending,
+      targetStr,
+      effectiveProjectId,
+      effectiveWorkdir,
+      effectiveModel,
+      effectiveWorkerType,
+      onProcessCreated,
+      pendingProjectId,
+      pendingAttachedRefs,
+      processType,
+      transport,
+      promptContext,
+      onPromptContextConsumed,
+      selectedProcessId,
+      inputHistory,
+      contextKey,
+      processContext,
+      t,
+    ],
+  );
 
-    if (sending) return;
-    setSending(true);
-    try {
-      let proc = opts?.forceNewProcess ? null : activeProcess;
-      const isPtyPoll = transport === 'pty-poll';
-
-      // Lazy-create on first send.
-      if (!proc) {
-        if (selectedProcessId && !opts?.forceNewProcess) return;
-        if (createInFlightRef.current) return;
-        createInFlightRef.current = true;
-        try {
-          const computeNode = await ComputeNode.getById('@local');
-          if (!computeNode) throw new Error('No local compute node');
-          const newProcess = await computeNode.createProcess(
-            {
-              workdir: effectiveWorkdir ?? undefined,
-              projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
-              targetVfsPath: targetStr,
-              processType,
-              ...(effectiveModel ? { model: effectiveModel } : {}),
-              ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
-              // pty-poll: interactive PTY worker, no stream-json print mode.
-              ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
-            },
-            // pty-poll: spawn the interactive PTY right away (visible=true
-            // auto-start) so the first prompt() lands on a live worker.
-            // print: declare the headless transport (pty_mode=false) — the
-            // backend defaults pty_mode to true when omitted, which would put
-            // the print-mode chat on a PTY worker.
-            isPtyPoll ? { visible: true } : { pty_mode: false },
-          );
-          if (onProcessCreated) await onProcessCreated(newProcess);
-          for (const ref of pendingAttachedRefs) {
-            try { await newProcess.embeddedAssets.attach(ref); }
-            catch (err) { console.error('[EntityExecutionPanel] attach on create failed', ref, err); }
-          }
-          setLocalProcess(newProcess);
-          proc = newProcess;
-        } finally {
-          createInFlightRef.current = false;
-        }
-      }
-
-      if (!proc) throw new Error('process creation failed');
-
-      // Prepend host-supplied context (e.g. a selected web-app element) to this
-      // turn, then consume it so it doesn't leak into later prompts.
-      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
-      // One method, both transports: the backend's prompt action routes by the
-      // process's `visible` flag (PTY-transcript poll vs print-mode stream).
-      await proc.prompt(composed);
-      if (promptContext) onPromptContextConsumed?.();
-    } catch (err) {
-      console.error('[EntityExecutionPanel] prompt failed', err);
-      notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setSending(false);
-    }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, inputHistory, t]);
+  // Stable adapter between the composer's (text, files) shape and handleSend's
+  // options bag — an inline arrow here would invalidate the composer's
+  // callbacks on every streamed-item render.
+  const handleComposerSend = useCallback(
+    (text: string, files?: File[]) => handleSend(text, files?.length ? { files } : undefined),
+    [handleSend],
+  );
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -622,13 +804,12 @@ export function EntityExecutionPanel({
     if (!autoPrompt || autoPrompt.nonce === lastAutoNonceRef.current) return;
     lastAutoNonceRef.current = autoPrompt.nonce;
     if (autoPrompt.newSession) startNewSession();
-    void handleSend(autoPrompt.text, { forceNewProcess: autoPrompt.newSession });
+    void handleSend(autoPrompt.text, { forceNewProcess: autoPrompt.newSession, files: autoPrompt.files });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPrompt?.nonce]);
 
-  const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
-    scrollRef.current?.scrollToBottom();
+    scrollRef.current?.follow();
     // In dense mode new tool events (and the appearing activity footer) don't
     // bump messages.length — track the group count + active edge too.
   }, [messages.length, turnGroups.length, activity.active]);
@@ -644,9 +825,7 @@ export function EntityExecutionPanel({
   // If the deleted process is the active session, we also clear `selectedProcessId`
   // and `localProcess` so the panel falls back to the latest remaining one.
   const [pendingDelete, setPendingDelete] = useState<
-    | null
-    | { kind: 'one'; id: string; title: string }
-    | { kind: 'all'; count: number }
+    null | { kind: 'one'; id: string; title: string } | { kind: 'all'; count: number }
   >(null);
 
   const handleDeleteOne = useCallback((id: string, title: string) => {
@@ -654,15 +833,15 @@ export function EntityExecutionPanel({
   }, []);
 
   const handleClearAll = useCallback(() => {
-    setPendingDelete({ kind: 'all', count: sortedProcesses.length });
-  }, [sortedProcesses.length]);
+    setPendingDelete({ kind: 'all', count: sortedHistorySource.length });
+  }, [sortedHistorySource.length]);
 
   const performDelete = useCallback(async () => {
     if (!pendingDelete) return;
     const idsToDelete =
       pendingDelete.kind === 'one'
         ? [pendingDelete.id]
-        : sortedProcesses.map((p) => p.id).filter((id): id is string => !!id);
+        : sortedHistorySource.map((p) => p.id).filter((id): id is string => !!id);
 
     // Clear active picks that point at to-be-deleted ids so the panel doesn't
     // try to render a process that no longer exists between the WS deletion
@@ -672,7 +851,10 @@ export function EntityExecutionPanel({
     if (pendingDelete.kind === 'all') setForceNew(false);
 
     for (const id of idsToDelete) {
-      const proc = sortedProcesses.find((p) => p.id === id);
+      // Resolved from the SAME pool the row was offered from — a project-scoped
+      // row is absent from `sortedProcesses`, and looking it up there would make
+      // its trash button a silent no-op.
+      const proc = sortedHistorySource.find((p) => p.id === id);
       if (!proc) continue;
       try {
         await proc.delete();
@@ -680,7 +862,7 @@ export function EntityExecutionPanel({
         console.error('[EntityExecutionPanel] delete failed for', id, err);
       }
     }
-  }, [pendingDelete, sortedProcesses, selectedProcessId, localProcess?.id]);
+  }, [pendingDelete, sortedHistorySource, selectedProcessId, localProcess?.id]);
 
   // Headless AND PTY turns now broadcast their worker-status transitions
   // mid-turn (the backend removed the INITIALIZING pin), so the reactive
@@ -692,18 +874,23 @@ export function EntityExecutionPanel({
   // `status`; read via `isBusy`) drives the Stop button and routes mid-turn
   // sends to the queue. The composer itself stays USABLE while busy — typing
   // + Enter enqueues (handleSend's turn-busy branch) instead of being locked
-  // out, so the only hard gate is having a target at all.
+  // out, so the only hard gates are having a target at all and the host's own
+  // `composerDisabled` (a session swap in flight — see the prop's docs).
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
-  const sendDisabled = !targetStr;
+  const sendDisabled = !targetStr || composerDisabled;
   const modelSettingsNode = modelSelectSlot?.({
     value: effectiveModel,
     disabled: !targetStr || sending || busy || modelSavePending,
     onChange: handleModelChange,
     activeProcess,
   });
+  // A live session changes worker only through the host's own switch flow; a host
+  // without one keeps the worker it started with rather than offering a picker that
+  // does nothing.
+  const workerLocked = !!activeProcess && !onActiveWorkerChange;
   const workerSettingsNode = workerSelectSlot?.({
     value: effectiveWorkerType,
-    disabled: !targetStr || sending || busy,
+    disabled: !targetStr || sending || busy || workerLocked,
     onChange: handleWorkerChange,
     activeProcess,
   });
@@ -713,26 +900,19 @@ export function EntityExecutionPanel({
   // composer's duplicate status indicator so a turn isn't announced twice (the
   // "two dots" look). The composer slot still shows resting states (Complete /
   // Idle / asked-you-a-question) once the footer disappears.
-  const statusSlot = indicatorProcess && !(dense && activity.active) ? (
-    <span
-      title={getStatusLabel(indicatorProcess)}
-      className="flex items-center"
-      data-testid="entity-execution-status"
-    >
-      <ProcessStatusIndicator
-        process={indicatorProcess}
-        showLabel
-        size="sm"
-        className="px-1 text-muted-foreground"
-      />
-    </span>
-  ) : null;
+  const statusSlot =
+    indicatorProcess && !(dense && activity.active) ? (
+      <span
+        title={getStatusLabel(indicatorProcess)}
+        className="flex items-center"
+        data-testid="entity-execution-status"
+      >
+        <ProcessStatusIndicator process={indicatorProcess} showLabel size="sm" className="px-1 text-muted-foreground" />
+      </span>
+    ) : null;
 
   return (
-    <div
-      className={cn('flex h-full min-h-0 flex-col bg-background', className)}
-      data-testid="entity-execution-panel"
-    >
+    <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="entity-execution-panel">
       {headerLabel && (
         <div
           className="flex-shrink-0 border-b px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
@@ -742,7 +922,7 @@ export function EntityExecutionPanel({
         </div>
       )}
       <ExecutionHistoryHeader
-        processes={sortedProcesses}
+        processes={historyProcesses}
         workerHistoryByProcessId={workerHistoryByProcessId}
         activeId={activeProcess?.id ?? null}
         onNewSession={typeof leadingSlot === 'function' ? null : startNewSession}
@@ -755,23 +935,25 @@ export function EntityExecutionPanel({
         historyLabel={historyLabel}
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
-        afterHistorySlot={afterHistorySlot}
+        onHistoryOpen={() => setHistoryRequested(true)}
+        afterHistorySlot={
+          typeof afterHistorySlot === 'function' ? afterHistorySlot({ activeProcess }) : afterHistorySlot
+        }
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
           <>
-            <AssetManagerButton
-              process={activeProcess}
-              pendingRefs={effectiveAttachedRefs}
-              onAttach={activeProcess ? undefined : handleAttach}
-              onDetach={activeProcess ? undefined : handleDetach}
-            />
+            {showAssetManager && <AssetManagerButton process={activeProcess} />}
             <ExecutionSettingsPopover
               activeProcess={activeProcess}
-              projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}
+              projectId={
+                activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)
+              }
               onProjectChange={setPendingProjectId}
+              showProject={showProjectSetting}
               modelControl={modelSettingsNode}
               workerControl={workerSettingsNode}
+              actions={settingsActions}
               trigger={
                 <button
                   type="button"
@@ -787,47 +969,58 @@ export function EntityExecutionPanel({
         }
       />
       {showProcessNameBar && activeProcess && <ProcessNameBar process={activeProcess} />}
-      <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
-        {showEmptyState && (
-          <div className="p-3 text-sm text-muted-foreground">
-            {emptyStateText}
-          </div>
-        )}
-        {dense
-          ? (
+      <LinkScope process={activeProcess} surface={linkSurface}>
+        <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
+          {showEmptyState && <div className="p-3 text-sm text-muted-foreground">{emptyStateText}</div>}
+          {activeProcess && <AgentIntroMessage agent={launchingAgent} />}
+          {dense ? (
             <>
-              <TurnGroupsList groups={inlineGroups} worker={activeProcess?.worker_type ?? undefined} />
+              <TurnGroupsList
+                groups={inlineGroups}
+                worker={activeProcess?.worker_type ?? undefined}
+                agent={launchingAgent}
+                onWorkerChange={workerLocked ? undefined : handleWorkerChange}
+              />
               {activeProcess && (
-                <ChatActivityLine
-                  process={activeProcess}
-                  active={activity.active}
-                  startedAt={activity.startedAt}
-                  status={activity.status}
-                  trailing={<TurnEventChip events={liveEvents} />}
-                />
+                <ChatActivityLine process={activeProcess} trailing={<TurnEventChip events={liveEvents} />} />
               )}
             </>
-          )
-          : messages.map((m) => (
+          ) : (
+            messages.map((m) => (
               <ExecutionMessage
-                key={m.id ?? m.timestamp}
+                key={m.timestamp}
                 flowData={m}
                 worker={activeProcess?.worker_type ?? undefined}
+                agent={launchingAgent}
                 isUser={
-                  m.elementType === FlowElementTypes.USER_MESSAGE ||
-                  (m.attributes && m.attributes.role === 'user')
+                  m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')
                 }
               />
-            ))}
-      </AutoScrollContainer>
+            ))
+          )}
+        </AutoScrollContainer>
+        {/* A vibe switch held back while the agent works (see SurfaceSwitchWaitNotice). */}
+        <SurfaceSwitchWaitNotice processId={activeProcess?.id} />
+        {/* Pending interaction: the agent's question as a card with its options
+            on a headless worker. On a PTY worker it says a question is waiting
+            and opens the terminal (the agent's own picker is blocked there — an
+            answer sent from here is rejected and its text is eaten as keystrokes). */}
+        <ChatPlanModeProvider process={activeProcess}>
+          <PlanInteractionBar items={items} />
+        </ChatPlanModeProvider>
+      </LinkScope>
       {promptContext && (
         <div className="flex flex-shrink-0 items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
-          <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+          {/* accent/accent-foreground, not primary-on-primary/10: the vibe
+              themes set --primary to a saturated blue that fails contrast as
+              text on both the near-black dark canvas and the white light one.
+              The accent pair is tuned per theme to stay readable. */}
+          <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-primary/40 bg-accent px-2 py-0.5 text-xs text-accent-foreground">
             <span className="truncate">{promptContext.label}</span>
             <button
               type="button"
               aria-label={t`Clear selection`}
-              className="shrink-0 rounded-full px-0.5 hover:bg-primary/20"
+              className="shrink-0 rounded-full px-0.5 hover:bg-accent-foreground/15"
               onClick={() => onPromptContextConsumed?.()}
             >
               <X className="h-3 w-3" />
@@ -836,26 +1029,43 @@ export function EntityExecutionPanel({
         </div>
       )}
       <CompactExecutionInput
-        onSend={handleSend}
+        onSend={handleComposerSend}
         disabled={sendDisabled}
         running={busy}
         onStop={handleStop}
         statusSlot={statusSlot}
         placeholder={placeholder}
-        onPasteImages={handlePasteImages}
-        leadingSlot={<QueueChip process={activeProcess} />}
+        // Before the first send there is no process to upload into: with
+        // attachments on, a pasted image becomes a chip sent with the text.
+        onPasteImages={allowImagePaste && (activeProcess || !allowAttachments) ? handlePasteImages : undefined}
+        allowAttachments={allowAttachments}
+        leadingSlot={
+          <div className="flex items-center gap-2">
+            <QueueChip process={activeProcess} />
+            <BackgroundWorkChip process={activeProcess} />
+          </div>
+        }
         history={inputHistory}
         animateEnqueue
+        // The PROCESS id, which is what makes a draft follow the session across
+        // a view-mode switch: vibe renders this panel (pinned via
+        // `initialProcessId`) while Standard renders ChatComposerBar, and both
+        // are bound to the same process by the dock URL. Keying on the surface
+        // instead would give the two composers different scopes and lose the
+        // draft at exactly the moment the user swaps modes.
+        //
+        // It resolves asynchronously, so it starts undefined — CompactExecutionInput
+        // carries live text across that first undefined -> id transition rather
+        // than clearing it.
+        draftScope={activeProcess?.id ?? (contextKey ? `context:${contextKey}` : undefined)}
       />
       <ConfirmDialog
         open={!!pendingDelete}
-        onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
+        onOpenChange={(o) => {
+          if (!o) setPendingDelete(null);
+        }}
         variant="destructive"
-        title={
-          pendingDelete?.kind === 'all'
-            ? t`Clear all past chats?`
-            : t`Delete this chat?`
-        }
+        title={pendingDelete?.kind === 'all' ? t`Clear all past chats?` : t`Delete this chat?`}
         description={
           pendingDelete?.kind === 'all'
             ? `This will permanently delete ${pendingDelete.count} chat session${pendingDelete.count === 1 ? '' : 's'} for this surface. The conversation transcripts saved on disk are kept; only the process records are removed. This cannot be undone.`
@@ -864,7 +1074,9 @@ export function EntityExecutionPanel({
               : ''
         }
         confirmLabel={pendingDelete?.kind === 'all' ? t`Delete all` : t`Delete`}
-        onConfirm={() => { void performDelete(); }}
+        onConfirm={() => {
+          void performDelete();
+        }}
       />
     </div>
   );
@@ -888,6 +1100,7 @@ function ExecutionHistoryHeader({
   historyLabel,
   historyTriggerLabel,
   historyOnLeft,
+  onHistoryOpen,
   afterHistorySlot,
   pastSessionsLabel,
   noPastSessionsLabel,
@@ -910,6 +1123,8 @@ function ExecutionHistoryHeader({
   historyTriggerLabel?: string;
   /** Render the history trigger on the left (next to leadingSlot). */
   historyOnLeft?: boolean;
+  /** Starts the lazy worker-history enrichment when the menu is first opened. */
+  onHistoryOpen: () => void;
   /** Optional node rendered right after the left-placed history pill. */
   afterHistorySlot?: React.ReactNode;
   pastSessionsLabel: string;
@@ -919,10 +1134,10 @@ function ExecutionHistoryHeader({
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   const pillBtn =
-    'inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+    'inline-flex h-7 flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
 
   const historyDropdown = (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && onHistoryOpen()}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -935,11 +1150,13 @@ function ExecutionHistoryHeader({
           {historyTriggerLabel && <span>{historyTriggerLabel}</span>}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={historyOnLeft ? 'start' : 'end'} className="w-72" data-testid="entity-execution-history-menu">
+      <DropdownMenuContent
+        align={historyOnLeft ? 'start' : 'end'}
+        className="w-72"
+        data-testid="entity-execution-history-menu"
+      >
         <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-          <span className="text-[11px] font-medium text-muted-foreground">
-            {pastSessionsLabel}
-          </span>
+          <span className="text-[11px] font-medium text-muted-foreground">{pastSessionsLabel}</span>
           {processes.length > 0 && (
             <button
               type="button"
@@ -970,7 +1187,7 @@ function ExecutionHistoryHeader({
             const subline = buildHistorySubline(entry);
             // `updated_date` / `created_date` can come through as either an
             // ISO string or a Date depending on how the entity was hydrated;
-            // normalize to ISO so `timeAgo` can parse uniformly.
+            // normalize to ISO so `formatTimeAgoShort` can parse uniformly.
             const lastActiveRaw = entry?.last_active_time ?? p.updated_date ?? p.created_date ?? null;
             const lastActive: string | null =
               lastActiveRaw == null
@@ -986,18 +1203,16 @@ function ExecutionHistoryHeader({
                 key={p.id}
                 onSelect={() => p.id && onPickSession(p.id)}
                 data-active={isActive ? 'true' : 'false'}
-                className="group flex flex-col items-start gap-0.5 pr-1"
+                className="group flex flex-col items-start gap-0.5 pe-1"
               >
                 <div className="flex w-full items-center gap-1.5">
                   <HistoryWorkerIcon
                     workerType={entry?.worker_type ?? p.worker_type ?? null}
                     className="h-3 w-3 shrink-0"
                   />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
-                    {title}
-                  </span>
-                  <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                    {historyTimeAgo(lastActive)}
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
+                  <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                    {formatTimeAgoShort(lastActive)}
                   </span>
                   {p.id && (
                     <button
@@ -1046,10 +1261,7 @@ function ExecutionHistoryHeader({
       {historyOnLeft && historyDropdown}
       {historyOnLeft && afterHistorySlot}
       {cursorLine != null && (
-        <span
-          className="text-[11px] tabular-nums text-muted-foreground"
-          data-testid="entity-execution-line-badge"
-        >
+        <span className="text-[11px] tabular-nums text-muted-foreground" data-testid="entity-execution-line-badge">
           <Trans>line {cursorLine}</Trans>
         </span>
       )}

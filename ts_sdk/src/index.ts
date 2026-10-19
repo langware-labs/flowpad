@@ -4,8 +4,13 @@ export * from './agent_hooks/index';
 export * from './process/index';
 export * from './alert';
 export * from './APIEntity';
+export { PERF_T0_KEY, markPerfT0, perfLog, perfTime } from './utils/perf';
 export * from './ApiResponse';
 export * from './apiStats';
+export * from './apps/index';
+export * from './evals/types';
+export * from './diagnose/types';
+export * from './viewers/index';
 export * from './capabilities';
 export * from './client';
 export * from './config';
@@ -25,13 +30,34 @@ export * from './preferences/indexingConsent';
 export * from './stores/fsStore';
 export * from './tags/EventBus';
 export * from './tags/grammar';
+export * from './tags/event-bus-debug';
 export * from './tags/ws-bridge';
+export * from './tabs/index';
 export * from './stores/ontology-store';
+export * from './icons';
+// NOT `export * from './react/FlowIcon'` — the barrel is imported by non-React
+// consumers, and re-exporting the component drags React into every one of them.
+// `icons/index.ts` advertises itself as framework-free; that has to stay true.
+// Import the component from '@sdk/react/FlowIcon', as the react hooks already
+// are.
+export * from './stores/project-cleanup-store';
+export * from './stores/project-readiness-store';
 export * from './utils';
 export * from './websocket';
 export * from './worldview';
 export * from './types/index';
 export * from './schema/index';
-export { FSRef } from './fs/FSRef';
+// Resolve names defined more than once under this barrel explicitly.
+// Name the winner explicitly; the losers stay reachable via their own module.
+//   - `WorkerType` — the `AgentConfig` enum, the only one of the two that is a
+//                    runtime value; the vendor union lives in `process/index`.
+export { Skill } from './entities/skill';
+export { WorkerType } from './entities/subagent';
+export { FSEntry } from './fs/FSEntry';
+export { FSRef, type FSRefJson } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
-export { Frontmatter } from './fs/Frontmatter';
+export * from './fs/AssetDocument';
+
+export * from './lazy';
+
+export * from './models/web-url-pointer';

@@ -6,9 +6,9 @@
  * in-memory Tab store (seed rows use `dock.toJSON()`, so dedup runs through the
  * actual `Tab.dockPointer` reconstruction).
  */
-import { Tab } from '@sdk';
+import { Tab, tabManager } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { resetTabLifecycleForTests, setupTab } from '@src/tabs/tab-lifecycle';
+import { resetTabContentLifecycleForTests, setupTab } from '@src/tabs/tab-content-lifecycle';
 import { projectScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,14 +33,15 @@ function mockTabStore() {
   const getSpy = vi.spyOn(Tab, 'getFromDockPointer').mockImplementation(async (d) => {
     const t = new Tab({ id: nextTabId(), pointer: d.toJSON?.() ?? '', visible: true });
     store.push(t);
-    return [t];
+    return { tabs: [t], created: true };
   });
   return { store, getSpy };
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
-  resetTabLifecycleForTests();
+  resetTabContentLifecycleForTests();
+  tabManager.resetForTests();
 });
 
 describe('assets tab dedup by scope', () => {

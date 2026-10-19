@@ -1,0 +1,1044 @@
+"""What a ``DataDriver`` does at run time — the registry of loaded drivers, and one source's traversal.
+
+A ``DataDriver`` (``flow_sdk/builtin/data_driver.py``) is one data source driver as the application
+runs it: the folder's ``Source`` class
+and its manifest (``flow_sdk/ingest/driver_registry.py`` loads both). Everything that differs between
+sources the class or the manifest says — the credential shape (``auth``), the transport it is built
+over (``build``), how a send's arguments address its channel (``message_for``), the identity a reflected file resolves on
+(``origin_id_for``). The sync engine, reflection and the stream inbox ask the type; nothing here, or
+anywhere outside an asset folder, names a provider.
+
+**One source's traversal** (``DataDriver.traverse``) is the engine step: the source's ``query()``, paged
+by ``fetch(cursor)`` and capped by ``pages_per_pass``, starting from the row's durable cursor when the
+class declares one, else from the row's window. A record source's items lower to the flat envelope in
+the order they happened; a reflecting source's files become refs diffed against the manifest the row carries — an
+observed stamp per key plus, when the source can say, a handle that survives a rename. A remote
+file source's changed bytes are pulled through ``open`` into the row's cache first.
+"""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+from flow_sdk._compat import StrEnum
+from flow_sdk.capsules.atomic import atomic_write
+from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.sources.base import Family, Source
+from flow_sdk.sources.binding import Persona, SourceBinding
+from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.credentials import ResolvedSecrets
+from flow_sdk.sources.errors import Rejected, SourceError, Unsupported
+from flow_sdk.sources.files import LOCAL_KIND, extension_of, plan_parts, resolve_files, safe_name
+from flow_sdk.sources.protocols import (
+    Choosing,
+    Identified,
+    Listable,
+    Openable,
+    Reacting,
+    StableHandle,
+    Verdict,
+    Verifiable,
+    actions_of,
+)
+from flow_sdk.sources.values.items import FileItem, MessageData, MessageFileData, ReactionData, UserProfile
+from flow_sdk.sources.values.origin import CloudOrigin
+from flow_sdk.sources.values.page import ChangePage
+from flow_sdk.sources.values.query import MessageQuery
+from flow_sdk.utils.kind_registry import KindRegistry
+from flow_sdk.utils.serialization import iso_to_utc
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.source_item import MessageSpec
+    from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
+
+logger = logging.getLogger(__name__)
+
+#: Remote objects pulled at once into a cache. Small on purpose: each is held whole in memory
+#: before its atomic write, so the gate bounds peak RSS as much as sockets.
+DOWNLOAD_CONCURRENCY = 4
+#: The `context_data` key naming the source a spawned worker belongs to. Paired with
+#: `SCOPES["data_source_id"]` (server/routes/runs.py) and `PROCESS_RUN_SCOPE_KEYS`
+#: (ui/src/navigation/DockPointer.ts): an ingest worker has no spawning entity to browse from.
+RUN_SOURCE_KEY = "data_source_id"
+
+_EPOCH = datetime.min.replace(tzinfo=timezone.utc)
+
+
+# ── the send outcome (until the messaging verbs return a MessageItem) ──────────
+
+
+class SendStatus(StrEnum):
+    """What became of an outbound message. ``DRAFTED``: composed for the user to send — a real
+    outcome that has reached nobody, so it is never recorded as a message."""
+
+    SENT = "sent"
+    DRAFTED = "drafted"
+
+
+@dataclass(frozen=True)
+class SendOutcome:
+    """What the channel confirmed about one message. ``recorded`` is load-bearing: False on a SENT
+    message means recording the copy failed — the mail is gone, and re-sending to fix the
+    bookkeeping would mail the recipient twice."""
+
+    external_id: str = ""
+    status: SendStatus = SendStatus.SENT
+    recorded: bool = False
+    artifact_id: str = ""
+    #: Every provider message the send became, in order — files fan out on a channel that carries
+    #: one per message. ``external_id`` is the first.
+    parts: tuple[str, ...] = ()
+
+    @property
+    def drafted(self) -> bool:
+        return self.status is SendStatus.DRAFTED
+
+
+# ── a source's position and what a traversal from it found ─────────────────────
+
+
+@dataclass(frozen=True)
+class Position:
+    """Where a source's last traversal left off: the durable cursor and, for a reflecting source, the
+    manifest of what it last observed. ``window_start`` floors a traversal that has no cursor."""
+
+    cursor: Optional[str] = None
+    manifest: dict = field(default_factory=dict)
+    window_start: Optional[str] = None
+
+
+def position_of(row: Any, now: Optional[datetime] = None) -> Position:
+    """The position a row holds: its cursor, its manifest and its window floor."""
+    floor = row.window_floor(now or datetime.now(timezone.utc)) if hasattr(row, "window_floor") else None
+    return Position(
+        cursor=getattr(row, "cursor", None) or None,
+        manifest=dict(getattr(row, "manifest", None) or {}),
+        window_start=floor.isoformat() if floor else None,
+    )
+
+
+@dataclass(frozen=True)
+class Pass:
+    """One traversal's findings: records OR files, and the position to carry to the next one."""
+
+    items: list = field(default_factory=list)
+    refs: list[str] = field(default_factory=list)
+    tombstones: list[str] = field(default_factory=list)
+    renames: dict[str, str] = field(default_factory=dict)
+    cursor: Optional[str] = None
+    manifest: dict = field(default_factory=dict)
+    #: Greatest ordinal covered — observability only, never read back as a floor.
+    high_water: Optional[str] = None
+    unchanged: bool = False
+    #: The ``external_id`` of EVERY record the outside system has, when this pass proved it: a source
+    #: that ``lists_everything``, read from the start to the end. None otherwise -- absence then
+    #: proves nothing, and nothing is removed.
+    listed: Optional[frozenset] = None
+    #: Reaction reports the pass found — applied to the messages they name, never stored as records.
+    reactions: list = field(default_factory=list)
+
+
+#: Inbound files copied at once per message — enough to beat a provider's short-lived link.
+STAGE_CONCURRENCY = 4
+
+
+def split_reactions(items: list) -> tuple[list, list]:
+    """``(messages, reactions)``: a reaction report is applied to its message, never stored as a record."""
+    reactions = [item for item in items if isinstance(item.data, ReactionData)]
+    return [item for item in items if not isinstance(item.data, ReactionData)], reactions
+
+
+async def _write_stream(home: Path, opening: Any) -> None:
+    """Write an ``Openable.open`` stream to ``home`` atomically (``.part`` then rename), every disk
+    touch off the loop — a 100 MB document is a thousand writes."""
+    await asyncio.to_thread(home.parent.mkdir, parents=True, exist_ok=True)
+    part = home.with_name(home.name + ".part")
+    fh = await asyncio.to_thread(part.open, "wb")
+    try:
+        async with opening as chunks:
+            async for chunk in chunks:
+                await asyncio.to_thread(fh.write, chunk)
+    finally:
+        await asyncio.to_thread(fh.close)
+    await asyncio.to_thread(os.replace, part, home)
+
+
+def link_or_copy(src: Path, dest: Path) -> None:
+    """``dest`` holds ``src``'s bytes: a hard link where the filesystem allows one, else a copy.
+    A no-op when ``dest`` exists — a file under a given name never changes."""
+    import shutil  # noqa: PLC0415
+
+    if dest.exists():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(src, dest)
+    except OSError:  # another device, or a filesystem without hard links
+        shutil.copyfile(src, dest)
+
+
+# ── identity and provenance ────────────────────────────────────────────────────
+
+
+#: Rows ``DriverRuntime.identify`` already asked this process — once is enough to ask a source that
+#: may not know who it is.
+_IDENTIFY_ASKED: set[str] = set()
+
+
+def identity_stamped(row: Any) -> bool:
+    """Whether ``row`` already knows which account it reads as."""
+    return bool(getattr(row, "account_key", "") or getattr(row, "account_identities", None))
+
+
+async def stamp_identity(row: Any, *, account_key: str, identities: list[str]) -> None:
+    """Record the account a source reads and posts as: without it the stream inbox attributes our own
+    posts to a stranger and a listening loop answers itself."""
+    row.account_key = account_key
+    row.account_identities = [v for v in identities if v]
+    await row.save_runtime()
+
+
+def ingest_run_context(row: Any) -> dict[str, str]:
+    """The provenance every ingest-spawned worker carries."""
+    return {RUN_SOURCE_KEY: str(getattr(row, "id", "") or "")}
+
+
+# ── the cache a remote file source's bytes land in ─────────────────────────────
+
+
+def cached_path(root: Path, key: str) -> Optional[Path]:
+    """Where a remote object's bytes land under ``root``, or ``None`` when its key cannot be a
+    path. A key is provider input and may hold ``..`` or only separators: refused where it meets
+    the local filesystem, never coerced into a guess."""
+    parts = [part for part in key.split("/") if part not in ("", ".")]
+    if not parts or ".." in parts:
+        return None
+    return root.joinpath(*(part.replace("\\", "_") for part in parts))
+
+
+#: Each cache index as last read, stamped ``(mtime, size)``: reflection asks for an origin twice
+#: per ref, and re-parsing an index of a whole drive per call is quadratic.
+_INDEX_CACHE: dict[Path, tuple[tuple[int, int], dict[str, str]]] = {}
+
+
+def cache_index_path(root: Path, provider: str) -> Path:
+    return root / f".{provider}-index.json"
+
+
+def read_cache_index(root: Path, provider: str) -> dict[str, str]:
+    """The cache's ``{path: key}`` index — empty when absent or unreadable."""
+    path = cache_index_path(root, provider)
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _INDEX_CACHE.get(path)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    try:
+        loaded = {str(rel): str(key) for rel, key in json.loads(path.read_text(encoding="utf-8")).items()}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    _INDEX_CACHE[path] = (stamp, loaded)
+    return loaded
+
+
+def write_cache_index(root: Path, provider: str, index: dict[str, str]) -> None:
+    atomic_write(cache_index_path(root, provider), json.dumps(index, indent=2, sort_keys=True).encode("utf-8"))
+
+
+def _place_without_collisions(wanted: dict[str, str], known: dict[str, str]) -> dict[str, str]:
+    """Each key's cache path, never shared with another key.
+
+    A remote file's ``path`` is its name, and names are not unique (Drive keeps several files called
+    ``report.csv`` side by side): the same path for two keys would overwrite one with the other and
+    hand both refs one identity. A key keeps the placement it already has; a key whose wanted path
+    another key holds gets a stable, distinct one carrying its own key.
+    """
+    owners = {rel: key for key, rel in known.items()}
+    placed: dict[str, str] = {}
+    for key, rel in wanted.items():
+        distinct = _distinct_path(rel, key)
+        if known.get(key) in (rel, distinct):
+            placed[key] = known[key]
+        elif owners.get(rel, key) != key:
+            placed[key] = distinct
+        else:
+            placed[key] = rel
+        owners[placed[key]] = key
+    return placed
+
+
+def _distinct_path(rel: str, key: str) -> str:
+    """``dir/name~<key prefix>.ext`` — the same file name, told apart by its key."""
+    head, _, name = rel.rpartition("/")
+    stem, dot, suffix = name.rpartition(".")
+    tag = "".join(ch for ch in key if ch.isalnum())[:10] or "x"
+    renamed = f"{stem}~{tag}.{suffix}" if dot and stem else f"{name}~{tag}"
+    return f"{head}/{renamed}" if head else renamed
+
+
+async def _pull(source: Source, wanted: list) -> None:
+    """Each ``(item, path)``'s bytes, through the source's ``open``, atomically into place — a pass
+    that dies mid-download never leaves a half file for the indexer to type."""
+    gate = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
+
+    async def one(item: Any, path: Path) -> None:
+        async with gate:
+            async with source.open(item) as chunks:  # type: ignore[attr-defined]
+                content = b"".join([chunk async for chunk in chunks])
+            atomic_write(path, content)
+
+    await asyncio.gather(*(one(item, path) for item, path in wanted))
+
+
+# ── binding a row ──────────────────────────────────────────────────────────────
+
+
+def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, persona: Optional[Persona] = None) -> SourceBinding:
+    credentials = credentials or ResolvedSecrets()
+    # A secret the resolver lifted out of the row never also rides in ``config``.
+    driver = DRIVERS.get_or_none(str(getattr(row, "provider", "") or ""))
+    # A stored config, read as well as it still validates.
+    typed = driver.config_of(row) if driver is not None else dict(getattr(row, "config", None) or {})
+    config = {k: v for k, v in typed.items() if k not in credentials.values}
+    return SourceBinding(
+        source_id=str(getattr(row, "id", "") or ""),
+        name=str(getattr(row, "provider", "") or ""),
+        account_key=str(getattr(row, "account_key", "") or ""),
+        config=config,
+        credentials=credentials,
+        persona=persona or Persona(),
+        read_only=bool(getattr(row, "read_only", False)),
+    )
+
+
+async def _persona_of(row: Any) -> Persona:
+    from flow_sdk.stream_inbox.sender_identity import sender_identity  # noqa: PLC0415
+
+    identity = await sender_identity(row)
+    return Persona(name=identity.username, icon=identity.icon_emoji) if identity else Persona()
+
+
+def _when(item: Any) -> Any:
+    """The event time an item's payload reports — the window, the order and the high-water read it."""
+    return getattr(item.data, "sent_at", None) or getattr(item.data, "published_at", None)
+
+
+class DriverRuntime:
+    """The run-time half of ``DataDriver``: build, bind, traverse, send. A mixin, so the registry
+    holds the entity itself; its state (``_cls``, ``_manifest``, ``_folder``, ...) is the entity's
+    private attributes, set by ``DataDriver.for_class``."""
+
+    _cls: type[Source]
+    _manifest: "Optional[DataDriverSpec]"
+    _folder: Optional[Path]
+    _content_hash: str
+    _shipped: bool
+    kind: str
+    name: str
+
+    @property
+    def cls(self) -> type[Source]:
+        return self._cls
+
+    @property
+    def display_title(self) -> str:
+        """What a person calls this channel in an error: the manifest title, else the provider key."""
+        return str(getattr(self, "title", "") or "") or self.provider
+
+    @property
+    def provider(self) -> str:
+        return self.name
+
+    @property
+    def manifest(self) -> "Optional[DataDriverSpec]":
+        return self._manifest
+
+    @property
+    def folder(self) -> Optional[Path]:
+        """The asset folder the driver loaded from; ``None`` for a class registered by hand (a test's)."""
+        return self._folder
+
+    @property
+    def content_hash(self) -> str:
+        """The folder's code as it loaded — a changed ``source.py`` is loaded again."""
+        return self._content_hash
+
+    @property
+    def shipped(self) -> bool:
+        """Loaded from the wheel's own folders: never reloaded, never shadowed."""
+        return self._shipped
+
+    # ── traits the application reads ───────────────────────────────────────
+    # The family is read off the class (``self.cls.family``): ``DataDriver`` serializes it as a field of
+    # the same name, so the runtime never shadows it with a property.
+    @property
+    def is_object(self) -> bool:
+        """A file source: its items are reflected onto disk, never kept as records."""
+        return self.cls.family is Family.OBJECT
+
+    @property
+    def can_send(self) -> bool:
+        """A channel that answers. A message source is ``Messaging`` with ``message_for`` — ``load_driver``
+        refuses one that is not — so the family is the answer."""
+        return self.cls.family is Family.MESSAGE
+
+    @property
+    def has_setup(self) -> bool:
+        return issubclass(self.cls, Verifiable)
+
+    @property
+    def push_only(self) -> bool:
+        """A webhook is its only delivery: a poll finds nothing to fetch."""
+        return not issubclass(self.cls, Listable)
+
+    @property
+    def offers_choices(self) -> bool:
+        return callable(getattr(self.cls, "choices_for", None)) or issubclass(self.cls, Choosing)
+
+    @property
+    def finds_replies(self) -> bool:
+        """A transport that can look one response up by what it answers (Gmail's In-Reply-To scan)."""
+        return hasattr(self.cls, "find_reply")
+
+    @property
+    def open_inbound(self) -> bool:
+        return self.can_send and self.cls.open_inbound
+
+    def open_inbound_for(self, config: Any) -> bool:
+        """``open_inbound`` for one source's config (``MessageSource.open_inbound_for``)."""
+        return self.can_send and self.cls.open_inbound_for(config or {})
+
+    @property
+    def identity_config_key(self) -> str:
+        return self.cls.identity_config_key
+
+    @property
+    def connection(self) -> Optional[str]:
+        return self.cls.connection
+
+    @property
+    def attention_poll_seconds(self) -> Optional[int]:
+        return self.cls.attention_poll_seconds
+
+    @property
+    def stamps_identity(self) -> bool:
+        """May reflection write our identity into this source's files (a file source's question)."""
+        return self.cls.stamps_identity
+
+    def channel_for(self, row: Any) -> str:
+        """The user-facing channel a row reaches; a file source has none."""
+        if self.is_object:
+            return ""
+        return str(self.cls.origin_kind_for(getattr(row, "config", None) or {}) or "")
+
+    def outbound_spec(self, row: Any) -> type["MessageSpec"]:
+        """The spec class that knows WHO a reply on this channel is addressed to."""
+        declared = self.cls.outbound_spec() if self.can_send else None
+        if declared is not None:
+            return declared
+        from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
+
+        return EmailMessageSpec
+
+    def permalink(self, external_id: str, thread_key: str = "") -> str:
+        """The channel's own link for a record its provider gave no URL; ``""`` for a non-channel."""
+        return self.cls.permalink(external_id, thread_key) if self.can_send else ""
+
+    # ── instances ───────────────────────────────────────────────────────────
+    def create_source(self, config: "SourceConfig | dict | None" = None, *, name: str, **authored: Any) -> "DataSource":
+        """A configured instance of this driver, in memory: nothing is written until ``save()``.
+
+        ``config`` is what ``create_config`` returned, or a plain dict ``save()`` validates the same way.
+        ``await source.save()`` places ``data_source.json`` in the project scope (the request's
+        project, the owning agent's, else the working directory's).
+        """
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        if isinstance(config, SourceConfig):
+            config = config.model_dump(mode="json", exclude_unset=True)
+        return DataSource(provider=self.provider, name=name, kind=self.kind, config=dict(config or {}), **authored)
+
+    # ── binding ─────────────────────────────────────────────────────────────
+    async def credentials_for(self, row: Any) -> ResolvedSecrets:
+        """What the row reads with, resolved from the manifest's ``auth``."""
+        from flow_sdk.ingest.credentials import resolve_credentials  # noqa: PLC0415
+
+        return await resolve_credentials(self.manifest.auth if self.manifest is not None else None, row)
+
+    async def open(self, row: Any, *, persona: bool = False, credentials: Optional[ResolvedSecrets] = None) -> Source:
+        """The configured source (not yet in a session). A configuration the class refuses is a
+        person's to fix. ``credentials`` already resolved for this row skip the second resolve."""
+        credentials = credentials if credentials is not None else await self.credentials_for(row)
+        binding = binding_of(row, credentials=credentials, persona=await _persona_of(row) if persona else None)
+        derived = dict(self.cls.configure(row) or {})
+        if derived:
+            binding = binding.model_copy(update={"config": {**binding.config, **derived}})
+        try:
+            return self.cls.build(binding)
+        except ValueError as exc:
+            raise Rejected(str(exc)) from exc
+
+    # ── where a reflecting source's files are ───────────────────────────────
+    def cache_root(self, row: Any) -> Optional[Path]:
+        """Where a REMOTE file source's bytes land: under this instance, not a project, so deleting
+        the source can take its cache without touching anything a person wrote. ``None`` for a
+        source with no remote bytes."""
+        if not self.is_object or self.cls.local_tree_key:
+            return None
+        override = (getattr(row, "config", None) or {}).get("cache_root")
+        if override:
+            return Path(str(override)).expanduser().resolve()
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        return (get_instance_settings().instance_dir / self.provider / str(getattr(row, "id", "") or "")).resolve()
+
+    def tree_root(self, row: Any) -> Optional[Path]:
+        """The tree every ref of a reflecting source is relative to: the local tree the source reads
+        in place, else its cache. ``None`` when the row does not name one yet."""
+        if not self.is_object:
+            return None
+        key = self.cls.local_tree_key
+        if not key:
+            return self.cache_root(row)
+        raw = str((getattr(row, "config", None) or {}).get(key) or "")
+        return Path(raw).expanduser().resolve() if raw else None
+
+    def origin_for(self, row: Any) -> Any:
+        """The tree, as the origin a reflecting row is stamped with on save; ``None`` for a record
+        source or a row that names no tree yet."""
+        root = self.tree_root(row)
+        if root is None:
+            return None
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
+        return local_origin_for_path(root)
+
+    def origin_id_for(self, row: Any, ref: str) -> str:
+        """The identity reflection resolves an unstamped file on, from the class; ``""`` falls back
+        to the path."""
+        root = self.tree_root(row)
+        return str(self.cls.origin_id_for(row, ref, root) or "") if root is not None else ""
+
+    # ── the source's traversal ──────────────────────────────────────────────
+    async def traverse(self, row: Any, position: Optional[Position] = None) -> Pass:
+        """One pass over the source's stream from ``position`` (the row's own when omitted)."""
+        position = position or position_of(row)
+        if self.push_only:
+            # A push-only source (a webhook is its only delivery): a poll finds nothing.
+            return Pass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
+        source = await self.open(row)
+        if isinstance(source, Identified) and await self._stamp(row, source):
+            # Before the FIRST pass, not only at setup or on a send. A source with no setup step
+            # otherwise projects its first items not knowing who it is (our own messages land as
+            # a stranger's), and the account it later learns re-scopes every origin after it --
+            # the same message would ingest under a second key. Reopened because the binding
+            # reads the account it was opened with.
+            source = await self.open(row)
+        cls = type(source)
+        async with source:
+            cursor = position.cursor if cls.durable_cursor else None
+            complete = cursor is None
+            started_at = cursor
+            floor = iso_to_utc(position.window_start) if position.window_start else None
+            query = source.query()
+            narrow = None
+            if cursor is None and floor is not None and isinstance(query, MessageQuery) and query.since is None:
+                narrow = {"since": floor}
+            items, removed, moved, resume, pages = [], [], [], None, 0
+            while True:
+                page = await source.fetch(cursor, narrow=narrow)
+                pages += 1
+                items.extend(page.items)
+                if isinstance(page, ChangePage):
+                    removed.extend(page.removed)
+                    moved.extend(page.moved)
+                    resume = page.resume_cursor or resume
+                cursor = page.next_cursor
+                if cursor is None or (cls.pages_per_pass is not None and pages >= cls.pages_per_pass):
+                    break
+            # An idle traversal hands back no new resume point: the position it started from stands.
+            carried = (resume or started_at) if cls.durable_cursor else None
+            if self.is_object:
+                return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
+            kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
+            # Inside the session: a provider's media link rarely outlives it (a WhatsApp URL dies in
+            # five minutes; a self-hosted gateway may delete the file sooner).
+            kept = await self._stage(row, source, kept)
+            # The whole collection, proven: read from the very start (`complete`), to the very end
+            # (`cursor is None`), unnarrowed, by a source that lists everything. Every LISTED record
+            # counts -- one older than the window is still there.
+            whole = cls.lists_everything and complete and cursor is None and narrow is None
+            return self._records(row, kept, carried, moved_on=carried != started_at, listed=items if whole else None)
+
+    async def read_before(self, row: Any, before: datetime, page_size: int) -> Pass:
+        """One page of what the source held BEFORE ``before``, newest first: a list paged past its oldest held
+        row asks for this. No cursor and no window: the forward position is not read and the Pass carries
+        none, so placing it never moves the row's position. Only a ``pages_backward`` source is asked."""
+        source = await self.open(row)
+        async with source:
+            page = await source.fetch(None, page_size=page_size, narrow={"before": before})
+            kept = await self._stage(row, source, list(page.items))
+            return self._records(row, kept, None, moved_on=False)
+
+    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None) -> Pass:
+        messages, reactions = split_reactions(items)
+        kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)
+        envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
+        stamps = [when for when in map(_when, kept) if when is not None]
+        every = None
+        if listed is not None:
+            every = frozenset(envelope_of(item, data_source_id=str(row.id), provider=self.provider).external_id
+                              for item in split_reactions(listed)[0])
+        return Pass(
+            listed=every,
+            items=envelopes,
+            cursor=cursor,
+            high_water=max(stamps).isoformat() if stamps else None,
+            # Nothing arrived and the position did not move: the free no-op a 304 or an empty page is.
+            # ... unless the source lists everything: its listing must still be compared with what is
+            # stored (the last record may have just been removed outside).
+            unchanged=not items and not moved_on and every is None,
+            reactions=reactions,
+        )
+
+    # ── files on messages ───────────────────────────────────────────────────
+    def files_root(self, row: Any) -> Path:
+        """Where this source's message files live on this machine — durable, purged with the source."""
+        from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+        return data_dir_for("data_source", row.id) / "files"
+
+    def _file_home(self, row: Any, origin: CloudOrigin, name: str) -> Path:
+        digest = hashlib.sha256(f"{origin.kind}|{origin.namespace}|{origin.key}".encode()).hexdigest()[:32]
+        return self.files_root(row) / digest / safe_name(name)
+
+    async def _stage(self, row: Any, source: Source, items: list) -> list:
+        """Copy every inbound file's bytes to this machine while ``source`` is open; the items come back
+        with each file's local ``path`` (or its ``fetch_error``). Idempotent: a file already here is
+        not fetched again. A few at a time — a burst of media must still beat a provider that
+        deletes its copy in minutes."""
+        gate = asyncio.Semaphore(STAGE_CONCURRENCY)
+
+        async def one(f: FileItem) -> FileItem:
+            async with gate:
+                return await self._stage_file(row, source, f)
+
+        out = []
+        for item in items:
+            data = item.data
+            if not isinstance(data, MessageData) or not data.attachments:
+                out.append(item)
+                continue
+            files = tuple(await asyncio.gather(*(one(f) for f in data.attachments)))
+            out.append(item.model_copy(update={"data": data.model_copy(update={"attachments": files})}))
+        return out
+
+    async def _stage_file(self, row: Any, source: Source, f: FileItem) -> FileItem:
+        data = f.data
+        if f.origin.kind == LOCAL_KIND or not isinstance(data, MessageFileData) or data.fetch_error:
+            return f
+        if not data.name:
+            # A provider that names no file (a WhatsApp photo): its handle, with the extension its type says.
+            stem = f.origin.key.rstrip("/").rsplit("/", 1)[-1] or "file"
+            ext = extension_of(data.media_type)
+            data = data.model_copy(update={"name": stem if stem.endswith(ext) else f"{stem}{ext}"})
+        home = self._file_home(row, f.origin, data.name)
+        if not home.is_file():
+            if not isinstance(source, Openable):
+                return f
+            try:
+                await _write_stream(home, source.open(f))
+            except Exception as exc:  # noqa: BLE001 — a lost file keeps its metadata and says why
+                logger.info("[ingest] %s %s: could not copy %s: %s", self.provider, row.id, f.origin.key, exc)
+                return f.model_copy(update={"data": data.model_copy(update={"fetch_error": str(exc) or type(exc).__name__})})
+        size = data.size if data.size is not None else home.stat().st_size
+        return f.model_copy(update={"data": data.model_copy(update={"path": str(home), "size": size})})
+
+    async def _keep_sent(self, row: Any, sent: Any) -> Any:
+        """Our sent copy points at a durable copy of each file it carried, never the caller's path —
+        an agent's outbox or a temp upload may be gone by the time anyone looks. A hard link where the
+        filesystem allows one, a copy where it does not; off the loop either way."""
+        data = sent.data
+        if not isinstance(data, MessageData) or not data.attachments:
+            return sent
+        kept = []
+        for i, f in enumerate(data.attachments):
+            fd = f.data
+            if isinstance(fd, MessageFileData) and fd.path and Path(fd.path).is_file():
+                origin = CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=f"{sent.origin.key}#{i}")
+                home = self._file_home(row, origin, fd.name)
+                await asyncio.to_thread(link_or_copy, Path(fd.path), home)
+                f = f.model_copy(update={"data": fd.model_copy(update={"path": str(home)})})
+            kept.append(f)
+        return sent.model_copy(update={"data": data.model_copy(update={"attachments": tuple(kept)})})
+
+    async def _files(self, row: Any, source: Source, items, removed, moved, cursor: Optional[str], previous: dict, *, complete: bool) -> Pass:
+        """A reflecting source's files as refs, diffed against the manifest.
+
+        A traversal from the beginning is ``complete``: a key it no longer lists is gone. A delta
+        traversal (resumed from a durable cursor) reports only what changed, so it merges into the
+        manifest and only what the source says it removed is gone. A local tree's refs are its own
+        paths under ``tree_root``. A remote one's bytes are pulled through ``open`` into the row's
+        cache (``cache_root``), laid out along each file's ``path`` and indexed ``{path: key}`` beside
+        them — reflection is handed a ref, never a cursor, and names identity from that index.
+        """
+        handle_of = source.handle_of if isinstance(source, StableHandle) else (lambda _item: "")
+        by_key = {item.origin.key: item for item in items}
+        root = self.cache_root(row)
+        tree = None if root is not None else self.tree_root(row)
+        placed: dict[str, str] = {}
+        known: dict[str, str] = {}
+        if root is not None:
+            known = {key: rel for rel, key in read_cache_index(root, self.provider).items()}
+            wanted = {key: getattr(item.data, "path", None) or key for key, item in by_key.items()}
+            refused = [key for key, rel in wanted.items() if cached_path(root, rel) is None]
+            if refused:
+                # Never a silent drop: a source that quietly reflected 40 of 45 objects reads as complete.
+                logger.info("[ingest] %s %s: skipped %d object(s) with no usable path", self.provider, row.id, len(refused))
+            for key in refused:
+                del by_key[key], wanted[key]
+            placed = _place_without_collisions(wanted, known)
+
+        def ref(key: str, rel: Optional[str] = None) -> Optional[str]:
+            if root is None:
+                assert tree is not None, f"{self.provider} reflects but its row names no {self.cls.local_tree_key or 'tree'}"
+                return os.path.join(str(tree), key)
+            path = cached_path(root, rel if rel is not None else known.get(key, key))
+            return str(path) if path is not None else None
+
+        observed = {key: [item.data.stable_dump(), handle_of(item)] for key, item in by_key.items()}
+        changed = [key for key, entry in observed.items() if previous.get(key) != entry]
+        # A moved-from key is neither live nor gone: identity travels to where it moved.
+        moved_from = {move.previous.key for move in moved}
+        if complete:
+            current = observed
+            live = {entry[1] for entry in current.values() if entry[1]}
+            gone = [
+                key for key, entry in previous.items()
+                if key not in current and key not in moved_from and not (entry[1] and entry[1] in live)
+            ]
+        else:
+            current, gone = {**previous, **observed}, []
+        # A removal counts only for a key this source placed: a change log also reports files it never
+        # listed (deleted elsewhere on the account), and those have nothing to tombstone.
+        gone.extend(origin.key for origin in removed if origin.key in previous or origin.key in known)
+        for key in (*gone, *moved_from):
+            current.pop(key, None)
+        renames = {ref(move.origin.key): ref(move.previous.key) for move in moved}
+        tombstones = [r for key in dict.fromkeys(gone) if (r := ref(key))]
+        if root is not None:
+            # The same key under a new path is a rename the source reported by name alone (a Drive
+            # rename keeps its fileId): identity travels, and the stale bytes leave the cache.
+            relocated = {key: known[key] for key in changed if key in known and known[key] != placed[key]}
+            renames.update({ref(key, placed[key]): ref(key) for key in relocated})
+            await _pull(source, [(by_key[key], Path(ref(key, placed[key]))) for key in changed])
+            for old in relocated.values():
+                if (stale := cached_path(root, old)) is not None:
+                    stale.unlink(missing_ok=True)
+            kept = {key: rel for key, rel in known.items() if key in current}
+            write_cache_index(root, self.provider, {rel: key for key, rel in {**kept, **placed}.items()})
+        return Pass(
+            refs=[r for key in changed if (r := ref(key, placed.get(key)))],
+            tombstones=tombstones,
+            renames=renames,
+            cursor=cursor,
+            manifest=current,
+            high_water=str(len(current)),
+            unchanged=not changed and not gone and not renames,
+        )
+
+    # ── messaging ───────────────────────────────────────────────────────────
+    async def send(
+        self,
+        row: Any,
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str = "",
+        conversation_id: str = "",
+        in_reply_to: str = "",
+        files: tuple[FileItem, ...] = (),
+        quote: bool = True,
+    ) -> SendOutcome:
+        """One message into the channel, recorded. A refused message is a ``ValueError`` — one failed
+        reply must never become source health.
+
+        ``files`` are local files (``sources.files.local_file``), checked against the channel's
+        ``files`` before any provider I/O and fanned out when it carries fewer per message. ``quote``
+        ``False`` answers without quoting on a channel whose replies quote (``cls.quotes``); a channel
+        whose reply only threads (email, Slack) keeps ``in_reply_to`` — dropping it would break the thread."""
+        if not self.can_send:
+            raise NotImplementedError(f"{self.provider} cannot send")
+        files = resolve_files(files, self.cls.files, title=self.display_title) if files else ()
+        answering = in_reply_to if (quote or not getattr(self.cls, "quotes", False)) else ""
+        parts = plan_parts(self.cls.files, text, files, quote=bool(answering))
+        source = await self.open(row, persona=True)
+        sents = []
+        try:
+            async with source:
+                for i, part in enumerate(parts):
+                    data, answered = source.message_for(  # type: ignore[attr-defined]
+                        thread_key=thread_key,
+                        to=to,
+                        text=part.text or "",
+                        subject=subject,
+                        in_reply_to=answering if part.quotes else "",
+                        conversation_id=conversation_id,
+                    )
+                    if part.files or part.text is None:
+                        data = data.model_copy(update={"text": part.text, "attachments": part.files})
+                    sents.append(await (source.reply(answered, data) if answered is not None else source.send(data)))  # type: ignore[attr-defined]
+        except SourceError as exc:
+            if not sents:
+                raise ValueError(f"{self.provider} refused the message: {exc}") from exc
+            # Some parts are out: the recipient has them, so record those and say the rest failed.
+            logger.warning("[ingest] %s: part %d of %d refused: %s", self.provider, len(sents) + 1, len(parts), exc)
+        if isinstance(source, Identified):
+            await self._stamp(row, source)
+        outcomes = [await self._settle(row, source, sent, to) for sent in sents]
+        first = outcomes[0]
+        return SendOutcome(
+            external_id=first.external_id,
+            status=first.status,
+            recorded=all(o.recorded for o in outcomes),
+            artifact_id=first.artifact_id,
+            parts=tuple(o.external_id for o in outcomes),
+        )
+
+    async def _settle(self, row: Any, source: Source, sent: Any, to: str) -> SendOutcome:
+        """One sent provider message: addressed, recorded, reported."""
+        # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
+        # records its own copy says so on the payload.
+        if to and not getattr(sent.data, "recipients", None):
+            # Whom we sent it to is known here even when the provider's answer does not say — a
+            # conversation we open is addressed by it.
+            to_whom = UserProfile(origin=CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=to), address=to)
+            sent = sent.model_copy(update={"data": sent.data.model_copy(update={"recipients": (to_whom,)})})
+        drafted = self.cls.sends_may_draft and sent.data.sent_at is None
+        recorded = bool(getattr(sent.data, "recorded", False))
+        if not drafted and not recorded:
+            recorded = await self._record_ours(row, source, sent) is not None
+        return SendOutcome(
+            external_id=sent.origin.key,
+            status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
+            recorded=recorded,
+            artifact_id=str(getattr(sent.data, "artifact_id", "") or ""),
+        )
+
+    async def _record_ours(self, row: Any, source: Source, sent: Any) -> Optional[str]:
+        """Ingest a message we just wrote (a send, an action's message), marked ours — at once, not
+        whenever the provider's echo is next read. The echo carries the same natural key, so it lands
+        on this row and keeps the mark; without the mark a copy with no self author would read as a
+        stranger's message. Answers the ``SourceItem`` id, or ``None`` when the transport records its
+        own copy (``data.recorded``) or the bookkeeping failed."""
+        from flow_sdk.ingest.ingestor import ingest_item  # noqa: PLC0415
+
+        if getattr(sent.data, "recorded", False):
+            return None
+        try:
+            outcome = await ingest_item(
+                envelope_of(await self._keep_sent(row, sent), data_source_id=str(row.id), provider=self.provider), sent_by_us=True
+            )
+        except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
+            logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
+            return None
+        return str(outcome.entity_id) if outcome.entity_id else None
+
+    async def ingest_pushed(
+        self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"", verified_by_hub: bool = False
+    ) -> dict:
+        """A provider's push delivery (a webhook body), as the records it carries, through the one
+        ingestion chokepoint. Total: a payload carrying nothing we render ingests nothing.
+
+        A class that can prove a delivery came from its provider (``webhook_authentic``) must: the
+        delivery is refused with ``Rejected`` before anything is read, whoever calls this."""
+        # Whoever calls this: the route hands over case-insensitive headers, an in-process caller a plain
+        # dict — a class that checks a signature reads them lowercased either way.
+        headers = {str(k).lower(): v for k, v in dict(headers or {}).items()}
+        credentials = await self.credentials_for(row)
+        # ``verified_by_hub``: the hub checked the vendor's signature at its edge and split the batch, so the
+        # vendor's signature no longer covers these bytes (``/<source id>/webhook``, reached only from the hub).
+        authentic = None if verified_by_hub else getattr(self.cls, "webhook_authentic", None)
+        if authentic is not None and not authentic(headers or {}, raw, credentials):
+            raise Rejected("the delivery's signature did not verify")
+        source = await self.open(row, credentials=credentials)
+        async with source:
+            events = list(source.events_from_webhook(payload))  # type: ignore[attr-defined]
+            events = await self._stage_events(row, source, events)
+            # A source people talk to live rings its calls here too; the caller hands them to whoever answers.
+            calls = list(source.calls_from_webhook(payload)) if hasattr(source, "calls_from_webhook") else []
+        result = await self.ingest_events(row, events)
+        if calls:
+            result["calls"] = calls
+        return result
+
+    async def _stage_events(self, row: Any, source: Source, events: list) -> list:
+        items = [event.item for event in events if event.item is not None]
+        staged = iter(await self._stage(row, source, items))
+        return [event.model_copy(update={"item": next(staged)}) if event.item is not None else event for event in events]
+
+    async def ingest_events(self, row: Any, events: Any) -> dict:
+        """Events a source produced outside a traversal (a webhook, a live call) through the one ingestion
+        chokepoint: ``{"ingested", "created", "ids"}`` — ``ids`` the stored rows, in event order. A
+        reaction report is applied to the message it names, after the messages it came with."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
+
+        messages, reactions = split_reactions([event.item for event in events if event.item is not None])
+        items = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in messages]
+        report = await ingest_items(items) if items else None
+        if reactions:
+            await apply_reactions(row, reactions)
+        if not items:
+            return {"ingested": 0, "reactions": len(reactions)}
+        return {
+            "reactions": len(reactions),
+            "ingested": len(items),
+            "created": getattr(report, "created", 0),
+            "ids": [o.entity_id for o in getattr(report, "outcomes", [])],
+        }
+
+    async def react(self, row: Any, target: CloudOrigin, emoji: str, *, remove: bool = False) -> None:
+        """Put (or, with ``remove``, take back) our emoji on ``target``. A channel that cannot react raises
+        ``Unsupported``; one that cannot show this emoji raises its ``Rejected`` — never a substitute."""
+        if not issubclass(self.cls, Reacting):
+            raise Unsupported(f"{self.display_title} has no reactions")
+        source = await self.open(row, persona=True)
+        async with source:
+            if remove:
+                await source.unreact(target, emoji)  # type: ignore[attr-defined]
+            else:
+                await source.react(target, emoji)  # type: ignore[attr-defined]
+
+    async def act(self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False) -> Optional[str]:
+        """Run the channel's ``action`` on ``conversation`` (``ended``: whether it has ended). A message
+        the action wrote is recorded as ours, like a sent one (its echo lands on the same row); answers
+        that record's ``SourceItem`` id, or ``None`` when the action wrote nothing. A channel without
+        the action, or an action not offered in the conversation's state, raises ``Unsupported``."""
+        spec = next((a for a in actions_of(self.cls) if a.id == action), None)
+        if spec is None:
+            raise Unsupported(f"no action {action} on this channel")
+        if spec.when != "any" and (spec.when == "ended") != ended:
+            raise Unsupported(f"this action is not available on {'an ended' if ended else 'an open'} conversation")
+        source = await self.open(row, persona=True)
+        async with source:
+            written = await source.act(conversation, action, text)  # type: ignore[attr-defined]
+        return await self._record_ours(row, source, written) if written is not None else None
+
+    async def find_reply(self, row: Any, external_id: str) -> Any:
+        """The reply to ``external_id`` as an envelope, or ``None`` — one look."""
+        source = await self.open(row)
+        item = await source.find_reply(external_id)  # type: ignore[attr-defined]
+        if item is None:
+            return None
+        return envelope_of(item, data_source_id=str(row.id), provider=self.provider)
+
+    async def wait_for_reply(self, row: Any, external_id: str) -> Any:
+        """Look again until the response exists. The caller owns the deadline, so there is no second
+        timeout or sleep here to disagree with it."""
+        while True:
+            reply = await self.find_reply(row, external_id)
+            if reply is not None:
+                return reply
+
+    # ── setup ───────────────────────────────────────────────────────────────
+    async def verify(self, row: Any) -> Verdict:
+        """Whether setup is finished. A source with no setup step is ready once configured."""
+        if not self.has_setup:
+            return Verdict(ready=True)
+        try:
+            source = await self.open(row)
+        except Rejected as exc:
+            return Verdict(ready=False, detail=str(exc))
+        verdict = await source.verify()  # type: ignore[attr-defined]
+        if (verdict.ready or verdict.pending) and isinstance(source, Identified):
+            await self._stamp(row, source)
+        return verdict
+
+    async def identify(self, row: Any) -> None:
+        """Record who the source reads as, if it does not know yet — before its first sync lands a
+        record, so a row only ever synced (never verified, never sent from) still tells our own
+        posts from a stranger's. Asked once per row per process: a source that cannot say is not
+        re-asked on every poll (``send`` and ``verify`` still stamp it)."""
+        key = str(getattr(row, "id", "") or "")
+        if identity_stamped(row) or not issubclass(self.cls, Identified) or key in _IDENTIFY_ASKED:
+            return
+        _IDENTIFY_ASKED.add(key)
+        try:
+            source = await self.open(row)
+        except Rejected:
+            return  # the sync that follows reports the refusal
+        async with source:
+            await self._stamp(row, source)
+
+    async def _stamp(self, row: Any, source: Source) -> bool:
+        """Record who the source reads and posts as, once. True when this call wrote it."""
+        if identity_stamped(row):
+            return False
+        try:
+            profiles = await source.whoami()  # type: ignore[attr-defined]
+            if not profiles:
+                return False
+            identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
+            await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
+            return True
+        except Exception:  # noqa: BLE001 — identity is a nicety; it never fails what asked for it
+            logger.debug("[ingest] %s identity stamp failed", self.provider, exc_info=True)
+            return False
+
+    async def choices(self, row: Any, field: str) -> list:
+        """What the credential can see for one config field. Raises like a fetch; the one caller
+        (``DataSource.choices_for``) turns a refusal into a sentence. A field whose offer is
+        APPLICATION state (the desks this instance adopted) the class answers from that state."""
+        if callable(getattr(self.cls, "choices_for", None)):
+            return list(await self.cls.choices_for(row, field))  # type: ignore[attr-defined]
+        from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
+
+        async with await self.open(row) as source:
+            offered = await source.choices(field)  # type: ignore[attr-defined]
+        return [Choice(**{k: str(entry[k]) for k in ("id", "name", "detail") if entry.get(k)}) for entry in offered]
+
+
+def _register_shipped(registry: "KindRegistry[DataDriver]") -> None:
+    from flow_sdk.ingest.driver_registry import register_shipped  # noqa: PLC0415
+
+    register_shipped(registry)
+
+
+#: Keyed by provider; the shipped asset folders load on the first lookup. A miss answers ``None`` —
+#: an unknown provider is a diagnosable source state (``unknown_provider``), not a crash in the poller.
+DRIVERS: "KindRegistry[DataDriver]" = KindRegistry("data driver", key="provider", builder=_register_shipped)
+
+
+__all__ = [
+    "DOWNLOAD_CONCURRENCY",
+    "RUN_SOURCE_KEY",
+    "DRIVERS",
+    "Pass",
+    "Position",
+    "SendOutcome",
+    "SendStatus",
+    "DriverRuntime",
+    "binding_of",
+    "cache_index_path",
+    "cached_path",
+    "identity_stamped",
+    "ingest_run_context",
+    "position_of",
+    "read_cache_index",
+    "stamp_identity",
+    "write_cache_index",
+]

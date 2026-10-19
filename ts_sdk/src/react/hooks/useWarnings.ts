@@ -1,64 +1,49 @@
+import { useRuntimeInfo } from './useRuntimeInfo';
 import {
-  cloudManager,
   createCloudConnectionAuthRejectedWarning,
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
   createHarnessLoginWarning,
   createHubRequestFailedWarning,
+  createEmptyProjectsWarning,
+  createProjectSetupRequiredWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
   createSnifferNotFoundWarning,
-  dataContext,
-  HubClientErrorInfo,
   UserWarning,
-} from '../..';
+} from '../../models/UserWarning';
+import { dataContext } from '../../FlowSync/context';
+import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_login';
+import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
+import { useCleanupSummary } from './use-cleanup-summary';
+import { useProjectSetupLeft } from './use-project-readiness';
+import { refreshProjectReadiness } from '../../stores/project-readiness-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { HARNESS_CAPABILITY_KINDS, capabilityManager } from '../../capabilities';
 import { useContext } from './useContext';
+import { useLazyAsset } from './useLazyAsset';
+import { LazyAsset } from '../../lazy/LazyAsset';
+import { InstallState, type StatusRecord } from '../../entities/status-record';
+import type { LLMFundingStatus } from '../../services/llm-sources-service';
 
 /**
- * True when every harness CLI is checked and none is installed. The
- * all-checked gate avoids a false flash while startup discovery is still
- * running.
+ * True when the status record lists CLI harnesses and none is installed. `unknown` (the boot
+ * sweep has not finished) is not "not installed", so there is no false flash at startup.
  */
-export function isNoHarnessFound(
-  snapshots: ReadonlyArray<{ checked: boolean; available: boolean }>,
-): boolean {
-  return snapshots.every((snapshot) => snapshot.checked && !snapshot.available);
-}
-
-function readNoHarnessFound(): boolean {
-  return isNoHarnessFound(
-    HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)),
-  );
+export function isNoHarnessFound(record: StatusRecord | null | undefined): boolean {
+  const clis = (record?.harnesses ?? []).filter((h) => h.install !== InstallState.BuiltIn);
+  return clis.length > 0 && clis.every((h) => h.install === InstallState.NotInstalled);
 }
 
 /**
- * True when at least one harness CLI is installed, every installed one has a
- * probed login state (the startup gate populates it), and none is
- * authenticated. The probed-state gate avoids a false flash before the
- * auth-status probes land.
+ * Why the default harness has nothing to run on, or `null` when it is funded — the funding
+ * layer's own set-up verdict. Only an installed default is asked: an uninstalled one is
+ * `isNoHarnessFound`'s warning (or the default is simply wrong).
  */
-export function isHarnessLoginRequired(
-  snapshots: ReadonlyArray<{
-    checked: boolean;
-    available: boolean;
-    capability: { login_state?: string | null } | null;
-  }>,
-): boolean {
-  const installed = snapshots.filter((snapshot) => snapshot.checked && snapshot.available);
-  return (
-    installed.length > 0 &&
-    installed.every((snapshot) => !!snapshot.capability?.login_state) &&
-    !installed.some((snapshot) => snapshot.capability?.login_state === 'authenticated')
-  );
-}
-
-function readHarnessLoginRequired(): boolean {
-  return isHarnessLoginRequired(
-    HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)),
-  );
+export function defaultHarnessUnfunded(funding: LLMFundingStatus | null | undefined): string | null {
+  const verdict = funding?.default;
+  if (!verdict?.installed || verdict.source) return null;
+  return verdict.reason || 'Nothing funds the default assistant.';
 }
 
 /**
@@ -67,22 +52,15 @@ function readHarnessLoginRequired(): boolean {
  * - Cloud disconnected (in desktop mode when cloud login is not available)
  */
 export function useWarnings() {
+  useRuntimeInfo();
   const context = useContext();
-  const {
-    isDesktop,
-    cloudLoginAvailable,
-    computeNode,
-    snifferEnabled,
-    snifferInstalled,
-    cloudConnectionStatus,
-  } = context;
+  const { isDesktop, cloudLoginAvailable, computeNode, snifferEnabled, snifferInstalled, cloudConnectionStatus } =
+    context;
 
   // Track the most recent hub HTTP error (4xx/5xx) reported by the local
   // backend's httpx hook. Shown as a soft warning so the user can see the
   // full method/path/status and copy it; clicking dismisses it.
-  const [lastHubError, setLastHubError] = useState<HubClientErrorInfo | null>(
-    () => cloudManager.lastHubError,
-  );
+  const [lastHubError, setLastHubError] = useState<HubClientErrorInfo | null>(() => cloudManager.lastHubError);
   useEffect(() => {
     const handler = (next: HubClientErrorInfo | null) => setLastHubError(next);
     cloudManager.on('last_hub_error_changed', handler);
@@ -92,20 +70,32 @@ export function useWarnings() {
     };
   }, []);
 
-  // Re-derive the no-harness verdict on capability events, but store the
-  // boolean, not an event counter: setState with an unchanged value bails
-  // out, so unrelated capability activity doesn't recompute the warning
-  // list or rewrite the global warnings context.
-  const [noHarnessFound, setNoHarnessFound] = useState(readNoHarnessFound);
-  const [harnessLoginRequired, setHarnessLoginRequired] = useState(readHarnessLoginRequired);
-  useEffect(
-    () =>
-      capabilityManager.subscribe(() => {
-        setNoHarnessFound(readNoHarnessFound());
-        setHarnessLoginRequired(readHarnessLoginRequired());
-      }),
-    [],
+  // Empty-project count from the last project scan. The store only replaces its
+  // held value on a real change, so an unchanged scan result does not rewrite
+  // the global warnings context.
+  // Checked in the background whenever the current project changes — the footer says when it
+  // cannot run here yet.
+  const projectId = context.project?.id ?? null;
+  const projectName = context.project?.name ?? '';
+  useEffect(() => {
+    void refreshProjectReadiness(projectId);
+  }, [projectId]);
+  const setupLeft = useProjectSetupLeft(projectId);
+
+  const cleanup = useCleanupSummary();
+  const emptyProjects = shouldWarnAboutEmptyProjects(cleanup) ? cleanup!.empty_count : 0;
+
+  // Status and funding, both pushed by the backend on change: the warnings re-read them and
+  // derive nothing of their own.
+  // Desktop only: the hub has no box to ask, and the warnings below are desktop-only anyway.
+  const { data: statusRecord } = useLazyAsset(LazyAsset.Status, undefined, { enabled: isDesktop });
+  const { data: funding } = useLazyAsset(
+    LazyAsset.LlmFunding,
+    { projectId: projectId ?? undefined },
+    { enabled: isDesktop },
   );
+  const noHarnessFound = isNoHarnessFound(statusRecord);
+  const unfundedReason = defaultHarnessUnfunded(funding);
 
   // Compute warnings based on current state
   const computedWarnings = useMemo(() => {
@@ -132,13 +122,15 @@ export function useWarnings() {
     // present at once (e.g. WS reconnecting + an in-flight fs/download
     // returned 404).
     if (lastHubError) {
-      warnings.push(createHubRequestFailedWarning({
-        method: lastHubError.method,
-        path: lastHubError.path,
-        statusCode: lastHubError.statusCode,
-        message: lastHubError.message,
-        onDismiss: () => cloudManager.clearLastHubError(),
-      }));
+      warnings.push(
+        createHubRequestFailedWarning({
+          method: lastHubError.method,
+          path: lastHubError.path,
+          statusCode: lastHubError.statusCode,
+          message: lastHubError.message,
+          onDismiss: () => cloudManager.clearLastHubError(),
+        }),
+      );
     }
 
     // No compute node warning
@@ -146,16 +138,14 @@ export function useWarnings() {
       warnings.push(createNoComputeNodeWarning());
     }
 
-    // No harness warning. HarnessCapabilitiesContext warms the checks at
-    // app start; this only reads the snapshots.
     if (noHarnessFound) {
       warnings.push(createNoHarnessWarning());
     }
 
-    // Harness(es) installed but none signed in — clicking opens the
-    // harness-login modal (routed by id in the warnings popover).
-    if (!noHarnessFound && harnessLoginRequired) {
-      warnings.push(createHarnessLoginWarning());
+    // The default assistant is installed and nothing pays for it — clicking opens the
+    // Assistants & keys modal (routed by id in the warnings popover).
+    if (!noHarnessFound && unfundedReason) {
+      warnings.push(createHarnessLoginWarning(unfundedReason));
     }
 
     // Sniffer hooks are live in the harness settings file — surface it for as
@@ -170,8 +160,31 @@ export function useWarnings() {
       warnings.push(createSnifferNotFoundWarning());
     }
 
+    // Empty workspace folders piling up. Informational — the click opens the
+    // cleanup screen, and nothing is removed until the user says so there.
+    if (emptyProjects > 0) {
+      warnings.push(createEmptyProjectsWarning(emptyProjects));
+    }
+
+    if (setupLeft > 0) {
+      warnings.push(createProjectSetupRequiredWarning(projectName, setupLeft));
+    }
+
     return warnings;
-  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, snifferInstalled, lastHubError, noHarnessFound, harnessLoginRequired]);
+  }, [
+    setupLeft,
+    projectName,
+    emptyProjects,
+    isDesktop,
+    cloudLoginAvailable,
+    cloudConnectionStatus,
+    computeNode,
+    snifferEnabled,
+    snifferInstalled,
+    lastHubError,
+    noHarnessFound,
+    unfundedReason,
+  ]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

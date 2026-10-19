@@ -1,3 +1,5 @@
+import { LazyAsset } from '../../lazy';
+import { useLazyAsset } from './useLazyAsset';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { CapabilitySnapshot, capabilityManager } from '../../capabilities';
@@ -21,17 +23,19 @@ export interface UseCapabilityResult extends CapabilitySnapshot {
 export function useCapability(kind: string, options: UseCapabilityOptions = {}): UseCapabilityResult {
   const autoCheck = options.autoCheck !== false;
   const [version, setVersion] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const metadata = useLazyAsset(LazyAsset.Capabilities, undefined, { priority: autoCheck ? 'demand' : 'background' });
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => capabilityManager.subscribe(() => setVersion((current: number) => current + 1)), []);
 
   useEffect(() => {
+    if (!autoCheck || !metadata.isSuccess) return;
     let cancelled = false;
     setIsLoading(true);
     setError(null);
 
-    const load = autoCheck ? capabilityManager.ensureChecked(kind) : capabilityManager.load();
+    const load = capabilityManager.ensureChecked(kind);
     load
       .catch((err) => {
         if (!cancelled) setError(err);
@@ -43,7 +47,7 @@ export function useCapability(kind: string, options: UseCapabilityOptions = {}):
     return () => {
       cancelled = true;
     };
-  }, [autoCheck, kind]);
+  }, [autoCheck, kind, metadata.isSuccess]);
 
   const snapshot = useMemo(() => capabilityManager.getSnapshot(kind), [kind, version]);
 
@@ -83,8 +87,8 @@ export function useCapability(kind: string, options: UseCapabilityOptions = {}):
 
   return {
     ...snapshot,
-    isLoading,
-    error,
+    isLoading: isLoading || metadata.isLoading,
+    error: error ?? metadata.error,
     activeProcess,
     refetch: () => run('load').then(() => undefined),
     test: () => run('test'),
