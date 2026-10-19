@@ -228,7 +228,16 @@ class CloudManager extends EventEmitter {
         // not signed in yet. Those render, and start the login from a CLICK —
         // which is the only place a popup can be opened, so it is also the only
         // way the user keeps this tab and the URL that brought them here.
-        if (!opts?.allowAnonymous) window.location.assign(this._hubLoginUrl());
+        //
+        // The redirect never resolves: the page is leaving, and letting the app
+        // keep rendering lets a route's own 401 handling start a SECOND login.
+        // Two concurrent Auth0 authorizations overwrite each other's `state` in
+        // the session, so the callback fails its CSRF check and lands on `/`
+        // instead of the page the user opened.
+        if (!opts?.allowAnonymous) {
+          window.location.assign(this._hubLoginUrl());
+          await new Promise<never>(() => {});
+        }
       }
       return;
     }
