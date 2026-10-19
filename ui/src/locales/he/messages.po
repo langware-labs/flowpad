@@ -1474,6 +1474,10 @@ msgstr "<0>{0}</0> כבר קיים בסביבת העבודה."
 msgid "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
 msgstr "<0>{attemptedName}</0> כבר קיים בסביבת העבודה. יש לבחור שם תיקייה אחר."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "<0>{recipient}</0> is not a member"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you, but we couldn't find a local clone of the repository. Clone it to see the task."
 msgstr "<0>{senderName}</0> שיתף אתך את <1>{taskTitle}</1>, אך לא הצלחנו למצוא קלון מקומי של המאגר. שחזר אותו כדי לראות את המשימה."
@@ -9444,8 +9448,8 @@ msgid "Don't ask again"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Don’t ask again"
-msgstr ""
+#~ msgid "Don’t ask again"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Don't ask me again"
@@ -9455,6 +9459,10 @@ msgstr "אל תשאלו אותי שוב"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Don't have FlowPad yet?"
 msgstr "עדיין אין לך FlowPad?"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Don’t show again"
+msgstr ""
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Don't show again until Flowpad restarts"
@@ -11556,6 +11564,7 @@ msgstr "התאימו את תצוגת Atlas"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Fix"
 msgstr "תיקון"
 
@@ -12428,8 +12437,8 @@ msgid "Guest"
 msgstr "אורח"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Guest does not grant access to the project."
-msgstr ""
+#~ msgid "Guest does not grant access to the project."
+#~ msgstr ""
 
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -14242,6 +14251,7 @@ msgid "Learn about your data"
 msgstr "למד עוד על הנתונים שלך"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
@@ -14415,6 +14425,10 @@ msgstr "הקישור הועתק"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
 msgstr "הקישור הועתק ללוח"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Link project to cloud"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link project to cloud to securely and privately manage your shared assets."
@@ -17746,7 +17760,11 @@ msgid "Not launched yet in this project"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Not linked to cloud"
+#~ msgid "Not linked to cloud"
+#~ msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Not linked to cloud — recipients get a copy. Click to link & track."
 msgstr ""
 
 #: src/components/assets/ProjectDependencyDialog.tsx
@@ -28761,8 +28779,8 @@ msgid "Untitled task"
 msgstr "משימה ללא כותרת"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Untracked sharing"
-msgstr ""
+#~ msgid "Untracked sharing"
+#~ msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"
