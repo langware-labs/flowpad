@@ -479,6 +479,19 @@ class Wizard(Entity):
             }
         )
 
+    @classmethod
+    @action.get(action_name="first-run-state")
+    async def first_run_state_action(cls) -> ApiResponse:
+        """`GET /wizard/first-run-state` -- may a project be set up here yet? ``{"state": "open" | "closed"}``.
+
+        Type-level (no wizard id): the app asks it at load, before it knows the wizard. It answers only once the
+        shipped wizard can be looked up -- on a fresh database that is when the system-content index ends, some
+        40 seconds after the app is serving -- and is held until then (event-driven, no polling), because a state
+        read before the wizard exists would call the gate open for good."""
+        from flow_sdk.core.wizard.first_run import first_run_state  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"state": await first_run_state()})
+
     @action.post(action_name="continue-without-setup")
     async def continue_without_setup_action(self) -> ApiResponse:
         """`POST /wizard/<id>/continue-without-setup` -- the person goes on without finishing this wizard.

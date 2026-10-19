@@ -966,9 +966,7 @@ server.add_router(data_source_webhook_router)
 from flow_sdk.server.routes.tasks import router as task_ledger_router  # noqa: E402
 
 server.add_router(task_ledger_router)
-from flow_sdk.server.routes.first_run import router as first_run_router  # noqa: E402
 
-server.add_router(first_run_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)

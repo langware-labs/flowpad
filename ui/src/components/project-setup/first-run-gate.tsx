@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useContext, useEntity } from '@sdk/react/hooks';
-import { apiClient, type Wizard } from '@sdk';
+import { Wizard } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { startFirstRunFlow, type FirstRunOrigin } from '@src/components/first-run-flow/first-run-flow-store';
 import { findSetupWizard, openSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
@@ -39,7 +39,7 @@ export interface FirstRunGate {
 /**
  * The gate, live. Two answers make it:
  *
- * 1. The BACKEND's, asked once at load (`GET /first-run/state`). It answers only once the shipped wizard can be
+ * 1. The BACKEND's, asked once at load (`GET /wizard/first-run-state`). It answers only once the shipped wizard can be
  *    looked up: on a fresh database that row appears when the system-content index ends, some 40 seconds after
  *    the app is serving, and a gate that read "no wizard yet" as "open" let a project setup and an invitation's
  *    dialog through ahead of the wizard. Until it answers the gate is `loading`.
@@ -57,10 +57,9 @@ export function useFirstRunGate(): FirstRunGate {
   useEffect(() => {
     if (!isDesktop) return undefined;
     let cancelled = false;
-    apiClient
-      .get<{ state: 'open' | 'closed' }>('/api/v1/first-run/state')
+    Wizard.firstRunState()
       .then((answer) => {
-        if (!cancelled) setAsked(answer?.state === 'closed' ? 'closed' : 'open');
+        if (!cancelled) setAsked(answer);
       })
       .catch(() => {
         if (!cancelled) setAsked('open');

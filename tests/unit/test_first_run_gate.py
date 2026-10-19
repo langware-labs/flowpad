@@ -233,14 +233,14 @@ async def test_a_process_that_never_indexes_answers_at_once(monkeypatch):
     await require_first_run_setup()
 
 
-async def test_the_route_answers_with_the_state(monkeypatch):
-    from flow_sdk.server.routes.first_run import get_first_run_state
+async def test_the_type_level_action_answers_with_the_state(monkeypatch):
+    from flow_sdk.builtin.wizard import Wizard
 
     async def closed():
         return _wizard()
 
     monkeypatch.setattr(first_run, "first_run_wizard", closed)
 
-    answer = await get_first_run_state()
+    answer = await Wizard.first_run_state_action()
 
     assert answer.data == {"state": "closed"}

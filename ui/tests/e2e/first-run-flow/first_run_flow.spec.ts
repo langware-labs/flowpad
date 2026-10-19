@@ -59,7 +59,7 @@ test('before Start the wizard has an X and no minimize; X leads through windows 
 
 test('the backend says the gate is closed, and a project setup is refused until the wizard ran fully', async ({ request }) => {
   // Answered only once the shipped wizard can be looked up, so a fresh database reads "closed", never "open".
-  const state = await request.get(`${BACKEND}/api/v1/first-run/state`);
+  const state = await request.get(`${BACKEND}/api/v1/graph/wizard/first-run-state`);
   expect(((await state.json()) as { data?: { state?: string } }).data?.state).toBe('closed');
 
   const projects = await request.get(`${BACKEND}/api/v1/graph/project`);
