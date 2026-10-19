@@ -2839,6 +2839,7 @@ class Project(SetupSkippable, Entity):
         label: str | None = None,
         description: str | None = None,
         asset: str | None = None,
+        background: bool = False,
     ) -> "DependencyState":
         """Declare a dependency in ``flow.json`` and resolve it.
 
@@ -2849,6 +2850,8 @@ class Project(SetupSkippable, Entity):
 
         ``asset`` (a TypeId) declares it in THAT asset's own ``flow.json`` instead of the
         project's — ids only. ``label`` / ``description`` are the entry's human-friendly name.
+        ``background`` returns as soon as flow.json is written, with the entry as it reads
+        from the file; the fetch, index and Load then run detached (see ``schedule_add``).
 
         ``local`` keeps it on this device only: it is never written to ``flow.json`` (or any
         file of the project), so nothing committed or shared records that it exists.
@@ -2906,7 +2909,14 @@ class Project(SetupSkippable, Entity):
             states = await project_dependencies.resolve(self, fetch=True)
             return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
-        states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
+        install = [dep.name] if optional else []
+        if background:
+            # Answer from flow.json alone; the fetch, index and Load run detached. Indexing a
+            # large folder takes minutes, and a request must never be held that long.
+            states = await project_dependencies.inspect_dependencies(self)
+            project_dependencies.schedule_add(self, dep.name, install=install)
+            return next(s for s in states if s.name == dep.name and s.via is None)
+        states = await project_dependencies.resolve(self, fetch=True, install=install)
         return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
 
     async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
@@ -2968,6 +2978,9 @@ class Project(SetupSkippable, Entity):
                 # True while the resolve opening the project started is still fetching: a
                 # ``missing`` dependency may be on its way — the caller should not warn yet.
                 "resolving": project_dependencies.is_resolving(str(self.id)),
+                # The context the resolved dependencies give: a background add lands it, and a listing
+                # is how a caller learns it (the add itself answered before the fetch).
+                **self._context_payload(),
                 **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
                    if declarers else {}),
             }
@@ -3016,6 +3029,7 @@ class Project(SetupSkippable, Entity):
                 label=label or None,
                 description=description or None,
                 asset=asset or None,
+                background=True,
             )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)

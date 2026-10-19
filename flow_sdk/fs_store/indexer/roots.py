@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from flow_sdk.assets.placement import Scope
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -297,7 +298,7 @@ def flowpad_assistant_scoped_roots() -> tuple[FSRef, ...]:
             FSRef(
                 system_root,
                 record_type=RecordType.SYSTEM_ROOT,
-                scope="system",
+                scope=Scope.SYSTEM.value,
                 project_id=system_pid,
             ),
         )
@@ -323,9 +324,13 @@ def classify_path(path: str | Path) -> str | None:
 
     try:
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
-        system_root = flowpad_assistant_project_root().resolve()
-        if target == system_root or system_root in target.parents:
-            return "system"
+        from flow_sdk.core.log_dataset import temp_datasets  # noqa: PLC0415
+
+        # Flowpad's own: its shipped project, and its logs' folder in temp (SmartNavigationLog, FlowCall
+        # logs). Only that folder: a project made under temp (a mock project, a test's) stays a project.
+        for system_root in (flowpad_assistant_project_root().resolve(), temp_datasets().resolve()):
+            if target == system_root or system_root in target.parents:
+                return Scope.SYSTEM.value
     except Exception:
         pass
 
@@ -358,6 +363,15 @@ async def owning_project_id(path: str | Path, default: str | None = None) -> str
         return default
 
 
+async def system_project_id() -> str | None:
+    """The id of the system project (flowpad_assistant), which ``system`` rows are listed under."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.config import FLOWPAD_ASSISTANT_PROJECT_UNAME  # noqa: PLC0415
+
+    project = await Project.get_by_uname(FLOWPAD_ASSISTANT_PROJECT_UNAME)
+    return str(project.id) if project is not None else None
+
+
 def scope_for(path: str | Path, project_id: str | None) -> str | None:
     """``classify_path``, with an owning project authoritative.
 
@@ -367,7 +381,7 @@ def scope_for(path: str | Path, project_id: str | None) -> str | None:
     stays system.
     """
     scope = classify_path(path)
-    return "project" if project_id and scope != "system" else scope
+    return Scope.PROJECT.value if project_id and scope != Scope.SYSTEM else scope
 
 
 def default_roots() -> list[FSRef]:
@@ -377,7 +391,6 @@ def default_roots() -> list[FSRef]:
     (which sandboxes user_home) walks the sandbox, not the real home.
     """
     from flow_sdk.fs_store.path_utils import legacy_project_scope_id  # noqa: PLC0415
-    from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     settings = get_instance_settings()
     cwd = Path.cwd()

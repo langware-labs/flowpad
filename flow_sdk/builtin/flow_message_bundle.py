@@ -754,7 +754,7 @@ async def _pack_webapp_artifact_attachment(
     transfers: dict | None,
     transfer_mode: str,
 ) -> bool:
-    """Copy-mode carrier for a folder-backed webapp ``artifact`` with no git remote.
+    """Copy-mode carrier for a local ``artifact``: a webapp folder, or one shared file.
 
     ``artifact`` is a graph entity (no ``main_subdir``, no walker), so the
     file-backed packer never handles it and the git-reference packer only fires in
@@ -766,6 +766,10 @@ async def _pack_webapp_artifact_attachment(
     it up. The receiver mirrors the folder into the target project and materializes
     the row pointing ``path`` at the served folder (see
     ``_restore_webapp_artifact_entry``). Returns True when it handled the entry.
+
+    A shared FILE (``SHARED_FILE_KIND``: a page, doc, image or video shared as
+    itself) rides the same way as ``shared/<id>/<name>``, marked ``single_file`` so the
+    receiver may keep it in their own folder rather than a project.
     """
     if transfer_mode != _TRANSFER_MODE_COPY or transfers is None:
         return False
@@ -781,21 +785,33 @@ async def _pack_webapp_artifact_attachment(
     if getattr(origin, "kind", None) != "local":
         return False
     src = Path(str(origin.base)) / str(origin.rel_path or ".")
-    if not src.is_dir():
-        return False  # only a folder artifact rides as bytes; nothing to serve otherwise
+    if src.is_file():
+        from flow_sdk.builtin.artifact import SHARED_FILE_KIND  # noqa: PLC0415
+
+        if getattr(ent, "kind", None) != SHARED_FILE_KIND:
+            return False
+        # One folder per shared file: two different files named index.html must not collide.
+        slug, bytes_rel, single_file = src.name, f"shared/{entry_id}/{src.name}", True
+    elif src.is_dir():
+        slug = _safe_entity_name(ent)
+        bytes_rel, single_file = f"webapps/{slug}", False
+    else:
+        return False  # only a folder or a shared file rides as bytes; nothing to serve otherwise
 
     key = _entry_key(entry_type, entry_id)
-    slug = _safe_entity_name(ent)
-    dest = attachment_dir / key / "webapps" / slug
+    dest = attachment_dir / key / bytes_rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    pack_tree(src, dest, type_name=entry_type)
-    metadata_path = _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent)
+    if single_file:
+        await asyncio.to_thread(shutil.copy2, src, dest)  # an image or video can be large
+    else:
+        pack_tree(src, dest, type_name=entry_type)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_COPY,
-        "metadata_path": metadata_path,
+        "metadata_path": _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent),
         "entity_mode": "metadata",
         "slug": slug,
-        "bytes_rel": f"webapps/{slug}",
+        "bytes_rel": bytes_rel,
+        **({"single_file": True} if single_file else {}),
     }
     return True
 
@@ -1438,14 +1454,14 @@ async def _restore_webapp_artifact_entry(
     overwrite: bool,
     owner_typeid: str | None,
 ) -> Path | None:
-    """Install a copy-mode folder webapp artifact: mirror its staged bytes into the
-    project and materialize the ``Artifact`` row pointing ``path`` at the served
-    folder (no clone).
+    """Install a copy-mode artifact: mirror its staged bytes (a webapp folder or a
+    shared file) under ``project_root`` and materialize the ``Artifact`` row
+    pointing at them (no clone).
 
     The counterpart of ``_pack_webapp_artifact_attachment``. ``entry_dir`` holds
-    only ``webapps/<slug>/…`` (the declaration rode separately at
+    only the bytes (the declaration rode separately at
     ``metadata/<key>/metadata.json``), so ``_restore_file_backed_entry`` mirrors it
-    verbatim under ``project_root``. Returns the served folder path, or None.
+    verbatim under ``project_root``. Returns the served path, or None.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
     from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
@@ -1459,29 +1475,37 @@ async def _restore_webapp_artifact_entry(
     # verbatim — raises FlowMessageExistsError on a real collision when overwrite=False).
     _restore_file_backed_entry(entry_dir, project_root, overwrite)
     served = project_root / PurePosixPath(bytes_rel)
-    if not served.is_dir():
+    single_file = bool(transfer.get("single_file"))
+    if not (served.is_file() if single_file else served.is_dir()):
         return None
 
     # Materialize the row from the shipped declaration — pick only the artifact's
     # own fields (never the sender-local project_id / audit columns).
     payload = _read_transfer_metadata(unpacked_root, transfer)
+    # Where the bytes now live. A shared file also opens as the file itself
+    # (``_shared_file_target`` reads asset_ref).
+    location = {"origin": LocalOrigin(base=str(served.parent), rel_path=served.name)}
+    if single_file:
+        location["path"] = location["asset_ref"] = str(served)
+
+    existing = await Artifact.get_one({"id": asset_id})
+    if existing is not None and not overwrite:
+        # Idempotent re-receive: heal a missing location, leave the rest untouched.
+        if getattr(existing, "origin", None) is None or (single_file and existing.asset_ref != str(served)):
+            for field, value in location.items():
+                setattr(existing, field, value)
+            await existing.save(owner_typeid)
+        return served
+
     new_payload = {
         "type": EntityType.ARTIFACT.value,
         "id": asset_id,
         "name": payload.get("name") or f"artifact-{asset_id[:8]}",
         "kind": payload.get("kind") or "application.web",
         "description": payload.get("description"),
-        "origin": LocalOrigin(base=str(served.parent), rel_path=served.name).model_dump(mode="python"),
         "project_id": project_id,
+        **location,
     }
-
-    existing = await Artifact.get_one({"id": asset_id})
-    if existing is not None and not overwrite:
-        # Idempotent re-receive: heal a missing origin, leave the rest untouched.
-        if getattr(existing, "origin", None) is None:
-            existing.origin = LocalOrigin(base=str(served.parent), rel_path=served.name)
-            await existing.save(owner_typeid)
-        return served
 
     artifact = Artifact.model_validate(new_payload)
     artifact.id = asset_id
@@ -2715,7 +2739,8 @@ async def unpack_bundle(
             _tmode = (transfer or {}).get("transfer_mode") or "git"
             if _tmode == _TRANSFER_MODE_COPY:
                 _unpacked = fm_data_ops.staged_entry_rel_path(key)
-                _user_scope: bool | None = False
+                # A shared file may live in the recipient's own folder; a webapp needs a project.
+                _user_scope: bool | None = bool((transfer or {}).get("single_file"))
             else:
                 _unpacked = str(transfer.get("metadata_path") or "")
                 _user_scope = None

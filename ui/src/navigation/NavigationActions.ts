@@ -922,11 +922,12 @@ export class NavigationActions {
    * any surface that has a directory (file browsers, task artifacts) routes it
    * here. Converts the absolute machine path to the compute-node-relative form
    * the `fs/` pointer expects (handles POSIX `/…` and Windows `C:\…`).
+   * `select` names an entry of the folder to show selected.
    */
-  openFolder(machinePath: string): void {
+  openFolder(machinePath: string, select?: string): void {
     const parsed = VFSPath.parse(machinePath);
     if (parsed.isAbsolute) {
-      this.openDock(DockPointer.forAssetFs(parsed));
+      this.openDock(DockPointer.forAssetFs(parsed, Layout.DOCK, select));
       return;
     }
 
@@ -936,7 +937,7 @@ export class NavigationActions {
       machinePath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(machinePath)
         ? VFSPath.fromMachinePath(machinePath, locatorTypeId)
         : VFSPath.fromTypeId(locatorTypeId, machinePath);
-    this.openDock(DockPointer.forAssetFs(vfsPath));
+    this.openDock(DockPointer.forAssetFs(vfsPath, Layout.DOCK, select));
   }
 
   /** Navigate to the default shell view (no specific session) */

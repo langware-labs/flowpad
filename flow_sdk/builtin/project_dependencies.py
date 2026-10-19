@@ -32,6 +32,7 @@ finds as it is; only a clone this module made is fast-forwarded, and only on
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections import deque
 from dataclasses import dataclass
@@ -611,6 +612,44 @@ def schedule_resolve(project: "Project") -> None:
 
     # Detached: a plain task would hold the activation request for the whole fetch.
     _TASKS[pid] = create_detached_task(run(), name=f"deps-resolve:{pid}")
+
+
+async def settled(project_id: str) -> None:
+    """Wait for the background resolve / add running for a project, if any."""
+    running = _TASKS.get(str(project_id))
+    while running is not None and not running.done():
+        with contextlib.suppress(Exception):
+            await asyncio.shield(running)
+        nxt = _TASKS.get(str(project_id))
+        running = None if nxt is running else nxt
+
+
+def schedule_add(project: "Project", name: str, *, install: Iterable[str] = ()) -> None:
+    """Fetch, index and Load a dependency just written to flow.json, in the background.
+    Runs after any resolve already in flight for the project, and counts as one for
+    ``is_resolving`` — the dependency list shows it as on its way until it lands."""
+    pid = str(project.id)
+    previous = _TASKS.get(pid)
+    wanted = tuple(install)
+
+    async def run() -> None:
+        if previous is not None and not previous.done():
+            with contextlib.suppress(Exception):
+                await previous
+        try:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            fresh = await Project.get_by_id(pid) or project
+            states = await resolve(fresh, fetch=True, install=wanted)
+            found = next((s for s in states if s.name == name and s.via is None), None)
+            if found is not None:
+                await load_dependency(found)
+        except Exception:  # noqa: BLE001 — a background add reports through states, never raises
+            logger.warning("[deps] background add of %s failed for %s", name, pid, exc_info=True)
+
+    from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+    _TASKS[pid] = create_detached_task(run(), name=f"deps-add:{pid}:{name}")
 
 
 async def _resolve(
