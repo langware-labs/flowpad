@@ -30481,6 +30481,10 @@ msgstr "Working on {0}"
 msgid "Working on {hostName}'s machine…"
 msgstr "Working on {hostName}'s machine…"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Working on it — this can take a few minutes…"
+msgstr "Working on it — this can take a few minutes…"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Working tree"
 msgstr "Working tree"

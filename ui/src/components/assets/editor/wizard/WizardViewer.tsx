@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
 import { ActionInfo, AgenticProcess, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
@@ -178,10 +178,14 @@ export function WizardViewer({
   wizard,
   fsRef,
   presentation = 'page',
+  suspended = false,
 }: {
   wizard: Wizard;
   fsRef: FSRef;
   presentation?: WizardPresentation;
+  /** A popup that must give the screen to something else (the LLM chooser, a launch) WITHOUT being unmounted: it
+   *  stays mounted, drawn nowhere, so what it knows (that Start was pressed) survives and it returns at once. */
+  suspended?: boolean;
 }) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
   const { doc, error, loading } = useJsonDoc<WizardDoc>(mainRef);
@@ -220,6 +224,7 @@ export function WizardViewer({
       initial={doc}
       docError={error}
       presentation={presentation}
+      suspended={suspended}
     />
   );
 }
@@ -230,9 +235,11 @@ function WizardViewerBody({
   initial,
   docError,
   presentation,
+  suspended,
 }: {
   wizard: Wizard;
   presentation: WizardPresentation;
+  suspended: boolean;
   mainRef: FSRef;
   initial: WizardDoc | null;
   docError: string | null;
@@ -410,12 +417,19 @@ function WizardViewerBody({
   // The backend already waits for exactly this call instead of racing itself onto the screen
   // (the trigger in `builtin_triggers.py`); this button is the OTHER half of that same design, not a separate one.
   const [starting, setStarting] = useState(false);
+  // The start call has come back: the whole run has ended (it resolves only then).
+  const [startReturned, setStartReturned] = useState(false);
+  // A step has shown life since Start: the "working" line has done its job and never comes back (below).
+  const [sawLife, setSawLife] = useState(false);
   const startWizard = useCallback(async () => {
     setStarting(true);
+    setStartReturned(false);
+    setSawLife(false);
     try {
       // Settle an LLM source, then run the wizard. Resolves when the whole run has ended — its
       // progress arrives through the run record, not this reply.
       await wizard.start();
+      setStartReturned(true);
     } catch (e) {
       // 409 is the backend's `busy` answer: this call was REPLACED by a newer start (`start_wizard`
       // — the first-run trigger and this button race, the newest wins) or another run holds the
@@ -436,11 +450,41 @@ function WizardViewerBody({
   // opens its shell before the first step goes live -- seconds the screen used to show nothing for (the whole
   // Start block went away the moment `starting` was set, spinner included). It stays, and says what is going on.
   // The run's ROOT goes live at once, well before any step does, so the test is on the steps themselves.
-  const awaitingFirstStep = isPopup && starting && !state.result && !joinedSteps.some((row) => row.live || row.outcome);
+  // A run that has started already carries a result ("still running"), and the LLM-source chooser sits in this same
+  // window before any step goes live -- so what ends the wait is a step reporting, or the whole call returning.
+  // Every step's node is "live" (pending) from the moment the run begins, and the plan writes a blank outcome per
+  // step (`ran: false`, no detail): neither is a step doing anything. Only a step that RAN, said something, failed,
+  // or is running / parked on a question counts as the first sign of life.
+  const stepShowsLife = ({ live, outcome }: (typeof joinedSteps)[number]) =>
+    outcome
+      ? Boolean(outcome.ran || outcome.reported || outcome.detail || outcome.exit_code !== 0)
+      : LIVE_STATE[live?.state ?? '']?.status === 'running';
+  const anyLife = joinedSteps.some(stepShowsLife);
+  // LATCHED: a check that passes leaves a blank outcome (`ran: false`, no detail) just like the plan's placeholder,
+  // so judging by the current rows alone made the line vanish and return between one check and the next.
+  useEffect(() => {
+    if (starting && anyLife) setSawLife(true);
+  }, [starting, anyLife]);
+  const awaitingFirstStep = isPopup && starting && !startReturned && !sawLife && !anyLife;
   // A settled run that fell short — a step failed, or the person declined one. Popup only: the
   // generic page has its own Run button.
   const notFinished =
     !conversational && !runView.live && Boolean(state.result) && !isOk(state.result) && Boolean(wizard.failure_message);
+  // The run is going and nothing on screen says so: a check can take long (seconds to minutes on a slow machine)
+  // and a row between two spinners is just a grey circle. One steady line for the whole run -- not tied to which
+  // row is spinning this instant, which is what made the earlier "Starting…" come and go -- except while a question
+  // waits for the person (then it is THEM being waited for) and once the run has ended.
+  const waitingForPerson = joinedSteps.some(
+    ({ live, outcome }) => !outcome && WAITING_FOR_PERSON.test(live?.current ?? ''),
+  );
+  const working =
+    isPopup &&
+    !conversational &&
+    !awaitingFirstStep &&
+    ((starting && !startReturned) || runView.live) &&
+    !finished &&
+    !notFinished &&
+    !waitingForPerson;
 
   const main = (
     <div className="flex flex-col gap-5 p-4" data-testid="wizard-viewer">
@@ -713,6 +757,17 @@ function WizardViewerBody({
         </div>
       ) : null}
 
+      {working ? (
+        <p
+          className="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+          role="status"
+          data-testid="wizard-working"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <Trans>Working on it — this can take a few minutes…</Trans>
+        </p>
+      ) : null}
+
       {anyStuck ? (
         <div className="flex justify-center">
           <Button variant="outline" onClick={() => void startWizard()} data-testid="wizard-restart">
@@ -806,8 +861,8 @@ function WizardViewerBody({
       // wizard instead of answering the question (and, mounted later, would
       // also sit on top of it). Non-modal has neither problem; the backdrop
       // below stands in for the dimming a modal would have drawn.
-      <Dialog open modal={false} onOpenChange={(wantsOpen) => !wantsOpen && closeIt()}>
-        <div className="fixed inset-0 z-50 bg-black/80" aria-hidden="true" />
+      <Dialog open={!suspended} modal={false} onOpenChange={(wantsOpen) => !wantsOpen && closeIt()}>
+        {suspended ? null : <div className="fixed inset-0 z-50 bg-black/80" aria-hidden="true" />}
         <DialogContent
           ref={dialogContentRef}
           hideClose
