@@ -1121,6 +1121,10 @@ msgstr "منذ {m} دقيقة"
 msgid "{messageCount, plural, one {# message} other {# messages}}"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "{misroutes} misroutes"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "{ms} ms"
 msgstr ""
@@ -1313,6 +1317,18 @@ msgstr ""
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} عنصر"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Connected"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Flowpad's number"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Your own number"
+msgstr ""
+
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
 msgstr "تسجيل الدخول إلى {title} يحتاج إلى تجديد"
@@ -1401,6 +1417,7 @@ msgstr "→ {0} (انزاح)"
 #~ msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "+ Add rule"
 msgstr ""
 
@@ -1435,6 +1452,10 @@ msgstr "+{hiddenCount} أخرى…"
 
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 msgid "+{more} more — find them under Select Project"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "+972 54-123 4567"
 msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
@@ -1576,6 +1597,14 @@ msgstr "أسبوع واحد"
 msgid "1. Copy this code"
 msgstr "١. نسخ هذا الرمز"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "1. The hub proves the number is yours: it asks your server for this phone number ID using the access token. Only an answer naming the same ID passes."
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "120363…@g.us"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "15 minutes"
 msgstr "١٥ دقيقة"
@@ -1596,6 +1625,10 @@ msgstr "1أ"
 msgid "2. Copy & open the sign-in page"
 msgstr "٢. نسخ الرابط وفتح صفحة الدخول"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned messages are refused."
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "24 hours"
@@ -1612,6 +1645,10 @@ msgstr "خامل لمدة 24 ساعة أو أكثر"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "3 days"
 msgstr "3 أيام"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through your server with the same token."
+msgstr ""
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "3. Your browser will show a code — paste it here"
@@ -1660,6 +1697,10 @@ msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A deployment"
+msgstr ""
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "A desktop instance or a machine, and a channel id on it"
 msgstr ""
 
 #: src/components/automations/KindGallery.tsx
@@ -1723,6 +1764,10 @@ msgstr "اسم ضمن النطاق، أو قيمة حرفية"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
+msgstr ""
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "A place and channel by hand…"
 msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
@@ -1811,6 +1856,10 @@ msgstr "منذ مدة"
 msgid "a wizard name"
 msgstr "اسم معالج"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours."
+msgstr ""
+
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A workspace is a folder of related projects. It starts empty."
 msgstr ""
@@ -1895,6 +1944,10 @@ msgstr ""
 #: src/components/connections-manager.tsx
 msgid "Access requested"
 msgstr "تم طلب الوصول"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Access token"
+msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Account key"
@@ -2256,6 +2309,11 @@ msgstr "إضافة مشروع"
 msgid "Add row"
 msgstr "إضافة صف"
 
+#: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Add rule"
+msgstr ""
+
 #: src/components/agent-resources/AgentSchedulesSection.tsx
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Add schedule"
@@ -2608,6 +2666,11 @@ msgstr "الكل"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
 msgstr "الكل"
+
+#. placeholder {0}: numbers.length
+#: src/components/inbound/InboundView.tsx
+msgid "All {0}"
+msgstr ""
 
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
@@ -3042,6 +3105,10 @@ msgstr "التعليقات التوضيحية"
 msgid "Announcements shown at startup"
 msgstr "عرض الإعلانات عند بدء التشغيل"
 
+#: src/components/inbound/InboundView.tsx
+msgid "Another computer"
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Another Flowpad instance"
 msgstr ""
@@ -3114,6 +3181,10 @@ msgstr "أي مخطط مكتوب كنص mermaid"
 
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Any server that speaks Meta's WhatsApp API and webhook format. The hub proves the number on that server and replies through it."
 msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -3256,6 +3327,10 @@ msgstr "صفحة التطبيق"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "App runtime"
 msgstr "بيئة التشغيل"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "App secret"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
@@ -3982,6 +4057,7 @@ msgstr "منطقة AWS لخدمة Bedrock"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/journey/JourneyTray.tsx
@@ -4554,6 +4630,9 @@ msgstr ""
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -4732,6 +4811,7 @@ msgid "Chain"
 msgstr "السلسلة"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Change"
 msgstr "تغيير"
@@ -4739,6 +4819,11 @@ msgstr "تغيير"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Change avatar"
 msgstr "تغيير الصورة الرمزية"
+
+#: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/RouteCheck.tsx
+msgid "Change destination"
+msgstr ""
 
 #: src/components/footer/LanguageSelector.tsx
 #: src/components/footer/LanguageSelector.tsx
@@ -4801,8 +4886,16 @@ msgstr ""
 msgid "Channel"
 msgstr "القناة"
 
+#: src/components/inbound/use-inbound.ts
+msgid "channel {name}"
+msgstr ""
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
+msgstr ""
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "Channel id (data source id there)"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
@@ -4907,6 +5000,11 @@ msgstr ""
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "التحقق من الرسائل الجديدة"
+
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/RouteCheck.tsx
+msgid "Check route"
+msgstr ""
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "Check the address, or try opening it in your browser."
@@ -5476,6 +5574,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/inbound/RouteCheck.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
@@ -5602,6 +5701,10 @@ msgstr ""
 #: src/notifications/ingest.ts
 msgid "Cloud access denied"
 msgstr "تم رفض الوصول إلى السحابة"
+
+#: src/components/inbound/use-inbound.ts
+msgid "Cloud box {place}"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -5935,6 +6038,10 @@ msgstr "معرف عقدة الحساب:"
 msgid "Compute Op"
 msgstr "عملية حوسبة"
 
+#: src/components/inbound/DestinationPicker.tsx
+msgid "compute_node-…"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
 msgstr "جاري حساب الفرق…"
@@ -6024,6 +6131,11 @@ msgstr ""
 
 #~ msgid "Connect a data source to make it available here"
 #~ msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Connect a number"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
@@ -6542,8 +6654,8 @@ msgstr ""
 #~ msgstr "نسخ مسار هذا الملف إلى الحافظة"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
-msgstr ""
+#~ msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -7276,8 +7388,8 @@ msgid "Could not send report to the Flowpad team"
 msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Could not send the files"
-msgstr ""
+#~ msgid "Could not send the files"
+#~ msgstr ""
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -7670,6 +7782,10 @@ msgstr "العدد"
 #: src/components/hooks-manager/index.tsx
 msgid "Count: {counter}"
 msgstr "العدد: {counter}"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Counted live while this page is open — not stored"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
 msgid "Country code"
@@ -8232,6 +8348,10 @@ msgstr "افتراضي"
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
 msgstr "افتراضي"
+
+#: src/components/inbound/use-inbound.ts
+msgid "Default — the number's fallback"
+msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Default ({defaultDbPath})"
@@ -8825,6 +8945,10 @@ msgstr "تصميم صفحة التسعير"
 msgid "Desktop"
 msgstr "سطح المكتب"
 
+#: src/components/inbound/DestinationPicker.tsx
+msgid "Desktop instance"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
 msgstr "إصدار سطح المكتب"
@@ -9304,6 +9428,7 @@ msgstr "تم"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -9521,6 +9646,10 @@ msgstr "مثال: \"Read\"، \"Edit|Write\"، \"*\" (اترك الحقل فار�
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "مثال: /path/to/script.sh أو if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
+
+#: src/components/inbound/RouteCheck.tsx
+msgid "Each hop, without sending a message."
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
@@ -10216,6 +10345,10 @@ msgstr ""
 msgid "Every minute"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Every number, bot and app that sends you messages — and where each message goes. Agents and deployments only receive."
+msgstr ""
+
 #~ msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
 #~ msgstr ""
 
@@ -10293,6 +10426,10 @@ msgstr ""
 
 #~ msgid "Everything available is already connected."
 #~ msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "Everything else to this number"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Everything Flowpad announces, who listens, and what they do. Counts are since the app started."
@@ -10538,6 +10675,7 @@ msgid "Extracting…"
 msgstr ""
 
 #: src/components/footer/activity-words.ts
+#: src/components/inbound/RouteCheck.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
@@ -10911,6 +11049,18 @@ msgstr "فشل رفع الصورة"
 msgid "Failed."
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "fallback"
+msgstr ""
+
+#: src/components/inbound/RouteCheck.tsx
+msgid "Fallback — everything else"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Fallback — everything no rule matches goes to"
+msgstr ""
+
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "Fallback order under its parent"
 msgstr "ترتيب الاحتياط تحت الأصل"
@@ -11093,8 +11243,8 @@ msgid "Files on disk not yet in the DB"
 msgstr "ملفات موجودة على القرص ولم تُضف بعد إلى قاعدة البيانات"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Files sent to cloud"
-msgstr ""
+#~ msgid "Files sent to cloud"
+#~ msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Files: {files}"
@@ -11305,6 +11455,10 @@ msgstr "أُطلِق أثناء إعادة التشغيل (قبل الربط)"
 #~ msgid "Firing…"
 #~ msgstr "جارٍ البث…"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "first delivery received"
+msgstr ""
+
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "First indexed"
 msgstr "أول فهرسة"
@@ -11408,6 +11562,10 @@ msgstr "Flowpad"
 #~ msgid "FlowPad"
 #~ msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Flowpad agent"
+msgstr ""
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "مفتاح FlowPad API"
@@ -11503,6 +11661,10 @@ msgstr "يعمل Flowpad بأفضل شكل مع بعض الأدوات على ج�
 #: src/components/powered-by.tsx
 msgid "Flowpad.ai Logo"
 msgstr "شعار Flowpad.ai"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Flowpad's number · linked sender"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11841,6 +12003,10 @@ msgstr "جارٍ الإنشاء: {0}"
 msgid "Generating…"
 msgstr "جاري الإنشاء…"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Generic Meta-API webhook"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Generic options"
 msgstr "خيارات عامة"
@@ -12096,6 +12262,10 @@ msgstr ""
 msgid "Go up"
 msgstr "للأعلى"
 
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Goes to"
+msgstr ""
+
 #: src/components/conversation/PromptCallCard.tsx
 msgid "good"
 msgstr ""
@@ -12129,6 +12299,10 @@ msgstr "سياق الرسم البياني"
 msgid "Graph presentation"
 msgstr "تنسيق الرسم البياني"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Graph server"
+msgstr ""
+
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/organization/organization-page.tsx
@@ -12153,10 +12327,12 @@ msgstr "تشغيل سير عمل الرسم البياني"
 msgid "Graph Workflows"
 msgstr "مسارات عمل الرسم البياني"
 
+#: src/components/inbound/InboundView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
 msgstr ""
 
+#: src/components/inbound/AddRuleDialog.tsx
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "مجموعة"
@@ -12602,6 +12778,10 @@ msgstr ""
 msgid "How do I get it?"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "How do messages reach the hub?"
+msgstr ""
+
 #: src/components/data-sources/GroupChoice.tsx
 msgid "How do you want to connect {group}?"
 msgstr ""
@@ -12962,6 +13142,16 @@ msgstr "غير نشط"
 msgid "inactive copy"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+#: src/pages/hub-home/HubHome.tsx
+#: src/types/ViewType.ts
+msgid "Inbound"
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "Inbound routing"
+msgstr ""
+
 #~ msgid "Include another folder in this project's context."
 #~ msgstr "تضمين مجلد آخر ضمن سياق هذا المشروع."
 
@@ -13257,6 +13447,10 @@ msgstr "جاري تثبيت Flowpad وإعادة تشغيله… قد تستغر
 #: src/components/version-popover/version-popover.tsx
 msgid "Installing…"
 msgstr "جاري التثبيت…"
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "Instance id"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "instead?"
@@ -13689,6 +13883,10 @@ msgstr ""
 msgid "Keys on this computer"
 msgstr "مفاتيح على هذا الحاسوب"
 
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "keyword / time — not supported"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
 msgstr "النوع"
@@ -13756,6 +13954,7 @@ msgid "Language"
 msgstr "اللغة"
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "lapsed"
 msgstr ""
 
@@ -13796,6 +13995,11 @@ msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last attempt"
+msgstr ""
+
+#. placeholder {0}: clockTime(last)
+#: src/components/inbound/InboundView.tsx
+msgid "last delivery {0}"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14145,6 +14349,10 @@ msgstr ""
 msgid "Link to cloud"
 msgstr "ربط بالسحابة"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "linked"
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -14217,6 +14425,10 @@ msgstr ""
 
 #~ msgid "Live · {guest}'s session"
 #~ msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "live · {received} received since {since}"
+msgstr ""
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "live · stale"
@@ -14800,6 +15012,8 @@ msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
+#: src/components/inbound/DestinationPicker.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
 msgstr "الآلة"
@@ -14963,6 +15177,10 @@ msgstr "القناع:"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Masked"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Match"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -15204,6 +15422,10 @@ msgstr "مرفق الرسالة"
 msgid "Message downloaded"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Message Flowpad's own {title} account. Nothing to set up — link your phone once with a code."
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
 msgstr "تعذر إدراج الرسالة في الطابور"
@@ -15254,6 +15476,10 @@ msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "messages on"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Meta official Cloud API"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -15311,6 +15537,11 @@ msgstr "Mis-Sc"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "misrouted"
+msgstr ""
+
+#. placeholder {0}: row.misroutes
+#: src/components/inbound/RouteCheck.tsx
+msgid "Misroutes ×{0}: the place answered 404 — that channel is not there any more. Pick another destination."
 msgstr ""
 
 #: src/components/assets/DependencyChips.tsx
@@ -16349,6 +16580,10 @@ msgstr "لا توجد بيانات."
 msgid "no dataset"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "no delivery yet"
+msgstr ""
+
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
 msgstr "لا توجد عمليات نشر حتى الآن"
@@ -16714,6 +16949,10 @@ msgstr "لا توجد نماذج."
 msgid "No narrowing — everything the roots allow."
 msgstr "بلا تضييق — كل ما تسمح به الجذور."
 
+#: src/components/inbound/InboundView.tsx
+msgid "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "No older conversations"
 msgstr ""
@@ -16772,6 +17011,10 @@ msgstr ""
 
 #~ msgid "no place"
 #~ msgstr ""
+
+#: src/components/inbound/use-inbound.ts
+msgid "No place of its own: it falls through to \"everything else\""
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No plugins installed"
@@ -17459,6 +17702,7 @@ msgid "Not pushed yet"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
+#: src/components/inbound/RouteCheck.tsx
 msgid "not reachable"
 msgstr "غير قابل للوصول"
 
@@ -17841,17 +18085,30 @@ msgstr ""
 msgid "Now listening."
 msgstr "يستمع الآن."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Now send your messages to the hub. Paste these into your server's webhook settings:"
+msgstr ""
+
 #. placeholder {0}: landed?.name ?? source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Now using {0}"
 msgstr "يُستخدم الآن {0}"
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "Nowhere yet"
 msgstr ""
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "number"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "number proven"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Numbers and bots that message you, and where each message goes."
 msgstr ""
 
 #: src/components/connections-manager/sign-in-method.tsx
@@ -17881,9 +18138,18 @@ msgstr "متوقف"
 msgid "Off on this place"
 msgstr ""
 
+#: src/components/inbound/RouteCheck.tsx
+msgid "offline"
+msgstr ""
+
 #: src/components/harness-login/funding-pill.ts
 msgid "Offline"
 msgstr "غير متصل"
+
+#: src/components/inbound/RouteCheck.tsx
+#: src/components/inbound/RouteCheck.tsx
+msgid "ok"
+msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
@@ -17966,7 +18232,6 @@ msgid "On the schedule {expr}"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr ""
 
@@ -18004,6 +18269,10 @@ msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "One decision, nothing runs."
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "One group"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -18048,6 +18317,10 @@ msgstr "واحد في كل سطر. الفارغ يعني كل ما تسمح به
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "مصدر واحد لكل خلاصة أو حساب بعيد. يقوم النظام بمزامنة كل مصدر عند كل نبضة، ويحوّل ما يجده إلى سجلات يمكن البحث فيها وقراءتها وبناء التدفقات عليها."
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "One sender"
+msgstr ""
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "one@example.com"
@@ -18958,6 +19231,10 @@ msgstr "رسالة إلى المالك (اختياري)…"
 msgid "Or copy an invite link"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "or open the link on your phone"
+msgstr ""
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Or pick a person, or type an email"
 msgstr ""
@@ -19458,6 +19735,10 @@ msgstr "رقم الهاتف"
 msgid "Phone number — recorded on the agent's card, not yet used to route messages"
 msgstr "رقم الهاتف — مُسجَّل في بطاقة الوكيل، ولا يُستخدم بعد لتوجيه الرسائل"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Phone number ID"
+msgstr ""
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Pick a contact or enter an email"
 msgstr "يمكن اختيار جهة اتصال أو إدخال بريد إلكتروني"
@@ -19469,6 +19750,10 @@ msgstr "يُرجى اختيار جهة اتصال لعرض محادثاتك مع
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Pick a contacts group or people"
 msgstr "تحديد مجموعة جهات اتصال أو أشخاص"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Pick a fallback — until then nothing no rule matches is delivered"
+msgstr ""
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Pick a group in any conversation to add all its members at once."
@@ -20307,8 +20592,20 @@ msgstr "محمي"
 msgid "Protocol"
 msgstr "البروتوكول"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Prove and connect"
+msgstr ""
+
 #~ msgid "Proved by"
 #~ msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "proven"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
+msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
@@ -21087,6 +21384,9 @@ msgstr "جلسة العامل البعيد"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -21224,6 +21524,10 @@ msgstr ""
 msgid "Remove new variable {0}"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Remove number"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "إزالة الخيار"
@@ -21238,6 +21542,7 @@ msgid "Remove row"
 msgstr "إزالة الصف"
 
 #: src/components/graph-view/ui/AccessTab.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "Remove rule"
 msgstr ""
 
@@ -21272,8 +21577,17 @@ msgstr "إزالة هذا الملف من الـ commit القادم (git restor
 msgid "Remove this message from Flowpad?"
 msgstr ""
 
+#. placeholder {0}: removing.rules
+#: src/components/inbound/InboundView.tsx
+msgid "Remove this number and its {0} rules? The hub stops taking its traffic now; your server will get 404 until you point it elsewhere. The agents and their channels stay."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
+msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "Remove this? The hub stops routing its messages now. The agents and their channels stay."
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -22089,6 +22403,12 @@ msgstr "نطاق زمن الصف"
 msgid "Rows"
 msgstr "الصفوف"
 
+#. placeholder {0}: i + 1
+#. placeholder {1}: claimTitle(r)
+#: src/components/inbound/RouteCheck.tsx
+msgid "Rule {0} · {1}"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Rule code saved"
 msgstr ""
@@ -22104,6 +22424,10 @@ msgstr ""
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "القواعد"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Rules — the most specific wins: sender › group › everything else"
+msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
@@ -22513,6 +22837,7 @@ msgstr "الصناديق"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/inbound/AddRuleDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
@@ -23102,6 +23427,10 @@ msgstr "تم حفظ السر"
 msgid "Secrets"
 msgstr "الأسرار"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Secrets are stored write-only on the hub — nobody can read them back."
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
 msgstr "تم تفعيل الأسرار"
@@ -23354,8 +23683,8 @@ msgid "Send failed."
 msgstr "فشل الإرسال."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Send files to cloud"
-msgstr ""
+#~ msgid "Send files to cloud"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Send invite"
@@ -23377,6 +23706,14 @@ msgstr "أرسل تعديلاتي"
 msgid "Send one minimal call through this endpoint"
 msgstr "إرسال استدعاء بسيط واحد عبر نقطة النهاية هذه"
 
+#: src/components/inbound/InboundView.tsx
+msgid "Send this code from your phone to link it:"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Send this from your phone to Flowpad's {title} account:"
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "أرسل هذا إلى الشخص الذي تدعمه — سيشغّله في الطرفية لديه:"
@@ -23389,13 +23726,21 @@ msgstr ""
 msgid "Send without the session"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "sender"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Sender"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 msgid "Sender refused"
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Sending failed."
-msgstr ""
+#~ msgid "Sending failed."
+#~ msgstr ""
 
 #. placeholder {0}: channelSpec?.title
 #: src/components/conversation/ConversationView.tsx
@@ -23894,7 +24239,6 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
-#: src/components/html-preview/HtmlPreview.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -23902,6 +24246,7 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/top-nav-bar/PageShareButton.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share"
 msgstr "مشاركة"
@@ -24600,6 +24945,10 @@ msgstr "جارٍ تسجيل الدخول…"
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
 msgid "Signing out…"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Signs every delivery (x-hub-signature-256). Stored write-only."
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -26306,6 +26655,10 @@ msgstr "صورة التمويل متاحة فقط على نسخة سطح الم�
 msgid "The GitHub connection didn't complete."
 msgstr "لم يكتمل الاتصال بـ GitHub."
 
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "The group's id as the vendor sends it. Already claimed by someone else → refused."
+msgstr ""
+
 #: src/components/conversation/SessionCard.tsx
 msgid "the guest"
 msgstr "الضيف"
@@ -26362,6 +26715,10 @@ msgstr "رفض الـ Hub تسجيل دخول FlowPad المحفوظ"
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
 msgstr "رفض Hub هذا العميل."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The id Meta's API uses for the number (not the phone number itself)."
+msgstr ""
 
 #: src/components/ui/media-lightbox.tsx
 msgid "The image could not be copied to the clipboard."
@@ -26516,6 +26873,10 @@ msgstr "لم يتم العثور على الوكيل المطلوب."
 msgid "The run could not be reset"
 msgstr "تعذّرت إعادة تعيين التشغيل"
 
+#: src/components/inbound/InboundView.tsx
+msgid "The same screen as on the hub: it lists the hub's claims you own; \"This computer\" is just one of the places."
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "The schemas could not be read."
 msgstr ""
@@ -26530,6 +26891,10 @@ msgstr "المشروع المختار لا يحتوي على مجلد على ه�
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "the sender is still staging it"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -26589,6 +26954,11 @@ msgstr ""
 
 #~ msgid "The terminal is not ready yet"
 #~ msgstr ""
+
+#. placeholder {0}: made.claim?.key
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "the token acts as {0}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -26807,6 +27177,7 @@ msgstr "لم تعد غرفة التعاون هذه موجودة أو أنها غ
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/use-inbound.ts
 msgid "This computer"
 msgstr ""
 
@@ -27134,8 +27505,8 @@ msgid "This project"
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "This project can now be opened from the cloud."
-msgstr ""
+#~ msgid "This project can now be opened from the cloud."
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "This project can only be opened from its share."
@@ -28747,6 +29118,14 @@ msgstr "التحقق"
 msgid "Verify the setup first."
 msgstr "يجب التحقق من الإعداد أولاً."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Verify token"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Verify token: when you save the URL, your server calls it once with this word and the hub echoes back a challenge only if the word matches. It proves you own the URL; it is not a password for messages — those are checked with the app secret."
+msgstr ""
+
 #~ msgid "Verify: {0}"
 #~ msgstr "التحقق: {0}"
 
@@ -28994,7 +29373,12 @@ msgid "Waiting for sign-in"
 msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "waiting for the code"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "waiting for the first signed delivery…"
 msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
@@ -29020,6 +29404,14 @@ msgstr "في انتظار أن تختار مصدر LLM"
 
 #~ msgid "Waiting for you…"
 #~ msgstr "في انتظارك…"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "waiting for your message…"
+msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "waiting to be proven"
+msgstr ""
 
 #: src/components/ask/AskForm.tsx
 #: src/journey/JourneyTray.tsx
@@ -29097,6 +29489,10 @@ msgstr "حالة تطبيق الويب"
 msgid "Webhook"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Webhook URL"
+msgstr ""
+
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
 msgstr "أسبوع"
@@ -29158,6 +29554,10 @@ msgstr "ما الذي عثرت عليه Flowpad عند التحقق من إعد�
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What happened, what you expected, what you already tried (optional)"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "What happens"
 msgstr ""
 
 #. placeholder {0}: tile.label
@@ -29412,12 +29812,20 @@ msgstr ""
 #~ msgid "Where this desk lives"
 #~ msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Where your server answers Meta's API. https only."
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
 msgstr "المحرّك الذي ينفّذ فحص الملفات الثقيل: Python (مدمج)، أو Rust (ملف ثنائي مرفق، أسرع بكثير في المشاريع الكبيرة). يعود تلقائيًا إلى Python عندما لا يتوفر ملف Rust الثنائي. يسري مفعوله عند الفحص التالي."
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
+msgstr ""
+
+#: src/components/inbound/RouteCheck.tsx
+msgid "While it is offline, the hub answers 503 and your server retries — nothing is lost and nothing is stored. Messages from other senders keep flowing."
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
@@ -29963,6 +30371,10 @@ msgstr ""
 msgid "your budget: {short}"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "your Claude Code"
 msgstr "Claude Code لديك"
@@ -30009,6 +30421,10 @@ msgstr "رمزك لمرة واحدة أدناه. يُرجى النقر على <0
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "Your own assets, shared by every project"
+msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "Your own number"
 msgstr ""
 
 #: src/components/project-list/ProjectList.tsx

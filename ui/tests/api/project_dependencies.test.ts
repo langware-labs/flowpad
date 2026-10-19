@@ -105,9 +105,19 @@ describe('project dependencies (include_dirs)', () => {
     const mount = (project).fs_storage_mount_path as string;
     expect(mount).toBeTruthy();
 
-    // 2. Add the dependency via the real HTTP action (declares + resolves + indexes).
-    const dep = await project.addDependency(contextDir);
+    // 2. Add the dependency via the real HTTP action. It answers at once; the fetch, index and
+    //    Load run in the background, and the SDK announces the dependency when they land.
+    const loaded = new Promise<any>((resolve) => {
+      const stop = sdk.onDependencyLoaded((dependency: any, consumer: string) => {
+        if (consumer !== project.id) return;
+        stop();
+        resolve(dependency);
+      });
+    });
+    await project.addDependency(contextDir);
+    const dep = await loaded;
     expect(dep.state).toBe('ready');
+    // The announcement read the listing, which carries the resolved context.
     expect(project.include_dirs).toContain(contextDir);
 
     // It is listed among the declared dependencies, with nothing to warn about.

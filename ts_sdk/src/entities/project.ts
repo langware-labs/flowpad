@@ -880,10 +880,12 @@ export class Project extends APIEntity<Project> {
    *  fetches: a dependency not on this machine yet reads `missing`. */
   async dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
     const { declarers, ...params } = options;
-    const response = await this.get<Partial<ProjectDependencies> | null>(
+    const response = await this.get<(Partial<ProjectDependencies> & Partial<ProjectContextPayload>) | null>(
       'dependencies',
       declarers ? { ...params, declarers: '1' } : params,
     );
+    // The listing carries the project's resolved context: a background add lands here.
+    this.adoptContext(response);
     return {
       dependencies: response?.dependencies ?? [],
       warnings: response?.warnings ?? [],
