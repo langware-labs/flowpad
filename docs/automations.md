@@ -126,8 +126,8 @@ lives in a code comment beside the spec) and never words that sound like
 watching them. `tests/unit/automations/test_builtin_descriptions.py` holds every one to
 that. Design notes that used to sit in those descriptions:
 
-- **First-time setup** (`wizard/llm-setup/…/on-tab-ready`) is `fire_once`: it never runs
-  on its own again; Settings → General → Run setup again runs the same two steps.
+- **First-time setup** (`wizard/llm-setup/…/on-tab-ready`) is `fire_once`: it opens the first-run flow on
+  every app load until it has run fully once; Settings → General → Run setup again runs the same two steps.
 - **Search setup on Windows** (`wizard/install-vcredist/…/on-runtime-missing`) is
   deliberately NOT `fire_once`: search announces `rag.runtime.missing` at most once
   until a person acts (adds a folder, "index now"), so a "Not now" is not asked

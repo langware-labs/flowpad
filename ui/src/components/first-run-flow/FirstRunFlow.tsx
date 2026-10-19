@@ -53,10 +53,13 @@ export function FirstRunFlowRoot() {
     }
     if (opened.current) return;
     opened.current = true;
-    void openSetupWizard().then((shown) => {
-      // No wizard to show here: nothing to wait for.
-      if (!shown) end();
-    });
+    openSetupWizard()
+      .then((shown) => {
+        // No wizard to show here: nothing to wait for.
+        if (!shown) end();
+      })
+      // A failed open must not leave the flow in 'wizard' with no window, hiding every other dialog.
+      .catch(() => end());
   }, [step, end]);
   const seenOpen = useRef(false);
   useEffect(() => {

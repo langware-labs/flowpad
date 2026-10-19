@@ -413,20 +413,23 @@ async def _start_system_content_index() -> None:
     try:
         import asyncio as _asyncio
 
+        from flow_sdk.core.wizard.first_run import indexing_finished, indexing_started
         from flow_sdk.fs_store.indexer.auto_index import own_index_task
         from flow_sdk.server.routes.bootstrap import index_system_content
-
-        from flow_sdk.core.wizard.first_run import indexing_finished, indexing_started
 
         global _system_content_index_task
         # The first-run gate is closed until the shipped wizard's row exists, i.e. until this pass ends.
         indexing_started()
-        # Owned like an auto-index: a factory reset arriving while this pass is
-        # still walking must cancel it, not let it write through the wipe.
-        _system_content_index_task = own_index_task(
-            _asyncio.create_task(index_system_content(), name="system-content-index")
-        )
-        _system_content_index_task.add_done_callback(lambda _task: indexing_finished())
+        try:
+            # Owned like an auto-index: a factory reset arriving while this pass is
+            # still walking must cancel it, not let it write through the wipe.
+            _system_content_index_task = own_index_task(
+                _asyncio.create_task(index_system_content(), name="system-content-index")
+            )
+            _system_content_index_task.add_done_callback(lambda _task: indexing_finished())
+        except BaseException:
+            indexing_finished()  # never leave the gate waiting for a pass that did not start
+            raise
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")

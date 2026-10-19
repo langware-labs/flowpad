@@ -29,8 +29,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _log = logging.getLogger(__name__)
 
-# Both live with the gate that also reads them (``core/wizard/first_run``); re-exported under the old names.
-from flow_sdk.core.wizard.first_run import SKIP_FIRST_RUN_SETUP_ENV  # noqa: E402,F401
+from flow_sdk.core.wizard.first_run import SKIP_FIRST_RUN_SETUP_ENV  # noqa: E402
 
 # ── Built-in callbacks ───────────────────────────────────────────────────────
 

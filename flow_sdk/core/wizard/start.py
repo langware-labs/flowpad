@@ -178,7 +178,11 @@ async def _start_wizard(
     if spec is not None and spec.requires_llm_source:
         source = await _settle_after_install(source)
     # Only now: the sign-in above may still have put a chooser on screen, and project setup must not start under it.
-    finish_first_run(wizard, result)
+    if finish_first_run(wizard, result):
+        # The stamp flips `first_run_gate_open`; the last push of the run went out before it.
+        from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
+
+        await _notify_wizard_watchers(str(wizard.id))
     return source, result
 
 
