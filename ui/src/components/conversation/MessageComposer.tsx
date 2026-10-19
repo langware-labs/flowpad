@@ -27,6 +27,7 @@ import { useLocalUser } from './useLocalUser';
 import { TaskItIcon, taskItHint } from './task-it';
 import { useScrollToLatest } from './LatestScroll';
 import { discardDraftFlowMessage } from './flow-message-drafts';
+import { readDraft, writeDraft } from '@src/components/entity-execution-panel/composer-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -193,7 +194,9 @@ export function MessageComposer({
   const isDraftMode = !!draft;
   const effectiveConversationId = conversationId ?? draft?.conversation_id ?? undefined;
 
-  const [text, setText] = useState(draft?.text ?? '');
+  // A live-session prompt survives navigating away and back, like a tab session's draft.
+  const draftScope = !isDraftMode && liveSessionId ? `live-session:${liveSessionId}` : undefined;
+  const [text, setText] = useState(draft?.text ?? readDraft(draftScope));
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
@@ -248,6 +251,10 @@ export function MessageComposer({
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [text, draft]);
+
+  useEffect(() => {
+    writeDraft(draftScope, text);
+  }, [draftScope, text]);
 
   // A send asked for in the same update as the text/files it sends: `send` reads
   // both from its render, so it must run in the render that already has them.

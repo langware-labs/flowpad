@@ -73,3 +73,14 @@ def test_default_names_the_users_default_harness(fetched):
 def test_an_unknown_check_is_an_argument_error(fetched):
     assert _check("--check", "login:claude") == status_cmd.EXIT_INVALID_ARG
     assert _check("--check", "install:nope") == status_cmd.EXIT_INVALID_ARG
+
+
+def test_hub_offline_status_does_not_label_the_local_backend_offline(fetched):
+    _, answer = fetched
+    answer['record'] = {
+        'hub': {'login': 'offline', 'error': 'WebSocket verification failed'},
+        'harnesses': [], 'keys': [],
+    }
+    result = CliRunner().invoke(status_cmd.status_app, [])
+    assert result.exit_code == 0
+    assert result.stdout.splitlines()[0] == 'Flowpad hub: offline — WebSocket verification failed'

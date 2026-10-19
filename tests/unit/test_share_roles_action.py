@@ -9,5 +9,5 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 @pytest.mark.asyncio
-async def test_share_roles_is_editor_member_admin():
-    assert (await share_roles()).data == ["editor", "member", "admin"]
+async def test_share_roles_is_guest_editor_member_admin():
+    assert (await share_roles()).data == ["guest", "editor", "member", "admin"]

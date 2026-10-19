@@ -55,14 +55,18 @@ async def handle_query_resource(request: Request):
 
 
 def _apply_top_level_paging(request_info, entities_filter) -> None:
-    """Honor ?limit= / ?offset= query params on graph list requests.
+    """Honor ?limit= / ?offset= / ?order_by= query params on graph list requests.
 
     Historically only ``limit``/``offset`` INSIDE the ``filter`` JSON were
     honored; a top-level ``?limit=5000`` was silently dropped, turning
-    intended-bounded list calls into full-corpus dumps. Filter-JSON values
-    win when both are set; malformed values are ignored.
+    intended-bounded list calls into full-corpus dumps. ``QueryFilter.toJSON``
+    (ts_sdk) sends ``order_by`` top-level too — dropping it paged a limited list
+    in insertion order, so the stream inbox's newest conversations fell off its
+    first page. Filter-JSON values win when both are set; malformed values are ignored.
     """
     params = request_info.request_parameters
+    if getattr(entities_filter, "order_by", None) is None and params.get("order_by"):
+        entities_filter.order_by = params["order_by"]
     for field in ("limit", "offset"):
         if getattr(entities_filter, field, None) is not None:
             continue
@@ -76,6 +80,14 @@ def _apply_top_level_paging(request_info, entities_filter) -> None:
             continue
         if value >= 0:
             setattr(entities_filter, field, value)
+    # The SDK sends order_by beside filter too; without it a limited list is
+    # cut in storage order and the newest rows fall off the page.
+    raw_order = params.get("order_by")
+    if entities_filter.order_by is None and raw_order:
+        try:
+            entities_filter.order_by = QueryFilter.parse({"order_by": raw_order}, entities_filter.type).order_by
+        except Exception as e:  # noqa: BLE001 — a malformed sort is ignored, like a malformed limit
+            service_log.debug(f"[graph read] ignoring malformed ?order_by={raw_order!r}: {e}")
 
 
 def _request_wants_system(request_info, filter_params) -> bool:
@@ -449,9 +461,7 @@ async def handle_create_entity(request: Request):
         else:
             # A caller-supplied id is an identity minted elsewhere — never swap it
             # for a natural-key match.
-            entity = await _dispatch_create_save(
-                entity, request_info, someone_typeid, find_existing=not incoming_id
-            )
+            entity = await _dispatch_create_save(entity, request_info, someone_typeid, find_existing=not incoming_id)
     except AssetPathCollisionError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
@@ -466,7 +476,12 @@ _DEFAULT_CREATE_PARENT = object()
 
 
 async def _dispatch_create_save(
-    entity: Entity, request_info, someone_typeid, *, destination_parent=_DEFAULT_CREATE_PARENT, find_existing: bool = False
+    entity: Entity,
+    request_info,
+    someone_typeid,
+    *,
+    destination_parent=_DEFAULT_CREATE_PARENT,
+    find_existing: bool = False,
 ) -> Entity:
     """The three create arms (standalone / visitor / parented), extracted so
     handle_create_entity can wrap them under one ValueError→400 mapping.
@@ -476,16 +491,24 @@ async def _dispatch_create_save(
     # A natural key names one row wherever the create is addressed — standalone or under a parent.
     if find_existing and (existing := await entity.find_existing_for_create()) is not None:
         return existing
-    target_typeid = (request_info.target_entity_typeid if destination_parent is _DEFAULT_CREATE_PARENT
-                     else destination_parent.typeid if destination_parent is not None else None)
+    target_typeid = (
+        request_info.target_entity_typeid
+        if destination_parent is _DEFAULT_CREATE_PARENT
+        else destination_parent.typeid
+        if destination_parent is not None
+        else None
+    )
     if not target_typeid or target_typeid.type == User.get_type():
         entity = await entity.save(someone_typeid)
     elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()
         await entity.set_visitor_role(AuthRole.ANONYMOUS_VIEWER.value.lower())
     else:
-        target_entity: Entity | None = (await request_info.get_target_entity()
-                                      if destination_parent is _DEFAULT_CREATE_PARENT else destination_parent)
+        target_entity: Entity | None = (
+            await request_info.get_target_entity()
+            if destination_parent is _DEFAULT_CREATE_PARENT
+            else destination_parent
+        )
         # we will not get to this if anymore because it is caught in the Authorizer: is_authorized_resource_request
         if not target_entity:
             err_msg = f"Invalid url path, Target entity not found:{request_info.parent_entity}"

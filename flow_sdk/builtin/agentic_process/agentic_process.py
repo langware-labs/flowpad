@@ -623,8 +623,9 @@ async def _index_additional_dir(
         root_type = SchemaRegistry.type_for(p, placed_only=True)
         info = SchemaRegistry.get(root_type) if root_type else None
         if info is not None and not info.keyed_by_ref and info.claims(p) is None:
-            roots.append(FSRef(p, record_type=RecordType(root_type), parent=new_root,
-                               layout=info.layout_of(p, verify=True)))
+            roots.append(
+                FSRef(p, record_type=RecordType(root_type), parent=new_root, layout=info.layout_of(p, verify=True))
+            )
         result = await get_shared_indexer().index(IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True))
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
@@ -2955,6 +2956,8 @@ class AgenticProcess(Entity):
                 data={"type_id": None, "reason": f"{vendor.key} sessions cannot be attached yet."}
             )
         path = self.transcript_path
+        if path is None or not path.exists():
+            path = await self._fork_source_transcript_path()
         if path is None or not path.exists():
             return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
         if vendor.transcript_owned_by_run:
@@ -8602,6 +8605,19 @@ class AgenticProcess(Entity):
             self.plan_path = path_str
             await self.save()
         await cross_link_entities(plan, self, b_data={"path": path_str})
+
+    async def _fork_source_transcript_path(self) -> Path | None:
+        """The transcript a fork branched off, while the fork has none of its own.
+
+        A fork writes its own JSONL only on its first turn; until then everything
+        it holds is its source session's transcript.
+        """
+        fork_source = (self.cli_config or {}).get("fork_session_id")
+        if not fork_source or not self.driver.pins_resume_cwd:
+            return None
+        source_id = await self._find_resumable_session(fork_source)
+        record = get_claude_session(source_id) if source_id else None
+        return Path(record.jsonl_path) if record and record.jsonl_path else None
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""

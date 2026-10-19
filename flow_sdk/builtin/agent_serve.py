@@ -577,7 +577,9 @@ async def _made_chat_source(driver, agent, deployment):
     key = driver.cls.identity_config_key
     source = driver.create_source(
         driver.create_config(**{key: str(deployment.id)}),
-        name=f"{agent.name or agent.id} chat",
+        # Keyed by the deployment, as its folder is: another machine's chat of the same agent (arrived with
+        # the project) must not take this one's place (FLOWPAD-2258).
+        name=f"{agent.name or agent.id} chat {deployment.id}",
         owner=agent.typeid,
         **_deployment_binding(deployment),
         status=SourceStatus.ACTIVE.value,

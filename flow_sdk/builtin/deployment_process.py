@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from typing import IO, Optional
 
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import quote_powershell_literal
+
 #: The environment variable that tells the loop which deployment it runs (the shell carries it).
 DEPLOYMENT_ENV = "FLOW_DEPLOYMENT_ID"
 
@@ -180,8 +182,14 @@ def shell_id_of(deployment) -> str:
 
 
 def command_of(deployment) -> str:
-    """What is typed into the terminal: this interpreter, on the deployment's file, naming the deployment."""
-    return f"{shlex.quote(sys.executable)} {shlex.quote(str(file_of(deployment)))} {deployment.id}"
+    """What is typed into the terminal: this interpreter, on the deployment's file, naming the deployment.
+    On Windows the terminal is PowerShell, which runs a quoted path only behind its call operator ``&``
+    (as ``flow_command``)."""
+    exe, file = sys.executable, str(file_of(deployment))
+    if sys.platform == "win32":
+        quoted = " ".join(quote_powershell_literal(a) for a in (exe, file))
+        return f"& {quoted} {deployment.id}"
+    return f"{shlex.quote(exe)} {shlex.quote(file)} {deployment.id}"
 
 
 async def _shell(deployment):
