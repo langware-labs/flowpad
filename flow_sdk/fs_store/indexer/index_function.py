@@ -1047,7 +1047,11 @@ class FSIndexer:
                 ",".join(item.duplicate_paths),
             )
 
-        async with _db_session() as _idx_session:
+        from flow_sdk.wiki.run_scope import link_scope  # noqa: PLC0415
+
+        # Links resolve from per-run memory: a database read per link would sit
+        # inside the batch's writer lock (see flow_sdk/wiki/run_scope.py).
+        async with _db_session() as _idx_session, link_scope():
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
                 await _hand_over_if_waited_on()
                 progress.current = ref.record_type
