@@ -30235,10 +30235,6 @@ msgstr "your budget: {short}"
 msgid "your Claude Code"
 msgstr "your Claude Code"
 
-#: src/pages/entry/InstallLanding.tsx
-msgid "Your CloudNSite workspace is ready"
-msgstr "Your CloudNSite workspace is ready"
-
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
 msgstr "Your diagnosis request came back"
@@ -30313,6 +30309,10 @@ msgstr "Your session has expired. Sign in again to launch."
 
 #~ msgid "Your teams"
 #~ msgstr "Your teams"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your workspace is ready"
+msgstr "Your workspace is ready"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

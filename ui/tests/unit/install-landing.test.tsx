@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { INSTALL_REVIEW_BRANCH } from '@src/lib/content-install';
 
 const mocks = vi.hoisted(() => ({
   launch: vi.fn(),
@@ -79,7 +80,11 @@ vi.mock('@src/components/git/BranchPicker', async () => {
     BranchPicker: (props: { onSelect: (branch: { name: string; protected: boolean }) => void }) =>
       React.createElement(
         'button',
-        { type: 'button', onClick: () => props.onSelect({ name: 'develop', protected: false }), 'data-testid': 'choose-branch' },
+        {
+          type: 'button',
+          onClick: () => props.onSelect({ name: 'develop', protected: false }),
+          'data-testid': 'choose-branch',
+        },
         'Choose develop',
       ),
   };
@@ -133,7 +138,7 @@ describe('/install landing', () => {
           content_repo: 'https://github.com/globex/customer-support.git',
           content_branch: 'main',
           scope: 'shared',
-          review_branch: 'flowpad/install-cloudnsite-agents',
+          review_branch: INSTALL_REVIEW_BRANCH,
         },
       },
     });
