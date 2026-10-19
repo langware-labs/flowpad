@@ -243,9 +243,15 @@ def test_spawn_contract_preserves_argv_env_and_prompt_channel(
     compat_argv, compat_env = options.to_spawn_args(instruction=instruction)
 
     assert (argv, env) == (compat_argv, compat_env)
-    assert stdin == (None if vendor == "claude" else instruction or "")
-    if instruction:
-        assert (argv[-2:] == ["--", instruction]) is (vendor == "claude")
+    # The prompt rides argv for claude and for an interactive codex launch; a headless codex exec
+    # reads it from stdin (the ``-`` sentinel).
+    on_stdin = options.PROMPT_CHANNEL == "stdin"
+    assert on_stdin is (vendor != "claude" and not (vendor == "codex" and cid.startswith("interactive")))
+    assert stdin == ((instruction or "") if on_stdin else None)
+    if instruction and vendor == "claude":
+        assert argv[-2:] == ["--", instruction]
+    elif instruction and not on_stdin:
+        assert argv[-1] == instruction
 
 
 @pytest.mark.parametrize("vendor", _VENDORS)

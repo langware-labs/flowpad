@@ -253,6 +253,11 @@ export function buildDockPointer(
       return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
+    case 'flow_message': {
+      // A message opens in its conversation, scrolled to it.
+      const conversationId = (resolved as { conversation_id?: string | null }).conversation_id;
+      return conversationId ? DockPointer.forConversation(conversationId, { messageId: resolved.id }) : null;
+    }
     case 'claude_session':
     case 'codex_session':
     case 'copilot_session':

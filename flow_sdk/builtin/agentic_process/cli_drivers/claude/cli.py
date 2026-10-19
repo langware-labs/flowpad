@@ -133,17 +133,33 @@ class ClaudeAgentOptions(AgentOptions):
     # ------------------------------------------------------------------
 
     def _resolve_binary(self) -> list[str]:
-        """Resolve the ``claude`` argv prefix on PATH; wrap a win32 ``.cmd``/
-        ``.bat`` launcher through COMSPEC so PtyProcess can exec it."""
+        """The ``claude`` argv prefix — the bare executable name, as the base does.
+
+        Do NOT ``shutil.which`` here: that resolves against THIS process's PATH
+        at argv-build time, which on a box where the backend's service PATH
+        carries its own ``claude`` (or a developer/CI image with one in
+        ``/usr/bin``) bakes an absolute path that is NOT the discovered one, and
+        then ``resolve_worker_argv0`` — which exists to pin argv[0] to the
+        DISCOVERED bin folder (D02) — can only re-confirm the already-absolute
+        path it was handed. Leaving the name bare lets ``resolve_worker_argv0``
+        resolve it against the spawn env PATH (discovered folder first), exactly
+        as codex/copilot do.
+
+        The win32 ``.cmd``/``.bat`` COMSPEC wrap still needs a resolved path, but
+        it must resolve against the same discovered folder. Only win32 ever has a
+        ``.cmd``/``.bat`` launcher, so this branch is a no-op elsewhere.
+        """
         import os
         import shutil
         import sys
 
-        resolved = shutil.which("claude")
-        if sys.platform == PLATFORM_WIN32 and resolved and resolved.lower().endswith((".cmd", ".bat")):
-            comspec = os.environ.get("COMSPEC") or "cmd.exe"
-            return [comspec, "/c", resolved]
-        return [resolved or "claude"]
+        if sys.platform == PLATFORM_WIN32:
+            folder = self.env_vars.get("PATH")
+            resolved = shutil.which("claude", path=folder) or shutil.which("claude")
+            if resolved and resolved.lower().endswith((".cmd", ".bat")):
+                comspec = os.environ.get("COMSPEC") or "cmd.exe"
+                return [comspec, "/c", resolved]
+        return ["claude"]
 
     def _emit_flags(self) -> list[str]:
         """Claude's argv flags (after the binary, before the ``-- <instruction>``).
