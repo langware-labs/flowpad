@@ -2837,6 +2837,7 @@ class Project(SetupSkippable, Entity):
         label: str | None = None,
         description: str | None = None,
         asset: str | None = None,
+        background: bool = False,
     ) -> "DependencyState":
         """Declare a dependency in ``flow.json`` and resolve it.
 
@@ -2847,6 +2848,8 @@ class Project(SetupSkippable, Entity):
 
         ``asset`` (a TypeId) declares it in THAT asset's own ``flow.json`` instead of the
         project's — ids only. ``label`` / ``description`` are the entry's human-friendly name.
+        ``background`` returns as soon as flow.json is written, with the entry as it reads
+        from the file; the fetch, index and Load then run detached (see ``schedule_add``).
         """
         from flow_sdk.assets import flow_json  # noqa: PLC0415
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
@@ -2890,7 +2893,14 @@ class Project(SetupSkippable, Entity):
             description=description or None,
         )
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
-        states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
+        install = [dep.name] if optional else []
+        if background:
+            # Answer from flow.json alone; the fetch, index and Load run detached. Indexing a
+            # large folder takes minutes, and a request must never be held that long.
+            states = await project_dependencies.inspect_dependencies(self)
+            project_dependencies.schedule_add(self, dep.name, install=install)
+            return next(s for s in states if s.name == dep.name and s.via is None)
+        states = await project_dependencies.resolve(self, fetch=True, install=install)
         return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
 
     async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
@@ -2997,6 +3007,7 @@ class Project(SetupSkippable, Entity):
                 label=label or None,
                 description=description or None,
                 asset=asset or None,
+                background=True,
             )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
