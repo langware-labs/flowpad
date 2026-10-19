@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => ({ isDesktop: true }), useEntity: () => ({ data: null }) }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
-  apiClient: { get: vi.fn(() => Promise.resolve({ state: 'closed' })) },
+  Wizard: { firstRunState: vi.fn(() => Promise.resolve('closed')) },
 }));
 vi.mock('@src/components/setup-incomplete/open-setup-wizard', () => ({
   findSetupWizard: () => Promise.resolve({ typeId: { toString: () => 'wizard-1' }, first_run_gate_open: false }),

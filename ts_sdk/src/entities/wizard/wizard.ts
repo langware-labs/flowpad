@@ -249,6 +249,17 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   }
 
   /**
+   * May a project be set up here yet? Asked once at load, before the wizard is known. The backend holds the answer
+   * until the shipped wizard can be looked up (a fresh database indexes it ~40s after the app is serving).
+   */
+  static async firstRunState(): Promise<'open' | 'closed'> {
+    const answer = await dataManager.callAction<undefined, { state: 'open' | 'closed' }>(
+      new ActionInfo('first-run-state', Wizard.type, null, 'GET'),
+    );
+    return answer?.state === 'closed' ? 'closed' : 'open';
+  }
+
+  /**
    * Go on without finishing this wizard: opens the first-run gate for this backend session (a restart closes it again), so a project can be set up
    * though an install was declined or blocked. Only the first-run wizard gates anything (400 for another).
    */

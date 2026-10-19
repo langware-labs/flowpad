@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
-  apiClient: { get: h.get },
+  Wizard: { firstRunState: async () => (await h.get())?.state },
 }));
 vi.mock('@sdk/react/hooks', () => ({
   useContext: () => ({ isDesktop: h.isDesktop }),
