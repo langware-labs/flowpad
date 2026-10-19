@@ -124,11 +124,32 @@ async def _existing_targets(entries: list[WikiEntry]) -> list[TypeId]:
     return list(targets.values())
 
 
-def _matches_word(entity: Any, canonical: str) -> bool:
-    return any(
-        isinstance(value, str) and value == canonical
-        for value in (getattr(entity, "uname", None), getattr(entity, "name", None))
+#: Types that are never a link's implicit target.
+LINK_SKIP_TYPES = frozenset({"project", "wiki", "wiki_entry"})
+
+
+def link_words(entity: Any) -> tuple[str, ...]:
+    """The words a link can name ``entity`` by: its uname and its name."""
+    return tuple(
+        dict.fromkeys(
+            value
+            for value in (getattr(entity, "uname", None), getattr(entity, "name", None))
+            if isinstance(value, str) and value
+        )
     )
+
+
+def _matches_word(entity: Any, canonical: str) -> bool:
+    return canonical in link_words(entity)
+
+
+def project_owner_classes() -> list[type[Entity]]:
+    """The asset classes whose rows a project owns through their project_id stamp."""
+    return [
+        entity_cls
+        for entity_cls in Entity.asset_owner_classes()
+        if "project_id" in getattr(entity_cls, "model_fields", {}) and entity_cls.get_type() not in LINK_SKIP_TYPES
+    ]
 
 
 async def _implicit_project_assets(project: Project, canonical: str) -> list[TypeId]:
@@ -146,16 +167,11 @@ async def _implicit_project_assets(project: Project, canonical: str) -> list[Typ
     # Indexed local assets also carry the established project_id stamp. Some
     # legacy index paths predate Project child edges, so retain that local
     # ownership seam while the graph converges.
-    for entity_cls in Entity.asset_owner_classes():
-        fields = getattr(entity_cls, "model_fields", {})
-        if "project_id" not in fields:
-            continue
-        if entity_cls.get_type() in {"project", "wiki", "wiki_entry"}:
-            continue
+    for entity_cls in project_owner_classes():
         # Match the word in SQL: loading every project row to compare one name made
         # each link cost a full hydrate of the project (minutes on a big project).
         for field in ("uname", "name"):
-            if field not in fields:
+            if field not in entity_cls.model_fields:
                 continue
             for entity in await entity_cls.get_all({"project_id": str(project.id), field: canonical}):
                 if getattr(entity, "asset_ref", None) and _matches_word(entity, canonical):
@@ -164,13 +180,11 @@ async def _implicit_project_assets(project: Project, canonical: str) -> list[Typ
 
 
 async def resolve(wiki: Wiki, word: str) -> dict[str, Any]:
+    from .run_scope import lookups  # noqa: PLC0415
+
+    lk = lookups()
     canonical = canonicalize_word(word)
-    entries = await WikiEntry.get_all(
-        {
-            "parent_type_id": str(wiki.typeid),
-            "word": canonical,
-        }
-    )
+    entries = await lk.entries_for(wiki, canonical)
     if entries:
         targets = await _existing_targets(entries)
         if not targets:
@@ -179,11 +193,11 @@ async def resolve(wiki: Wiki, word: str) -> dict[str, Any]:
             return _result("ambiguous")
         return _result("resolved", target=targets[0], source="entry")
 
-    project = await Project.get_by_id(str(wiki.project_id)) if wiki.project_id else None
+    project = await lk.project(str(wiki.project_id)) if wiki.project_id else None
     if project is None or str(wiki.id) != default_wiki_id(str(project.id)):
         return _result("missing")
 
-    candidates = await _implicit_project_assets(project, canonical)
+    candidates = await lk.project_assets(project, canonical)
     if not candidates:
         return _result("missing")
     if len(candidates) > 1:

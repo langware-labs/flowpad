@@ -856,11 +856,13 @@ class FSRecord(Generic[M]):
             from_exception as _record_error_from_exception,  # noqa: PLC0415
         )
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.wiki import run_scope as wiki_run_scope  # noqa: PLC0415
 
         register_asset_runtime_bindings()
         try:
             async with _db_session():
                 entity = await Entity.from_record(self, notify=notify)
+                wiki_run_scope.lookups().note(entity)
 
                 # Mirror entity state back to disk metadata.json (id, scope, project_id, etc.).
                 import asyncio  # noqa: PLC0415
