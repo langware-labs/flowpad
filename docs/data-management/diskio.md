@@ -1,3 +1,6 @@
+---
+id: 7a172035-d547-4538-804f-af1baa95174b
+---
 # Interface proposal — v6 — FINAL (iteration 6)
 
 **How to read this document.** It specifies the disk-I/O kernel of the Python SDK: eight

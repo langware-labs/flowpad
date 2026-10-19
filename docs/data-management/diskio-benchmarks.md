@@ -1,3 +1,6 @@
+---
+id: 5a26a6af-41d8-42d1-a4e7-f42d4e31fa06
+---
 # diskio — measured results
 
 What the `flow_sdk/diskio` work changed, in numbers taken on the finished branch. Design-time
