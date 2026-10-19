@@ -62,7 +62,7 @@ migration at all.
 **Fix when red:** advance the slot, do not back-fill. An empty slot carries nothing
 to run.
 
-**Root cause is upstream of this test.** `.claude/skills/deploy-pypi/SKILL.md` (step 3,
+**Root cause is upstream of this test.** the internal `deploy-pypi` skill (step 3,
 "bump + build + publish", writing `flow_sdk/_version.py`) and
 `scripts/deploy_to_github.sh` never mention the slot, so the release cannot advance
 it. That is why this has happened twice — 0.2.160 released empty in `83c986c27`, and

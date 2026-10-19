@@ -22,7 +22,7 @@ import {
 import { StepList } from '@src/components/ui/step-list';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useAuth } from '@src/hooks/useAuth';
-import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
+import { contentInstallSpec, INSTALL_REVIEW_BRANCH, parseInstallIntent } from '@src/lib/content-install';
 import { Trans } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -124,7 +124,7 @@ export default function InstallLanding() {
           <div className="rounded-lg border border-border p-5 text-start" data-testid="install-progress">
             <p className="mb-3 text-sm font-medium">
               {launchUrl ? (
-                <Trans>Your Globex workspace is ready</Trans>
+                <Trans>Your workspace is ready</Trans>
               ) : failed ? (
                 <Trans>Couldn't finish preparing your workspace</Trans>
               ) : (
@@ -161,8 +161,8 @@ export default function InstallLanding() {
               Where do you want to install {intent.name}?
             </DialogTitle>
             <DialogDescription>
-              Flowpad will propose the install on <code>flowpad/install-globex-agents</code>. Your default branch is
-              not changed and no pull request is opened automatically.
+              Flowpad will propose the install on <code>{INSTALL_REVIEW_BRANCH}</code>. Your default branch is not
+              changed and no pull request is opened automatically.
             </DialogDescription>
           </DialogHeader>
 
