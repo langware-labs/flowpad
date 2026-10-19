@@ -57,6 +57,79 @@ def latest_release(timeout: float = 8.0) -> "str | None":
     return latest if isinstance(latest, str) else None
 
 
+def desktop_compat_block(version: str) -> "str | None":
+    """Reason a desktop-managed backend must not install *version*, or ``None``.
+
+    The pre-install half of the bidirectional contract (``flow_sdk/utils/compat.py``):
+    the desktop's own floor, from the env the Electron shell set on ``flow start``.
+    A backend the desktop does not manage (no env) is never constrained, so
+    CLI/headless installs stay free. The other direction — *version* requiring a
+    newer desktop — needs the target's own metadata and is checked after the
+    install by :func:`verify_installed_against_desktop`.
+    """
+    from flow_sdk.utils import compat  # noqa: PLC0415
+
+    desktop_version, desktop_min_backend = compat.desktop_constraints()
+    if desktop_min_backend is None:
+        return None
+    ok = compat.meets_floor(version, desktop_min_backend)
+    if ok is None:
+        return (
+            f"cannot compare {version!r} with the desktop app's minimum backend "
+            f"version {desktop_min_backend!r} — refusing to install it"
+        )
+    if not ok:
+        return (
+            f"FlowPad Desktop{f' {desktop_version}' if desktop_version else ''} requires "
+            f"Backend {desktop_min_backend} or newer; {version} would be incompatible. "
+            "Update the desktop app first, or pick a newer backend version."
+        )
+    return None
+
+
+def installed_min_desktop() -> "str | None":
+    """``min_desktop_version`` of the flowpad NOW ON DISK.
+
+    Read fresh from the file — after an in-place reinstall the on-disk
+    ``flow_sdk/compat.json`` belongs to the NEW release while this process still
+    runs the old code, and that new floor is exactly what must be checked.
+    Raises ``flow_sdk.utils.compat.CompatError`` on invalid metadata.
+    """
+    import flow_sdk  # noqa: PLC0415
+    from flow_sdk.utils import compat  # noqa: PLC0415
+
+    return compat.backend_min_desktop_version(Path(flow_sdk.__file__).resolve().parent / "compat.json")
+
+
+def verify_installed_against_desktop() -> "str | None":
+    """After an in-place reinstall: ``None`` when the backend now on disk accepts
+    the managing desktop, else the human reason it does not (→ roll back).
+
+    No managing desktop (no ``FLOWPAD_DESKTOP_VERSION`` in the env) → ``None``.
+    """
+    from flow_sdk.utils import compat  # noqa: PLC0415
+
+    desktop_version, _ = compat.desktop_constraints()
+    if desktop_version is None:
+        return None
+    try:
+        floor = installed_min_desktop()
+    except compat.CompatError as exc:
+        return f"the installed backend's compatibility metadata is invalid: {exc}"
+    ok = compat.meets_floor(desktop_version, floor)
+    if ok is None:
+        return (
+            f"cannot compare FlowPad Desktop {desktop_version!r} with the installed "
+            f"backend's minimum desktop version {floor!r}"
+        )
+    if not ok:
+        return (
+            f"the installed backend requires FlowPad Desktop {floor} or newer, "
+            f"but Desktop {desktop_version} is running"
+        )
+    return None
+
+
 def is_valid_version(version: str) -> bool:
     # Gate the value before it becomes a `flowpad==<version>` subprocess arg.
     # Uses the same parser that builds the PyPI release list server-side, so any

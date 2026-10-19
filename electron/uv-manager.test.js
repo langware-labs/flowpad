@@ -1864,5 +1864,127 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
+  // ── Desktop <-> engine compatibility (engine-compat.js wiring) ──────────────
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    // A fake installed venv: bin/flow + site-packages with _version.py and compat.json.
+    const makeVenv = ({ engineVersion, compatJson }) => {
+      const venv = fs.mkdtempSync(path.join(os.tmpdir(), 'uvtest-compat-'));
+      const bin = path.join(venv, IS_WIN ? 'Scripts' : 'bin');
+      fs.mkdirSync(bin, { recursive: true });
+      const flowBin = path.join(bin, IS_WIN ? 'flow.exe' : 'flow');
+      fs.writeFileSync(flowBin, '');
+      const site = path.join(venv, ...(IS_WIN ? ['Lib', 'site-packages'] : ['lib', 'python3.11', 'site-packages']), 'flow_sdk');
+      fs.mkdirSync(site, { recursive: true });
+      fs.writeFileSync(path.join(site, '_version.py'), `__version__ = "${engineVersion}"\n`);
+      if (compatJson !== undefined) fs.writeFileSync(path.join(site, 'compat.json'), compatJson);
+      return { venv, flowBin };
+    };
+    // Never let the discovery's strategy-2 fallback read the developer's REAL tool venv.
+    const compatMgr = (appVersion) => {
+      const m = new UvManager(silentLog, appVersion ? { appVersion } : {});
+      m._toolVenvDir = () => path.join(os.tmpdir(), 'uvtest-compat-no-such-tool');
+      return m;
+    };
+
+    {
+      // getInstalledMinDesktopSync reads the engine's own floor as plain data.
+      const { venv, flowBin } = makeVenv({ engineVersion: '0.2.70', compatJson: '{"min_desktop_version": "0.2.60"}' });
+      const m = compatMgr('0.2.45');
+      eq(m.getInstalledMinDesktopSync(flowBin), { minDesktopVersion: '0.2.60' }, 'reads the installed engine floor');
+      eq(m.getInstalledVersionSync(flowBin), '0.2.70', 'the shared site-packages discovery still reads the version');
+
+      // installedPairIssue: the engine demands a newer desktop than this one.
+      const issue = m.installedPairIssue(flowBin);
+      ok(issue && issue.engineVersion === '0.2.70', 'an incompatible installed pair is detected');
+      ok(issue.message.includes('requires Desktop 0.2.60'), 'the issue carries the user-facing message');
+
+      // A desktop above the floor is fine.
+      eq(compatMgr('0.2.60').installedPairIssue(flowBin), null, 'a pair meeting the floor has no issue');
+
+      // No app version (tests/tools) → the contract is not evaluated.
+      eq(compatMgr(null).installedPairIssue(flowBin), null, 'no app version → no verdict');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+    {
+      // Legacy engine (no compat.json) and invalid metadata both leave startup alone.
+      const legacy = makeVenv({ engineVersion: '0.2.10' });
+      const m = compatMgr('0.2.45');
+      eq(m.getInstalledMinDesktopSync(legacy.flowBin), { minDesktopVersion: null }, 'a pre-contract engine has no floor');
+      eq(m.installedPairIssue(legacy.flowBin), null, 'legacy engine → compatible (documented policy)');
+      fs.rmSync(legacy.venv, { recursive: true, force: true });
+
+      const broken = makeVenv({ engineVersion: '0.2.10', compatJson: 'not json' });
+      eq(m.getInstalledMinDesktopSync(broken.flowBin), 'invalid', 'unparseable metadata reads as invalid');
+      eq(m.installedPairIssue(broken.flowBin), null, 'invalid metadata on an INSTALLED engine must not brick startup');
+      fs.rmSync(broken.venv, { recursive: true, force: true });
+    }
+    {
+      // resolveCompatibleEngineVersion: newest release passing BOTH directions, from stubbed metadata.
+      const m = new UvManager(silentLog, { appVersion: '0.2.45' });
+      m._getPypiData = async () => ({
+        info: { version: '0.2.70' },
+        releases: {
+          '0.2.70': [{ yanked: false }],
+          '0.2.65': [{ yanked: false }],
+          '0.2.60': [{ yanked: true }],
+        },
+      });
+      const floors = { '0.2.70': '0.2.60', '0.2.65': '0.2.40' };
+      m._readCandidateMinDesktop = async (v) => ({ minDesktopVersion: floors[v] || null });
+      eq(await m.resolveCompatibleEngineVersion(), { version: '0.2.65', minDesktopVersion: '0.2.40' },
+        'latest needs a newer desktop → the newest compatible release is picked (yanked skipped)');
+      eq(await m._compatibleEngineSpec('flowpad'), 'flowpad==0.2.65', 'the spec pins the resolved release');
+
+      // PyPI unreachable → fall back to the caller's spec (offline keeps the old behaviour).
+      m._getPypiData = async () => null;
+      eq(await m.resolveCompatibleEngineVersion(), null, 'no PyPI answer → no verdict');
+      eq(await m._compatibleEngineSpec('flowpad@latest'), 'flowpad@latest', 'no verdict → the fallback spec');
+
+      // PyPI answered and NOTHING is compatible → a user-readable failure, nothing installed.
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: { '0.2.70': [{}] } });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '9.9.9' });
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /No compatible FlowPad engine release/); passed++;
+    }
+    {
+      // _assertCandidateCompatible: an explicit target below/above the contract.
+      const m = new UvManager(silentLog, { appVersion: '0.2.45' });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.60' });
+      await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /existing installation has been preserved/); passed++;
+      m._readCandidateMinDesktop = async () => 'invalid';
+      await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /invalid compatibility metadata/); passed++;
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.40' });
+      await m._assertCandidateCompatible('0.2.70'); passed++; // resolves: compatible
+      m._readCandidateMinDesktop = async () => null; // indeterminate → the post-install check decides
+      await m._assertCandidateCompatible('0.2.70'); passed++;
+    }
+    {
+      // _verifyInstalledPairOrRollback: a bad pair after an install puts the previous pin back and throws.
+      const incompatible = makeVenv({ engineVersion: '0.2.70', compatJson: '{"min_desktop_version": "0.2.60"}' });
+      const m = compatMgr('0.2.45');
+      m._flowBin = incompatible.flowBin;
+      const installs = [];
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._uvToolInstallForce = async (args) => { installs.push(args.join(' ')); };
+      m._resolveFlowBin = async () => incompatible.flowBin;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /not compatible/); passed++;
+      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force'], 'the previous release is pinned back');
+
+      // No previous version (first install): throw without any rollback install.
+      installs.length = 0;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback(null), /not compatible/); passed++;
+      eq(installs, [], 'nothing to roll back to on a first install');
+
+      // A compatible pair verifies silently.
+      const fine = makeVenv({ engineVersion: '0.2.70', compatJson: '{"min_desktop_version": "0.2.40"}' });
+      m._flowBin = fine.flowBin;
+      await m._verifyInstalledPairOrRollback('0.2.50'); passed++;
+      fs.rmSync(incompatible.venv, { recursive: true, force: true });
+      fs.rmSync(fine.venv, { recursive: true, force: true });
+    }
+  }
+
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

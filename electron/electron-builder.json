@@ -30,6 +30,8 @@
     "update-restart.js",
     "progress-watchdog.js",
     "semver.js",
+    "engine-compat.js",
+    "engine-compat.json",
     "uv-manager.js",
     "flow-rs-keychain.js",
     "loading.html",

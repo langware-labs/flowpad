@@ -280,7 +280,12 @@ This runs the following steps in order:
 
 ### Version Synchronization
 
-The Electron app version (in `electron/package.json`) should match the PyPI package version (in `flow_sdk/_version.py`).
+The Electron app version (`electron/package.json`, overridden by `RELEASE_VERSION` in CI) and the
+PyPI package version (`flow_sdk/_version.py`) are **independent** release streams. What keeps an
+installed pair workable is the bidirectional compatibility contract — `electron/engine-compat.json`
+(`min_backend_version`) and `flow_sdk/compat.json` (`min_desktop_version`), enforced by
+`electron/engine-compat.js` / `flow_sdk/utils/compat.py`. See
+[`docs/version-compatibility.md`](version-compatibility.md).
 
 ### Platform Build Commands
 
