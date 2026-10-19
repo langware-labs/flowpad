@@ -169,7 +169,14 @@ def sync(source_id: str) -> None:
 
 @source_app.command("items", help=(
     "This source's records, newest first, with 500-character body previews. "
-    "body_truncated and full_body_length describe the preview; GET full_record_path for the complete stored record."
+    "name is complete, including any original ellipsis or newline; only body is previewed. "
+    "body_truncated and full_body_length describe that body preview. "
+    "full_record_path addresses this worker's local instance, not the hub. "
+    "Use instance discovery and the cookie-gated CLI transport; flow config's legacy host is not the running instance.\n\n"
+    "Full record (Python, in the same worker/instance; replace ITEM_ID):\n\n"
+    "\b\n"
+    "from flow_sdk.cli.commands._common import discover_port, graph_url, get_graph_json, server_error\n"
+    "record = get_graph_json(graph_url(discover_port(), 'source_item/ITEM_ID'), on_error=server_error)"
 ))
 def items(source_id: str, limit: Annotated[int, typer.Option("--limit")] = 20) -> None:
     ok(_source_action(source_id, "items", {"limit": limit}))

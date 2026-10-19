@@ -80,6 +80,14 @@ def _apply_top_level_paging(request_info, entities_filter) -> None:
             continue
         if value >= 0:
             setattr(entities_filter, field, value)
+    # The SDK sends order_by beside filter too; without it a limited list is
+    # cut in storage order and the newest rows fall off the page.
+    raw_order = params.get("order_by")
+    if entities_filter.order_by is None and raw_order:
+        try:
+            entities_filter.order_by = QueryFilter.parse({"order_by": raw_order}, entities_filter.type).order_by
+        except Exception as e:  # noqa: BLE001 — a malformed sort is ignored, like a malformed limit
+            service_log.debug(f"[graph read] ignoring malformed ?order_by={raw_order!r}: {e}")
 
 
 def _request_wants_system(request_info, filter_params) -> bool:
