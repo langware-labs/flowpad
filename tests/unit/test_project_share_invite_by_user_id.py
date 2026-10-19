@@ -180,7 +180,7 @@ async def test_invite_silently_skips_an_unparseable_id(hub):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("role", ["owner", "guest", ""])
+@pytest.mark.parametrize("role", ["owner", "reader", ""])
 async def test_invite_by_user_id_rejects_a_role_outside_the_allowlist(hub, role):
     """Refused before any hub call — nothing is published or invited."""
     proj = Project(name="invite-by-id-bad-role")

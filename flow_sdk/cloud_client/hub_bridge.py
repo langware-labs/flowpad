@@ -1298,9 +1298,7 @@ class HubWsBridge:
 
         payload = {**(data or {}), "id": deployment_id}
         if existing is None:
-            deployment = Deployment(**payload)
-            deployment.remote = True
-            await deployment.save()
+            await Deployment.adopt_from_hub(payload)
             logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
             return
 
