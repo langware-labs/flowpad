@@ -280,16 +280,21 @@ describe('a fully finished run', () => {
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
   });
 
-  it('in the first-run flow, "Go to homepage" waits for the gate instead of reading as Skip (window 2)', () => {
-    useFirstRunFlowStore.getState().start('project_setup');
-    const firstRun = { ...(withMessage(finished) as Record<string, unknown>), name: 'llm-setup' } as never;
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={firstRun} />);
+  it.each(['wizard-go-home', 'wizard-close'])(
+    'in the first-run flow, %s after a finished run waits for the gate instead of reading as Skip (window 2)',
+    async (button) => {
+      useFirstRunFlowStore.getState().start('project_setup');
+      act(() => openWizardPopup('wizard-x'));
+      const firstRun = { ...(withMessage(finished) as Record<string, unknown>), name: 'llm-setup', popup: true } as never;
+      renderWizard(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={firstRun} />);
+      await waitFor(() => expect(screen.getByTestId(button)).toBeTruthy());
 
-    fireEvent.click(screen.getByTestId('wizard-go-home'));
+      fireEvent.click(screen.getByTestId(button));
 
-    expect(useFirstRunFlowStore.getState().minimized).toBe(true);
-    useFirstRunFlowStore.getState().end();
-  });
+      expect(useFirstRunFlowStore.getState().minimized).toBe(true);
+      useFirstRunFlowStore.getState().end();
+    },
+  );
 
   it('says nothing about being finished while the run is still going, or has not run at all', () => {
     const stillGoing = { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', ran: false, steps: {} } };

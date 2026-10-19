@@ -13,8 +13,8 @@ survives every later run.
 Open (``first_run_gate_open``) when any of these holds, and closed otherwise:
 
 * ``first_run_done`` is stamped;
-* a result is on disk from before runs were tracked (``first_run_tracked`` unset): an install that already
-  ran the wizard is not asked to again;
+* a green result is on disk from before runs were tracked (``first_run_tracked`` unset): an install that
+  already ran the wizard fully is not asked to again;
 * the person went on without finishing it THIS session (``waive_for_session``): a waiver lives in this process
   only, so the wizard opens again after a restart -- it is never a permanent way round;
 * ``FLOWPAD_SKIP_FIRST_RUN_SETUP=true`` (a test backend never runs the wizard);
@@ -46,7 +46,6 @@ from flow_sdk.core.wizard.state import (
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.wizard import Wizard
-    from flow_sdk.responses.response import ApiFailResponse
     from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 _log = logging.getLogger(__name__)
@@ -77,11 +76,12 @@ class FirstRunSetupRequired(Exception):
         super().__init__(BLOCKED_MESSAGE)
 
 
-def first_run_gate_open(wizard_id: str, name: str = FIRST_RUN_WIZARD) -> bool:
-    """Whether project setup may begin, judged for the wizard ``wizard_id`` (named ``name``).
+def first_run_gate_open(wizard_id: str, gates: bool = True) -> bool:
+    """Whether project setup may begin, judged for the wizard ``wizard_id``.
 
-    Any wizard but the first-run one is open: only that wizard gates anything. Never raises."""
-    if name != FIRST_RUN_WIZARD:
+    ``gates`` is the wizard's ``gates_project_setup``: a wizard that does not declare it is open, only the
+    first-run one gates anything. Never raises."""
+    if not gates:
         return True
     try:
         if os.environ.get(SKIP_FIRST_RUN_SETUP_ENV, "").lower() == "true":
@@ -95,8 +95,10 @@ def first_run_gate_open(wizard_id: str, name: str = FIRST_RUN_WIZARD) -> bool:
         state = read_state(wizard_id)
         if state.get(FIRST_RUN_DONE):
             return True
-        # A result written before runs were tracked: this install already ran the wizard.
-        return isinstance(state.get("result"), dict) and not state.get(FIRST_RUN_TRACKED)
+        # A GREEN result written before runs were tracked: this install already ran the wizard fully. Any other
+        # result (a failed or check-only run from the CLI or API) proves nothing.
+        result = state.get("result")
+        return isinstance(result, dict) and result.get("exit_code") == 0 and not state.get(FIRST_RUN_TRACKED)
     except Exception:  # noqa: BLE001 -- a gate that cannot tell stays open (and says so)
         _log.warning("first-run gate: could not read the wizard's state; leaving the gate open", exc_info=True)
         return True
@@ -141,7 +143,7 @@ async def first_run_state() -> str:
     open for good. Waits for the index (see the module doc), then judges like ``require_first_run_setup``."""
     await wait_until_indexed()
     wizard = await first_run_wizard()
-    return "open" if wizard is None or first_run_gate_open(str(wizard.id), wizard.name) else "closed"
+    return "open" if wizard is None or first_run_gate_open(str(wizard.id), wizard.gates_project_setup) else "closed"
 
 
 async def require_first_run_setup() -> None:
@@ -153,25 +155,10 @@ async def require_first_run_setup() -> None:
             _log.info("first-run gate: closed -- the shipped wizards are not indexed yet")
             raise FirstRunSetupRequired()
         return
-    if first_run_gate_open(str(wizard.id), wizard.name):
+    if first_run_gate_open(str(wizard.id), wizard.gates_project_setup):
         return
     _log.info("first-run gate: closed -- project setup refused until the first-run wizard is done")
     raise FirstRunSetupRequired()
-
-
-async def first_run_block() -> "ApiFailResponse | None":
-    """The refusal an action answers with while the gate is closed, or ``None`` when setup may begin.
-
-    412 (a precondition not met) with ``data.blocked == "first_run_setup"``: a client tells it from any other
-    refusal by that, and shows "finish the first-time setup" instead of an error. Not 409 -- clients already
-    read a 409 from these very routes as a NAME COLLISION (``project_name_conflict``, a clone's suggested name)."""
-    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
-
-    try:
-        await require_first_run_setup()
-    except FirstRunSetupRequired:
-        return ApiFailResponse(message=BLOCKED_MESSAGE, status_code=412, data={"blocked": BLOCKED_FIRST_RUN})
-    return None
 
 
 def waive_for_session(wizard_id: str) -> None:
@@ -186,10 +173,10 @@ def begin_first_run(wizard: "Wizard") -> None:
     An install that ran the wizard before runs were tracked keeps its standing: its old result is stamped
     ``first_run_done`` now, because the start that follows archives that result. Then the run is marked
     tracked, so from here a result on disk (a run still going writes one) proves nothing -- only the stamp."""
-    if wizard.name != FIRST_RUN_WIZARD:
+    if not wizard.gates_project_setup:
         return
     wid = str(wizard.id)
-    if first_run_gate_open(wid, wizard.name) and wid not in _WAIVED:
+    if first_run_gate_open(wid, wizard.gates_project_setup) and wid not in _WAIVED:
         mark_first_run_done(wid)
     mark_first_run_tracked(wid)
 
@@ -200,7 +187,7 @@ def finish_first_run(wizard: "Wizard", result: "WizardResult") -> bool:
     window meanwhile and the installs finished in the background; anything else leaves it as it was.
 
     Returns whether it stamped, so the caller can tell the watchers the gate changed."""
-    if wizard.name != FIRST_RUN_WIZARD or not result.ok:
+    if not wizard.gates_project_setup or not result.ok:
         return False
     mark_first_run_done(str(wizard.id))
     _log.info("first-run gate: opened -- the first-run wizard finished")

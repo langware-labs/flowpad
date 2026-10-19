@@ -183,12 +183,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         {!isHubOnly() && <HarnessSignInDialogRoot />}
-        {!isHubOnly() && dialogsAllowed && (
-          <>
-            <ProjectSetupDialogRoot />
-            <ProjectLoadDialogRoot />
-          </>
-        )}
+        {/* Stays mounted through the first-run flow and hides itself: it keeps what it was refused (see its root). */}
+        {!isHubOnly() && <ProjectSetupDialogRoot />}
+        {!isHubOnly() && dialogsAllowed && <ProjectLoadDialogRoot />}
         {!isHubOnly() && dialogsAllowed && <SourceSetupDialogRoot />}
         {/* A required dependency of the open project is not on this machine. */}
         {!isHubOnly() && dialogsAllowed && <MissingDependenciesDialogRoot />}

@@ -400,7 +400,7 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
 
     await builtin_triggers._run_llm_setup_trigger(SimpleNamespace(uname="llm-setup-on-tab-ready"), [])
 
-    assert calls == ([] if shown else ["ran itself, off screen"])
+    assert calls == ([] if shown else ["ran itself, off screen"]), "watched: the UI drives the flow; unwatched: it ran itself"
 
 
 async def test_a_question_waits_with_no_deadline(monkeypatch):
