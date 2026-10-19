@@ -25,12 +25,14 @@ export function WizardPopupRoot() {
   // A launch the person asked for is on screen: a popup the app opens by itself (first-run setup
   // on a new install) would cover it — and whatever it has to say — so it waits for the launch.
   const launching = useLaunchStore((s) => s.open);
-  // The chooser takes the screen while it asks; the popup waits and returns when the tab leaves it.
-  if (!open || !typeId || launching || pathname.startsWith(LLM_SETUP_PATH)) return null;
-  return <WizardPopupHost typeIdStr={typeId} />;
+  // The chooser takes the screen while it asks; the popup waits and returns when the tab leaves it. Waiting is
+  // SUSPENDED, not unmounted: an unmounted popup forgot that Start was pressed (it came back blank, with no sign
+  // that anything was running) and had to load its entity and document again (the page behind showed for a moment).
+  if (!open || !typeId) return null;
+  return <WizardPopupHost typeIdStr={typeId} suspended={launching || pathname.startsWith(LLM_SETUP_PATH)} />;
 }
 
-function WizardPopupHost({ typeIdStr }: { typeIdStr: string }) {
+function WizardPopupHost({ typeIdStr, suspended }: { typeIdStr: string; suspended: boolean }) {
   const typeId = useMemo(() => new TypeId(typeIdStr), [typeIdStr]);
   const { data: wizard } = useEntity<Wizard>(typeId, { watch: true });
   // The entity owns its content layout: `record()` carries the path and the filesystem authority.
@@ -47,5 +49,5 @@ function WizardPopupHost({ typeIdStr }: { typeIdStr: string }) {
     [record],
   );
   if (!wizard || !fsRef) return null;
-  return <WizardViewer fsRef={fsRef} wizard={wizard} presentation="popup" />;
+  return <WizardViewer fsRef={fsRef} wizard={wizard} presentation="popup" suspended={suspended} />;
 }

@@ -392,6 +392,7 @@ describe('a popup wizard', () => {
     expect(screen.getByTestId('wizard-finished')).toBeTruthy();
     expect(screen.queryByTestId('wizard-restart')).toBeNull();
     expect(screen.queryByTestId('wizard-not-finished')).toBeNull();
+    expect(screen.queryByTestId('wizard-working')).toBeNull();
   });
 
   it('shows the ordinary page unless it is presented as a popup — even a wizard that asks for one', () => {
@@ -448,6 +449,69 @@ describe('a popup wizard', () => {
     // The same wizard as a page in Advanced view DOES show its editor.
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
     await waitFor(() => expect(screen.getByTestId('wizard-form')).toBeTruthy());
+  });
+
+  it('keeps saying it is working while the run has begun but no step has reported (the LLM chooser, the shell opening)', async () => {
+    const withStep = () =>
+      refWith(() => Promise.resolve(JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] })));
+    const view = await renderPopup(<WizardViewer presentation="popup" fsRef={withStep()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    // The backend has begun the run: a "still running" result is on the record, and no step has reported yet.
+    // ...and every step already has a pending node and a blank planned outcome, as the real run writes them.
+    const blank = { exit_code: ExitCode.OK, detail: '', ran: false, reported: false };
+    const begun = {
+      ...popupWizard(),
+      run_state: { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', steps: { a: blank } } },
+    } as never;
+    view.rerender(
+      <TooltipProvider delayDuration={0}>
+        <WizardViewer presentation="popup" fsRef={withStep()} wizard={begun} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('wizard-starting')).toBeTruthy();
+  });
+
+  it('once a step has run, the working line goes and does not come back between one check and the next', async () => {
+    h.start.mockReturnValue(new Promise(() => undefined));
+    const ref = fsRef();
+    const stepsDoc = refWith(() =>
+      Promise.resolve(JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] })),
+    );
+    void ref;
+    const blank = { exit_code: ExitCode.OK, detail: '', ran: false, reported: false };
+    const wizardWith = (step: Record<string, unknown>) =>
+      ({ ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', steps: { a: step } } } }) as never;
+    const popup = (w: never) => <WizardViewer presentation="popup" fsRef={stepsDoc} wizard={w} />;
+    const view = await renderPopup(popup(popupWizard()));
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    // A step reports it ran, then the next check's passing leaves a blank outcome again.
+    view.rerender(<TooltipProvider delayDuration={0}>{popup(wizardWith({ ...blank, ran: true, detail: 'installed' }))}</TooltipProvider>);
+    await waitFor(() => expect(screen.queryByTestId('wizard-starting')).toBeNull());
+    view.rerender(<TooltipProvider delayDuration={0}>{popup(wizardWith(blank))}</TooltipProvider>);
+
+    expect(screen.queryByTestId('wizard-starting')).toBeNull();
+    // ...but the run is still going, and one steady line says so (between two checks no row is spinning).
+    expect(screen.getByTestId('wizard-working')).toBeTruthy();
+  });
+
+  it('given the screen to the LLM chooser and handed back, it still says it is working (suspended, not unmounted)', async () => {
+    h.start.mockReturnValue(new Promise(() => undefined)); // the real call resolves only when the whole run has ended
+    const ref = fsRef();
+    const popup = popupWizard();
+    const popupWith = (suspended: boolean) => (
+      <WizardViewer presentation="popup" fsRef={ref} wizard={popup} suspended={suspended} />
+    );
+    const view = await renderPopup(popupWith(false));
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    view.rerender(<TooltipProvider delayDuration={0}>{popupWith(true)}</TooltipProvider>);
+    await waitFor(() => expect(screen.queryByTestId('wizard-popup')).toBeNull());
+
+    view.rerender(<TooltipProvider delayDuration={0}>{popupWith(false)}</TooltipProvider>);
+    expect(await screen.findByTestId('wizard-starting')).toBeTruthy();
   });
 
   it('offers no Run/Reset — a popup wizard has Start instead', async () => {
