@@ -19,6 +19,8 @@ import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
+import { isHubRelayed } from '@src/lib/hub-relayed';
+import { Button } from '@src/components/ui/button';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -153,6 +155,9 @@ export function AppDisplayViewer({
     void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
   }, [appDisplay.src]);
 
+  // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
+  const relayed = isHubRelayed(appDisplay.src);
+
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
   // the frame's identity, and reload the whole app to recolour it.
@@ -243,6 +248,19 @@ export function AppDisplayViewer({
       {definition?.project_id && definition.name ? (
         <AppStatusLine projectId={definition.project_id} app={definition.name} />
       ) : null}
+      {relayed ? (
+        <div
+          data-testid="app-opens-in-tab"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
+        >
+          <p className="text-lg font-medium">
+            <Trans>This app is served externally via Flowpad. Open it in a new tab.</Trans>
+          </p>
+          <Button onClick={() => openExternal(appDisplay.src)}>
+            <Trans>Open in new tab</Trans>
+          </Button>
+        </div>
+      ) : (
       <div className="min-h-0 flex-1">
         <WebappDisplay
           // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
@@ -258,6 +276,7 @@ export function AppDisplayViewer({
           targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
         />
       </div>
+      )}
     </div>
   );
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
