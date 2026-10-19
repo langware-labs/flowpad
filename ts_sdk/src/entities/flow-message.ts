@@ -322,6 +322,14 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   mark?: IMessageMark | null;
   static type: string = 'flow_message';
 
+  /** An unnamed message reads as a short quote of its text (chips, tabs); a given name wins. */
+  getDisplayName(): string | null {
+    if (this.name?.trim()) return null;
+    const text = this.text?.trim().replace(/\s+/g, ' ');
+    if (!text) return null;
+    return `“${text.length > 32 ? `${text.slice(0, 32)}…` : text}”`;
+  }
+
   constructor(entity: Partial<IFlowMessage> = {}) {
     super(entity);
     this.text = entity.text;

@@ -1,3 +1,4 @@
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { openableValue } from './ConversationAutomationChip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -813,6 +814,9 @@ export function FlowMessageBubble({
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
+        messageSession={
+          session ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) } : null
+        }
         taskIt={
           messageTask
             ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask, people: taskPeople }
