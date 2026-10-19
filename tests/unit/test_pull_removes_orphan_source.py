@@ -51,7 +51,7 @@ async def test_a_pull_that_deletes_a_sources_folder_removes_its_row(tmp_path):
     await project.save()
     tree = tmp_path / "mail"
     tree.mkdir()
-    (tree / "inbox.md").write_text("# inbox\n", encoding="utf-8")
+    (tree / "notes.md").write_text("# notes\n", encoding="utf-8")
     driver = await DataDriver.get("folder")
     src = driver.create_source(driver.create_config(root=str(tree)), name="gmail",
                                reflect=ReflectMode.NONE.value, project_id=str(project.id))
