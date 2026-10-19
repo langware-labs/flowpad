@@ -87,7 +87,15 @@ class _Hub:
 
     async def post(self, etype, payload, eid=None, action=None, **_):
         self.calls.append(("POST", etype, eid, action))
-        return {"deployment_id": eid, "source_revision": "abc"} if self.configured else None
+        if not self.configured:
+            return None
+        if action in ("pause", "resume"):
+            # A lifecycle verb answers with the placement as the hub now holds it.
+            from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+            row = await Deployment.get_by_id(eid)
+            return row.model_dump(mode="json") if row else {"id": eid}
+        return {"deployment_id": eid, "source_revision": "abc"}
 
     async def get(self, etype, eid=None, action=None, **kw):
         self.calls.append(("GET", etype, eid, action, kw.get("params")))

@@ -1582,7 +1582,10 @@ class DataSource(SetupSkippable, Entity):
 
         Body: ``{"limit"?}`` (default 20). Item bodies are ``PREVIEW_CHARS``-character previews;
         ``body_truncated`` and ``full_body_length`` describe that preview, not storage.
-        GET each item's ``full_record_path`` for its complete stored body."""
+        ``name`` is complete, including original ellipses and newlines. GET each item's
+        ``full_record_path`` on this worker's local instance for its complete stored body;
+        use instance discovery and the cookie-gated transport (see ``flow source items --help``),
+        not the hub or a host from legacy CLI configuration."""
         body = await self._body()
         return ApiSuccessResponse(data={"items": await self.recent_items(int(body.get("limit") or 20))})
 

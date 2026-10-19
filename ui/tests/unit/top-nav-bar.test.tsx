@@ -10,7 +10,6 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FileText } from 'lucide-react';
-import { Tab } from '@sdk';
 
 const openDock = vi.hoisted(() => vi.fn());
 const nav = vi.hoisted(() => ({
@@ -39,7 +38,7 @@ vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
   useNavigate: () => routerNavigate,
 }));
-/** Where the bar is — a tab by default; the home (`viewType: 'home'`) in the Home/Tabs cases. */
+/** Where the bar is — a tab by default; the home (`viewType: 'home'`) in the Home cases. */
 const dock = vi.hoisted(() => ({ current: { tabHash: 'h1' } as Record<string, unknown> }));
 const goHome = vi.hoisted(() => vi.fn());
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -91,20 +90,10 @@ const buckets = vi.hoisted(() => ({ current: { buckets: [] as unknown[], globalT
 const dockForProjectEntry = vi.hoisted(() => vi.fn(() => Promise.resolve({ __dock: 'project' })));
 const dockForGlobalEntry = vi.hoisted(() => vi.fn(() => Promise.resolve({ __dock: 'global' })));
 const openWikiModal = vi.hoisted(() => vi.fn());
-/** The project's known last-active tab — what the Home button flips to "Back to tabs" for.
- *  Which tab that is lives in `lastKnownTab` (project-entry tests); the bar only asks. */
-const lastTab = vi.hoisted(() => ({ current: null as unknown }));
-const lastTabAsked = vi.hoisted(() => vi.fn());
 vi.mock('@src/tabs/use-tab-manager', () => ({
   useTabProjectBuckets: () => buckets.current,
-  useLastKnownTab: (enabled: boolean) => {
-    lastTabAsked(enabled);
-    return enabled ? lastTab.current : null;
-  },
 }));
-vi.mock('@src/tabs/project-entry', async (importOriginal) => ({
-  // The real hydration, so "Back to tabs" is seen handing openDock a DockPointer.
-  tabDock: (await importOriginal<typeof import('@src/tabs/project-entry')>()).tabDock,
+vi.mock('@src/tabs/project-entry', () => ({
   dockForProjectEntry,
   dockForGlobalEntry,
 }));
@@ -181,7 +170,6 @@ beforeEach(() => {
   crumbs.current = [crumb('Acme', 'project'), crumb('Design notes', 'current')];
   buckets.current = { buckets: [], globalTabCount: 0 };
   dock.current = { tabHash: 'h1' };
-  lastTab.current = null;
   assistant.current = null;
   vi.clearAllMocks();
 });
@@ -236,47 +224,18 @@ describe('the navigation bar', () => {
     expect(screen.getByTestId('top-nav-home')).toBeTruthy();
   });
 
-  describe('Home and Tabs are one button that flips', () => {
-    const tab = new Tab({
-      id: '00000000-0000-4000-8000-0000000000a2',
-      pointer: JSON.stringify({ viewType: 'shell', pointer: 'shell-a2' }),
-      target_type: 'shell',
-      target_id: '00000000-0000-4000-8000-0000000000a2',
-      visible: true,
-      last_active_at: '2026-10-07T12:00:00Z',
-    } as never);
-
-    it('on a tab: Home, which goes home — and it does not even ask for the last tab', async () => {
-      lastTab.current = tab;
+  describe('Home always opens the main home', () => {
+    it.each([
+      { tabHash: 'h1' },
+      { viewType: 'home', tabHash: null },
+      { viewType: 'project', pointer: PROJECT_ID },
+    ])('opens the main home from %j', async (current) => {
+      dock.current = current;
       renderBar();
 
-      expect(lastTabAsked).toHaveBeenLastCalledWith(false);
       expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
       await userEvent.click(screen.getByTestId('top-nav-home'));
-      expect(goHome).toHaveBeenCalledWith({ homePage: true });
-    });
-
-    it('on the home with a known last tab: Back to tabs, which opens it top-level', async () => {
-      dock.current = { viewType: 'home', tabHash: null };
-      lastTab.current = tab;
-      renderBar();
-
-      expect(screen.queryByTestId('top-nav-home')).toBeNull();
-      await userEvent.click(screen.getByTestId('top-nav-tabs'));
-      expect(openDock).toHaveBeenCalledTimes(1);
-      const [dockArg, , opts] = openDock.mock.calls[0];
-      // Hydrated to the UI class, not the stored JSON.
-      expect(dockArg.constructor.name).toBe('DockPointer');
-      expect(dockArg.pointer).toBe('shell-a2');
-      expect(opts).toEqual({ topLevel: true });
-    });
-
-    it('on the home with no known tab: Home, disabled — there is nothing to go back to', () => {
-      dock.current = { viewType: 'home', tabHash: null };
-      renderBar();
-
-      expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
-      expect(screen.getByTestId('top-nav-home').hasAttribute('disabled')).toBe(true);
+      expect(goHome).toHaveBeenCalledWith();
     });
   });
 
