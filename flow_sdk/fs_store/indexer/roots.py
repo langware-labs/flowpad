@@ -323,9 +323,12 @@ def classify_path(path: str | Path) -> str | None:
         return None
 
     try:
-        from flow_sdk.config import FLOWPAD_TEMP_DIR, flowpad_assistant_project_root  # noqa: PLC0415
-        # Flowpad's own: its shipped project, and its temp folder (logs such as SmartNavigationLog).
-        for system_root in (flowpad_assistant_project_root().resolve(), Path(FLOWPAD_TEMP_DIR).resolve()):
+        from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+        from flow_sdk.core.log_dataset import temp_datasets  # noqa: PLC0415
+
+        # Flowpad's own: its shipped project, and its logs' folder in temp (SmartNavigationLog, FlowCall
+        # logs). Only that folder: a project made under temp (a mock project, a test's) stays a project.
+        for system_root in (flowpad_assistant_project_root().resolve(), temp_datasets().resolve()):
             if target == system_root or system_root in target.parents:
                 return Scope.SYSTEM.value
     except Exception:

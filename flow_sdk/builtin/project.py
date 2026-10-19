@@ -2961,6 +2961,9 @@ class Project(SetupSkippable, Entity):
                 # True while the resolve opening the project started is still fetching: a
                 # ``missing`` dependency may be on its way — the caller should not warn yet.
                 "resolving": project_dependencies.is_resolving(str(self.id)),
+                # The context the resolved dependencies give: a background add lands it, and a listing
+                # is how a caller learns it (the add itself answered before the fetch).
+                **self._context_payload(),
                 **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
                    if declarers else {}),
             }
