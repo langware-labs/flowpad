@@ -23,11 +23,25 @@ SCRIPT = REPO / "scripts" / "check_version_compat.py"
 HOST = "https://files.pythonhosted.org/packages/ab/cd"
 
 
+_CONTRACT_MODULES = ("flow_sdk", "flow_sdk.utils", "flow_sdk.utils.compat", "flow_sdk.utils.semver")
+
+
 @pytest.fixture(scope="module")
 def gate():
-    spec = importlib.util.spec_from_file_location("check_version_compat_under_test", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    """The script, loaded as a module. It installs bare stand-ins for ``flow_sdk`` into ``sys.modules`` when
+    the package is not imported yet (that is how it runs in CI); put ``sys.modules`` back afterwards so a
+    stub can never leak into the rest of the session, whatever order the tests run in."""
+    saved = {name: sys.modules.get(name) for name in _CONTRACT_MODULES}
+    try:
+        spec = importlib.util.spec_from_file_location("check_version_compat_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        for name, original in saved.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
     return module
 
 
@@ -177,3 +191,44 @@ def test_an_unparseable_desktop_version_is_a_usage_error(gate):
         gate.resolve("nonsense", "0.2.0")
 
     assert stop.value.code == 2
+
+
+def test_the_failure_says_why_releases_were_excluded(gate, monkeypatch, capsys):
+    """"No release satisfies the floor" was the message for four different causes; name the real ones."""
+    releases = {
+        "0.2.90": _release("0.2.90", yanked=True),
+        "0.2.89": _release("0.2.89", host="https://evil.example.com/p"),
+        "0.2.88": _release("0.2.88", sdist_only=True),
+        "0.2.30": _release("0.2.30"),
+    }
+    doc = json.dumps({"releases": releases}).encode()
+    monkeypatch.setattr(gate.urllib.request, "urlopen", lambda url, timeout=0: _Response(doc))
+
+    with pytest.raises(SystemExit):
+        gate.resolve("0.2.45", "0.2.50")
+
+    err = capsys.readouterr().err
+    assert "1 release(s) are below the desktop's floor 0.2.50" in err
+    assert "1 release(s) have only yanked wheels" in err
+    assert "1 release(s) have no wheel on files.pythonhosted.org" in err
+    assert "1 release(s) have no wheel" in err
+
+
+def test_no_stub_package_is_left_in_sys_modules(gate):
+    """The script plants bare stand-ins for ``flow_sdk`` when the package is not imported yet; they must
+    not outlive loading it. (A real package has a ``__file__``; the stand-in does not.)"""
+    leaked = sys.modules.get("flow_sdk")
+
+    assert leaked is None or getattr(leaked, "__file__", None), "a bare stub package leaked into sys.modules"
+
+
+def test_no_stub_leaks_even_when_flow_sdk_was_not_imported_first():
+    """``tests/conftest.py`` imports flow_sdk before any test runs, which hides the hazard. Run the check
+    above with no conftest at all -- the condition the stubs exist for."""
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "--noconftest", "-q", "-p", "no:cacheprovider",
+         f"{Path(__file__)}::test_no_stub_package_is_left_in_sys_modules"],
+        cwd=REPO, capture_output=True, text=True, timeout=60,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
