@@ -1,14 +1,10 @@
-"""Scope definitions for filesystem and cloud resources."""
+"""The asset scope vocabulary: ``user``, ``project`` and ``system``.
 
-from enum import Enum
+One enum, defined with placement (``flow_sdk/assets/placement.py``) and re-exported here for the
+index. Claude Code's own config locations (managed, local, legacy...) are a different thing:
+``flow_sdk/builtin/faas/system_profile_types.py``.
+"""
 
+from flow_sdk.assets.placement import Scope
 
-class Scope(str, Enum):
-    """Scope/location of a resource."""
-
-    MANAGED = "managed"
-    USER = "user"
-    GLOBAL = "global"
-    PROJECT = "project"
-    LOCAL = "local"
-    LEGACY = "legacy"
+__all__ = ["Scope"]

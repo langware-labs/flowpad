@@ -145,7 +145,7 @@ async def index_one(
     own labels when the caller has them; otherwise the path is classified and
     the deepest project mount owning it wins, as in the walk."""
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.roots import owning_project_id, scope_for  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import owning_project_id, scope_for, system_project_id  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     info = resolved.info
@@ -160,10 +160,13 @@ async def index_one(
     if record is None:
         return None
     project_id = project_id or await owning_project_id(resolved.root)
+    if not scope:
+        scope = scope_for(resolved.root, project_id)
+        object.__setattr__(record, "scope", scope)
+    if not project_id and scope == "system":
+        project_id = await system_project_id()  # system content outside the shipped project (temp logs)
     if project_id:
         object.__setattr__(record, "project_id", project_id)
-    if not scope:
-        object.__setattr__(record, "scope", scope_for(resolved.root, project_id))
     if not getattr(record, "parent_type_id", None):
         parent_type_id = _enclosing_repo_asset_typeid(resolved.root)
         if parent_type_id:
