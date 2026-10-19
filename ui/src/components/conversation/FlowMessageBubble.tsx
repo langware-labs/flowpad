@@ -246,9 +246,9 @@ interface FlowMessageBubbleProps {
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
-}
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
   continuation?: boolean;
+}
 
 export function FlowMessageBubble({
   messageId,
