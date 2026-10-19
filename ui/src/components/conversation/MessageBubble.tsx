@@ -13,7 +13,7 @@ import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
-import { LinkifiedText } from '@src/components/links/LinkifiedText';
+import { withHardBreaks } from './message-markdown';
 import type { LinkHandlers } from '@src/components/links/link-events';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
@@ -96,6 +96,8 @@ interface MessageBubbleProps {
   onReply?: () => void;
   /** The channel's replies only thread (`ChannelSpec.quotes` false): Reply says "Reply in thread". */
   replyInThread?: boolean;
+  /** Same sender as the message just above, moments later: no avatar or name; time and actions on hover. */
+  continuation?: boolean;
 }
 
 /**
@@ -238,7 +240,12 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
     );
   }
   // Without a message to resolve against, a link could only fail — keep it text.
-  return <div className={bodyClass}>{links ? <LinkifiedText text={content} handlers={links} /> : content}</div>;
+  if (!links) return <div className={bodyClass}>{content}</div>;
+  return (
+    <div className={`break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+      <MarkdownView value={withHardBreaks(content)} compact dense links={links} />
+    </div>
+  );
 }
 
 export function MessageBubble({
@@ -267,6 +274,7 @@ export function MessageBubble({
   onReact,
   onReply,
   replyInThread,
+  continuation = false,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -342,7 +350,7 @@ export function MessageBubble({
 
   return (
     <div
-      className={`group flex gap-2 rounded p-1 transition-colors ${
+      className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
         onSelect ? 'cursor-pointer' : ''
       } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
       onClick={handleBubbleClick}
@@ -350,13 +358,21 @@ export function MessageBubble({
     >
       <SenderTag
         {...senderProps}
-        aria-label={onSenderClick ? t`Open ${displayName}` : undefined}
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
+        aria-hidden={continuation || undefined}
+        tabIndex={continuation ? -1 : undefined}
+        aria-label={onSenderClick && !continuation ? t`Open ${displayName}` : undefined}
+        className={`${continuation ? 'invisible h-0' : 'h-8'} flex w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
       >
         {initial}
       </SenderTag>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-baseline gap-2">
+        <div
+          className={
+            continuation
+              ? 'absolute end-1 top-0 z-10 flex items-baseline gap-2 rounded bg-background px-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100'
+              : 'flex items-baseline gap-2'
+          }
+        >
           {!isBot && editing ? (
             <input
               className="border-b border-input bg-transparent text-sm font-semibold text-foreground focus:outline-none"
@@ -369,7 +385,7 @@ export function MessageBubble({
               }}
               autoFocus
             />
-          ) : (
+          ) : continuation ? null : (
             <SenderTag
               {...senderProps}
               className={`text-sm font-semibold text-foreground ${onSenderClick ? 'hover:underline' : ''}`}
