@@ -359,6 +359,7 @@ async def _install_git_reference(
     overwrite: bool,
     someone_typeid,
     name: str | None = None,
+    project_root: Path | None = None,
 ) -> ApiResponse:
     """Install a staged git reference (``TypeInfo.receive_transfer``): the type's
     ``restore_reference`` writes its row from the staged metadata — an artifact
@@ -390,6 +391,8 @@ async def _install_git_reference(
             overwrite=overwrite,
             owner_typeid=someone_typeid,
             name=name,
+            project_root=project_root,
+            project_id=project_id if scope == AttachmentScope.PROJECT.value else None,
         )
     except FlowMessageExistsError as e:
         return ApiFailResponse(
@@ -568,15 +571,34 @@ async def handle_attachment_install(
     # the rest (artifact / folder: the row only, the checkout resolves at open).
     from flow_sdk.builtin.flow_message_bundle import git_reference_cls  # noqa: PLC0415
 
-    if git_reference_cls(ma.asset_type) is not None and ma.transfer_mode == TransferMode.GIT.value:
-        return await _install_git_reference(
-            ma,
-            scope,
-            project_id,
-            overwrite=overwrite,
-            someone_typeid=someone_typeid,
-            name=name,
-        )
+    if git_reference_cls(ma.asset_type) is not None and ma.transfer_mode in (
+        TransferMode.GIT.value,
+        TransferMode.BOTH.value,
+    ):
+        project_root = await _project_mount(project_id) if scope == AttachmentScope.PROJECT.value else None
+        if ma.transfer_mode == TransferMode.BOTH.value and not await _opens_by_git(ma, project_root):
+            # Not a checkout of the shared repo: the copy, never a hidden clone.
+            return await _install_webapp_artifact_copy(
+                ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+            )
+        try:
+            return await _install_git_reference(
+                ma,
+                scope,
+                project_id,
+                overwrite=overwrite,
+                someone_typeid=someone_typeid,
+                name=name,
+                project_root=project_root,
+            )
+        except GitShareError as e:
+            if ma.transfer_mode != TransferMode.BOTH.value or ma.asset_type != EntityType.ARTIFACT.value:
+                return _git_share_failed(e)
+            # Git could not open it here: the bytes that rode beside the pointer can.
+            res = await _install_webapp_artifact_copy(
+                ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+            )
+            return _with_git_share_error(res, e)
     # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
     # folder bytes and serve them.
     if ma.asset_type == EntityType.ARTIFACT.value:
@@ -627,7 +649,7 @@ async def handle_attachment_install(
         root = Path(mount)
     else:
         project_id = None
-        if ma.transfer_mode != TransferMode.GIT.value:
+        if ma.transfer_mode != TransferMode.GIT.value:  # copy, or both (whose bytes are the fallback)
             # Same policy that stamped `user_scope_allowed` at stage time —
             # the single owner is placement.user_scope_allowed.
             if not user_scope_allowed(asset_class):
@@ -651,6 +673,23 @@ async def handle_attachment_install(
         except ValueError:
             return ApiFailResponse(message=f"unknown record type: {ma.asset_type!r}", status_code=400)
 
+    git_error: GitShareError | None = None
+    if ma.transfer_mode == TransferMode.BOTH.value and await _opens_by_git(ma, root):
+        # Git first, into the receiver's project; the bytes are the fallback.
+        try:
+            if await _restore_git_transfer_entry(
+                unpacked_dir(ma.flow_message_id),
+                entry_key,
+                ma.git_transfer or {},
+                _origin_map(entry_key, ma),
+                preferred_project_root=root,
+                preferred_project_id=project_id,
+                overwrite=overwrite,
+                owner_typeid=someone_typeid,
+            ):
+                return await _finalize_install(ma, scope, project_id, None, someone_typeid)
+        except GitShareError as e:
+            git_error = e
     try:
         if ma.transfer_mode == TransferMode.GIT.value:
             # Clone/pull + index happen HERE, behind explicit consent (at
@@ -707,14 +746,7 @@ async def handle_attachment_install(
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
         )
     except GitShareError as e:
-        # The shared version could not be opened here (no access, offline,
-        # rewritten history, no git): say which, with its code, and leave the
-        # attachment staged so a retry can still install it.
-        return ApiFailResponse(
-            message=str(e),
-            status_code=424,
-            data={"git_share_error": e.code},
-        )
+        return _git_share_failed(e)
 
     # Metadata axis: overlay the portable entity-JSON envelopes (entities.json)
     # onto the freshly materialized rows — parent_type_id / labels / status /
@@ -727,13 +759,54 @@ async def handle_attachment_install(
     except Exception:
         logger.warning("[install] entities.json overlay failed for %s", ma.id, exc_info=True)
 
-    return await _finalize_install(
+    res = await _finalize_install(
         ma,
         scope,
         project_id,
         str(root) if root is not None else None,
         someone_typeid,
     )
+    return _with_git_share_error(res, git_error) if git_error is not None else res
+
+
+async def _opens_by_git(ma: MessageAttachment, root: Path | None) -> bool:
+    """A ``both`` share opens by git only inside a project that is a checkout of
+    the shared repo; anywhere else (another project, the receiver's own folder, a
+    temp folder) it opens from the bytes that rode with it."""
+    if not ma.origin or not getattr(ma.origin, "transportable", False):
+        return False
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.builtin.share_target import is_checkout_of  # noqa: PLC0415
+
+    return await asyncio.to_thread(is_checkout_of, ma.origin, root)
+
+
+async def _project_mount(project_id: str | None) -> Path | None:
+    """The receiver's project folder, or None."""
+    if not project_id:
+        return None
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    project = await Project.get_one({"id": project_id})
+    mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+    return Path(mount) if mount else None
+
+
+def _git_share_failed(e) -> ApiFailResponse:
+    """The shared version could not be opened here (no access, offline, rewritten
+    history, no git): say which, with its code, and leave the attachment staged so
+    a retry can still install it."""
+    return ApiFailResponse(message=str(e), status_code=424, data={"git_share_error": e.code})
+
+
+def _with_git_share_error(res: ApiResponse, e) -> ApiResponse:
+    """A ``both`` install that opened from the copy because git failed: the copy is
+    in place, and the response says why git did not open it (the UI offers to
+    request access)."""
+    if isinstance(res, ApiSuccessResponse) and isinstance(res.data, dict):
+        res.data = {**res.data, "git_share_error": e.code, "git_share_message": str(e)}
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -785,7 +858,12 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     # (the shared destroy tail below); there is no installed_root to sweep.
     row_only = getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto"
 
-    if ma.transfer_mode != TransferMode.GIT.value and not row_only:
+    # A ``both`` row opened by git copied no bytes (no installed_root) — nothing to sweep.
+    if (
+        ma.transfer_mode != TransferMode.GIT.value
+        and not row_only
+        and (ma.transfer_mode != TransferMode.BOTH.value or ma.installed_root)
+    ):
         if not ma.installed_root:
             return ApiFailResponse(message="installed_root missing — cannot uninstall", status_code=409)
         entry_dir = _entry_dir_for(ma)
@@ -1009,6 +1087,171 @@ async def install_attachment_action() -> ApiResponse:
     except Exception as e:
         logger.error("[message_attachment] install error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"install failed: {e}")
+
+
+async def handle_open_shared(
+    attachment_id: str,
+    *,
+    project_id: str | None = None,
+    choice: str | None = None,
+    someone_typeid=None,
+) -> ApiResponse:
+    """Open a received share in the right place — the receiver's one entry point.
+
+    ``project_id``: the receiver picked it. ``choice="clone"``: clone the shared
+    repo as a new project and open it there. ``choice="copy"``: open the copy in
+    the receiver's own folder. Neither: resolve it (``resolve_share_target``) —
+    one answer opens straight away, otherwise ``data.needs`` asks the UI for a
+    ``choice`` (2+ projects) or a ``placement`` (none). The answer is saved by
+    binding the conversation to the project, so it is asked once.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.drivers.git_driver import GitShareError  # noqa: PLC0415
+    from flow_sdk.builtin.share_target import (  # noqa: PLC0415
+        clone_as_project,
+        remember_project_for_sender,
+        resolve_share_target,
+    )
+
+    ma = await _load_ma(attachment_id)
+    if ma is None:
+        return _not_found(attachment_id)
+    clone_error: GitShareError | None = None
+    if choice == "clone":
+        try:
+            project_id = (await clone_as_project(ma.origin)).id
+        except GitShareError as e:
+            choice, clone_error = "copy", e  # the repo could not be cloned here: the copy, and why
+    if choice == "copy":
+        res = await handle_attachment_install(
+            attachment_id, AttachmentScope.USER.value, None, someone_typeid=someone_typeid
+        )
+        return _with_git_share_error(res, clone_error) if clone_error else res
+    conv = await Conversation.get_one({"id": ma.conversation_id}) if ma.conversation_id else None
+    mismatch = False
+    if not project_id:
+        target = await resolve_share_target(
+            ma.origin,
+            bound_project_id=getattr(conv, "project_id", None),
+            remote_project_id=getattr(conv, "remote_project_id", None),
+        )
+        if target.project_id is None:
+            needs = "choice" if target.candidates else "placement"
+            return ApiSuccessResponse(data={"needs": needs, "candidates": target.candidates})
+        project_id, mismatch = target.project_id, target.mismatch
+    res = await handle_attachment_install(
+        attachment_id, AttachmentScope.PROJECT.value, project_id, someone_typeid=someone_typeid
+    )
+    if not isinstance(res, ApiSuccessResponse):
+        return res
+    if conv is not None and not conv.project_id:
+        conv.project_id = project_id  # the answer, kept: later shares here open in it too
+        await conv.save(someone_typeid)
+    # The sender's project is this one here — later conversations from it open in it too.
+    remember_project_for_sender(getattr(conv, "remote_project_id", None), project_id)
+    if isinstance(res.data, dict):
+        res.data = {**res.data, "project_id": project_id, "mismatch": mismatch}
+    return res
+
+
+@action.post(action_name="open-shared", types=["message_attachment"])
+async def open_shared_attachment_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        body = await request_info.get_post_data() or {}
+        return await handle_open_shared(
+            str(request_info.target_entity_typeid.id),
+            project_id=body.get("project_id") or None,
+            choice=body.get("choice") or None,
+            someone_typeid=await _local_owner_typeid(),
+        )
+    except Exception as e:
+        logger.error("[message_attachment] open-shared error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"open failed: {e}")
+
+
+#: Marker keys of the structured share replies (``prompt_preview`` JSON on the URL carrier).
+GIT_ACCESS_REQUEST_KEY = "git_access_request"
+SHARE_MISMATCH_KEY = "share_mismatch_report"
+
+
+async def handle_share_reply(attachment_id: str, kind: str, someone_typeid=None) -> ApiResponse:
+    """Send the sharer a structured reply about a received share, in its conversation.
+
+    ``kind`` is ``GIT_ACCESS_REQUEST_KEY`` ("Git request access": the receiver
+    cannot open the repo by git) or ``SHARE_MISMATCH_KEY`` (the conversation's
+    project is not a checkout of the shared repo). The reply is a message whose
+    URL attachment is the repo, with the details as a marker in ``prompt_preview``
+    — fields the hub keeps — so the sharer's app shows it as a request card.
+    """
+    import json  # noqa: PLC0415
+
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    ma = await _load_ma(attachment_id)
+    if ma is None:
+        return _not_found(attachment_id)
+    origin = ma.origin
+    if origin is None or not callable(getattr(origin, "clone_url", None)) or not ma.conversation_id:
+        return ApiFailResponse(message="this share has no git repo to ask about", status_code=400)
+    sender = await User.current_sender_participant(None)
+    who = sender.get("name") or sender.get("email") or "The receiver"
+    repo_url = origin.clone_url()
+    detail = {
+        "requester_name": sender.get("name"),
+        "requester_email": sender.get("email"),
+        "repo_url": repo_url,
+        "branch": getattr(origin, "branch", None),
+        "path": getattr(origin, "rel_path", None),
+        "asset_name": ma.name,
+    }
+    if kind == GIT_ACCESS_REQUEST_KEY:
+        text = f"Git request access: {who} asks for access to {repo_url}"
+    elif kind == SHARE_MISMATCH_KEY:
+        conv = await Conversation.get_one({"id": ma.conversation_id})
+        project = await Project.get_one({"id": conv.project_id}) if conv and conv.project_id else None
+        detail["project_name"] = getattr(project, "name", None)
+        text = (
+            f"Please check: {ma.name or 'the shared file'} is from {repo_url}, "
+            f"but {who} has this conversation in project {detail['project_name'] or 'another project'}"
+        )
+    else:
+        return ApiFailResponse(message=f"unknown share reply: {kind!r}", status_code=400)
+    return await handle_add_message(
+        {
+            "conversation_id": ma.conversation_id,
+            "message": text,
+            "attachment": [
+                {
+                    "attachment_type": AttachmentType.URL.value,
+                    "data": repo_url,
+                    "prompt_preview": json.dumps({kind: detail}),
+                }
+            ],
+        },
+        someone_typeid or await _local_owner_typeid(),
+    )
+
+
+@action.post(action_name="request-git-access", types=["message_attachment"])
+async def request_git_access_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    return await handle_share_reply(str(request_info.target_entity_typeid.id), GIT_ACCESS_REQUEST_KEY)
+
+
+@action.post(action_name="report-share-mismatch", types=["message_attachment"])
+async def report_share_mismatch_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    return await handle_share_reply(str(request_info.target_entity_typeid.id), SHARE_MISMATCH_KEY)
 
 
 @action.post(action_name="setup", types=["message_attachment"])
