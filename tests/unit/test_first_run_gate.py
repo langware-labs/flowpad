@@ -20,7 +20,6 @@ from flow_sdk.core.wizard.first_run import (
     FirstRunSetupRequired,
     begin_first_run,
     finish_first_run,
-    first_run_block,
     first_run_gate_open,
     first_run_state,
     indexing_finished,
@@ -49,8 +48,8 @@ def _instance(monkeypatch, tmp_path):
     monkeypatch.setattr("flow_sdk.instance_settings.runtime.get_assigned_runtime", lambda: None)
 
 
-def _wizard(name: str = FIRST_RUN_WIZARD):
-    return SimpleNamespace(id=WIZARD_ID, name=name)
+def _wizard(gates: bool = True):
+    return SimpleNamespace(id=WIZARD_ID, name=FIRST_RUN_WIZARD, gates_project_setup=gates)
 
 
 def test_a_fresh_install_is_closed():
@@ -71,9 +70,15 @@ def test_the_stamp_survives_every_later_run():
     assert first_run_gate_open(WIZARD_ID) is True, "a later run that falls short must not close the gate again"
 
 
-def test_a_result_from_before_runs_were_tracked_counts_as_done():
-    record_result(WIZARD_ID, WizardResult.not_yet("an older install ended short"))
+def test_a_green_result_from_before_runs_were_tracked_counts_as_done():
+    record_result(WIZARD_ID, WizardResult.satisfied("an older install ran fully"))
     assert first_run_gate_open(WIZARD_ID) is True
+
+
+def test_a_result_that_fell_short_proves_nothing():
+    """A failed or check-only run from the CLI/API writes a result too; it must not open the gate for good."""
+    record_result(WIZARD_ID, WizardResult.not_yet("a check-only run found a tool missing"))
+    assert first_run_gate_open(WIZARD_ID) is False
 
 
 def test_a_tracked_run_still_going_does_not_open_it():
@@ -103,9 +108,9 @@ def test_only_a_green_finish_stamps_it():
 
 
 def test_another_wizard_never_gates_anything():
-    assert first_run_gate_open(WIZARD_ID, "git-dependency") is True
-    begin_first_run(_wizard("git-dependency"))
-    finish_first_run(_wizard("git-dependency"), WizardResult.satisfied("done"))
+    assert first_run_gate_open(WIZARD_ID, False) is True
+    begin_first_run(_wizard(False))
+    finish_first_run(_wizard(False), WizardResult.satisfied("done"))
     assert read_state(WIZARD_ID).get("first_run_done") is None
 
 
@@ -142,7 +147,6 @@ async def test_no_first_run_wizard_installed_means_nothing_to_wait_for(monkeypat
 
     monkeypatch.setattr(first_run, "first_run_wizard", none)
     await require_first_run_setup()
-    assert await first_run_block() is None
 
 
 async def test_a_closed_gate_refuses_with_a_marker_a_client_can_read(monkeypatch):
@@ -153,10 +157,17 @@ async def test_a_closed_gate_refuses_with_a_marker_a_client_can_read(monkeypatch
 
     with pytest.raises(FirstRunSetupRequired):
         await require_first_run_setup()
-    refused = await first_run_block()
-    assert refused is not None
+
+
+def test_the_refusal_is_a_412_a_client_can_read():
+    import json
+
+    from flow_sdk.server.flow_server import _first_run_required
+
+    refused = _first_run_required(None, FirstRunSetupRequired())  # type: ignore[arg-type]
+
     assert refused.status_code == 412, "never 409: clients read that as a name collision"
-    assert refused.data == {"blocked": BLOCKED_FIRST_RUN}
+    assert json.loads(refused.body)["data"] == {"blocked": BLOCKED_FIRST_RUN}
 
 
 async def test_start_setup_is_refused_before_it_derives_or_starts_anything(monkeypatch):
@@ -184,7 +195,6 @@ async def test_a_wizard_not_indexed_yet_is_not_ready_so_the_gate_is_closed(monke
 
     with pytest.raises(FirstRunSetupRequired):
         await require_first_run_setup()
-    assert (await first_run_block()) is not None
 
 
 async def test_no_wizard_after_the_index_ended_is_not_installed_so_the_gate_is_open(monkeypatch):
@@ -196,7 +206,6 @@ async def test_no_wizard_after_the_index_ended_is_not_installed_so_the_gate_is_o
     indexing_finished()
 
     await require_first_run_setup()
-    assert await first_run_block() is None
 
 
 async def test_the_state_is_not_answered_until_the_index_ended_then_says_closed_or_open(monkeypatch):

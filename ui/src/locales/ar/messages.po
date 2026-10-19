@@ -6992,7 +6992,6 @@ msgid "Could not open link"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
-#: src/components/project-setup/first-run-gate.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Could not open setup"
 msgstr "تعذّر فتح الإعداد"

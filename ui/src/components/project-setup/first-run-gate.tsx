@@ -4,7 +4,7 @@ import { useContext, useEntity } from '@sdk/react/hooks';
 import { Wizard } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { startFirstRunFlow, type FirstRunOrigin } from '@src/components/first-run-flow/first-run-flow-store';
-import { findSetupWizard, openSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
+import { findSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
@@ -29,8 +29,6 @@ export type FirstRunGateState = 'loading' | 'closed' | 'open';
 
 export interface FirstRunGate {
   state: FirstRunGateState;
-  /** Opens the first-run wizard blank; the person presses its own Start. */
-  finish: () => Promise<void>;
   /** Goes on without finishing it, for this session -- a declined install or a blocked policy never ends all
    *  green. Resolves whether the backend took it (a failure is told to the person, and the gate stays closed). */
   continueAnyway: () => Promise<boolean>;
@@ -96,13 +94,6 @@ export function useFirstRunGate(): FirstRunGate {
     }
   }
 
-  const finish = useCallback(async () => {
-    try {
-      if (!(await openSetupWizard())) throw new Error('The setup wizard is not installed.');
-    } catch (err) {
-      notify.error({ title: errorMessage(err, t`Could not open setup`), forceToast: true });
-    }
-  }, [t]);
   const continueAnyway = useCallback(async () => {
     try {
       // No wizard to waive: the backend has not taken it, so say so rather than end the flow as if it had.
@@ -115,7 +106,7 @@ export function useFirstRunGate(): FirstRunGate {
     }
   }, [wizard, t]);
 
-  return { state, finish, continueAnyway };
+  return { state, continueAnyway };
 }
 
 /**

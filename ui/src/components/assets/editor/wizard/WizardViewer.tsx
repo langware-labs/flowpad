@@ -278,16 +278,18 @@ function WizardViewerBody({
     closeWizardPopup();
   }, [inFirstRunFlow, setFlowMinimized]);
   // X (and Skip): close it. In the first-run flow that leads on to window 2; a run already going carries on.
-  const closeIt = useCallback(() => closeWizardPopup(), []);
+  // After a run that ended all green the gate opens a moment later (the backend stamps it after the sign-in that
+  // follows the installs): closing then must not read as Skip, so the flow waits for the gate, as for Minimize.
+  const closeIt = useCallback(() => {
+    if (inFirstRunFlow && finished) setFlowMinimized(true);
+    closeWizardPopup();
+  }, [inFirstRunFlow, finished, setFlowMinimized]);
   // "Go to homepage" from a popup must also close it: the popup sits OVER the page, so navigating
   // alone changed only the page behind it and the click looked like it did nothing.
   const goHome = useCallback(() => {
-    // A finished run opens the first-run gate a moment after this screen says so (the backend stamps it after the
-    // sign-in that follows the installs): closing now must not read as Skip. The flow waits for the gate instead.
-    if (inFirstRunFlow && finished) setFlowMinimized(true);
-    if (isPopup) closeWizardPopup();
+    if (isPopup) closeIt();
     navigation.goHome({ homePage: true });
-  }, [isPopup, navigation, inFirstRunFlow, finished, setFlowMinimized]);
+  }, [isPopup, navigation, closeIt]);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is

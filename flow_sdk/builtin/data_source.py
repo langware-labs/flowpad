@@ -1670,10 +1670,9 @@ class DataSource(SetupSkippable, Entity):
         tree (what its driver needs — a connection, credential values — then its stages, or Verify). The
         questions come to the app; answers at once with the run's address, which a screen claims."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
-        from flow_sdk.core.wizard.first_run import first_run_block  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import require_first_run_setup  # noqa: PLC0415
 
-        if (blocked := await first_run_block()) is not None:
-            return blocked
+        await require_first_run_setup()
         project = await self.setup_project()
         if project is None:
             return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)

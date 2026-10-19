@@ -66,6 +66,12 @@ class Wizard(Entity):
 
         return read_wizard(Path(self.asset_ref)) if self.asset_ref else None
 
+    @property
+    def gates_project_setup(self) -> bool:
+        """Whether project setup waits for this wizard -- its document says so (``gates_project_setup``)."""
+        spec = self.spec()
+        return bool(spec is not None and spec.gates_project_setup)
+
     def is_system(self) -> bool:
         """True when this wizard ships inside an SDK system project.
 
@@ -233,7 +239,7 @@ class Wizard(Entity):
 
         if not self.id:
             return True
-        return first_run_gate_open(str(self.id), self.name or "")
+        return first_run_gate_open(str(self.id), self.gates_project_setup)
 
     async def run(
         self,
@@ -501,9 +507,9 @@ class Wizard(Entity):
         wizard opens again until it has run fully. Only the first-run wizard gates anything; asking it of
         another is a 400. The wizard's own warning in the footer still says it is unfinished."""
         from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
-        from flow_sdk.core.wizard.first_run import FIRST_RUN_WIZARD, waive_for_session  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import waive_for_session  # noqa: PLC0415
 
-        if self.name != FIRST_RUN_WIZARD:
+        if not self.gates_project_setup:
             return ApiFailResponse(message=f"{self.name or 'This wizard'} does not gate project setup.", status_code=400)
         waive_for_session(str(self.id))
         await _notify_wizard_watchers(str(self.id))

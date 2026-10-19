@@ -103,7 +103,7 @@ async def test_approving_a_setup_before_the_first_run_wizard_is_done_waits_inste
     from flow_sdk.core.wizard import first_run
 
     async def closed():
-        return NS(id="w-1", name=first_run.FIRST_RUN_WIZARD)
+        return NS(id="w-1", name=first_run.FIRST_RUN_WIZARD, gates_project_setup=True)
 
     monkeypatch.setattr(first_run, "first_run_wizard", closed)
 

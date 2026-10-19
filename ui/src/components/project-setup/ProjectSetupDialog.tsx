@@ -31,6 +31,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
+import { useDialogsAllowed } from '@src/components/first-run-flow/first-run-flow-store';
 import { FirstRunWaiting, isFirstRunBlocked, useFirstRunGate, useFirstRunResume } from './first-run-gate';
 import { useSetupRun } from './use-setup-run';
 
@@ -125,12 +126,15 @@ function JustificationInfo({ req }: { req: ProjectSetupRequirement }) {
 
 export function ProjectSetupDialogRoot() {
   const { open, payload, setOpen } = useProjectSetupStore();
+  // Hidden, not unmounted, while the first-run flow is on screen: the dialog's own Start is what STARTS that flow
+  // (the backend refuses it), and an unmounted dialog forgets it was refused and never goes on by itself.
+  const dialogsAllowed = useDialogsAllowed();
   if (!payload) return null;
   return (
     <ProjectSetupDialog
       projectId={payload.projectId}
       projectName={payload.projectName}
-      open={open}
+      open={open && dialogsAllowed}
       onOpenChange={setOpen}
     />
   );

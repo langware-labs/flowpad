@@ -159,9 +159,6 @@ export function IncomingDeepLink() {
   // wizard, and what Skip leads to) to end with the gate open, and shows only then. Nothing else shows meanwhile.
   const gate = useFirstRunGate();
   const flowActive = useFirstRunFlowActive();
-  useEffect(() => {
-    if (pendingProject && gate.state === 'closed') startFirstRunFlow('invitation');
-  }, [pendingProject, gate.state]);
   const launchPlan = useLaunchStore((state) => state.payload);
   // A launch is fetching its own projects: nothing is offered until it is done, so what it
   // set up is already here when the offers are looked at.
@@ -274,12 +271,17 @@ export function IncomingDeepLink() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Anything waiting on the gate starts the flow when the gate is closed (a shared project, a launch, a task).
+  useEffect(() => {
+    if ((pendingProject || launchPlan || pendingTask) && gate.state === 'closed') startFirstRunFlow('invitation');
+  }, [pendingProject, launchPlan, pendingTask, gate.state]);
+
   return (
     <>
-      {launchPlan && !flowActive && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
+      {launchPlan && gate.state === 'open' && !flowActive && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
-      {pendingTask && !flowActive && (
+      {pendingTask && gate.state === 'open' && !flowActive && (
         <IncomingTaskDialog
           open={!!pendingTask}
           taskId={pendingTask.taskId}

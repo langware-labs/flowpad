@@ -1172,12 +1172,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         ``target_name`` set to accept the suggestion.
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
-        from flow_sdk.core.wizard.first_run import first_run_block
+        from flow_sdk.core.wizard.first_run import require_first_run_setup
         from flow_sdk.fs_store.origin.git_origin import GitOrigin
         from flow_sdk.utils.git import derive_repo_leaf_from_url
 
-        if (blocked := await first_run_block()) is not None:
-            return blocked
+        await require_first_run_setup()
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         workspace_root, error = self._workspace_base(body)

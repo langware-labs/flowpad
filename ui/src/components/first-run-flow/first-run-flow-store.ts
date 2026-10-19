@@ -4,8 +4,8 @@ import { create } from 'zustand';
  * The first-run flow's state: which of its three windows is up, and where the person came from.
  *
  * The flow is what the product spec draws (`agentic-assets/chart/first-run-wizard-flow`): window 1 is the setup
- * wizard, window 2 says Flowpad was not installed with its dependencies (Run setup / Skip), window 3 says where
- * to run setup again (Continue anyway). Every path out of it ends with the backend's first-run gate OPEN -- the
+ * wizard, window 2 says Flowpad was not installed with its dependencies (Run setup / Continue anyway; X is Continue
+ * anyway), window 3 says where to run setup again (X is the only way out). Every path out of it ends with the backend's first-run gate OPEN -- the
  * wizard ran fully, or the person pressed Continue anyway -- so whoever started the flow waits on the gate, not
  * on a callback.
  *
