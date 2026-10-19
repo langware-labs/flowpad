@@ -91,7 +91,7 @@ export function useGitShareGate(
       // as its repo, under the same name); a folder of the project's own is
       // only re-minted — sharing it must not make it a dependency.
       if (folder.dependency) {
-        await add(folder.workdir, folder.required ? 'required' : 'optional');
+        await add(folder.workdir, folder.local ? 'local' : folder.required ? 'required' : 'optional');
       } else {
         await project.folderForPath(folder.workdir);
       }
