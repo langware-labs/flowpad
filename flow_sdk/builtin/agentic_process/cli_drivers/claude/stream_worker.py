@@ -56,6 +56,7 @@ from uuid import uuid4
 
 from flow_sdk import toplog
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.claude_cron_job import (
+    SCHEDULE_TOOLS,
     ClaudeCronJob,
     content_blocks,
     cron_job_from_result,
@@ -112,11 +113,6 @@ _AUTH_ERROR_TEXT = (
     "This usually clears on its own — try sending it again. "
     "If it keeps happening, the machine needs to sign in to Claude again."
 )
-
-#: The tools that put a job on the CLI's own scheduler, or take one off it.
-SCHEDULE_TOOLS = frozenset({"CronCreate", "CronDelete", "ScheduleWakeup"})
-#: The tools that put a job on the CLI's own scheduler, or take one off it.
-SCHEDULE_TOOLS = frozenset({"CronCreate", "CronDelete", "ScheduleWakeup"})
 
 
 class _TranscriptDurabilityGate(TranscriptDurabilityGate):
