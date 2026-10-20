@@ -1,14 +1,14 @@
 ---
 type: markdown_index
 id: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
-inputs_hash: b9b4a59f6dcecfd343b04aa8f541b639eb527ae48dce7704fdb48a117b2c7747
+inputs_hash: 5c242676b77e279de4d11d497fa9cd4eb316d9a9199abe2a36e9b4609e79756a
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
-generated_at: '2026-10-19T19:20:22.498491+00:00'
+generated_at: '2026-10-20T09:49:59.934612+00:00'
 latest_process_ref: ''
-file_count: 55
+file_count: 54
 subfolder_count: 16
 ---
 
@@ -40,7 +40,6 @@ subfolder_count: 16
 - [Entities Groups — generic folder-like containment](entities-groups.md) — Group entity design for folder-like containment of entities: group_id membership, nesting, virtual roots identified by group namespace, and the backend Group class.
 - [`flow connect --docker <container>` — enroll a Docker container into the hub](flow-connect-docker.md) — Procedure for enrolling a running Docker container as a hub compute node with flow connect --docker, covering install, machine.env, approval and reconnecting.
 - [FlowEvents — the unified event bus (delivery worklog)](flow-events.md) — Phase-by-phase delivery worklog for the unified FlowEvent bus: envelope spec, emitters, trigger subscriptions, WebSocket dialect replacement, lifecycle signals and dated log entries
-- [flowcall-guidance-audit](flowcall-guidance-audit.md) — Nearly empty file holding only front matter with an id; no audit content.
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console debug cheatsheet: registered debug globals and snippets for entity, PTY, agentic process, hook, WebSocket, context, navigation and auth bugs, plus state snapshots.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef declarative file and folder references: the class family, indexer walk tags, read-only semantics for borrowed checkouts, and freshness fingerprint.
 - [fs_store: Record System Architecture](fs_store.md) — Pointer page for the fs_store file-backed record system, mapping each subject to its current doc and noting the SQLite entities table is a rebuildable index.
