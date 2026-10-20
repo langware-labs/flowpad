@@ -27,7 +27,7 @@ import contextlib
 import json as _json
 import logging
 import uuid
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar, FrozenSet
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
@@ -37,6 +37,7 @@ from flow_sdk.builtin.tab_order import (
     filter_for_project,
 )
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.core.dock_address import VIEW_META, PageId, ViewType, parse_view_type
 from flow_sdk.api.api_types.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
@@ -276,7 +277,7 @@ def tab_id_for(pointer: str) -> str:
     return mint_uuid(key=f"tab:{hash_str}", namespace=uuid.NAMESPACE_URL)
 
 
-class Tab(Entity):
+class Tab(ProjectedFields, Entity):
     type: str = APIField(default=EntityType.TAB.value)
 
     # Canonical serialized DockPointer (frontend ``DockPointer.tabHash``). The
@@ -286,6 +287,10 @@ class Tab(Entity):
     # fast reverse lookup. Null for target-less surfaces (settings/search/diff).
     target_type: str | None = APIField(default=None)
     target_id: str | None = APIField(default=None)
+    # Derived: the client computes them from the pointer (it owns the pointer
+    # grammar), and only ``ensure_tab_created`` writes them onto a row.
+    derived_fields: ClassVar[FrozenSet[str]] = frozenset({"target_type", "target_id"})
+    derived_writer: ClassVar[str] = "ensure_tab_created"
 
     # Advisory grouping edge to the opener tab (the vibe display tab is the first
     # consumer). Never affects ordering/close/recency; children stay ordinary
@@ -1048,7 +1053,7 @@ async def ensure_tab_created(
             ("target_id", target_id),
         ):
             if val is not None and getattr(existing, attr) != val:
-                setattr(existing, attr, val)
+                existing._write_derived(**{attr: val})
                 dirty = True
         # ``project_id`` is re-derived from the target on every (re)open, so an
         # EXPLICIT value — including ``None`` when the target is now projectless —
@@ -1103,6 +1108,13 @@ async def ensure_tab_created(
             elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
                 existing.parent_tab_id = parent_tab_id
                 dirty = True
+            elif not parent_tab_id and existing.parent_tab_id is not None:
+                # Reopened from outside any workspace while its group is closed: no
+                # strip can show a child of a closed parent, so it comes back top-level.
+                parent = await Tab.get_one({"id": existing.parent_tab_id})
+                if parent is None or not parent.visible:
+                    existing.parent_tab_id = None
+                    dirty = True
         if dirty:
             await existing.save()
         if reopened:

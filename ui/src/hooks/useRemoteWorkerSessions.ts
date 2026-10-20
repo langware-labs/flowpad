@@ -9,7 +9,7 @@ export interface SharedSessionRow {
   status: string;
 }
 
-const sessionsQuery = new QueryRequest({
+export const sessionsQuery = new QueryRequest({
   type: RemoteWorkerSession.type,
   scope: [],
   name: 'useRemoteWorkerSessions:sessions',

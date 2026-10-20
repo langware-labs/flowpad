@@ -259,14 +259,14 @@ function dependencyToolbar(
     actions.push({
       id: 'install',
       icon: <Download className="h-3 w-3" />,
-      label: t`Install dependency`,
+      label: t`Install package`,
       run: () => onInstall(dep.name),
     });
   }
   actions.push({
     id: 'remove',
     icon: <Trash2 className="h-3 w-3" />,
-    label: t`Remove dependency`,
+    label: t`Remove package`,
     run: () => deps.onRemove(dep.name, dir),
   });
   return actions;
@@ -422,7 +422,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
   const root: BrowseableRoot = {
     id: ASSET_CONTEXT_FOLDERS_ROOT_ID,
     kind: 'root',
-    label: i18n._(msg`Dependencies`),
+    label: i18n._(msg`Packages`),
     icon: <FolderTree className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
     hasChildren: dirs.length > 0 || dependencies.length > 0,
     pointer: null,
@@ -431,7 +431,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
       {
         id: 'add',
         icon: <FolderPlus className="h-3.5 w-3.5" />,
-        label: t`Add dependency`,
+        label: t`Add package`,
         run: onAdd,
       },
     ],

@@ -119,7 +119,7 @@ _TRANSITIONS: dict[str, frozenset] = {
 # Hard cap on a live session's length, counted from approval (the card's clock).
 # Past it the host closes the session (and tells the guest); the guest stops
 # sending into it on its own, so the cap holds even with the host offline.
-MAX_SESSION_LENGTH = timedelta(hours=2)
+MAX_SESSION_LENGTH = timedelta(hours=4)
 
 
 def is_terminal(status: str | None) -> bool:

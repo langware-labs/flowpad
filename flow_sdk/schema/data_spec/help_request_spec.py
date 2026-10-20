@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import ClassVar, Optional
 
-from pydantic import ConfigDict, model_validator
+from pydantic import model_validator
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -37,7 +37,6 @@ class HelpOrigin(str, Enum):
 class HelpRecipient(DataSpec):
     """Who is asked. A team that wants to be asked enables a desk — there is no team kind."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
     spec_kind: ClassVar[str] = "help.recipient"
 
     kind: HelpRecipientKind
@@ -61,7 +60,6 @@ class AskForHelpRequest(DataSpec):
     """One ask. ``conversation_id`` is minted by the asker and kept across resubmits — the same id is
     the same ask, so pressing Send again after a lost reply never makes a second one."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
     spec_kind: ClassVar[str] = "help.request"
 
     conversation_id: Optional[str] = None

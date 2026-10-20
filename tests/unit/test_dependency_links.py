@@ -88,8 +88,7 @@ async def test_a_folder_dependency_is_a_private_link_with_its_sidecar(tmp_path):
     project = await _make_project(tmp_path)
     ctx = _ctx_dir(tmp_path)
 
-    resp = await project.add_dependency_action(source=ctx)
-    assert resp.status == "SUCCESS"
+    added = await project.add_dependency(ctx)
 
     # Folder entity minted and found by its origin natural key.
     folder = await Folder.get_one({"origin_id": LocalOrigin(base=ctx).key()})
@@ -107,13 +106,13 @@ async def test_a_folder_dependency_is_a_private_link_with_its_sidecar(tmp_path):
         "via": None,
         "own": True,
         "required": True,
+        "local": False,
         "cloned": False,
         "read_only": False,
     }
     assert project.include_dirs == [ctx]
-    # Action response carries the computed lists (frontend adopts them).
-    assert resp.data["include_dirs"] == [ctx]
-    assert resp.data["dependency"]["state"] == "ready"
+    assert project._context_payload()["include_dirs"] == [ctx]
+    assert added.state == "ready"
 
     # Idempotent re-add.
     await project.add_dependency(ctx)

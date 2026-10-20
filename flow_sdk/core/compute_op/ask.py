@@ -30,12 +30,13 @@ backend registered its question where no answer could reach it.
 from __future__ import annotations
 
 import asyncio
-import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
+
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
@@ -86,6 +87,8 @@ class Question:
     #: The wizard run that asked (its activity address), when one did. A screen showing that run
     #: claims the question and draws it in place; nobody claiming it, it opens on its own.
     run: str = ""
+    #: The setup step that asked (its node id in the setup tree), when one did — what the question's Skip skips.
+    step: str = ""
     #: How a person finds the value — the op's ``setup.md``, markdown. Drawn beside the fields.
     guide: str = ""
     #: The agent the person can hand this question to (``AskOp.assist_agent``). Empty: no AI Assist.
@@ -125,7 +128,11 @@ class Question:
             "items": [item.model_dump(mode="json") for item in self.items],
             "wizard_id": self.wizard_id,
             "run": self.run,
-            "guide": self.guide,
+            # A setup step asked: the person may skip that step instead of answering (``POST ask/<id>/skip``).
+            "skippable": bool(self.step),
+            # Beside "pick a way" cards the guide is the agent's recipe (``flow credentials set …``): each card
+            # already says what it does, so no screen draws it.
+            "guide": "" if self.choices else self.guide,
             "assist_available": bool(self.assist_agent),
             "assist": self.assist_payload(),
         }
@@ -139,6 +146,9 @@ class Question:
 #: The wizard run the current task is executing, set by ``execute_wizard`` for the length of a
 #: run. A question opened inside it is stamped with it (``Question.run``).
 ASKING_RUN: ContextVar[str] = ContextVar("asking_run", default="")
+#: The setup step (node id) whose wizard the current task runs, set by the setup walk; a question opened
+#: inside it is stamped with it (``Question.step``).
+ASKING_STEP: ContextVar[str] = ContextVar("asking_step", default="")
 
 
 #: Whether THIS process serves the answer routes — set by the app that mounts
@@ -211,7 +221,7 @@ def open_question(
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
     question = Question(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         op_name=op_name,
         prompt=prompt,
         shape=shape,
@@ -227,6 +237,7 @@ def open_question(
         items=list(items or []),
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
+        step=ASKING_STEP.get(),
         guide=guide,
         assist_agent=assist_agent,
         setup_timeout=setup_timeout,

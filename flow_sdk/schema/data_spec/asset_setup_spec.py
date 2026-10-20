@@ -44,7 +44,6 @@ class AssetSetupSpec(AssetDocumentSpec):
     #: An entity document: it carries its own id in its root, the way ``compute_op.json`` does.
     manifest_layout: ClassVar[str | None] = "entity"
 
-    model_config = ConfigDict(extra="ignore")
 
     #: The node's name AND its folder name.
     name: str = ""

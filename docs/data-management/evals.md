@@ -43,11 +43,15 @@ or `await flow_sdk.evals.run(dataset, out_dir=...)`. The runner:
 
 * resolves the eval — one **nested** in the dataset (`<dataset>/agentic-assets/eval/<name>/`), else
   one **shipped** in the Flowpad Assistant project whose `dataset_kind` is the dataset's spec;
-* runs every **labelled** row of the eval's roles (unlabelled ones are counted, not judged); an
+* runs every **labelled** row of the eval's roles (unlabelled ones are counted, not judged); a
   row that raises is `verdict: error` and the run carries on;
 * writes `<dataset>/evals/<run_id>/`: `run.json`, `rows.jsonl`, and `report.html` — one
   self-contained page: headline metrics, the verdict bar, a table per slice (click a value to
   filter), and every row (failures first; click one for its gold, prediction and labels).
+
+Over REST, on the dataset: `GET evals` (every run, newest first), `GET eval/<run>` (one run with its
+rows), `GET eval/<run>/<row>` (that row's `trace`), `POST run-eval {eval?, kinds?}` (a new run) —
+TypeScript `evalRuns` / `evalRun` / `evalTrace` / `runEval`.
 
 ## The SmartNavigator eval
 

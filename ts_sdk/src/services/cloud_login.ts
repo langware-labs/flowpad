@@ -117,7 +117,8 @@ export interface CloudStatusData extends DesktopInfoSeed {
  * Lives on its own slot (not on the connection-status slot) — a 4xx/5xx from
  * a hub HTTP call is a request-level failure, not a WebSocket connectivity
  * problem. Surfaced through the warnings system so the user can see + copy
- * the full detail; auto-cleared on explicit dismiss.
+ * the full detail; cleared on explicit dismiss, or when the hub answers that
+ * same request (`hub_client_recovered_msg`). One that never gets an answer stays.
  */
 export interface HubClientErrorInfo {
   method: string;
@@ -228,7 +229,16 @@ class CloudManager extends EventEmitter {
         // not signed in yet. Those render, and start the login from a CLICK —
         // which is the only place a popup can be opened, so it is also the only
         // way the user keeps this tab and the URL that brought them here.
-        if (!opts?.allowAnonymous) window.location.assign(this._hubLoginUrl());
+        //
+        // The redirect never resolves: the page is leaving, and letting the app
+        // keep rendering lets a route's own 401 handling start a SECOND login.
+        // Two concurrent Auth0 authorizations overwrite each other's `state` in
+        // the session, so the callback fails its CSRF check and lands on `/`
+        // instead of the page the user opened.
+        if (!opts?.allowAnonymous) {
+          window.location.assign(this._hubLoginUrl());
+          await new Promise<never>(() => {});
+        }
       }
       return;
     }
@@ -299,6 +309,7 @@ class CloudManager extends EventEmitter {
       } as CloudLoginStatusMessage);
     });
     cm.on('on_hub_client_error_msg', (msg: Record<string, unknown>) => this._onHubClientError(msg));
+    cm.on('on_hub_client_recovered_msg', (msg: Record<string, unknown>) => this._onHubClientRecovered(msg));
     // Resync after a local-WS reconnect: connection-status broadcasts that
     // landed while the socket was down would otherwise be lost forever,
     // leaving the avatar stuck on whatever state we saw last.
@@ -968,6 +979,15 @@ class CloudManager extends EventEmitter {
     this._lastHubError = { method, path, statusCode, message, ts: Date.now() };
     this.emit('hub_client_error', msg);
     this.emit('last_hub_error_changed', this._lastHubError);
+  }
+
+  private _onHubClientRecovered(msg: Record<string, unknown>) {
+    const method = String(msg.method ?? '');
+    const path = String(msg.path ?? '');
+    this.emit('hub_client_recovered', { method, path });
+    if (this._lastHubError?.method === method && this._lastHubError.path === path) {
+      this.clearLastHubError();
+    }
   }
 
   /** Most recent hub HTTP error, or null if none / dismissed. */

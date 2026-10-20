@@ -1,8 +1,6 @@
 """Filesystem contracts independent of application entities."""
 from typing import ClassVar, Optional
 
-from pydantic import ConfigDict
-
 from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
@@ -25,7 +23,6 @@ class AgentPlaceSpec(DataSpec):
     """
 
     spec_kind: ClassVar[str] = "agent.place"
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     deployment_id: str
     #: Whether the agent runs on this place at all. ``None`` = the definition's ``enabled``.

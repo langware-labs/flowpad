@@ -49,6 +49,8 @@ export interface SimpleFileManagerProps {
    *  render in the highlight color — used by the git-backed dependency
    *  browser to mark files not yet pushed to the remote. */
   isPathHighlighted?: (path: string, isDir: boolean) => boolean;
+  /** Name of an entry in `initialPath` to select (and scroll to) once it lists. */
+  initialSelectedName?: string;
 }
 
 export type SortField = 'name' | 'size' | 'modifiedAt' | 'type';

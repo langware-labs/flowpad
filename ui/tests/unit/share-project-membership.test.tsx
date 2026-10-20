@@ -1,9 +1,12 @@
 import { act, renderHook, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@sdk';
-import { projectNonMembers, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
+import { outsidersAfter, projectNonMembers, projectOutsiders, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 const mocks = vi.hoisted(() => ({ roster: vi.fn(), roles: vi.fn(), invite: vi.fn() }));
-vi.mock('@sdk', () => ({ membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles } }));
+vi.mock('@sdk', () => ({
+  membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles },
+  Role: { GUEST: 'guest', ANONYMOUS_VIEWER: 'anonymous_viewer' },
+}));
 const project = {
   id: 'p',
   typeId: { type: 'project', id: 'p' },
@@ -26,6 +29,19 @@ describe('sharing project membership', () => {
         [{ user_id: 'id', user_email: 'alice@example.com', role: 'guest', status: 'pending' }],
       ),
     ).toEqual(['new@example.com']);
+  });
+  it('counts only approved members with a real role as inside the project', () => {
+    // A guest or a pending invite can't read the project's files: they get a copy, not a git link.
+    expect(
+      projectOutsiders(
+        ['editor@example.com', 'guest@example.com', 'pending@example.com', 'new@example.com'],
+        [
+          { user_id: 'e', user_email: 'Editor@example.com', role: 'editor', status: 'approved' },
+          { user_id: 'g', user_email: 'guest@example.com', role: 'guest', status: 'approved' },
+          { user_id: 'p', user_email: 'pending@example.com', role: 'editor', status: 'pending' },
+        ],
+      ),
+    ).toEqual(['guest@example.com', 'pending@example.com', 'new@example.com']);
   });
   it('keeps failed roster unknown and refuses invitation', async () => {
     mocks.roster.mockRejectedValue(new Error('Forbidden'));
@@ -91,5 +107,16 @@ describe('sharing project membership', () => {
     expect(hook.current.nonMembers).toEqual(['b@example.com']);
     await act(() => hook.current.invite({ 'a@example.com': 'guest', 'b@example.com': 'member' }));
     expect(mocks.invite.mock.calls[1][0]).toEqual([{ idOrEmail: 'b@example.com', role: 'member' }]);
+  });
+});
+
+describe('outsidersAfter', () => {
+  it('takes out recipients given a role with file access; None and Guest stay outside', () => {
+    const outsiders = ['a@x.com', 'b@x.com', 'c@x.com', 'd@x.com'];
+    expect(outsidersAfter(outsiders, { 'a@x.com': 'member', 'b@x.com': 'guest', 'c@x.com': 'none' })).toEqual([
+      'b@x.com',
+      'c@x.com',
+      'd@x.com',
+    ]);
   });
 });

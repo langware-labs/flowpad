@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import { gitOriginFromUrl } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 
-export const INSTALL_REVIEW_BRANCH = 'flowpad/install-cloudnsite-agents';
+export const INSTALL_REVIEW_BRANCH = 'flowpad/install-agents';
 const SAFE_BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
 const SAFE_GITHUB_SLUG = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 

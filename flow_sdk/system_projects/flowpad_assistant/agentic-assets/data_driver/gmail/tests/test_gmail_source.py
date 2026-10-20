@@ -430,7 +430,7 @@ async def test_an_expected_reply_is_stored_under_the_origin_it_returns(monkeypat
 
     Gmail scopes every origin under its mailbox (``<account>/INBOX``), so the identity is the one
     the source stamped — ``reply.origin`` — not one re-derived from the row's account alone
-    (``legacy_lift.origin_of`` gives ``<account>``, which no Gmail row is stored under)."""
+    (``envelope_lift.origin_of`` gives ``<account>``, which no Gmail row is stored under)."""
     import uuid
 
     from flow_sdk.builtin.data_source import DataSource

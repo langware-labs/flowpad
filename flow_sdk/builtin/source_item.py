@@ -10,7 +10,7 @@ later projection over ingested records will need.
 one row is ``find_existing``, which resolves ``(data_source, origin)`` to the
 row that already holds it. ``origin`` is the contract's ``CloudOrigin`` — the
 resource's ``(kind, namespace, key)`` — and ``data`` its typed payload; both are
-lifted from the flat header (``flow_sdk/ingest/legacy_lift.py``). Same guarantee as the old v5-derived id
+lifted from the flat header (``flow_sdk/ingest/envelope_lift.py``). Same guarantee as the old v5-derived id
 (idempotency with no delivery ledger and no dedupe table), relocated from id
 arithmetic to a lookup — so rows written before the change still resolve, and
 nothing has to re-derive an id it does not hold.
@@ -131,33 +131,6 @@ class EmailMessageSpec(MessageSpec):
         )
 
 
-class TelegramMessageSpec(MessageSpec):
-    """Outbound Telegram message: the generic shape, chat-targeted replies.
-
-    No extra fields — Telegram has no subject; parse modes and media are
-    explicit non-goals for now (the driver sends plain text).
-    """
-
-    @classmethod
-    def reply_to(cls, m, *, body: str, files=()) -> "TelegramMessageSpec":
-        """A reply to inbound message ``m`` — a pure constructor, no I/O.
-
-        Telegram replies target the CHAT, not the author: ``to`` carries the
-        chat id (the leading component of ``thread_key``), and the replied-to
-        message's ``external_id`` (``"<chat_id>/<message_id>"``) rides
-        ``reply_to_external_id`` for the driver's ``reply_to_message_id``.
-        """
-        thread_key = str(getattr(m, "thread_key", "") or "")
-        chat_id = thread_key.split("/", 1)[0]
-        return cls(
-            to=[chat_id],
-            body=body,
-            thread_key=thread_key,
-            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            files=list(files),
-        )
-
-
 class ChannelMessageSpec(MessageSpec):
     """Outbound message to a CHANNEL, threaded — the shape Slack and Teams share.
 
@@ -191,20 +164,6 @@ class ChannelMessageSpec(MessageSpec):
         )
 
 
-class SlackMessageSpec(ChannelMessageSpec):
-    """Outbound Slack message: ``thread_key`` is the thread's ``ts``."""
-
-
-class TeamsMessageSpec(ChannelMessageSpec):
-    """Outbound Microsoft Teams message: ``thread_key`` is the ROOT message id.
-
-    Teams' own model is two levels — a root and its replies — so a reply to a
-    reply is still a reply to the root, and ``thread_key`` already names it.
-    """
-
-    container_parts: ClassVar[int] = 2
-
-
 class HelpdeskMessageSpec(ChannelMessageSpec):
     """Outbound help-desk reply: ``to`` is the TICKET — the hub conversation id
     the inbound record's ``thread_key`` names — and ``thread_key`` rides
@@ -234,37 +193,6 @@ class VoiceMessageSpec(MessageSpec):
         """A reply to inbound sentence ``m`` — a pure constructor, no I/O: said to whoever said it."""
         thread_key = str(getattr(m, "thread_key", "") or "")
         return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
-
-
-class WhatsAppMessageSpec(MessageSpec):
-    """Outbound WhatsApp message: the generic shape, chat-targeted replies — the person, or the group.
-
-    No extra fields — WhatsApp has no subject, and templates, media and
-    interactive replies are explicit non-goals for now (the driver sends plain
-    text inside the 24-hour window).
-    """
-
-    @classmethod
-    def reply_to(cls, m, *, body: str, files=()) -> "WhatsAppMessageSpec":
-        """A reply to inbound message ``m`` — a pure constructor, no I/O.
-
-        WhatsApp replies target the CHAT, and the chat IS the thread: a 1:1
-        conversation is the pair (business number, wa_id), a group's is the
-        group — so ``to`` and ``thread_key`` carry the same id (a wa_id, or the
-        group id: a reply in a group goes to the group, never privately to
-        whoever wrote) and there is nothing to derive. The
-        replied-to id rides ``reply_to_external_id`` and becomes Meta's
-        ``context`` — which renders as a quote and does not start a thread,
-        because WhatsApp has none.
-        """
-        thread_key = str(getattr(m, "thread_key", "") or "")
-        return cls(
-            to=[thread_key],
-            body=body,
-            thread_key=thread_key,
-            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            files=list(files),
-        )
 
 
 class SourceItem(Entity):
@@ -425,6 +353,6 @@ class SourceItem(Entity):
         channels); ``data_source_id`` partitions it, because the same remote feed
         added twice must not collide. The key itself is declared once, on the type
         (``TypeInfo.natural_key``); this is its named single-row entry point,
-        indexed by ``ix_entities_source_item_origin_v3``.
+        indexed by the index declared on ``SOURCE_ITEM.indexes``.
         """
         return await cls.serializer().resolve_key(cls, (data_source_id, origin.kind, origin.namespace, origin.key))

@@ -210,6 +210,7 @@ opens a different screen and reports success.
 | Graph Workflows | `graph-workflows` | workflows |
 | Home | `home` | landing, start |
 | Hooks | `hooks` | claude hooks |
+| Inbound routing | `inbound` | webhooks, inbound webhooks, message routing |
 | Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
 | LLM sources | `llm-sources` | harness funding |

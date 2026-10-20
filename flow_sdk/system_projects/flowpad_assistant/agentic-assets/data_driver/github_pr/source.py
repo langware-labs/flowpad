@@ -122,6 +122,11 @@ class GithubPrMessageData(MessageData):
     subject: Optional[str] = None
     raw: Optional[dict] = None
 
+    @property
+    def item_title(self) -> str:
+        return self.subject or ""
+
+
 
 class GithubPrConfig(SourceConfig):
     """What a github_pr source is configured with."""

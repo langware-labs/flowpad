@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.builtin.source_item import EmailMessageSpec, SlackMessageSpec
+from flow_sdk.builtin.source_item import ChannelMessageSpec, EmailMessageSpec
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
 from flow_sdk.stream_inbox.outbound import ChannelSendUnavailable, resolve_reply_target
 
@@ -295,7 +295,7 @@ class TestAChannelRepliesToTheChannel:
 
     @pytest.mark.asyncio
     async def test_a_slack_reply_is_addressed_to_the_channel_not_the_author(self, wire):
-        wire["spec"] = SlackMessageSpec
+        wire["spec"] = ChannelMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
         wire["messages"] = [_message("slack:U0123456789", "i-1", kind="slack")]
         wire["items"] = {"i-1": _item("i-1", "U0123456789", "hello", origin_namespace="T0123/C0123456789")}
@@ -307,7 +307,7 @@ class TestAChannelRepliesToTheChannel:
     @pytest.mark.asyncio
     async def test_a_channel_record_with_no_channel_refuses(self, wire):
         """Better a refusal than a post addressed to an empty string."""
-        wire["spec"] = SlackMessageSpec
+        wire["spec"] = ChannelMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
         wire["messages"] = [_message("slack:U0123456789", "i-1", kind="slack")]
         wire["items"] = {"i-1": _item("i-1", "U0123456789", "hello", origin_namespace="")}

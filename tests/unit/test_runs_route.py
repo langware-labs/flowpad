@@ -23,13 +23,13 @@ from flow_sdk.server.routes.runs import _badge, _row
 def _process(**over):
     base = dict(
         id="11111111-1111-4111-8111-111111111111",
-        name="Flow HN Radar: report",
+        name="Flow digest: report",
         instruction_content="write the report",
         status="running",
         created_date="2026-07-30T10:00:00+00:00",
         updated_date="2026-07-30T10:01:00+00:00",
         context_data={"launched_by_agent": "email-summarizer", "flow_run_id": "r1",
-                      "flow_id": "gmail-radar", "node_id": "n1"},
+                      "flow_id": "digest-flow", "node_id": "n1"},
         exit_code=None,
         start_failure=None,
         deployment_id=None,
@@ -66,7 +66,7 @@ class TestRow:
         row = _row(_process())
         assert row["agent"] == "email-summarizer"
         assert row["flow_run_id"] == "r1"
-        assert row["flow_id"] == "gmail-radar"
+        assert row["flow_id"] == "digest-flow"
         assert row["node_id"] == "n1"
 
     def test_prompt_is_bounded(self):

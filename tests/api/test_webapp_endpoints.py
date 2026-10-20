@@ -14,6 +14,7 @@ A placement answers a browser on AT MOST two endpoints — its ``app`` proxy (en
 from __future__ import annotations
 
 import asyncio
+import shlex
 import socket
 import sys
 import textwrap
@@ -22,11 +23,11 @@ import uuid
 
 import pytest
 
+from flow_sdk.builtin import webapp_placement
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
-from flow_sdk.builtin import webapp_placement
 from flow_sdk.builtin.webapp_placement import (
     deployment_routes,
     place_webapp_locally,
@@ -198,7 +199,7 @@ async def test_a_declared_dev_server_is_started_and_a_service_is_an_endpoint_of_
             {
                 "name": "api",
                 "protocol": {"spec_kind": "api.rest"},
-                "serving": {"type": "proxy", "start_cmd": f"{sys.executable} {server} {{port}}"},
+                "serving": {"type": "proxy", "start_cmd": f"{shlex.quote(sys.executable)} {shlex.quote(str(server))} {{port}}"},
             }
         ],
     )
@@ -310,19 +311,13 @@ async def test_a_box_asks_the_hub_to_refresh_a_desktop_does_not(monkeypatch, tmp
     monkeypatch.setattr(hub_http, "hub_post", hub_post)
     project = await _project(tmp_path)
 
-    def sandbox(answer):
-        def own_sandbox_id():
-            return answer
-
-        own_sandbox_id.cache_clear = lambda: None  # the fixture teardown clears the real one's cache
-        return own_sandbox_id
-
-    monkeypatch.setattr(runtime, "own_sandbox_id", sandbox(None))
+    # A box is one the hub placed — any provider, sandbox or agent — not one whose id E2B's metadata answers.
+    monkeypatch.setattr(runtime, "get_assigned_compute_node", lambda: None)
     await register_dev_endpoint(project, port=4803)
     await asyncio.gather(*webapp_placement._TELLING)
     assert asked == []
 
-    monkeypatch.setattr(runtime, "own_sandbox_id", sandbox("sbx-1"))
+    monkeypatch.setattr(runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001")
     row = await register_dev_endpoint(project, port=4804)
     await asyncio.gather(*webapp_placement._TELLING)  # sent in the background, off the caller's write lock
     assert asked == [("deployment", row.parent_type_id.split("-", 1)[1], "refresh-endpoints")]

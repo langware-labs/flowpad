@@ -168,7 +168,8 @@ async def test_rows_listing_reports_promoted_items_and_gold(bootstrapped_client,
         await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
     ).json()["data"]["ids"]
     listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/row-index")).json()["data"]["rows"]
-    assert listed == [{"row_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False}]
+    assert listed == [{"row_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False,
+                       "multi_output": False, "binary_input": True}]
     await client.post(
         f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": eid, "ground_truth": {"sentiment": "neutral"}}
     )
@@ -245,3 +246,24 @@ async def test_typed_rows_append_read_annotate_and_validate(bootstrapped_client,
     gold.write_text('{"route": "sideways"}')
     problems = (await client.post(f"{base}/validate")).json()["data"]["problems"]
     assert [p["row_id"] for p in problems] == [second] and "ground_truth" in problems[0]["error"], problems
+
+
+async def test_promote_is_a_row_write_that_says_so(bootstrapped_client, user, tmp_path, monkeypatch):
+    """Promoted rows land like any other write: one ``dataset.rows.changed`` naming the new row ids."""
+    from flow_sdk.tags import ws_forward
+    from flow_sdk.tags.bus import on_tag
+
+    monkeypatch.setattr(ws_forward, "_started", True)
+    heard: list = []
+    off = on_tag("dataset.rows.changed", heard.append)
+    try:
+        client = bootstrapped_client
+        pid = await _project(client, tmp_path)
+        sid = await _source_with_items(client)
+        ds = await _dataset(client, pid, sid)
+        items = await _items(client, sid)
+        resp = await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
+        ids = resp.json()["data"]["ids"]
+    finally:
+        off()
+    assert [(e.data["op"], e.data["keys"]) for e in heard] == [("put", ids)]

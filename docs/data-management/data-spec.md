@@ -118,8 +118,8 @@ what was written — that is what keeps `agent.json` and `dataset.json` readable
 ### `spec_kind` is the connector
 
 An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
-**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `binary`)
-→ its Python type; a registered kind → its class (`register_kind` /
+**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `date`, and `binary`, which
+`io/native.py` adds) → its Python type; a registered kind → its class (`register_kind` /
 `kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
 opaque, never minted. A kind referenced before it is registered resolves to
 `Any` — compilation is eager, so there is no cycle to detect.
@@ -226,7 +226,7 @@ is an entity field with a compatible core (the entity may narrow: `str` → `Typ
 | a field typed as another **asset type** | a sub-asset with its own identity — recognised by the REGISTRY (the nested class's type has an `asset_spec`), never by inheritance; a `list[…]` of a file-layout type is a directory of files |
 
 ```python
-class SubAgentSpec(FrontMatter):            # a DataSpec with extra="ignore" (hand-edited file)
+class SubAgentSpec(FrontMatter):            # a schema with extra="ignore" (hand-edited file)
     file_ext: ClassVar[str | None] = ".md"
     name: str | None = None
     tools: Any = None

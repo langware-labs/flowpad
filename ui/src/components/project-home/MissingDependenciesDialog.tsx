@@ -49,10 +49,10 @@ export function MissingDependenciesDialog({ open, warnings, onNotNow, onFix }: M
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <Trans>Missing dependencies</Trans>
+            <Trans>Missing packages</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>This project needs these dependencies, and they are not on this computer.</Trans>
+            <Trans>This project needs these packages, and they are not on this computer.</Trans>
           </DialogDescription>
         </DialogHeader>
         <ul className="flex flex-col gap-1.5">

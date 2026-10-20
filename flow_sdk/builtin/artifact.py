@@ -26,10 +26,10 @@ LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
 
 
 #: The kind of an artifact that stands for one shared file (see ``for_shared_file``).
+#: Every shared file travels as one — a page, a doc, an image, a video — so a
+#: share is always the same message: a git pointer when every recipient can read
+#: the repo, a copy otherwise.
 SHARED_FILE_KIND = "content.file.text"
-#: The standalone files that travel as an artifact (a git pointer the receiver
-#: opens and finds), rather than as a copied raw file.
-SHARED_FILE_SUFFIXES = frozenset({".html", ".htm"})
 
 
 def _is_single_file(origin) -> bool:
@@ -200,7 +200,9 @@ class Artifact(Entity):
         )
 
     @classmethod
-    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+    async def restore_reference(
+        cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None, project_root=None, project_id=None
+    ) -> bool:
         """Persist the received declaration and GitOrigin only. The checkout
         stays unresolved until the receiver opens the artifact and the git
         setup wizard provides a local path."""
@@ -228,7 +230,10 @@ class Artifact(Entity):
             from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
             from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
-            root, project_id = await get_origin_driver(origin.kind).materialize_pinned(origin)
+            # Opened in the receiver's project when it is a checkout of the same repo.
+            root, project_id = await get_origin_driver(origin.kind).materialize_pinned(
+                origin, preferred_root=project_root, preferred_project_id=project_id
+            )
             file = safe_join(root, origin.rel_path)
             if file is None or not file.is_file():
                 raise FileNotFoundError(f"shared file not found: {root / origin.rel_path}")
@@ -255,21 +260,24 @@ class Artifact(Entity):
 
     @classmethod
     async def for_shared_file(cls, path: str) -> "Artifact":
-        """The artifact that stands for one file being shared (an .html page in a
-        repo), found by its path in its project or registered once. Sharing it
-        by git then sends a pointer to the file at a commit, which the receiver
-        opens and finds by name."""
+        """The artifact that stands for one file being shared, found by its path
+        in its project or registered once. Sharing it by git then sends a pointer
+        to the file at a commit, which the receiver opens and finds by name;
+        otherwise it travels as a copy."""
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.roots import owning_project_id  # noqa: PLC0415
         from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
 
         file = Path(path).expanduser().resolve()
         if not file.is_file():
             raise FileNotFoundError(f"not a file: {file}")
-        if file.suffix.lower() not in SHARED_FILE_SUFFIXES:
-            raise ValueError(f"{file.name} is shared as a file, not as an artifact")
-        root = find_project_root(str(file.parent)) or str(file.parent)
-        project = await Project.recover_by_path(root)
-        project_id = project.id if project else None
+        # The project that holds the file — any folder, git or not. Only a repo
+        # nobody opened as a project yet gets one, rooted at the repo.
+        project_id = await owning_project_id(file)
+        if project_id is None:
+            root = find_project_root(str(file.parent))
+            project = await Project.recover_by_path(root) if root else None
+            project_id = project.id if project else None
         kind = SHARED_FILE_KIND
         # The address IS the file: one artifact per shared path, whatever project
         # (if any) it sits in.

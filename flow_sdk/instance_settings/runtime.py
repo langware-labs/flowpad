@@ -40,6 +40,7 @@ import re
 from functools import lru_cache
 from urllib.request import Request, urlopen
 
+from flow_sdk.api.api_types.identifier import UUID_PATTERN
 from flow_sdk.cli import app_config
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.models.bootstrap_models import RuntimeInfo, RuntimeKind
@@ -173,7 +174,7 @@ def own_sandbox_id() -> str | None:
 
 
 _COMPUTE_NODE_KEY = "compute_node_typeid"
-_COMPUTE_NODE_RE = re.compile(r"^compute_node-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_COMPUTE_NODE_RE = re.compile(rf"^compute_node-{UUID_PATTERN}$")
 
 
 def get_assigned_compute_node() -> str | None:
@@ -181,7 +182,9 @@ def get_assigned_compute_node() -> str | None:
 
     Assigned by the hub alongside the runtime kind (``flow auth set-compute-node``)
     and read by the keep-alive loop, which names this node when it tells the hub
-    the machine is in use. Not memoized: it is read once a minute, not per request.
+    the machine is in use, and on every ``direct-url`` request and endpoint
+    registration, which ask the hub only on a box it placed. Not memoized: each
+    read is a small config-file read.
     """
     raw = app_config.get_config(_COMPUTE_NODE_KEY)
     return raw if isinstance(raw, str) and _COMPUTE_NODE_RE.match(raw) else None

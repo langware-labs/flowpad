@@ -106,7 +106,7 @@ describe('the apps button', () => {
       await userEvent.setup().click(screen.getByTestId('top-nav-apps'));
       expect(screen.getByTestId('top-nav-app-shop').textContent).toBe('shopUser');
       expect(screen.getByTestId('top-nav-app-back-office').textContent).toBe('back-officeAdmin');
-      expect(screen.getByTestId('top-nav-app-docs').textContent).toBe('docsDependencyUser');
+      expect(screen.getByTestId('top-nav-app-docs').textContent).toBe('docsPackageUser');
       expect(openDock).not.toHaveBeenCalled();
     });
 

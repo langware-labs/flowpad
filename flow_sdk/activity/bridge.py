@@ -77,6 +77,11 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
             # always true.
             error_message="(legacy producer reported an error without detail)",
         )
+        # A type whose count reached its known total is finished — end it now, so the
+        # parent's "n/m" counts it. Needed only because legacy rows carry no end signal;
+        # it goes with this module.
+        if row_total is not None and row.done >= row_total and not child.is_terminal:
+            child.done()
 
     node.set_progress(done=table.done)
 
@@ -85,6 +90,11 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
         node.done()
     elif table.text and table.text != node.message_text:
         node.message(table.text)
+    elif not table.text and table.roots:
+        # Say WHAT is being walked while it runs; paths, so there is nothing to translate.
+        where = ", ".join(table.roots)
+        if where != node.message_text:
+            node.message(where)
 
 
 __all__ = ["mirror_table"]

@@ -65,10 +65,10 @@ describe('DockPointer fs pointer grammar', () => {
 });
 
 describe('assetContextFoldersRoot', () => {
-  it('is labelled Dependencies', () => {
+  it('is labelled Packages', () => {
     const root = assetContextFoldersRoot({ dirs: [], onAdd: vi.fn(), onRemove: vi.fn() });
-    expect(root.label).toBe('Dependencies');
-    expect(root.toolbar![0].label).toBe('Add dependency');
+    expect(root.label).toBe('Packages');
+    expect(root.toolbar![0].label).toBe('Add package');
   });
 
   it('lists every declared dependency, with or without a folder here', async () => {
@@ -141,7 +141,7 @@ describe('assetContextFoldersRoot', () => {
     const onRemove = vi.fn();
     const root = assetContextFoldersRoot({ dirs: DIRS, dependencies: DEPS, onAdd: vi.fn(), onRemove });
     const rows = await root.listChildren!();
-    expect(rows[1].toolbar![0].label).toBe('Remove dependency');
+    expect(rows[1].toolbar![0].label).toBe('Remove package');
     await rows[1].toolbar![0].run();
     expect(onRemove).toHaveBeenCalledWith('design-docs', '/Users/alice/shared/design-docs');
     await rows[3].toolbar![0].run();
