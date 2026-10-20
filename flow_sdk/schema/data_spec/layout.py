@@ -235,16 +235,6 @@ class DatasetLayout:
         reading the payloads. Only a per-row layout can answer."""
         raise NotImplementedError("index is io_folder only — a CSV dataset has no per-row dirs")
 
-    def count_annotated(self, folder, rows: Sequence[Any]) -> int:
-        """How many of the parsed ``rows`` carry gold. THE definition of
-        ``num_annotated``, for every layout — the indexer's extractor and the
-        entity's post-label recount both read it. A row is annotated when its
-        gold slot is present, and ``FolderLayout.read_row`` emits that slot
-        on exactly the scan result ``has_ground_truth`` reports, so the
-        per-row ``index`` flag and this count are one rule without a second
-        pass over the directories."""
-        return sum(1 for ex in rows if getattr(ex, "ground_truth", None) is not None)
-
     def read(self, folder: Path, spec: type, *, dataset_id: str,
              field_spec: Optional[dict[str, str]] = None, delimiter: str = ",") -> list[Any]:
         raise NotImplementedError

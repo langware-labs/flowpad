@@ -222,7 +222,7 @@ class Dataset(ProjectedFields, Entity):
         """The counts are FACTS about ``rows`` — derived here, so an entity
         built from rows (a save) and one read from disk agree, and neither can
         carry a stale count."""
-        if self.rows:
+        if "rows" in self.model_fields_set:   # rows given (a save, a parse): even none means zero
             from flow_sdk.assets.types.dataset import derive_counts, row_facts
 
             self._write_derived(**derive_counts(row_facts(row) for row in self.rows))
