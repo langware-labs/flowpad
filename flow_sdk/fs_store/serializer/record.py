@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from flow_sdk.assets.layout import Folder
+from flow_sdk.utils.field_path import walk
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,9 @@ FTS_WEIGHT_CONTENT = 1
 
 
 def _text_of(obj: Any, sources: Any) -> str:
-    from flow_sdk.datasets.query import field_of  # noqa: PLC0415 -- lazy: the scan child must not load it
-
     parts = []
     for source in sources:
-        value = field_of(obj, source)   # a dotted path through attributes and keys; accessors are properties
+        value = walk(obj, source)   # a dotted path through attributes and keys; accessors are properties
         if isinstance(value, (list, tuple)):
             value = " ".join(str(v) for v in value if v)
         if value:

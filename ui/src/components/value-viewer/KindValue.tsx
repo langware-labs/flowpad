@@ -1,5 +1,5 @@
 import { createViewerContext, isTypeId, TypeId } from '@sdk';
-import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useEffect, useMemo, useRef } from 'react';
 

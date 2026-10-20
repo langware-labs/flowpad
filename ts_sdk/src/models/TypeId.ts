@@ -30,6 +30,19 @@ export function isValidEntityId(id: string): boolean {
   return new RegExp(`^${uuidRegex}$`).test(id);
 }
 
+/** Any UUID, any version or case — the backend's version-agnostic `is_valid_uuid` (a name that is
+ *  only an id, say). Not an entity-id gate: that is `isValidEntityId`. */
+export function isValidUuid(text: string): boolean {
+  return new RegExp(`^${UUID_SOURCE}$`, 'i').test(text);
+}
+
+/** An id taken from outside (pasted, from a URL) as an entity id: trimmed and lowercased, then
+ *  gated by `isValidEntityId` — null when it is not one. */
+export function normalizeEntityId(raw: string | null | undefined): string | null {
+  const id = (raw ?? '').trim().toLowerCase();
+  return isValidEntityId(id) ? id : null;
+}
+
 /**
  * Check if identifier is a valid named ID (@name format)
  * Matches backend: hub identifier.py::is_valid_named_id

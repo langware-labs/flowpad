@@ -13,7 +13,7 @@ import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
-import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
