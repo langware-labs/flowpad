@@ -33,6 +33,7 @@ from pydantic import ConfigDict, model_validator
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin import ingest_order
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-exported; the row and its snapshot read as one module
     NonBlank,
@@ -195,11 +196,39 @@ class VoiceMessageSpec(MessageSpec):
         return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
 
 
-class SourceItem(Entity):
+class SourceItem(ProjectedFields, Entity):
     """The ROW; the snapshot the medium persists is ``SourceItemSpec``
-    (``TypeInfo.asset_spec``)."""
+    (``TypeInfo.asset_spec``).
+
+    What it authors is the payload (``data``, read as ``payload``) under its identity ``(data_source_id,
+    item_scope, item_key)``, plus local state (``read``, ``starred``, ``sent_by_us``,
+    ``reactions``). The flat header (``kind``, ``name``, ``body``, ``thread_key`` …) and the
+    ``origin_*`` triple are COPIES of the payload/origin, still written for the readers that have
+    not moved to the payload accessors: declared ``derived_fields``, so any writer other than
+    the ingest upsert is reported (warn mode)."""
 
     type: str = APIField(default=EntityType.SOURCE_ITEM.value)
+
+    # ── identity + the authored value ──────────────────────────────────────
+    # ``item_`` because ``scope`` and ``key`` are taken on every entity (the discovery scope, the
+    # namespace key column).
+    item_scope: str = APIField(default="", description="Account-free container scope (escaped join of the source's parts)")
+    item_key: str = APIField(default="", description="The remote id, unique within (data_source_id, item_scope)")
+    # The payload keeps its stored name ``data``: user-authored paths (``data.stage`` in a mirror
+    # map) and dataset files address it so; the rename travels with the data migration.
+    data: Optional[Tagged[Payload]] = APIField(default=None, description="The typed payload, tagged with its spec_kind")
+
+    derived_fields: ClassVar[frozenset[str]] = frozenset({
+        "kind", "provider", "external_id", "name", "body", "occurred_at", "author_external_id",
+        "author_display", "permalink", "thread_key", "reply_to_external_id", "recipients",
+        "conversation_id", "message_id", "origin_kind", "origin_namespace", "origin_key",
+    })
+    derived_writer: ClassVar[str] = "flow_sdk.ingest.envelope_lift.envelope_of (via the ingest upsert)"
+
+    @property
+    def payload(self) -> Optional[Payload]:
+        """The authoritative typed value (stored as ``data``)."""
+        return self.data
 
     # ── envelope (the routing header) ──────────────────────────────────────
     kind: str = APIField(default="", description="Ontology kind, e.g. content.feed.item")
@@ -229,7 +258,6 @@ class SourceItem(Entity):
     origin_kind: str = APIField(default="")
     origin_namespace: str = APIField(default="")
     origin_key: str = APIField(default="")
-    data: Optional[Tagged[Payload]] = APIField(default=None, description="The typed payload, tagged with its spec_kind")
 
     # ── who ────────────────────────────────────────────────────────────────
     author_external_id: Optional[str] = APIField(default=None)
@@ -281,8 +309,11 @@ class SourceItem(Entity):
         from flow_sdk.schema.data_spec.layout import INPUT  # noqa: PLC0415
 
         envelope = SourceItemSpec.model_validate({k: getattr(self, k) for k in SourceItemSpec.model_fields})
+        # The file keeps the shape existing dataset rows were labelled against (no scope) until
+        # its readers move to ``{scope, key, payload}`` together.
+        contents = envelope.model_dump(mode="json", exclude_none=True, exclude={"item_scope"})
         return (
-            {f"{INPUT}/item.json": envelope.model_dump(mode="json", exclude_none=True)},
+            {f"{INPUT}/item.json": contents},
             {
                 "data_source_id": self.data_source_id,
                 "external_id": self.external_id,
@@ -348,11 +379,20 @@ class SourceItem(Entity):
     async def find_existing(cls, data_source_id: str, origin: CloudOrigin) -> Optional["SourceItem"]:
         """THE identity lookup — the row this source holds for *origin*, or None.
 
-        The origin's namespace carries the segment, because provider ids are
-        frequently only unique *within* one (a Slack ``ts`` repeats across
-        channels); ``data_source_id`` partitions it, because the same remote feed
-        added twice must not collide. The key itself is declared once, on the type
-        (``TypeInfo.natural_key``); this is its named single-row entry point,
-        indexed by the index declared on ``SOURCE_ITEM.indexes``.
+        Identity is ``(data_source_id, item_scope, item_key)``: the scope carries the
+        container, because provider ids are frequently only unique *within* one (a
+        Slack ``ts`` repeats across channels); ``data_source_id`` partitions it, because
+        the same remote feed added twice must not collide. The key is declared once, on
+        the type (``TypeInfo.natural_key``), with the origin triple as its legacy key —
+        ``DbSerializer.resolve`` asks that one when the new key finds nothing, which
+        is how a row written before the key moved still resolves.
         """
-        return await cls.serializer().resolve_key(cls, (data_source_id, origin.kind, origin.namespace, origin.key))
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        from flow_sdk.sources.base import scope_in  # noqa: PLC0415
+
+        named = SimpleNamespace(
+            data_source_id=data_source_id, item_scope=scope_in(origin), item_key=origin.key,
+            origin_kind=origin.kind, origin_namespace=origin.namespace, origin_key=origin.key,
+        )
+        return await cls.serializer().resolve(cls, named)

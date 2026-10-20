@@ -95,7 +95,7 @@ _PAGE = "page:"
 
 class SlackMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.slack"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw", "recorded"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw", "recorded"})
 
     raw: Optional[dict] = None
     #: A sent message whose record is the provider's echo, not a copy made at send (an upload: Slack
