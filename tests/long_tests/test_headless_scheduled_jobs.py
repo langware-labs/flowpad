@@ -77,12 +77,17 @@ async def _process(client: httpx.AsyncClient, process_id: str) -> dict:
 
 
 async def _prompt(client: httpx.AsyncClient, process_id: str, message: str) -> int:
-    async with client.stream(
-        "POST", f"/api/v1/graph/agentic_process/{process_id}/prompt", json={"message": message}
-    ) as r:
-        async for _ in r.aiter_bytes():
-            pass
-        return r.status_code
+    """Send ``message``; a fire turn in flight answers 409 (one turn at a time), so wait it out."""
+    deadline = time.monotonic() + 60
+    while True:
+        async with client.stream(
+            "POST", f"/api/v1/graph/agentic_process/{process_id}/prompt", json={"message": message}
+        ) as r:
+            async for _ in r.aiter_bytes():
+                pass
+        if r.status_code != 409 or time.monotonic() > deadline:
+            return r.status_code
+        await asyncio.sleep(5)
 
 
 def _fires(log: Path) -> int:
