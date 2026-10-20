@@ -5,7 +5,7 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "b9b4a59f6dcecfd343b04aa8f541b639eb527ae48dce7704fdb48a117b2c7747",
+  "inputs_hash": "5c242676b77e279de4d11d497fa9cd4eb316d9a9199abe2a36e9b4609e79756a",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's architecture, terminology and design docs: the record and entity model, agents and agentic processes, terminals and PTY, collaboration and sharing, navigation and tabs, the desktop app and its version-compatibility contract, FlowCall, runnable SDK snippets, and proven debugging findings with their benchmarks.",
@@ -185,14 +185,6 @@
       "summary": "Phase-by-phase delivery worklog for the unified FlowEvent bus: envelope spec, emitters, trigger subscriptions, WebSocket dialect replacement, lifecycle signals and dated log entries",
       "content_hash": "9031bef30832a1de90b5486326fa3334707db1e434c2dbcd415ee21cae7f040b",
       "size_bytes": 42773
-    },
-    {
-      "name": "flowcall-guidance-audit.md",
-      "rel_path": "flowcall-guidance-audit.md",
-      "title": "flowcall-guidance-audit",
-      "summary": "Nearly empty file holding only front matter with an id; no audit content.",
-      "content_hash": "d5dc0bcc1f57f9151dff6e63fe27a0baecb3e7561df1572e7ed30f374d37eff1",
-      "size_bytes": 49
     },
     {
       "name": "frontend-debug-cheatsheet.md",
@@ -423,8 +415,8 @@
       "rel_path": "version-compatibility.md",
       "title": "Desktop <-> Backend Version Compatibility",
       "summary": "Version-compatibility contract between the Electron desktop and PyPI backend: min_backend_version and min_desktop_version floors, enforcement per flow, release steps, and troubleshooting",
-      "content_hash": "6d8420b9737b0cdbe3a5756e035e81eff887687d161c35fabbdbe2a347a3f75c",
-      "size_bytes": 10680
+      "content_hash": "5f5f205a9511fbf7d723a5cb600a54d7d449bace95640b75a786d02abb810f82",
+      "size_bytes": 11184
     },
     {
       "name": "vfs.md",
@@ -565,6 +557,6 @@
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-19T19:20:22.498491+00:00",
+  "generated_at": "2026-10-20T09:49:59.934612+00:00",
   "latest_process_ref": ""
 }
