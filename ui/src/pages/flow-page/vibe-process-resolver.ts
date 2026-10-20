@@ -11,12 +11,13 @@ import { useCallback, useRef } from 'react';
  *  `openedOnly` (default) keeps only chats that were opened; Discuss on an asset
  *  passes false — a chat made by Discuss is the asset's even before its first turn. */
 export function lastVibeChatQuery(
-  projectId: string,
+  /** Null = a project-less chat (the chat-scratch folder): matches `project_id` unset. */
+  projectId: string | null,
   target?: string,
   { openedOnly = true }: { openedOnly?: boolean } = {},
 ): QueryRequest {
   const operands: Partial<ExpressionNode>[] = [
-    { op: '$EQ', operands: ['project_id', projectId] },
+    projectId ? { op: '$EQ', operands: ['project_id', projectId] } : { op: '$IS_NULL', operands: ['project_id'] },
     { op: '$EQ', operands: ['process_type', ProcessKind.Chat] },
   ];
   if (openedOnly) operands.push({ op: '$IS_NOT_NULL', operands: ['last_active_at'] });
@@ -24,7 +25,7 @@ export function lastVibeChatQuery(
   return new QueryRequest({
     type: AgenticProcess.type,
     scope: [],
-    name: `lastVibeChat:${projectId}${target ? `:${target}` : ''}${openedOnly ? '' : ':any'}`,
+    name: `lastVibeChat:${projectId ?? 'scratch'}${target ? `:${target}` : ''}${openedOnly ? '' : ':any'}`,
     query: new QueryFilter({ match: { op: '$AND', operands } }),
   });
 }

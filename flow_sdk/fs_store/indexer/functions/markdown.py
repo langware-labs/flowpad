@@ -119,6 +119,21 @@ def markdown_in_folder_fn(
     by-name skill-doc skip are cross-type rules — "every ``.md`` a different
     type's walk already claims" — that a per-type declaration cannot state.
     """
+    return _doc_folder_files(nodes, (".md",), RecordType.MARKDOWN)
+
+
+def document_files_in_folder_fn(
+    nodes: list[FSRef],
+    opts: IndexerOptions,
+) -> list[FSRef]:
+    """For each walked FOLDER, emit its direct ``.docx`` / ``.txt`` children as
+    DOCUMENT_FILE — the same docs-folder and typed-ancestor rules as markdown."""
+    from flow_sdk.assets.types.document_file import DOCUMENT_FILE_EXTS  # noqa: PLC0415
+
+    return _doc_folder_files(nodes, DOCUMENT_FILE_EXTS, RecordType.DOCUMENT_FILE)
+
+
+def _doc_folder_files(nodes: list[FSRef], suffixes: tuple[str, ...], record_type: RecordType) -> list[FSRef]:
     out: list[FSRef] = []
     seen: set[str] = set()
     typed_dirs = _typed_record_dirs()
@@ -137,7 +152,7 @@ def markdown_in_folder_fn(
         if _in_claimed_folder(folder_path, Path(root.path) if root is not None else None, mains, claimed):
             continue
         try:
-            entries = sorted(folder_path.glob("*.md"))
+            entries = sorted(p for p in folder_path.iterdir() if p.suffix.lower() in suffixes)
         except OSError:
             continue
         for md in entries:
@@ -153,7 +168,7 @@ def markdown_in_folder_fn(
             except OSError:
                 continue
             if first_seen(seen, md, resolve=True):
-                out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=node))
+                out.append(FSRef(md, record_type=record_type, parent=node))
     return out
 
 
