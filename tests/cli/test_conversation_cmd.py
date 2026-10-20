@@ -123,6 +123,24 @@ def test_send_lands_message_and_is_pending_when_logged_out(conv_cli):
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_send_prompt_rides_inline_and_saves_nothing_to_the_library(conv_cli):
+    """`send --prompt` must not mint a library Prompt: each one writes a file under the
+    project's agentic-assets/prompt/, private chat text one `git add` from a push."""
+    def prompt_ids():
+        rows = requests.get(f"{conv_cli.base}/api/v1/graph/prompt", timeout=10).json().get("data") or []
+        return {r["id"] for r in rows}
+
+    before = prompt_ids()
+    payload = conv_cli.ok_payload(conv_cli.invoke(
+        ["conversation", "send", conv_cli.conv_id, "please run this", "--prompt", "echo hi from cli"]
+    ))
+    inline = [a["data"] for a in payload["attachment"] if a.get("attachment_type") == "prompt"]
+    assert inline == ["echo hi from cli"]
+    assert not [a for a in payload["attachment"] if str(a.get("data", "")).startswith("prompt-")]
+    assert prompt_ids() == before
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_summary_command_returns_text(conv_cli):
     conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "one"])
     conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "two"])

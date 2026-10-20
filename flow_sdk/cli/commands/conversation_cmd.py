@@ -345,6 +345,20 @@ def send_message(
             help="Message id to answer: the reply quotes it and joins the thread rooted at it.",
         ),
     ] = None,
+    prompt: Annotated[
+        Optional[str],
+        typer.Option(
+            "--prompt",
+            help=(
+                "A runnable prompt for the recipient. It rides inline on the message — "
+                "never saved to the prompt library or the project."
+            ),
+        ),
+    ] = None,
+    session: Annotated[
+        Optional[str],
+        typer.Option("--session", help="Live-session id (remote_worker_session) to send into."),
+    ] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
@@ -353,6 +367,10 @@ def send_message(
     body: dict = {"text": message}
     if reply_to:
         body["reply_to_id"] = _message_id(reply_to)
+    if prompt and prompt.strip():
+        body["prompt_text"] = prompt
+    if session:
+        body["remote_worker_session_id"] = session.strip()
     data = _post_json(
         _add_message_url(port, cid),
         body,
