@@ -54,7 +54,8 @@ def test_a_release_that_rejects_the_managing_desktop_is_rolled_back(monkeypatch,
     out = CliRunner().invoke(app, ["upgrade"])
 
     assert out.exit_code == 1
-    assert [cmd[-1] for cmd in ran] == ["flowpad==999.0.0", f"flowpad=={__version__}"], "installed, then put back"
+    assert len(ran) == 2, "installed, then put back (the restore succeeds on its first attempt)"
+    assert "flowpad==999.0.0" in ran[0] and f"flowpad=={__version__}" in ran[1], "the previous release is pinned back"
     assert "not compatible with the running desktop" in out.output and "0.2.60" in out.output
     assert f"flowpad {__version__} has been restored." in out.output
     assert "flowpad upgraded:" not in out.output

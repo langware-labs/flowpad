@@ -147,7 +147,14 @@ def rollback_if_incompatible(previous_version: str) -> "PairRollback | None":
     if reason is None:
         return None
     logger.warning("[self-update] the installed release is incompatible with the running desktop: %s -- restoring %s", reason, previous_version)
-    restore = reinstall_version(previous_version)
+    # The wheel being restored is the one uv installed before, so it is in uv's cache: try that first. The
+    # network may be exactly what failed (an install that died half way is often a dropped connection), and a
+    # local/dev build that is not on PyPI can only come back from the cache.
+    restore = None
+    if build_install_command(previous_version, offline=True) != build_install_command(previous_version):
+        restore = reinstall_version(previous_version, offline=True)
+    if restore is None or not restore.ok:
+        restore = reinstall_version(previous_version)
     manual = " ".join(str(part) for part in build_install_command(previous_version))
     return PairRollback(reason=reason, restored=restore.ok, manual_command=manual)
 
@@ -206,7 +213,17 @@ def detect_install_method() -> str:
     return "pip"
 
 
-def build_install_command(version: str) -> list[str]:
+def build_install_command(version: str, offline: bool = False) -> list[str]:
+    """The pinned install. ``offline`` asks uv for its cache only -- how a rollback avoids needing the network
+    for a wheel uv already holds. pip has no such mode: there ``offline`` changes nothing."""
+    cmd = _build_install_command(version)
+    uv = shutil.which("uv")
+    if offline and uv and cmd and cmd[0] == uv:
+        cmd.append("--offline")
+    return cmd
+
+
+def _build_install_command(version: str) -> list[str]:
     if detect_install_method() == "uv":
         # No ``--force``: a new pin already moves the tool, in place. ``--force`` rebuilds the
         # environment, and its own callers run inside it (``flow upgrade``, the server) -- on
@@ -301,6 +318,11 @@ def upgrade_after_exit(version: str, pids: list[int], log: Path) -> int:
     asked, and its Python) have exited, writing what happened to *log*. Run detached."""
     from flow_sdk import __version__ as previous  # noqa: PLC0415 -- read now: the install below replaces it on disk
 
+    # Loaded now for the same reason: the post-install check runs in THIS process, and a first import after the
+    # install would execute the NEW release's compat module. If a later release renamed what the check calls, the
+    # detached relay would die with no log and no rollback. The module loaded here reads the new floor from disk.
+    importlib.import_module("flow_sdk.utils.compat")
+
     _wait_for_exit(pids, timeout=60)
     with launchers_set_aside(wait_s=60) as free:
         if not free:
@@ -323,7 +345,7 @@ def upgrade_after_exit(version: str, pids: list[int], log: Path) -> int:
     return result.returncode
 
 
-def reinstall_version(version: str, timeout: float = 180.0) -> "CliResult":
+def reinstall_version(version: str, timeout: float = 180.0, offline: bool = False) -> "CliResult":
     """Run the pinned reinstall — a ``CliResult``, built the one way every
     process record is (``of_process``), so a timeout is ``timed_out`` rather than
     folded into "failed". Never raises.
@@ -332,8 +354,8 @@ def reinstall_version(version: str, timeout: float = 180.0) -> "CliResult":
     """
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
 
-    cmd = build_install_command(version)
-    command = " ".join(cmd)
+    cmd = build_install_command(version, offline=offline)
+    command = " ".join(str(part) for part in cmd)
     logger.info("[self-update] installing %s==%s via: %s", PACKAGE, version, command)
     started = time.monotonic()
     try:
