@@ -1,6 +1,5 @@
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
-import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
@@ -9,17 +8,14 @@ import { PageShareButton } from './PageShareButton';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
 /**
- * Bookmark / share / discuss / pop-out for whatever the bar is currently addressing.
+ * Bookmark / share / pop-out for whatever the bar is currently addressing.
  *
  * Every one of these is an existing surface — this only picks the target and
  * mounts them. In particular the cluster is the SAME `EntityActionsToolbar` the
  * asset editor header uses, in the same order, so the actions don't drift into
  * two dialects of themselves.
  *
- * `AssetDiscussButton` is the self-gating variant on purpose: this bar is
- * global, so gating that lives inside the button (asset docks only, not already
- * in Vibe, not a popped-out window, project resolved) is exactly right. A copy
- * of those rules here would be a second copy destined to drift.
+ * Chat about a document is NOT here: it is per viewer (`ViewerChatToggle`).
  */
 export function TopBarActions({
   targetTypeId,
@@ -55,12 +51,7 @@ export function TopBarActions({
         // must not draw a second one. Riding the `trailing` slot keeps it inside
         // the toolbar's own row rather than in a wrapper repeating its classes.
         hideFavorite
-        trailing={
-          <>
-            <AssetDiscussButton />
-            {favorite && <BookmarksStarButton favorite={favorite} />}
-          </>
-        }
+        trailing={favorite && <BookmarksStarButton favorite={favorite} />}
       />
     );
   }
@@ -69,12 +60,11 @@ export function TopBarActions({
   // still bookmarkable BY ITS DOCK — resolved through the same rule the
   // bookmarks menu uses, so a star set here is the row shown there. Sharing has
   // no subject, except a standalone page (shared as the artifact that names it,
-  // minted on click); pop-out and discuss gate themselves.
+  // minted on click); pop-out gates itself.
   if (!dock) return null;
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
       <PageShareButton dock={dock} />
-      <AssetDiscussButton />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>
   );

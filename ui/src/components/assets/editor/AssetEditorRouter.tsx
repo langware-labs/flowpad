@@ -1,4 +1,5 @@
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
+import { ViewerChatSlotProvider } from './ViewerChatToggle';
 import {
   AssetSetup,
   ComputeOp,
@@ -145,7 +146,16 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
+/** Every asset viewer, with its Chat toggle (`ViewerChatSlotProvider`). */
+export function AssetEditorRouter(props: AssetEditorRouterProps) {
+  return (
+    <ViewerChatSlotProvider>
+      <AssetEditorRouterInner {...props} />
+    </ViewerChatSlotProvider>
+  );
+}
+
+function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
   const { currentDock, navigation } = useDockNavigation();
   const readOnly = useAssetReadOnly();
   const occurrenceType = useReadOnlyOccurrenceType();
