@@ -14,6 +14,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
+import { VibeDocChip } from './vibe-doc-chip';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { AgenticProcess, ProcessKind, toplog } from '@sdk';
@@ -276,7 +277,10 @@ export function VibeChatPane({
         historyProjectId={chatProjectId}
         showProcessNameBar
         afterHistorySlot={
-          <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+          <>
+            <VibeDocChip process={process} />
+            <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+          </>
         }
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}
