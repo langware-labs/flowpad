@@ -442,3 +442,7 @@ html.light .milkdown-editor-wrapper .token.regex,
 html.light .milkdown-editor-wrapper .token.important {
   color: #af00db;
 }
+
+/* Find bar (Cmd/Ctrl+F) matches */
+::highlight(md-find) { background-color: rgb(250 204 21 / 0.4); }
+::highlight(md-find-active) { background-color: rgb(249 115 22 / 0.7); }
