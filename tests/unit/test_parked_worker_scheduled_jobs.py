@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCLIStreamWorker, stream_worker
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import restored_cron_jobs
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.claude_cron_job import restored_cron_jobs
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowElementType
 from tests.utils.fake_cli import patch_build_spawn
