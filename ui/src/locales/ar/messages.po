@@ -5004,6 +5004,10 @@ msgstr "المخططات"
 msgid "Chat"
 msgstr "المحادثة"
 
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Chat about this file"
+msgstr ""
+
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
 msgstr ""
@@ -5722,6 +5726,10 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
 msgstr "إغلاق الإشارة المرجعية"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Close chat"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Close details"
@@ -7204,6 +7212,10 @@ msgstr "تعذّر فتح التدفق الفرعي"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
+msgstr ""
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Could not open this document: {error}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -9377,8 +9389,8 @@ msgstr "جارٍ اكتشاف {typeLabel}…"
 #~ msgstr "جارٍ الاكتشاف…"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Discuss"
-msgstr "نقاش"
+#~ msgid "Discuss"
+#~ msgstr "نقاش"
 
 #: src/i18n/pref-labels.ts
 msgid "Disk I/O backend"
@@ -9475,6 +9487,7 @@ msgstr ""
 msgid "Documentation"
 msgstr "التوثيق"
 
+#: src/i18n/type-labels.ts
 #: src/i18n/type-labels.ts
 msgid "Documents"
 msgstr "المستندات"
@@ -11563,8 +11576,8 @@ msgid "finishing"
 msgstr "جارٍ الإنهاء"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Finishing asset load…"
-msgstr "إنهاء تحميل الملف…"
+#~ msgid "Finishing asset load…"
+#~ msgstr "إنهاء تحميل الملف…"
 
 #~ msgid "Fire (synthetic test)"
 #~ msgstr "إطلاق (اختبار اصطناعي)"
@@ -15014,6 +15027,7 @@ msgstr "جاري التحميل..."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -18640,6 +18654,10 @@ msgstr ""
 msgid "Open {name}"
 msgstr "افتح {name}"
 
+#: src/pages/flow-page/vibe-doc-chip.tsx
+msgid "Open {name} beside this chat"
+msgstr ""
+
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
 msgstr "فتح {title}"
@@ -21219,6 +21237,10 @@ msgstr ""
 msgid "Read the result in FlowPad"
 msgstr "اقرأ النتيجة في FlowPad"
 
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Read-only"
+msgstr ""
+
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Reader"
 msgstr ""
@@ -22571,8 +22593,8 @@ msgid "Review each attached asset and choose how to install it."
 msgstr "يُرجى مراجعة كل عنصر مرفق واختيار كيفية تثبيته."
 
 #: src/tabs/doc-tab-card.tsx
-msgid "Review in"
-msgstr "مراجعة في"
+#~ msgid "Review in"
+#~ msgstr "مراجعة في"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -23789,8 +23811,8 @@ msgid "Select a project"
 msgstr "اختيار مشروع"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Select a project to discuss this file"
-msgstr "يرجى اختيار مشروع لمناقشة هذا الملف"
+#~ msgid "Select a project to discuss this file"
+#~ msgstr "يرجى اختيار مشروع لمناقشة هذا الملف"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
