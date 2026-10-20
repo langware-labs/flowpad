@@ -49,8 +49,9 @@ def test_armed_instance_presents_the_secret_on_loopback():
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
 def test_every_loopback_spelling_is_covered(host):
-    """`read_all_server_infos` builds `localhost` urls while the command modules
-    build `127.0.0.1` ones -- both are this machine and both must pass."""
+    """`read_all_server_infos` and the command modules build `127.0.0.1` urls,
+    but a caller may still present any loopback spelling -- `127.0.0.1`,
+    `localhost` or `::1` -- and every one is this machine and must pass."""
     url = f"http://[{host}]:9007/x" if host == "::1" else f"http://{host}:9007/x"
     with _armed():
         assert gate_headers(url) == {HEADER_NAME: SECRET}

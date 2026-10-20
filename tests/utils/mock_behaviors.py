@@ -24,12 +24,17 @@ _TASK_NEWS = re.compile(r"^\[task (?P<id>[0-9a-f-]{36}) · (?P<event>\w+) · by 
 def flow_runner(client, monkeypatch):
     """``flow(process, argv)`` — the real typer CLI, in-process, as ``process`` (FLOWPAD_EXECUTION_SCOPE),
     its HTTP bridged into the in-process app (the ``CliDriver`` pattern of the source matrix)."""
-    from typer.testing import CliRunner  # noqa: PLC0415
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    import os  # noqa: PLC0415
+
+    from typer.main import get_command  # noqa: PLC0415
 
     from flow_sdk.cli import flow_cli  # noqa: PLC0415
     from flow_sdk.cli.commands import _common, conversation_cmd, task_cmd  # noqa: PLC0415
 
     loop = asyncio.get_running_loop()
+    command = get_command(flow_cli.app)
 
     def request(method, url, json=None, params=None, timeout=None, **_kw):  # noqa: A002
         path = "/" + url.split("://", 1)[1].split("/", 1)[1]
@@ -41,17 +46,46 @@ def flow_runner(client, monkeypatch):
         monkeypatch.setattr(module, "discover_port", lambda *a, **k: 1)
     monkeypatch.setattr(conversation_cmd, "_discover_port", lambda *a, **k: 1)
 
-    # CliRunner sets its env on the PROCESS: two turns calling at once (a chief and a run) would
-    # borrow each other's identity — one call at a time.
+    # Two facts force one CLI call at a time: each sets FLOWPAD_EXECUTION_SCOPE on the PROCESS env
+    # (two turns at once — a chief and a run — would borrow each other's identity), and each captures
+    # the process stdout. We do NOT use click's ``CliRunner``: its ``StreamMixer`` installs a GC
+    # finalizer that closes the capture buffers, and a re-entrant turn (the CLI's own HTTP call runs
+    # back on this loop, which may dispatch another turn) lets that finalizer close the buffer still
+    # being read — ``ValueError: I/O operation on closed file``. A plain ``StringIO`` under the lock
+    # has no finalizer and no shared global to corrupt.
     lock = asyncio.Lock()
 
+    def _invoke(argv: list[str], scope: str) -> dict:
+        out, err = io.StringIO(), io.StringIO()
+        prior = os.environ.get("FLOWPAD_EXECUTION_SCOPE")
+        os.environ["FLOWPAD_EXECUTION_SCOPE"] = scope
+        exit_code = 0
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                try:
+                    # standalone_mode=False makes click RETURN the exit code for a
+                    # ``typer.Exit(n)`` (it only raises SystemExit for a real
+                    # ``sys.exit``), so capture both or a refused call (Exit 7)
+                    # reads as 0.
+                    rv = command.main(args=argv, prog_name="flow", standalone_mode=False)
+                    if isinstance(rv, int):
+                        exit_code = rv
+                except SystemExit as exit_:
+                    exit_code = int(exit_.code or 0)
+        finally:
+            if prior is None:
+                os.environ.pop("FLOWPAD_EXECUTION_SCOPE", None)
+            else:
+                os.environ["FLOWPAD_EXECUTION_SCOPE"] = prior
+        return {"exit_code": exit_code, "stdout": out.getvalue(), "stderr": err.getvalue()}
+
     async def run(process, argv: list[str]) -> dict:
-        env = {"FLOWPAD_EXECUTION_SCOPE": json.dumps([{"type": "agentic_process", "id": process.id}])}
+        scope = json.dumps([{"type": "agentic_process", "id": process.id}])
         async with lock:
-            result = await asyncio.to_thread(CliRunner().invoke, flow_cli.app, argv, env=env)
-        lines = [ln for ln in (result.stdout + "\n" + (result.stderr if hasattr(result, "stderr") else "")).splitlines() if ln.startswith("{")]
-        payload = json.loads(lines[-1]) if lines else {"ok": False, "error": result.output[-400:]}
-        return {"exit_code": result.exit_code, **payload}
+            result = await asyncio.to_thread(_invoke, argv, scope)
+        lines = [ln for ln in (result["stdout"] + "\n" + result["stderr"]).splitlines() if ln.startswith("{")]
+        payload = json.loads(lines[-1]) if lines else {"ok": False, "error": (result["stdout"] + result["stderr"])[-400:]}
+        return {"exit_code": result["exit_code"], **payload}
 
     return run
 

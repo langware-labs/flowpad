@@ -243,9 +243,11 @@ function linkedAnchors(links: LinkHandlers): Partial<Components> {
   return {
     a: ({ node, href, children }) => {
       const ref = node?.properties?.dataLinkRef;
+      // A bare address reads left to right even inside Hebrew or Arabic prose; a labelled link follows its label.
+      const dir = typeof children === 'string' && (children === href || children === ref) ? 'ltr' : undefined;
       if (typeof ref !== 'string') {
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
+          <a href={href} dir={dir} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
             {children}
           </a>
         );
@@ -253,6 +255,7 @@ function linkedAnchors(links: LinkHandlers): Partial<Components> {
       return (
         <a
           href={isWebUrl(ref) ? ref : undefined}
+          dir={dir}
           role="link"
           // A linked `code.py:3` keeps its code chip but reads as a link.
           className={`cursor-pointer ${MARKDOWN_LINK_CLASS} [&>code]:text-primary [&>code]:underline`}

@@ -97,10 +97,30 @@ def _project(root: Path, *, ns: str = "acme") -> Path:
 
 def _probe(root: Path, kind: str = "--acme--.ingest.feed.item.quake") -> list[str]:
     """``[<class the kind resolved to>, <the BARE name is unreachable>]``."""
+    # The child inherits none of the parent's env, so it must be handed a HOME and
+    # an isolated FLOW_HOME/FLOW_INSTANCE of its own. Two reasons, both hermetic:
+    #   * flow_sdk resolves its flow_home as ``$FLOW_HOME`` or, absent that,
+    #     ``Path.home()/.flow`` — and ``Path.home()`` with no HOME in env falls back
+    #     to the OS user database, which is absent in a sandboxed uid (gVisor), so
+    #     config import dies at ``RuntimeError: Could not determine home directory``.
+    #     A real HOME makes the probe independent of the host's passwd file.
+    #   * With no FLOW_INSTANCE the child would resolve the ambient default
+    #     ``prod`` and touch the live instance's tree; pinning both FLOW_HOME and
+    #     FLOW_INSTANCE keeps it inside ``root``. The kind under test comes from
+    #     ``namespace_roots.remember`` in the probe, not from any instance DB, so
+    #     the instance only needs to be isolated, not primed.
+    home = root / ".home"
+    home.mkdir(exist_ok=True)
     done = subprocess.run(
         [sys.executable, "-c", textwrap.dedent(PROBE), str(root), kind],
         capture_output=True, text=True, check=True,
-        env={"FLOWPAD_SKIP_DOTENV": "true", "PATH": ""},
+        env={
+            "FLOWPAD_SKIP_DOTENV": "true",
+            "PATH": "",
+            "HOME": str(home),
+            "FLOW_HOME": str(root / ".flow"),
+            "FLOW_INSTANCE": "probe-isolated",
+        },
     )
     return done.stdout.split()
 
