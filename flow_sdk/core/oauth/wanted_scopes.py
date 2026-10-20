@@ -30,11 +30,15 @@ async def wanted_extra_scopes(provider: str) -> list[str]:
     wanted: set[str] = set()
     holding = await _drivers_holding_rows()
     # Only the drivers that write through this connection, then whether any of their sources writes back.
+    def for_this(by_connector: dict[str, list[str]]) -> list[str]:
+        return [s for connector, listed in by_connector.items() if connector.lower() in names for s in listed]
+
     for driver in DRIVERS.kinds():
         if driver in holding:
-            wanted.update(s for connector, listed in row_scopes_of_driver(driver).items() if connector.lower() in names for s in listed)
-        scopes = [s for connector, listed in write_scopes_of_driver(driver).items() if connector.lower() in names for s in listed]
-        if not scopes or driver in holding:
+            wanted.update(for_this(row_scopes_of_driver(driver)))
+            continue
+        scopes = for_this(write_scopes_of_driver(driver))
+        if not scopes:
             continue
         try:
             sources = await DataSource.get_all({"provider": driver})
