@@ -690,7 +690,7 @@ msgstr "{0} מתוך {1} מוגדרים"
 #. placeholder {1}: drawn.total
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "{0} of {1} set up"
-msgstr ""
+msgstr "{0} מתוך {1} הוגדרו"
 
 #. placeholder {0}: tries.data.filter((r) => caughtWord(r.verdict).kind === 'yes').length
 #. placeholder {1}: tries.data.length
@@ -947,7 +947,7 @@ msgstr ""
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{done} of {total} set up"
-msgstr ""
+msgstr "{done} מתוך {total} הוגדרו"
 
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "{doneCount} records"
@@ -1367,7 +1367,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "{unfinished} did not finish"
-msgstr ""
+msgstr "{unfinished} לא הסתיימו"
 
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "{unopened} new"
@@ -2978,7 +2978,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
-msgstr ""
+msgstr "תמיד"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always allow sessions from {guestName}"
@@ -5109,7 +5109,7 @@ msgstr "בודק את קבצי מרכז העזרה"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Checking the sign-in…"
-msgstr ""
+msgstr "בודק את ההתחברות…"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Checking the tag index…"
@@ -5121,7 +5121,7 @@ msgstr "בודק מה מממן את {harnessLabel}…"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Checking what this needs…"
-msgstr ""
+msgstr "בודק מה נדרש…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -6159,7 +6159,7 @@ msgstr "התחבר"
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connect {0}"
-msgstr ""
+msgstr "חבר את {0}"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Connect {group}"
@@ -6255,7 +6255,7 @@ msgstr "מחובר"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected — {as}"
-msgstr ""
+msgstr "מחובר — {as}"
 
 #. placeholder {0}: partners.length
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6413,7 +6413,7 @@ msgstr "המשיכו במסע"
 #. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Continue setup: {0}"
-msgstr ""
+msgstr "להמשיך בהגדרה: {0}"
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -7506,7 +7506,7 @@ msgstr "לא ניתן היה להתנתק מארגז החול"
 #. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not skip {0}"
-msgstr ""
+msgstr "לא ניתן לדלג על {0}"
 
 #~ msgid "Could not skip {name}"
 #~ msgstr ""
@@ -7555,7 +7555,7 @@ msgstr "לא ניתן היה להתחיל את סשן זמן האמת"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not start the setup"
-msgstr ""
+msgstr "לא ניתן להתחיל את ההגדרה"
 
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "Could not start the sign-in."
@@ -7574,7 +7574,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not stop the setup"
-msgstr ""
+msgstr "לא ניתן לעצור את ההגדרה"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not stop the snippet"
@@ -7607,7 +7607,7 @@ msgstr ""
 #. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not undo the skip of {0}"
-msgstr ""
+msgstr "לא ניתן לבטל את הדילוג על {0}"
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not unpublish"
@@ -10533,7 +10533,7 @@ msgstr "הכול כבר מעודכן."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Everything required is set up."
-msgstr ""
+msgstr "כל מה שנדרש הוגדר."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -10699,7 +10699,7 @@ msgstr "פג תוקף אחרי"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Explain"
-msgstr ""
+msgstr "הסבר"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Explain the result"
@@ -11493,7 +11493,7 @@ msgstr "סיום ההגדרה של Flowpad"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Finish setup"
-msgstr ""
+msgstr "סיום ההגדרה"
 
 #: src/components/data-sources/source-attention.ts
 msgid "Finish setup, then press Verify."
@@ -13608,7 +13608,7 @@ msgstr ""
 
 #: src/components/assets/DependencyChips.tsx
 msgid "invalid"
-msgstr ""
+msgstr "לא תקין"
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "Invalid"
@@ -15047,7 +15047,7 @@ msgstr "נתיב מקומי"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Locally"
-msgstr ""
+msgstr "במחשב הזה"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
@@ -15687,7 +15687,7 @@ msgstr ""
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
-msgstr ""
+msgstr "חסר"
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
@@ -16035,7 +16035,7 @@ msgstr "נדרש עבור:"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Needed to run {projectName} on this computer."
-msgstr ""
+msgstr "נדרש כדי להריץ את {projectName} במחשב הזה."
 
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -17621,7 +17621,7 @@ msgstr "לא נמצא אשף בשם הזה."
 #. placeholder {0}: stage.wizard
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "No wizard named {0} is installed."
-msgstr ""
+msgstr "לא מותקן wizard בשם {0}."
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
@@ -17772,7 +17772,7 @@ msgstr "עדיין לא הופעל"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "not found"
-msgstr ""
+msgstr "לא נמצא"
 
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -17791,7 +17791,7 @@ msgstr "לא נמצא"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "not installed"
-msgstr ""
+msgstr "לא מותקן"
 
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/funding-pill.ts
@@ -18172,7 +18172,7 @@ msgstr "אין מה לשמור"
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Nothing to set up."
-msgstr ""
+msgstr "אין מה להגדיר."
 
 #: src/components/git/RepoPicker.tsx
 msgid "Nothing to show for {owner}."
@@ -18389,7 +18389,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
-msgstr ""
+msgstr "במחשב הזה בלבד — אפשר לבטל בכל עת"
 
 #: src/components/account/settings-section.tsx
 #: src/i18n/pref-labels.ts
@@ -19363,14 +19363,14 @@ msgstr "הפעולה נכשלה"
 #: src/components/assets/DependencyChips.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
-msgstr ""
+msgstr "אופציונלי"
 
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
-msgstr ""
+msgstr "אופציונלי"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -19382,7 +19382,7 @@ msgstr "אופציונלי — השאר ריק עבור בית"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional — skipped on this machine"
-msgstr ""
+msgstr "אופציונלי — דולג במחשב הזה"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -19623,7 +19623,7 @@ msgstr ""
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Packages"
-msgstr ""
+msgstr "חבילות"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -20611,7 +20611,7 @@ msgstr "פרויקט נדרש"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Project requirements"
-msgstr ""
+msgstr "דרישות הפרויקט"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Project role"
@@ -21161,7 +21161,7 @@ msgstr "קורא"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "reading {account}"
-msgstr ""
+msgstr "קורא את {account}"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 #~ msgid "Reading dependencies…"
@@ -21188,7 +21188,7 @@ msgstr "קריאה…"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "ready"
-msgstr ""
+msgstr "מוכן"
 
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
@@ -21712,7 +21712,7 @@ msgstr "הסרת סוכן מ־Vibe"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Remove it from the project — the deletion is staged in git"
-msgstr ""
+msgstr "להסיר מהפרויקט — המחיקה מוכנה לקומיט ב-git"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
@@ -22136,7 +22136,7 @@ msgstr "בקשות דרך השורש הזה ייכשלו עד שיישמר מפ�
 
 #: src/components/assets/DependencyChips.tsx
 msgid "required"
-msgstr ""
+msgstr "חובה"
 
 #: src/components/ask/AskItems.tsx
 #: src/components/assets/dependency-sources.tsx
@@ -22146,7 +22146,7 @@ msgstr ""
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
-msgstr ""
+msgstr "חובה"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "required — it will not work here until it is set up"
@@ -22154,7 +22154,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required — skipped on this machine"
-msgstr ""
+msgstr "חובה — דולג במחשב הזה"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
@@ -22698,7 +22698,7 @@ msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Run again"
-msgstr ""
+msgstr "להריץ שוב"
 
 #: src/components/automations/RunDetail.tsx
 msgid "Run again with this event"
@@ -23698,7 +23698,7 @@ msgstr "בחרו את {label}"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Select {name}"
-msgstr ""
+msgstr "בחר את {name}"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
@@ -24348,7 +24348,7 @@ msgstr "מגדירים את הכול"
 #. placeholder {0}: now.label
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Setting up {0}"
-msgstr ""
+msgstr "מגדיר את {0}"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
@@ -24368,7 +24368,7 @@ msgstr "הכנת הפרויקט שלך…"
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Setting up…"
-msgstr ""
+msgstr "מגדיר…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
@@ -24395,11 +24395,11 @@ msgstr "הגדרה"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup complete"
-msgstr ""
+msgstr "ההגדרה הושלמה"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup complete ({summary})"
-msgstr ""
+msgstr "ההגדרה הושלמה ({summary})"
 
 #~ msgid "Setup could not start"
 #~ msgstr ""
@@ -25308,7 +25308,7 @@ msgstr "דילוג על בדיקת ההרשאות ההתחלתית בעת ההפ
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skip it…"
-msgstr ""
+msgstr "לדלג…"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "Skip on this machine only — undo any time"
@@ -25333,7 +25333,7 @@ msgstr "דילגנו — ההגדרה ממשיכה בלי זה."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skipped on this machine"
-msgstr ""
+msgstr "דולג במחשב הזה"
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"
@@ -25424,7 +25424,7 @@ msgstr "לחלק מהפריסות יש שגיאות"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Some of the selected cannot be removed from the project"
-msgstr ""
+msgstr "חלק מהפריטים שנבחרו לא ניתנים להסרה מהפרויקט"
 
 #: src/components/automations/TestPanel.tsx
 msgid "Some things need attention."
@@ -25963,7 +25963,7 @@ msgstr "עצור"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Stopped"
-msgstr ""
+msgstr "נעצר"
 
 #~ msgid "stopped — killed after {0}s"
 #~ msgstr ""
@@ -26865,7 +26865,7 @@ msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
 msgid "The fixer could not repair this setup. The step above says what it found."
-msgstr ""
+msgstr "הכלי לתיקון לא הצליח לתקן את ההגדרה. השלב שלמעלה מפרט מה הוא מצא."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "The fixer could not start."
@@ -27716,6 +27716,14 @@ msgstr ""
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 msgstr "זה מוחק את ההודעה וכל הנתונים שלה בצורה קבועה לכולם בשיחה. לא ניתן לבטל זאת."
 
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק ({path}). לא ניתן לבטל את הפעולה."
+
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק. לא ניתן לבטל את הפעולה."
+
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
 msgstr "פעולה זו מוחקת את הקובץ מהדיסק באופן קבוע. לא ניתן לבטל אותה."
@@ -27796,7 +27804,7 @@ msgstr "עדיין לא הוגדרו סודות לפרויקט זה."
 
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "This project is no longer on this computer. Open it again from the project that uses it."
-msgstr ""
+msgstr "הפרויקט הזה כבר לא נמצא במחשב הזה. פתח אותו שוב מהפרויקט שמשתמש בו."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "This project is now available in the cloud."
@@ -28730,7 +28738,7 @@ msgstr ""
 #: src/components/assets/DependencyChips.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "unknown"
-msgstr ""
+msgstr "לא ידוע"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -28805,7 +28813,7 @@ msgstr "שינויים שלא נדחפו"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "unreachable"
-msgstr ""
+msgstr "לא נגיש"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
@@ -29151,7 +29159,7 @@ msgstr "בשימוש על ידי"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Used by: {usedBy}"
-msgstr ""
+msgstr "בשימוש על ידי: {usedBy}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used in transcript"
