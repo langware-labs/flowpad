@@ -1,5 +1,6 @@
 """SQLAlchemy/SQLite database driver for FlowPad testing."""
 
+import functools
 import json
 
 DEFAULT_BROWSE_LIMIT = 20
@@ -20,6 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
+from flow_sdk.datasets.query import Many, field_of
 from flow_sdk.db.drivers.db_base_record import (
     BuiltinEntityType,
     DBBaseRecord,
@@ -71,6 +73,7 @@ _AFTER_COMMIT_KEY = "flow_after_commit"
 _PATH_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+@functools.lru_cache(maxsize=1024)   # a small closed set of paths, checked once each
 def json_path_sql(field_path: str, column: str = "data") -> str:
     """``json_extract(<column>, '$.a.b')`` for the dotted ``field_path`` — validated, never pasted raw.
 
@@ -94,21 +97,16 @@ _RETIRED_ENTITY_INDEXES = (
     "ix_entities_message_thread_natural_key_v2",
     "ix_entities_message_thread_natural_key_v3",
 )
-_DECLARED_INDEX_NAME = re.compile(r"^ix_entities_(?P<type>[A-Za-z0-9_]+)_(?P<n>\d+)_(?P<hash>[0-9a-f]{8})$")
-
-
-def _declared_index_name(type_name: str, n: int, paths: Sequence[str]) -> str:
-    import hashlib  # noqa: PLC0415
-
-    return f"ix_entities_{type_name}_{n}_{hashlib.sha1(','.join(paths).encode()).hexdigest()[:8]}"
+#: A declared index's name; the optional ``_<n>`` matches the earlier position-numbered names, so they drop too.
+_DECLARED_INDEX_NAME = re.compile(r"^ix_entities_(?P<type>[A-Za-z0-9_]+?)(?:_\d+)?_(?P<hash>[0-9a-f]{8})$")
 
 
 def declared_index_name(type_name: str, paths: Sequence[str]) -> str:
-    """The index name the driver builds for ``paths`` declared on ``type_name``'s ``TypeInfo.indexes``."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    """The index name the driver builds for ``paths`` declared on ``type_name``'s ``TypeInfo.indexes``:
+    named by what it indexes, so reordering the declarations renames nothing."""
+    import hashlib  # noqa: PLC0415
 
-    declared = [tuple(p) for p in (SchemaRegistry.get(type_name).indexes or ())]
-    return _declared_index_name(type_name, declared.index(tuple(paths)), paths)
+    return f"ix_entities_{type_name}_{hashlib.sha1(','.join(paths).encode()).hexdigest()[:8]}"
 
 
 def declared_index_sql(registry: Any, column_fields: Any) -> dict[str, str]:
@@ -121,29 +119,14 @@ def declared_index_sql(registry: Any, column_fields: Any) -> dict[str, str]:
             continue
         if not _PATH_SEGMENT.match(type_name):
             raise ValueError(f"Invalid type name for a declared index: {type_name!r}")
-        for n, paths in enumerate(declared):
+        for paths in declared:
             exprs = [p if p in column_fields else json_path_sql(p) for p in paths]
-            name = _declared_index_name(type_name, n, paths)
+            name = declared_index_name(type_name, paths)
             out[name] = (
                 f"CREATE INDEX IF NOT EXISTS {name} ON entities({', '.join(exprs)}) "
                 f"WHERE type = '{type_name}'"
             )
     return out
-
-
-def _path_value(obj: Any, field_path: str) -> Any:
-    """The value at a dotted ``field_path`` on an entity (attributes, then dict keys / list indexes)."""
-    current = obj
-    for segment in field_path.split("."):
-        if current is None:
-            return None
-        if isinstance(current, dict):
-            current = current.get(segment)
-        elif isinstance(current, (list, tuple)):
-            current = current[int(segment)] if segment.isdigit() and int(segment) < len(current) else None
-        else:
-            current = getattr(current, segment, None)
-    return current
 
 
 async def _run_commit_callbacks(session: AsyncSession) -> None:
@@ -205,11 +188,9 @@ class FtsEntry:
         return cls(
             entity_id=str(entity.id),
             entity_type=entity.get_type(),
-            name=fts_text(entity, info, FTS_WEIGHT_NAME) or getattr(entity, "name", None) or None,
-            title=fts_text(entity, info, FTS_WEIGHT_TITLE) or getattr(entity, "title", None) or None,
-            description=fts_text(entity, info, FTS_WEIGHT_DESCRIPTION)
-            or getattr(entity, "description", None)
-            or None,
+            name=fts_text(entity, info, FTS_WEIGHT_NAME) or None,
+            title=fts_text(entity, info, FTS_WEIGHT_TITLE) or None,
+            description=fts_text(entity, info, FTS_WEIGHT_DESCRIPTION) or None,
             content=fts_content(entity, info) or None,
         )
 
@@ -2028,14 +2009,13 @@ class SQLiteDBDriver(DBDriver):
             query = query.where(scope_cond)
 
         # Push ORDER BY for column-level sort fields
-        sql_order, needs_python_sort = self._build_sql_order_by(entities_filter.order_by)
+        sql_order = self._build_sql_order_by(entities_filter.order_by)
         if sql_order:
             query = query.order_by(*sql_order)
 
-        # Push LIMIT/OFFSET to SQL only when the full filter+sort is handled in SQL
-        # (if Python post-filter or Python sort is needed, pagination must happen after).
-        can_push_pagination = fully_sql and not needs_python_sort
-        if can_push_pagination:
+        # Push LIMIT/OFFSET to SQL only when the whole filter runs in SQL (a Python
+        # post-filter must see every row before pagination). Sorting always runs in SQL.
+        if fully_sql:
             if entities_filter.offset:
                 query = query.offset(entities_filter.offset)
             if entities_filter.limit:
@@ -2049,12 +2029,8 @@ class SQLiteDBDriver(DBDriver):
         if not fully_sql:
             entities = [e for e in entities if self._entity_matches_filter(e, entities_filter)]
 
-        # Python sort — only for sort fields that live in the JSON blob
-        if needs_python_sort:
-            entities = self._apply_sorting(entities, entities_filter.order_by)
-
         # Pagination — only when not already applied in SQL
-        if not can_push_pagination:
+        if not fully_sql:
             if entities_filter.offset:
                 entities = entities[entities_filter.offset :]
             if entities_filter.limit:
@@ -2235,22 +2211,18 @@ class SQLiteDBDriver(DBDriver):
             return text(f"{path} NOT IN ({placeholders})").bindparams(**params)
         return None
 
-    def _build_sql_order_by(self, order_by) -> tuple:
-        """Return (sql_clauses, needs_python_sort).
-
-        Every sort field is pushed to SQL ORDER BY: column fields as columns, JSON-blob
-        fields (dotted paths included) as validated ``json_extract`` expressions.
-        ``needs_python_sort`` stays in the signature for callers and is always False now.
-        """
+    def _build_sql_order_by(self, order_by) -> list:
+        """The SQL ORDER BY clauses: column fields as columns, JSON-blob fields (dotted paths
+        included) as validated ``json_extract`` expressions."""
         if not order_by:
-            return [], False
+            return []
 
         if isinstance(order_by, dict):
             order_by = [order_by]
         elif isinstance(order_by, str):
             order_by = [{order_by: "asc"}]
 
-        sql_clauses, needs_python = [], False
+        sql_clauses = []
         for spec in order_by:
             if isinstance(spec, str):
                 spec = {spec.lstrip("-"): "desc" if spec.startswith("-") else "asc"}
@@ -2265,7 +2237,7 @@ class SQLiteDBDriver(DBDriver):
                         # the Python ``_sort_key`` puts them.
                         path = text(json_path_sql(field))
                         sql_clauses.append(desc(path) if direction == "desc" else asc(path))
-        return sql_clauses, needs_python
+        return sql_clauses
 
     # ==================== Relationship CRUD ====================
 
@@ -2630,22 +2602,9 @@ class SQLiteDBDriver(DBDriver):
 
     @staticmethod
     def _sort_key(value):
-        """Comparable key that never compares a missing value against a real one.
-
-        Used by ``_apply_sorting`` (the Python fallback for JSON-blob sort fields)
-        AND by the child ordering that delegates to it — one rule, one place.
-
-        Bucket 0 = missing, so NULLs sort FIRST on ascending — the same place
-        SQLite's ``ORDER BY ... ASC`` puts them, so ordering children in Python
-        can't disagree with the SQL path.
-
-        Not reusing ``_apply_sorting``: its key is ``getattr(e, f, "") or ""``,
-        which coerces a missing value to ``""`` and then raises comparing ``str``
-        to ``datetime``. Children are ordered by ``created_date``, so that would
-        be a live hazard here. (Consolidating the two sorters is worth doing, but
-        it changes a helper shared with the main query path — left alone
-        deliberately rather than folded into this change.)
-        """
+        """Comparable key for the Python ordering of child values (entity sorts run in SQL):
+        a missing value sorts FIRST ascending, where SQLite's ``ORDER BY ... ASC`` puts NULLs,
+        and never compares against a real one."""
         return (0, "") if value is None else (1, value)
 
     def _sort_children(self, children: List[EntityChild], order_by) -> List[EntityChild]:
@@ -3310,8 +3269,8 @@ class SQLiteDBDriver(DBDriver):
         if expression.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
             if not expression.operands:
                 return False
-            attr_value = self._field_value(attributes, expression.operands[0])
-            if self._is_many(attr_value):
+            attr_value = field_of(attributes, expression.operands[0])
+            if isinstance(attr_value, Many):
                 attr_value = attr_value or None
             return attr_value is None if expression.op == QueryOp.IS_NULL else attr_value is not None
 
@@ -3324,7 +3283,7 @@ class SQLiteDBDriver(DBDriver):
         # Handle PROP expression
         if isinstance(operand2, ExpressionNode) and operand2.op == QueryOp.PROP:
             prop_name = operand2.operands[0]
-            prop_value = self._field_value(attributes, prop_name)
+            prop_value = field_of(attributes, prop_name)
             if prop_value is None:
                 return False
             if expression.op == QueryOp.IN:
@@ -3334,24 +3293,11 @@ class SQLiteDBDriver(DBDriver):
             return False
 
         attr_name = operand1
-        attr_value = self._field_value(attributes, attr_name)
-        if self._is_many(attr_value):
+        attr_value = field_of(attributes, attr_name)
+        if isinstance(attr_value, Many):
             # A ``*`` step: the test passes when any one of the values does.
             return any(self._compare_leaf(expression.op, attr_name, v, operand2) for v in attr_value)
         return self._compare_leaf(expression.op, attr_name, attr_value, operand2)
-
-    @staticmethod
-    def _is_many(value: Any) -> bool:
-        from flow_sdk.datasets.query import Many  # noqa: PLC0415
-
-        return isinstance(value, Many)
-
-    @staticmethod
-    def _field_value(attributes: Dict[str, Any], field_path: Any) -> Any:
-        """The value at ``field_path`` — a flat key as written, else walked as a dotted path."""
-        from flow_sdk.datasets.query import field_of  # noqa: PLC0415
-
-        return field_of(attributes, field_path)
 
     @staticmethod
     def _compare_leaf(op: QueryOp, attr_name: Any, attr_value: Any, target_value: Any) -> bool:
@@ -3413,7 +3359,7 @@ class SQLiteDBDriver(DBDriver):
             if isinstance(sort_spec, dict):
                 for field, direction in sort_spec.items():
                     reverse = direction == "desc"
-                    entities.sort(key=lambda e, f=field: self._sort_key(_path_value(e, f)), reverse=reverse)
+                    entities.sort(key=lambda e, f=field: self._sort_key(field_of(e, f)), reverse=reverse)
             elif isinstance(sort_spec, str):
                 if sort_spec.startswith("-"):
                     field = sort_spec[1:]
@@ -3421,7 +3367,7 @@ class SQLiteDBDriver(DBDriver):
                 else:
                     field = sort_spec
                     reverse = False
-                entities.sort(key=lambda e, f=field: self._sort_key(_path_value(e, f)), reverse=reverse)
+                entities.sort(key=lambda e, f=field: self._sort_key(field_of(e, f)), reverse=reverse)
 
         return entities
 

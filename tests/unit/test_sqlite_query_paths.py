@@ -85,8 +85,7 @@ class TestDottedPaths:
     @pytest.mark.asyncio
     async def test_dotted_order_by_keeps_limit_in_sql(self, driver):
         t = await _seed(driver)
-        order, needs_python = driver._build_sql_order_by([{"origin.key": "desc"}])
-        assert needs_python is False and order
+        assert driver._build_sql_order_by([{"origin.key": "desc"}])
         rows = await driver.get_all(QueryFilter(type=t, order_by=[{"origin.key": "desc"}], limit=2))
         assert [r.body for r in rows] == ["c", "b"]
         rows = await driver.get_all(QueryFilter(type=t, order_by=[{"origin.key": "asc"}], limit=1, offset=1))
@@ -135,7 +134,7 @@ class TestDeclaredIndexes:
             for t in ("source_item", "message_thread", "consumer_position", "source_change"):
                 if name.startswith(f"ix_entities_{t}_"):
                     by_type[t] = by_type.get(t, 0) + 1
-        assert by_type == {"source_item": 2, "message_thread": 3, "consumer_position": 1, "source_change": 1}
+        assert by_type == {"source_item": 2, "message_thread": 1, "consumer_position": 1, "source_change": 1}
 
     @pytest.mark.asyncio
     async def test_resync_is_noop_and_removed_declaration_drops(self, driver):
@@ -191,7 +190,7 @@ class TestDeclaredIndexes:
 
 
 class TestFtsSources:
-    def test_fts_sources_walk_paths_and_call_accessors(self):
+    def test_fts_sources_walk_paths_and_read_accessors(self):
         from types import SimpleNamespace
 
         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
@@ -203,7 +202,8 @@ class TestFtsSources:
             def get_type(self):
                 return "source_item"
 
-            def summary(self):
+            @property
+            def summary(self):   # an accessor is a property (``Payload.item_*``)
                 return "from accessor"
 
         row = Row(name="n", payload={"subject": "Hello", "body": {"text": "deep"}})

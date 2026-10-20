@@ -25,21 +25,12 @@ FTS_WEIGHT_DESCRIPTION = 3
 FTS_WEIGHT_CONTENT = 1
 
 
-def fts_source_value(obj: Any, source: str) -> Any:
-    """The value an FTS source names on ``obj``: a dotted path walked through
-    attributes and dict keys; a callable at the end (an accessor) is called."""
-    current = obj
-    for step in source.split("."):
-        if current is None:
-            return None
-        current = current.get(step) if isinstance(current, dict) else getattr(current, step, None)
-    return current() if callable(current) else current
-
-
 def _text_of(obj: Any, sources: Any) -> str:
+    from flow_sdk.datasets.query import field_of  # noqa: PLC0415 -- lazy: the scan child must not load it
+
     parts = []
     for source in sources:
-        value = fts_source_value(obj, source)
+        value = field_of(obj, source)   # a dotted path through attributes and keys; accessors are properties
         if isinstance(value, (list, tuple)):
             value = " ".join(str(v) for v in value if v)
         if value:
@@ -47,10 +38,16 @@ def _text_of(obj: Any, sources: Any) -> str:
     return "\n".join(parts).strip()
 
 
+#: Where a type that declares no ``TypeInfo.fts`` source for a column takes it from.
+_FTS_DEFAULT = {FTS_WEIGHT_NAME: "name", FTS_WEIGHT_TITLE: "title", FTS_WEIGHT_DESCRIPTION: "description"}
+
+
 def fts_text(obj: Any, info: Any, weight: int) -> str:
-    """The text ``TypeInfo.fts`` routes to the column of bm25 ``weight`` ("" when none)."""
+    """The text for the column of bm25 ``weight``: the ``TypeInfo.fts`` sources routed there, else the
+    column's default field ("" when neither has text)."""
     declared = getattr(info, "fts", None) or {}
-    return _text_of(obj, [source for source, bucket in declared.items() if bucket == weight])
+    routed = _text_of(obj, [source for source, bucket in declared.items() if bucket == weight])
+    return routed or (_text_of(obj, [_FTS_DEFAULT[weight]]) if weight in _FTS_DEFAULT else "")
 
 
 def fts_content(obj: Any, info: Any) -> str:

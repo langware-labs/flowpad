@@ -25,7 +25,7 @@ def row_facts(row: Any) -> dict:
     first = row.input[0] if isinstance(row.input, list) and row.input else row.input
     return {
         "kind": str(getattr(row.kind, "value", row.kind)),
-        "annotated": getattr(row, "ground_truth", None) is not None,  # == count_annotated
+        "annotated": getattr(row, "ground_truth", None) is not None,  # THE definition of num_annotated
         "multi_output": isinstance(row.output, list) and len(row.output) > 1,
         "binary_input": is_binary(first),
     }

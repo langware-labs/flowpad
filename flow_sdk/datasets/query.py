@@ -54,9 +54,11 @@ def _step(at: Any, step: str, follow: Optional[Follow]) -> Any:
         at = linked.get("input")
     if isinstance(at, dict):
         return at.get(step)
-    if isinstance(at, list) and step.isdigit() and int(step) < len(at):
-        return at[int(step)]
-    return None
+    if isinstance(at, (list, tuple)):
+        return at[int(step)] if step.isdigit() and int(step) < len(at) else None
+    if at is None or isinstance(at, (str, int, float, bool)):
+        return None
+    return getattr(at, step, None)              # an object (an entity, a payload): its attribute
 
 
 def field_of(row: Any, path: Any, follow: Optional[Follow] = None) -> Any:
@@ -72,7 +74,7 @@ def field_of(row: Any, path: Any, follow: Optional[Follow] = None) -> Any:
     for step in path.split("."):
         if step == "*":
             many = True
-            current = [item for at in current if isinstance(at, list) for item in at]
+            current = [item for at in current if isinstance(at, (list, tuple)) for item in at]
         else:
             current = [_step(at, step, follow) for at in current]
         if not current:
