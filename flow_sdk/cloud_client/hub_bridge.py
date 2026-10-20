@@ -307,6 +307,19 @@ class HubWsBridge:
         link = await FlowMessage.resolve_open(fm_id, local_user.typeid if local_user else None)
         tab = pick_connection(None)
         if isinstance(tab, tuple):
+            # macOS never lets a background app put itself in front: the banner is how a window
+            # left behind gets the person there (its click raises the window on the conversation).
+            # Sent first — the open reloads the page, and a command after it would be lost.
+            conversation_id = getattr(link, "conversation_id", "") or ""
+            if conversation_id:
+                from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+
+                await notify_desktop(
+                    "message",
+                    title=getattr(link, "sender_name", "") or "Message",
+                    body="Opened in FlowPad",
+                    click_target={"view_type": "conversation", "pointer": f"{conversation_id}/message/{fm_id}"},
+                )
             await send_ui_command(tab[1], "open_link", query=link.to_query())
             return
         # No Flowpad tab is open: open one at the message, as an ask does (`ask_window._open_a_window`).

@@ -972,6 +972,8 @@ ipcMain.on('focus-window', () => {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  // macOS keeps another app in front of a focused window; the person asked for this one.
+  if (process.platform === 'darwin') app.focus({ steal: true });
 });
 
 ipcMain.on('set-menu-visible', (_event, visible) => {
