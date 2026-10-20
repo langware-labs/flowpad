@@ -49,3 +49,16 @@ async def test_a_dataset_whose_rows_live_in_drive_asks_for_drive(monkeypatch):
 
     monkeypatch.setattr(Dataset, "get_all", datasets)
     assert await wanted_extra_scopes("google") == [DRIVE]
+
+
+async def test_a_dataset_whose_rows_live_in_a_bucket_asks_for_storage_writes_and_a_gcs_source_never_does(monkeypatch):
+    from flow_sdk.builtin.dataset import Dataset
+
+    storage = "https://www.googleapis.com/auth/devstorage.read_write"
+    assert storage not in make_data_source("gcs", config={"bucket": "acme"}).connections.scopes("google")
+
+    async def datasets(*a, **k):
+        return [Dataset(name="leads", location="gcs:acme/leads")]
+
+    monkeypatch.setattr(Dataset, "get_all", datasets)
+    assert await wanted_extra_scopes("google") == [storage]

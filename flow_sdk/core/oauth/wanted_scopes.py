@@ -22,7 +22,7 @@ async def wanted_extra_scopes(provider: str) -> list[str]:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_registry import get_local_provider, local_providers  # noqa: PLC0415
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
-    from flow_sdk.permissions import write_scopes_of_driver  # noqa: PLC0415
+    from flow_sdk.permissions import row_scopes_of_driver, write_scopes_of_driver  # noqa: PLC0415
 
     asked = (provider or "").strip().lower()
     local = get_local_provider(asked) or next((p for p in local_providers() if (p.hub_name or "").lower() == asked), None)
@@ -31,11 +31,10 @@ async def wanted_extra_scopes(provider: str) -> list[str]:
     holding = await _drivers_holding_rows()
     # Only the drivers that write through this connection, then whether any of their sources writes back.
     for driver in DRIVERS.kinds():
-        scopes = [s for connector, listed in write_scopes_of_driver(driver).items() if connector.lower() in names for s in listed]
-        if not scopes:
-            continue
         if driver in holding:
-            wanted.update(scopes)
+            wanted.update(s for connector, listed in row_scopes_of_driver(driver).items() if connector.lower() in names for s in listed)
+        scopes = [s for connector, listed in write_scopes_of_driver(driver).items() if connector.lower() in names for s in listed]
+        if not scopes or driver in holding:
             continue
         try:
             sources = await DataSource.get_all({"provider": driver})
