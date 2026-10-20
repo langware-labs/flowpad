@@ -33,6 +33,10 @@ Prompt delivery / cancel semantics:
   alive, idle, and able to take a new user message on the same stdin
   (``claim_for_message`` + ``write_user_message``) — see ``worker_turns``. A CLI
   that never reports its state is closed at ``result``, as before.
+- A job the CLI's own scheduler holds (``CronCreate``, a ``ScheduleWakeup``
+  wakeup) keeps the worker parked the same way: it fires only while the process
+  lives, and ``background_tasks_changed`` never lists it, so the worker tracks
+  it from the tool calls (``_observe_cron_jobs``).
 - A user-requested cancel is NOT an error: after ``close_session()``, the
   interrupted turn's ``result`` (which the CLI reports as ``is_error``) is
   reclassified to ``outcome=aborted`` and the worker emits the canonical
@@ -47,6 +51,9 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -101,6 +108,92 @@ _AUTH_ERROR_TEXT = (
     "This usually clears on its own — try sending it again. "
     "If it keeps happening, the machine needs to sign in to Claude again."
 )
+
+#: The tools that put a job on the CLI's own scheduler, or take one off it.
+SCHEDULE_TOOLS = frozenset({"CronCreate", "CronDelete", "ScheduleWakeup"})
+#: A recurring CronCreate job deletes itself this long after it was created (after one last fire).
+CRON_EXPIRY_SECONDS = 7 * 24 * 3600
+
+
+@dataclass(frozen=True)
+class ClaudeCronJob:
+    """A CronCreate job the CLI holds. Claude Code runs it; Flowpad only needs to know when it is gone."""
+
+    #: The CLI's job id (``tool_use_result.id``), the key ``CronDelete`` names.
+    id: str
+    recurring: bool
+    #: When the CLI drops the job on its own, epoch seconds: a one-shot after its fire
+    #: (``nextFireAt``, which already includes the CLI's jitter), a recurring job at expiry.
+    ends_at: float
+
+
+def _content_blocks(event: dict) -> list[dict]:
+    message = event.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
+
+
+def _cron_job_from_result(result: dict, *, seen_at: float) -> ClaudeCronJob | None:
+    """A CronCreate result (``{id, recurring, durable, nextFireAt}``) as the job it created."""
+    job_id = result.get("id")
+    next_fire_at = result.get("nextFireAt")
+    if not isinstance(job_id, str) or not job_id or not isinstance(next_fire_at, (int, float)):
+        return None
+    recurring = bool(result.get("recurring"))
+    ends_at = seen_at + CRON_EXPIRY_SECONDS if recurring else next_fire_at / 1000
+    return ClaudeCronJob(id=job_id, recurring=recurring, ends_at=ends_at)
+
+
+def restored_cron_jobs(path: Path, now: float) -> dict[str, ClaudeCronJob]:
+    """The CronCreate jobs ``claude --resume`` restores from this session's transcript.
+
+    The CLI's own rule: every job created and not deleted, except a recurring job past its
+    expiry and a one-shot whose fire time has passed. Scans the whole file — a job can be
+    days older than the transcript's tail.
+    """
+    calls: dict[str, str] = {}
+    jobs: dict[str, ClaudeCronJob] = {}
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return jobs
+    for line in lines:
+        # A call names its tool; its result only links back by id (``Cancelled job X.``).
+        if "Cron" not in line and not (calls and '"tool_result"' in line):
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("type") == "assistant":
+            for block in _content_blocks(entry):
+                if block.get("type") == "tool_use" and block.get("name") in ("CronCreate", "CronDelete"):
+                    calls[str(block.get("id"))] = block["name"]
+        elif entry.get("type") == "user":
+            result = entry.get("toolUseResult")
+            if not isinstance(result, dict):
+                continue
+            for block in _content_blocks(entry):
+                name = calls.pop(str(block.get("tool_use_id")), None) if block.get("type") == "tool_result" else None
+                if name is None or block.get("is_error"):
+                    continue
+                if name == "CronDelete":
+                    jobs.pop(str(result.get("id")), None)
+                elif job := _cron_job_from_result(result, seen_at=_entry_time(entry) or now):
+                    jobs[job.id] = job
+    return {job_id: job for job_id, job in jobs.items() if job.ends_at > now}
+
+
+def _entry_time(entry: dict) -> float | None:
+    stamp = entry.get("timestamp")
+    if not isinstance(stamp, str):
+        return None
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 class _TranscriptDurabilityGate(TranscriptDurabilityGate):
@@ -183,6 +276,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         #: Ids of the background work the CLI reports as still running
         #: (``background_tasks_changed`` carries the COMPLETE current set).
         self._background_task_ids: set[str] = set()
+        #: CronCreate jobs still scheduled, by the CLI's job id. Not in ``background_tasks_changed``,
+        #: so built from the tool calls: create adds; delete, a one-shot's fire or expiry removes.
+        self._cron_jobs: dict[str, ClaudeCronJob] = {}
+        #: Schedule tool calls waiting for their result: tool_use id → (tool name, input).
+        self._schedule_calls: dict[str, tuple[str, dict]] = {}
+        #: The self-paced /loop's one pending wakeup (``scheduledFor``, epoch seconds), or None.
+        self._pending_wakeup: float | None = None
         self._result_seen = False
 
     @property
@@ -191,7 +291,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
     @property
     def parked(self) -> bool:
-        """Idle between turns, kept alive only because background work still runs.
+        """Idle between turns, kept alive only because background work or a scheduled job remains.
 
         The CLI answered and went ``idle`` but its stdin is still open: the one state
         in which a NEW user message can be written to this same process and answered
@@ -270,6 +370,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         self._stopped_while_parked = False
         self._session_state = None
         self._background_task_ids = set()
+        # ``--resume`` restores the session's cron jobs and the new stream never announces them.
+        self._cron_jobs = await self._restored_cron_jobs(context)
+        self._schedule_calls = {}
+        self._pending_wakeup = None
         self._result_seen = False
         # A turn must never start on a token we already know is dead — the CLI
         # would renew it inside this request and, if that renewal is slow, give
@@ -632,7 +736,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         )
 
     def _observe_session_events(self, event: dict | None) -> None:
-        """Mirror the CLI's own typed signals: its state, the result, its background work."""
+        """Mirror the CLI's own typed signals: its state, the result, its background work, its scheduled jobs."""
         if event is None:
             return
         if event.get("type") == "result":
@@ -648,6 +752,71 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 self._background_task_ids = {
                     task["task_id"] for task in tasks if isinstance(task, dict) and task.get("task_id")
                 }
+        self._observe_cron_jobs(event)
+
+    def _observe_cron_jobs(self, event: dict) -> None:
+        """Track the jobs the CLI's scheduler holds (CronCreate / CronDelete / ScheduleWakeup).
+
+        They are not in ``background_tasks_changed``, so they are read from the tool calls and
+        their results; a fire is a turn the scheduler starts (``command_lifecycle``) and names no job.
+        """
+        etype = event.get("type")
+        if etype == "assistant":
+            for block in _content_blocks(event):
+                if block.get("type") == "tool_use" and block.get("name") in SCHEDULE_TOOLS and block.get("id"):
+                    self._schedule_calls[block["id"]] = (block["name"], block.get("input") or {})
+        elif etype == "user":
+            self._observe_schedule_results(event)
+        elif etype == "command_lifecycle" and event.get("state") == "started":
+            self._observe_scheduled_fire(time.time())
+
+    def _observe_schedule_results(self, event: dict) -> None:
+        """Apply a schedule tool call once its result says it succeeded."""
+        result = event.get("tool_use_result")
+        result = result if isinstance(result, dict) else {}
+        for block in _content_blocks(event):
+            if block.get("type") != "tool_result":
+                continue
+            call = self._schedule_calls.pop(block.get("tool_use_id"), None)
+            if call is None or block.get("is_error"):
+                continue
+            name, args = call
+            if name == "CronCreate":
+                job = _cron_job_from_result(result, seen_at=time.time())
+                if job is not None:
+                    self._cron_jobs[job.id] = job
+            elif name == "CronDelete":
+                self._cron_jobs.pop(str(result.get("id") or args.get("id")), None)
+            elif name == "ScheduleWakeup":
+                scheduled_for = result.get("scheduledFor")
+                stop = args.get("stop") or not isinstance(scheduled_for, (int, float))
+                self._pending_wakeup = None if stop else scheduled_for / 1000
+
+    def _observe_scheduled_fire(self, now: float) -> None:
+        """A turn the scheduler started. It names no job, so drop whatever the CLI has dropped by now:
+        a one-shot whose fire time has come, an expired recurring job, a due wakeup."""
+        self._cron_jobs = {job_id: job for job_id, job in self._cron_jobs.items() if job.ends_at > now}
+        if self._pending_wakeup is not None and self._pending_wakeup <= now:
+            self._pending_wakeup = None
+
+    @property
+    def _keeps_alive(self) -> bool:
+        """What the CLI still has to do with no turn running: background work or a scheduled job."""
+        return bool(self._background_task_ids or self._cron_jobs or self._pending_wakeup is not None)
+
+    @staticmethod
+    async def _restored_cron_jobs(context: AgenticContext) -> dict[str, ClaudeCronJob]:
+        """The cron jobs ``--resume`` brings back for this session; none for a fresh one."""
+        if not context.resume_session_id:
+            return {}
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (  # noqa: PLC0415
+            get_session_jsonl_path,
+        )
+
+        path = get_session_jsonl_path(context.resume_session_id)
+        if path is None:
+            return {}
+        return await asyncio.to_thread(restored_cron_jobs, path, time.time())
 
     def _close_stdin_when_finished(self) -> None:
         """Close stdin once there is nothing left for this process to do.
@@ -661,6 +830,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         ends) with it. While work is running the process is parked instead — see
         :attr:`parked` — and ``claude -p`` keeps it alive on its own account.
 
+        A scheduled job (a CronCreate job, a pending wakeup) counts as work left: it
+        fires only while the process lives, and a closed stdin exits the CLI at once —
+        the hourly check that fired once and never again (2026-10-15).
+
         A CLI that never reports its state is closed at ``result``, as before. A
         stop that was asked for closes at ``idle`` whatever is still running.
         """
@@ -668,7 +841,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             return
         if self._session_state is None:
             self._close_stdin()
-        elif self._session_state == "idle" and (self._cancel_requested or not self._background_task_ids):
+        elif self._session_state == "idle" and (self._cancel_requested or not self._keeps_alive):
             self._close_stdin()
 
     def _close_stdin(self) -> None:
