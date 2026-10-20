@@ -10,6 +10,7 @@ import {
   type IMessageMark,
   type IMessageReaction,
 } from '@sdk/entities/flow-message';
+import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { attachmentSummary } from './useAttachments';
 
 /** A FILE attachment's name — its `data/<name>` subpath, last segment. */
@@ -20,7 +21,10 @@ export function attachmentFileName(a: Parameters<typeof attachmentDataString>[0]
 /** Who wrote a message and what it says, as a quote or a reply banner shows it: a message with no
  *  text is named by what it carries. `someone` is the caller's translated fallback. */
 export function messageSummary(fm: FlowMessage, someone: string): { sender: string; text: string } {
-  return { sender: fm.sender_name || fm.envelope?.sender?.name || someone, text: fm.text || attachmentSummary(fm) };
+  // An agent's reply carries the PERSON in `sender_name` (the wire pair); the typed sender says agent.
+  const byAgent = senderOf(fm)?.kind === SenderKind.Agent;
+  const name = byAgent ? fm.envelope?.sender?.name : fm.sender_name || fm.envelope?.sender?.name;
+  return { sender: name || someone, text: fm.text || attachmentSummary(fm) };
 }
 
 const MARK_TONE: Record<NonNullable<IMessageMark['tone']>, string> = {

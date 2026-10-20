@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.types.dataset import iter_rows
+from tests.unit._dataset_read import iter_rows
 from flow_sdk.builtin.dataset import (
     DataLayoutEnum,
     Dataset,

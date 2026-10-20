@@ -120,21 +120,19 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
     only the flat, queryable copy of what the payload already says.
     """
     data = item.data
-    person = getattr(data, "sender", None) or getattr(data, "author", None)
-    when = getattr(data, "sent_at", None) or getattr(data, "published_at", None)
     return SourceItemSpec(
         data_source_id=data_source_id,
         provider=provider,
         kind=kind_of(data),
         external_id=item.origin.key,
-        name=getattr(data, "subject", None) or getattr(data, "title", None) or "",
-        body=getattr(data, "text", None) or "",
-        occurred_at=when.isoformat() if when else None,
-        author_external_id=person.origin.key if person else None,
-        author_display=(person.name if person else None) or getattr(data, "byline", None),
-        permalink=item.origin.url or getattr(data, "url", None),
-        thread_key=_key_of(getattr(data, "conversation", None)),
-        reply_to_external_id=_key_of(getattr(data, "in_reply_to", None)),
+        name=data.item_title,
+        body=data.item_text,
+        occurred_at=data.item_at,
+        author_external_id=data.item_author_id,
+        author_display=data.item_author_name,
+        permalink=item.origin.url or data.item_permalink,
+        thread_key=data.item_thread,
+        reply_to_external_id=data.item_reply_to,
         recipients=[formataddr((p.name or "", p.address or p.origin.key)) for p in getattr(data, "recipients", ())],
         raw=getattr(data, "raw", None),
         # Adoption hints: a record that already exists locally as a hub-mirrored row (a help-desk
@@ -144,10 +142,6 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         origin=item.origin,
         data=data,
     )
-
-
-def _key_of(origin: Optional[CloudOrigin]) -> Optional[str]:
-    return origin.key if origin is not None else None
 
 
 def _beside(origin: CloudOrigin, key: str) -> Optional[CloudOrigin]:

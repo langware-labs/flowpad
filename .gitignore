@@ -358,3 +358,6 @@ id_ed25519
 id_ed25519.*
 secrets.json
 .claude/settings.local.json
+
+# A personal mailbox source (its address is the owner's account) — kept local, not shared.
+agentic-assets/data_source/gmail/

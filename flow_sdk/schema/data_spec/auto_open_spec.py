@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, ClassVar, Union
 
-from pydantic import BeforeValidator, ConfigDict
+from pydantic import BeforeValidator
 
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -26,7 +26,6 @@ class AutoOpenOp(DataSpec):
     """Open the place a ``navigate`` op names, and let the op repair it."""
 
     spec_kind: ClassVar[str] = "auto_open.op"
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     #: The op's name, resolved in the agent's own project or a direct context folder.
     op: str
@@ -36,7 +35,6 @@ class AutoOpenWizard(DataSpec):
     """Run a wizard in the background when a session opens."""
 
     spec_kind: ClassVar[str] = "auto_open.wizard"
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     #: The wizard's name, resolved like ``AutoOpenOp.op``.
     wizard: str

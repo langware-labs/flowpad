@@ -1,5 +1,10 @@
 const delimiter = '-';
-const uuidRegex = '[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+/** Version-agnostic lowercase UUID source (no anchors, no flags) — the twin of the backend's
+ *  `UUID_PATTERN` (`flow_sdk/api/api_types/identifier.py`). Compose it; add `i` where case-insensitive. */
+export const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+/** Entity-id UUID source: v4 or v5 only — the shape `isValidEntityId` gates on. */
+export const ENTITY_UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const uuidRegex = ENTITY_UUID_SOURCE;
 
 // Identifier patterns matching backend (hub identifier.py)
 const numberLimit = 10000;
@@ -19,11 +24,10 @@ export enum IdentifierType {
   UNKNOWN = 'unknown',
 }
 
-// typeid is a string that is a combination of type and id separated by delimiter, e.g. 'chat_thread:1234-5678-9101'
-export function isValidUUIDv4(id: string): boolean {
-  // const regexExp = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const regexExp = new RegExp(`^${uuidRegex}$`, 'i');
-  return regexExp.test(id);
+/** An entity id: a lowercase UUID v4 or v5 — the same gate as the backend's `is_valid_entity_id`
+ *  (`flow_sdk/api/api_types/identifier.py`), which rejects uppercase too. */
+export function isValidEntityId(id: string): boolean {
+  return new RegExp(`^${uuidRegex}$`).test(id);
 }
 
 /**
@@ -55,7 +59,7 @@ export function isValidPropId(id: string): boolean {
  * Supports: UUID, namespace key, property ID, or named ID
  */
 export function isValidIdentifier(id: string): boolean {
-  return isValidUUIDv4(id) || isValidKey(id) || isValidPropId(id) || isValidUName(id);
+  return isValidEntityId(id) || isValidKey(id) || isValidPropId(id) || isValidUName(id);
 }
 
 /**
@@ -71,7 +75,7 @@ export function getIdentifierType(identifier: string): IdentifierType {
   }
 
   // Check in priority order matching backend
-  if (isValidUUIDv4(identifier)) {
+  if (isValidEntityId(identifier)) {
     return IdentifierType.UUID;
   }
   if (isValidKey(identifier)) {

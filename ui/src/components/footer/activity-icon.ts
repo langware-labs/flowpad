@@ -11,8 +11,7 @@
  *   2. the subject entity's `TypeInfo.icon`, via the registry `iconForType` reads;
  *   3. `Activity`, the generic "something is happening" glyph.
  *
- * On the hub, step 2 degrades to step 3: the hub's bootstrap ships no `types`, so the
- * frontend SchemaRegistry is empty there. That is expected, not a bug.
+ * The hub's bootstrap ships `types` too, so step 2 resolves there as well.
  */
 
 import { Activity as ActivityGlyph, type LucideIcon } from 'lucide-react';

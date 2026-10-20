@@ -115,7 +115,7 @@ class SourceItemSpec(DataSpec):
     recipients: list[str] = []
     raw: Optional[dict] = None
 
-    # ── the contract's value, lifted from the header above (``ingest/legacy_lift.py``) ──
+    # ── the contract's value, lifted from the header above (``ingest/envelope_lift.py``) ──
     # The ingestor fills both before it resolves the row; a caller may pass them already
     # lifted. Neither is digested: each is a function of digested fields and the source.
     origin: Optional[CloudOrigin] = None

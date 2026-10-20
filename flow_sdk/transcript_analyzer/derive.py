@@ -49,6 +49,7 @@ _FLOW_VERBS = frozenset(
         "connections",
         "config",
         "context",
+        "contacts",
         "conversation",
         "credentials",
         "diagnose",

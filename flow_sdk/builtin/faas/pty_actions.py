@@ -461,11 +461,11 @@ class PtyActionsMixin:
             try:
                 import re as _re
 
+                from flow_sdk.api.api_types.identifier import UUID_PATTERN
                 from flow_sdk.builtin.shell import Shell
                 from flow_sdk.core.entity.entity_model import Entity
 
-                _UUID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                if _re.match(_UUID, str(record.id), _re.I):
+                if _re.match(rf"^{UUID_PATTERN}$", str(record.id), _re.I):
                     was_new = await Shell.get_one({"id": record.id}) is None
                     shell = await Shell.from_record(record)
                     if shell:

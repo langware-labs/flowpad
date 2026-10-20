@@ -41,7 +41,7 @@ const INLET_GAP = 96;
  * `subscriptions[]` and `$external` are both real entry doors that the canvas
  * previously drew nothing for — and an edge whose source is `$external` was
  * silently DROPPED by React Flow, because no node had that id. So a flow like
- * hn-radar, whose report lane is entered by injection, rendered as an
+ * one whose report lane is entered by injection, rendered as an
  * unreachable island. These are synthesized, never persisted into graph.json.
  */
 function inletNodes(doc: GraphWorkflowDoc): { nodes: Node[]; edges: Edge[] } {

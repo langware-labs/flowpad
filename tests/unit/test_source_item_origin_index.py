@@ -25,4 +25,7 @@ async def test_the_origin_lookup_uses_the_v3_index():
     finally:
         conn.close()
     text = " ".join(str(row[-1]) for row in plan)
-    assert "ix_entities_source_item_origin_v3" in text, text
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import declared_index_name
+
+    declared = declared_index_name("source_item", ("data_source_id", "origin_kind", "origin_namespace", "origin_key"))
+    assert declared in text, text

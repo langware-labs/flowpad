@@ -8,14 +8,15 @@
  */
 import apiClient from '../client';
 import { serviceUrlOf } from '../entities/service-endpoint';
-import type {
-  CollectionRequest,
-  KindForm,
-  Mounted,
-  ViewerChoice,
-  ViewerContext,
-  ViewerModule,
-  ViewRequest,
+import {
+  VIEWER_CONTRACT,
+  type CollectionRequest,
+  type KindForm,
+  type Mounted,
+  type ViewerChoice,
+  type ViewerContext,
+  type ViewerModule,
+  type ViewRequest,
 } from './contract';
 import { h, injectStyles } from './dom';
 import { GENERIC_VIEWER_STYLES, genericCollection, genericSingle } from './generic';
@@ -36,7 +37,6 @@ export interface ViewerHost {
   /** What the app does when a viewer opens a part on its own (`ctx.open`) or an entity (`ctx.navigate`). */
   open?: ViewerContext['open'];
   navigate?: ViewerContext['navigate'];
-  candidates?: ViewerContext['candidates'];
 }
 
 export interface StoredValue {
@@ -65,7 +65,7 @@ function cached<T>(cache: Map<string, Promise<T>>, key: string, load: () => Prom
 function fetchChoices(kind: string, shape: ViewShape, within?: string): Promise<ViewerChoice[]> {
   const query = new URLSearchParams({ shape, ...(within ? { within } : {}) });
   return cached(choiceCache, `${kind}|${query}`, async () =>
-    (await apiClient.get<ViewerChoice[]>(`/api/v1/viewers/${encodeURIComponent(kind)}?${query}`)) ?? []).catch(() => []);
+    (await apiClient.get<ViewerChoice[]>(`/api/v1/viewers/${encodeURIComponent(kind)}?${query}`)) ?? []);
 }
 
 const valueCache = new Map<string, Promise<StoredValue>>();
@@ -96,6 +96,11 @@ export function createViewerContext(host: ViewerHost = {}): ViewerContext {
     if (!kind) return null;
     for (const choice of await choices(kind, shape, host.within)) {
       const mod = await load(choice);
+      if (mod.contract !== undefined && mod.contract !== VIEWER_CONTRACT) {
+        console.warn(`[viewer] ${choice.title || choice.name} speaks viewer contract ${mod.contract}, not ${VIEWER_CONTRACT} — skipped`);
+        continue;
+      }
+      // The data-viewer asset re-exports the SDK's generic styles, already injected above.
       injectStyles(choice.typeid, mod.styles);
       const viewer = mod.viewers?.[choice.kind]?.[shape];
       if (viewer) return { viewer, name: choice.title || choice.name };
@@ -156,7 +161,6 @@ export function createViewerContext(host: ViewerHost = {}): ViewerContext {
     generic: { single: genericSingle, collection: genericCollection },
     open: host.open,
     navigate: host.navigate,
-    candidates: host.candidates,
     render: async (el: HTMLElement, request: ViewRequest) => {
       const got = await dereference(request.value);
       if ('missing' in got) return missing(el, got);

@@ -1,5 +1,5 @@
 /**
- * What every app opened on a dataset shares: the dataset itself, and labelling one example.
+ * What every app opened on a dataset shares: the dataset itself, and labelling one row.
  *
  * Labelling is ONE path for every app (the dataset editor, the eval browser): the dataset kind's own
  * viewer in edit mode — so whatever a dataset shows beside its form (the run's answer, say) shows
@@ -26,7 +26,7 @@ const FOCUS_STYLES = `
  * viewer opens (`ctx.open`) shows on its own in a panel with a trail back — each step a history
  * entry, so Back closes it — and an entity a viewer opens (`ctx.navigate`) is opened by the host.
  */
-export function datasetViewerContext(subject: string, rootTitle = 'Example'): ViewerContext {
+export function datasetViewerContext(subject: string, rootTitle = 'Row'): ViewerContext {
   injectStyles('viewer-focus', FOCUS_STYLES);
   const overlay = h('div', { class: 'vf-overlay' });
   overlay.hidden = true;
@@ -86,7 +86,7 @@ export interface LabelOptions {
   dataset: any;
   /** The dataset's declared kind — its viewer draws the form. */
   kind: string;
-  /** The example as a row; `output` is what a run answered (offered as a starting point). */
+  /** The row as written; `output` is what a run answered (offered as a starting point). */
   row: Record<string, any>;
   onSaved?: (groundTruth: unknown) => void;
   /** What the host knows about the row beyond it (`trace`: how its answer was reached, from a run). */
@@ -94,7 +94,7 @@ export interface LabelOptions {
   onCancel?: () => void;
 }
 
-/** The example in edit mode, with Save (and "start from what the run answered" when there is one). */
+/** The row in edit mode, with Save (and "start from what the run answered" when there is one). */
 export async function mountLabel(el: HTMLElement, options: LabelOptions, start?: unknown): Promise<void> {
   const { ctx, dataset, kind, row } = options;
   const body = h('div');

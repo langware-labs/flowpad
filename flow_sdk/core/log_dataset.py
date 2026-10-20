@@ -54,7 +54,7 @@ async def drain() -> None:
 
 
 def rows(folder: Path) -> list[Path]:
-    """A log's example dirs, oldest first: numbered rows by number (``0009`` before ``10000``)."""
+    """A log's row dirs, oldest first: numbered rows by number (``0009`` before ``10000``)."""
     from flow_sdk.schema.data_spec.layout import _row_dirs  # noqa: PLC0415 -- THE row enumeration
 
     return sorted(_row_dirs(folder), key=lambda p: (0, int(p.name), "") if p.name.isdigit() else (1, 0, p.name))
@@ -75,7 +75,10 @@ class TempLog:
         if manifest.exists():
             return
         self.folder().mkdir(parents=True, exist_ok=True)
-        metadata = {"title": self.title, "description": self.description, "data_layout": "io_folder", "spec": self.spec}
+        from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec  # noqa: PLC0415
+
+        header = DatasetManifestSpec(title=self.title, description=self.description, data_layout="io_folder", spec=self.spec)
+        metadata = header.model_dump(mode="json", exclude_none=True, exclude={"data"})
         manifest.write_text(json.dumps({"metadata": metadata, "data": {}}, indent=2) + "\n")
 
     async def indexed(self) -> Any:
@@ -100,7 +103,7 @@ class TempLog:
         return Dataset.at(self.folder())
 
     async def append(self, row: dict, *, max_rows: Optional[int] = None) -> Optional[str]:
-        """Append one row; the new example id, else None. Never raises."""
+        """Append one row; the new row id, else None. Never raises."""
         from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
         from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
 
@@ -125,7 +128,7 @@ class TempLog:
                     if len(held) > max_rows:
                         ds.delete_rows([d.name for d in held[: len(held) - max_rows]])
                 if indexed is not None:
-                    # Only the counts change, and they follow from the cheap per-example index: a full
+                    # Only the counts change, and they follow from the cheap per-row index: a full
                     # re-index re-parses every row, which would make each append O(rows).
                     await indexed.refresh_counts()
             return row_id

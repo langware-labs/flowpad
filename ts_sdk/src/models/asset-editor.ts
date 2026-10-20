@@ -313,9 +313,10 @@ export function extToEditor(): Record<string, AssetEditor> {
  * extension is plain `html`. The UI's `isMcpAppPath` delegates here. */
 const MCP_APP_PATH_RE = /\.mcp\.html?$/i;
 
-/** A kind-tagged value file — `diagnosis.value.json`. Its last-dot extension is plain `json`,
- * which stays the code editor's: only the suffix says the file is one value of a kind. */
-export const VALUE_PATH_RE = /\.value\.json$/i;
+/** A kind-tagged value file — `diagnosis.value.json`, or a value store's `value/<name>/value.json`
+ * (`flow_sdk/values.py` VALUE_FILE). Its last-dot extension is plain `json`, which stays the code
+ * editor's: only the name says the file is one value of a kind. */
+export const VALUE_PATH_RE = /(\.value\.json|[/\\]value[/\\][^/\\]+[/\\]value\.json)$/i;
 
 /**
  * Editor for a RAW file path (no entity). Unknown extensions fall back to the

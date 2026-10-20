@@ -716,12 +716,18 @@ class FolderLayout(DatasetLayout):
         out = []
         for ex_dir in _row_dirs(folder):
             meta, _ = _load_row_meta(ex_dir)
+            data, _ = self._scan(ex_dir)
+            inputs = data[INPUT]
+            first_input = inputs[min(inputs, key=lambda k: (k is not None, k or 0))] if inputs else None
             out.append({
                 "row_id": row_id(ex_dir, dataset_id, meta),
                 "key": ex_dir.name,
                 "item_id": (meta.get("source") or {}).get("item_id"),
                 "kind": str(coerce_dataset_enum(meta.get("kind"), RowKind, RowKind.TRAIN).value),
-                "annotated": self.has_ground_truth(ex_dir),
+                "annotated": bool(data[GROUND_TRUTH] or data[EXPECTED_LEGACY]),  # == has_ground_truth
+                # The same facts `read_row` would give `derive_counts`, from the one scan.
+                "multi_output": len(data[OUTPUT]) > 1,
+                "binary_input": first_input is not None and is_binary(_build_node(ex_dir, first_input)),
             })
         return out
 

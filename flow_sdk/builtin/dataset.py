@@ -24,12 +24,11 @@ object the use case owns. Both are surfaced on the carrier models below.
 The container is the entity; an ``Row`` is a plain Pydantic row parsed from
 disk on demand (a 50k-row CSV stays one record, not 50k entities). The
 train/eval/test split lives *per-row* as ``Row.kind`` — "the eval set"
-is simply ``dataset.rows(RowKind.EVAL)``.
+is simply ``dataset.of_kind(RowKind.EVAL)``.
 
 The on-disk grammar (both layouts, per-row reads and writes, the index)
-lives in ``flow_sdk/schema/data_spec/layout.py``; the indexer's extractor and
-id mint in ``flow_sdk/fs_store/indexer/functions/dataset.py``; the type
-registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
+lives in ``flow_sdk/schema/data_spec/layout.py``; the derived counts in
+``flow_sdk/assets/types/dataset.py``; the type registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
 """
 from __future__ import annotations
 
@@ -37,12 +36,13 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, FrozenSet, List, Optional
 
-from pydantic import ValidationError, model_validator
+from pydantic import ValidationError, computed_field, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.datasets.projection import ROW_KEY, delete_through, is_link, write_through
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
@@ -165,7 +165,7 @@ def _refused(exc: "LinkError | ConflictError", status_code: int) -> ApiFailRespo
     return ApiFailResponse(message=str(exc), status_code=status_code, data={"errors": exc.errors, "details": exc.details})
 
 
-class Dataset(Entity):
+class Dataset(ProjectedFields, Entity):
     """A dataset folder — the ROW. Its shape on disk is ``DatasetManifestSpec``
     (``TypeInfo.asset_spec``); where ``dataset.json`` lands and how the rows
     are laid out is the disk serializer's, driven by ``TypeInfo``
@@ -193,8 +193,8 @@ class Dataset(Entity):
     # file and `from_fs_ref` carry them, the SQLite row does not.
     rows: List[ARTIFACT_ROW] = NoDBAPIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.TRUE)  # type: ignore[valid-type]
 
-    # Denormalized counts surfaced in lists — computed from the rows by the
-    # entity (num_rows/kind_counts) and by the indexer (the other three).
+    # Denormalized counts surfaced in lists — DERIVED, one deriver:
+    # `assets/types/dataset.py:derive_counts` (indexer, validator, refresh_counts).
     # Persist.TRUE: they ride the shadow index so `from_record` lifts them onto
     # the DB row; they are NOT header fields, so the manifest never carries them.
     num_rows: int = APIField(0, persist=Persist.TRUE)
@@ -212,17 +212,20 @@ class Dataset(Entity):
     # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors CHART.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
+    derived_fields: ClassVar[FrozenSet[str]] = frozenset(
+        {"num_rows", "kind_counts", "num_annotated", "num_multi_output", "num_binary_inputs"}
+    )
+    derived_writer: ClassVar[str] = "flow_sdk.assets.types.dataset.derive_counts"
+
     @model_validator(mode="after")
     def _counts_follow_the_rows(self) -> "Dataset":
-        """``num_rows`` / ``kind_counts`` are FACTS about ``rows`` —
-        derived here, so an entity built from rows (a save) and one read from
-        disk agree, and neither can carry a stale count."""
+        """The counts are FACTS about ``rows`` — derived here, so an entity
+        built from rows (a save) and one read from disk agree, and neither can
+        carry a stale count."""
         if self.rows:
-            from flow_sdk.assets.types.dataset import dataset_counts
+            from flow_sdk.assets.types.dataset import derive_counts, row_facts
 
-            counts = dataset_counts(str(row.kind) for row in self.rows)
-            self.num_rows = counts["num_rows"]
-            self.kind_counts = counts["kind_counts"]
+            self._write_derived(**derive_counts(row_facts(row) for row in self.rows))
         return self
 
     def of_kind(self, kind: RowKind) -> List[RowSpec]:
@@ -273,15 +276,11 @@ class Dataset(Entity):
         actions here, or a caller that appended rows itself), and broadcast the row. A write changes only the counts, and those follow
         from the cheap index — re-parsing every row's payload (what a full
         reindex does) would make labelling N rows O(N²)."""
-        rows = self._index()
-        from flow_sdk.assets.types.dataset import dataset_counts
+        from flow_sdk.assets.types.dataset import derive_counts
 
-        counts = dataset_counts(row["kind"] for row in rows)
-        self.num_rows = counts["num_rows"]
-        # `annotated` is the layout's `has_ground_truth` — the rule the indexer's
-        # `count_annotated` applies too, so a label and a reindex agree.
-        self.num_annotated = sum(1 for row in rows if row["annotated"])
-        self.kind_counts = counts["kind_counts"]
+        # The index rows carry the same per-row facts `row_facts` gives the
+        # indexer, so all five counters agree with a reindex.
+        self._write_derived(**derive_counts(self._index()))
         await self.save()
         return self
 
@@ -324,7 +323,10 @@ class Dataset(Entity):
                 ),
                 contents,
             ))
-        return layout.append_many(self._folder(), batch, dataset_id=self.id)
+        with self._lock():   # a row write like any other: one at a time, and said
+            ids = layout.append_many(self._folder(), batch, dataset_id=self.id)
+        self._tell("put", ids)   # a numbered row is named by its id
+        return ids
 
     async def annotate(self, row_id: str, ground_truth: Any, *, by: str = "") -> None:
         """One row's gold label -- a value, or a LIST of acceptable answers -- validated against
@@ -383,10 +385,12 @@ class Dataset(Entity):
 
     _ROW_KEYS = frozenset({"input", "context", "ground_truth", "output", "kind", "data"})
 
+    @computed_field
     @property
     def row_kind(self) -> str:
         """The kind every row is (its ``input``): a row is one instance of it, referenced as
-        ``<row kind>.id.<row id>``. ``""`` when the spec names no kind."""
+        ``<row kind>.id.<row id>``. ``""`` when the spec names no kind. Sent to clients, so the TS
+        ``Dataset.rowKind`` answers for a named spec without resolving the kind itself."""
         from flow_sdk.datasets.links import row_kind  # noqa: PLC0415
 
         return row_kind(self.spec)

@@ -30,12 +30,13 @@ backend registered its question where no answer could reach it.
 from __future__ import annotations
 
 import asyncio
-import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
+
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
@@ -220,7 +221,7 @@ def open_question(
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
     question = Question(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         op_name=op_name,
         prompt=prompt,
         shape=shape,
