@@ -192,7 +192,7 @@ _SESSION_EVENT_TEXTS = {
     "approved": "{actor} approved the live session",
     "declined": "{actor} declined the live session",
     "ended": "{actor} ended the live session",
-    "expired": "{actor} closed the live session — the 2-hour limit was reached",
+    "expired": "{actor} closed the live session — the 4-hour limit was reached",
     "settings_changed": "{actor} changed the session settings",
 }
 

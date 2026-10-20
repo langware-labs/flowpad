@@ -304,7 +304,7 @@ def _parse_share_transfer_mode(body: dict) -> str:
         or "copy"
     )
     mode = str(mode).strip().lower()
-    return mode if mode in {"copy", "git"} else "copy"
+    return mode if mode in {"copy", "git", "both"} else "copy"
 
 
 def _parse_share_create_bookmark(body: dict) -> bool:
@@ -831,7 +831,7 @@ async def check_attachments() -> ApiResponse:
     refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
     gaps = await find_unshippable_references(refs)
     gitignored = []
-    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
+    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) in ("copy", "both"):
         from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
             attachments_holding_gitignored,
             gitignored_payload,
@@ -997,7 +997,7 @@ async def handle_add_message(
         )
     # A copy carries the asset folder whole — files git excludes (often private) included. The sender is
     # told which and decides: refused ONCE, before anything is written; ``include_gitignored`` sends them.
-    if transfer_mode == "copy" and not _parse_share_include_gitignored(body):
+    if transfer_mode in ("copy", "both") and not _parse_share_include_gitignored(body):
         from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
 
         if refused := await refuse_gitignored(_parse_context_typeids(conv, asset_references, [])):

@@ -25,7 +25,7 @@ export interface ConversationSendPayload {
   sharedContextEntities?: string[];
   /** Body-bundle transfer policy + per-share opt-ins. Defaults to copy. */
   shareConfig?: {
-    transferMode?: 'copy' | 'git';
+    transferMode?: 'copy' | 'git' | 'both';
     /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
      *  asset when it installs. Default off. */
     createBookmark?: boolean;
@@ -88,7 +88,7 @@ export interface ShareAttachmentCheck {
  */
 export async function checkShareAttachments(
   assetReferences: readonly string[],
-  options: { transferMode?: 'copy' | 'git' } = {},
+  options: { transferMode?: 'copy' | 'git' | 'both' } = {},
 ): Promise<ShareAttachmentCheck> {
   const refs = [...new Set(assetReferences)];
   if (refs.length === 0) return { unshippable: [], gitignored: [] };

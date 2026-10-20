@@ -6,12 +6,45 @@ and stopped without losing the terminal — ``Shell.belonging_to`` / ``run_comma
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 
 import pytest
 
 from flow_sdk.builtin.shell import Shell
 from tests.unit.conftest import kill_pty, poll_read
+
+
+def _host_reports_pty_foreground_pgid() -> bool:
+    """Whether this host's PTY master answers ``tcgetpgrp`` — the signal that tells a backgrounded
+    job apart from the foreground command.
+
+    ``Shell.running()`` is correct only where the kernel exposes the terminal's foreground process
+    group (``TIOCGPGRP``). A real desktop and CI both do; a gVisor sandbox implements no
+    ``TIOCGPGRP`` on any PTY fd (``ENOTTY``) and surfaces no equivalent (``/proc/<pid>/stat`` tpgid
+    is 0, there is no controlling-tty number), so a backgrounded job and a foreground one are
+    byte-for-byte identical in the process table there. Without the signal the distinction under
+    test is physically unobservable — like a missing ``zsh``, it is a host the test cannot run on,
+    not a failure. Probed on the same ``ptyprocess`` master the product's PTY uses."""
+    try:
+        from ptyprocess import PtyProcess  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 — no POSIX ptyprocess (Windows); the product uses the children fallback there
+        return False
+    proc = PtyProcess.spawn(["/bin/sh", "-c", "sleep 5"])
+    try:
+        os.tcgetpgrp(proc.fd)
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            proc.terminate(force=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+#: Computed once: a PTY spawn is not free, and the capability does not change within a run.
+_PTY_FOREGROUND_PGID_AVAILABLE = _host_reports_pty_foreground_pgid()
 
 
 async def _until(predicate, timeout: float = 10.0) -> None:
@@ -169,10 +202,21 @@ async def test_run_and_capture_reads_the_output_between_the_command_and_its_mark
         await shell.close()
 
 
+@pytest.mark.skipif(
+    not _PTY_FOREGROUND_PGID_AVAILABLE,
+    reason="host PTY does not report the foreground process group (tcgetpgrp); a background job is "
+    "then indistinguishable from a foreground one",
+)
 @pytest.mark.long  # 1.0–1.5s: a real background job, then the prompt checked
 async def test_a_background_process_at_the_prompt_is_not_a_running_command(tmp_path):
     """A prompt spawns helpers (an async git status) while the terminal sits idle: children of the
-    shell that are not the command. Only the foreground job is — so the terminal is at its prompt."""
+    shell that are not the command. Only the foreground job is — so the terminal is at its prompt.
+
+    Needs a host whose PTY answers ``tcgetpgrp`` (``_PTY_FOREGROUND_PGID_AVAILABLE``): that is the
+    one signal that tells the backgrounded ``sleep`` from a foreground command. Where it is missing
+    (a gVisor sandbox), ``_foreground_pgid`` has no choice but its no-POSIX-PTY children fallback,
+    which cannot make the distinction — so the test is skipped there rather than asserting the
+    unknowable."""
     shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         marker = await shell.run_command("sleep 60 &")

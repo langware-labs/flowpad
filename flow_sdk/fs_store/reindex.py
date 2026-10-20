@@ -159,6 +159,21 @@ async def sources_gone_under(root: str | Path) -> list[str]:
     return await asyncio.to_thread(lambda: [ref for ref in refs if source_gone(ref)])
 
 
+async def reconcile_under(root: str | Path, *, write: bool = True) -> tuple[ReindexResult, list]:
+    """Bring the index in line with what is under ``root`` now: every asset there re-indexed, and every
+    row stored under it whose source is gone (``sources_gone_under``) reconciled away. For a folder
+    changed outside an editor -- a git pull. Returns the result and the walk's scan issues.
+    ``write=False`` for a checkout whose bytes are the publisher's."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.assets.scanning import scan_repo_tree  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    scan = await asyncio.to_thread(scan_repo_tree, Path(root), SchemaRegistry.repo_family_to_info())
+    present = [str(c.path) for c in scan.candidates if c.included]
+    return await reindex_paths(present, await sources_gone_under(root), write=write), list(scan.issues)
+
+
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),

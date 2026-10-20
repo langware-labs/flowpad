@@ -41,7 +41,7 @@ An app's setup is declared in its asset folder, not in code you guess at:
 
 - **"port N is held by another program"** — find the holder's owner before killing:
   `ps -o pid,ppid,lstart,command -p <pid>` and `lsof -p <pid> | grep cwd`. The usual holder is the SAME
-  app left running from another workspace or instance (`~/Flowpad workspaces/<other>/...`), or a stray dev
+  app left running from another workspace or instance (`~/.flow/instances/<other>/workspace/...`), or a stray dev
   server. It starts as a stack: freeing one port often only reveals the next (emulators 4400, then the API
   8090). Check EVERY port the app's `webapp.json` declares in one pass and free them together, not one
   failure at a time.

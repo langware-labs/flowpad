@@ -1,3 +1,4 @@
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { openableValue } from './ConversationAutomationChip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -70,7 +71,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
-import { useOpenGitShare } from './asset-review/use-open-git-share';
+import { useOpenGitShare, type OpenShareOutcome } from './asset-review/use-open-git-share';
+import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
 import type { ProcessCall, ReturnedValue } from '@sdk';
@@ -245,6 +247,8 @@ interface FlowMessageBubbleProps {
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
+  /** Same sender as the bubble above, moments later — drawn without avatar and name. */
+  continuation?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -276,6 +280,7 @@ export function FlowMessageBubble({
   onLaunchWorker,
   promptCall = null,
   callPeerName = null,
+  continuation = false,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -813,6 +818,9 @@ export function FlowMessageBubble({
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
+        messageSession={
+          session ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) } : null
+        }
         taskIt={
           messageTask
             ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask, people: taskPeople }
@@ -842,7 +850,9 @@ export function FlowMessageBubble({
         onReact={channelTraits?.reacts && fm?.origin ? handleReact : undefined}
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
+        continuation={continuation}
       />
+      <ShareReplyCard fm={fm} isMine={isCurrentUser} onForward={canForward ? () => setForwardOpen(true) : undefined} />
       {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
         <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
@@ -1050,7 +1060,7 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   const { run: openGitShare } = useOpenGitShare(attachment, projectId);
-  const [openError, setOpenError] = useState<string | null>(null);
+  const [openOutcome, setOpenOutcome] = useState<OpenShareOutcome | null>(null);
    
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
   // A project the message staged (its bundle carried it) is an ordinary
@@ -1132,25 +1142,28 @@ export function MessageEntityChip({
       open={reviewOpen}
       onClose={() => {
         setReviewOpen(false);
-        setOpenError(null);
+        setOpenOutcome(null);
       }}
       attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
       initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
-      initialError={openError}
+      initialOutcome={openOutcome}
     />
   );
-  // A git share is a pointer that never touches the receiver's own checkout:
-  // one click installs AND opens it; a failure (said in a toast) opens the review.
+  // A git share (or Git + copy) opens in one click, in the right project; a failure
+  // or a question (which project? clone or copy?) opens the review.
   // A whole project is not a pointer: its review asks where it lands (Clone & Open, a taken name).
-  const gitShare = attachment?.transfer_mode === 'git' && attachment.asset_type !== 'project' && !handleFolderPull;
+  const gitShare =
+    (attachment?.transfer_mode === 'git' || attachment?.transfer_mode === 'both') &&
+    attachment.asset_type !== 'project' &&
+    !handleFolderPull;
   const onStagedClick =
     handleFolderPull ??
     (gitShare
       ? async () => {
-          const failed = await openGitShare();
-          if (failed) {
-            setOpenError(failed);
+          const out = await openGitShare();
+          if (out.error || out.needs) {
+            setOpenOutcome(out);
             setReviewOpen(true);
           }
         }
