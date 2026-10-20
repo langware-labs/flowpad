@@ -119,14 +119,14 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await until('declined on the guest', async () => (await latest(ALICE.backendUrl, convId))?.status === 'declined');
   await both(alice, bob, convId, '02-declined');
 
-  // 03 — Approve once + Run (Skip project): per-instance temp folder, no grant
+  // 03 — Approve (this session only) + Run (Skip project): per-instance temp folder, no grant
   await gotoConversation(alice, convId);
   await openSession(alice);
   await until('S2 on the host', async () => (await sessionsOn(BOB.backendUrl, convId)).length === 2);
   await gotoConversation(bob, convId);
-  await bob.getByTestId('session-card-approve-once').last().click();
+  await bob.getByTestId('session-card-approve').last().click();
   await expect(bob.getByTestId('live-session-no-project')).toBeVisible({ timeout: 30_000 });
-  await shot(bob, '03-approve-once-picker-host');
+  await shot(bob, '03-approve-picker-host');
   await bob.getByTestId('live-session-no-project').click();
   const s2 = await until('S2 live with a temp folder', async () => {
     const r = await latest(BOB.backendUrl, convId);
@@ -273,7 +273,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await until('ended on the host', async () => (await latest(BOB.backendUrl, convId))?.status === 'ended');
   await both(alice, bob, convId, '10-host-disconnect-mid-turn');
 
-  // 11 — Approve (remembers the guest) → the GUEST disconnects
+  // 11 — Approve (this session only), then "Always auto-approve" on the chip → the GUEST disconnects
   await gotoConversation(alice, convId);
   await openSession(alice);
   await until('S3 on the host', async () => (await sessionsOn(BOB.backendUrl, convId)).length === 3);
@@ -282,7 +282,13 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await bob.getByTestId('session-card-approve').last().click();
   await bob.getByTestId('live-session-no-project').click();
   await until('S3 live', async () => (await latest(BOB.backendUrl, convId))?.status === 'idle');
-  const grants = await grantsOnHost();
+  expect(await grantsOnHost()).toHaveLength(0);
+  await bob.getByTestId('live-session-permission-chip').last().click();
+  await bob.getByTestId('live-session-permission-global').click();
+  const grants = await until('grant saved', async () => {
+    const g = await grantsOnHost();
+    return g.length ? g : null;
+  });
   expect(grants).toHaveLength(1);
   await until('guest sees S3 live', async () => (await latest(ALICE.backendUrl, convId))?.status === 'idle');
   await both(alice, bob, convId, '11-approved-remembered');
