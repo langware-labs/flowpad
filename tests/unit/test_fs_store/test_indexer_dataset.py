@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.types.dataset import dataset_asset_hash, iter_rows
+from flow_sdk.assets.types.dataset import dataset_asset_hash
+from tests.unit._dataset_read import iter_rows
 from flow_sdk.builtin.dataset import DataLayoutEnum, RowKind
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions

@@ -1,4 +1,4 @@
-import { AgenticProcess, PrefKey } from '@sdk';
+import { AgenticProcess, PrefKey, UUID_SOURCE } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -15,7 +15,7 @@ import { ArrowDown, ArrowUp, MessageSquare, RotateCw, Search, X } from 'lucide-r
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = new RegExp(`^${UUID_SOURCE}$`, 'i');
 
 function pickName(entry: WorkerHistoryEntry): string | null {
   const name = (entry.name ?? '').trim();

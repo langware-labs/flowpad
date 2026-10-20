@@ -257,6 +257,8 @@ export interface IDataset extends IEntity {
   kind_counts?: Record<string, number>;
   num_annotated?: number;
   asset_ref?: string;
+  /** The kind each row is, resolved by the backend (`Dataset.row_kind`) — named specs too. */
+  row_kind?: string;
 }
 
 // `implements IDataset` only checks the class; it contributes no members, so every
@@ -320,9 +322,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return typeof this.spec === 'string' ? this.spec : null;
   }
 
-  /** The kind each row is — its `input` — for a named spec too (`kindForm(specKind).slots.input`);
-   *  an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
+  /** The kind each row is — its `input` — for a named spec too: the backend resolves it
+   *  (`row_kind`); an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
   get rowKind(): string | null {
+    if (this.row_kind) return this.row_kind;
     const input = typeof this.spec === 'object' ? this.spec?.rows?.[0]?.input : null;
     return typeof input === 'string' ? input.replace(/^\?/, '') : null;
   }
@@ -472,13 +475,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.get(`eval/${encodeURIComponent(runId)}`);
   }
 
-  /** Run this dataset's eval now; answers the new run. */
   /** How one row's answer was reached in a run (its `trace`), fetched only when it is opened. */
   async evalTrace(runId: string, rowId: string): Promise<EvalTrace | null> {
     const found = (await this.get(`eval/${encodeURIComponent(runId)}/${encodeURIComponent(rowId)}`)) as { trace?: EvalTrace | null };
     return found?.trace ?? null;
   }
 
+  /** Run this dataset's eval now; answers the new run. */
   async runEval(options: { eval?: string; kinds?: string[] } = {}): Promise<EvalRun> {
     return this.post('run-eval', options);
   }

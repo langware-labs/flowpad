@@ -2,7 +2,7 @@
 import apiClient from '../client';
 import { DATASET_FIELD_KINDS } from '../entities/dataset';
 import type { CheckDetail } from '../entities/dataset';
-import { isValidUUIDv4 } from '../models/TypeId';
+import { isValidEntityId } from '../models/TypeId';
 import type { KindForm, SchemaTree, Shape } from './contract';
 
 /** The backend's reserved primitives: the ones a person types, plus `binary` (bytes, never typed). */
@@ -102,5 +102,5 @@ export function parseValueRef(text: unknown): { kind: string; id: string } | nul
   const at = text.lastIndexOf('.id.');
   const kind = text.slice(0, at);
   const id = text.slice(at + 4);
-  return at > 0 && isValidUUIDv4(id) && !kind.split('.').includes('id') ? { kind, id } : null;
+  return at > 0 && isValidEntityId(id) && !kind.split('.').includes('id') ? { kind, id } : null;
 }

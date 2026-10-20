@@ -172,6 +172,32 @@ def test_attach_entity_references_existing_entity(conv_cli):
     assert target in type_ids
 
 
+def _create_prompt(conv_cli, text, **extra):
+    r = requests.post(f"{conv_cli.base}/api/v1/graph/prompt",
+                      json={"name": text[:20], "text": text, **extra}, timeout=10)
+    return r.json()["data"]["id"]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_attach_refuses_a_prompt_created_just_to_send_it(conv_cli):
+    """A prompt minted moments before the send is a project file made only to ride the
+    message: the send is refused and points at `send --prompt`."""
+    pid = _create_prompt(conv_cli, "run this fresh thing")
+    result = conv_cli.invoke(["conversation", "attach", conv_cli.conv_id, f"prompt-{pid}", "run it"])
+    assert result.exit_code != 0
+    assert "--prompt" in result.output
+    assert "Messages: 0" in conv_cli.summary_text() or "run it" not in conv_cli.summary_text()
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_attach_shares_a_prompt_the_user_already_uses(conv_cli):
+    pid = _create_prompt(conv_cli, "a library prompt in use", use_count=3)
+    payload = conv_cli.ok_payload(
+        conv_cli.invoke(["conversation", "attach", conv_cli.conv_id, f"prompt-{pid}", "try mine"])
+    )
+    assert f"prompt-{pid}" in [a["data"] for a in payload["attachment"]]
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_attach_missing_entity_fails_not_found(conv_cli):
     bogus = "skill-00000000-0000-4000-8000-000000000000"

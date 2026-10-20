@@ -1281,9 +1281,8 @@ class Entity(DBEntity):
 
         A DB-free on-disk load: it resolves identity through ``TypeInfo`` and
         dispatches to the registered ``from_disk_fn`` — the SAME cold-path parser the indexer runs
-        (e.g. ``extract_dataset``) — and builds the entity generically from the
-        returned ``FSRecord``. Only that parser (and, for datasets, the
-        ``iter_rows`` it reaches via ``Dataset.rows``) is type-specific;
+        — and builds the entity generically from the returned ``FSRecord``.
+        Only that parser (and a type's ``derive_fields_fn``) is type-specific;
         everything here is generic and registry-driven.
 
         Distinct from the async ``from_record``: no ``await``, no ``save()``, no
@@ -2755,7 +2754,7 @@ class Entity(DBEntity):
                 # feeds FTS straight from the row.
                 async with _one_write():
                     await DBEntity.save(self, user_id, notify=notify)
-                    if type_info.fts_content:
+                    if type_info.fts_content or type_info.fts:
                         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
 
                         await self._fts_write(FtsEntry.from_entity(self, info=type_info))

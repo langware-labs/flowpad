@@ -1,4 +1,4 @@
-"""Gmail's send-only REST transport, independent of mailbox/IMAP permission.
+"""The Gmail driver's send-only REST transport, independent of mailbox/IMAP permission.
 
 The caller retains account selection, OAuth refresh, consent scopes and recipient
 confirmation. This module never signs in or reads a mailbox. A token granted
@@ -7,10 +7,10 @@ confirmation. This module never signs in or reads a mailbox. A token granted
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Sequence
 
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.errors import SourceUnavailable
 
@@ -18,8 +18,9 @@ SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 
-@dataclass(frozen=True)
-class InlineImage:
+class InlineImage(DataSpec):
+    """An image the HTML body shows by ``cid:<content_id>``."""
+
     content_id: str
     content: bytes
     filename: str

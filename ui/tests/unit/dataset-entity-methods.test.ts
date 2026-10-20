@@ -20,6 +20,14 @@ describe('a dataset built from a wire row keeps its actions', () => {
   });
 });
 
+describe('a dataset whose spec NAMES a kind', () => {
+  it('links its rows through the row kind the backend resolved', () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n', spec: 'crm.companies', row_kind: 'crm.company' });
+    expect(ds.rowKind).toBe('crm.company');
+    expect(ds.refOf('11111111-1111-4111-8111-111111111111')).toBe('crm.company.id.11111111-1111-4111-8111-111111111111');
+  });
+});
+
 /**
  * Reading SOME rows, counting them, and writing many in one step: each method must reach its own
  * action with exactly the parameters the server reads (`flow_sdk/builtin/dataset.py`).

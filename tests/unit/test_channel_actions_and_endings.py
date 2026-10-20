@@ -21,7 +21,7 @@ from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.ingest.ingestor import ingest_item
-from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.ingest.envelope_lift import envelope_of
 from flow_sdk.schema.data_spec.channel_spec import ActionSpec
 from flow_sdk.sources import Acting
 from flow_sdk.sources.http import next_link, paginate

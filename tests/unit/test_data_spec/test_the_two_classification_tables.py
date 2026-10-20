@@ -205,6 +205,8 @@ def test_no_package_outside_this_list_declares_a_shape():
     found = {
         f"flow_sdk.{path.relative_to(root).parts[0]}"
         for path in root.rglob("*.py")
-        if len(path.relative_to(root).parts) > 1 and declares.search(path.read_text(encoding="utf-8", errors="ignore"))
+        # A shipped asset (a data driver's own shapes) is loaded by its loader, not imported as a package.
+        if len(path.relative_to(root).parts) > 1 and path.relative_to(root).parts[0] != "system_projects"
+        and declares.search(path.read_text(encoding="utf-8", errors="ignore"))
     }
     assert found <= set(SHAPE_PACKAGES), sorted(found - set(SHAPE_PACKAGES))

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules.atomic import atomic_write
-from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.ingest.envelope_lift import envelope_of
 from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
