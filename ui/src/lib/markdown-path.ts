@@ -33,8 +33,8 @@ export function isMarkdownDocumentPath(path?: string | null): boolean {
 /** A read-only document file (`.docx` / `.txt`) the Documents tree lists beside
  *  markdown — the `document_file` type, opened in its read-only preview. */
 export function isDocumentFilePath(path?: string | null): boolean {
-  const re = new RegExp(`\\.(?:${documentFileExtensions().map(escapeRe).join('|')})$`, 'i');
-  return Boolean(path && re.test(path));
+  const lower = path?.toLowerCase();
+  return Boolean(lower && documentFileExtensions().some((ext) => lower.endsWith(`.${ext.toLowerCase()}`)));
 }
 
 /** The Documents tree's type for a file: `document_file` or markdown. */

@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from flow_sdk.assets.types.spreadsheet import spreadsheet_asset_hash
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
@@ -84,8 +85,4 @@ def extract_document_file(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [rec]
 
 
-def document_file_asset_hash(ref: FSRef) -> int:
-    try:
-        return ref._path.stat().st_mtime_ns
-    except OSError:
-        return 0
+document_file_asset_hash = spreadsheet_asset_hash  # one flat file: its mtime
