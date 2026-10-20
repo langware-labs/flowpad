@@ -22,6 +22,7 @@ def test_the_ontology_walks_by_provider():
         "permission.google.drive.write",
         "permission.google.secret_manager.access",
         "permission.google.storage.read",
+        "permission.google.storage.write",
     ]
     assert permissions.mapping("permission.google.drive.read").oauth_scopes == [
         "https://www.googleapis.com/auth/drive.readonly"

@@ -56,9 +56,12 @@ async def _drivers_holding_rows() -> set[str]:
     or a record system that is not ``read_only``): keeping rows there writes."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
     from flow_sdk.datasets.locations import parse  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     try:
-        datasets = await Dataset.get_all() or []
+        # Only the datasets that name a location: one without keeps its rows locally.
+        placed = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["location"]))
+        datasets = await Dataset.get_all(placed) or []
     except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
         logger.warning("[oauth] could not list datasets for their locations' scopes", exc_info=True)
         return set()
