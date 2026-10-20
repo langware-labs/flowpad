@@ -130,8 +130,9 @@ def wheel_min_desktop(url: str) -> "str | None":
 
 
 def resolve(desktop_version: str, min_backend: str) -> None:
-    """Walk PyPI newest-first (the same order as electron/engine-compat.js selectCompatibleRelease, over fewer
-    candidates -- CI downloads whole wheels) for a release both floors accept."""
+    """Walk PyPI newest-first (the same order and the same candidates as electron/engine-compat.js
+    selectCompatibleRelease, over fewer of them -- CI downloads whole wheels) for a release both floors accept.
+    Only final releases count: a release candidate must not make a desktop look releasable."""
     if semver.string2semver(desktop_version) is None:
         print(f"usage: --desktop-version {desktop_version!r} is not a parseable version", file=sys.stderr)  # noqa: T201
         raise SystemExit(2)
@@ -150,6 +151,9 @@ def resolve(desktop_version: str, min_backend: str) -> None:
         parsed = semver.string2semver(version)
         if parsed is None or not isinstance(files, list):
             exclude("have an unparseable version or no file list")
+            continue
+        if not compat.is_final_release(version):
+            exclude("are pre-releases or tagged builds (never chosen automatically)")
             continue
         if compat.meets_floor(version, min_backend) is not True:
             exclude(f"are below the desktop's floor {min_backend}")

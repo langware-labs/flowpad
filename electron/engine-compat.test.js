@@ -13,6 +13,7 @@ const {
   desktopMinBackendVersion,
   meetsFloor,
   isInstallableVersion,
+  isFinalRelease,
   parseEngineCompat,
   checkPair,
   selectCompatibleRelease,
@@ -93,6 +94,14 @@ for (const bad of ['', 'garbage', '1.2', 'v1.2.3', '1.2.3 --index-url http://evi
   ok(!isInstallableVersion(bad), `not installable: ${JSON.stringify(bad)}`);
 }
 
+// ── what the desktop may choose by itself: X.Y.Z or X.Y.Z.postN, never a pre-release ──
+// The same vectors run in tests/unit/test_version_compat.py against flow_sdk/utils/compat.py is_final_release.
+for (const good of ['0.2.223', '1.0.0', '10.20.30', '0.2.223.post1']) ok(isFinalRelease(good), `final: ${good}`);
+for (const bad of ['0.2.223rc1', '0.2.205rc2', '0.2.223a1', '0.2.223b2', '0.2.223.dev4', '0.2.223+local1', '0.2.223-local', '0.2.223.rc1',
+  '0.2.223.post', '0.2.223post1', '0.2', 'v0.2.223', ' 0.2.223', '', null, undefined, 223]) {
+  ok(!isFinalRelease(bad), `not final: ${JSON.stringify(bad)}`);
+}
+
 // ── selectCompatibleRelease (async) ─────────────────────────────────────────
 (async () => {
   {
@@ -142,6 +151,30 @@ for (const bad of ['', 'garbage', '1.2', 'v1.2.3', '1.2.3 --index-url http://evi
     });
     eq(picked, null, 'no compatible release → null');
     eq(reads.length, 5, 'bounded by the limit');
+  }
+  {
+    // The review's reproduction: the project's semver ranks `0.2.223rc1` ABOVE `0.2.223`, so left to the sort a
+    // published release candidate wins the pick. Only final releases are candidates.
+    const asked = [];
+    const picked = await selectCompatibleRelease({
+      releases: [{ version: '0.2.222' }, { version: '0.2.223' }, { version: '0.2.223rc1' }, { version: '0.2.224.dev1' }, { version: '0.2.205rc2' }],
+      desktopVersion: '9.9.9', minBackendVersion: null,
+      readEngineCompat: async (v) => { asked.push(v); return { minDesktopVersion: null }; },
+    });
+    eq(picked, { version: '0.2.223', minDesktopVersion: null }, 'the final release wins over its own release candidate');
+    eq(asked, ['0.2.223'], 'pre-releases are never even interrogated');
+
+    // Nothing but pre-releases published above the floor: nothing to pick (no silent rc install).
+    eq(await selectCompatibleRelease({
+      releases: [{ version: '0.2.230rc1' }, { version: '0.2.231a1' }], desktopVersion: '9.9.9', minBackendVersion: null,
+      readEngineCompat: async () => { throw new Error('must not be called'); },
+    }), null, 'only pre-releases -> no candidate');
+
+    // A post-release IS a final release and is newer than its base.
+    eq((await selectCompatibleRelease({
+      releases: [{ version: '0.2.223' }, { version: '0.2.223.post1' }], desktopVersion: '9.9.9', minBackendVersion: null,
+      readEngineCompat: async () => ({ minDesktopVersion: null }),
+    })).version, '0.2.223.post1', 'a post-release outranks its base');
   }
   {
     // A release key that PARSES (semver.js finds a triple anywhere) but is not release-shaped never becomes

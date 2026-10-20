@@ -40,6 +40,18 @@ function isInstallableVersion(version) {
   return typeof version === 'string' && INSTALLABLE_VERSION_RE.test(version);
 }
 
+// What the desktop may pick on its own: a plain release, `X.Y.Z`, or its post-release, `X.Y.Z.postN` -- never a
+// release candidate, a dev build or a tagged build. The project's semver rule ranks any tag after the patch
+// number NEWER than the bare version, so `0.2.223rc1` sorts above `0.2.223`; left to the sort, an rc published
+// to PyPI would win the pick for every desktop. A person can still choose a pre-release by hand in the version
+// picker. Twin: flow_sdk/utils/compat.py is_final_release.
+const FINAL_RELEASE_RE = /^[0-9]+\.[0-9]+\.[0-9]+(?:\.post[0-9]+)?$/;
+
+/** True for a release the desktop may choose automatically (see FINAL_RELEASE_RE). */
+function isFinalRelease(version) {
+  return typeof version === 'string' && FINAL_RELEASE_RE.test(version);
+}
+
 /** The oldest engine this desktop build accepts, or null (no constraint declared). */
 function desktopMinBackendVersion(compat = DESKTOP_COMPAT) {
   const v = compat && compat.min_backend_version;
@@ -119,7 +131,7 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
   const candidates = (releases || [])
     .filter((r) => r && !r.yanked)
     .map((r) => ({ version: r.version, parsed: string2semver(r.version) }))
-    .filter((r) => r.parsed && isInstallableVersion(r.version) && meetsFloor(r.version, minBackendVersion) === true)
+    .filter((r) => r.parsed && isFinalRelease(r.version) && meetsFloor(r.version, minBackendVersion) === true)
     .sort((a, b) => compareSemver(b.parsed, a.parsed)); // newest first
 
   let interrogated = 0;
@@ -163,6 +175,7 @@ module.exports = {
   desktopMinBackendVersion,
   meetsFloor,
   isInstallableVersion,
+  isFinalRelease,
   parseEngineCompat,
   checkPair,
   selectCompatibleRelease,

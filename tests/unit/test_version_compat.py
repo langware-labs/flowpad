@@ -55,6 +55,30 @@ def test_unparseable_sides_are_indeterminate_not_waved_through():
     assert compat.meets_floor("0.2.50", "garbage") is None
 
 
+# ── what may be chosen automatically: X.Y.Z or X.Y.Z.postN -- never a pre-release ─────────────
+# The same vectors run in electron/engine-compat.test.js against isFinalRelease (the twin).
+
+@pytest.mark.parametrize("version", ["0.2.223", "1.0.0", "10.20.30", "0.2.223.post1"])
+def test_final_releases_may_be_chosen_automatically(version):
+    assert compat.is_final_release(version) is True
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["0.2.223rc1", "0.2.205rc2", "0.2.223a1", "0.2.223b2", "0.2.223.dev4", "0.2.223+local1", "0.2.223-local",
+     "0.2.223.rc1", "0.2.223.post", "0.2.223post1", "0.2", "v0.2.223", " 0.2.223", "", None, 223],
+)
+def test_nothing_else_is_chosen_automatically(version):
+    assert compat.is_final_release(version) is False
+
+
+def test_the_project_semver_would_rank_an_rc_above_its_final_which_is_why_the_filter_exists():
+    """The reason is_final_release exists: left to the sort, 0.2.223rc1 beats 0.2.223."""
+    from flow_sdk.utils.semver import compare_semver, string2semver
+
+    assert compare_semver(string2semver("0.2.223rc1"), string2semver("0.2.223")) == 1
+
+
 # ── check_pair: both directions mandatory ─────────────────────────────────────
 
 def test_compatible_pair_passes_both_directions():

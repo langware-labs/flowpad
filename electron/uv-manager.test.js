@@ -2161,6 +2161,15 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       await assert.rejects(() => m.resolveCompatibleEngineVersion(), /checked the newest 2\)/); passed++;
     }
 
+    // A published release candidate must not be installed for everyone, nor offered on every launch.
+    {
+      const m = mk('0.2.45');
+      m._getPypiData = async () => ({ info: { version: '0.2.223' }, releases: { '0.2.222': [{}], '0.2.223': [{}], '0.2.223rc1': [{}], '0.2.205rc2': [{}] } });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: null });
+      eq((await m.resolveCompatibleEngineVersion()).version, '0.2.223', 'resolve picks the final release, not its rc');
+      eq(await m._compatibleEngineSpec('flowpad'), 'flowpad==0.2.223', 'and so does the spec every install/upgrade/repair uses');
+    }
+
     // #6: a version that is not release-shaped never reaches an install command.
     {
       const m = mk('0.2.45');

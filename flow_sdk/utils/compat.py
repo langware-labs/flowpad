@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import NamedTuple, Optional
 
@@ -60,6 +61,18 @@ class CompatVerdict(NamedTuple):
     compatible: bool
     #: Human-readable reasons when incompatible (empty when compatible).
     reasons: list
+
+
+#: What may be chosen automatically: ``X.Y.Z`` or ``X.Y.Z.postN`` -- never a release candidate, dev build or
+#: tagged build. The shared semver rule ranks any tag after the patch number NEWER than the bare version
+#: (``0.2.223rc1`` > ``0.2.223``), so leaving the choice to the sort would let a published rc win. Twin:
+#: ``isFinalRelease`` in electron/engine-compat.js.
+FINAL_RELEASE_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:\.post[0-9]+)?$")
+
+
+def is_final_release(version: object) -> bool:
+    """True for a release that may be chosen automatically (see :data:`FINAL_RELEASE_RE`)."""
+    return isinstance(version, str) and FINAL_RELEASE_RE.match(version) is not None
 
 
 def parse_compat_text(text: str, source: str = "compat.json") -> dict:

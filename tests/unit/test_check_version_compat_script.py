@@ -232,3 +232,27 @@ def test_no_stub_leaks_even_when_flow_sdk_was_not_imported_first():
     )
 
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_release_candidate_never_makes_a_desktop_releasable(gate, monkeypatch, capsys):
+    """The desktop never installs an rc by itself, so the gate must not pass a desktop because of one."""
+    seen = []
+    releases = {"0.2.230rc1": _release("0.2.230rc1"), "0.2.223.dev1": _release("0.2.223.dev1"), "0.2.222": _release("0.2.222")}
+    doc = json.dumps({"releases": releases}).encode()
+    monkeypatch.setattr(gate.urllib.request, "urlopen", lambda url, timeout=0: _Response(doc))
+    monkeypatch.setattr(gate, "wheel_min_desktop", lambda url: seen.append(url) or None)
+
+    gate.resolve("0.2.45", "0.2.0")
+
+    assert seen == [f"{HOST}/flowpad-0.2.222-py3-none-any.whl"], "only the final release was read"
+    assert "resolves backend 0.2.222" in capsys.readouterr().out
+
+
+def test_when_only_pre_releases_exist_the_failure_says_so(gate, monkeypatch, capsys):
+    doc = json.dumps({"releases": {"0.2.230rc1": _release("0.2.230rc1"), "0.2.231a1": _release("0.2.231a1")}}).encode()
+    monkeypatch.setattr(gate.urllib.request, "urlopen", lambda url, timeout=0: _Response(doc))
+
+    with pytest.raises(SystemExit):
+        gate.resolve("0.2.45", "0.2.0")
+
+    assert "2 release(s) are pre-releases or tagged builds" in capsys.readouterr().err
