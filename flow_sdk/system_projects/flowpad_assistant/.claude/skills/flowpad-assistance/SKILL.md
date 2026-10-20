@@ -6,7 +6,7 @@ description: >-
   process, workspace) so other actions compose without needing an id; creates and
   indexes records (tasks, skills, agents, workflows); searches local assets via FTS;
   restarts the calling agentic-process; reads messages the user received ("X sent me
-  a message") and sends messages with attachments into a conversation. Use for "the current X" / "this X", "create a task / skill / agent",
+  a message") and sends messages with attachments into a conversation, or starts one with a contact. Use for "the current X" / "this X", "create a task / skill / agent",
   "find or look up X", "restart this session", "what did X send me", or "send X to my
   conversation with Y", and finding Flow SDK guidance for FlowCall (calls, outcomes, returned values, and composition), channel webhooks and deployment routing.
   NOT for showing or opening something in the UI (flowpad-navigation), building a

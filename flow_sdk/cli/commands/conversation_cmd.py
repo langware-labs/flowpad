@@ -8,6 +8,7 @@ hits — no business logic lives here (mirrors ``flow record``). Commands:
     flow conversation show <id> [--last N] [--thread T] — full messages, oldest-first
     flow conversation message <msg-id>           — one message in full
     flow conversation send <id> <message>        — add a text message
+    flow conversation new <who> <message>        — start one with an email / contact (`flow contacts find`)
     flow conversation attach <id> <target> <msg> — add a message + attachment
 
 ``attach`` auto-detects ``<target>``: a ``<type>-<uuid>`` TypeId becomes an
@@ -325,6 +326,7 @@ def _emit_send_result(conversation_id: str, data: dict) -> None:
             # Composed offline / not logged in → saved locally, NOT delivered.
             "pending": delivery_status == "pending_send",
             "attachment": data.get("attachment") or [],
+            **({"invited": data["invited"]} if data.get("invited") else {}),
         }
     )
 
@@ -356,6 +358,64 @@ def send_message(
         body,
         not_found_hint=f"Conversation not found: {cid}",
     )
+    _emit_send_result(cid, data)
+
+
+def _resolve_contact(port: int, who: str) -> dict:
+    """``who`` (an email, a hub user id or a name) as one participant
+    ``{name, email, user_id}`` — through the address book, so a name works.
+    An email nobody knows yet is still a valid recipient (the hub invites them)."""
+    from flow_sdk.cli.commands.contacts_cmd import load_contacts, match  # noqa: PLC0415
+
+    found = match(load_contacts(port), who)
+    if len(found) == 1:
+        c = found[0]
+        return {"name": c.get("name"), "email": c.get("email"), "user_id": c.get("user_id")}
+    if "@" in who and not found:
+        return {"name": None, "email": who.strip().lower(), "user_id": None}
+    if not found:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No contact matches {who!r}. Ask for their email.")
+    names = ", ".join(f"{c.get('name')} <{c.get('email') or c.get('user_id')}>" for c in found)
+    _fail(EXIT_INVALID_ARG, "AMBIGUOUS", f"{who!r} matches {len(found)} contacts: {names}. Pass the email.")
+
+
+@conversation_app.command(
+    "new",
+    help=(
+        "Start a conversation with someone and send the first message. <who> is an email, "
+        "a hub user id, or a name from `flow contacts find`."
+    ),
+)
+def new_conversation(
+    who: Annotated[str, typer.Argument(help="Email, hub user id, or contact name.")],
+    message: Annotated[str, typer.Argument(help="First message text.")],
+    title: Annotated[Optional[str], typer.Option("--title", help="Conversation title.")] = None,
+) -> None:
+    if not (message or "").strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    port = _discover_port()
+    listing = _post_json(_graph_url(port, "conversation-list"), {})
+    if listing.get("auth_required"):
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", "Not signed in to Flowpad: sign in (`flow auth login`) and retry.")
+    person = _resolve_contact(port, who)
+    invitee = person["email"] or person["user_id"]
+
+    created = _post_json(_graph_url(port, "conversation"), {"title": title or person.get("name") or invitee,
+                                                            "members": [person]})
+    cid = str(created.get("id") or "")
+    if not cid:
+        _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", "conversation was not created")
+    retry = f"conversation {cid} was created; retry with `flow conversation send {cid} <text>`"
+    try:
+        resp = _local_post(_graph_url(port, f"conversation/{cid}/share"), json={"recipients": [invitee]}, timeout=30)
+        body = resp.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        _fail(EXIT_ACTION_FAILED, "SHARE_FAILED", f"inviting {invitee} failed ({e}); {retry}")
+    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+        _fail(EXIT_ACTION_FAILED, "SHARE_FAILED",
+              f"inviting {invitee} failed ({body.get('message') or resp.status_code}); {retry}")
+    data = _post_json(_add_message_url(port, cid), {"text": message})
+    data["invited"] = invitee
     _emit_send_result(cid, data)
 
 
