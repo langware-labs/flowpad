@@ -13,13 +13,17 @@
       "shape": "enum:fast|real",
       "description": "fast: drawn in the product's tokens; real: built from the running app's captured DOM."
     },
+    "fast_reason": {
+      "shape": "?string",
+      "description": "Required for a fast mock: the person's own words asking for a sketch, or why the product cannot run here. A fast mock without it is refused by the journey bar."
+    },
     "app_url": {
       "shape": "?string",
       "description": "Where the mock is served (its Flowpad web app URL)."
     },
     "folder": {
       "shape": "?string",
-      "description": "The mock's web app folder in the mock project (absolute; never the repo) — the review panel's Open folder shows it."
+      "description": "The mock's web app folder in the mock project (absolute; never the repo) \u2014 the review panel's Open folder shows it."
     },
     "repo": {
       "shape": "?string",
@@ -27,7 +31,7 @@
     },
     "session": {
       "shape": "?string",
-      "description": "The agentic process that builds the mock — where submitted feedback is sent."
+      "description": "The agentic process that builds the mock \u2014 where submitted feedback is sent."
     },
     "status": {
       "shape": "enum:draft|in_review|submitted|revised",

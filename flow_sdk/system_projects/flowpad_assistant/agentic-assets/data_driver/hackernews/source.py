@@ -31,7 +31,7 @@ STREAM_KEY = "updates"
 class HackerNewsItemData(FeedItemData):
     spec_kind: ClassVar[str] = "ingest.feed.item.hackernews"
     #: ``score`` and ``kids`` move constantly: the echo never takes part in change detection.
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     raw: Optional[dict] = None
 

@@ -40,7 +40,7 @@ Choose the keys: short, stable slugs of what the row is (`dana_levi`, `icp_ai_or
 to the row use its stored id, so a `ds-rename` breaks nothing inside Flowpad. A key copied
 OUTSIDE (a CRM field, a URL, a doc) does not follow — store the row's `ref` there instead
 of its key. A value that must live BOTH here and in an outside system is that system's field:
-mirrored in, marked `owned_by`, and an edit here is sent there first (`references/mirroring.md`).
+the rows live in that system (`location`), marked `owned_by`, and an edit here is sent there first (`references/locations.md`).
 Never keep it in step yourself — no state file, no merge, no "agreed value".
 A key that names no row in YOUR checkout may be a row another machine added that you have not
 pulled — report it, never overwrite it.
@@ -59,8 +59,7 @@ pulled — report it, never overwrite it.
 | find by text | `DM ds-rows <ds> --q 'pricing objection'` | every word, anywhere in the row |
 | who links to a row | `DM ds-used-by <ds> [key …]` | `[]` = nothing links to it (safe to delete) |
 | create or replace MANY | `DM ds-put-many <ds> '[{"key": "dana", "input": {…}}, …]'` | one step: one row that does not fit writes nothing, named by key |
-| mirror an outside system | `DM ds-sync <ds> '[{"key": …, "input": {…}}, …]' [--match '{…}'] [--no-prune]` | the dataset made to hold exactly these rows → `created / updated / unchanged / deleted`; `--match` prunes only the slice it selects |
-| mirror a data source's items | `DM ds-mirror <ds> <source id> '{"key": "external_id", "input": {"name": "name", "stage": "data.stage"}}'` | each item one typed row; a sync underneath (`--by`, `--no-prune`) |
+| hold exactly a given set of rows | `DM ds-sync <ds> '[{"key": …, "input": {…}}, …]' [--match '{…}'] [--no-prune]` | the dataset made to hold exactly these rows → `created / updated / unchanged / deleted`; `--match` prunes only the slice it selects |
 | delete MANY | `DM ds-delete <ds> dana eli fay` | one step, all or none; rows deleted together do not hold each other back |
 | rename | `DM ds-rename <ds> dana dana_levi [--expected <version>]` | the id (stored in the row) stays, so links to it hold |
 | delete | `DM ds-delete <ds> dana [--expected <version>]` | refused (409) while another row links to it — re-point or delete that one first; with `--expected`, also when it changed since. A row already gone is 404 (`LookupError`), not 409 — a script that removes rows treats it as done |

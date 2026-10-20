@@ -20,10 +20,8 @@ export interface SessionCardProps {
   replyCount: number;
   /** URL-first: the caller navigates (`openDock(DockPointer.forLiveSession)`). */
   onOpen: () => void;
-  /** Host + pending only: approve and remember this guest (later sessions start without asking). */
+  /** Host + pending only: approve this live session only. */
   onApprove?: () => Promise<void>;
-  /** Host + pending only: approve this session only. */
-  onApproveOnce?: () => Promise<void>;
   onDecline?: () => Promise<void>;
   /** Either side, while live: end the session. */
   onDisconnect?: () => Promise<void>;
@@ -85,9 +83,9 @@ function useSessionExpired(session: RemoteWorkerSession | null): boolean {
 /**
  * A live session's ONE line in the conversation: `Live session · <other side>`
  * and its status. The whole line opens the session view, where the turns live.
- * The host answers a request here once (Approve — and remember this guest —,
- * Approve once, or Decline); once it is live the
+ * The host answers a request here once (Approve or Decline); once it is live the
  * line carries the message count, the time since approval, and a red Disconnect.
+ * The guest can cancel a request the host has not answered yet.
  * While a prompt runs the line names it; the host also gets an icon that opens
  * the chat it runs in.
  */
@@ -99,7 +97,6 @@ export function SessionCard({
   replyCount,
   onOpen,
   onApprove,
-  onApproveOnce,
   onDecline,
   onDisconnect,
   lastPromptFailed,
@@ -108,7 +105,7 @@ export function SessionCard({
   chatProcessId,
 }: SessionCardProps) {
   const { t } = useLingui();
-  const [busy, setBusy] = useState<'approve' | 'approve-once' | 'decline' | 'disconnect' | 'retry' | null>(null);
+  const [busy, setBusy] = useState<'approve' | 'decline' | 'disconnect' | 'retry' | null>(null);
   // Past the length cap the session is over on this side too, whatever the row says.
   const expired = useSessionExpired(session);
   const state = expired ? 'ended' : sessionCardState(session?.status);
@@ -223,7 +220,7 @@ export function SessionCard({
           projectId={session.project_id ?? null}
           guestName={guest}
           pending={state === 'pending'}
-          onApprove={() => void run('approve-once', onApproveOnce)}
+          onApprove={() => void run('approve', onApprove)}
           disabled={!!busy}
         />
       )}
@@ -243,12 +240,6 @@ export function SessionCard({
           <>
             {button('approve', onApprove, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
             {button(
-              'approve-once',
-              onApproveOnce,
-              'border border-border text-foreground hover:bg-muted',
-              <Trans>Approve once</Trans>,
-            )}
-            {button(
               'decline',
               onDecline,
               'border border-border text-foreground hover:bg-muted',
@@ -256,6 +247,14 @@ export function SessionCard({
             )}
           </>
         )}
+        {role === 'guest' &&
+          (state === 'pending' || state === 'requesting') &&
+          button(
+            'disconnect',
+            onDisconnect,
+            'border border-border text-foreground hover:bg-muted',
+            <Trans>Cancel request</Trans>,
+          )}
         {state === 'active' &&
           button(
             'disconnect',

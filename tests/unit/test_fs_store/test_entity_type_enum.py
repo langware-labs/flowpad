@@ -188,6 +188,8 @@ EXPECTED = {
     # introducing commits missed this freeze.
     "DECK": "deck",
     "SPREADSHEET": "spreadsheet",
+    # Read-only .docx/.txt in a docs folder — a brand-new type, no value changed.
+    "DOCUMENT_FILE": "document_file",
     # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
     # entity type. Flow-graph v2 added the run model.
     "TAG": "tag",

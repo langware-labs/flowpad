@@ -379,6 +379,14 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
+   * Opening the agent again lands on its last chat: re-apply `auto_open` there
+   * (`POST /agent/<id>/resume`) — only what is not open yet; the display is not moved.
+   */
+  async resume(processId: string): Promise<void> {
+    await this.post('resume', { process_id: processId });
+  }
+
+  /**
    * Open a chat on one exact cloud Deployment of this Agent.
    *
    * The Hub validates that the placement belongs to this Agent and creates the

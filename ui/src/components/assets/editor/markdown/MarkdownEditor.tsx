@@ -1,4 +1,5 @@
 import { DocumentSaveNotice } from '../DocumentSaveNotice';
+import { ViewerChatSlot } from '../ViewerChatToggle';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -1048,6 +1049,7 @@ function EditorHeader({
           </button>
         )}
         {actions}
+        <ViewerChatSlot />
       </div>
     </div>
   );

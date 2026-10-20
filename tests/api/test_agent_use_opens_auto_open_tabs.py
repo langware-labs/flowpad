@@ -39,8 +39,9 @@ async def test_auto_launch_and_use_open_the_declared_tabs(bootstrapped_client, t
         assert process["context_data"]["last_shown"]["path"].endswith("/scoreboard.html")
         # What a Vibe worker is told is already open: one reopen command per tab.
         assert [c.rsplit("/", 1)[-1] for c in process["context_data"]["auto_open"]] == ["scoreboard.html", "week.html"]
-    # A tab IS its address — one file, one tab on this machine — so the week tab
-    # sits under the session that opened it last, not one copy per session.
-    anchor = next(t for t in listed if t.get("target_id") == used["process_id"])
-    children = [json.loads(t["pointer"])["pointer"] for t in listed if t.get("parent_tab_id") == anchor["id"]]
-    assert [c.rsplit("/", 1)[-1] for c in children] == ["week.html"]
+    # Every declared tab is a tab OF each session's workspace — its own row per workspace
+    # (``DockPointer.tabHash`` appends ``|@<session>``), the shown one included.
+    for process_id in (launched["process_id"], used["process_id"]):
+        anchor = next(t for t in listed if t.get("target_id") == process_id)
+        children = [json.loads(t["pointer"])["pointer"] for t in listed if t.get("parent_tab_id") == anchor["id"]]
+        assert sorted(c.rsplit("/", 1)[-1] for c in children) == ["scoreboard.html", "week.html"]

@@ -1,5 +1,6 @@
 import { msg } from '@lingui/core/macro';
 import { i18n, type MessageDescriptor } from '@lingui/core';
+import { locationLabel, type DatasetLocation } from '@sdk';
 import { channelLabel } from '@src/components/conversation/channel-attribution';
 import { participantLabel } from '@src/components/conversation/participant-display';
 import { PRIORITY_CONFIG, statusLabel } from '@src/components/task-bar/constants';
@@ -157,7 +158,12 @@ const ROWS: Record<string, RowSpec[]> = {
     [msg`Synced`, (e) => ago(e.last_synced_at)],
     [msg`Error`, (e) => text(e.error_detail)],
   ],
-  dataset: [[msg`Rows`, (e) => count(e.num_rows)], [msg`Annotated`, (e) => count(e.num_annotated)], UPDATED],
+  dataset: [
+    [msg`Rows`, (e) => count(e.num_rows)],
+    [msg`Annotated`, (e) => count(e.num_annotated)],
+    [msg`Stored in`, (e) => locationLabel(e.location as DatasetLocation | null | undefined)],
+    UPDATED,
+  ],
   llm_endpoint: [
     [msg`Provider`, (e) => text(e.provider)],
     [msg`Enabled`, (e) => onOff(e.enabled)],

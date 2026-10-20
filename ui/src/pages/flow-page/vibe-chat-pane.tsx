@@ -14,9 +14,11 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
+import { VibeDocChip } from './vibe-doc-chip';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
-import { AgenticProcess, ProcessKind, toplog } from '@sdk';
+import { Agent, AgenticProcess, ProcessKind, toplog, TypeId } from '@sdk';
+import { startAgentSession } from '@src/components/agents/use-agent-launcher';
 import { SessionSurfaceSwitch } from '@src/components/terminal/interactive-terminal/SessionSurfaceSwitch';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useCallback, useEffect, useState } from 'react';
@@ -128,6 +130,14 @@ export function VibeChatPane({
       // prompt into the previous chat, and the new one stayed empty forever.
       markNewSessionPending(true);
       try {
+        // An agent's workspace: New is a new chat WITH that agent (its auto prompt, its auto_open).
+        const agentTypeId = process?.target_typeid_str?.startsWith(`${Agent.type}-`) ? process.target_typeid_str : null;
+        const agent = agentTypeId ? await Agent.getById<Agent>(new TypeId(agentTypeId).id) : null;
+        if (agent) {
+          const processId = await startAgentSession(agent, projectId);
+          await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+          return;
+        }
         rememberLaunch('vibe', ViewMode.Vibe);
         await createVibeProcessForProject({
           projectId,
@@ -144,6 +154,7 @@ export function VibeChatPane({
     },
     [
       startingNewSession,
+      process,
       project?.id,
       project?.fs_storage_mount_path,
       process?.project_id,
@@ -276,7 +287,10 @@ export function VibeChatPane({
         historyProjectId={chatProjectId}
         showProcessNameBar
         afterHistorySlot={
-          <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+          <>
+            <VibeDocChip process={process} />
+            <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+          </>
         }
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}

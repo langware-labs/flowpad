@@ -69,6 +69,7 @@ export enum RecordType {
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet',
+  DOCUMENT_FILE = 'document_file',
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',

@@ -63,6 +63,9 @@ class PermissionMappingSpec(DataSpec):
     #: Needed only to WRITE to the provider: a source that is read-only (``DataSource.read_only``) does
     #: not ask for it, so its consent stays as narrow as reading.
     writes: bool = False
+    #: Needed only to keep a dataset's rows in this driver's store (``dataset.json`` ``location``): no
+    #: source of the driver asks for it, a dataset whose rows live there does (``wanted_scopes``).
+    rows: bool = False
 
     @field_validator("mechanism")
     @classmethod

@@ -109,6 +109,7 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   source_item: msg`Source Item`,
   spec: msg`Spec`,
   spreadsheet: msg`Spreadsheets`,
+  document_file: msg`Documents`,
   subagent: msg`Sub-agents`,
   tab: msg`Tab`,
   tag: msg`Tags`,

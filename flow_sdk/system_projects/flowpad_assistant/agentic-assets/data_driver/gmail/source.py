@@ -77,7 +77,7 @@ _UID_VALIDITY_RE = re.compile(rb"(?:UIDVALIDITY\s+)?(\d+)", re.IGNORECASE)
 
 class GmailMessageData(EmailMessageData):
     spec_kind: ClassVar[str] = "ingest.message.email.gmail"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     raw: Optional[dict] = None
 
