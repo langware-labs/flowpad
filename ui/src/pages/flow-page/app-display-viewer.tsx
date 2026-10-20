@@ -13,7 +13,7 @@ import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
-import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
@@ -281,7 +281,10 @@ export function AppDisplayViewer({
   );
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
   const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
-  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+  // Files served as they are need nothing set up, wherever they live (a mock in $TMPDIR):
+  // the tab belongs to the project, the page does not wait on it.
+  const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
+  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
     ? (
       <ProjectLoadGate
         key={provider}

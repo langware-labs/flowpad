@@ -33,8 +33,9 @@ The app password is read from `GMAIL_APP_PASSWORD` when Gmail is contacted. It
 is never copied into the DataSource row or its metadata — which is exactly what
 `tests/unit/test_gmail_snippet.py` runs this page to check.
 
-For a report sender that already has a Google `gmail.send` grant, use
-`flow_sdk.sources.gmail_send` instead of creating an IMAP mailbox source.
+For a report sender that already has a Google `gmail.send` grant, the Gmail
+driver's own `send.py` (`agentic-assets/data_driver/gmail/send.py`) sends
+without an IMAP mailbox source.
 `compose_message` accepts the sender, To/Cc recipients, plain text, HTML and
 `InlineImage` values with matching HTML CID references. `raw_message` exposes
 the Gmail API body for inspection without sending. `send_message` uses the

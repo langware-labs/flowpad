@@ -19,7 +19,7 @@ import pytest
 from flow_sdk.builtin.data_source import DataSource, SourceStatus, parse_since
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
-from flow_sdk.ingest.legacy_lift import origin_of
+from flow_sdk.ingest.envelope_lift import origin_of
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 

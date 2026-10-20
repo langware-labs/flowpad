@@ -5,7 +5,7 @@ id: 082a91bf-87c7-5f07-a3bf-8d9bd4cef44f
 
 A project role controls access inside Flowpad Cloud. It does not grant access to a GitHub repository.
 
-When you share assets from a linked project, a role selector appears for recipients confirmed not to be project members. Guest is selected by default. Existing members keep their current roles. Your choice is applied only when you click Share.
+When you share assets from a linked project, each recipient confirmed not to be a project member is flagged under **To** with a **Fix** button; Fix shows the role selector with Member selected. Until you press Fix no role is chosen (None). Existing members keep their current roles. Your choice is applied only when you click Share, before the message is sent. A shared file carries both its Git pointer and a copy whatever the role; the role decides whether the recipient can open the project (Member and up), not how the file travels.
 
 | Choice | Access |
 | --- | --- |

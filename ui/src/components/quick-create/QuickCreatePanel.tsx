@@ -466,7 +466,7 @@ export function QuickCreatePanel({
   // Dependency tiles are the dependency sources, flattened out of the "+"
   // dialog they otherwise hide behind. The kind is read synchronously on click
   // and passed by value, so the host still has it after this panel unmounts.
-  const folderSources = useDependencySources();
+  const folderSources = useDependencySources(dependencyKind);
 
   // One registry group's tiles; a group the server leaves empty renders nothing.
   const assetGroup = (group: QuickCreateGroup, title: ReactNode, extra?: ReactNode) => {

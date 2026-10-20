@@ -129,6 +129,14 @@ msgstr "· נבחר"
 msgid "· remote"
 msgstr "· מרוחק"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "› Messages"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "› Messages › from {from}"
+msgstr ""
+
 #. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
@@ -690,7 +698,7 @@ msgstr "{0} מתוך {1} מוגדרים"
 #. placeholder {1}: drawn.total
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "{0} of {1} set up"
-msgstr ""
+msgstr "{0} מתוך {1} הוגדרו"
 
 #. placeholder {0}: tries.data.filter((r) => caughtWord(r.verdict).kind === 'yes').length
 #. placeholder {1}: tries.data.length
@@ -702,6 +710,11 @@ msgstr ""
 #. placeholder {1}: a.recent_runs
 #: src/components/automations/AutomationRow.tsx
 msgid "{0} of last {1} failed"
+msgstr ""
+
+#. placeholder {0}: live.length
+#: src/components/footer/LiveSessionsChip.tsx
+msgid "{0} open live sessions"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -947,7 +960,7 @@ msgstr ""
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{done} of {total} set up"
-msgstr ""
+msgstr "{done} מתוך {total} הוגדרו"
 
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "{doneCount} records"
@@ -1285,6 +1298,14 @@ msgstr "{selectedCount} נבחרו"
 msgid "{senderName} has shared {sharedThing}"
 msgstr "{senderName} שיתף/ה את {sharedThing}"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "{senderName} is still uploading — try again in a moment."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "{senderName} sent you a message"
+msgstr ""
+
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} סשנים"
@@ -1367,7 +1388,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "{unfinished} did not finish"
-msgstr ""
+msgstr "{unfinished} לא הסתיימו"
 
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "{unopened} new"
@@ -1384,6 +1405,15 @@ msgstr ""
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "{value}"
 msgstr "{value}"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} asks for access to <0>{where}</0>"
+msgstr ""
+
+#. placeholder {0}: detail.project_name ?? '—'
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
+msgstr ""
 
 #~ msgid "{worker} session info"
 #~ msgstr "מידע על סשן {worker}"
@@ -1470,9 +1500,18 @@ msgstr "<0/>רענון מלא"
 msgid "<0>{0}</0> already exists in the workspace."
 msgstr "<0>{0}</0> כבר קיים בסביבת העבודה."
 
+#. placeholder {0}: source.label
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "<0>{0}</0> has changes. Commit before share?"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
 msgstr "<0>{attemptedName}</0> כבר קיים בסביבת העבודה. יש לבחור שם תיקייה אחר."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "<0>{recipient}</0> is not a member"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you, but we couldn't find a local clone of the repository. Clone it to see the task."
@@ -2960,7 +2999,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
-msgstr ""
+msgstr "תמיד"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always allow sessions from {guestName}"
@@ -5009,6 +5048,7 @@ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Check again"
 msgstr "בדוק שוב"
 
@@ -5056,9 +5096,13 @@ msgstr "בודק את {0}"
 msgid "Checking access…"
 msgstr "בודקים את הגישה…"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Checking FlowPad status…"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Checking Git eligibility…"
-msgstr "בודקים זכאות ל-Git…"
+#~ msgid "Checking Git eligibility…"
+#~ msgstr "בודקים זכאות ל-Git…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking Git…"
@@ -5091,7 +5135,7 @@ msgstr "בודק את קבצי מרכז העזרה"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Checking the sign-in…"
-msgstr ""
+msgstr "בודק את ההתחברות…"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Checking the tag index…"
@@ -5103,7 +5147,7 @@ msgstr "בודק מה מממן את {harnessLabel}…"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Checking what this needs…"
-msgstr ""
+msgstr "בודק מה נדרש…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -5255,7 +5299,6 @@ msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -5571,6 +5614,10 @@ msgstr ""
 #~ msgid "Clone a git repo (or reuse a local clone) as context"
 #~ msgstr "ניתן לשכפל repo של Git (או להשתמש בעותק מקומי קיים) כקונטקסט"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Clone as project"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone failed."
@@ -5829,7 +5876,6 @@ msgid "Code expires"
 msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Codex"
 msgstr "Codex"
@@ -5979,13 +6025,17 @@ msgstr "לבצע commit ולהמשיך"
 msgid "Commit & Merge"
 msgstr "אישור ומיזוג"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Commit & share"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "אשר את כל השינויים ובצע מיזוג לענף הראשי. Claude יצא מ-worktree בעת סיום."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Commit and push this file"
-msgstr "בצע commit ו-push לקובץ הזה"
+#~ msgid "Commit and push this file"
+#~ msgstr "בצע commit ו-push לקובץ הזה"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
@@ -6133,7 +6183,7 @@ msgstr "התחבר"
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connect {0}"
-msgstr ""
+msgstr "חבר את {0}"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Connect {group}"
@@ -6229,7 +6279,7 @@ msgstr "מחובר"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected — {as}"
-msgstr ""
+msgstr "מחובר — {as}"
 
 #. placeholder {0}: partners.length
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6387,7 +6437,7 @@ msgstr "המשיכו במסע"
 #. placeholder {0}: pending.label
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Continue setup: {0}"
-msgstr ""
+msgstr "להמשיך בהגדרה: {0}"
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -6473,11 +6523,11 @@ msgid "Copied to project"
 msgstr ""
 
 #: src/pages/entry/entry-shell.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copied!"
 msgstr "הועתק!"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
@@ -6502,6 +6552,7 @@ msgstr "כרטיסיית Copilot"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copy"
 msgstr "העתק"
 
@@ -7422,6 +7473,10 @@ msgstr ""
 msgid "Could not save the snippet"
 msgstr ""
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Could not send"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 msgid "Could not send it"
 msgstr ""
@@ -7476,7 +7531,7 @@ msgstr "לא ניתן היה להתנתק מארגז החול"
 #. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not skip {0}"
-msgstr ""
+msgstr "לא ניתן לדלג על {0}"
 
 #~ msgid "Could not skip {name}"
 #~ msgstr ""
@@ -7525,7 +7580,7 @@ msgstr "לא ניתן היה להתחיל את סשן זמן האמת"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not start the setup"
-msgstr ""
+msgstr "לא ניתן להתחיל את ההגדרה"
 
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "Could not start the sign-in."
@@ -7544,7 +7599,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not stop the setup"
-msgstr ""
+msgstr "לא ניתן לעצור את ההגדרה"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not stop the snippet"
@@ -7577,7 +7632,7 @@ msgstr ""
 #. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not undo the skip of {0}"
-msgstr ""
+msgstr "לא ניתן לבטל את הדילוג על {0}"
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not unpublish"
@@ -8146,7 +8201,6 @@ msgstr "הזמן הנוכחי"
 msgid "cursor"
 msgstr "סמן"
 
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Cursor"
 msgstr "Cursor"
@@ -9444,8 +9498,8 @@ msgid "Don't ask again"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Don’t ask again"
-msgstr ""
+#~ msgid "Don’t ask again"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Don't ask me again"
@@ -9455,6 +9509,10 @@ msgstr "אל תשאלו אותי שוב"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Don't have FlowPad yet?"
 msgstr "עדיין אין לך FlowPad?"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Don’t show again"
+msgstr ""
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Don't show again until Flowpad restarts"
@@ -9468,6 +9526,7 @@ msgstr "הושלם"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -9479,6 +9538,10 @@ msgstr "הושלם"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Done"
 msgstr "בוצע"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Done — access given"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Done!"
@@ -9502,6 +9565,7 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Download"
 msgstr "הורד"
 
@@ -10494,7 +10558,7 @@ msgstr "הכול כבר מעודכן."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Everything required is set up."
-msgstr ""
+msgstr "כל מה שנדרש הוגדר."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -10660,7 +10724,7 @@ msgstr "פג תוקף אחרי"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Explain"
-msgstr ""
+msgstr "הסבר"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Explain the result"
@@ -11454,7 +11518,7 @@ msgstr "סיום ההגדרה של Flowpad"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Finish setup"
-msgstr ""
+msgstr "סיום ההגדרה"
 
 #: src/components/data-sources/source-attention.ts
 msgid "Finish setup, then press Verify."
@@ -11556,6 +11620,7 @@ msgstr "התאימו את תצוגת Atlas"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Fix"
 msgstr "תיקון"
 
@@ -11705,6 +11770,10 @@ msgstr ""
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad היא אפליקציית דסקטופ חינמית בקוד פתוח לעבודה על פרויקטים עם סוכני הקוד שלך. פתחו את הפרויקט הזה ו-FlowPad יגדיר אותו במחשב שלך."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is offline"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 msgstr ""
@@ -11849,6 +11918,7 @@ msgstr "תבנית"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
@@ -12119,6 +12189,10 @@ msgstr "Git"
 msgid "Git"
 msgstr "Git"
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Git access to {repo} is set. Open {file} again."
+msgstr ""
+
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr "שינויים בגיט"
@@ -12158,6 +12232,10 @@ msgstr "מאגר Git"
 
 #~ msgid "Git repository ready"
 #~ msgstr "מאגר Git מוכן"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Git request access"
+msgstr ""
 
 #~ msgid "Git setup cancelled"
 #~ msgstr "הגדרת Git בוטלה"
@@ -12428,8 +12506,8 @@ msgid "Guest"
 msgstr "אורח"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Guest does not grant access to the project."
-msgstr ""
+#~ msgid "Guest does not grant access to the project."
+#~ msgstr ""
 
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -13559,7 +13637,7 @@ msgstr ""
 
 #: src/components/assets/DependencyChips.tsx
 msgid "invalid"
-msgstr ""
+msgstr "לא תקין"
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "Invalid"
@@ -14242,6 +14320,7 @@ msgid "Learn about your data"
 msgstr "למד עוד על הנתונים שלך"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
@@ -14417,6 +14496,10 @@ msgid "Link copied to clipboard"
 msgstr "הקישור הועתק ללוח"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Link project to cloud"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link project to cloud to securely and privately manage your shared assets."
 msgstr ""
 
@@ -14497,6 +14580,7 @@ msgid "live"
 msgstr "חי"
 
 #: src/components/automations/BusStream.tsx
+#: src/components/footer/LiveSessionsChip.tsx
 msgid "Live"
 msgstr ""
 
@@ -14993,7 +15077,7 @@ msgstr "נתיב מקומי"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Locally"
-msgstr ""
+msgstr "במחשב הזה"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
@@ -15004,7 +15088,13 @@ msgid "locked after first message"
 msgstr "נעול לאחר ההודעה הראשונה"
 
 #: src/navigation/smart-ask.ts
+#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Log in"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Log in to read the message here — or open it in FlowPad."
 msgstr ""
 
 #~ msgid "Log mode"
@@ -15512,6 +15602,10 @@ msgstr ""
 msgid "Message Flowpad's own {title} account. Nothing to set up — link your phone once with a code."
 msgstr ""
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Message not found."
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
 msgstr "ההודעה לא נוספה לתור"
@@ -15633,7 +15727,7 @@ msgstr ""
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
-msgstr ""
+msgstr "חסר"
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
@@ -15981,7 +16075,7 @@ msgstr "נדרש עבור:"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Needed to run {projectName} on this computer."
-msgstr ""
+msgstr "נדרש כדי להריץ את {projectName} במחשב הזה."
 
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -16799,6 +16893,10 @@ msgstr ""
 msgid "No future run."
 msgstr ""
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "No Git access — opened the copy"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No GitHub repos linked"
 msgstr "אין ריפוזיטוריים של GitHub מקושרים"
@@ -17563,7 +17661,7 @@ msgstr "לא נמצא אשף בשם הזה."
 #. placeholder {0}: stage.wizard
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "No wizard named {0} is installed."
-msgstr ""
+msgstr "לא מותקן wizard בשם {0}."
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Nobody can log in to this sandbox, including its owner."
@@ -17714,7 +17812,7 @@ msgstr "עדיין לא הופעל"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "not found"
-msgstr ""
+msgstr "לא נמצא"
 
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -17733,7 +17831,7 @@ msgstr "לא נמצא"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "not installed"
-msgstr ""
+msgstr "לא מותקן"
 
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/funding-pill.ts
@@ -17746,7 +17844,11 @@ msgid "Not launched yet in this project"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Not linked to cloud"
+#~ msgid "Not linked to cloud"
+#~ msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Not linked to cloud — recipients get a copy. Click to link & track."
 msgstr ""
 
 #: src/components/assets/ProjectDependencyDialog.tsx
@@ -18110,7 +18212,7 @@ msgstr "אין מה לשמור"
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Nothing to set up."
-msgstr ""
+msgstr "אין מה להגדיר."
 
 #: src/components/git/RepoPicker.tsx
 msgid "Nothing to show for {owner}."
@@ -18327,7 +18429,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
-msgstr ""
+msgstr "במחשב הזה בלבד — אפשר לבטל בכל עת"
 
 #: src/components/account/settings-section.tsx
 #: src/i18n/pref-labels.ts
@@ -18463,6 +18565,7 @@ msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -18483,6 +18586,7 @@ msgstr ""
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open"
@@ -18807,6 +18911,7 @@ msgstr ""
 msgid "Open in Flowpad"
 msgstr ""
 
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "פתיחה ב-FlowPad"
@@ -18867,6 +18972,10 @@ msgstr "פתיחת דפדפן הידע"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Open link"
 msgstr "פתח קישור"
+
+#: src/components/footer/LiveSessionsChip.tsx
+msgid "Open live sessions"
+msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Open LLM Indexers"
@@ -19040,6 +19149,10 @@ msgstr ""
 msgid "Open the chat this session runs in"
 msgstr "לפתוח את הצ'אט שבו הסשן הזה רץ"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Open the copy"
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Open the data source"
 msgstr ""
@@ -19118,9 +19231,12 @@ msgstr ""
 
 #: src/components/conversation/ConversationAutomationChip.tsx
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/workers/WorkerToolbar.tsx
 msgid "Open the session"
 msgstr "פתח את הסשן"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open the session started from this message"
+msgstr ""
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Open the sign-in page"
@@ -19293,14 +19409,14 @@ msgstr "הפעולה נכשלה"
 #: src/components/assets/DependencyChips.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
-msgstr ""
+msgstr "אופציונלי"
 
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
-msgstr ""
+msgstr "אופציונלי"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -19312,7 +19428,7 @@ msgstr "אופציונלי — השאר ריק עבור בית"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional — skipped on this machine"
-msgstr ""
+msgstr "אופציונלי — דולג במחשב הזה"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -19332,6 +19448,10 @@ msgstr "הודעה לבעלים (אופציונלי)…"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Or copy an invite link"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "or download the message (.flowmsg)"
 msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -19553,7 +19673,7 @@ msgstr ""
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Packages"
-msgstr ""
+msgstr "חבילות"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -20005,6 +20125,7 @@ msgstr "הצמד — הוסף לספריית הפרומפטים"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 #: src/i18n/type-labels.ts
+#: src/pages/entry/MessageLanding.tsx
 #: src/types/ViewType.ts
 msgid "Plan"
 msgstr "תוכנית"
@@ -20053,6 +20174,10 @@ msgstr "השמע צליל כשסוכן ממתין לי"
 #: src/i18n/pref-labels.ts
 msgid "Plays each time an agentic process becomes ready for your input."
 msgstr "מושמע בכל פעם שתהליך סוכן מוכן לקלט שלך."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Please check the shared repo"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Please choose an image file"
@@ -20537,7 +20662,7 @@ msgstr "פרויקט נדרש"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Project requirements"
-msgstr ""
+msgstr "דרישות הפרויקט"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Project role"
@@ -20927,8 +21052,8 @@ msgid "Push & notify"
 msgstr "דחפו & הודיעו"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Push and share"
-msgstr "בצע push ושתף"
+#~ msgid "Push and share"
+#~ msgstr "בצע push ושתף"
 
 #~ msgid "Push failed"
 #~ msgstr "דחיפה נכשלה"
@@ -21087,7 +21212,7 @@ msgstr "קורא"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "reading {account}"
-msgstr ""
+msgstr "קורא את {account}"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 #~ msgid "Reading dependencies…"
@@ -21114,7 +21239,7 @@ msgstr "קריאה…"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "ready"
-msgstr ""
+msgstr "מוכן"
 
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
@@ -21256,12 +21381,16 @@ msgid "Recently edited items and chat sessions"
 msgstr "פריטים שנערכו לאחרונה ושיחות צ'אט"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Recipients are project members — they get a live link to the file in git."
-msgstr "הנמענים חברים בפרויקט — הם יקבלו קישור חי לקובץ ב-git."
+#~ msgid "Recipients are project members — they get a live link to the file in git."
+#~ msgstr "הנמענים חברים בפרויקט — הם יקבלו קישור חי לקובץ ב-git."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recipients get a copy."
 msgstr "הנמענים יקבלו עותק."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients with access to the repo open it from Git; everyone else gets a copy."
+msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -21634,7 +21763,7 @@ msgstr "הסרת סוכן מ־Vibe"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Remove it from the project — the deletion is staged in git"
-msgstr ""
+msgstr "להסיר מהפרויקט — המחיקה מוכנה לקומיט ב-git"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
@@ -22001,6 +22130,10 @@ msgstr "כתובת המאגר:"
 msgid "Request"
 msgstr ""
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Request access"
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Request status"
 msgstr "בקש עדכון"
@@ -22054,7 +22187,7 @@ msgstr "בקשות דרך השורש הזה ייכשלו עד שיישמר מפ�
 
 #: src/components/assets/DependencyChips.tsx
 msgid "required"
-msgstr ""
+msgstr "חובה"
 
 #: src/components/ask/AskItems.tsx
 #: src/components/assets/dependency-sources.tsx
@@ -22064,7 +22197,7 @@ msgstr ""
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
-msgstr ""
+msgstr "חובה"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "required — it will not work here until it is set up"
@@ -22072,7 +22205,7 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required — skipped on this machine"
-msgstr ""
+msgstr "חובה — דולג במחשב הזה"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
@@ -22616,7 +22749,7 @@ msgstr ""
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Run again"
-msgstr ""
+msgstr "להריץ שוב"
 
 #: src/components/automations/RunDetail.tsx
 msgid "Run again with this event"
@@ -23616,7 +23749,7 @@ msgstr "בחרו את {label}"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Select {name}"
-msgstr ""
+msgstr "בחר את {name}"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
@@ -23911,6 +24044,10 @@ msgstr "נשלח יחד"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Sent to {to}"
+msgstr ""
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Sent to the sharer"
 msgstr ""
 
 #: src/components/install/InstallButton.tsx
@@ -24262,7 +24399,7 @@ msgstr "מגדירים את הכול"
 #. placeholder {0}: now.label
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Setting up {0}"
-msgstr ""
+msgstr "מגדיר את {0}"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
@@ -24282,7 +24419,7 @@ msgstr "הכנת הפרויקט שלך…"
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Setting up…"
-msgstr ""
+msgstr "מגדיר…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
@@ -24309,11 +24446,11 @@ msgstr "הגדרה"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup complete"
-msgstr ""
+msgstr "ההגדרה הושלמה"
 
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup complete ({summary})"
-msgstr ""
+msgstr "ההגדרה הושלמה ({summary})"
 
 #~ msgid "Setup could not start"
 #~ msgstr ""
@@ -24415,6 +24552,10 @@ msgstr ""
 msgid "Share anyway"
 msgstr "שתפו בכל זאת"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share as is"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -24477,8 +24618,8 @@ msgstr "שתף לשיחה"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Share using Git origin"
-msgstr "שיתוף באמצעות Git origin"
+#~ msgid "Share using Git origin"
+#~ msgstr "שיתוף באמצעות Git origin"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Share with team"
@@ -24856,6 +24997,7 @@ msgstr "תצוגת גרף Sigma"
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "היכנסו"
 
@@ -25204,6 +25346,7 @@ msgstr "דלג על כל הודעות הרשאה (--dangerously-skip-permissions
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "דילוג על אישורים ובידוד (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/ask/AskSkipButton.tsx
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "Skip for now"
 msgstr "לדלג בינתיים"
@@ -25217,7 +25360,7 @@ msgstr "דילוג על בדיקת ההרשאות ההתחלתית בעת ההפ
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skip it…"
-msgstr ""
+msgstr "לדלג…"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "Skip on this machine only — undo any time"
@@ -25236,9 +25379,13 @@ msgstr ""
 msgid "Skipped"
 msgstr ""
 
+#: src/components/ask/AskSkipButton.tsx
+msgid "Skipped — setup goes on without it."
+msgstr "דילגנו — ההגדרה ממשיכה בלי זה."
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skipped on this machine"
-msgstr ""
+msgstr "דולג במחשב הזה"
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"
@@ -25329,7 +25476,7 @@ msgstr "לחלק מהפריסות יש שגיאות"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Some of the selected cannot be removed from the project"
-msgstr ""
+msgstr "חלק מהפריטים שנבחרו לא ניתנים להסרה מהפרויקט"
 
 #: src/components/automations/TestPanel.tsx
 msgid "Some things need attention."
@@ -25342,6 +25489,7 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Someone"
 msgstr "מישהו"
 
@@ -25868,7 +26016,7 @@ msgstr "עצור"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Stopped"
-msgstr ""
+msgstr "נעצר"
 
 #~ msgid "stopped — killed after {0}s"
 #~ msgstr ""
@@ -26407,6 +26555,10 @@ msgstr ""
 msgid "Teams inside this team"
 msgstr ""
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Tell sender"
+msgstr ""
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Temperature ≤"
 msgstr "טמפרטורה ≤"
@@ -26766,7 +26918,7 @@ msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
 msgid "The fixer could not repair this setup. The step above says what it found."
-msgstr ""
+msgstr "הכלי לתיקון לא הצליח לתקן את ההגדרה. השלב שלמעלה מפרט מה הוא מצא."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "The fixer could not start."
@@ -26992,6 +27144,10 @@ msgstr "הספק דחה את הטוקן השמור."
 msgid "The query failed"
 msgstr ""
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "The receiver"
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
 msgstr "הנמען יראה פרומפט לאישור."
@@ -27104,6 +27260,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "The upload didn't complete — ask {senderName} to resend."
+msgstr ""
 
 #~ msgid "The value could not be written."
 #~ msgstr ""
@@ -27286,8 +27446,8 @@ msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
-msgstr "לא ניתן להשתף את הנכס הזה עם Git. יש לכבות את שיתוף Git כדי לשלוח עותק."
+#~ msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
+#~ msgstr "לא ניתן להשתף את הנכס הזה עם Git. יש לכבות את שיתוף Git כדי לשלוח עותק."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
@@ -27366,6 +27526,10 @@ msgstr ""
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."
 msgstr "שיחה זו כבר אינה קיימת או אינה זמינה."
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "This conversation's project is not a checkout of the shared repo"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This could not be prepared for download."
@@ -27609,6 +27773,14 @@ msgstr ""
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 msgstr "זה מוחק את ההודעה וכל הנתונים שלה בצורה קבועה לכולם בשיחה. לא ניתן לבטל זאת."
 
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק ({path}). לא ניתן לבטל את הפעולה."
+
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+msgstr "הפעולה תמחק לצמיתות את הפרויקט ואת כל מה שבו — כל הרשומות המאונדקסות והצאצאים שלהן, ואת תיקיית הפרויקט בדיסק. לא ניתן לבטל את הפעולה."
+
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
 msgstr "פעולה זו מוחקת את הקובץ מהדיסק באופן קבוע. לא ניתן לבטל אותה."
@@ -27689,7 +27861,7 @@ msgstr "עדיין לא הוגדרו סודות לפרויקט זה."
 
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "This project is no longer on this computer. Open it again from the project that uses it."
-msgstr ""
+msgstr "הפרויקט הזה כבר לא נמצא במחשב הזה. פתח אותו שוב מהפרויקט שמשתמש בו."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "This project is now available in the cloud."
@@ -28623,7 +28795,7 @@ msgstr ""
 #: src/components/assets/DependencyChips.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "unknown"
-msgstr ""
+msgstr "לא ידוע"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -28698,7 +28870,7 @@ msgstr "שינויים שלא נדחפו"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "unreachable"
-msgstr ""
+msgstr "לא נגיש"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
@@ -28761,8 +28933,8 @@ msgid "Untitled task"
 msgstr "משימה ללא כותרת"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Untracked sharing"
-msgstr ""
+#~ msgid "Untracked sharing"
+#~ msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"
@@ -29044,7 +29216,7 @@ msgstr "בשימוש על ידי"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Used by: {usedBy}"
-msgstr ""
+msgstr "בשימוש על ידי: {usedBy}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used in transcript"
@@ -29762,8 +29934,8 @@ msgid "What is an optional package?"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "What is Git sharing?"
-msgstr "מה זה שיתוף Git?"
+#~ msgid "What is Git sharing?"
+#~ msgstr "מה זה שיתוף Git?"
 
 #: src/components/voice/CallControls.tsx
 msgid "What is the call for? (optional)"
@@ -30182,7 +30354,6 @@ msgstr "עובד…"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -30403,6 +30574,14 @@ msgstr "עדיין אינכם משויכים לארגון. ארגונים מוג
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "אין לך הרשאה לפעולה זו. יש לפנות למנהל המערכת אם זה נראה שגוי."
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "You don't have this repo yet."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You have a message"
+msgstr ""
+
 #: src/pages/entry/entry-shell.tsx
 msgid "You have access to this {label}."
 msgstr "יש לך גישה לפריט הזה."
@@ -30416,6 +30595,10 @@ msgstr "אין לך תקציב שאפשר לחלק."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
+msgstr ""
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "You have this repo in more than one project. Open it in:"
 msgstr ""
 
 #: src/components/open-project-component/use-open-project.ts

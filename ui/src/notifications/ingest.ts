@@ -30,12 +30,37 @@ interface HubClientErrorMsg {
   suppressed_count?: number;
 }
 
+// What holds each cloud toast up: the failed requests it reports ("GET /path") and, for
+// the shared ids, the connection slot. A toast goes away only once EVERY holder got an
+// answer from the hub — a request that never did keeps its toast up.
+const CONNECTION_HOLDER = 'connection';
+const toastHolders = new Map<string, Set<string>>();
+
+function hold(toastId: string, holder: string): void {
+  const holders = toastHolders.get(toastId) ?? new Set<string>();
+  holders.add(holder);
+  toastHolders.set(toastId, holders);
+}
+
+function release(holder: string): void {
+  for (const [toastId, holders] of toastHolders) {
+    if (!holders.delete(holder) || holders.size > 0) continue;
+    toastHolders.delete(toastId);
+    dismiss(toastId);
+  }
+}
+
+function handleHubClientRecovered(msg: { method?: string; path?: string }): void {
+  release(`${String(msg.method ?? '').trim()} ${String(msg.path ?? '').trim()}`);
+}
+
 function handleHubClientError(msg: HubClientErrorMsg): void {
   const method = String(msg.method ?? '').trim();
   const path = String(msg.path ?? '').trim();
   const statusCode = Number(msg.status_code ?? 0);
   const rawMessage = String(msg.message ?? '');
   const suppressed = Number(msg.suppressed_count ?? 0);
+  const request = `${method} ${path}`;
 
   if (suppressed > 0) {
     notify.warning({
@@ -60,6 +85,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
       actions: [detail],
     });
+    hold('cloud-unreachable', request);
   } else if (statusCode === 401) {
     // A 401 while we were never authenticated (or after an explicit logout) is
     // the *normal* logged-out state — not an error. The stream inbox/conversation
@@ -75,6 +101,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: t`Please sign in again to keep using cloud features.`,
       actions: [{ label: t`Sign in`, command: 'cloud.signin' }, detail],
     });
+    hold('cloud-auth-expired', request);
   } else if (statusCode === 403) {
     notify.error({
       id: 'cloud-access-denied',
@@ -82,6 +109,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: t`You don't have permission for this action. Contact your admin if this seems wrong.`,
       actions: [detail],
     });
+    hold('cloud-access-denied', request);
   } else if (statusCode === 404) {
     notify.warning({
       id: 'cloud-not-found',
@@ -89,6 +117,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: t`We couldn't find what you were looking for on the cloud.`,
       actions: [detail],
     });
+    hold('cloud-not-found', request);
   } else if (statusCode >= 500) {
     notify.error({
       id: 'cloud-server-error',
@@ -96,6 +125,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: t`The cloud service returned an error. Please try again in a moment.`,
       actions: [detail],
     });
+    hold('cloud-server-error', request);
   } else if (statusCode >= 400) {
     // Benign rejection: inviting someone who already accepted means the desired
     // state (they're a member) already holds, and the invite dialog surfaces its
@@ -110,6 +140,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: rawMessage || `The cloud rejected the request (${statusCode}).`,
       actions: [detail],
     });
+    hold('cloud-request-rejected', request);
   }
 }
 
@@ -132,6 +163,7 @@ function handleCloudConnectionStatus(): void {
       title: t`Cloud is not available`,
       message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
     });
+    hold('cloud-unreachable', CONNECTION_HOLDER);
   } else if (status === 'auth_rejected') {
     notify.error({
       id: 'cloud-auth-expired',
@@ -139,8 +171,10 @@ function handleCloudConnectionStatus(): void {
       message: t`Please sign in again to keep using cloud features.`,
       actions: [{ label: t`Sign in`, command: 'cloud.signin' }],
     });
+    hold('cloud-auth-expired', CONNECTION_HOLDER);
   } else if (status === 'connected' || status === 'verified') {
-    dismiss('cloud-unreachable');
+    // The hub answered the connection; a toast a failed REQUEST also holds stays up.
+    release(CONNECTION_HOLDER);
   }
 }
 
@@ -295,6 +329,7 @@ export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
   dataContext.on(ContextEventType.CONTEXT_CHANGED, flushBootstrapNotice);
   cloudManager.on('hub_client_error', handleHubClientError);
+  cloudManager.on('hub_client_recovered', handleHubClientRecovered);
   cloudManager.on('connection_status_changed', handleCloudConnectionStatus);
   connectionManager.on('on_flow_data', onFlowDataEvent);
   const offFlowMessages = subscribeToEntityOps('flow_message', onFlowMessageOp, { ops: ['update', 'create'] });
@@ -316,6 +351,7 @@ export function initNotificationIngest(): () => void {
   return () => {
     dataContext.off(ContextEventType.CONTEXT_CHANGED, flushBootstrapNotice);
     cloudManager.off('hub_client_error', handleHubClientError);
+    cloudManager.off('hub_client_recovered', handleHubClientRecovered);
     cloudManager.off('connection_status_changed', handleCloudConnectionStatus);
     connectionManager.off('on_flow_data', onFlowDataEvent);
     offFlowMessages();

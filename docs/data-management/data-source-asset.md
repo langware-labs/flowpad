@@ -41,7 +41,8 @@ loads the driver. Only a source that owes a setup (`setup_owed`) holds its proje
 (`docs/dependency-lifecycle.md`). One owner
 watches one account once: `save()` of a new source for an account its owner already watches adopts
 that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
-config merged onto it, its cursor kept — instead of minting a twin. `owner=` takes the entity itself
+config merged onto it, its cursor kept — instead of minting a twin. Items are the same: `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) looks a row up by its natural key, so a re-ingest updates instead of duplicating.
+`gitignored` (default true) keeps the source's reflected/copied DATA out of git (`keep_out_of_git`, `flow_sdk/ingest/reflect.py`); `data_source.json` itself is a committed project asset. `owner=` takes the entity itself
 (an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
 
@@ -347,17 +348,7 @@ never a frontend table.
 
 ## Runtime
 
-There is one runtime, `source`: the folder's `source.py`, loaded in the backend process by
-`flow_sdk/ingest/source_registry.py`. The folder is imported as a package named for its
-content (`flowpad_source_<name>_<sha8>`), so helper modules import relatively and a
-changed folder loads as a new module. The loader refuses, as a `load_error` shown on the
-spec row: a folder with no `source.py`, a module defining other than exactly one `Source`
-subclass, a class whose `provider` is not the manifest's `name`, an import error, and a
-name a shipped source owns.
-
-The shipped folders load on the registry's first lookup. An authored folder in a
-project loads on first use — its `DataSource` is saved or synced — through its
-`DataDriver` row.
+There is one runtime, `source`: the folder's `source.py`. How it loads: [data-sources.md](data-sources.md) (the loader paragraph).
 
 The extractor (`derive_data_driver`) stamps `runtime: source` on the row. A folder
 still carrying the retired `fetch.py` or `FETCH.md` is reported by the scan (never indexed) with

@@ -41,7 +41,7 @@ Standard UUID v4. The default for dynamically created entities.
 | **Enum**       | `IdentifierType.UUID`                                                 |
 | **Pattern**    | `[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}` |
 | **Example**    | `user-550e8400-e29b-41d4-a716-446655440000`                           |
-| **Validation** | `is_valid_uuid4()` (Python), `isValidUUIDv4()` (TS)                   |
+| **Validation** | `is_valid_entity_id()` (Python), `isValidEntityId()` (TS) — lowercase v4/v5 |
 
 Entities that don't specify an `id` on creation get a random UUID v4 assigned automatically (`DBBaseRecord.__init__`).
 

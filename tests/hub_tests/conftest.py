@@ -146,9 +146,11 @@ def _reset_hub_error_reporter():
 
     hub_error_reporter._timestamps.clear()
     hub_error_reporter._suppressed_in_window = 0
+    hub_error_reporter._failing.clear()
     yield
     hub_error_reporter._timestamps.clear()
     hub_error_reporter._suppressed_in_window = 0
+    hub_error_reporter._failing.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -304,9 +306,7 @@ async def bob_token(hub_base_url) -> str:
         pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
 
     async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.post(
-            f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw}
-        )
+        response = await client.post(f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw})
         response.raise_for_status()
         data = response.json()["data"]
     return data.get("api_key") or data["token"]

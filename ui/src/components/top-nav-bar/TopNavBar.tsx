@@ -13,7 +13,6 @@ import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { AppButton } from './AppButton';
 import { NavIconButton } from './NavIconButton';
-import { NewChatButton } from './NewChatButton';
 import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
@@ -130,11 +129,6 @@ export function TopNavBar() {
         />
       )}
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
-      {/* Quick launch, last in the row: unlike the actions beside it, it acts
-          on nothing the bar is addressing — it starts somewhere new. One click,
-          no picker; the harness is the last one used and the mode is the
-          current one. */}
-      <NewChatButton />
     </div>
   );
 }

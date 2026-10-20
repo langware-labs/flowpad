@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import type { OpenShareOutcome } from './use-open-git-share';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { isHubRepoOrigin, projectSourceLabel } from '@sdk/models/FSOrigin';
@@ -13,7 +14,8 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { notify } from '@src/notifications';
-import { buildDockPointer, iconForEntity } from '../EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
 import { isCloudOnlyProject, ProjectInstallAction } from './ProjectInstallAction';
 import { ProjectPreview } from './ProjectPreview';
@@ -185,7 +187,7 @@ interface AssetReviewDialogProps {
   project?: ProjectReviewRef;
   /** Why opening the clicked attachment just failed (a 1-click git open), shown
    *  inline beside its Retry. */
-  initialError?: string | null;
+  initialOutcome?: OpenShareOutcome | null;
 }
 
 /**
@@ -248,7 +250,7 @@ function AttachmentReviewDialog({
   attachments,
   initialAttachmentId,
   attachmentProjectId,
-  initialError,
+  initialOutcome,
 }: AssetReviewDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -523,7 +525,7 @@ function AttachmentReviewDialog({
             <AssetInstallActions
               attachment={selected}
               conversationProjectId={attachmentProjectId}
-              initialError={selected.id === initialAttachmentId ? initialError : null}
+              initialOutcome={selected.id === initialAttachmentId ? initialOutcome : null}
             />
           ) : (
             <>

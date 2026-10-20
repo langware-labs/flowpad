@@ -1,5 +1,6 @@
 """SQLAlchemy/SQLite database driver for FlowPad testing."""
 
+import functools
 import json
 
 DEFAULT_BROWSE_LIMIT = 20
@@ -20,6 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk._compat import UTC
+from flow_sdk.datasets.query import Many, field_of
 from flow_sdk.db.drivers.db_base_record import (
     BuiltinEntityType,
     DBBaseRecord,
@@ -65,6 +67,66 @@ _standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
     "_sqlite_driver_standalone_session", default=None
 )
 _AFTER_COMMIT_KEY = "flow_after_commit"
+
+# One segment of a field path. A path is pasted into SQL text (``json_extract`` takes its path as a
+# literal for index matching), so every segment is checked against this before it gets there.
+_PATH_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@functools.lru_cache(maxsize=1024)   # a small closed set of paths, checked once each
+def json_path_sql(field_path: str, column: str = "data") -> str:
+    """``json_extract(<column>, '$.a.b')`` for the dotted ``field_path`` — validated, never pasted raw.
+
+    Raises ValueError on any segment that is not a plain identifier, which closes the hole a field
+    name like ``x') OR 1=1 --`` used to open."""
+    if not isinstance(field_path, str) or not field_path:
+        raise ValueError(f"Invalid field path: {field_path!r}")
+    for segment in field_path.split("."):
+        if not _PATH_SEGMENT.match(segment):
+            raise ValueError(f"Invalid field path: {field_path!r}")
+    return f"json_extract({column}, '$.{field_path}')"
+
+
+# Hand-written per-type indexes now declared on their ``TypeInfo.indexes``.
+_RETIRED_ENTITY_INDEXES = (
+    "ix_entities_source_item_origin_v3",
+    "ix_entities_source_item_by_source_created",
+    "ix_entities_position_by_source",
+    "ix_entities_source_change_by_source_created",
+    "ix_entities_message_thread_natural_key",
+    "ix_entities_message_thread_natural_key_v2",
+    "ix_entities_message_thread_natural_key_v3",
+)
+#: A declared index's name; the optional ``_<n>`` matches the earlier position-numbered names, so they drop too.
+_DECLARED_INDEX_NAME = re.compile(r"^ix_entities_(?P<type>[A-Za-z0-9_]+?)(?:_\d+)?_(?P<hash>[0-9a-f]{8})$")
+
+
+def declared_index_name(type_name: str, paths: Sequence[str]) -> str:
+    """The index name the driver builds for ``paths`` declared on ``type_name``'s ``TypeInfo.indexes``:
+    named by what it indexes, so reordering the declarations renames nothing."""
+    import hashlib  # noqa: PLC0415
+
+    return f"ix_entities_{type_name}_{hashlib.sha1(','.join(paths).encode()).hexdigest()[:8]}"
+
+
+def declared_index_sql(registry: Any, column_fields: Any) -> dict[str, str]:
+    """``{index name: CREATE INDEX sql}`` for every ``TypeInfo.indexes`` declaration in ``registry``."""
+    out: dict[str, str] = {}
+    for type_name in registry.get_all_types():
+        info = registry.get(type_name)
+        declared = getattr(info, "indexes", ()) or ()
+        if not declared:
+            continue
+        if not _PATH_SEGMENT.match(type_name):
+            raise ValueError(f"Invalid type name for a declared index: {type_name!r}")
+        for paths in declared:
+            exprs = [p if p in column_fields else json_path_sql(p) for p in paths]
+            name = declared_index_name(type_name, paths)
+            out[name] = (
+                f"CREATE INDEX IF NOT EXISTS {name} ON entities({', '.join(exprs)}) "
+                f"WHERE type = '{type_name}'"
+            )
+    return out
 
 
 async def _run_commit_callbacks(session: AsyncSession) -> None:
@@ -115,14 +177,20 @@ class FtsEntry:
         """Build the entry from the ROW — the other sanctioned constructor, for a
         row-only type (``db_only``) that has no ``FSRecord`` shadow to read from.
         Same four weighted columns; ``content`` is ``TypeInfo.fts_content``."""
-        from flow_sdk.fs_store.serializer.record import fts_content  # noqa: PLC0415
+        from flow_sdk.fs_store.serializer.record import (  # noqa: PLC0415
+            FTS_WEIGHT_DESCRIPTION,
+            FTS_WEIGHT_NAME,
+            FTS_WEIGHT_TITLE,
+            fts_content,
+            fts_text,
+        )
 
         return cls(
             entity_id=str(entity.id),
             entity_type=entity.get_type(),
-            name=getattr(entity, "name", None) or None,
-            title=getattr(entity, "title", None) or None,
-            description=getattr(entity, "description", None) or None,
+            name=fts_text(entity, info, FTS_WEIGHT_NAME) or None,
+            title=fts_text(entity, info, FTS_WEIGHT_TITLE) or None,
+            description=fts_text(entity, info, FTS_WEIGHT_DESCRIPTION) or None,
             content=fts_content(entity, info) or None,
         )
 
@@ -506,23 +574,6 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
-        # Partial expression index on a SourceItem's natural key (``SOURCE_ITEM.natural_key``).
-        # Ingestion resolves every record by its origin rather than by a derived id, and does it
-        # on EVERY poll to consult the digest gate — the read that is supposed to cost one indexed
-        # lookup and nothing else. These are JSON fields, not columns, so without this the gate
-        # degrades to a full scan of the type.
-        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_source_item_natural_key_v2"))
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_origin_v3 "
-                "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.origin_kind'), "
-                "json_extract(data, '$.origin_namespace'), "
-                "json_extract(data, '$.origin_key')) "
-                "WHERE type = 'source_item'"
-            )
-        )
-
         # Identity for a source-backed asset is resolved by ORIGIN, not by a
         # derived id — `reflect._find_by_origin` asks every file-backed type
         # whether it holds this handle, on every observed ref. There is no
@@ -543,36 +594,7 @@ class SQLiteDBDriver(DBDriver):
         )
 
         await conn.execute(text("DROP INDEX IF EXISTS ix_entities_cursor_by_source"))
-
-        # A consumer drains a source in INGEST order — `(created_date, id)`, both real
-        # columns, so ORDER BY and LIMIT push to SQL. Without this the drain is a type scan
-        # per page; with `occurred_at` (a JSON field) it could not push at all.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_by_source_created "
-                "ON entities(json_extract(data, '$.data_source_id'), created_date, id) "
-                "WHERE type = 'source_item'"
-            )
-        )
-
-        # The position row is found by `(consumer, data_source_id)` on every listen() start.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_position_by_source "
-                "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.consumer')) "
-                "WHERE type = 'consumer_position'"
-            )
-        )
-
-        # The change log a folder consumer drains, in the same ingest order.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_change_by_source_created "
-                "ON entities(json_extract(data, '$.data_source_id'), created_date, id) "
-                "WHERE type = 'source_change'"
-            )
-        )
+        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_source_item_natural_key_v2"))
 
         # A reference FlowMessage keys on the SourceItem it renders. The
         # projection resolves "is this item already placed" by this field on
@@ -585,43 +607,6 @@ class SQLiteDBDriver(DBDriver):
                 "CREATE INDEX IF NOT EXISTS ix_entities_fm_source_item "
                 "ON entities(json_extract(data, '$.source_item_id')) "
                 "WHERE type = 'flow_message'"
-            )
-        )
-
-        # A MessageThread's natural key. The projection resolves every ingested
-        # message's thread by (channel, thread_key) — a lookup, not a derived
-        # id — and does it once per projected item.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key "
-                "ON entities(json_extract(data, '$.channel'), "
-                "json_extract(data, '$.thread_key')) "
-                "WHERE type = 'message_thread'"
-            )
-        )
-        # The same key with its owner. `_v2` rather than a redefinition, for the
-        # reason the SourceItem index carries one: `IF NOT EXISTS` never alters
-        # an index that already exists under a name. v1 stays — the projection's
-        # legacy fallback (`owner IS NULL`) and every pre-owner caller use it.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v2 "
-                "ON entities(json_extract(data, '$.channel'), "
-                "json_extract(data, '$.thread_key'), "
-                "json_extract(data, '$.owner')) "
-                "WHERE type = 'message_thread'"
-            )
-        )
-        # ...and its account: the source that read it (`MessageThread.data_source_id`).
-        # `_v3` for the same reason; v1/v2 stay for the pre-account adoption lookup.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v3 "
-                "ON entities(json_extract(data, '$.channel'), "
-                "json_extract(data, '$.thread_key'), "
-                "json_extract(data, '$.owner'), "
-                "json_extract(data, '$.data_source_id')) "
-                "WHERE type = 'message_thread'"
             )
         )
 
@@ -643,6 +628,37 @@ class SQLiteDBDriver(DBDriver):
                 "WHERE json_extract(data, '$.asset_ref') IS NOT NULL"
             )
         )
+
+        # Per-type indexes are declared on ``TypeInfo.indexes``; these are the
+        # hand-written names they replaced. Kept as drops so an upgraded DB does
+        # not carry both. (Cross-type and value-partial indexes above stay here:
+        # a ``type = '<t>'`` declaration cannot express them.)
+        for retired in _RETIRED_ENTITY_INDEXES:
+            await conn.execute(text(f"DROP INDEX IF EXISTS {retired}"))
+        await self._sync_declared_indexes(conn)
+
+    async def _sync_declared_indexes(self, conn) -> None:
+        """Create every ``TypeInfo.indexes`` declaration; drop the ones no longer declared.
+
+        Names are deterministic (``ix_entities_<type>_<n>_<hash of the paths>``) so a re-run
+        is a no-op, and a changed declaration lands under a new name — the old one is then
+        not desired and is dropped. Only indexes of a REGISTERED type are ever dropped: a
+        type this process does not know about keeps whatever it built."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        desired = declared_index_sql(SchemaRegistry, self._COLUMN_FIELDS)
+        registered = set(SchemaRegistry.get_all_types())
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_entities_%'")
+        )
+        existing = {row[0] for row in result.fetchall()}
+        for name in sorted(existing - set(desired)):
+            match = _DECLARED_INDEX_NAME.match(name)
+            if match and match.group("type") in registered:
+                await conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
+        for name, sql in desired.items():
+            if name not in existing:
+                await conn.execute(text(sql))
 
     async def close(self):
         """Close database connection and ensure worker threads stop."""
@@ -1895,7 +1911,7 @@ class SQLiteDBDriver(DBDriver):
                 result = await session.execute(
                     select(EntitySchema).where(
                         EntitySchema.type == entity_type,
-                        text(f"json_extract(data, '$.{property_key}') = :value").bindparams(value=property_value),
+                        text(f"{json_path_sql(property_key)} = :value").bindparams(value=property_value),
                     )
                 )
 
@@ -1993,14 +2009,13 @@ class SQLiteDBDriver(DBDriver):
             query = query.where(scope_cond)
 
         # Push ORDER BY for column-level sort fields
-        sql_order, needs_python_sort = self._build_sql_order_by(entities_filter.order_by)
+        sql_order = self._build_sql_order_by(entities_filter.order_by)
         if sql_order:
             query = query.order_by(*sql_order)
 
-        # Push LIMIT/OFFSET to SQL only when the full filter+sort is handled in SQL
-        # (if Python post-filter or Python sort is needed, pagination must happen after).
-        can_push_pagination = fully_sql and not needs_python_sort
-        if can_push_pagination:
+        # Push LIMIT/OFFSET to SQL only when the whole filter runs in SQL (a Python
+        # post-filter must see every row before pagination). Sorting always runs in SQL.
+        if fully_sql:
             if entities_filter.offset:
                 query = query.offset(entities_filter.offset)
             if entities_filter.limit:
@@ -2014,12 +2029,8 @@ class SQLiteDBDriver(DBDriver):
         if not fully_sql:
             entities = [e for e in entities if self._entity_matches_filter(e, entities_filter)]
 
-        # Python sort — only for sort fields that live in the JSON blob
-        if needs_python_sort:
-            entities = self._apply_sorting(entities, entities_filter.order_by)
-
         # Pagination — only when not already applied in SQL
-        if not can_push_pagination:
+        if not fully_sql:
             if entities_filter.offset:
                 entities = entities[entities_filter.offset :]
             if entities_filter.limit:
@@ -2161,7 +2172,7 @@ class SQLiteDBDriver(DBDriver):
 
     def _json_op_to_sql(self, field_name: str, op: QueryOp, value: Any, n: int):
         """Translate a JSON-blob field leaf to a SQLAlchemy text condition."""
-        path = f"json_extract(data, '$.{field_name}')"
+        path = json_path_sql(field_name)
         pname = f"p{n}"
         # SQLite stores JSON booleans as integers (1/0); convert before binding.
         # String "true"/"false" can arrive from URL query params.
@@ -2200,22 +2211,18 @@ class SQLiteDBDriver(DBDriver):
             return text(f"{path} NOT IN ({placeholders})").bindparams(**params)
         return None
 
-    def _build_sql_order_by(self, order_by) -> tuple:
-        """Return (sql_clauses, needs_python_sort).
-
-        Pushes column-field sorts to SQL ORDER BY; leaves JSON-field sorts for Python.
-        If any sort field lives in the JSON blob, needs_python_sort=True and Python
-        _apply_sorting() will run on the result (overriding the SQL order).
-        """
+    def _build_sql_order_by(self, order_by) -> list:
+        """The SQL ORDER BY clauses: column fields as columns, JSON-blob fields (dotted paths
+        included) as validated ``json_extract`` expressions."""
         if not order_by:
-            return [], False
+            return []
 
         if isinstance(order_by, dict):
             order_by = [order_by]
         elif isinstance(order_by, str):
             order_by = [{order_by: "asc"}]
 
-        sql_clauses, needs_python = [], False
+        sql_clauses = []
         for spec in order_by:
             if isinstance(spec, str):
                 spec = {spec.lstrip("-"): "desc" if spec.startswith("-") else "asc"}
@@ -2225,8 +2232,12 @@ class SQLiteDBDriver(DBDriver):
                         col = getattr(EntitySchema, field)
                         sql_clauses.append(desc(col) if direction == "desc" else asc(col))
                     else:
-                        needs_python = True
-        return sql_clauses, needs_python
+                        # A JSON field (dotted paths included) sorts in SQL too, so LIMIT/OFFSET
+                        # stay in SQL. NULLs land first on ASC and last on DESC — the same place
+                        # the Python ``_sort_key`` puts them.
+                        path = text(json_path_sql(field))
+                        sql_clauses.append(desc(path) if direction == "desc" else asc(path))
+        return sql_clauses
 
     # ==================== Relationship CRUD ====================
 
@@ -2591,22 +2602,9 @@ class SQLiteDBDriver(DBDriver):
 
     @staticmethod
     def _sort_key(value):
-        """Comparable key that never compares a missing value against a real one.
-
-        Used by ``_apply_sorting`` (the Python fallback for JSON-blob sort fields)
-        AND by the child ordering that delegates to it — one rule, one place.
-
-        Bucket 0 = missing, so NULLs sort FIRST on ascending — the same place
-        SQLite's ``ORDER BY ... ASC`` puts them, so ordering children in Python
-        can't disagree with the SQL path.
-
-        Not reusing ``_apply_sorting``: its key is ``getattr(e, f, "") or ""``,
-        which coerces a missing value to ``""`` and then raises comparing ``str``
-        to ``datetime``. Children are ordered by ``created_date``, so that would
-        be a live hazard here. (Consolidating the two sorters is worth doing, but
-        it changes a helper shared with the main query path — left alone
-        deliberately rather than folded into this change.)
-        """
+        """Comparable key for the Python ordering of child values (entity sorts run in SQL):
+        a missing value sorts FIRST ascending, where SQLite's ``ORDER BY ... ASC`` puts NULLs,
+        and never compares against a real one."""
         return (0, "") if value is None else (1, value)
 
     def _sort_children(self, children: List[EntityChild], order_by) -> List[EntityChild]:
@@ -2838,7 +2836,7 @@ class SQLiteDBDriver(DBDriver):
                 result = await session.execute(
                     select(EntitySchema).where(
                         EntitySchema.type == entity.get_type(),
-                        text(f"json_extract(data, '$.{field}') = :value").bindparams(value=str(field_value)),
+                        text(f"{json_path_sql(field)} = :value").bindparams(value=str(field_value)),
                     )
                 )
 
@@ -2886,7 +2884,7 @@ class SQLiteDBDriver(DBDriver):
                     select(EntitySchema).where(
                         EntitySchema.type == entity.get_type(),
                         EntitySchema.id != entity.id,
-                        text(f"json_extract(data, '$.{field}') = :value").bindparams(value=str(field_value)),
+                        text(f"{json_path_sql(field)} = :value").bindparams(value=str(field_value)),
                     )
                 )
 
@@ -3271,7 +3269,9 @@ class SQLiteDBDriver(DBDriver):
         if expression.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
             if not expression.operands:
                 return False
-            attr_value = attributes.get(expression.operands[0])
+            attr_value = field_of(attributes, expression.operands[0])
+            if isinstance(attr_value, Many):
+                attr_value = attr_value or None
             return attr_value is None if expression.op == QueryOp.IS_NULL else attr_value is not None
 
         if len(expression.operands) < 2:
@@ -3283,7 +3283,7 @@ class SQLiteDBDriver(DBDriver):
         # Handle PROP expression
         if isinstance(operand2, ExpressionNode) and operand2.op == QueryOp.PROP:
             prop_name = operand2.operands[0]
-            prop_value = attributes.get(prop_name)
+            prop_value = field_of(attributes, prop_name)
             if prop_value is None:
                 return False
             if expression.op == QueryOp.IN:
@@ -3293,9 +3293,15 @@ class SQLiteDBDriver(DBDriver):
             return False
 
         attr_name = operand1
-        target_value = operand2
-        attr_value = attributes.get(attr_name)
+        attr_value = field_of(attributes, attr_name)
+        if isinstance(attr_value, Many):
+            # A ``*`` step: the test passes when any one of the values does.
+            return any(self._compare_leaf(expression.op, attr_name, v, operand2) for v in attr_value)
+        return self._compare_leaf(expression.op, attr_name, attr_value, operand2)
 
+    @staticmethod
+    def _compare_leaf(op: QueryOp, attr_name: Any, attr_value: Any, target_value: Any) -> bool:
+        """One leaf comparison of an entity value against the query's value."""
         if attr_value is None:
             if attr_name in ["is_child", "is_final"] and isinstance(target_value, bool):
                 attr_value = False
@@ -3318,23 +3324,23 @@ class SQLiteDBDriver(DBDriver):
             elif target_value.lower() == "false":
                 target_value = False
 
-        if expression.op == QueryOp.EQ:
+        if op == QueryOp.EQ:
             return attr_value == target_value
-        elif expression.op == QueryOp.NE:
+        elif op == QueryOp.NE:
             return attr_value != target_value
-        elif expression.op == QueryOp.GT:
+        elif op == QueryOp.GT:
             return attr_value > target_value
-        elif expression.op == QueryOp.GE:
+        elif op == QueryOp.GE:
             return attr_value >= target_value
-        elif expression.op == QueryOp.LT:
+        elif op == QueryOp.LT:
             return attr_value < target_value
-        elif expression.op == QueryOp.LE:
+        elif op == QueryOp.LE:
             return attr_value <= target_value
-        elif expression.op == QueryOp.IN:
+        elif op == QueryOp.IN:
             return attr_value in target_value if isinstance(target_value, (list, tuple, set)) else False
-        elif expression.op == QueryOp.NIN:
+        elif op == QueryOp.NIN:
             return attr_value not in target_value if isinstance(target_value, (list, tuple, set)) else True
-        elif expression.op == QueryOp.LIKE:
+        elif op == QueryOp.LIKE:
             return str(target_value).lower() in str(attr_value).lower()
 
         return False
@@ -3353,7 +3359,7 @@ class SQLiteDBDriver(DBDriver):
             if isinstance(sort_spec, dict):
                 for field, direction in sort_spec.items():
                     reverse = direction == "desc"
-                    entities.sort(key=lambda e, f=field: self._sort_key(getattr(e, f, None)), reverse=reverse)
+                    entities.sort(key=lambda e, f=field: self._sort_key(field_of(e, f)), reverse=reverse)
             elif isinstance(sort_spec, str):
                 if sort_spec.startswith("-"):
                     field = sort_spec[1:]
@@ -3361,7 +3367,7 @@ class SQLiteDBDriver(DBDriver):
                 else:
                     field = sort_spec
                     reverse = False
-                entities.sort(key=lambda e, f=field: self._sort_key(getattr(e, f, None)), reverse=reverse)
+                entities.sort(key=lambda e, f=field: self._sort_key(field_of(e, f)), reverse=reverse)
 
         return entities
 

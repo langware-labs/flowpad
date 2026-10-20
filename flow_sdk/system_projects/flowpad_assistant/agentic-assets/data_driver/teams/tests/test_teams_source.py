@@ -323,8 +323,7 @@ async def test_the_picker_offers_the_composite_id(serve):
 
 
 async def test_a_reply_is_addressed_to_the_channel_not_the_author():
-    from flow_sdk.builtin.source_item import TeamsMessageSpec
-
+    TeamsMessageSpec = teams_source.TeamsMessageSpec
     driver = DataDriver.loaded("teams")
     assert driver.outbound_spec(_source()) is TeamsMessageSpec
     ingested = TeamsSource(SourceBinding(account_key="tenant-1", config={"channel": CONTAINER})).origin("101", CONTAINER)

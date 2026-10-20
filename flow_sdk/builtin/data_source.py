@@ -160,12 +160,13 @@ class DataSource(SetupSkippable, Entity):
     kind: str = APIField(default="", description="Ontology kind, e.g. datasource.feed.rss", persist=Persist.FALSE)
     provider: str = APIField(default="", description="Driver registry key: rss | hackernews")
     account_key: str = APIField(default="", description="The remote account/feed-set identity", persist=Persist.FALSE)
-    # The user-facing CHANNEL — gmail | slack | jira. Deliberately NOT
+    # The user-facing CHANNEL — a kind the driver declares (e.g. voice,
+    # whatsapp), which several drivers may share. Deliberately NOT
     # `provider`, which is the driver/transport key and is literally "agent"
     # for the harness-backed sources. One channel may have several transports
     # (a harness Gmail source and an API one), and threading + the message
     # badge must key on the channel so both resolve to the same thread.
-    channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira", persist=Persist.FALSE)
+    channel: str = APIField(default="", description="User-facing channel: a kind the driver declares; several drivers may share one", persist=Persist.FALSE)
     # The addresses/handles that are ME on this source. A record authored by
     # one of them is mine, and the stream inbox projection must attribute it to the
     # local user — otherwise my own Sent mail counts as unread mail from a
@@ -637,7 +638,7 @@ class DataSource(SetupSkippable, Entity):
 
         The one constructor a caller should reach for, because picking the class
         by hand is picking the addressing rule by hand: ``EmailMessageSpec``
-        addresses the author, ``SlackMessageSpec`` addresses the channel, and a
+        addresses the author, a ``ChannelMessageSpec`` addresses the channel, and a
         caller that guesses wrong on a Slack source sends the reply as a DM to
         the person instead of posting it where everyone is reading. The driver
         already knows which rule is its own (``outbound_spec``); ask it.
@@ -1479,8 +1480,8 @@ class DataSource(SetupSkippable, Entity):
         record here is current without waiting for the next sync, whose echo lands on the same row
         (same origin). Answers ``{item_id, origin, status}``, plus ``warnings`` (``[str]``) when the
         driver made the record but not all of it (``SourceItemSpec.warnings``)."""
+        from flow_sdk.ingest.envelope_lift import envelope_of  # noqa: PLC0415
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
-        from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
 
         report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
         answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}

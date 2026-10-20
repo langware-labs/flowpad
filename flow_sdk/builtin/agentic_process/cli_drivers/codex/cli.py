@@ -89,7 +89,11 @@ class CodexAgentOptions(AgentOptions):
     DEFAULT_REASONING_EFFORT = "low"
 
     EXECUTABLE = "codex"
-    PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
+
+    @property
+    def PROMPT_CHANNEL(self) -> str:
+        """Interactive launches take argv; headless exec reads the stdin sentinel."""
+        return "stdin" if self.json_stream else "argv"
 
     def configure_fork(self, source_session_id: str) -> None:
         if self.json_stream:

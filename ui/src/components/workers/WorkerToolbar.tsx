@@ -34,6 +34,8 @@ interface WorkerToolbarProps {
   hasProcess?: boolean;
   onOpen?: () => void;
   openTitle?: string;
+  /** Name of the existing session, shown on the Open button. */
+  sessionName?: string;
   /** Disable launch buttons while a launch is in flight. */
   starting?: boolean;
   /**
@@ -77,6 +79,7 @@ export function WorkerToolbar({
   hasProcess = false,
   onOpen,
   openTitle = 'Open the session',
+  sessionName,
   starting = false,
   extraOpeners = [],
   mode,
@@ -108,20 +111,7 @@ export function WorkerToolbar({
   };
 
   if (hasProcess && onOpen) {
-    return (
-      <button
-        type="button"
-        onClick={onOpen}
-        data-testid={`${testIdPrefix}-open-session`}
-        className="inline-flex h-7 items-center gap-1.5 rounded border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-        title={openTitle ?? t`Open the session`}
-      >
-        <Play className="h-3.5 w-3.5 text-orange-500" />
-        <span>
-          <Trans>Open</Trans>
-        </span>
-      </button>
-    );
+    return <OpenSessionButton onOpen={onOpen} title={openTitle} name={sessionName} testIdPrefix={testIdPrefix} />;
   }
 
   // In lastOpened mode, lead with the last worker (falling back to the
@@ -225,5 +215,38 @@ export function WorkerToolbar({
       )}
       {availableExtras.map((o) => renderExtra(o, false))}
     </div>
+  );
+}
+
+/** "▷ Open <session name>" — opens an existing session. Hook-free, so a message row can afford one. */
+export function OpenSessionButton({
+  onOpen,
+  title,
+  name,
+  testIdPrefix,
+}: {
+  onOpen: () => void;
+  title: string;
+  name?: string;
+  testIdPrefix: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={`${testIdPrefix}-open-session`}
+      className="inline-flex h-7 items-center gap-1.5 rounded border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+      title={title}
+    >
+      <Play className="h-3.5 w-3.5 text-orange-500" />
+      <span>
+        <Trans>Open</Trans>
+      </span>
+      {name && (
+        <span className="max-w-[16rem] truncate text-muted-foreground" data-testid={`${testIdPrefix}-session-name`}>
+          {name}
+        </span>
+      )}
+    </button>
   );
 }

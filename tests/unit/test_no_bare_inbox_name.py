@@ -77,7 +77,6 @@ PHRASES = {
     r"^flow_sdk/system_projects/flowpad_assistant/\.claude/agents/email_summarizer\.md$": ["inbox summary", "gmail_inbox_summary"],
     r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/agent/emailer/system_prompt\.md$": ["someone's inbox"],
     r"^flow_sdk/system_projects/flowpad_assistant/\.claude/skills/connect-data-source/references/mapping\.md$": ["my inbox"],
-    r"^flow_sdk/graph_workflow_manager/service_graph_workflows\.py$": ["inbox summary", "gmail_inbox_summary"],
     r"^tests/unit/test_runs_route\.py$": ["gmail_inbox_summary"],
     r"^tests/unit/test_agent_send\.py$": ["someone's inbox"],
     r"^tests/unit/test_agentic_process_turn_cleanup\.py$": ["today's inbox"],

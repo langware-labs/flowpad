@@ -1,4 +1,5 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
+import { requestUiAction } from '@src/navigation/ui-actions';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useIsDev, useIsVibe } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
@@ -87,7 +88,11 @@ export function CollapsedSidebar() {
       title: t`Stream Inbox`,
       icon: Mail,
       viewType: ViewType.STREAM_INBOX,
-      open: () => navigation.openTab(ViewType.STREAM_INBOX),
+      // The rail always shows every message as is: no channel, view, search or column filter left over.
+      open: () => {
+        requestUiAction('stream-inbox.reset');
+        navigation.openTab(ViewType.STREAM_INBOX);
+      },
       badge: unreadCount,
     },
     automations: {

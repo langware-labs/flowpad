@@ -5,7 +5,7 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "64a64f6e53ee25c569f8294e33f7f39abb408e293377615465a3be91098387b0",
+  "inputs_hash": "619135d3050e1308e7420d25aed50aac39482d74ca93e9ac20bf41b0a948f7ce",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's architecture, terminology and design docs: the record and entity model, agents and agentic processes, terminals and PTY, collaboration and sharing, navigation and tabs, the desktop app and its version-compatibility contract, FlowCall, runnable SDK snippets, and proven debugging findings with their benchmarks.",
@@ -14,9 +14,9 @@
       "name": "CLAUDE.md",
       "rel_path": "CLAUDE.md",
       "title": "Record System Requirements",
-      "summary": "Record system requirements: disk as source of truth, FSRef file references, the single FSRecord class, shadow folder layout, metadata.json persistence, meta_dict and read-only rules.",
-      "content_hash": "49424af6e98dfdd0a01313db9a57b5580010664445ba6ce666766b844d830464",
-      "size_bytes": 10146
+      "summary": "Record system requirements: disk as source of truth, FSRef references, single FSRecord class with TypeInfo slots, shadow folder layout, metadata.json handling, and read-only rules.",
+      "content_hash": "9feb3299c62de7ad9d38fbd01aa4e9b3bab4513b2f3a96b75d17e9bd78e49d09",
+      "size_bytes": 10207
     },
     {
       "name": "agentic-process.md",
@@ -94,9 +94,9 @@
       "name": "data-management.md",
       "rel_path": "data-management.md",
       "title": "Data Management",
-      "summary": "Data management architecture overview: filesystem records as source of truth with SQLite entity indexes, write and sync flow, type system, and links to subsystem docs.",
-      "content_hash": "49b52c5932830829808e3bf4eeb4050d1090af6ccafea45c3a501814e037d492",
-      "size_bytes": 38178
+      "summary": "Two-layer data architecture: filesystem FSRecords as source of truth, SQLite entities as queryable index, sync paths, type system, and links to subsystem docs.",
+      "content_hash": "10a84824bed1d91526d7921b4b637adbef0668d38d67c118e2163fc68d159c3f",
+      "size_bytes": 38296
     },
     {
       "name": "debugMCP-setup.md",
@@ -134,9 +134,9 @@
       "name": "display-capabilities.md",
       "rel_path": "display-capabilities.md",
       "title": "Global Display Capabilities — Survey & Open Questions",
-      "summary": "Survey of how Flowpad displays content (files by extension, entities, webapps, artifacts, foreign HTML trust tiers, serving surfaces) with consolidated gaps and open design questions.",
-      "content_hash": "16c915cdb3a8c5f1d31f2d539e49ea7c7c0beafdc11981794a9a36cbfe03c582",
-      "size_bytes": 23791
+      "summary": "Survey of every way Flowpad displays content: dock pointers, flow show targets, file and entity viewers, webapps, foreign HTML trust tiers, gaps, open questions",
+      "content_hash": "526c182cc38a69fddeeffaee39f731c126fa4e07c2e6fce48e74cbf0f9564675",
+      "size_bytes": 26265
     },
     {
       "name": "doc.md",
@@ -214,9 +214,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Glossary cross-walking Flowpad nouns to Claude Code and OpenClaw terms, covering FlowCall, kind/schema/value, workspaces, naming rules and dated vocabulary decisions.",
-      "content_hash": "f83478789d887f7d0387bce2d1865bdbe138faccef0fda8676753d44b5c8d30c",
-      "size_bytes": 69831
+      "summary": "Glossary of Flowpad nouns versus Claude Code and OpenClaw terms: FlowCall, SubAgent, Agent, kind/schema/value, workspaces, row/record/item, naming rules",
+      "content_hash": "156259ecf029ceceee432bbf79ccf9eaeb785b91ee3c8c15209487539f3fd511",
+      "size_bytes": 70057
     },
     {
       "name": "icons.md",
@@ -270,9 +270,9 @@
       "name": "ontology.md",
       "rel_path": "ontology.md",
       "title": "Ontology — type, subkind, kind",
-      "summary": "Ontology definitions of type, subkind and kind as join keys between entities and schemas, covering composition, namespaces, kind declaration and resolution, and coverage gaps.",
-      "content_hash": "15e0a7204736f176cf6ae1437d6edf9424034e4c9d4ac299cf3326dff8a77dd4",
-      "size_bytes": 16458
+      "summary": "Definitions of type, subkind, and kind as join keys between entity and schema layers: kinds name shapes not rows, namespaces, resolution, coverage, unfinished work.",
+      "content_hash": "98af8aa0317a201a56ef05379388fceaf4c730d5cecd8ec148b71baa74cc6a1f",
+      "size_bytes": 16463
     },
     {
       "name": "playwright-usage.md",
@@ -477,7 +477,7 @@
       "rel_path": "data-management/index.md",
       "self_summary": "How Flowpad stores, discovers and indexes data: filesystem-backed records and assets, the SchemaRegistry, DataSpec schemas and datasets, data sources and their ingest contract, the SQLite entity index and full-text search, folder indexing, invalidation, and measured disk-IO benchmarks and interface proposals.",
       "child_typeid": "markdown_index-f8c2dd24-51c7-5d6b-9374-e56547a6d0b0",
-      "child_inputs_hash": "014b3732876ee97676d59ba3542140691495f3804384063a946c3adcdb1e05ba"
+      "child_inputs_hash": "4f7049e931b17d6f0e4d413b62cf07ff8d59685dac13272b7533dc37568a308e"
     },
     {
       "name": "flows",
@@ -526,7 +526,7 @@
       "rel_path": "primitives/index.md",
       "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
       "child_typeid": "markdown_index-8f46f52a-f7a0-5f6d-971a-71d496c084a0",
-      "child_inputs_hash": "55a147cd9bf659e9d4447b9735c1f8c8b1c22516d488f8e0aed1c2dfbadc3625"
+      "child_inputs_hash": "09512cedd1a484884c43ea4e89d9d34509feb9cae09b6f4847b99a88e8fe0bbe"
     },
     {
       "name": "reports",
@@ -540,14 +540,14 @@
       "rel_path": "sdk-site/index.md",
       "self_summary": "The public Flow SDK guide: typed schemas and values, agents, FlowCall outcomes and composition, channels, credentials, deployments, and executable examples.",
       "child_typeid": "markdown_index-cf2b1efb-c17b-5707-b85b-93a8a65a472e",
-      "child_inputs_hash": "8df85aade3216e270726fc41b14192cbc24acb4fbb13e1db17660c5e22ff2e47"
+      "child_inputs_hash": "4fccae04f48f3d9c11a06c654d4a0a18b1379ebb7353f9593ae2fe994bcbc6dd"
     },
     {
       "name": "snippets",
       "rel_path": "snippets/index.md",
-      "self_summary": "Runnable SDK snippets, one page per subject and each pinned by tests: agents on channels and deployments, FlowCall and ComputeOp blocks, wizards and workflows, data sources and pipes, DataSpec and datasets, connections and secrets, message channels and threads, RAG, scan and index, and project dependencies.",
+      "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
       "child_typeid": "markdown_index-c6cc7e2f-a8f7-5be3-a69e-2c70a334bd60",
-      "child_inputs_hash": "d2fde28a31588434ccf4aaebd821fb651cd80b7071aae2c8fa3a621dc7965674"
+      "child_inputs_hash": "4d1a29b97bb5de373a8985dce096141d176edd1489542d971ec0ca6898a61c59"
     },
     {
       "name": "tabs",
@@ -557,6 +557,6 @@
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-20T10:58:09.637445+00:00",
+  "generated_at": "2026-10-20T12:52:40.795640+00:00",
   "latest_process_ref": ""
 }

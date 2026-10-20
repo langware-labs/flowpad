@@ -35,9 +35,19 @@ export interface DependencySourceInfo {
  * "Folder on this computer" deliberately avoids "PC": on macOS and Linux that
  * word reads as Windows-only. "Computer" covers all three and needs no gloss.
  */
-export function useDependencySources(): DependencySourceInfo[] {
+/** Which sources make sense for a kind: a local package lives only on this
+ *  device, so a git repo (meant to be fetched wherever the project opens) has
+ *  no place there; a required/optional one travels with the project, so a
+ *  folder that exists only on this computer can't be one. */
+const SOURCES_BY_KIND: Record<DependencyKind, readonly DependencySource[]> = {
+  local: ['project', 'browse'],
+  required: ['project', 'git'],
+  optional: ['project', 'git'],
+};
+
+export function useDependencySources(kind: DependencyKind): DependencySourceInfo[] {
   const { t } = useLingui();
-  return [
+  const all: DependencySourceInfo[] = [
     {
       key: 'project',
       Icon: iconForType('project'),
@@ -63,6 +73,7 @@ export function useDependencySources(): DependencySourceInfo[] {
       testId: 'add-dependency-git',
     },
   ];
+  return all.filter((source) => SOURCES_BY_KIND[kind].includes(source.key));
 }
 
 /**

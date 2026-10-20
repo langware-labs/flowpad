@@ -115,7 +115,8 @@ for c in json.load(sys.stdin)['data']:
 
 - "my latest conversation with Y" → among the matches, pick the **max `updated_date`**.
 - Multiple plausible matches with similar recency → list them and ask the user; do not guess.
-- No match → send nothing (any other conversation is the wrong person) and ask the user for the contact's email.
+- A group conversation, or one about another subject, is not a match: everyone in it would read the message.
+- No match → never post into another conversation: `flow contacts find <name>`, then `flow conversation new <email|user_id> "<text>" --title "<subject>"` starts one; not in the address book → ask the user for the email.
 
 ## Step 2 — check cloud login (sends require it)
 
@@ -136,12 +137,18 @@ One endpoint carries every kind of send; pick the payload keys for what you are 
 | `message` (alias `text`) | the text body | required unless a prompt / file / asset is attached |
 | `files` | an on-disk file, uploaded | repeatable, one field per file |
 | `asset_references` | a Flowpad entity, referenced not uploaded | its TypeId, e.g. `markdown-<uuid>` |
-| `prompt_text` | a runnable prompt for the recipient | minted as a real `Prompt` entity, attached as a `type_id` with an inline `prompt_preview` |
-| `prompt_files` | prompt bodies read from files | text files become `Prompt` entities; images stay raw |
+| `prompt_text` | a runnable prompt for the recipient | rides inline on the message as a `prompt` attachment — never saved to the library or the project |
+| `prompt_files` | prompt bodies read from files | text rides inline like `prompt_text`; images stay raw files |
 | `reply_to_id` | the message this answers | quotes it and joins the thread rooted at it; must be a message of this conversation |
 | `thread_root_id` | a message whose thread to write into | joins that thread without quoting; ignored when `reply_to_id` is set |
 
 Text-only replies have a CLI form: `flow conversation send <conversation> "<text>" --reply-to <msg-id>`.
+A runnable prompt has one too: `flow conversation send <conversation> "<what they read>" --prompt "<what they run>" [--session <live-session-id>]`.
+
+**Never create a `Prompt` to send it.** A library `Prompt` is a file under the project's
+`agentic-assets/prompt/` — private chat text one `git add` away from a push. Send the text
+inline (`--prompt` / `prompt_text`). `flow conversation attach <conv> prompt-<uuid>` is only for
+sharing a prompt the user already keeps in their library.
 On a source channel (email, Slack, WhatsApp …) answer through the channel instead:
 `flow conversation reply <conversation> "<text>" --reply-to <msg-id>`.
 
@@ -204,7 +211,7 @@ print([(a.get('attachment_type'), a.get('data')) for a in d.get('attachment') or
 Done when `delivery_status` is `sent` (the hub accepted it) **and** the body has settled:
 `body_status` is `ready` for a send that carries a bundle, or `na` when nothing rides one
 (text-only, or inline-only attachments). Then check the attachment list matches what you sent —
-`('file', 'data/<your-filename>')` for an upload, `('type_id', 'prompt-<uuid>')` for a prompt.
+`('file', 'data/<your-filename>')` for an upload, `('prompt', '<the prompt text>')` for a prompt.
 Report the message id and what the recipient can now do with it (download, run the prompt).
 If `delivery_status` stays `created` or `body_status` stays `uploading`, report that honestly —
 do not mark the send verified.

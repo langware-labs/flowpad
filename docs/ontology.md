@@ -217,7 +217,7 @@ registers through the same class hook as path 1 — one mechanism, handed a clas
 ways. The miss loaders load these first (ours: the shipped tree; an external's: its
 project root, within the namespace's one claim), since a driver's code may name them.
 A rebuilt kind replaces its registered class while classes built earlier keep pointing
-at the old one; that old class still answers its kind, because `io/names.kind_of` reads
+at the old one; that old class still answers its kind, because `io/names.spec_kind_of` reads
 the tag stamped on the class (`__spec_tag__`) before the registry's inverse map. An
 unchanged folder is not rebuilt at all — a cost saving, not a correctness rule. A kind is
 owned by the folder that defines it only while that folder still does: once it moves, is

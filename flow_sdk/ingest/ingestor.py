@@ -15,7 +15,7 @@ committed. A refactor that moves emission to the caller, or into ``save()``'s
 notify path, breaks that silently: keep steps 5-7 in one function.
 
 **The digest gate is the performance story.** An unchanged item costs one
-indexed read (the natural key, via ``ix_entities_source_item_origin_v3``) and
+indexed read (the natural key, via the index declared on ``SOURCE_ITEM.indexes``) and
 nothing else — no save, no metadata.json write, no FTS write, no WS broadcast,
 no event. Feeds re-serve their whole window on every
 poll, so without this gate a 5-minute poller rewrites and re-announces the same
@@ -30,7 +30,7 @@ from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.ingest_on_tag import emit_item_tag
-from flow_sdk.ingest.legacy_lift import lift
+from flow_sdk.ingest.envelope_lift import lift
 from flow_sdk.ingest.models import IngestMode, IngestOutcome, IngestReport
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 

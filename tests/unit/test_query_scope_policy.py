@@ -41,6 +41,7 @@ ALLOWLIST: dict[str, int] = {
     "builtin/project.py": 7,
     "builtin/prompt_helpers.py": 1,
     "builtin/shell.py": 2,
+    "builtin/share_target.py": 1,  # projects_checking_out: which of this instance's projects is a checkout of a shared repo
     "builtin/trigger.py": 1,  # Trigger.every(): the automations screen and the boot sweep of stale rows
     "builtin/worker_history.py": 2,
     "core/capabilities/summary.py": 1,

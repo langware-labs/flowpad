@@ -347,6 +347,16 @@ class TypeInfo:
     # A row-only (``db_only``) type that is nonetheless searchable: the row field
     # FTS indexes as ``content`` — fed from the row, no metadata.json shadow.
     fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # FTS weights by source: a field path or accessor name (dotted paths walk nested
+    # values, callables are called) → the bm25 bucket it feeds (see FTS_WEIGHT_*
+    # in ``fs_store/serializer/record.py``). None ⇒ ``fts_content`` alone.
+    fts: dict[str, int] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Declared expression indexes: each entry is the field PATHS of one index on
+    # the entities table, partial on ``type = '<type_name>'``. A path naming a real
+    # column (``created_date``, ``id``) indexes the column; anything else indexes
+    # ``json_extract(data, '$.<path>')``. Built idempotently by the SQLite driver
+    # at open (``ix_entities_<type>_<n>_<hash>``); a dropped declaration drops its index.
+    indexes: tuple[tuple[str, ...], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # --- Placement axis ---
     # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / REPO / …);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
