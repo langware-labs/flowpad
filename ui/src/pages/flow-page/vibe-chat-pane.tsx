@@ -3,6 +3,8 @@ import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
 import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
+import { startAgentSession } from '@src/components/agents/use-agent-launcher';
+import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
@@ -58,6 +60,9 @@ export function VibeChatPane({
   // the tier the next build (from the home or here) starts with.
   const [vibeModelTier, setVibeModelTier] = useVibeModelTier();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
+  // A vibe-only agent's session has no tabs and no surface switch: New starts
+  // another session AS that agent, and New / Recent replace this one in place.
+  const vibeOnlyAgent = useVibeOnlyAgent(process?.id);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
     model: VibeModelChoice;
@@ -129,6 +134,11 @@ export function VibeChatPane({
       markNewSessionPending(true);
       try {
         rememberLaunch('vibe', ViewMode.Vibe);
+        if (vibeOnlyAgent) {
+          const processId = await startAgentSession(vibeOnlyAgent, projectId);
+          await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+          return;
+        }
         await createVibeProcessForProject({
           projectId,
           workdir: project?.fs_storage_mount_path ?? undefined,
@@ -149,6 +159,7 @@ export function VibeChatPane({
       process?.project_id,
       navigation,
       defaultWorkerType,
+      vibeOnlyAgent,
       markNewSessionPending,
       t,
     ],
@@ -252,7 +263,7 @@ export function VibeChatPane({
         composerDisabled={startingNewSession}
         // The session's surface selector — the same control as the terminal/chat headers.
         settingsActions={
-          process ? (
+          process && !vibeOnlyAgent ? (
             <div className="flex items-center justify-between gap-2" data-testid="execution-settings-surface">
               <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t`Show as`}</div>
               <SessionSurfaceSwitch process={process} />
@@ -305,14 +316,17 @@ export function VibeChatPane({
         initialProcessId={process?.id ?? null}
         promptContext={promptContext ? { label: t`Working on ${promptContext.label}`, text: promptContext.text } : null}
         onPromptContextConsumed={promptContext ? () => consume(promptContext.key) : undefined}
-        // New and Recent open a Vibe tab beside this one (`openVibeTabBeside`).
+        // New and Recent open a Vibe tab beside this one (`openVibeTabBeside`) —
+        // or, for a vibe-only agent, replace this session in place.
         onProcessSelected={(processId) => {
-          void navigation.openVibeTabBeside(processId);
+          if (vibeOnlyAgent) void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+          else void navigation.openVibeTabBeside(processId);
         }}
         onProcessCreated={async (newProcess) => {
           await newProcess.enableAssistant();
           await embedVibeSubagent(newProcess);
-          void navigation.openVibeTabBeside(newProcess.id);
+          if (vibeOnlyAgent) void navigation.openShellProcess(newProcess.id, { viewMode: ViewMode.Vibe });
+          else void navigation.openVibeTabBeside(newProcess.id);
         }}
       />
       <VibeWorkerSwitchDialog

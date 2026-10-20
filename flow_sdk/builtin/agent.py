@@ -20,6 +20,7 @@ NOT the same thing as a ``SubAgent``: that is the provider-owned
 may *reference* SubAgents through ``subagents`` — they render to that path
 verbatim and are never absorbed here.
 """
+
 import functools
 import logging
 from dataclasses import dataclass
@@ -76,6 +77,7 @@ _UNSET = object()
 #: persisted value (``.worker_type``). Both directions read the one table; a
 #: blank ``worker_type:`` means "unset" and follows ``get_driver``'s default.
 
+
 def _vendor(worker: str | None) -> Vendor:
     return vendor_for(worker) if (worker or "").strip() else default_vendor()
 
@@ -107,6 +109,7 @@ def _launches_on_open(candidate: "AssetCandidate") -> bool:
     except (OSError, ValueError):
         return False
     return spec.auto_launch is True
+
 
 #: Key in the project's device state (``flow_sdk.project_device_state``) holding
 #: the agent ids whose auto-launch already fired, or was cancelled, here.
@@ -290,12 +293,17 @@ class Agent(Entity):
         "(Use, home page, auto-launch), delivered through the process prompt queue. Independent "
         "of ``auto_launch``. Empty = open sessions with no first turn.",
     )
+    vibe_only: bool = APIField(
+        default=False,
+        description="Sessions as this agent stay in Vibe: no tab strip, and no switch to Chat or "
+        "Terminal. New and Recent open sessions in place. Presentation only.",
+    )
     auto_open: Optional[list[AutoOpenEntry]] = APIField(
         default=None,
         description="What every new session as this agent opens with (Use, home page, auto-launch): "
         "a place (``Tab.pointer`` JSON; a file named inside the agent's project as "
         "``vfs/project-<id>/<path>``), a ``navigate`` op in the agent's project that repairs it when it "
-        "cannot be used yet (``{\"op\": name}``), or a wizard (``{\"wizard\": name}``). The first place "
+        'cannot be used yet (``{"op": name}``), or a wizard (``{"wizard": name}``). The first place '
         "is the session's active display, the rest open beside it.",
     )
 
@@ -371,6 +379,7 @@ class Agent(Entity):
         if not self.auto_launch or store_suppressed() or in_remote_reflection():
             return await super().save(owner=owner, notify=notify)
         from pathlib import Path
+
         from flow_sdk.assets.document import DocumentPatch
         from flow_sdk.builtin.agent_authoring import agent_document_edit
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -380,8 +389,9 @@ class Agent(Entity):
         await self._prepare_for_storage()
         info = SchemaRegistry.get(self.get_type())
         document = str(Path(self.asset_ref) / info.shape.main)
-        async with agent_document_edit(document, DocumentPatch(set_fields={"auto_launch": True}),
-                                       project_id=self.project_id):
+        async with agent_document_edit(
+            document, DocumentPatch(set_fields={"auto_launch": True}), project_id=self.project_id
+        ):
             return await super().save(owner=owner, notify=notify)
 
     async def add_mcp(self, spec: "McpSpec") -> bool:
@@ -878,9 +888,7 @@ class Agent(Entity):
             published = await self.ensure_on_hub(actor, force=bool(body.get("force")))
         except Exception as exc:
             return ApiFailResponse(message=f"publish failed: {exc}")
-        return ApiSuccessResponse(
-            data={"agent_id": self.id, "published": published, "already_on_hub": not published}
-        )
+        return ApiSuccessResponse(data={"agent_id": self.id, "published": published, "already_on_hub": not published})
 
     # ── requirements and readiness ────────────────────────────────────────
 
@@ -903,7 +911,9 @@ class Agent(Entity):
 
         request_info = get_current_request_info()
         try:
-            deployment = await Deployment.resolve((request_info.get_param("deployment_id") if request_info else None) or "")
+            deployment = await Deployment.resolve(
+                (request_info.get_param("deployment_id") if request_info else None) or ""
+            )
         except LookupError as e:
             return ApiFailResponse(message=str(e), status_code=404)
         return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
@@ -927,10 +937,12 @@ class Agent(Entity):
             )
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
-        return ApiSuccessResponse(data={
-            "deployment": deployment.model_dump(mode="json"),
-            "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
-        })
+        return ApiSuccessResponse(
+            data={
+                "deployment": deployment.model_dump(mode="json"),
+                "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
+            }
+        )
 
     # ── the mailbox ───────────────────────────────────────────────────────
 
@@ -938,7 +950,7 @@ class Agent(Entity):
     def mailbox(self) -> AgentMailbox | None:
         """The mailbox projection resolved for this Agent in this SDK process.
 
-        A plain accessor. It is ``None`` until something resolves one — 
+        A plain accessor. It is ``None`` until something resolves one —
         :meth:`allocate_mailbox`, or ``AgentMailbox.for_agent(self)`` — because an
         Agent that was never given a mailbox does not have one, and a property
         that silently reached the Hub would make every attribute read a network
@@ -1030,9 +1042,7 @@ class Agent(Entity):
         body = (await request_info.get_post_data() if request_info else {}) or {}
         unknown = sorted(set(body) - {"allowed_senders", "filters", "poll_interval_seconds"})
         if unknown:
-            return ApiFailResponse(
-                message=f"unknown mailbox setting(s): {', '.join(unknown)}", status_code=400
-            )
+            return ApiFailResponse(message=f"unknown mailbox setting(s): {', '.join(unknown)}", status_code=400)
         interval = body.get("poll_interval_seconds")
         if interval is not None:
             if isinstance(interval, bool):
@@ -1135,8 +1145,11 @@ class Agent(Entity):
                 continue
             hook = driver.webhook
             specs[provider] = DeploymentWebhookSpec(
-                name=provider, var=driver.auth.vars[hook.url_var], path=WEBHOOK_ROUTE.format(name=provider),
-                methods=list(hook.methods), required_headers=list(hook.required_headers),
+                name=provider,
+                var=driver.auth.vars[hook.url_var],
+                path=WEBHOOK_ROUTE.format(name=provider),
+                methods=list(hook.methods),
+                required_headers=list(hook.required_headers),
             )
         return list(specs.values())
 
@@ -1212,7 +1225,9 @@ class Agent(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         try:
-            data = await self.deploy_to_cloud(actor, environment, provider=provider or None, token_allocation=allocation)
+            data = await self.deploy_to_cloud(
+                actor, environment, provider=provider or None, token_allocation=allocation
+            )
         except NotReady as exc:
             # The gate: nothing is deployed, and each missing value is named with its fix.
             return ApiFailResponse(
@@ -1310,7 +1325,9 @@ class Agent(Entity):
         outcome = await service_channel.ask(endpoint, "hub", request)
         if not isinstance(outcome, tuple):
             detail = json.loads(bytes(outcome.body) or b"{}").get("error") or {}
-            return ApiFailResponse(message=detail.get("message") or "no answer", status_code=outcome.status_code, data=detail)
+            return ApiFailResponse(
+                message=detail.get("message") or "no answer", status_code=outcome.status_code, data=detail
+            )
         completion, conversation_id = outcome
         answer = ((completion.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         return ApiSuccessResponse(data={"answer": answer, "conversation_id": conversation_id})

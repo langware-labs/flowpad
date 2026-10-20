@@ -24488,6 +24488,10 @@ msgstr "Sessions ({0})"
 msgid "Sessions that used this skill — analyze, improve, commit"
 msgstr "Sessions that used this skill — analyze, improve, commit"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions are reached from Recent."
+msgstr "Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions are reached from Recent."
+
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "set"
@@ -29756,6 +29760,11 @@ msgstr "Vibe"
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
 msgstr "Vibe agents"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Vibe only"
+msgstr "Vibe only"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
