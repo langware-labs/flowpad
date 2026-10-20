@@ -49,7 +49,7 @@ describe('rail Chats keeps the session mode (no mocks)', () => {
       await router.navigate(`/dock/shell/agentic_process-${chat.id}?viewMode=standard&${scope}`);
     });
     await waitFor(
-      async () => expect((await sdk.AgenticProcess.getById(chat.id, true))?.last_mode).toBe('standard'),
+      async () => expect((await sdk.AgenticProcess.getById(chat.id))?.last_mode).toBe('standard'),
       { timeout: 10000 }, // do not increase timeout without approval
     );
 
