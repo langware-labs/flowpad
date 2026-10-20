@@ -49,6 +49,8 @@ CONSUMER_POSITION = TypeInfo(
     icon="Bookmark",
     api_visible=True,
     db_only=True,
+    # The position row is found by ``(data_source_id, consumer)`` on every listen() start.
+    indexes=(("data_source_id", "consumer"),),
 )
 
 # The change log an object-shaped source leaves behind each reflected page.
@@ -57,4 +59,6 @@ SOURCE_CHANGE = TypeInfo(
     icon="FileDiff",
     api_visible=True,
     db_only=True,
+    # The change log a folder consumer drains, in ingest order (real columns).
+    indexes=(("data_source_id", "created_date", "id"),),
 )

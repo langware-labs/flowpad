@@ -157,7 +157,7 @@ class's own method (`build`, `configure`, `query`, `origin_id_for`,
   `flow_sdk.sources.testing` over a `local_http_server` double
   (`flow_sdk.ingest.testing`), plus the wire cases (paging, errors → the right
   health). Import the class with
-  `WikiSource = asset_module("wiki").WikiSource` (`flow_sdk.ingest.source_registry`).
+  `WikiSource = asset_module("wiki").WikiSource` (`flow_sdk.ingest.driver_registry`).
   Name the file `test_<name>_source.py` — test module names are global.
 - `tests/matrix.py`: a `Double` — the provider over a loopback socket, with `config`
   (including any base-URL seam the driver reads), `secrets` keyed as the manifest's `auth`

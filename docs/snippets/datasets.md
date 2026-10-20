@@ -156,10 +156,9 @@ mine.delete_row("sources")
 ```
 
 `put` creates or replaces one row and checks it first; slots it leaves out (gold, output, context)
-and the row's metadata are kept. Over HTTP: `POST dataset/<id>/put-row {key, row}`,
-`POST delete-row {key}`, `POST rename-row {key, new_key}`, `POST check-row {row}`; one value
+and the row's metadata are kept. HTTP and TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind); one value
 against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` (an unknown kind is a
-404, never "fits"). TypeScript: `dataset.put / deleteRow / rename / check` and `checkKind(kind, value)`.
+404, never "fits"), TypeScript `checkKind(kind, value)`.
 
 ## 8. Links between rows
 
@@ -222,10 +221,7 @@ expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $
 `$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row as it travels —
 `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its ISO string.
 
-Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems, version}`,
-`GET rows-version` → `{version}`, `GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
-`POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
-`dataset.query(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
+HTTP and TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind). In TypeScript, `dataset.onRowsChanged(handler)`:
 every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
 re-reads when told instead of on a timer — or on focus: a write made while the socket was down is told
 on reconnect as one `{op: "sync", keys: []}` (`docs/flow-events.md`). A script outside the server is
@@ -257,11 +253,9 @@ colleagues = leads.query({"op": "$IN", "operands": ["input.company", levis]}, or
 ```
 
 A date bucket is written `week:input.day` (also `day:` / `month:` / `quarter:`; `week_start="sunday"`
-when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path. Over HTTP:
-`GET rows?filter={match, expand}&q=…`, `GET count?group_by=week:input.day&metrics={…}&order_by={…}`,
-`GET used-by`. A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
-values `path` takes in the rows that match". TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
-week_start})`, `usedBy(keys)`, and `bucketOf(day, 'week', 'sunday')` for the key of a period.
+when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path (HTTP and
+TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind)). A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
+values `path` takes in the rows that match". TypeScript `bucketOf(day, 'week', 'sunday')` gives the key of a period.
 
 ## 11. Change a field the outside system owns
 

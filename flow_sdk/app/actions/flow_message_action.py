@@ -2924,14 +2924,16 @@ async def _materialize_invitation(
         # matches. The text is ``local_inv.message`` (the inviter's note)
         # when present, falling back to a generic placeholder otherwise.
         #
-        # The id is derived deterministically from the invitation id so that
-        # when ``_materialize_invitation`` re-runs (the WS nudge and the
-        # ``pending`` poll both fire it for the same invite),
-        # ``materialize_flow_message`` upserts the same row instead of
-        # minting a fresh duplicate each time.
-        import uuid as _uuid  # noqa: PLC0415
-
-        synth_fm_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"invitation-preview-{inv_id}"))
+        # ``_materialize_invitation`` re-runs for the same invite (the WS nudge
+        # and the ``pending`` poll both fire it), so the notice is found by its
+        # natural key -- the invitation message in this conversation carrying
+        # this invitation -- and upserted, never minted twice.
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        prior = await FlowMessage.get_all(
+            {"match": {"conversation_id": conv_id, "kind": FlowMessageKind.INVITATION.value}}, hydrate=False
+        )
+        same = next((m for m in prior if invitation_typeid in [str(c) for c in (m.shared_context_entities or [])]), None)
+        synth_fm_id = str(same.id) if same is not None else mint_uuid()
         message_text = (local_inv.message or "").strip()
         # The invite logically precedes every message in the conversation, but
         # this synth path runs on a slower async leg and loses the race against

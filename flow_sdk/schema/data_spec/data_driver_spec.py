@@ -48,7 +48,7 @@ class Runtime(StrEnum):
 
 
 class FieldType(StrEnum):
-    """What a config field renders as. The ts mirror (``data-source-spec.ts``)
+    """What a config field renders as. The ts mirror (``ts_sdk/src/entities/data-driver.ts``)
     compares against these values."""
 
     TEXT = "text"

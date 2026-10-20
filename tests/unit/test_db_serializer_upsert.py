@@ -11,7 +11,7 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.db import DbSerializer
 from flow_sdk.ingest import ingest_items
 from flow_sdk.ingest.digest import DIGESTED_FIELDS, content_digest
-from flow_sdk.ingest.legacy_lift import lift
+from flow_sdk.ingest.envelope_lift import lift
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources import CloudOrigin

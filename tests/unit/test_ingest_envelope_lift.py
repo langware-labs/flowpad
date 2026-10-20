@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from flow_sdk.ingest.legacy_lift import lift, origin_of
+from flow_sdk.ingest.envelope_lift import lift, origin_of
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.sources import CloudOrigin, EmailMessageData, FeedItemData, MessageData
 

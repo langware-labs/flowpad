@@ -15,7 +15,7 @@
  * Timeout: 180s (real Claude subprocess).
  */
 
-import { AgenticProcess, FlowData, FlowElementTypes, TypeId, dataManager, isTypeId, isValidUUIDv4 } from '@sdk';
+import { AgenticProcess, FlowData, FlowElementTypes, TypeId, dataManager, isTypeId, isValidEntityId } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -91,7 +91,7 @@ describe('AgenticProcess loadEmbeddedSubagent', () => {
       const s = String(r);
       if (!isTypeId(s)) return false;
       const tid = new TypeId(s);
-      return tid.type === 'subagent' && isValidUUIDv4(tid.id);
+      return tid.type === 'subagent' && isValidEntityId(tid.id);
     };
     const deadline = Date.now() + 5000;
     let refreshed: AgenticProcess | null = null;

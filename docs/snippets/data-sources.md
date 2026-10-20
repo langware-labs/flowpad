@@ -68,7 +68,7 @@ project may share — so it lives in the store the driver's `auth` names.
 
 A second source for the same account is a lookup, never a fresh row. `save()` does it for you — a
 new source for an account its owner already watches adopts that row — and the lookup is there when
-you want the row before deciding.
+you want the row before deciding. `SourceItem.find_existing` is the same lookup for an item, by its natural key.
 
 ```python
 from flow_sdk.builtin.data_driver import DataDriver

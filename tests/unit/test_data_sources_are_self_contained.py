@@ -28,7 +28,7 @@ SUFFIXES = (".py", ".ts", ".tsx")
 IGNORED = ("flow_sdk/system_projects/", "flow_sdk/server/static/")
 #: Source names that are also ordinary words the engine uses in their own sense (an ``"agent"``
 #: key in a run record is not the agent source). Only the table-row trace skips them.
-ORDINARY_WORDS = frozenset({"agent", "folder", "git"})
+ORDINARY_WORDS = frozenset({"agent", "folder", "git", "helpdesk"})   # helpdesk: Flowpad's own portal too
 
 #: Approved exceptions — ``{repo-relative path: "YYYY-MM-DD — approved by <who>: <why>"}``.
 #: Only the user grants one.
@@ -65,7 +65,20 @@ def traces() -> tuple[tuple[str, re.Pattern], ...]:
         ("names a source class", re.compile(rf"\b(?:{'|'.join(sorted(source_class_names()))})\b")),
         ("filters rows by a source name", re.compile(rf"""["']provider["']\s*:\s*["'](?:{names})["']""")),
         ("a per-source table row", re.compile(rf"""^\s*["']?(?:{rows})["']?\s*:\s*["'`]""", re.M)),
+        ("a constant naming a source", re.compile(
+            rf"""^\s*[A-Z0-9_]*(?:PROVIDER|SOURCE|DRIVER)[A-Z0-9_]*\s*(?::[^=\n]+)?=\s*["'](?:{rows})["']""", re.M)),
+        ("a provider's message spec", re.compile(rf"\b(?:{rows.replace('_', '')})MessageSpec\b", re.I)),
     )
+
+
+def provider_named_modules() -> list[str]:
+    """Modules of the engine named after a driver (``sources/gmail_send.py``): provider code by name."""
+    pathspecs = [f"{tier}/*{suffix}" for tier in SCANNED for suffix in SUFFIXES] + [f":!{p}" for p in IGNORED]
+    listed = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", *pathspecs],
+                            cwd=REPO, capture_output=True, text=True).stdout.splitlines()
+    names = row_names()
+    return [rel for rel in listed if (REPO / rel).is_file() and ((stem := Path(rel).stem.lower()) in names
+            or any(stem.startswith((f"{n}_", f"{n}-")) for n in names))]
 
 
 def _candidates() -> list[str]:
@@ -73,6 +86,7 @@ def _candidates() -> list[str]:
     untracked): reading every file of the tiers in Python is most of a second, and few files hold
     any of these strings at all. The exact traces then run on the candidates only."""
     needles = ["sources/providers", "sources.providers", "flowpad_source_", "provider", *source_class_names(),
+               "MessageSpec", *(f'= "{name}"' for name in row_names()), *(f"= '{name}'" for name in row_names()),
                # a table row, quoted (`"gmail":`) or an unquoted TS key (`gmail: 'Mail'`)
                *(f"{name}{q}:" for name in row_names() for q in ("\"", "'", ""))]
     pathspecs = [f"{tier}/*{suffix}" for tier in SCANNED for suffix in SUFFIXES] + [f":!{p}" for p in IGNORED]
@@ -83,8 +97,13 @@ def _candidates() -> list[str]:
     return [f for f in listed if (REPO / f).is_file()]
 
 
+#: A literal every match of that trace contains: a file without it skips the (slower) regex.
+_MUST_CONTAIN = {"a provider's message spec": "MessageSpec", "a constant naming a source": "="}
+
+
 def _first_trace(rel: str, text: str) -> str:
-    hits = [(match.start(), label) for label, pattern in traces() if (match := pattern.search(text))]
+    hits = [(match.start(), label) for label, pattern in traces()
+            if _MUST_CONTAIN.get(label, "") in text and (match := pattern.search(text))]
     if not hits:
         return ""
     start, label = min(hits)
@@ -100,6 +119,8 @@ def offenders() -> dict[str, str]:
         for name in shipped_names()
         if not (ASSETS / name / "source.py").is_file()
     }
+    for rel in provider_named_modules():
+        found[rel] = f"{rel} is named after a data driver"
     for rel in _candidates():
         if trace := _first_trace(rel, (REPO / rel).read_text(encoding="utf-8", errors="replace")):
             found[rel] = trace

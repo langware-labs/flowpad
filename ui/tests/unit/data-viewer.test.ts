@@ -62,6 +62,17 @@ describe('nesting — each value is drawn by ITS kind\'s viewer', () => {
     expect(out.querySelector('.dv-warn')?.textContent).toContain('could not show this');
     warn.mockRestore();
   });
+
+  it('a viewer module on another contract version is skipped — the generic view shows instead', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const future: ViewerModule = { contract: 999, viewers: { 'toy.inner': { single: { mount: (e) => ((e.textContent = 'FUTURE'), {}) } } } };
+    const out = el();
+    await host({ 'toy.inner': future }).render(out, { kind: 'toy.inner', value: { value: 'generic still' } });
+    expect(out.textContent).not.toContain('FUTURE');
+    expect(out.textContent).toContain('generic still');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('contract 999'));
+    warn.mockRestore();
+  });
 });
 
 describe('the generic viewer, every mode', () => {
@@ -119,5 +130,19 @@ describe('the generic viewer, every mode', () => {
     mounted.select?.(1);
     expect([...out.querySelectorAll('tr.dv-pick')].map((r) => r.classList.contains('dv-on'))).toEqual([false, true]);
     expect(out.querySelector('tr.dv-pick')).toBe(first);
+  });
+});
+
+describe('the backend cannot say which viewers exist', () => {
+  it('shows the generic view WITH a warning, not silently', async () => {
+    const { default: apiClient } = await import('../../../ts_sdk/src/client');
+    const get = vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('backend down'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const out = el();
+    await createViewerContext({ kindForm: async (k) => KINDS[k] ?? null }).render(out, { kind: 'toy.inner', value: { value: 'shown anyway' } });
+    expect(out.querySelector('.dv-warn')).not.toBeNull();
+    expect(out.textContent).toContain('shown anyway');
+    get.mockRestore();
+    warn.mockRestore();
   });
 });

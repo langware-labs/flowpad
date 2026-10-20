@@ -50,7 +50,7 @@ function SourceTile({
  */
 export function AddDependencyDialog({ open, onOpenChange, onPick }: AddDependencyDialogProps): React.ReactElement {
   const [kind, setKind] = useState<DependencyKind>('local');
-  const sources = useDependencySources();
+  const sources = useDependencySources(kind);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

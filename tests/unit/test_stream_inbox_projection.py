@@ -11,10 +11,10 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.sources.values.subject import normalize_subject
 from flow_sdk.stream_inbox.projection import (
     channel_of,
     is_message,
-    normalize_subject,
     thread_key_for,
 )
 

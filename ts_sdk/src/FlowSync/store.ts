@@ -14,7 +14,7 @@ import type { ReturnedValue } from '../models/ReturnedValue';
 import { readFlowAnswer, readFlowEnvelope } from './flow-call';
 import { isAxiosError } from 'axios';
 import { BootstrapInfo, DeferredInfo, ScanInfo } from '../models/BootstrapInfo';
-import { isValidIdentifier, isValidUUIDv4, TypeId } from '../models/TypeId';
+import { isValidIdentifier, isValidEntityId, TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isElectronShell } from '../utils/runtime';
@@ -1336,7 +1336,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ?.filter?.match;
     if (match?.op !== '$IN' || match.operands?.[0] !== 'id' || !Array.isArray(match.operands[1])) return claimed;
     for (const id of match.operands[1]) {
-      if (typeof id !== 'string' || !isValidUUIDv4(id)) continue;
+      if (typeof id !== 'string' || !isValidEntityId(id)) continue;
       const typeId = new TypeId(type, id);
       const ref = this.getRef(typeId);
       if (ref.entity || ref.status === EntityStatus.FETCHING || ref.notFound || ref.saveInFlight) continue;

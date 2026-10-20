@@ -45,3 +45,9 @@ export function isSessionExpired(session: CappedSession | null | undefined, now:
   const ends = sessionExpiresAt(session);
   return ends !== null && now >= ends;
 }
+
+/** Open = waiting for approval or connected, and not past the length cap. */
+export function isLiveSessionOpen(session: CappedSession, now: number): boolean {
+  const state = sessionCardState(session.status);
+  return (state === 'pending' || state === 'active') && !isSessionExpired(session, now);
+}
