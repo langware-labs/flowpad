@@ -5044,6 +5044,10 @@ msgstr "Charts"
 msgid "Chat"
 msgstr "Chat"
 
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Chat about this file"
+msgstr "Chat about this file"
+
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
 msgstr "Chat context"
@@ -5765,6 +5769,10 @@ msgstr "Close all side tabs"
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
 msgstr "Close bookmark"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Close chat"
+msgstr "Close chat"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Close details"
@@ -7263,6 +7271,10 @@ msgstr "Could not open the sub-flow"
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
 msgstr "Could not open the workspace folder"
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Could not open this document: {error}"
+msgstr "Could not open this document: {error}"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not pause"
@@ -9445,8 +9457,8 @@ msgstr "Discovering {typeLabel}…"
 #~ msgstr "Discovering…"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Discuss"
-msgstr "Discuss"
+#~ msgid "Discuss"
+#~ msgstr "Discuss"
 
 #: src/i18n/pref-labels.ts
 msgid "Disk I/O backend"
@@ -9543,6 +9555,7 @@ msgstr "Document not on the hub: sign in to Flowpad cloud on this desk, then pub
 msgid "Documentation"
 msgstr "Documentation"
 
+#: src/i18n/type-labels.ts
 #: src/i18n/type-labels.ts
 msgid "Documents"
 msgstr "Documents"
@@ -11650,8 +11663,8 @@ msgid "finishing"
 msgstr "finishing"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Finishing asset load…"
-msgstr "Finishing asset load…"
+#~ msgid "Finishing asset load…"
+#~ msgstr "Finishing asset load…"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 #~ msgid "Fire (synthetic test)"
@@ -15152,6 +15165,7 @@ msgstr "Loading..."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -18815,6 +18829,10 @@ msgstr "open {name}"
 msgid "Open {name}"
 msgstr "Open {name}"
 
+#: src/pages/flow-page/vibe-doc-chip.tsx
+msgid "Open {name} beside this chat"
+msgstr "Open {name} beside this chat"
+
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
@@ -21410,6 +21428,10 @@ msgstr "Read only"
 msgid "Read the result in FlowPad"
 msgstr "Read the result in FlowPad"
 
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Read-only"
+msgstr "Read-only"
+
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Reader"
 msgstr "Reader"
@@ -22771,8 +22793,8 @@ msgid "Review each attached asset and choose how to install it."
 msgstr "Review each attached asset and choose how to install it."
 
 #: src/tabs/doc-tab-card.tsx
-msgid "Review in"
-msgstr "Review in"
+#~ msgid "Review in"
+#~ msgstr "Review in"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -24000,8 +24022,8 @@ msgid "Select a project"
 msgstr "Select a project"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Select a project to discuss this file"
-msgstr "Select a project to discuss this file"
+#~ msgid "Select a project to discuss this file"
+#~ msgstr "Select a project to discuss this file"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
