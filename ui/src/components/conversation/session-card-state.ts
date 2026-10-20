@@ -27,7 +27,7 @@ export function sessionCardState(status: string | null | undefined): SessionCard
 /** Hard cap on a live session's length, from approval (else start) — mirrors
  *  the backend's `MAX_SESSION_LENGTH`; the backend sweep ends the row, this
  *  only stops the card reading "connected" in the minute before it does. */
-export const MAX_SESSION_LENGTH_MS = 2 * 60 * 60 * 1000;
+export const MAX_SESSION_LENGTH_MS = 4 * 60 * 60 * 1000;
 
 type CappedSession = { status?: string | null; approved_at?: string | null; started_at?: string | null };
 
@@ -44,4 +44,10 @@ export function sessionExpiresAt(session: CappedSession | null | undefined): num
 export function isSessionExpired(session: CappedSession | null | undefined, now: number): boolean {
   const ends = sessionExpiresAt(session);
   return ends !== null && now >= ends;
+}
+
+/** Open = waiting for approval or connected, and not past the length cap. */
+export function isLiveSessionOpen(session: CappedSession, now: number): boolean {
+  const state = sessionCardState(session.status);
+  return (state === 'pending' || state === 'active') && !isSessionExpired(session, now);
 }

@@ -1,4 +1,4 @@
-import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
+import { dataManager, isTypeId, isValidEntityId, TypeId } from '@sdk';
 import { isFolderShape, type TypeShape } from '@sdk/FlowSync/schema';
 
 /**
@@ -47,7 +47,7 @@ export function parseTypeid(typeid: string): { type: string; id: string } {
  * the "click to open" affordance shared by the asset picker and manager rows.
  */
 export function isOpenableTypeid(typeid: string): boolean {
-  return isTypeId(typeid) && isValidUUIDv4(parseTypeid(typeid).id);
+  return isTypeId(typeid) && isValidEntityId(parseTypeid(typeid).id);
 }
 
 export function basename(path: string): string {

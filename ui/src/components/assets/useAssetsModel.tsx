@@ -347,7 +347,7 @@ export function useAssetsModel() {
         await removeDependency(name);
       } catch (err) {
         notify.error({
-          title: t`Failed to remove dependency`,
+          title: t`Failed to remove package`,
           message: err instanceof Error ? err.message : undefined,
         });
         return;
@@ -375,7 +375,7 @@ export function useAssetsModel() {
         await installDependency(name);
       } catch (err) {
         notify.error({
-          title: t`Failed to install dependency`,
+          title: t`Failed to install package`,
           message: err instanceof Error ? err.message : undefined,
         });
         return;
@@ -438,7 +438,7 @@ export function useAssetsModel() {
         });
       }
       if (failed.length) {
-        notify.error({ title: t`Not copied into dependency folder`, message: failed.join(', ') });
+        notify.error({ title: t`Not copied into package folder`, message: failed.join(', ') });
       }
     },
     [fsTypeId, contextTreeNodeId],
@@ -473,7 +473,7 @@ export function useAssetsModel() {
         });
       } catch (err) {
         console.error('[AssetsNavigator] Failed to add dropped files to dependency folder:', err);
-        notify.error({ title: t`Failed to add files to dependency folder` });
+        notify.error({ title: t`Failed to add files to package folder` });
       }
     },
     [fsTypeId, contextTreeNodeId],

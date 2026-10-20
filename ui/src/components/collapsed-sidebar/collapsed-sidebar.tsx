@@ -1,6 +1,7 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
+import { requestUiAction } from '@src/navigation/ui-actions';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
-import { useIsDev } from '@src/components/view-mode';
+import { useIsDev, useIsVibe } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { OrgTeamsButton } from './OrgTeamsButton';
 import { RAIL_ITEMS, type RailItemId } from './rail-visibility';
@@ -18,7 +19,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { PageId } from '@sdk';
+import { AgenticProcess, PageId } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
@@ -66,15 +69,30 @@ export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
   const devMode = useIsDev();
   const { unread: unreadCount } = useStreamInboxManager();
+  const isVibe = useIsVibe();
+  const openLastVibeChat = useLastVibeChat();
   const { t } = useLingui();
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Record<RailItemId, NavItem> = {
+    // Glyph from the type registry: the rail slot and an AgenticProcess entity
+    // are one thing to a user, so one TypeInfo. Vibe has no chats list — it
+    // resumes the last real UI chat in the project.
+    chats: {
+      title: t`Chats`,
+      icon: iconForType(AgenticProcess.type),
+      viewType: ViewType.SHELL,
+      open: () => (isVibe ? openLastVibeChat() : navigation.openTab(ViewType.SHELL)),
+    },
     stream_inbox: {
       title: t`Stream Inbox`,
       icon: Mail,
       viewType: ViewType.STREAM_INBOX,
-      open: () => navigation.openTab(ViewType.STREAM_INBOX),
+      // The rail always shows every message as is: no channel, view, search or column filter left over.
+      open: () => {
+        requestUiAction('stream-inbox.reset');
+        navigation.openTab(ViewType.STREAM_INBOX);
+      },
       badge: unreadCount,
     },
     automations: {
@@ -103,7 +121,9 @@ export function CollapsedSidebar() {
   // unused entries every desk render).
   const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
-  const currentView = currentDock?.viewType;
+  // A Vibe host is a process shown in Vibe: the rail lights Chats for it, as for
+  // the same process shown as a chat or terminal.
+  const currentView = DockPointer.isSessionView(currentDock?.viewType) ? ViewType.SHELL : currentDock?.viewType;
   const currentPointer = currentDock?.pointer ?? '';
   // Hub-rail active state: pointer-carrying items (WorldView world/organization,
   // records/<type>) match on viewType + pointer; the rest on viewType alone.

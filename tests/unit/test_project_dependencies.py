@@ -353,6 +353,33 @@ async def test_removing_a_dependency_unlinks_it_and_leaves_the_folder(tmp_path):
     assert (notes / "keep.md").exists()
 
 
+async def test_a_local_package_is_used_here_and_recorded_nowhere_in_the_project(tmp_path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    site = await _project(tmp_path, "site")
+    root = Path(site.fs_storage_mount_path)
+    state = await site.add_dependency(str(notes), local=True)
+    assert state.local and state.state == "ready" and not state.required
+    assert canonical_posix_path(str(notes)) in site.include_dirs
+    assert list(root.iterdir()) == [], "nothing is written into the project"
+    assert _state(await site.dependencies(), "notes").local, "it is found again on the next read"
+    assert project_dependencies.warnings_for(str(site.id), await site.dependencies()) == []
+
+
+async def test_removing_a_local_package_leaves_its_folder_and_the_project_files(tmp_path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "keep.md").write_text("x")
+    site = await _project(tmp_path, "site")
+    _declare(Path(site.fs_storage_mount_path), {"dependencies": {}})
+    before = (Path(site.fs_storage_mount_path) / "flow.json").read_text()
+    await site.add_dependency(str(notes), local=True)
+    await site.remove_dependency("notes")
+    assert site.include_dirs == []
+    assert (notes / "keep.md").exists()
+    assert (Path(site.fs_storage_mount_path) / "flow.json").read_text() == before
+
+
 async def test_editing_the_file_by_hand_is_picked_up_on_the_next_read(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir(), b.mkdir()

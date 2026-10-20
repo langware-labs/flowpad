@@ -1,10 +1,10 @@
-import type { AgenticProcess } from '@sdk';
+import { type AgenticProcess, ENTITY_UUID_SOURCE } from '@sdk';
 
 // `[45]` for the version nibble, matching the entity-id policy (ids are UUID v4
 // or v5 — CLAUDE.md) and the SDK's own shape source (`ts_sdk/src/models/TypeId.ts`
 // `uuidRegex`). Pinning `4` here let a v5-shaped `skill-<uuid>` through as a
 // "label", which is exactly the address-as-a-name case these rules reject.
-const TYPEID_RX = /^[a-z][a-z0-9_-]*-[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TYPEID_RX = new RegExp(`^[a-z][a-z0-9_-]*-${ENTITY_UUID_SOURCE}$`, 'i');
 
 /** Strip the decoration PTY tools interleave with the real OSC title —
  *  spinner frames (Braille/box glyphs), emoji/icons, rotation arrows, ANSI

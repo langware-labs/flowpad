@@ -1,4 +1,5 @@
 import { lifecyclesOf, onlyWithSessions, useHandledKeys } from './message-lifecycle';
+import { continuesGroup } from './message-markdown';
 import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -537,6 +538,23 @@ export function ConversationView({
     ].sort((a, b) => a.sortAt - b.sortAt);
   }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors, calls]);
 
+  // A message right under one from the same sender, moments later, drops its avatar and name.
+  const continuations = useMemo(() => {
+    const keys = new Set<string>();
+    let prev: { sender_id?: string | null; at: number } | null = null;
+    for (const item of groupedItems) {
+      const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : null;
+      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT) {
+        prev = null;
+        continue;
+      }
+      const cur = { sender_id: fm.sender_id, at: Date.parse(item.timestamp) };
+      if (continuesGroup(prev, cur)) keys.add(item.key);
+      prev = cur;
+    }
+    return keys;
+  }, [groupedItems, messagesById]);
+
   // Each live session's messages, in feed order: its card offers Retry on a failed prompt
   // (nothing answered it since) and names the prompt the host is working on.
   const messagesBySession = useMemo(() => {
@@ -582,7 +600,7 @@ export function ConversationView({
   // anchor) renders as a slim centered system line.
   /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
    *  so a task's thread offers its chips without expanding it. */
-  const renderConversationItem = (item: ConversationItem, threadTask: Task | null = null) => {
+  const renderConversationItem = (item: ConversationItem, threadTask: Task | null = null, continuation = false) => {
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
       const fm = messagesById.get(id) ?? null;
@@ -633,6 +651,7 @@ export function ConversationView({
           onLaunchWorker={launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
+          continuation={continuation}
         />
       );
     }
@@ -1059,7 +1078,7 @@ export function ConversationView({
                 </div>
               );
             }
-            return renderConversationItem(item);
+            return renderConversationItem(item, null, continuations.has(item.key));
           })}
         </div>
       )}

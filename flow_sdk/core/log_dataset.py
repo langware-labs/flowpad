@@ -54,7 +54,7 @@ async def drain() -> None:
 
 
 def rows(folder: Path) -> list[Path]:
-    """A log's example dirs, oldest first: numbered rows by number (``0009`` before ``10000``)."""
+    """A log's row dirs, oldest first: numbered rows by number (``0009`` before ``10000``)."""
     from flow_sdk.schema.data_spec.layout import _row_dirs  # noqa: PLC0415 -- THE row enumeration
 
     return sorted(_row_dirs(folder), key=lambda p: (0, int(p.name), "") if p.name.isdigit() else (1, 0, p.name))
@@ -75,7 +75,10 @@ class TempLog:
         if manifest.exists():
             return
         self.folder().mkdir(parents=True, exist_ok=True)
-        metadata = {"title": self.title, "description": self.description, "data_layout": "io_folder", "spec": self.spec}
+        from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec  # noqa: PLC0415
+
+        header = DatasetManifestSpec(title=self.title, description=self.description, data_layout="io_folder", spec=self.spec)
+        metadata = header.model_dump(mode="json", exclude_none=True, exclude={"data"})
         manifest.write_text(json.dumps({"metadata": metadata, "data": {}}, indent=2) + "\n")
 
     async def indexed(self) -> Any:
@@ -100,21 +103,23 @@ class TempLog:
         return Dataset.at(self.folder())
 
     async def append(self, row: dict, *, max_rows: Optional[int] = None) -> Optional[str]:
-        """Append one row; the new example id, else None. Never raises."""
+        """Append one row; the new row id, else None. Never raises."""
         from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
         from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
 
         try:
             async with _lock(self.name):
                 indexed = await self.indexed()
-                if indexed is None:
-                    # The first row: create the folder and index it once, so the UI lists the log. It is
-                    # the user's: the temp folder is inside no project and no known root.
+                if indexed is None or getattr(indexed, "scope", None) != "system":
+                    # The first row (or a row indexed as the user's before temp was system): index it once,
+                    # so the UI lists the log. The temp folder classifies as system, so it is listed under
+                    # the system project and not in every user project.
                     self._create()
                     try:
-                        await index_one(await resolve_asset(self.folder(), write=True), notify=True, scope="user")
+                        await index_one(await resolve_asset(self.folder(), write=True), notify=True)
                     except Exception as exc:  # noqa: BLE001 -- no index (no DB): the folder alone takes the row
                         logger.debug("%s: not indexed: %s", self.title, exc)
+                    self._row = None
                     indexed = await self.indexed()
                 ds = indexed or Dataset.at(self.folder())
                 [row_id] = await ds.append([row])
@@ -123,7 +128,7 @@ class TempLog:
                     if len(held) > max_rows:
                         ds.delete_rows([d.name for d in held[: len(held) - max_rows]])
                 if indexed is not None:
-                    # Only the counts change, and they follow from the cheap per-example index: a full
+                    # Only the counts change, and they follow from the cheap per-row index: a full
                     # re-index re-parses every row, which would make each append O(rows).
                     await indexed.refresh_counts()
             return row_id

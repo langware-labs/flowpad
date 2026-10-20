@@ -197,4 +197,6 @@ async def test_the_drain_uses_its_index():
     finally:
         conn.close()
     text = " ".join(str(row[-1]) for row in plan)
-    assert "ix_entities_source_item_by_source_created" in text, text
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import declared_index_name
+
+    assert declared_index_name("source_item", ("data_source_id", "created_date", "id")) in text, text

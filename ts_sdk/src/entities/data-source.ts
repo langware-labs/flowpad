@@ -13,6 +13,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { SetupStageState } from './data-driver';
 import type { ProjectSetupRun } from './project';
+import type { ChannelRouteClaim } from './inbound-webhook';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -95,26 +96,8 @@ export interface IDataSource extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DataSource extends EntityMerge<IDataSource> {}
 
-/** Where a hub webhook claim hands this channel's messages (the hub's `DeliveryTarget`). */
-export interface ChannelRouteTarget {
-  kind: 'none' | 'desktop' | 'node';
-  instance_id?: string;
-  node_typeid?: string;
-  data_source_id?: string;
-}
-
-/** The hub claim that delivers to a channel, as the owner sees it (never a secret). */
-export interface ChannelRouteClaim {
-  id: string;
-  url: string;
-  provider: string;
-  status: 'pending' | 'active' | 'lapsed';
-  claim?: { kind: 'root' | 'account' | 'user' | 'group'; key: string } | null;
-  target: ChannelRouteTarget;
-  deliveries: number;
-  misroutes: number;
-  recent: { at: number; method: string; sub_path?: string; status: number }[];
-}
+// The hub claim types live with the Inbound screen's client, which owns the hub `webhook` chain.
+export type { ChannelRouteClaim, ChannelRouteTarget } from './inbound-webhook';
 
 /** One place a channel's messages can be pointed at: this computer, or a cloud placement of its agent. */
 export interface ChannelRoutePlace {

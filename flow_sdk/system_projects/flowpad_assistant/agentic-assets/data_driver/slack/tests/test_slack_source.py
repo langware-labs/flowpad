@@ -573,13 +573,12 @@ async def test_find_for_account_matches_the_rows_channel():
 
 
 async def test_slack_message_spec_replies_into_the_channel_thread():
-    from flow_sdk.builtin.source_item import SlackMessageSpec
-
+    from flow_sdk.builtin.source_item import ChannelMessageSpec
     ingested = SlackSource(SourceBinding(account_key="T1", config={"channel": CHANNEL}))._message_origin("100.000100", CHANNEL)
     m = SimpleNamespace(origin_namespace=ingested.namespace, thread_key="100.000100", external_id="100.000100", author_external_id="U1", name="", body="ship it?")
-    r = SlackMessageSpec.reply_to(m, body="shipping")
+    r = ChannelMessageSpec.reply_to(m, body="shipping")
     assert (r.to, r.thread_key, r.reply_to_external_id) == ([CHANNEL], "100.000100", "100.000100")
-    assert DataDriver.loaded("slack").outbound_spec(_source()) is SlackMessageSpec
+    assert DataDriver.loaded("slack").outbound_spec(_source()) is ChannelMessageSpec
 
 
 # ── files ────────────────────────────────────────────────────────────────────

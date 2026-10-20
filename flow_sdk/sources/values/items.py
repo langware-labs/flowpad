@@ -12,6 +12,7 @@ change detection is the application's, over what it observes.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar, Literal, Optional
 
 from pydantic import AwareDatetime, Field
@@ -20,6 +21,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec._types import NonBlank
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.sources.values.origin import CloudOrigin
+from flow_sdk.sources.values.subject import normalize_subject
 
 
 class Payload(DataSpec):
@@ -34,6 +36,59 @@ class Payload(DataSpec):
     def stable_dump(self) -> dict:
         """The fields a change digest may look at."""
         return self.model_dump(mode="json", exclude=set(self.volatile))
+
+    # ── accessors ───────────────────────────────────────────────────────────
+    # One way to read what an item says, whatever its payload class: a subclass overrides the
+    # ones its fields answer. Plain properties, so they never serialize. ``item_`` because the
+    # bare words are real fields on some payloads (``RecordData.title``, ``MessageData.text``,
+    # ``FeedItemData.author``), and a property may not shadow a field.
+
+    @property
+    def item_title(self) -> str:
+        return ""
+
+    @property
+    def item_text(self) -> str:
+        return ""
+
+    @property
+    def item_author(self) -> Optional["UserProfile"]:
+        return None
+
+    @property
+    def item_author_id(self) -> Optional[str]:
+        author = self.item_author
+        return author.origin.key if author is not None else None
+
+    @property
+    def item_author_name(self) -> Optional[str]:
+        author = self.item_author
+        return author.name if author is not None else None
+
+    @property
+    def item_time(self) -> Optional[datetime]:
+        return None
+
+    @property
+    def item_at(self) -> Optional[str]:
+        """``item_time`` as ISO text."""
+        when = self.item_time
+        return when.isoformat() if when else None
+
+    @property
+    def item_thread(self) -> Optional[str]:
+        """The key of the thread the item belongs to, ``None`` when it names none."""
+        return None
+
+    @property
+    def item_reply_to(self) -> Optional[str]:
+        """The key of the item this one answers, ``None`` when it answers none."""
+        return None
+
+    @property
+    def item_permalink(self) -> Optional[str]:
+        """A link the payload carries; the origin's own ``url`` wins over it."""
+        return None
 
 
 class FileData(Payload):
@@ -145,11 +200,40 @@ class MessageData(Payload):
     #: What the message did (approved, merged); None for a message that only says something.
     mark: Optional[MessageMarkSpec] = None
 
+    @property
+    def item_text(self) -> str:
+        return self.text or ""
+
+    @property
+    def item_author(self) -> Optional[UserProfile]:
+        return self.sender
+
+    @property
+    def item_time(self) -> Optional[datetime]:
+        return self.sent_at
+
+    @property
+    def item_thread(self) -> Optional[str]:
+        return self.conversation.key if self.conversation is not None else None
+
+    @property
+    def item_reply_to(self) -> Optional[str]:
+        return self.in_reply_to.key if self.in_reply_to is not None else None
+
 
 class EmailMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.email"
 
     subject: Optional[str] = None
+
+    @property
+    def item_title(self) -> str:
+        return self.subject or ""
+
+    @property
+    def subject_thread(self) -> str:
+        """The thread an email falls back to when its provider names none: the subject, normalized."""
+        return normalize_subject(self.subject or "")
 
 
 class MessageItem(SourceItemSpec):
@@ -180,6 +264,14 @@ class ReactionData(Payload):
     mode: ReactionMode = ReactionMode.SET
     sent_at: Optional[AwareDatetime] = None
 
+    @property
+    def item_author(self) -> Optional[UserProfile]:
+        return self.sender
+
+    @property
+    def item_time(self) -> Optional[datetime]:
+        return self.sent_at
+
 
 class ReactionItem(SourceItemSpec):
     data: Tagged[ReactionData]
@@ -196,6 +288,18 @@ class RecordData(Payload):
     text: Optional[str] = None
     url: Optional[str] = None
 
+    @property
+    def item_title(self) -> str:
+        return self.title or ""
+
+    @property
+    def item_text(self) -> str:
+        return self.text or ""
+
+    @property
+    def item_permalink(self) -> Optional[str]:
+        return self.url
+
 
 class RecordItem(SourceItemSpec):
     data: Tagged[RecordData]
@@ -211,6 +315,19 @@ class FeedItemData(RecordData):
     published_at: Optional[AwareDatetime] = None
     author: Optional[UserProfile] = None
     byline: Optional[str] = None
+
+    @property
+    def item_author(self) -> Optional[UserProfile]:
+        return self.author
+
+    @property
+    def item_author_name(self) -> Optional[str]:
+        """The author's name, else the byline the provider printed."""
+        return super().item_author_name or self.byline
+
+    @property
+    def item_time(self) -> Optional[datetime]:
+        return self.published_at
 
 
 __all__ = [

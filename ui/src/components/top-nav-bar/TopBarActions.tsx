@@ -5,7 +5,7 @@ import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActio
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
 import { BookmarksStarButton } from './BookmarksStarButton';
-import { OpenInWindowButton } from './OpenInWindowButton';
+import { PageShareButton } from './PageShareButton';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
 /**
@@ -57,7 +57,6 @@ export function TopBarActions({
         hideFavorite
         trailing={
           <>
-            <OpenInWindowButton />
             <AssetDiscussButton />
             {favorite && <BookmarksStarButton favorite={favorite} />}
           </>
@@ -69,11 +68,12 @@ export function TopBarActions({
   // No entity to act on (an assets list, settings, a bare shell). The view is
   // still bookmarkable BY ITS DOCK — resolved through the same rule the
   // bookmarks menu uses, so a star set here is the row shown there. Sharing has
-  // no subject, so it simply isn't offered; pop-out and discuss gate themselves.
+  // no subject, except a standalone page (shared as the artifact that names it,
+  // minted on click); pop-out and discuss gate themselves.
   if (!dock) return null;
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
-      <OpenInWindowButton />
+      <PageShareButton dock={dock} />
       <AssetDiscussButton />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>

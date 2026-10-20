@@ -55,6 +55,15 @@ export function ActivityDetailsModalRoot() {
               {elapsedMs > 0 && ` · ${humanizeSeconds(elapsedMs / 1000)}`}
             </p>
           )}
+          {spec && !isTerminal(spec) && spec.message && (
+            <p
+              className="truncate text-xs text-muted-foreground"
+              title={spec.message}
+              data-testid="activity-details-message"
+            >
+              {spec.message}
+            </p>
+          )}
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto pe-1">
           {spec ? (
@@ -62,7 +71,9 @@ export function ActivityDetailsModalRoot() {
               <ActivityRow spec={spec} detail />
             </ul>
           ) : (
-            <p className="px-3 py-2 text-xs italic text-muted-foreground">Nothing is running at this address anymore.</p>
+            <p className="px-3 py-2 text-xs italic text-muted-foreground">
+              Nothing is running at this address anymore.
+            </p>
           )}
         </div>
         {live && !isTerminal(live) && (

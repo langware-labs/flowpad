@@ -35,3 +35,26 @@ async def test_error_reporter_suppresses_and_emits_summary():
     assert "suppressed" in messages[-2].message
     assert messages[-1].status_code == 503
     assert messages[-1].path == "/y"
+
+
+@pytest.mark.asyncio
+async def test_only_a_failed_request_that_is_answered_again_clears_its_error():
+    messages = []
+
+    async def broadcast(message):
+        messages.append(message)
+
+    reporter = _HubErrorReporter(broadcast_func=broadcast)
+
+    await reporter.recovered(method="GET", path="/x")
+    assert messages == [], "nothing failed, so nothing recovers"
+
+    await reporter.report(status_code=0, method="GET", path="/x", message="timed out")
+    await reporter.report(status_code=502, method="GET", path="/y", message="bad gateway")
+    await reporter.recovered(method="GET", path="/x")
+    await reporter.recovered(method="GET", path="/x")
+
+    recovered = [m for m in messages if m.message_type == "hub_client_recovered_msg"]
+    assert [(m.method, m.path) for m in recovered] == [("GET", "/x")], (
+        "/x was answered once after failing; /y never was, so its error stays"
+    )

@@ -17,9 +17,16 @@ const stable = vi.hoisted(() => ({
   auth: { cloudUser: null },
   user: { localUser: { id: 'u1', name: 'Me' } },
   gate: () => Promise.resolve({ ok: true as const }),
-  sender: { send: () => undefined, busy: false, error: null, resetDraft: () => undefined },
+  sender: { send: vi.fn(), busy: false, error: null, resetDraft: () => undefined },
   matches: { conversations: [] as never[] },
-  preflight: { available: false, loading: false, reason: null },
+  preflight: {
+    available: false,
+    loading: false,
+    reason: null as string | null,
+    answered: true,
+    fix: null as 'commit' | 'push' | null,
+  },
+  gitFix: vi.fn(),
   entity: { data: null },
   owner: { project: null as Project | null, loading: false },
   preferences: { isLoaded: true, version: 0, get: vi.fn(() => 'ask'), set: vi.fn() },
@@ -28,14 +35,25 @@ const stable = vi.hoisted(() => ({
     status: 'idle',
     error: null as string | null,
     nonMembers: [] as string[],
+    outsiders: [] as string[],
     roles: [] as string[],
     refresh: vi.fn(),
     invite: vi.fn(),
   },
 }));
 vi.mock('@src/components/contact-picker/ContactPicker', () => ({
-  ContactPicker: ({ value, onChange }: { value: { email: string }[]; onChange: (value: { email: string }[]) => void }) => (
-    <input data-testid="test-recipients" value={value.map((p) => p.email).join(',')} onChange={(event) => onChange(event.target.value.split(',').map((email) => ({email})))} />
+  ContactPicker: ({
+    value,
+    onChange,
+  }: {
+    value: { email: string }[];
+    onChange: (value: { email: string }[]) => void;
+  }) => (
+    <input
+      data-testid="test-recipients"
+      value={value.map((p) => p.email).join(',')}
+      onChange={(event) => onChange(event.target.value.split(',').map((email) => ({ email })))}
+    />
   ),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => stable.nav }));
@@ -61,6 +79,7 @@ vi.mock('@src/hooks/use-conversations-for-contacts', () => ({
 vi.mock('@src/hooks/use-auto-title', () => ({ useAutoTitle: () => 'Auto title' }));
 vi.mock('@src/hooks/use-git-share-preflight', () => ({
   useGitSharePreflight: () => stable.preflight,
+  runGitShareFix: (...args: unknown[]) => stable.gitFix(...args),
 }));
 vi.mock('@src/hooks/entity-hooks', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -83,7 +102,9 @@ vi.mock('@src/hooks/use-share-project-membership', async (importOriginal) => ({
 const REF = new TypeId('markdown', 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001');
 const prepare = vi.fn(async () => ({ assetReferences: [REF.toString()], sharedContextEntities: [REF.toString()] }));
 const source: ShareSource = { label: 'Design', ownerRef: REF, previewAssets: [{ ref: REF, label: 'Design' }], prepare };
-const commit = vi.fn<(target: SendTarget, payload: ConversationSendPayload) => Promise<string | null>>(async () => 'conversation-1');
+const commit = vi.fn<(target: SendTarget, payload: ConversationSendPayload) => Promise<string | null>>(
+  async () => 'conversation-1',
+);
 function show(extra: Partial<React.ComponentProps<typeof ShareToConversationDialog>> = {}) {
   return render(
     <ShareToConversationDialog
@@ -103,7 +124,11 @@ beforeEach(() => {
   stable.membership.status = 'idle';
   stable.membership.error = null;
   stable.membership.nonMembers = [];
+  stable.membership.outsiders = [];
   stable.membership.roles = [];
+  stable.preflight.available = false;
+  stable.preflight.fix = null;
+  stable.gitFix.mockResolvedValue({ ok: true });
   stable.membership.invite.mockResolvedValue(undefined);
   vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] });
 });
@@ -140,7 +165,7 @@ it('skips the cloud step and remembers only the reminder preference', () => {
     remote: false,
   });
   show();
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Don’t ask again' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Don’t show again' }));
   fireEvent.click(screen.getByTestId('share-skip-link'));
   expect(stable.preferences.set).toHaveBeenCalledWith('preferences.notifications.share_cloud_link', 'skip');
   expect(stable.link).not.toHaveBeenCalled();
@@ -159,16 +184,37 @@ it('links the canonical owning project and advances the same dialog', async () =
   expect(stable.link).toHaveBeenCalledWith(stable.owner.project);
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
 });
-it('offers Guest by default and submits an explicit None choice', async () => {
+it('flags a non-member under To; Fix reveals the role picker on Member', async () => {
   stable.membership.status = 'ready';
   stable.membership.nonMembers = ['bob@example.com'];
   stable.membership.roles = ['guest', 'member'];
   show();
-  expect((screen.getByTestId('share-project-role') as HTMLSelectElement).value).toBe('guest');
-  fireEvent.change(screen.getByTestId('share-project-role'), { target: { value: 'none' } });
+  expect(screen.getByTestId('share-non-member').textContent).toContain('bob@example.com is not a member');
+  expect(screen.queryByTestId('share-project-role')).toBeNull();
+  fireEvent.click(screen.getByTestId('share-non-member-fix'));
+  expect((screen.getByTestId('share-project-role') as HTMLSelectElement).value).toBe('member');
   fireEvent.click(screen.getByTestId('share-submit'));
   await waitFor(() => expect(commit).toHaveBeenCalledTimes(1));
-  expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': 'none' });
+  expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': 'member' });
+});
+it('starts with nobody in To when the caller names no one', () => {
+  show({ initialParticipants: undefined });
+  expect((screen.getByTestId('test-recipients') as HTMLInputElement).value).toBe('');
+});
+it('asks to link without a project box: Skip on the left of Link', () => {
+  stable.owner.project = new Project({
+    id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002',
+    name: 'Owner project',
+    remote: false,
+  });
+  show();
+  const step = screen.getByTestId('share-cloud-link-step');
+  expect(step.textContent).not.toContain('Not linked to cloud');
+  expect(step.textContent).not.toContain('Owner project');
+  const skip = screen.getByTestId('share-skip-link');
+  expect(
+    skip.compareDocumentPosition(screen.getByTestId('share-link-project')) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 it('does not send after a project invitation fails', async () => {
   stable.membership.status = 'ready';
@@ -186,37 +232,129 @@ it('requires explicit no-membership consent when the roster cannot be read', asy
   stable.membership.error = 'Members unavailable';
   show();
   expect((screen.getByTestId('share-submit') as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('checkbox', {name: 'Share without project membership'}));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Share without project membership' }));
   fireEvent.click(screen.getByTestId('share-submit'));
   await waitFor(() => expect(commit).toHaveBeenCalledTimes(1));
   expect(stable.membership.invite).not.toHaveBeenCalled();
 });
 it('does not carry a completed old Link attempt into a reopened draft', async () => {
-  stable.owner.project = new Project({id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002', remote: false});
+  stable.owner.project = new Project({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002', remote: false });
   let complete!: (project: Project) => void;
-  stable.link.mockReturnValue(new Promise<Project>((resolve) => { complete = resolve; }));
+  stable.link.mockReturnValue(
+    new Promise<Project>((resolve) => {
+      complete = resolve;
+    }),
+  );
   const view = show();
   fireEvent.click(screen.getByTestId('share-link-project'));
   view.rerender(<ShareToConversationDialog open={false} onClose={() => undefined} source={source} />);
   view.rerender(<ShareToConversationDialog open onClose={() => undefined} source={source} />);
-  complete(new Project({id: stable.owner.project.id, remote: true}));
+  complete(new Project({ id: stable.owner.project.id, remote: true }));
   await waitFor(() => expect(screen.getByTestId('share-cloud-link-step')).toBeTruthy());
   expect(screen.queryByTestId('share-submit')).toBeNull();
 });
 
-it('keeps an existing recipient’s None choice when another recipient is added', () => {
+it('keeps an existing recipient’s role choice when another recipient is added', () => {
   stable.membership.status = 'ready';
   stable.membership.nonMembers = ['bob@example.com'];
   stable.membership.roles = ['guest', 'member'];
   show();
-  fireEvent.change(screen.getByTestId('share-project-role'), {target: {value: 'none'}});
+  fireEvent.click(screen.getByTestId('share-non-member-fix'));
+  fireEvent.change(screen.getByTestId('share-project-role'), { target: { value: 'none' } });
   stable.membership.nonMembers = ['bob@example.com', 'alice@example.com'];
-  fireEvent.change(screen.getByTestId('test-recipients'), {target: {value: 'bob@example.com,alice@example.com'}});
-  const choices = screen.getAllByTestId('share-project-role') as HTMLSelectElement[];
-  expect(choices.map((choice) => choice.value)).toEqual(['none', 'guest']);
+  fireEvent.change(screen.getByTestId('test-recipients'), { target: { value: 'bob@example.com,alice@example.com' } });
+  expect((screen.getAllByTestId('share-project-role') as HTMLSelectElement[]).map((choice) => choice.value)).toEqual([
+    'none',
+  ]);
+  expect(screen.getAllByTestId('share-non-member')).toHaveLength(1);
   stable.membership.nonMembers = ['alice@example.com'];
-  fireEvent.change(screen.getByTestId('test-recipients'), {target: {value: 'alice@example.com'}});
+  fireEvent.change(screen.getByTestId('test-recipients'), { target: { value: 'alice@example.com' } });
   stable.membership.nonMembers = ['bob@example.com', 'alice@example.com'];
-  fireEvent.change(screen.getByTestId('test-recipients'), {target: {value: 'bob@example.com,alice@example.com'}});
-  expect((screen.getAllByTestId('share-project-role') as HTMLSelectElement[]).map((choice) => choice.value)).toEqual(['guest', 'guest']);
+  fireEvent.change(screen.getByTestId('test-recipients'), { target: { value: 'bob@example.com,alice@example.com' } });
+  expect(screen.queryByTestId('share-project-role')).toBeNull();
+  expect(screen.getAllByTestId('share-non-member')).toHaveLength(2);
+});
+
+describe('sharing a thing', () => {
+  // An asset share: a new conversation titled for it, git only when every recipient
+  // is inside the project, and a link to hand out at the end.
+  const thing: ShareSource = { ...source, bookmarkable: true, shareAsThing: true, gitPreflightRef: REF };
+  beforeEach(() => {
+    stable.owner.project = new Project({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002', name: 'P', remote: true });
+    stable.membership.status = 'ready';
+    stable.preflight.available = true;
+  });
+
+  it('titles the conversation for the shared thing and sends Git and a copy', () => {
+    show({ source: thing, commit: undefined });
+    expect(screen.getByTestId('share-title-input').getAttribute('placeholder')).toBe('Me has shared Design');
+    expect(screen.getByTestId('share-transfer-mode').getAttribute('data-mode')).toBe('both');
+    expect(screen.queryByTestId('share-git-toggle')).toBeNull();
+  });
+
+  it('sends Git and a copy whoever the recipients are; each receiver picks', () => {
+    stable.membership.outsiders = ['bob@example.com'];
+    stable.membership.nonMembers = ['bob@example.com'];
+    stable.membership.roles = ['guest'];
+    show({ source: thing, commit: undefined });
+    expect(screen.getByTestId('share-transfer-mode').getAttribute('data-mode')).toBe('both');
+    // Sharing a file never adds someone to the project on the side.
+    expect(screen.getByTestId('share-non-member')).toBeTruthy();
+    expect(screen.queryByTestId('share-project-role')).toBeNull();
+  });
+
+  it('invites a Fixed outsider before the send, which carries Git and a copy', async () => {
+    stable.membership.outsiders = ['bob@example.com'];
+    stable.membership.nonMembers = ['bob@example.com'];
+    stable.membership.roles = ['guest', 'member'];
+    stable.sender.send.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-000000000003');
+    show({ source: thing, commit: undefined });
+    fireEvent.click(screen.getByTestId('share-non-member-fix'));
+    fireEvent.click(screen.getByTestId('share-submit'));
+    await waitFor(() => expect(stable.sender.send).toHaveBeenCalledTimes(1));
+    expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': 'member' });
+    expect(stable.membership.invite.mock.invocationCallOrder[0]).toBeLessThan(
+      stable.sender.send.mock.invocationCallOrder[0],
+    );
+    expect(stable.sender.send.mock.calls[0][1]).toMatchObject({ shareConfig: { transferMode: 'both' } });
+  });
+
+  it('asks to commit changes first, before linking; Commit & share commits then goes on', async () => {
+    stable.owner.project = new Project({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002', name: 'P', remote: false });
+    stable.preflight.available = false;
+    stable.preflight.fix = 'commit';
+    show({ source: thing, commit: undefined });
+    expect(screen.getByTestId('share-changes-step')).toBeTruthy();
+    expect(screen.queryByTestId('share-cloud-link-step')).toBeNull();
+    fireEvent.click(screen.getByTestId('share-changes-commit'));
+    await waitFor(() => expect(stable.gitFix).toHaveBeenCalledWith(REF, 'commit'));
+    expect(await screen.findByTestId('share-cloud-link-step')).toBeTruthy();
+  });
+
+  it('Share as is skips the commit and sends a copy only', async () => {
+    stable.preflight.available = false;
+    stable.preflight.fix = 'push';
+    stable.sender.send.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-000000000003');
+    show({ source: thing, commit: undefined });
+    fireEvent.click(screen.getByTestId('share-changes-skip'));
+    expect(stable.gitFix).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('share-submit'));
+    await waitFor(() => expect(stable.sender.send).toHaveBeenCalledTimes(1));
+    expect(stable.sender.send.mock.calls[0][1].shareConfig?.transferMode).not.toBe('both');
+  });
+
+  it('shows the invite link to the new conversation once shared', async () => {
+    stable.sender.send.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-000000000003');
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async (info: { subpath?: string }) =>
+      info.subpath === 'link' ? { url: 'https://hub.example/invite/fpinv_x' } : { unshippable: [], gitignored: [] },
+    );
+    show({ source: thing, commit: undefined });
+    fireEvent.click(screen.getByTestId('share-submit'));
+    const url = (await screen.findByTestId('share-link-url')) as HTMLInputElement;
+    expect(url.value).toBe('https://hub.example/invite/fpinv_x');
+    expect(stable.sender.send.mock.calls[0][0]).toMatchObject({
+      kind: 'new',
+      params: { title: 'Me has shared Design' },
+    });
+  });
 });

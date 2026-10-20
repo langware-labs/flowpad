@@ -70,7 +70,7 @@ def test_a_concrete_item_accepts_a_plain_dict_for_its_payload():
 def test_a_record_round_trips_and_a_feed_entry_is_a_record():
     """A record is its own payload family — the kind it is stored under, and the class a tagged dump
     restores — and a feed entry is one of them."""
-    from flow_sdk.ingest.legacy_lift import FEED_KIND, RECORD_KIND, kind_of
+    from flow_sdk.ingest.envelope_lift import FEED_KIND, RECORD_KIND, kind_of
 
     item = RecordItem(origin=ISSUE, data=RecordData(title="PROJ-7", text="Login fails", url=ISSUE.url))
     loaded = SourceItemSpec.model_validate(item.model_dump(mode="json"))

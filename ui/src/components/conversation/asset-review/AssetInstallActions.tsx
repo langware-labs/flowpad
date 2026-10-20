@@ -1,5 +1,6 @@
 import { Conversation, dataManager, MessageAttachment, Project, TypeId } from '@sdk';
-import { useOpenGitShare } from './use-open-git-share';
+import { useOpenGitShare, type OpenShareOutcome } from './use-open-git-share';
+import { SharedOpenPanel } from './SharedOpenPanel';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Download, FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
@@ -79,21 +80,21 @@ function ScopeButton({
 export function AssetInstallActions({
   attachment,
   conversationProjectId,
-  initialError,
+  initialOutcome,
 }: {
   attachment: MessageAttachment;
   /** The conversation's mapped project — the picker's preselected default and
    *  the default install+run target. */
   conversationProjectId?: string | null;
-  /** A failure from opening this attachment before the dialog opened. */
-  initialError?: string | null;
+  /** What opening this attachment from its chip came to, before the dialog opened. */
+  initialOutcome?: OpenShareOutcome | null;
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   // Transient failure reason for a Git Download/Setup — shown inline; the
   // Download button stays clickable so the receiver can retry (each attachment
   // retries independently; a pull failure never indexes stale content).
-  const [gitError, setGitError] = useState<string | null>(initialError ?? null);
+  const [gitError, setGitError] = useState<string | null>(initialOutcome?.error ?? null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { scopeId: workspace } = useActiveWorkspace();
   const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen, workspace });
@@ -156,7 +157,7 @@ export function AssetInstallActions({
   const downloaded = attachment.effectiveScope != null;
   const { run: openGitShare, busy: gitBusy } = useOpenGitShare(attachment, conversationProjectId);
   const doGitDownload = useCallback(async () => {
-    setGitError(await openGitShare());
+    setGitError((await openGitShare()).error ?? null);
   }, [openGitShare]);
 
   const doGitSetup = useCallback(async () => {
@@ -225,6 +226,10 @@ export function AssetInstallActions({
   // Git-shared assets never enter Copy & Install. A single Download clones/pulls
   // + indexes; Setup (when the type has a setup skill) is a separate optional
   // action offered only after a successful Download.
+  // Git AND a copy: one Open, and only the question the backend cannot answer.
+  const both = attachment.transfer_mode === 'both';
+  if (both && !downloaded) return <SharedOpenPanel attachment={attachment} initialOutcome={initialOutcome} />;
+
   if (isGit) {
     const spinner = busy || gitBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
     return (

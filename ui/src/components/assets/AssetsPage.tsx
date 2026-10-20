@@ -303,11 +303,9 @@ export function AssetsPage() {
     const path = proj.fs_storage_mount_path;
     showDeleteAssetModal({
       name,
-      description:
-        'This permanently deletes the project and everything in it — all indexed ' +
-        'records and their children, and the project folder on disk' +
-        (path ? ` (${path})` : '') +
-        '. This cannot be undone.',
+      description: path
+        ? t`This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk (${path}). This cannot be undone.`
+        : t`This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone.`,
       checkbox: {
         label: t`Delete chats`,
         description: t`Keeping chat history can make this project reappear when projects are scanned.`,
@@ -619,7 +617,12 @@ export function AssetsPage() {
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
           {isFsMode && fsVfsPath ? (
-            <ContextFolderBrowser vfsPath={fsVfsPath} onNavigate={navigateAsset} projectId={scopeProjectId} />
+            <ContextFolderBrowser
+              vfsPath={fsVfsPath}
+              onNavigate={navigateAsset}
+              projectId={scopeProjectId}
+              selectName={currentDock?.fsSelect}
+            />
           ) : isWikiMode && wikiName ? (
             <WikiResolveView
               name={wikiName}

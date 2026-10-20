@@ -43,9 +43,9 @@ The bar imports `/sdk/flowpad-sdk.js` (the page must be served by Flowpad — `f
 | 💬 → text (+ decision chip, + 📎 / pasted image) → **Save** | `append` one `mockify.feedback` row: `mock` = the mock row's `ref`, `step`, `text`, `decision?`, `screenshot?` (a `data:image/…;base64` URL — stored as `input/screenshot.png`), `status: open`, `created`; key `<mock>-<step>-<base36 time>` |
 | 🎯 → point at an element (hover outlines it, Esc cancels) → the feedback box opens on it → **Save** | the same row, plus `anchor` (`mockify.anchor`: a `selector` from the screen's `[data-step]` or an id, the element's `label`, its `html`, its position `x y w h`) and `element_shot` (the element drawn through an SVG `foreignObject`, best effort: no picture for a big subtree or a cross-origin image) |
 | ✕ on an open comment | `deleteRow(key, {expected: version})` |
-| **▶ Execute (n)** on the bar | what **Send to <session>** below does, for the open comments — no review first; greyed with none open or no session |
+| **▶ Execute (n)** on the bar | what **Send to <session>** below does, for the open comments — no review first — then asks the host to open the session's tab (`navigateHost`); greyed with none open or no session |
 | **Review** (popup toolbar) | nothing yet: opens the review panel — the open comments as ONE markdown document (screen by screen in journey order; each with its decision, the element it is on and its selector, and the paths of its images under the mock-feedback dataset folder), with **📁 Open folder** (the mock row's `folder`, shown in Finder / Explorer through the compute node), **⧉ Copy** and **Send ▶** |
-| **Send to <session> ▶** | uploads **that same markdown** as a file into the mock's `session` input folder and queues ONE line pointing at it ("File <name>.md is available here: <path>" — a multi-line prompt typed into a terminal session sits unsubmitted in its input box); `Send again` re-delivers the already-sent markdown the same way. Then, for new comments, `putMany` the open rows to `submitted` (with their versions) and the mock row to `status: submitted` |
+| **Send to <session> ▶** | (like ▶ Execute, it then opens the session's tab) uploads **that same markdown** as a file into the mock's `session` input folder and queues ONE line pointing at it ("File <name>.md is available here: <path>" — a multi-line prompt typed into a terminal session sits unsubmitted in its input box); `Send again` re-delivers the already-sent markdown the same way. Then, for new comments, `putMany` the open rows to `submitted` (with their versions) and the mock row to `status: submitted` |
 
 A comment on an element shows as a numbered **bubble** at that element (at its saved spot when the selector no
 longer finds it; grey once submitted); a click on the bubble opens the comment and outlines the element.
@@ -59,8 +59,8 @@ step change.
 **Restart** goes to the first screen. **Back / Next** and ←/→ follow the **main path** (branches are
 skipped; from a branch Next rejoins the path); ☰ reaches every screen (branches as "↳ when — title");
 browser Back/Forward walk the screens visited; arrows are ignored while typing. Every panel (screens, feedback) closes with its ✕ or Esc;
-the comment typed so far stays until Save, and a successful Save folds the box
-away and shows the saved entry, highlighted, in the panel (＋ New comment brings the box back). Drag by ⋮⋮ (kept on
+the comment typed so far stays until Save, and a successful Save closes the panel
+back to the clean bar (the comment shows as its bubble and in ▶ Execute (n)). Drag by ⋮⋮ (kept on
 screen, panels open upward when the bar sits low); – minimises to `🎯 · n of N` (+ restores). Position
 and minimised state survive reloads (sessionStorage, guarded). The bar **contrasts with the screen behind
 it** (it samples the real background: light bar on a dark screen, dark on a light one), re-checked on

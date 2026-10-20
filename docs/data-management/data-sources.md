@@ -135,8 +135,8 @@ declared. A source answers *what is there* and *what changed since a cursor*; it
 writes an entity, emits an event, or advances a cursor. It imports the public SDK, never
 another asset.
 
-The loader (`flow_sdk/ingest/source_registry.py`) builds each folder into a **source
-type** (`flow_sdk/ingest/sources.py`, `DataDriver`) from the manifest and the class. What
+The loader (`flow_sdk/ingest/driver_registry.py`: `load_driver`, `asset_module`) builds each folder into a **source
+type** (`DataDriver`, `flow_sdk/builtin/data_driver.py`) from the manifest and the class. What
 differs between sources, the source says itself: the credential shape is the manifest's
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
 application transport; `message_for` reads a send's arguments; `query` names the one stream it reads; `local_tree_key` / `origin_id_for` place and name reflected files;
@@ -472,7 +472,7 @@ straight from the row (`fts_content=("body",)`). The row stores the contract's
 value: `origin`, the resource's `CloudOrigin(kind, namespace, key)`, and `data`,
 its typed payload tagged with a `spec_kind` (`ingest.message`,
 `ingest.message.email`, `ingest.feed.item`). Drivers still emit the flat
-envelope; `ingest/legacy_lift.py` is the one rule that lifts it — `kind` is the
+envelope; `ingest/envelope_lift.py` is the one rule that lifts it — `kind` is the
 source's channel, `namespace` is the account the source reads as (the kind
 itself for a source with no account; a driver that builds its own origin joins
 its container, `<account>/<channel>`), `key` is the external id — and the
@@ -481,7 +481,7 @@ identity is the natural key declared once on the type —
 `natural_key=("data_source_id", "origin_kind", "origin_namespace",
 "origin_key")`, the flat copy of the origin a query can reach — resolved by
 `DbSerializer.resolve_many` in one query per page (index
-`ix_entities_source_item_origin_v3`), and gated by `digest_fields` (`ingest/digest.py`: an allowlist of
+the index declared on `SOURCE_ITEM.indexes`), and gated by `digest_fields` (`ingest/digest.py`: an allowlist of
 normalized fields, never `raw`). `upsert` copies only the spec's fields onto
 the row, plus the natural key it resolved by, so `read` and `starred` survive
 re-delivery by not being named. A
@@ -503,17 +503,17 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
   same source.
 * A source's code runs in the backend process; the sandboxed source host is a later step
   (no asset changes when it lands).
-* The outbound message specs are still named per channel in
-  `flow_sdk/builtin/source_item.py` (`SlackMessageSpec`, …) until the messaging verbs
-  replace them.
+* Resolved: every provider's outbound message spec (`TelegramMessageSpec`, …) lives in its
+  driver's `source.py`, reached via `outbound_spec`; the gate test fails on a
+  `<Driver>MessageSpec` outside an asset folder.
 
 **Key source files:** `flow_sdk/builtin/data_source.py` (the `send`, `reply`, `items`,
-`sync`, `set_enabled`, `remove` actions), `source_item.py`
-(`SourceItemSpec` = the row's header), `data_driver.py` (`DataDriverSpec` = the
-manifest's header), `flow_sdk/ingest/` (`source_registry.py`, `sources.py`,
+`sync`, `set_enabled`, `remove` actions), `source_item.py`,
+`data_driver.py`, `flow_sdk/schema/data_spec/source_item_spec.py` (`SourceItemSpec` = the row's header),
+`data_driver_spec.py` (`DataDriverSpec` = the manifest's header), `flow_sdk/ingest/` (`driver_registry.py`,
 `credentials.py`, `testing.py`, `poller.py`, `sync.py`, `session.py`, `ingestor.py`, `models.py`,
 `reflect.py`, `change_event.py`, `health.py`, `digest.py`, `ingest_on_tag.py`,
-`legacy_lift.py`), `flow_sdk/sources/` (the contract), each data source's asset folder,
+`envelope_lift.py`), `flow_sdk/sources/` (the contract), each data source's asset folder,
 `flow_sdk/cli/commands/source_cmd.py` (`flow source`),
 `flow_sdk/server/routes/data_source_webhook.py`,
 `flow_sdk/server/routes/ingest.py`,

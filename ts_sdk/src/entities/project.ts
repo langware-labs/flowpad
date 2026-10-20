@@ -880,10 +880,12 @@ export class Project extends APIEntity<Project> {
    *  fetches: a dependency not on this machine yet reads `missing`. */
   async dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
     const { declarers, ...params } = options;
-    const response = await this.get<Partial<ProjectDependencies> | null>(
+    const response = await this.get<(Partial<ProjectDependencies> & Partial<ProjectContextPayload>) | null>(
       'dependencies',
       declarers ? { ...params, declarers: '1' } : params,
     );
+    // The listing carries the project's resolved context: a background add lands here.
+    this.adoptContext(response);
     return {
       dependencies: response?.dependencies ?? [],
       warnings: response?.warnings ?? [],
@@ -916,7 +918,8 @@ export class Project extends APIEntity<Project> {
    *  `hub:<project-id>` or `file:<path>` string — or a plain local folder (a
    *  folder inside a git checkout is written as its repo) or a bare git URL.
    *  `path` points at a sub-folder of the source; `optional` files it under
-   *  `optionalDependencies` (and installs it now); `label` / `description` are
+   *  `optionalDependencies` (and installs it now); `local` keeps it on this device
+   *  only — written to no file of the project; `label` / `description` are
    *  the entry's human-friendly name; `asset` (a TypeId) declares it in that
    *  asset's own `flow.json` (ids only). Rejects with the backend's message on a
    *  bad source. */
@@ -926,6 +929,7 @@ export class Project extends APIEntity<Project> {
       name?: string;
       path?: string;
       optional?: boolean;
+      local?: boolean;
       label?: string;
       description?: string;
       asset?: string;
@@ -938,9 +942,30 @@ export class Project extends APIEntity<Project> {
       );
       this.adoptContext(response);
       if (!response?.dependency) throw new Error('add-dependency returned no dependency');
-      for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
+      // The backend fetches, indexes and loads it in the background — announce it once that lands.
+      if (!options.asset) void this.announceWhenResolved(response.dependency.name);
+      else for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
       return response.dependency;
     });
+  }
+
+  /** Wait (without holding the caller) for the background add to finish, then tell
+   *  the dependency listeners and refresh the dependency list. */
+  private async announceWhenResolved(name: string): Promise<void> {
+    try {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const { dependencies, resolving } = await this.dependencies();
+        if (resolving) continue;
+        const dependency = dependencies.find((d) => d.name === name && !d.via);
+        if (dependency) for (const listener of dependencyLoadListeners) listener(dependency, this.id);
+        return;
+      }
+    } catch (err) {
+      console.warn('[project] dependency announce failed', err);
+    } finally {
+      notifyDependenciesChanged(this.id);
+    }
   }
 
   /** Run a dependency verb, then tell every listener for this project

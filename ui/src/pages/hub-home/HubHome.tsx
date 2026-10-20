@@ -30,6 +30,7 @@ import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
 import { HUB_HOME_CARD } from './card-style';
+import { openInbound } from '@src/components/inbound/inbound-pointer';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
@@ -45,6 +46,7 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
+  Webhook,
 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -402,6 +404,21 @@ export function HubHome() {
             </span>
             <span className="text-sm text-muted-foreground">
               <Trans>Teams and people across your org.</Trans>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openInbound(navigation)}
+            data-testid="hub-home-inbound"
+            className={HUB_HOME_CARD}
+          >
+            <Webhook className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
+            <span className="text-base font-semibold">
+              <Trans>Inbound</Trans>
+            </span>
+            <span className="text-sm text-muted-foreground">
+              <Trans>Numbers and bots that message you, and where each message goes.</Trans>
             </span>
           </button>
 

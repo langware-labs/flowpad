@@ -190,6 +190,12 @@ def test_an_entity_document_is_always_a_document_but_not_the_reverse():
     assert len(documents) > len(entity_documents), "the two predicates have collapsed into one"
 
 
+def _in_asset_folder(path) -> bool:
+    """Inside an asset folder (one holding its ``<family>.json`` manifest, e.g. a data driver):
+    loaded by its asset loader, never imported as a package, so it is not a shape package."""
+    return any((parent / f"{parent.parent.name}.json").is_file() for parent in path.parents)
+
+
 def test_no_package_outside_this_list_declares_a_shape():
     """``SHAPE_PACKAGES`` is hand-written, so it needs a way to go wrong loudly.
 
@@ -205,6 +211,7 @@ def test_no_package_outside_this_list_declares_a_shape():
     found = {
         f"flow_sdk.{path.relative_to(root).parts[0]}"
         for path in root.rglob("*.py")
-        if len(path.relative_to(root).parts) > 1 and declares.search(path.read_text(encoding="utf-8", errors="ignore"))
+        if len(path.relative_to(root).parts) > 1 and not _in_asset_folder(path)
+        and declares.search(path.read_text(encoding="utf-8", errors="ignore"))
     }
     assert found <= set(SHAPE_PACKAGES), sorted(found - set(SHAPE_PACKAGES))

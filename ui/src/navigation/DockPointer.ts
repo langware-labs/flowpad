@@ -113,6 +113,8 @@ export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[num
 export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null };
 
 export const HIGHLIGHT_PARAM = 'highlight';
+/** An entry of an `fs/` folder to show selected. */
+export const FS_SELECT_PARAM = 'select';
 /** A transcript entry to scroll to and select. */
 export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
 /** A timestamp to seek a transcript to. */
@@ -587,6 +589,11 @@ export class DockPointer implements IDockPointer {
    * reads the same `HIGHLIGHT_PARAM` via `useHighlight()` instead (it is not a
    * dock URL). See docs/wikitip.md.
    */
+  /** The folder entry an `fs/` pointer opens with selected. */
+  get fsSelect(): string | undefined {
+    return this.options?.[FS_SELECT_PARAM];
+  }
+
   get highlight(): string | null {
     return this.options?.[HIGHLIGHT_PARAM] ?? null;
   }
@@ -1252,11 +1259,16 @@ export class DockPointer implements IDockPointer {
    * Route grammar: `fs/vfs/<absVfsPath>`. `vfs://` is deliberately not placed
    * in the path segments; `VFSPath.absVfsPath` is the route-safe serialization.
    */
-  static forAssetFs(vfsPath: VFSPath, layout: Layout = Layout.DOCK): DockPointer {
+  static forAssetFs(vfsPath: VFSPath, layout: Layout = Layout.DOCK, select?: string): DockPointer {
     if (!vfsPath.isAbsolute) {
       throw new Error(`Asset filesystem pointers require an absolute VFS path: "${vfsPath.rawPath}"`);
     }
-    return new DockPointer(ViewType.ASSETS, `fs/${AssetRoutingMethod.VFS}/${vfsPath.absVfsPath}`, undefined, layout);
+    return new DockPointer(
+      ViewType.ASSETS,
+      `fs/${AssetRoutingMethod.VFS}/${vfsPath.absVfsPath}`,
+      select ? { [FS_SELECT_PARAM]: select } : undefined,
+      layout,
+    );
   }
 
   /**

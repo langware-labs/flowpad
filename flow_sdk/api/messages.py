@@ -13,6 +13,7 @@ from flow_sdk.api.api_types.messages import (  # noqa: F401  (re-exports)
     EntityMessage,
     HttpMethod,
     HubClientErrorMessage,
+    HubClientRecoveredMessage,
     OAuthMessage,
     OAuthMessageStatus,
     OperationType,

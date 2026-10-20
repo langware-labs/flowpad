@@ -221,6 +221,8 @@ class FlowDependency(DataSpec):
     source: str
     path: str = "."
     required: bool = True
+    #: A local package: kept on this device only, never written to ``flow.json``.
+    local: bool = False
     #: The human-friendly name and description an entry may carry.
     label: Optional[str] = None
     description: Optional[str] = None
@@ -382,6 +384,8 @@ class DependencyState(DataSpec):
     name: str
     source: str
     required: bool = True
+    #: A local package: kept on this device only, never in the project's files.
+    local: bool = False
     path: str = "."
     state: DependencyStateName
     #: The resolved local folder (``ready`` only).

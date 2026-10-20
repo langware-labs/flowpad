@@ -88,25 +88,22 @@ async def _resolve_scoped(
     None means the source lacks project context, so the legacy unique-only
     compatibility lookup may run.
     """
-    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.wiki import Wiki
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.fs_store.type_id import TypeId
 
-    from .service import ensure_default_wiki, resolve
+    from .run_scope import lookups
+    from .service import resolve
 
     wiki = None
     if link.wiki_ref and link.wiki_ref != "@local":
         wiki = await Wiki.get_by_typeid(TypeId(f"wiki-{link.wiki_ref}"))
     else:
-        source_model = SchemaRegistry.get_entity_cls(src_type)
-        source = await source_model.get_one({"id": src_id}) if source_model else None
-        project_id = getattr(source, "project_id", None) if source is not None else None
+        lk = lookups()
+        project_id = await lk.source_project_id(src_type, src_id)
         if project_id:
-            from flow_sdk.builtin.project import Project
-
-            project = await Project.get_by_id(str(project_id))
+            project = await lk.project(project_id)
             if project is not None:
-                wiki = await ensure_default_wiki(project)
+                wiki = await lk.default_wiki(project)
         elif link.wiki_ref == "@local":
             return {"kind": "missing"}
 

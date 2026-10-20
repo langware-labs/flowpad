@@ -19,6 +19,8 @@ interface ContextFolderBrowserProps {
   /** Scoped project whose dependencies this path belongs to — resolves the
    *  containing git-backed dependency folder for status/push decoration. */
   projectId?: string | null;
+  /** Entry of the folder to show selected (the `select` URL option). */
+  selectName?: string;
 }
 
 /**
@@ -33,7 +35,7 @@ interface ContextFolderBrowserProps {
  * diff + push/notify) live on the folder's tree row — see
  * {@link ContextFolderGitBadge} — not in this pane.
  */
-export function ContextFolderBrowser({ vfsPath, onNavigate, projectId }: ContextFolderBrowserProps) {
+export function ContextFolderBrowser({ vfsPath, onNavigate, projectId, selectName }: ContextFolderBrowserProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   // The VFS the file manager browses. `useDependencyForRel` resolves the same
@@ -106,6 +108,7 @@ export function ContextFolderBrowser({ vfsPath, onNavigate, projectId }: Context
         <SimpleFileManager
           typeId={typeId}
           initialPath={initialPath}
+          initialSelectedName={selectName}
           onPathChange={handlePathChange}
           onFileSelect={handleFileSelect}
           onFsMutated={gitWorkdir ? () => void refresh() : undefined}

@@ -65,12 +65,12 @@ afterEach(() => {
 describe('rail', () => {
   it('shows the stream inbox, automations and connections, in that order', () => {
     // Every other screen is opened by asking for it in the top bar.
-    expect(renderRail().ids()).toEqual(['stream_inbox', 'automations', 'credentials']);
+    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'automations', 'credentials']);
   });
 
   it('developer mode adds nothing to the rail', () => {
     setDev(true);
-    expect(renderRail().ids()).toEqual(['stream_inbox', 'automations', 'credentials']);
+    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'automations', 'credentials']);
     setDev(false);
   });
 

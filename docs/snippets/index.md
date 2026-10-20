@@ -34,7 +34,7 @@ subfolder_count: 0
 - [Datasets — snippets](datasets.md) — Dataset snippets: row schemas as folders, reading and writing rows, evaluation, rows by key, links, mirroring, relational queries, aggregation, and source-owned field writes.
 - [Decisions — snippets](decisions.md) — Decision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, the Jev and OpenAI vocabulary, navigator routing, and decision wizard steps.
 - [FlowCall blocks — typed input, call.py, output](flowcall-blocks.md) — Typed ComputeOp authoring with call.py, whole-list inputs, Wizard-backed chains, explicit maps, references, approval, invocation tracing, and bounded call logs.
-- [Gmail source](gmail-source.md) — Gmail source creation from the shipped driver with an app password kept out of the row, and the OAuth gmail_send helper for report senders.
+- [Gmail source](gmail-source.md) — Gmail source creation from the shipped driver with an app password kept out of the row, and the Gmail driver's send-only module for report senders.
 - [LLM endpoints — snippets](llm-endpoints.md) — Snippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, harness resolution, public loginless endpoints, and error behavior.
 - [Simple message block](message-block.md) — Snippet: send a prompt through a process-local MessageBlock and let an Agent reply, with no worker named.
 - [Files, quote-replies and reactions on a channel](message-channels.md) — Snippets for sending files, quote-replies, voice notes and reactions on message channels, with capabilities declared as channel_spec data and unsupported content refused.
@@ -44,7 +44,6 @@ subfolder_count: 0
 - [Project dependencies — snippets](project-dependencies.md) — Project dependency declarations, resolution, shared context, cross-project documents and agents, sharing, and equivalent CLI operations.
 - [Project git share](project-git-share.md) — Runnable snippets for sharing a private GitHub repo with project members through the hub, with role-based pull and push access
 - [RAG — snippets](rag.md) — RagIndex snippets: covering folders, embedding only unseen chunks, pending versus indexing status, and semantic search over indexed markdown.
-- [Relationship pickers in SDK viewers](relationship-pickers.md) — SDK relationship candidate providers, dependent queries, search and pagination, ordered selections, readonly controls, and Dataset-owned validation and version conflicts.
 - [Scan and index — snippets](scan-and-index.md) — Runnable diskio examples for tree walking, asset scanning, document reading, link extraction, and Python or Rust backend selection.
 - [Secret stores](secret-stores.md) — Secret-store examples for credentials, environment variables, source access, account connections, deployment binding, validation, and project setup.
 - [Service endpoints — snippets](service-endpoints.md) — Deployment service endpoints, audience routes, protocol proxies, port ownership, cloud access grants, agent chat channels, and endpoint health checks.

@@ -92,7 +92,7 @@ class MessageThread(ProjectedFields, Entity):
 
         The key is declared once, on the type (``TypeInfo.natural_key``); this
         is its named single-row entry point, indexed by
-        ``ix_entities_message_thread_natural_key_v3``. A key names a SEQUENCE of
+        the index declared on ``MESSAGE_THREAD.indexes``. A key names a SEQUENCE of
         threads when its source times threads out (``thread_timeout_seconds``):
         the quiet one stays as it was and the next message begins a new row on
         the same key — so the current thread is the newest. Nothing renames an

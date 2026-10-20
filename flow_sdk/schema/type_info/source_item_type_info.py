@@ -30,4 +30,12 @@ SOURCE_ITEM = TypeInfo(
     # it — two sources reading one account keep their own rows.
     natural_key=("data_source_id", "origin_kind", "origin_namespace", "origin_key"),
     digest_fields=DIGESTED_FIELDS,
+    indexes=(
+        # The natural key: ingestion resolves every record by its origin on EVERY poll to
+        # consult the digest gate — one indexed lookup, not a scan of the type.
+        ("data_source_id", "origin_kind", "origin_namespace", "origin_key"),
+        # A consumer drains a source in INGEST order — ``(created_date, id)`` are real
+        # columns, so ORDER BY and LIMIT push to SQL.
+        ("data_source_id", "created_date", "id"),
+    ),
 )

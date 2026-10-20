@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.types.dataset import derive_dataset, iter_rows
+from flow_sdk.assets.types.dataset import derive_dataset
+from tests.unit._dataset_read import iter_rows
 from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum, FileRef, FolderSpec, TextSpec
 from flow_sdk.schema.data_spec.layout import FolderLayout, dataset_layout_for
 

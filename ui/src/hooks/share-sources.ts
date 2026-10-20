@@ -88,6 +88,10 @@ export interface ShareSource {
    *  the same call the team Share panel makes — so the recipient receives a
    *  project invitation whose accept materializes and clones it. */
   accessGrantRef?: TypeId;
+  /** Sharing a thing (an asset, artifact, file or folder): a new conversation
+   *  titled "<Name> has shared <thing>", git or copy by project membership, and
+   *  an invite link at the end. */
+  shareAsThing?: boolean;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -117,6 +121,7 @@ export function genericEntityShareSource(
     typeLabel: opts.typeLabel ?? typeId.type,
     defaultTitle: opts.label,
     bookmarkable: true,
+    shareAsThing: true,
     ownerRef: typeId,
     previewAssets: [{ ref: typeId, label: opts.label ?? ref }],
     // File-backed assets may be shared by their Git origin — the dialog's Git
@@ -179,6 +184,7 @@ export function folderShareSource(folderTypeId: TypeId, opts: { label: string })
     typeLabel: 'FOLDER',
     defaultTitle: opts.label,
     bookmarkable: true,
+    shareAsThing: true,
     shareConfig: { transferMode: 'git' },
     prepare: resolveOnce(() =>
       Promise.resolve({
@@ -206,6 +212,7 @@ export function artifactShareSource(
     typeLabel: opts.typeLabel ?? artifact.kind ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
     bookmarkable: true,
+    shareAsThing: true,
     ownerRef: artifact.typeId,
     previewAssets: [{ ref: artifact.typeId, label: opts.label ?? artifact.displayName ?? ref }],
     // Eligibility (clean + pushed worktree with a usable origin) is resolved by
