@@ -27777,6 +27777,14 @@ msgstr ""
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 msgstr "سيتم حذف الرسالة وجميع بياناتها بشكل نهائي لجميع المشاركين في المحادثة. هذا الإجراء غير قابل للتراجع."
 
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية، ومجلد المشروع على القرص ({path}). لا يمكن التراجع عن هذا الإجراء."
+
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+msgstr "سيؤدي هذا إلى حذف المشروع وكل ما فيه نهائيًا — جميع السجلات المفهرسة وعناصرها الفرعية، ومجلد المشروع على القرص. لا يمكن التراجع عن هذا الإجراء."
+
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
 msgstr "سيتم حذف الملف نهائياً من القرص. لا يمكن التراجع عن هذا الإجراء."

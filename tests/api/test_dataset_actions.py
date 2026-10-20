@@ -168,7 +168,8 @@ async def test_rows_listing_reports_promoted_items_and_gold(bootstrapped_client,
         await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
     ).json()["data"]["ids"]
     listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/row-index")).json()["data"]["rows"]
-    assert listed == [{"row_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False}]
+    assert listed == [{"row_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False,
+                       "multi_output": False, "binary_input": True}]
     await client.post(
         f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": eid, "ground_truth": {"sentiment": "neutral"}}
     )

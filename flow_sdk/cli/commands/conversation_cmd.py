@@ -383,6 +383,7 @@ def _resolve_contact(port: int, who: str) -> dict:
     """``who`` (an email, a hub user id or a name) as one participant
     ``{name, email, user_id}`` — through the address book, so a name works.
     An email nobody knows yet is still a valid recipient (the hub invites them)."""
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
     from flow_sdk.cli.commands.contacts_cmd import load_contacts, match  # noqa: PLC0415
 
     found = match(load_contacts(port), who)
@@ -390,7 +391,7 @@ def _resolve_contact(port: int, who: str) -> dict:
         c = found[0]
         return {"name": c.get("name"), "email": c.get("email"), "user_id": c.get("user_id")}
     if "@" in who and not found:
-        return {"name": None, "email": who.strip().lower(), "user_id": None}
+        return {"name": None, "email": normalize_email(who), "user_id": None}
     if not found:
         _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No contact matches {who!r}. Ask for their email.")
     names = ", ".join(f"{c.get('name')} <{c.get('email') or c.get('user_id')}>" for c in found)
