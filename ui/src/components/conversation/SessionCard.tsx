@@ -85,6 +85,7 @@ function useSessionExpired(session: RemoteWorkerSession | null): boolean {
  * and its status. The whole line opens the session view, where the turns live.
  * The host answers a request here once (Approve or Decline); once it is live the
  * line carries the message count, the time since approval, and a red Disconnect.
+ * The guest can cancel a request the host has not answered yet.
  * While a prompt runs the line names it; the host also gets an icon that opens
  * the chat it runs in.
  */
@@ -246,6 +247,14 @@ export function SessionCard({
             )}
           </>
         )}
+        {role === 'guest' &&
+          (state === 'pending' || state === 'requesting') &&
+          button(
+            'disconnect',
+            onDisconnect,
+            'border border-border text-foreground hover:bg-muted',
+            <Trans>Cancel request</Trans>,
+          )}
         {state === 'active' &&
           button(
             'disconnect',
