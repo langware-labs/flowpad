@@ -3,7 +3,7 @@
   "name": "gcs",
   "title": "Google Cloud Storage",
   "icon_name": "GoogleCloudStorage",
-  "description": "Objects from a GCS bucket, downloaded and indexed. Needs a Google connection.",
+  "description": "Objects from a GCS bucket, downloaded and indexed; a dataset's rows can live under a prefix (location gcs:<bucket>/<prefix>). Needs a Google connection.",
   "kind": "datasource.fs.gcs",
   "auth": {
     "connector": "google",
@@ -18,6 +18,14 @@
         "https://www.googleapis.com/auth/devstorage.read_only"
       ],
       "why": "List and read the objects of the configured bucket."
+    },
+    "permission.google.storage.write": {
+      "mechanism": "oauth",
+      "oauth_scopes": [
+        "https://www.googleapis.com/auth/devstorage.read_write"
+      ],
+      "why": "Keep a dataset's rows in the bucket (location gcs:<bucket>/<prefix>): write and delete objects under that prefix.",
+      "writes": true
     }
   },
   "reflect": [

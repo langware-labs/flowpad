@@ -132,7 +132,30 @@ export interface ViewerContext {
   open?: (part: OpenRequest) => void;
   /** Open an entity (a TypeId) in Flowpad — the host navigates. Absent when there is no host. */
   navigate?: (typeid: string) => void;
+  /** Relationship rows, distinct from the registry's choices of viewer modules. */
+  candidates?: RelationshipCandidates;
 }
+
+export interface RelationshipCandidate {
+  key: string;
+  label: string;
+  value: unknown;
+}
+
+export interface RelationshipQuery {
+  kind: string;
+  field: string;
+  parent: Record<string, unknown>;
+  selected: RelationshipCandidate[];
+  search: string;
+  cursor?: string;
+}
+
+/** The host owns filtering and pagination; the picker never infers relationship rules. */
+export type RelationshipCandidates = (query: RelationshipQuery) => Promise<{
+  items: RelationshipCandidate[];
+  next?: string;
+}>;
 
 /** A part to open on its own: a value of a kind, and what to call it in the trail. */
 export interface OpenRequest {

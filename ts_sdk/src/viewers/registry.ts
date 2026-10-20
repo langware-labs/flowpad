@@ -34,6 +34,8 @@ export interface ViewerHost {
   importModule?: (choice: ViewerChoice) => Promise<ViewerModule>;
   /** A stored value by its reference (`<kind>.id.<uuid>`), looked up in `within` first. */
   value?: (ref: string, within?: string) => Promise<StoredValue>;
+  /** Relationship rows for a picker (``mountRelationshipPicker``): the host filters and pages them. */
+  candidates?: ViewerContext['candidates'];
   /** What the app does when a viewer opens a part on its own (`ctx.open`) or an entity (`ctx.navigate`). */
   open?: ViewerContext['open'];
   navigate?: ViewerContext['navigate'];
@@ -161,6 +163,7 @@ export function createViewerContext(host: ViewerHost = {}): ViewerContext {
     generic: { single: genericSingle, collection: genericCollection },
     open: host.open,
     navigate: host.navigate,
+    candidates: host.candidates,
     render: async (el: HTMLElement, request: ViewRequest) => {
       const got = await dereference(request.value);
       if ('missing' in got) return missing(el, got);

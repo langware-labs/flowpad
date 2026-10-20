@@ -267,3 +267,54 @@ async def test_no_project_is_answered_before_any_request(driver, tmp_path):
 async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver, tmp_path):
     with local_http_server(_Bucket()) as base:
         assert await driver.choices(_source(tmp_path, base, project="p"), "prefix") == []
+
+
+# ── rows (``RowFiles``): a dataset's rows under a prefix ────────────────────
+
+
+class _RowBucket:
+    """One bucket's objects with generations; ``ifGenerationMatch`` honoured as GCS does (0 = absent)."""
+
+    def __init__(self):
+        self.objects: dict[str, tuple[bytes, int]] = {"elsewhere/x": (b"{}", 1)}
+        self.gen = 1
+
+    def __call__(self, path, headers):
+        url = urlparse(path)
+        query = {k: v[0] for k, v in parse_qs(url.query).items()}
+        method = headers.get("_method", "GET") if isinstance(headers, dict) else "GET"
+        wanted = query.get("ifGenerationMatch")
+        if url.path.endswith("/o") and method == "POST":           # the upload root
+            name, held = query["name"], self.objects.get(query["name"])
+            if wanted is not None and str(held[1] if held else 0) != wanted:
+                return 412, b"{}", {}
+            self.gen += 1
+            self.objects[name] = (headers["_raw"], self.gen)
+            return 200, json.dumps({"name": name, "generation": str(self.gen)}).encode(), {}
+        if url.path.endswith("/o"):
+            prefix = query.get("prefix") or ""
+            items = [{"name": n, "generation": str(g)} for n, (_, g) in sorted(self.objects.items()) if n.startswith(prefix)]
+            return 200, json.dumps({"items": items}).encode(), {}
+        name = unquote(url.path.split("/o/", 1)[1])
+        held = self.objects.get(name)
+        if method == "DELETE":
+            if wanted is not None and str(held[1] if held else 0) != wanted:
+                return 412, b"{}", {}
+            self.objects.pop(name, None)
+            return (204 if held else 404), b"", {}
+        return (200, held[0], {}) if held else (404, b"{}", {})
+
+
+async def test_rows_under_a_prefix_keep_the_row_files_contract():
+    from flow_sdk.sources.testing import check_row_files
+
+    bucket = _RowBucket()
+    with local_http_server(bucket) as base:
+        async with GcsSource(SourceBinding(config={"bucket": "acme-docs", "prefix": "gtm/leads", "base_url": base}, credentials=TOKEN)) as source:
+            await check_row_files(source)
+    assert set(bucket.objects) == {"elsewhere/x"}                                # nothing outside the prefix moved
+
+
+async def test_a_gcs_location_names_the_bucket_and_the_prefix():
+    assert GcsSource.row_files_target("acme-docs/gtm/leads") == {"bucket": "acme-docs", "prefix": "gtm/leads"}
+    assert GcsSource.row_files_target("gs://acme-docs") == {"bucket": "acme-docs", "prefix": ""}

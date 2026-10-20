@@ -15,7 +15,7 @@ subfolder_count: 0
 # data-management
 
 ## Self-Summary
-> How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.
+> How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, where a dataset's rows live, evals, records, search and the SQLite layer underneath.
 
 ## Files
 - [Asset capsules](asset-capsules.md) — Asset capsules: named JSON metadata stored in folders, Markdown comments and source-file comments, with read, write, remove operations, identity carriers and typed errors.
@@ -26,7 +26,8 @@ subfolder_count: 0
 - [Data sources](data-sources.md) — DataSource lifecycle, source contracts, polling health, account identity, change envelopes, driver registration, and curated Dataset integration.
 - [DataSpec — schemas as Pydantic, the schema as the layout](data-spec.md) — DataSpec schemas, runtime schema compilation, typed RowSpec and DatasetSpec values, DatasetLayout on disk, TypeInfo integration, and folder-defined schemas.
 - [Database Architecture](database.md) — SQLite layer architecture: one async engine, pooling, pragmas, BEGIN IMMEDIATE on writers, batched indexer commits with writer-lock hand-over, and driver session resolution.
-- [Dataset Layout (Authoring Guide)](datasets.md) — Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows, row verbs, queries, source curation, mirroring, editors and the schema tree.
+- [Dataset locations](dataset-locations.md) — Where a dataset's rows live: local, a folder, Drive, S3 or a record system; the working copy, commit point and conflicts, write-through of owned fields, pull and move-rows.
+- [Dataset Layout (Authoring Guide)](datasets.md) — Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows, row verbs, queries, source curation, row locations, editors and the schema tree.
 - [diskio — measured results](diskio-benchmarks.md) — Measured diskio performance comparing baseline, Python, and Rust implementations, with correctness checks and shadow-folder migration results.
 - [Benchmark results (FIXED unless a benchmark is rerun)](diskio-design-benchmarks.md) — Design benchmarks comparing thirteen filesystem and parsing operations across Python and Rust, including parity, timings, and implementation recommendations.
 - [Interface proposal — v6 — FINAL (iteration 6)](diskio.md) — Disk-I/O kernel contracts: eight protocol pieces, Python and Rust backends, scanning hierarchy, shared value and transport rules, conformance kit, and implementation scope.
@@ -41,7 +42,6 @@ subfolder_count: 0
 - [The LLM Folder-Index Pipeline](llm-index.md) — The index.md folder-index pipeline: LLMIndexer's hash-cache-assemble Merkle build, the on-disk artifacts, and the MarkdownIndex entity that indexes them.
 - [MCP Server Operations](mcp-operations.md) — The flow_sdk MCP server Claude Code spawns over stdio: how it launches, its FastMCP and raw-debug modes, and the entity, tag, context and session tools.
 - [Meeting sources — Zoom, Teams, Google Meet](meeting-sources.md) — Research comparing Zoom, Teams and Google Meet recordings, transcripts and AI notes as data sources, covering auth, permissions, push mechanisms and driver-model fit.
-- [Mirroring a system of record](mirroring-a-system-of-record.md) — How-to for mirroring an outside system of record into typed dataset rows: the source's declared mirror map, write-through of owned fields, record-driver rules, failure modes.
 - [Record Model](record-model.md) — The FSRecord class and flow_sdk/fs_store: disk as source of truth, per-type behaviour on TypeInfo, meta models, and what the lean rewrite deliberately dropped.
 - [Record Search (FTS5/SQLite)](record-search.md) — Record search on SQLite FTS5: how FSRecord.sync_to_db indexes entries, how Entity.search and the search route query them, and how bulk reindexing runs.
 - [Scan and Discovery](scan-and-discovery.md) — Filesystem record discovery through FSIndexer walkers, per-type parsing and freshness slots, session lookup, RecordQuery filtering, explicit indexing, HTTP endpoints, and performance.

@@ -130,8 +130,8 @@ creating the agent remains `agent-builder`, and connecting its source remains
 ## Keeping data in step with a system outside Flowpad
 
 "Keep my CRM deals / tickets / tasks here", "sync X with Y", "mirror ..." is two skills, in this
-order: `connect-data-source` connects (or writes) the source, then `data-management` declares the
-dataset it mirrors into and which fields are the outside system's. Nothing here is a script of
+order: `connect-data-source` connects (or writes) the driver, then `data-management` gives the
+dataset a `location` in that system and marks which fields are the outside system's. Nothing here is a script of
 your own — do not write a sync loop, an API client or a state file.
 
 ## Other actions
