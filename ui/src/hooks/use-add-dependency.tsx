@@ -67,12 +67,13 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
       // optional dependency as required.
       if (!projectId || gitKind === null) return;
       const optional = gitKind === 'optional';
+      const local = gitKind === 'local';
       setGitKind(null);
       try {
         const result = await launchWizard<{ path?: string; newProjectId?: string }>('git-dependency', {
           title: t`Add Git package`,
           targetTypeId: projectTypeId?.toString(),
-          payload: { projectId, optional, ...input },
+          payload: { projectId, optional, local, ...input },
           prompt:
             input.mode === 'existing'
               ? `Set up the existing git repository ${input.url}${
