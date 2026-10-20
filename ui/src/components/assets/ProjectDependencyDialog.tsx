@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isValidEntityId, type Project, ENTITY_UUID_SOURCE } from '@sdk';
+import { normalizeEntityId, type Project, ENTITY_UUID_SOURCE } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -23,9 +23,8 @@ const ENTITY_ID_IN_TEXT = new RegExp(ENTITY_UUID_SOURCE);
 /** The hub project id a pasted value names — a bare id, a `hub:<id>` source,
  *  or a hub link carrying one — or null. */
 export function hubProjectIdFrom(text: string): string | null {
-  const raw = text.trim().replace(/^hub:/i, '').toLowerCase();   // pasted text: normalise, then check
-  if (isValidEntityId(raw)) return raw;
-  return raw.match(ENTITY_ID_IN_TEXT)?.[0] ?? null;
+  const raw = text.trim().replace(/^hub:/i, '');
+  return normalizeEntityId(raw) ?? normalizeEntityId(raw.toLowerCase().match(ENTITY_ID_IN_TEXT)?.[0]);
 }
 
 /** What a picked project is saved as: its hub id when it is published (fetched wherever this

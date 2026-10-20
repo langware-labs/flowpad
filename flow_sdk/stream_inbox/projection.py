@@ -41,7 +41,7 @@ from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
-from flow_sdk.sources.values.subject import normalize_subject  # the subject fallback thread key; re-exported
+from flow_sdk.sources.values.subject import normalize_subject
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry, single_flight
 from flow_sdk.utils.serialization import iso_to_utc
 
