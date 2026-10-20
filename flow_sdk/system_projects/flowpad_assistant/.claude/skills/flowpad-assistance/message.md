@@ -115,7 +115,8 @@ for c in json.load(sys.stdin)['data']:
 
 - "my latest conversation with Y" → among the matches, pick the **max `updated_date`**.
 - Multiple plausible matches with similar recency → list them and ask the user; do not guess.
-- No match → send nothing (any other conversation is the wrong person) and ask the user for the contact's email.
+- A group conversation, or one about another subject, is not a match: everyone in it would read the message.
+- No match → never post into another conversation: `flow contacts find <name>`, then `flow conversation new <email|user_id> "<text>" --title "<subject>"` starts one; not in the address book → ask the user for the email.
 
 ## Step 2 — check cloud login (sends require it)
 
