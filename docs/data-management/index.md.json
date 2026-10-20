@@ -5,7 +5,7 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "014b3732876ee97676d59ba3542140691495f3804384063a946c3adcdb1e05ba",
+  "inputs_hash": "4f7049e931b17d6f0e4d413b62cf07ff8d59685dac13272b7533dc37568a308e",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How Flowpad stores, discovers and indexes data: filesystem-backed records and assets, the SchemaRegistry, DataSpec schemas and datasets, data sources and their ingest contract, the SQLite entity index and full-text search, folder indexing, invalidation, and measured disk-IO benchmarks and interface proposals.",
@@ -38,33 +38,33 @@
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "Data source asset folder format: data_driver.json manifest fields, source.py, DataSource config files, runtime state, setup status, ownership and inbound access rules.",
-      "content_hash": "594932f4eaceebb1cfd96eb39d49b4c0fa277069054bbb3013f20e5e2201dcb6",
-      "size_bytes": 22372
+      "summary": "Data source asset folder layout: data_driver manifest, source.py, DataSource config files, runtime state, ownership, and manifest fields such as auth, webhook, reflect",
+      "content_hash": "9fb097b557b90d89a2b5e24e207360d1ac58a96b9234ecb289ff8ea5036cb940",
+      "size_bytes": 22114
     },
     {
       "name": "data-sources-ui.md",
       "rel_path": "data-sources-ui.md",
       "title": "Data Sources UI (Frontend)",
-      "summary": "Frontend Data Sources screen: components, dataManager queries and actions, URL-first navigation, status and health rendering, and channels still to connect",
-      "content_hash": "284384749a41493142034b82591bff48d508c0f2fc82d24a24170b68fcd6654d",
-      "size_bytes": 8446
+      "summary": "Frontend Data Sources screen: components under ui/src/components/data-sources, dataManager entities and actions, URL-first navigation, status and health rendering, channels still to connect.",
+      "content_hash": "c4aef129214392e1c704dff10b513aa05d7e0d07152454eee304f2933fdc68dc",
+      "size_bytes": 9426
     },
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "DataSource model for ingesting feeds, mailboxes and channels into the graph: pipeline, source contract, health status, identity, change envelope, adding a source, known gaps.",
-      "content_hash": "be649976bd165baa774719220eae5a5ab87dcf9100402855a9b304c2d90e5167",
-      "size_bytes": 35091
+      "summary": "Backend model of data sources: pipeline from driver fetch to SourceItem ingestion, source contract and traits, status and health, identity, change envelope.",
+      "content_hash": "7838979c18e40023f88e535bd5b656257ec2f36155b2c1fb9d85fbee9a1f0508",
+      "size_bytes": 35253
     },
     {
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec — schemas as Pydantic, the schema as the layout",
-      "summary": "Design of DataSpec, the Pydantic base for schemas: spec_kind registration, parsing schemas that arrive as data, RowSpec and DatasetSpec generics, DatasetLayout, and schema-as-asset-layout",
-      "content_hash": "656488003a365d91c4a8b3964cfb2ce944b8eeddd5009001e2d8d1598882fcda",
-      "size_bytes": 24345
+      "summary": "DataSpec base class for Pydantic schemas: kind registration, parsing schemas arriving as data, RowSpec and DatasetSpec generics, and asset layouts modeled by the schema class.",
+      "content_hash": "b26190fccb79ceb84ffc6b2705f67d550908cca8e8d33c9b4e0588be3ae7caf5",
+      "size_bytes": 24382
     },
     {
       "name": "database.md",
@@ -78,9 +78,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring guide for dataset folder layout: dataset.json manifest, csv versus io_folder row layouts, slots and sidecars, typed rows, parser output and checklist",
-      "content_hash": "c5bdf3637df0a8acfb02846dbb920423fbcb0c72598ebc15c1d9ed89486cc827",
-      "size_bytes": 36366
+      "summary": "Authoring guide for dataset folder layout: dataset.json manifest, csv and io_folder layouts, slots, sidecars, row metadata, parsing rules, typed rows, and editors.",
+      "content_hash": "1a2d77e1e010c36301610c0d96d5beaf7c0197a941001632edd27ce0b0a46b34",
+      "size_bytes": 37855
     },
     {
       "name": "diskio-benchmarks.md",
@@ -118,9 +118,9 @@
       "name": "evals.md",
       "rel_path": "evals.md",
       "title": "Evals — a dataset's own eval, standard results, one report",
-      "summary": "Dataset evals: EvalSpec folder with eval.json and eval.py, RowEval and EvalRun result kinds, the evaluate_row contract, how to run, and the SmartNavigator eval",
-      "content_hash": "c0c4f5e0a96400d60002919cae787c6af5722129bc45888d059e3a6c254153e2",
-      "size_bytes": 3863
+      "summary": "Dataset eval framework: EvalSpec, RowEval and EvalRun schemas, the eval.py contract, running evals with report output, REST endpoints, and the SmartNavigator eval.",
+      "content_hash": "2c12155225588c3f54cbaddef5d0abedca954efd97f39e0d24ee403a9f98d5ff",
+      "size_bytes": 4125
     },
     {
       "name": "folder-layout.md",
@@ -230,9 +230,9 @@
       "name": "schema-registry.md",
       "rel_path": "schema-registry.md",
       "title": "Schema Registry",
-      "summary": "SchemaRegistry and TypeInfo as the single source of per-type metadata: declarative registration, merge semantics, persistence, scan/index orchestration, index logs, HTTP endpoints, and usage examples.",
-      "content_hash": "172ff51c0f4f59560147b0c39dbcd5641415e326a5dafd1d2d4537371ccb58e6",
-      "size_bytes": 25246
+      "summary": "SchemaRegistry and TypeInfo type metadata: declarative registration, persistence, scan and index orchestration with index-run logs, backward compatibility, HTTP endpoints, usage examples.",
+      "content_hash": "ddea5f8c1850b0aaaf4029e32e8a96f02a15b6e769821734a3e40d22241e9514",
+      "size_bytes": 25266
     },
     {
       "name": "source-contract-boundary.md",
@@ -268,6 +268,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-19T19:19:46.039045+00:00",
+  "generated_at": "2026-10-20T12:52:40.795640+00:00",
   "latest_process_ref": ""
 }

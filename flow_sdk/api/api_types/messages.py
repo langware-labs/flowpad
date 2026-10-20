@@ -22,6 +22,8 @@ class WSMessageType(Enum):
     LLM_CONFIG_MSG = "llm_config_msg"
     FLOW_DATA_MSG = "flow_data_msg"
     HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
+    # A hub request that had failed got an answer: the error it raised is over.
+    HUB_CLIENT_RECOVERED_MSG = "hub_client_recovered_msg"
     AUTH_EXPIRED_MSG = "auth_expired_msg"
     CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
@@ -99,6 +101,12 @@ class HubClientErrorMessage(BaseMessage):
     path: str
     message: str
     suppressed_count: int = 0
+
+
+class HubClientRecoveredMessage(BaseMessage):
+    message_type: str = WSMessageType.HUB_CLIENT_RECOVERED_MSG.value
+    method: str
+    path: str
 
 
 class AuthExpiredMessage(BaseMessage):

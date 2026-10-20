@@ -42,7 +42,6 @@
     cur = Math.min(J.length - 1, Math.max(0, i));
     const id = J[cur].id;
     if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
-    justSaved = '';   // a new screen starts with the box out
     show(id);
     render();
     contrast();
@@ -74,7 +73,6 @@
     .scope.on { background: var(--mk-accent); color: var(--mk-accent-fg); }
     .anchor { display: flex; gap: 8px; align-items: center; margin: 6px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--mk-soft); }
     .anchor b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .item.on { outline: 2px solid var(--mk-accent); border-radius: 8px; }
     button { all: unset; box-sizing: border-box; cursor: pointer; color: inherit; border-radius: 999px; white-space: nowrap; }
     button:focus-visible { outline: 2px solid var(--mk-accent); outline-offset: 2px; }
     button[disabled] { opacity: .35; cursor: default; }
@@ -190,8 +188,6 @@
   const setPanel = (p) => { open = p; renderPanel(); };
   const NO_DRAFT = { text: '', decision: '', image: '', anchor: null, shot: '' };
   let draft = { ...NO_DRAFT };
-  let justSaved = '';   // after a Save: the box folds away and the saved entry shows, until a new comment
-  const composing = () => !justSaved;
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // ── contrast: the bar takes the opposite of the screen behind it ──
@@ -316,15 +312,14 @@
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
       panel.innerHTML = html; return;
     }
-    if (composing() && decisions.length) {
+    if (decisions.length) {
       html += `<div class="chips">${decisions.map((d) => `<button class="chip${draft.decision === d.id ? ' on' : ''}" data-dec="${esc(d.id)}" title="${esc(d.question)}">${esc(d.id)} · ${esc(d.question.length > 40 ? d.question.slice(0, 40) + '…' : d.question)}</button>`).join('')}</div>`;
     }
-    if (composing() && draft.anchor) {
+    if (draft.anchor) {
       html += `<div class="anchor">📍 <span>On</span> <b title="${esc(draft.anchor.selector)}">${esc(draft.anchor.label)}</b><button class="ico clear-anchor" title="Not on this element">✕</button></div>`
         + (draft.shot ? `<img class="thumb" src="${draft.shot}" alt="the element">` : '');
     }
-    if (!composing()) html += `<div class="actions"><button class="tb review-all">Review all feedback</button><button class="save new-comment">＋ New comment</button></div>`;
-    else html += `<textarea placeholder="${draft.anchor ? 'What do you want for this element?' : 'What should change on this screen? (or use the picker at the left of the bar to point at an element)'}"></textarea>`
+    html += `<textarea placeholder="${draft.anchor ? 'What do you want for this element?' : 'What should change on this screen? (or use the picker at the left of the bar to point at an element)'}"></textarea>`
       + (draft.image ? `<img class="thumb" src="${draft.image}" alt="attached image">` : '')
       + `<div class="actions"><button class="attach">📎 ${draft.image ? 'Replace image' : 'Attach image'}</button>`
       + (draft.image ? '<button class="ico clear-img" title="Remove the image">✕</button>' : '')
@@ -333,13 +328,12 @@
     if (here.length) {
       html += `<h4 style="margin-top:14px">Saved on this screen (${here.length})</h4>` + here.map((r) => {
         const i = r.input;
-        return `<div class="item${r.key === justSaved ? ' on' : ''}" data-key="${esc(r.key)}"><div class="meta">${i.anchor ? `<b>📍 ${esc(i.anchor.label)}</b>` : ''}${i.decision ? `<b>${esc(i.decision)}</b>` : ''}<span>${esc(i.status)}</span><span>${esc((i.created || '').slice(11, 16))}</span>`
+        return `<div class="item" data-key="${esc(r.key)}"><div class="meta">${i.anchor ? `<b>📍 ${esc(i.anchor.label)}</b>` : ''}${i.decision ? `<b>${esc(i.decision)}</b>` : ''}<span>${esc(i.status)}</span><span>${esc((i.created || '').slice(11, 16))}</span>`
           + (i.status === 'open' ? `<button class="del" data-key="${esc(r.key)}" data-v="${esc(r.version || '')}" title="Delete">✕</button>` : '') + `</div>`
           + `<div>${esc(i.text)}</div>${i.element_shot ? `<img class="thumb" src="${i.element_shot}" alt="the element">` : ''}${i.screenshot ? `<img class="thumb" src="${i.screenshot}" alt="">` : ''}</div>`;
       }).join('');
     }
     panel.innerHTML = html;
-    if (justSaved) root.querySelector('.item.on')?.scrollIntoView({ block: 'nearest' });
     const ta = $('textarea');
     if (!ta) return;
     ta.value = draft.text;
@@ -378,7 +372,6 @@
     const el = e.target;
     setPicking(false);
     draft.anchor = anchorOf(el); draft.shot = '';
-    justSaved = '';
     setPanel('feedback');
     snapshot(el).then((png) => { if (png && draft.anchor) { draft.shot = png; renderPanel(); } });
   }, true);
@@ -550,8 +543,7 @@
     try {
       await data.fbDs.append([{ key, input }]);
       draft = { ...NO_DRAFT };
-      justSaved = key;   // saved: the box folds away and the new entry shows, highlighted
-      panelKey = '';   // refresh redraws the open panel once
+      setPanel('');   // saved: back to the clean bar; the bubble and Execute (n) show it
       await refresh();
     } catch (err) {
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not saved: ${esc(err?.message || err)}</div>`);
@@ -634,6 +626,9 @@
       panelKey = panelState();
       panel.innerHTML = head() + `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent to ${esc(target.name || 'the session that builds this mock')}.</div>`;
       placePanel(); panel.hidden = false;
+      // Back to the session's tab: it now has the comments to act on. The Submitted panel above is what a
+      // page with no host (opened on its own) keeps showing.
+      data.sdk.navigateHost?.({ typeid: `agentic_process-${m.input.session}` });
     } catch (err) {
       setPanel('send');
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`);
@@ -658,7 +653,7 @@
     const t = e.target;
     if (t.closest('.close')) { setPanel(''); return; }
     const tool = t.closest('.ptool');
-    if (tool) { if (tool.dataset.panel === 'feedback') justSaved = ''; setPanel(tool.dataset.panel); return; }
+    if (tool) { setPanel(tool.dataset.panel); return; }
     if (t.closest('.send-now')) { submitAll(); return; }
     if (t.closest('.save-now')) {
       const b = t.closest('.save-now'); b.disabled = true;
@@ -676,7 +671,6 @@
         .catch((err) => { b.disabled = false; panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`); });
       return;
     }
-    if (t.closest('.review-all')) { setPanel('send'); return; }
     if (t.closest('.copy-md')) {
       const b = t.closest('.copy-md'), md = feedbackMarkdown(b.dataset.which === 'sent' ? sentRows() : openRows());
       const done = () => { b.textContent = '✓ Copied'; setTimeout(() => { b.textContent = '⧉ Copy'; }, 1500); };
@@ -694,7 +688,6 @@
     if (t.closest('.hints-toggle')) { hints = !hints; store.set('hints', hints); markHints(true); renderPanel(); return; }
     const row = t.closest('[data-i]');
     if (row) { setPanel(''); go(+row.dataset.i); return; }
-    if (t.closest('.new-comment')) { justSaved = ''; renderPanel(); return; }
     const chip = t.closest('[data-dec]');
     if (chip) { draft.decision = draft.decision === chip.dataset.dec ? '' : chip.dataset.dec; renderPanel(); return; }
     if (t.closest('.attach')) { $('.file').click(); return; }

@@ -349,7 +349,7 @@ async def _seed(served):
     from flow_sdk.datasets.projection import project_source
     from flow_sdk.sources.values.items import RecordItem
     from flow_sdk.sources.values.origin import CloudOrigin
-    from flow_sdk.ingest.legacy_lift import envelope_of
+    from flow_sdk.ingest.envelope_lift import envelope_of
 
     await served.tasks.save()
     await served.deals.append([{"key": "acme", "input": {"name": "Acme", "crm_id": "OPP-1"}},
@@ -423,7 +423,7 @@ async def test_a_list_link_with_unresolved_ids_is_not_written_back(served):
     """The CRM's task is on two deals; only one has a row here, so the mirror linked one. Writing the
     row's `deals` as it stands would make Twenty's links exactly that one: refused, before any I/O."""
     from flow_sdk.datasets.projection import project_source
-    from flow_sdk.ingest.legacy_lift import envelope_of
+    from flow_sdk.ingest.envelope_lift import envelope_of
     from flow_sdk.sources.values.items import RecordItem
     from flow_sdk.sources.values.origin import CloudOrigin
 

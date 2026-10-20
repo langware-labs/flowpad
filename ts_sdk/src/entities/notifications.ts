@@ -17,7 +17,7 @@ export interface SendReplyExtras {
   sharedContextEntities?: string[];
   /** Transfer policy + per-share opt-ins for body-bundle attachments. */
   shareConfig?: {
-    transferMode?: 'copy' | 'git';
+    transferMode?: 'copy' | 'git' | 'both';
     /** Mint a FAVORITE bookmark on the receiver at install. Default off. */
     createBookmark?: boolean;
     /** The sender saw which files git excludes and chose to send them. Without it a copy-mode send

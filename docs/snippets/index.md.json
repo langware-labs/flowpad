@@ -5,18 +5,18 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "d2fde28a31588434ccf4aaebd821fb651cd80b7071aae2c8fa3a621dc7965674",
+  "inputs_hash": "4d1a29b97bb5de373a8985dce096141d176edd1489542d971ec0ca6898a61c59",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Runnable SDK snippets, one page per subject and each pinned by tests: agents on channels and deployments, FlowCall and ComputeOp blocks, wizards and workflows, data sources and pipes, DataSpec and datasets, connections and secrets, message channels and threads, RAG, scan and index, and project dependencies.",
+  "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
   "files": [
     {
       "name": "README.md",
       "rel_path": "README.md",
       "title": "Snippets — the dev onboarding shelf",
-      "summary": "Developer onboarding shelf index of runnable SDK snippet pages by category, each with the tests pinning it, plus channel routing notes and snippet conventions.",
-      "content_hash": "5a1c819384a46b9a6778d43d656bfae59e569f208c90fcff8d2e1604b6fa878e",
-      "size_bytes": 10670
+      "summary": "Index of the developer onboarding snippet shelf listing each runnable Python snippet category, what it shows, its pinning tests, plus channel routing and conventions.",
+      "content_hash": "6a8906e6c89552aaa62b92026965398242a5a8e5e5a56336225b928fc5c1a7ae",
+      "size_bytes": 10412
     },
     {
       "name": "activity.md",
@@ -102,9 +102,9 @@
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources — snippets",
-      "summary": "Runnable code snippets for data sources: connecting and syncing feeds, deduplication, search, folder mirroring, subscriptions, replies, Google Drive connections, and writing a custom driver",
-      "content_hash": "54547883569587318421c143125540f775c25be000d2057c99bd06d353df72c0",
-      "size_bytes": 21704
+      "summary": "Runnable Python snippets for data sources: connecting and syncing feeds, searching items, folder mirroring, subscriptions, replies, Google Drive, multi-source reads, and writing custom drivers.",
+      "content_hash": "6e72273cb0f1fc8491c9bbe97a944b6368be4cb7f9f5ac5d0177faeb6709f565",
+      "size_bytes": 21783
     },
     {
       "name": "data-spec.md",
@@ -118,9 +118,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Datasets — snippets",
-      "summary": "Runnable Python dataset snippets: row schemas as data_schema folders, reading and writing rows and labels, navigator evaluation, editors, linked rows, and mirrored external data.",
-      "content_hash": "e108ce971687bb0f30b05c3d04edac4275cdd790169293099432c19e4ec37c5a",
-      "size_bytes": 17701
+      "summary": "Runnable snippets for datasets: defining row schemas as data_schema folders, reading and writing typed rows and labels, evaluating the navigator, keyed records, links.",
+      "content_hash": "1be58904b1b85fc58553d85d409cd582a9c63918692eab38644d7bb845f7a258",
+      "size_bytes": 17223
     },
     {
       "name": "decisions.md",
@@ -142,9 +142,9 @@
       "name": "gmail-source.md",
       "rel_path": "gmail-source.md",
       "title": "Gmail source",
-      "summary": "Gmail source setup snippet: required .env.local address and app-password variables, and Python code creating and saving a source from the shipped gmail driver.",
-      "content_hash": "e9f49ae526451d5eb643f8539f16f63d21101d9a5629551b848c026d4ff03827",
-      "size_bytes": 1649
+      "summary": "Creating a Gmail data source from address and app password environment variables, plus the Gmail driver's send helper for composing and sending approved messages.",
+      "content_hash": "fac40c8193392d66c917aee2a7212419cbfe8319c2ce6605d39bd38c24609f46",
+      "size_bytes": 1687
     },
     {
       "name": "llm-endpoints.md",
@@ -174,9 +174,9 @@
       "name": "message-threads.md",
       "rel_path": "message-threads.md",
       "title": "Threads and replies — one model on every channel",
-      "summary": "Runnable snippets for the threads and replies model (reply_to_id, thread_id) shared by Flowpad chat and data source channels, with channel capabilities declared as data.",
-      "content_hash": "e61179edcc001eca19b0c0a962603a85196c30dd41a4dcca5cf0ecc59d3433f1",
-      "size_bytes": 2969
+      "summary": "Runnable snippets for replying in threads, reading threads, and quoting messages on Flowpad chat and data source channels, plus flow conversation CLI commands",
+      "content_hash": "8c601f767d0e683fd9b6bee06887daa4e4eee1eac9b2b251925901e3d5e73370",
+      "size_bytes": 3077
     },
     {
       "name": "pipes.md",
@@ -217,14 +217,6 @@
       "summary": "Runnable RagIndex snippets: making a folder searchable, running an embedding pass and reading its cost, asking questions, chunking without an index, and the HTTP API.",
       "content_hash": "fa14ecb9f786bd50842d595a20d86ebf2c58effb74606e87e382d194cf151479",
       "size_bytes": 7470
-    },
-    {
-      "name": "relationship-pickers.md",
-      "rel_path": "relationship-pickers.md",
-      "title": "Relationship pickers in SDK viewers",
-      "summary": "SDK relationship picker contract: ViewerHost.candidates provider shape, mountRelationshipPicker usage in create forms and inline editors, and item key, label and value semantics.",
-      "content_hash": "143a513ffe4f9314ff9b423ce00e556c05b110a177464b4873e541bbc504d2ed",
-      "size_bytes": 2512
     },
     {
       "name": "scan-and-index.md",
@@ -270,12 +262,12 @@
       "name": "workflows.md",
       "rel_path": "workflows.md",
       "title": "Workflows — snippets",
-      "summary": "Plain-Python workflow snippets using flow_sdk.blocks: a mail concierge loop, Telegram, Slack and all-channel variants, values-only usage, the opening program, and current limits.",
-      "content_hash": "4031482cb1d58e4861b676fb1014a30a1eb1fb00592f0ce9a266948f7cf2df41",
-      "size_bytes": 12763
+      "summary": "Plain-Python workflow snippets using flow_sdk.blocks: mail concierge loop with StreamInbox and agents, Telegram and Slack variants, multi-channel loops, values-only use, and current limits.",
+      "content_hash": "638ee984cffa0c3fb2afaf80a91c9d0ff74beb2d321a912e765d78d6c217fafe",
+      "size_bytes": 12722
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-19T19:20:00.383283+00:00",
+  "generated_at": "2026-10-20T12:52:40.795640+00:00",
   "latest_process_ref": ""
 }

@@ -28,8 +28,8 @@ interface TerminalBottomRibbonProps {
   onOpenLastPlan?: () => void;
   /** Deliverables this run REGISTERED (`flow artifact …`), in any order. */
   artifacts?: Artifact[];
-  /** Open an artifact's REFERENCED ASSET by path — never the artifact row. */
-  onOpenArtifact?: (assetRef: string) => void;
+  /** Open an artifact: its referenced asset, or the artifact as an app when it has none. */
+  onOpenArtifact?: (artifact: Artifact) => void;
   /** What this run has shown (`flow show`), oldest first — `display_stack`. */
   shown?: readonly DisplayEntry[];
   /** Open a shown target as its own tab. */
@@ -198,25 +198,20 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
  * Shows the newest registration; when there is more than one, a subtle chevron
  * opens a popover listing all of them newest-first.
  *
- * Clicking opens the artifact's REFERENCED ASSET, never the artifact row. An
- * artifact points at a deliverable — it is not the deliverable — so an artifact
- * with no `asset_ref` (a webapp registered by port, say) has nothing to open
- * and the click is inert rather than routing somewhere wrong.
+ * Clicking opens the artifact's REFERENCED ASSET when it has one; an artifact
+ * with no `asset_ref` (a webapp, say) opens as an app, addressed by the artifact.
  */
 const ARTIFACT_CHIP_CLASSES = 'h-6 text-violet-400 border-violet-400/40 hover:border-violet-400 hover:text-violet-300';
 
 const ArtifactsChip: React.FC<{
   artifacts: Artifact[];
-  onOpen: (assetRef: string) => void;
+  onOpen: (artifact: Artifact) => void;
 }> = ({ artifacts, onOpen }) => {
   const { t } = useLingui();
   const ArtifactIcon = iconForType(Artifact.type);
   const ordered = [...artifacts].sort(compareArtifactsNewest);
   const latest = ordered[0];
   const hasMore = ordered.length > 1;
-  const open = (artifact: Artifact) => {
-    if (artifact.asset_ref) onOpen(artifact.asset_ref);
-  };
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex items-center">
@@ -225,7 +220,7 @@ const ArtifactsChip: React.FC<{
             <Button
               variant="outline"
               size="sm"
-              onClick={() => open(latest)}
+              onClick={() => onOpen(latest)}
               className={cn(ARTIFACT_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]', hasMore && 'rounded-e-none border-e-0')}
             >
               <ArtifactIcon className="h-3.5 w-3.5" />
@@ -254,7 +249,7 @@ const ArtifactsChip: React.FC<{
                   <button
                     key={String(artifact.id)}
                     type="button"
-                    onClick={() => open(artifact)}
+                    onClick={() => onOpen(artifact)}
                     className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
                   >
                     <ArtifactIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />

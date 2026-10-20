@@ -1,7 +1,6 @@
 import { AgenticProcess, type ExpressionNode, ProcessKind, QueryFilter, QueryRequest } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { mostRecentProcess } from '@src/utils/process-recency';
-import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useRef } from 'react';
 
@@ -66,7 +65,9 @@ export function useLastVibeChat(): () => void {
           navigation.goHome();
           return;
         }
-        navigation.openDockPointer(last.terminalDockPointer, { viewMode: ViewMode.Vibe });
+        // No mode stated: the session opens in the mode it remembers (its
+        // `last_mode`), never forced to Vibe by the screen it is left from.
+        navigation.openDockPointer(last.terminalDockPointer);
       } catch (error) {
         console.error('[Vibe] failed to resolve the last chat', error);
         navigation.goHome();

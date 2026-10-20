@@ -26,7 +26,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
-import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { subjectEditorPointer } from '@src/navigation/subject-editor';

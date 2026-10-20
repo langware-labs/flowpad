@@ -217,7 +217,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
         if current is not None and current.state is LoadState.RUNNING:
             return current
         try:
-            failed = next((c for c in children if c.state is LoadState.FAILED), None)
+            # Showing one app: a provider's failure is its own item and never holds this app.
+            failed = None if target else next((c for c in children if c.state is LoadState.FAILED), None)
             if failed:
                 raise ValueError(f"Dependency {failed.project_id}: {failed.detail}")
             tree = tree or await ProjectTree(project, display=display).load()

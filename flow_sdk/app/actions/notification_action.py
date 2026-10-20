@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -304,7 +305,7 @@ def _parse_share_transfer_mode(body: dict) -> str:
         or "copy"
     )
     mode = str(mode).strip().lower()
-    return mode if mode in {"copy", "git"} else "copy"
+    return mode if mode in {"copy", "git", "both"} else "copy"
 
 
 def _parse_share_create_bookmark(body: dict) -> bool:
@@ -817,6 +818,34 @@ async def find_unshippable_references(asset_references: list) -> list[tuple[Type
     return await attachments_that_would_ship_nothing(typeids)
 
 
+#: A library prompt younger than this, never used, attached to a message was made only to send it.
+FRESH_PROMPT_WINDOW = timedelta(minutes=10)
+
+
+async def prompts_minted_just_to_send(asset_references: list) -> list[str]:
+    """``prompt-<id>`` references created within ``FRESH_PROMPT_WINDOW`` and never used.
+
+    Such a prompt exists only to ride this message, yet it is a file under the project's
+    ``agentic-assets/prompt/`` — private chat text one ``git add`` from a push. The send
+    must carry it inline (``prompt_text``); sharing a prompt the user keeps is unaffected."""
+    from flow_sdk.builtin.prompt import Prompt  # noqa: PLC0415
+
+    now = datetime.now(timezone.utc)
+    minted: list[str] = []
+    for tid in _typeids_of(asset_references):
+        if tid.type != "prompt":
+            continue
+        prompt = await Prompt.get_one({"id": tid.id})
+        created = getattr(prompt, "created_date", None) if prompt else None
+        if not isinstance(created, datetime) or (prompt.use_count or 0) > 0:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if now - created < FRESH_PROMPT_WINDOW:
+            minted.append(str(tid))
+    return minted
+
+
 @action.post(action_name="check-attachments", types=None)
 async def check_attachments() -> ApiResponse:
     """Preflight for a share: which of ``asset_references`` would arrive empty? Read-only.
@@ -831,7 +860,7 @@ async def check_attachments() -> ApiResponse:
     refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
     gaps = await find_unshippable_references(refs)
     gitignored = []
-    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
+    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) in ("copy", "both"):
         from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
             attachments_holding_gitignored,
             gitignored_payload,
@@ -983,6 +1012,16 @@ async def handle_add_message(
     # leaves the sender told "sent" and the recipient holding a bundle that cannot be complete.
     from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
 
+    if minted := await prompts_minted_just_to_send(asset_references):
+        return ApiFailResponse(
+            message=(
+                f"Cannot send: {', '.join(minted)} was created moments ago and never used — a library "
+                "prompt is a file in the project, so a prompt made just to send would be saved there. "
+                "Send it inline instead: `flow conversation send <conv> \"<text>\" --prompt \"<prompt>\"` "
+                "(or `prompt_text`). Nothing was sent."
+            ),
+            status_code=400,
+        )
     gaps = await attachments_that_would_ship_nothing(_parse_context_typeids(conv, asset_references, []))
     if gaps:
         names = "; ".join(f"{tid} — {why}" for tid, why in gaps)
@@ -997,7 +1036,7 @@ async def handle_add_message(
         )
     # A copy carries the asset folder whole — files git excludes (often private) included. The sender is
     # told which and decides: refused ONCE, before anything is written; ``include_gitignored`` sends them.
-    if transfer_mode == "copy" and not _parse_share_include_gitignored(body):
+    if transfer_mode in ("copy", "both") and not _parse_share_include_gitignored(body):
         from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
 
         if refused := await refuse_gitignored(_parse_context_typeids(conv, asset_references, [])):
