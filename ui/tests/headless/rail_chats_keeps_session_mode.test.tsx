@@ -53,7 +53,7 @@ describe('rail Chats keeps the session mode (no mocks)', () => {
       { timeout: 10000 }, // do not increase timeout without approval
     );
 
-    // 3. Inbox, then Chats — through the real rail buttons.
+    // 3. Stream Inbox, then Chats — through the real rail buttons.
     const rail = (id: string) => container.querySelector<HTMLButtonElement>(`[data-rail-item="${id}"]`)!;
     await waitFor(() => expect(rail('stream_inbox')).toBeTruthy());
     act(() => {
