@@ -176,6 +176,8 @@ export interface UiCommandMessage extends BaseMessage {
   info?: Record<string, unknown>;
   /** `kind: 'install_request'` — a published asset the hub asks this desktop to install (opens the Add-asset dialog). */
   request?: InstallRequest;
+  /** `kind: 'open_link'` — the deep-link params (`action=open&fm=…`) of a message the hub asked this desktop to open. */
+  query?: Record<string, string>;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
