@@ -6,14 +6,14 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 
-from flow_sdk.api.messages import HubClientErrorMessage
+from flow_sdk.api.messages import HubClientErrorMessage, HubClientRecoveredMessage
 from flow_sdk.cloud_client.constants import MAX_HUB_ERRORS_PER_WINDOW, WINDOW_SECONDS
 
-BroadcastFunc = Callable[[HubClientErrorMessage], Awaitable[None]]
+BroadcastFunc = Callable[[HubClientErrorMessage | HubClientRecoveredMessage], Awaitable[None]]
 ClockFunc = Callable[[], float]
 
 
-async def _broadcast_message(message: HubClientErrorMessage) -> None:
+async def _broadcast_message(message: HubClientErrorMessage | HubClientRecoveredMessage) -> None:
     try:
         from flow_sdk.server.routes.websocket import broadcast
 
@@ -37,6 +37,8 @@ class _HubErrorReporter:
         self.broadcast_func = broadcast_func
         self._timestamps: deque[float] = deque()
         self._suppressed_in_window = 0
+        # Requests whose last attempt failed, so the hub's next answer to one can clear its error.
+        self._failing: set[tuple[str, str]] = set()
 
     def _prune(self, now: float) -> None:
         cutoff = now - self.window_seconds
@@ -44,6 +46,7 @@ class _HubErrorReporter:
             self._timestamps.popleft()
 
     async def report(self, *, status_code: int, method: str, path: str, message: str) -> None:
+        self._failing.add((method, path))
         now = self.clock()
         self._prune(now)
 
@@ -54,21 +57,36 @@ class _HubErrorReporter:
         if self._suppressed_in_window:
             suppressed = self._suppressed_in_window
             self._suppressed_in_window = 0
-            await self.broadcast_func(HubClientErrorMessage(
+            await self.broadcast_func(
+                HubClientErrorMessage(
+                    status_code=status_code,
+                    method=method,
+                    path=path,
+                    message=f"{suppressed} hub errors suppressed in last window",
+                    suppressed_count=suppressed,
+                )
+            )
+
+        await self.broadcast_func(
+            HubClientErrorMessage(
                 status_code=status_code,
                 method=method,
                 path=path,
-                message=f"{suppressed} hub errors suppressed in last window",
-                suppressed_count=suppressed,
-            ))
-
-        await self.broadcast_func(HubClientErrorMessage(
-            status_code=status_code,
-            method=method,
-            path=path,
-            message=message,
-        ))
+                message=message,
+            )
+        )
         self._timestamps.append(now)
+
+    async def recovered(self, *, method: str, path: str) -> None:
+        """The hub answered a request whose previous attempt failed: say its error is over.
+
+        Only a request that failed and then got an answer clears anything -- one that never got an
+        answer keeps its error up, however long ago it was raised.
+        """
+        if (method, path) not in self._failing:
+            return
+        self._failing.discard((method, path))
+        await self.broadcast_func(HubClientRecoveredMessage(method=method, path=path))
 
 
 hub_error_reporter = _HubErrorReporter()

@@ -260,3 +260,35 @@ async def test_an_anonymous_request_sends_no_login_and_a_lapsed_one_does_not_sto
     assert resp.status_code == 401
     assert "Authorization" not in seen[0].headers
     assert load_credentials() is not None and is_logged_in(), "an answer to no credential says nothing about ours"
+
+
+@pytest.mark.asyncio
+async def test_a_hub_answer_clears_the_error_of_the_same_request_only(monkeypatch, memory_keyring):
+    """A request that failed and then got an answer clears its error; others keep theirs."""
+    import flow_sdk.cloud_client.client_hooks as hooks
+    from flow_sdk.cloud_client.error_reporter import _HubErrorReporter
+
+    messages = []
+
+    async def broadcast(message):
+        messages.append(message)
+
+    monkeypatch.setattr(hooks, "hub_error_reporter", _HubErrorReporter(broadcast_func=broadcast))
+    answers = {"/api/v1/flaky": [502, 200], "/api/v1/down": [502, 502], "/api/v1/fine": [200]}
+
+    async def handler(request: httpx.Request):
+        return httpx.Response(answers[request.url.path].pop(0), json={"data": {}}, request=request)
+
+    save_credentials(UserHubCredentials(api_key="token-1", user={"id": "u1"}))
+    set_user({"id": "u1"})
+    client = FlowpadClient(ApiConfig(api_base_url="https://hub.test/api/v1"), transport=httpx.MockTransport(handler))
+
+    async with client:
+        for path in ("/flaky", "/down", "/flaky", "/down", "/fine"):
+            try:
+                await client.get(path)
+            except ValueError:
+                pass
+
+    recovered = [m.path for m in messages if m.message_type == "hub_client_recovered_msg"]
+    assert recovered == ["/api/v1/flaky"], "only the request the hub went on to answer is cleared"

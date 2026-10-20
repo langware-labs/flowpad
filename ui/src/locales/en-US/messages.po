@@ -27967,6 +27967,14 @@ msgstr "This organization's budgets could not be read. The server answered with 
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 msgstr "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
 
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk ({path}). This cannot be undone."
+
+#: src/components/assets/AssetsPage.tsx
+msgid "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+msgstr "This permanently deletes the project and everything in it — all indexed records and their children, and the project folder on disk. This cannot be undone."
+
 #: src/components/assets/delete-asset-modal.tsx
 msgid "This permanently removes the file from disk. This cannot be undone."
 msgstr "This permanently removes the file from disk. This cannot be undone."
