@@ -273,7 +273,9 @@ def test_dm_ctl_asks_who_uses_rows(monkeypatch):
     assert _dm_calls(monkeypatch, ["ds-used-by", "companies"]) == [("GET", "/graph/dataset/ds1/used-by", None)]
 
 
-def test_dm_ctl_mirrors_a_data_source(monkeypatch):
-    mapping = '{"key": "external_id", "input": {"name": "name"}}'
-    assert _dm_calls(monkeypatch, ["ds-mirror", "deals", "src-1", mapping, "--by", "crm", "--no-prune"]) == [
-        ("POST", "/graph/dataset/ds1/mirror", {"source_id": "src-1", "map": {"key": "external_id", "input": {"name": "name"}}, "prune": False, "by": "crm"})]
+def test_dm_ctl_pulls_and_moves_rows(monkeypatch):
+    assert _dm_calls(monkeypatch, ["ds-pull", "deals"]) == [("POST", "/graph/dataset/ds1/pull", {})]
+    assert _dm_calls(monkeypatch, ["ds-move", "deals", "s3:acme/deals"]) == [("POST", "/graph/dataset/ds1/move-rows", {"location": "s3:acme/deals"})]
+    crm = '{"driver": "twenty", "config": {"resource": "opportunities"}}'
+    assert _dm_calls(monkeypatch, ["ds-move", "deals", crm]) == [
+        ("POST", "/graph/dataset/ds1/move-rows", {"location": {"driver": "twenty", "config": {"resource": "opportunities"}}})]

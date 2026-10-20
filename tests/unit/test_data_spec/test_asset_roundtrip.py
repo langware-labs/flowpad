@@ -109,6 +109,7 @@ NOT_ON_DISK[Dataset] = set(Dataset.model_fields) - _spec_fields(Dataset) - {"id"
 _Row = DEFAULT_DATASET_SPEC.row_type()
 OVERRIDES[Dataset] = {
     "data_layout": DataLayoutEnum.IO_FOLDER,
+    "location": "local",
     "spec": DatasetSpec.parse({"rows": [{"input": "file_ref", "output": "file_ref"}]}),
     "rows": [_Row(
         kind=RowKind.EVAL,

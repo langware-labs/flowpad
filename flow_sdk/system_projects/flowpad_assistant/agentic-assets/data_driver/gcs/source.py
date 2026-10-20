@@ -6,8 +6,13 @@ deletion, which a feed's silence never is. There is no move either: a "rename" i
 delete, and that is what arrives. The origin is ``(gcs, <bucket>, <object name>)``; a name is
 the identity and survives a new ``generation``, so no handle is offered to guess a rename with.
 
-Read-only by design — the scope asked for is ``devstorage.read_only`` — so the bytes are served
+Read-only as a source — the scope asked for is ``devstorage.read_only`` — so the bytes are served
 through ``open`` and nothing writes back. Where the bytes land is the application's business.
+
+**Rows** (``RowFiles``): a dataset whose ``location`` is ``gcs:<bucket>/<prefix>`` keeps one object per
+row file under the prefix (that asks for ``devstorage.read_write``). A write or delete is conditioned
+on the object's ``generation`` (``ifGenerationMatch``; ``0`` for "must not exist"), so GCS itself
+refuses a stale write (412) and two writers never both land.
 """
 from __future__ import annotations
 
@@ -22,7 +27,7 @@ from flow_sdk.sources import _paging, http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError, SourceUnavailable, is_transient
+from flow_sdk.sources.errors import AccessDenied, Conflict, NotFound, Rejected, SourceError, SourceUnavailable, is_transient
 from flow_sdk.sources.families import ObjectSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
@@ -170,6 +175,78 @@ class GcsSource(ObjectSource):
                 yield response.aiter_bytes(chunk_size)
         except httpx.HTTPError as exc:
             raise SourceUnavailable(f"GET {url}: {exc}", origin=origin) from exc
+
+    # ── rows (``RowFiles``) ─────────────────────────────────────────────────
+    @classmethod
+    def row_files_target(cls, target: str) -> dict:
+        """``gcs:<bucket>/<prefix>`` → the bucket and the prefix rows live under."""
+        bucket, _, prefix = str(target).strip().removeprefix("gs://").strip("/").partition("/")
+        if not bucket:
+            raise ValueError("location: gcs:<bucket>/<prefix> names a bucket")
+        return {"bucket": bucket, "prefix": prefix.strip("/")}
+
+    def _row_name(self, path: str) -> str:
+        prefix = str(self.config.get("prefix") or "").strip("/")
+        return f"{prefix}/{path}" if prefix else path
+
+    async def list_files(self) -> dict[str, str]:
+        self._require_open()
+        prefix = str(self.config.get("prefix") or "").strip("/")
+        base = f"{prefix}/" if prefix else ""
+        out, token = {}, None
+        while True:
+            params = {"fields": "nextPageToken,items(name,generation)", "maxResults": "1000", **({"prefix": base} if base else {})}
+            if token:
+                params["pageToken"] = token
+            body = (await self._request(self._bucket_path("/o"), params)).json()
+            for meta in body.get("items") or ():
+                name = str(meta.get("name") or "")
+                if name.startswith(base) and not name.endswith("/"):
+                    out[name[len(base):]] = str(meta.get("generation") or "")
+            token = body.get("nextPageToken")
+            if not token:
+                return out
+
+    async def read_file(self, path: str) -> bytes:
+        self._require_open()
+        response = await self._request(self._object_path(self._row_name(path)), {"alt": "media"}, ok_statuses=(404,))
+        if response.status_code == 404:
+            raise NotFound(f"gs://{self.bucket}/{self._row_name(path)} is not there")
+        return response.content
+
+    def _condition(self, expected: Optional[str]) -> dict[str, str]:
+        return {} if expected is None else {"ifGenerationMatch": expected or "0"}
+
+    async def write_file(self, path: str, data: bytes, *, expected: Optional[str] = None) -> str:
+        self._require_open()
+        self._require_writable()
+        assert self._http is not None
+        name = self._row_name(path)
+        url = f"{self._upload_base}/b/{quote(self.bucket, safe='')}/o"
+        response = await http.request(self._http, "POST", url, params={"uploadType": "media", "name": name, **self._condition(expected)},
+                                      content=bytes(data), headers={**self._auth(), "Content-Type": "application/octet-stream"},
+                                      ok_statuses=(412,))
+        if response.status_code == 412:
+            raise Conflict(f"gs://{self.bucket}/{name} is not at {expected or 'nothing'} any more")
+        return str(response.json().get("generation") or "")
+
+    async def delete_file(self, path: str, *, expected: Optional[str] = None) -> None:
+        self._require_open()
+        self._require_writable()
+        if expected == "":
+            return
+        assert self._http is not None
+        name = self._row_name(path)
+        response = await http.request(self._http, "DELETE", f"{self._base}{self._object_path(name)}", params=self._condition(expected),
+                                      headers=self._auth(), ok_statuses=(404, 412))
+        if response.status_code == 412:
+            raise Conflict(f"gs://{self.bucket}/{name} is not at {expected} any more")
+
+    @property
+    def _upload_base(self) -> str:
+        """The upload root beside the JSON API's (``/storage/v1`` → ``/upload/storage/v1``)."""
+        base = self._base
+        return base.replace("/storage/v1", "/upload/storage/v1") if base.endswith("/storage/v1") else f"{base}/upload"
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:

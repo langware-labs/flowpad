@@ -54,7 +54,6 @@ const TINT: Record<AttentionKind, string> = {
   parked: 'border-red-500/60 bg-red-500/10',
   paused: 'border-border bg-muted/40',
   held: AMBER,
-  mirror: AMBER,
   retrying: AMBER,
 };
 
