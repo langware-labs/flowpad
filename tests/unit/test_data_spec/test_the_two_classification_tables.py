@@ -39,6 +39,10 @@ from flow_sdk.schema.data_spec.io.placement import is_document, placement_of
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 #: Kept honest by `test_no_package_outside_this_list_declares_a_shape`.
+#: Process entry points: importing one RUNS it (``server.run`` loads ``.env.local`` over the
+#: environment, switching every later test in the session to that instance). They declare no shape.
+ENTRY_POINTS = frozenset({"flow_sdk.server.run"})
+
 SHAPE_PACKAGES = (
     "flow_sdk.assets",
     "flow_sdk.blocks",
@@ -67,6 +71,8 @@ def _every_shape() -> list[type]:
     for package in SHAPE_PACKAGES:
         module = importlib.import_module(package)
         for found in pkgutil.walk_packages(module.__path__, package + "."):
+            if found.name in ENTRY_POINTS:
+                continue
             try:
                 importlib.import_module(found.name)
             except Exception:  # noqa: BLE001 — a module that cannot import declares nothing
