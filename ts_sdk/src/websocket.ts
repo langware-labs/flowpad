@@ -23,6 +23,7 @@ type MessageType =
   | 'flow_data_msg'
   | 'llm_config_msg'
   | 'hub_client_error_msg'
+  | 'hub_client_recovered_msg'
   | 'auth_expired_msg'
   | 'cloud_login_status_msg'
   | 'cloud_connection_status_msg'
@@ -98,6 +99,13 @@ export interface HubClientErrorMessage extends BaseMessage {
   path: string;
   message: string;
   suppressed_count?: number;
+}
+
+/** A hub request that had failed got an answer — its error is over. */
+export interface HubClientRecoveredMessage extends BaseMessage {
+  message_type: 'hub_client_recovered_msg';
+  method: string;
+  path: string;
 }
 
 export interface AuthExpiredMessage extends BaseMessage {
@@ -638,6 +646,9 @@ export class ConnectionManager extends EventEmitter {
     }
     if (data.message_type === 'hub_client_error_msg') {
       return this.onHubClientErrorMessage(data as HubClientErrorMessage);
+    }
+    if (data.message_type === 'hub_client_recovered_msg') {
+      return this.emit('on_hub_client_recovered_msg', data as HubClientRecoveredMessage);
     }
     if (data.message_type === 'auth_expired_msg') {
       return this.onAuthExpiredMessage(data as AuthExpiredMessage);

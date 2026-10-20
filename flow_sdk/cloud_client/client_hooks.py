@@ -149,6 +149,8 @@ async def _on_response(response: httpx.Response) -> None:
             # This is a real credential rejection from the hub's identity
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected")
+            return
+        await hub_error_reporter.recovered(method=response.request.method, path=request_path(response.request.url))
         return
 
     if not passthrough:
