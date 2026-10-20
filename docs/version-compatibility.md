@@ -28,7 +28,8 @@ including its deliberate "an extra tag sorts newer" rule, so both sides always a
 are plain JSON objects; **unknown keys are ignored**, so the format can grow explicit ranges,
 maximums, or per-version exceptions without breaking older readers.
 
-**Pre-release and local tags satisfy a floor of the same `X.Y.Z`.** Under the project-wide rule
+**Pre-release and local tags satisfy a floor of the same `X.Y.Z`** (a floor is a comparison; whether a release
+may be *chosen* is the separate final-release rule above). Under the project-wide rule
 (a tag after the patch number sorts *newer* than the bare version) `0.2.50-rc1` and
 `0.2.50+local1` both meet a floor of `0.2.50`, and `0.2.49-rc1` still does not meet it. This is
 accepted on purpose: a floor names the first release that supports a contract, and the
@@ -60,10 +61,14 @@ and are not part of it.
 
 **Desktop installing/upgrading the engine** (`electron/uv-manager.js`):
 
-1. Candidates come from the PyPI JSON `releases` map, newest first, filtered to release-shaped
-   (`isInstallableVersion` — anchored, because the version later becomes a `flowpad==X`
-   argument), non-yanked versions that meet the desktop's `min_backend_version`. A release with no
-   files left counts as withdrawn, exactly as the backend's own release list treats it.
+1. Candidates come from the PyPI JSON `releases` map, newest first, filtered to **final releases**
+   (`isFinalRelease`: `X.Y.Z` or `X.Y.Z.postN` — a release candidate, dev build or tagged build is
+   never chosen automatically; the version picker still lets a person choose one by hand),
+   non-yanked, that meet the desktop's `min_backend_version`. The restriction to final releases is
+   not cosmetic: the shared semver rule ranks any tag newer than the bare version, so left to the
+   sort `0.2.223rc1` would beat `0.2.223`. A version string must also be release-shaped
+   (`isInstallableVersion` — anchored, because it later becomes a `flowpad==X` argument). A release
+   with no files left counts as withdrawn, exactly as the backend's own release list treats it.
 2. A candidate's `min_desktop_version` is read **without executing package code** and, normally,
    without downloading the wheel: `electron/wheel-compat.js` asks the wheel's file host
    (`files.pythonhosted.org`, https only) for its end-of-central-directory record, the central
