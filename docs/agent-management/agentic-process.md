@@ -238,7 +238,7 @@ whatever is scheduled (an hourly check fired once and never again, 2026-10-15). 
 CronCreate succeeds        -> a job, keyed by the CLI's job id (tool_use_result.id)
 CronDelete succeeds        -> that job is gone
 ScheduleWakeup             -> the one pending wakeup (scheduledFor); `stop: true` clears it
-a fire                     -> a turn the scheduler starts (command_lifecycle started, step 6's shape);
+a fire                     -> a turn the scheduler starts (`command_lifecycle` `started`, no delivery behind it);
                               it names no job, so whatever is due by then is gone: a one-shot past its
                               nextFireAt, a recurring job past its 7-day expiry, the wakeup
 --resume                   -> the CLI restores the session's cron jobs without announcing them; the
@@ -247,7 +247,8 @@ a fire                     -> a turn the scheduler starts (command_lifecycle sta
 ```
 
 The stdin rule of step 3 reads "idle and no background tasks *and no scheduled job*". A cron job
-holds its worker until it is deleted, `stop-background` ends it, or it expires (7 days).
+holds its worker until it is deleted or expires (7 days). `stop-background` ends the process, but the job
+comes back at the next `--resume` unless it was deleted.
 
 `WorkerTurns.route()` reads the worker's CURRENT state, not the frame in hand: a state frame can be
 handled after a delivered message already started the next turn, and the previous turn's `idle` must
