@@ -11747,8 +11747,8 @@ msgid "Fix the configuration — credentials or settings — then press Verify t
 msgstr "Fix the configuration — credentials or settings — then press Verify to resume polling."
 
 #: src/components/data-sources/source-attention.ts
-msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "Fix the setup"
@@ -15861,8 +15861,8 @@ msgid "minutes"
 msgstr "minutes"
 
 #: src/components/data-sources/source-attention.ts
-msgid "Mirror needs attention"
-msgstr "Mirror needs attention"
+#~ msgid "Mirror needs attention"
+#~ msgstr "Mirror needs attention"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -26291,6 +26291,10 @@ msgstr "stored"
 msgid "stored →"
 msgstr "stored →"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Stored in"
+msgstr "Stored in"
+
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
 msgstr "Stored in the project's repository on the hub"
@@ -27102,8 +27106,8 @@ msgid "The credentials could not be saved."
 msgstr "The credentials could not be saved."
 
 #: src/components/data-sources/source-attention.ts
-msgid "The dataset this source mirrors into could not be made current."
-msgstr "The dataset this source mirrors into could not be made current."
+#~ msgid "The dataset this source mirrors into could not be made current."
+#~ msgstr "The dataset this source mirrors into could not be made current."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
