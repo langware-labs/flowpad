@@ -53,8 +53,9 @@ def test_every_oauth_permission_names_only_scopes_its_driver_requests():
                 continue
             assert manifest.auth is not None and manifest.auth.connector, f"{name}: {kind} is OAuth without a connector"
             assert (mapping.connector or provider_of(kind)) == manifest.auth.connector, f"{name}: {kind}"
-            if mapping.writes:
-                # Asked for only while a source writes back: it must be one the provider lets a connect add,
+            if mapping.writes or mapping.rows:
+                # Asked for only while a source writes back (or a dataset keeps its rows there): it must be
+                # one the provider lets a connect add,
                 # or one the sign-in already asks for (GitHub's `repo` both reads and comments).
                 from flow_sdk.core.oauth.provider_registry import get_local_provider
 
