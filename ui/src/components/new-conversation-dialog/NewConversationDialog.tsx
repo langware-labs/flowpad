@@ -80,7 +80,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const projectName = projects.find((p) => p.id === projectId)?.displayName ?? null;
   const autofillTitle = useAutoTitle(open, participants, projectName);
 
-  const canCreate = !busy && (isRemote || !!projectId) && participants.length > 0 && !!initialMessage.trim();
+  const canCreate = !busy && (isRemote || !!projectId) && participants.length > 0;
 
   const handleCreate = async () => {
     if (!canCreate) return;
