@@ -25,7 +25,7 @@
         "https://www.googleapis.com/auth/devstorage.read_write"
       ],
       "why": "Keep a dataset's rows in the bucket (location gcs:<bucket>/<prefix>): write and delete objects under that prefix.",
-      "writes": true
+      "rows": true
     }
   },
   "reflect": [
