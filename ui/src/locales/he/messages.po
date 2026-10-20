@@ -11655,8 +11655,8 @@ msgid "Fix the configuration — credentials or settings — then press Verify t
 msgstr "תקנו את התצורה — פרטי גישה או הגדרות — ואז לחצו על אימות כדי לחדש את המשיכה."
 
 #: src/components/data-sources/source-attention.ts
-msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
+#~ msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "Fix the setup"
@@ -15719,8 +15719,8 @@ msgid "minutes"
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "Mirror needs attention"
-msgstr "המראה דורשת טיפול"
+#~ msgid "Mirror needs attention"
+#~ msgstr "המראה דורשת טיפול"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -26059,6 +26059,10 @@ msgstr "שמור"
 msgid "stored →"
 msgstr "שמור →"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Stored in"
+msgstr ""
+
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
 msgstr ""
@@ -26862,8 +26866,8 @@ msgid "The credentials could not be saved."
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "The dataset this source mirrors into could not be made current."
-msgstr "לא ניתן היה לעדכן את מערך הנתונים שמקור זה משתקף אליו."
+#~ msgid "The dataset this source mirrors into could not be made current."
+#~ msgstr "לא ניתן היה לעדכן את מערך הנתונים שמקור זה משתקף אליו."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
