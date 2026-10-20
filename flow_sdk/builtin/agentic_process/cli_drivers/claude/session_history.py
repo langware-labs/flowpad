@@ -15,10 +15,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import parse_iso_datetime
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -101,6 +101,11 @@ def cron_job_from_result(result: dict, *, seen_at: float) -> ClaudeCronJob | Non
     return ClaudeCronJob(id=job_id, recurring=recurring, ends_at=ends_at)
 
 
+def _seen_at(entry: dict, default: float) -> float:
+    stamped = parse_iso_datetime(entry.get("timestamp"))
+    return stamped.timestamp() if stamped else default
+
+
 def restored_cron_jobs(path: Path, now: float) -> dict[str, ClaudeCronJob]:
     """The CronCreate jobs ``claude --resume`` restores from this session's transcript.
 
@@ -138,19 +143,9 @@ def restored_cron_jobs(path: Path, now: float) -> dict[str, ClaudeCronJob]:
                     continue
                 if name == "CronDelete":
                     jobs.pop(str(result.get("id")), None)
-                elif job := cron_job_from_result(result, seen_at=_entry_time(entry) or now):
+                elif job := cron_job_from_result(result, seen_at=_seen_at(entry, now)):
                     jobs[job.id] = job
     return {job_id: job for job_id, job in jobs.items() if job.ends_at > now}
-
-
-def _entry_time(entry: dict) -> float | None:
-    stamp = entry.get("timestamp")
-    if not isinstance(stamp, str):
-        return None
-    try:
-        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
 
 
 def _extract_text_content(content: Any) -> str:
