@@ -358,3 +358,7 @@ id_ed25519
 id_ed25519.*
 secrets.json
 .claude/settings.local.json
+
+# A configured data source is personal to whoever set it up here (their mailbox address, their own
+# user id) — in THIS repo it is never product content. Other projects may commit their own.
+/agentic-assets/data_source/
