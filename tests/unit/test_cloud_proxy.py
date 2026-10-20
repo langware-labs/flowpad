@@ -102,6 +102,9 @@ async def test_cloudproxy_delivers_the_hub_body_verbatim(monkeypatch, status):
         async def report(self, **kwargs):
             self.reports.append(kwargs)
 
+        async def recovered(self, **kwargs):
+            pass
+
     reporter = Reporter()
     monkeypatch.setattr(hooks, "hub_error_reporter", reporter)
 
