@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectHomePageRedirect } from '@src/project-home-page/project-home-page-redirect';
-import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, isProjectHomePage } from '@src/project-home-page/home-page-state';
+import { HOME_PAGE_OPEN, HOME_PAGE_PARAM } from '@src/project-home-page/home-page-state';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 const mocks = vi.hoisted(() => ({
@@ -73,11 +73,23 @@ describe('project home page redirect — only navigations that ask for it', () =
     ['the project page', `http://flowpad.local/dock/project/${PROJECT_ID}`, () => {}],
     ['a cold start on the bare root', 'http://flowpad.local/', () => {}],
     ['a Hub-only build', HOME_BUTTON_URL, () => mocks.hubOnly.mockReturnValue(true)],
-    ['a route already inside a session', `http://flowpad.local/dock/shell/agentic_process-${LAST_CHAT}?${HOME_PAGE_PARAM}=${HOME_PAGE_OPEN}`, () => {}],
-    ['a route already inside a Vibe session', `http://flowpad.local/dock/vibe/agentic_process-${LAST_CHAT}?${HOME_PAGE_PARAM}=${HOME_PAGE_OPEN}`, () => {}],
-    ['no project at all', HOME_BUTTON_URL, () => {
-      mocks.dataContext.project = null;
-    }],
+    [
+      'a route already inside a session',
+      `http://flowpad.local/dock/shell/agentic_process-${LAST_CHAT}?${HOME_PAGE_PARAM}=${HOME_PAGE_OPEN}`,
+      () => {},
+    ],
+    [
+      'a route already inside a Vibe session',
+      `http://flowpad.local/dock/vibe/agentic_process-${LAST_CHAT}?${HOME_PAGE_PARAM}=${HOME_PAGE_OPEN}`,
+      () => {},
+    ],
+    [
+      'no project at all',
+      HOME_BUTTON_URL,
+      () => {
+        mocks.dataContext.project = null;
+      },
+    ],
   ])('never asks the backend for %s', async (_label, url, setup) => {
     setup();
     expect(await projectHomePageRedirect(new Request(url))).toBeNull();
@@ -128,17 +140,6 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(locationOf(response)).toContain(`/dock/vibe/agentic_process-${NEW_CHAT}`);
   });
 
-  it('remembers where the home page landed, so Home can step off it', async () => {
-    mocks.query.mockResolvedValue([{ id: LAST_CHAT, last_active_at: 5 }]);
-    const session = DockPointer.forShell(`agentic_process-${LAST_CHAT}`);
-
-    expect(isProjectHomePage(PROJECT_ID, session)).toBe(false);
-    await projectHomePageRedirect(new Request(HOME_BUTTON_URL));
-
-    expect(isProjectHomePage(PROJECT_ID, session)).toBe(true);
-    expect(isProjectHomePage('another-project', session)).toBe(false);
-  });
-
   it.each([
     ['no home page', { asset: null, type: null }],
     ['a backend error', { asset: null, type: null, error: 'boom' }],
@@ -161,7 +162,7 @@ describe('project home page redirect — only navigations that ask for it', () =
 describe('project home page redirect — a web app home (the project opens app-first)', () => {
   const APP = 'micro_app-00000000-0000-4000-8000-000000000009';
 
-  it('lands on the app running, pinned to the project, and remembers it', async () => {
+  it('lands on the app running, pinned to the project', async () => {
     mocks.openHomePage.mockResolvedValue({ asset: APP, type: 'micro_app' });
 
     const response = await projectHomePageRedirect(new Request(LAUNCH_URL));
@@ -172,15 +173,17 @@ describe('project home page redirect — a web app home (the project opens app-f
     expect(landed.pathname).toBe(`/dock/app/${APP}`);
     const dock = DockPointer.fromUrl(landed.pathname + landed.search);
     expect(dock?.scopeProjectId).toBe(PROJECT_ID);
-    expect(isProjectHomePage(PROJECT_ID, dock)).toBe(true);
     expect(mocks.agentGetById).not.toHaveBeenCalled();
   });
 
-  it('hands the app none of the scope keys — the project is the viewer\'s, not the app\'s query', async () => {
+  it("hands the app none of the scope keys — the project is the viewer's, not the app's query", async () => {
     const { appDockAddress } = await import('@src/navigation/app-dock');
     mocks.openHomePage.mockResolvedValue({ asset: APP, type: 'micro_app' });
 
-    const landed = new URL(locationOf(await projectHomePageRedirect(new Request(HOME_BUTTON_URL))), 'http://flowpad.local');
+    const landed = new URL(
+      locationOf(await projectHomePageRedirect(new Request(HOME_BUTTON_URL))),
+      'http://flowpad.local',
+    );
     const address = appDockAddress(DockPointer.fromUrl(landed.pathname + landed.search));
 
     expect(address?.microAppId).toBe(APP.slice('micro_app-'.length));
@@ -190,9 +193,17 @@ describe('project home page redirect — a web app home (the project opens app-f
 
 describe('project home prerequisite gate', () => {
   it('does not launch the agent before missing setup has been approved', async () => {
-    mocks.openHomePage.mockResolvedValue({ asset: AGENT, type: 'agent', lifecycle: {
-      state: 'setup_required', project_id: PROJECT_ID, detail: 'Setup required', run: null, asset: AGENT,
-    } });
+    mocks.openHomePage.mockResolvedValue({
+      asset: AGENT,
+      type: 'agent',
+      lifecycle: {
+        state: 'setup_required',
+        project_id: PROJECT_ID,
+        detail: 'Setup required',
+        run: null,
+        asset: AGENT,
+      },
+    });
     const response = await projectHomePageRedirect(new Request(LAUNCH_URL));
     const dock = DockPointer.fromUrl(locationOf(response));
     expect(dock.options?.providerProject).toBe(PROJECT_ID);
