@@ -3472,15 +3472,17 @@ msgstr "Approve and continue"
 msgid "Approve now"
 msgstr "Approve now"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
-#: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "Approve once"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "Approve, and let {guestName} start sessions without asking"
+msgid "Approve this live session only"
+msgstr "Approve this live session only"
+
+#: src/components/collaboration/LiveSessionView.tsx
+#~ msgid "Approve, and let {guestName} start sessions without asking"
+#~ msgstr "Approve, and let {guestName} start sessions without asking"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4800,6 +4802,10 @@ msgstr "Cancel"
 msgid "Cancel reply"
 msgstr "Cancel reply"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Cancel request"
+msgstr "Cancel request"
+
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "cancelled"
@@ -5720,6 +5726,7 @@ msgstr "Close"
 msgid "Close (Esc)"
 msgstr "Close (Esc)"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "Close (Escape)"
@@ -11582,6 +11589,10 @@ msgstr "Find agent rules"
 msgid "Find an event"
 msgstr "Find an event"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
+msgid "Find in document…"
+msgstr "Find in document…"
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Find machine"
 msgstr "Find machine"
@@ -16619,6 +16630,7 @@ msgstr "Next"
 msgid "next {0}"
 msgstr "next {0}"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
@@ -20614,6 +20626,7 @@ msgstr "Previous 30 days"
 msgid "Previous 7 days"
 msgstr "Previous 7 days"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "Previous match (Shift+Enter)"

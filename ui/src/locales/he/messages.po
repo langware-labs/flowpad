@@ -3438,15 +3438,17 @@ msgstr ""
 msgid "Approve now"
 msgstr "לאשר עכשיו"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
-#: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "לאשר פעם אחת"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "לאשר, ולאפשר ל-{guestName} להתחיל סשנים בלי לבקש"
+msgid "Approve this live session only"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+#~ msgid "Approve, and let {guestName} start sessions without asking"
+#~ msgstr "לאשר, ולאפשר ל-{guestName} להתחיל סשנים בלי לבקש"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4760,6 +4762,10 @@ msgstr "ביטול"
 msgid "Cancel reply"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Cancel request"
+msgstr ""
+
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "בוטל"
@@ -5677,6 +5683,7 @@ msgstr "סגור"
 msgid "Close (Esc)"
 msgstr "סגירה (Esc)"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "סגור (Escape)"
@@ -11496,6 +11503,10 @@ msgstr ""
 msgid "Find an event"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
+msgid "Find in document…"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Find machine"
 msgstr ""
@@ -16467,6 +16478,7 @@ msgstr "הבא"
 msgid "next {0}"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "התאמה הבאה (Enter)"
@@ -20423,6 +20435,7 @@ msgstr "30 הימים האחרונים"
 msgid "Previous 7 days"
 msgstr "7 הימים האחרונים"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "התאמה קודמת (Shift+Enter)"
