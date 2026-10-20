@@ -347,6 +347,12 @@ class Wizard(Entity):
 
         target, inputs = _target_and_inputs(body)
         result = await self.run(approved=approved, target=target, inputs=inputs)
+        # A run from the wizard page's own Run button that ends all green opens the gate too, not only a Start.
+        from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import finish_first_run  # noqa: PLC0415
+
+        if finish_first_run(self, result):
+            await _notify_wizard_watchers(str(self.id))
         payload = result.model_dump(mode="json")
         if result.busy:
             return ApiFailResponse(message=result.detail, status_code=409, data=payload)
