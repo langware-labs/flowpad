@@ -44,13 +44,15 @@ def _me(port: int) -> Optional[str]:
 
 def load_contacts(port: int) -> list[dict]:
     """Every known person, one entry each: ``{id, name, email, user_id}``."""
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
     rows = get_graph_json(graph_url(port, "user"), on_error=_on_error) or []
     me = _me(port)
     merged: dict[str, dict] = {}
     for u in rows:
         if u.get("system") or (me and u.get("user_id") == me):
             continue
-        email = (u.get("email") or "").strip().lower() or None
+        email = normalize_email(u.get("email"))
         key = u.get("user_id") or email or u.get("id")
         c = merged.setdefault(key, {"id": u.get("id"), "name": None, "email": None, "user_id": u.get("user_id")})
         c["name"] = c["name"] or u.get("name")
