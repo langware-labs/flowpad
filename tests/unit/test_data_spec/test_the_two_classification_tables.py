@@ -38,11 +38,11 @@ from flow_sdk.schema.data_spec.io.placement import is_document, placement_of
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-#: Kept honest by `test_no_package_outside_this_list_declares_a_shape`.
 #: Process entry points: importing one RUNS it (``server.run`` loads ``.env.local`` over the
 #: environment, switching every later test in the session to that instance). They declare no shape.
 ENTRY_POINTS = frozenset({"flow_sdk.server.run"})
 
+#: Kept honest by `test_no_package_outside_this_list_declares_a_shape`.
 SHAPE_PACKAGES = (
     "flow_sdk.assets",
     "flow_sdk.blocks",
