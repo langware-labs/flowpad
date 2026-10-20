@@ -2355,7 +2355,7 @@ def _send_time_from_pointer_index(tmp_root: Path, fm_id: str) -> str | None:
 
 
 def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: str | None = None) -> None:
-    """Fill a legacy bundle's missing send-time on ``fm_data``, in place.
+    """Fill a legacy bundle's missing send-time and hub clock on ``fm_data``, in place.
 
     THE one place that decides a message's send-time on receive. It must be
     applied at EVERY site that can persist a FlowMessage out of a bundle — a
@@ -2388,10 +2388,11 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     if fm_data.get("created_date"):
         return
     ts = _send_time_from_pointer_index(tmp_root, fm_id)
-    if not ts:
-        return
-    fm_data["created_date"] = ts
-    if not fm_data.get("updated_date"):
+    if ts:
+        fm_data["created_date"] = ts
+    # Independent of ``ts``: a bundle with no pointer index still has the hub
+    # clock, and without it the row is born ``now()``.
+    if not fm_data.get("updated_date") and (hub_updated or ts):
         fm_data["updated_date"] = hub_updated or ts
 
 
