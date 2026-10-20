@@ -30,6 +30,7 @@ The wizard prompt includes JSON data with:
 
 - `projectId`: the Flowpad project that depends on the repository
 - `optional`: `true` declares it under `optionalDependencies` — pass `--optional` to `flow dep add`
+- `local`: `true` keeps it on this device only, never in `flow.json` — pass `--local` to `flow dep add`
 - `mode`: `"existing"`, `"new"`, or `"adopt"`
 - `url`: the repository URL (mode `existing`; OPTIONAL in mode `adopt`)
 - `branch`: the branch the user picked (OPTIONAL — absent means the remote's
@@ -125,7 +126,7 @@ git -C <path> config push.autoSetupRemote true
    the project's dependencies — `flow dep list --project <projectId>` shows a
    dependency whose `local_path` is `path`. Then `flow dep add <path> --project
    <projectId> --name <that dependency's name>` (with `--optional` when it is
-   optional) records it as the git repository it now is. A folder that is the
+   optional, `--local` when it is local) records it as the git repository it now is. A folder that is the
    project itself, or a folder inside it, is NOT a dependency: never add it. Skip the "register and add" section
    below: write the report, then go to "All modes — finishing".
 
@@ -230,12 +231,12 @@ to `/api/v1/graph/project`. Keep the returned `data.id` as `newProjectId`.
 If a project for that exact path already exists, reuse it instead of
 creating a duplicate.
 
-2. Add the repo to the TARGET project's `flow.json` as a dependency — the folder
+2. Add the repo to the TARGET project as a dependency (in its `flow.json`, or on this device only when `local` is true) — the folder
    is recorded as its repository (`git+<url>#<branch>`) and this checkout is the
    one Flowpad uses for it:
 
 ```bash
-flow dep add <dir> --project <projectId>            # add --optional when optional is true
+flow dep add <dir> --project <projectId>            # add --optional when optional is true, --local when local is true
 ```
 
    A non-zero exit means it was NOT added — show the message and stop.
