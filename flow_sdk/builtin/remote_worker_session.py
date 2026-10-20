@@ -49,15 +49,26 @@ class ReplyPolicy(StrEnum):
     REVIEW = "review"  # save as a host draft inside the session
 
 
-def scratch_workdir() -> "Path":
-    """The folder a "No project" live session runs in — one per instance, always
-    the same. Under the instance's own data folder (never machine-wide), which is
-    a protected path, so running there never mints a Project for it."""
+def _instance_scratch(name: str) -> "Path":
+    """A fixed folder under the instance's own data folder (never machine-wide).
+    It is a protected path, so running there never mints a Project for it."""
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    folder = get_instance_settings().instance_dir / "live-session-scratch"
+    folder = get_instance_settings().instance_dir / name
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def scratch_workdir() -> "Path":
+    """The folder a "No project" live session runs in — one per instance, always the same."""
+    return _instance_scratch("live-session-scratch")
+
+
+def chat_scratch_workdir() -> "Path":
+    """The folder a project-less CHAT runs in (e.g. chat about a message
+    attachment) — one per instance, separate from the live-session scratch so a
+    guest's files and the user's own chats never mix."""
+    return _instance_scratch("chat-scratch")
 
 
 # The approve refusal for a session with nowhere to run — the UI answers it with a project picker.

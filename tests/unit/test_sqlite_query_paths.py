@@ -134,7 +134,7 @@ class TestDeclaredIndexes:
             for t in ("source_item", "message_thread", "consumer_position", "source_change"):
                 if name.startswith(f"ix_entities_{t}_"):
                     by_type[t] = by_type.get(t, 0) + 1
-        assert by_type == {"source_item": 2, "message_thread": 1, "consumer_position": 1, "source_change": 1}
+        assert by_type == {"source_item": 3, "message_thread": 1, "consumer_position": 1, "source_change": 1}
 
     @pytest.mark.asyncio
     async def test_resync_is_noop_and_removed_declaration_drops(self, driver):
@@ -184,6 +184,18 @@ class TestDeclaredIndexes:
                 "AND json_extract(data, '$.origin_kind') = 'k' "
                 "AND json_extract(data, '$.origin_namespace') = 'n' "
                 "AND json_extract(data, '$.origin_key') = 'x'"
+            ))
+            plan = " ".join(str(row[-1]) for row in result.fetchall())
+        assert "ix_entities_source_item_" in plan, plan
+
+    @pytest.mark.asyncio
+    async def test_source_item_identity_lookup_uses_an_index(self, driver):
+        async with driver.session_factory() as session:
+            result = await session.execute(text(
+                "EXPLAIN QUERY PLAN SELECT id FROM entities WHERE type = 'source_item' "
+                "AND json_extract(data, '$.data_source_id') = 'ds' "
+                "AND json_extract(data, '$.item_scope') = 's' "
+                "AND json_extract(data, '$.item_key') = 'x'"
             ))
             plan = " ".join(str(row[-1]) for row in result.fetchall())
         assert "ix_entities_source_item_" in plan, plan

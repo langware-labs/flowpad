@@ -3438,15 +3438,17 @@ msgstr ""
 msgid "Approve now"
 msgstr "לאשר עכשיו"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
-#: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "לאשר פעם אחת"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "לאשר, ולאפשר ל-{guestName} להתחיל סשנים בלי לבקש"
+msgid "Approve this live session only"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+#~ msgid "Approve, and let {guestName} start sessions without asking"
+#~ msgstr "לאשר, ולאפשר ל-{guestName} להתחיל סשנים בלי לבקש"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4760,6 +4762,10 @@ msgstr "ביטול"
 msgid "Cancel reply"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Cancel request"
+msgstr ""
+
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "בוטל"
@@ -4997,6 +5003,10 @@ msgstr "תרשימים"
 #: src/i18n/pref-labels.ts
 msgid "Chat"
 msgstr "צ'אט"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Chat about this file"
+msgstr ""
 
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
@@ -5677,6 +5687,7 @@ msgstr "סגור"
 msgid "Close (Esc)"
 msgstr "סגירה (Esc)"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "סגור (Escape)"
@@ -5715,6 +5726,10 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
 msgstr "סגור סימנייה"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Close chat"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Close details"
@@ -7197,6 +7212,10 @@ msgstr "לא ניתן היה לפתוח את תת-הזרימה"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
+msgstr ""
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Could not open this document: {error}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -9370,8 +9389,8 @@ msgstr "מגלה {typeLabel}…"
 #~ msgstr "גילוי..."
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Discuss"
-msgstr "דיון"
+#~ msgid "Discuss"
+#~ msgstr "דיון"
 
 #: src/i18n/pref-labels.ts
 msgid "Disk I/O backend"
@@ -9468,6 +9487,7 @@ msgstr ""
 msgid "Documentation"
 msgstr "תיעוד"
 
+#: src/i18n/type-labels.ts
 #: src/i18n/type-labels.ts
 msgid "Documents"
 msgstr "מסמכים"
@@ -11496,6 +11516,10 @@ msgstr ""
 msgid "Find an event"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
+msgid "Find in document…"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Find machine"
 msgstr ""
@@ -11552,8 +11576,8 @@ msgid "finishing"
 msgstr "מסיים"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Finishing asset load…"
-msgstr "מסיים טעינת נכס…"
+#~ msgid "Finishing asset load…"
+#~ msgstr "מסיים טעינת נכס…"
 
 #~ msgid "Fire (synthetic test)"
 #~ msgstr "הפעל (בדיקה סינתטית)"
@@ -11644,8 +11668,8 @@ msgid "Fix the configuration — credentials or settings — then press Verify t
 msgstr "תקנו את התצורה — פרטי גישה או הגדרות — ואז לחצו על אימות כדי לחדש את המשיכה."
 
 #: src/components/data-sources/source-attention.ts
-msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
+#~ msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "Fix the setup"
@@ -15003,6 +15027,7 @@ msgstr "טוען..."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -15708,8 +15733,8 @@ msgid "minutes"
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "Mirror needs attention"
-msgstr "המראה דורשת טיפול"
+#~ msgid "Mirror needs attention"
+#~ msgstr "המראה דורשת טיפול"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -16467,6 +16492,7 @@ msgstr "הבא"
 msgid "next {0}"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "התאמה הבאה (Enter)"
@@ -18628,6 +18654,10 @@ msgstr ""
 msgid "Open {name}"
 msgstr "פתיחת {name}"
 
+#: src/pages/flow-page/vibe-doc-chip.tsx
+msgid "Open {name} beside this chat"
+msgstr ""
+
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
 msgstr "פתיחת {title}"
@@ -20423,6 +20453,7 @@ msgstr "30 הימים האחרונים"
 msgid "Previous 7 days"
 msgstr "7 הימים האחרונים"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "התאמה קודמת (Shift+Enter)"
@@ -21201,6 +21232,10 @@ msgstr ""
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "קריאת התוצאה ב-FlowPad"
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Read-only"
+msgstr ""
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Reader"
@@ -22554,8 +22589,8 @@ msgid "Review each attached asset and choose how to install it."
 msgstr "יש לבדוק כל נכס מצורף ולבחור כיצד להתקין אותו."
 
 #: src/tabs/doc-tab-card.tsx
-msgid "Review in"
-msgstr "סקירה ב־"
+#~ msgid "Review in"
+#~ msgstr "סקירה ב־"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -23772,8 +23807,8 @@ msgid "Select a project"
 msgstr "בחר פרויקט"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Select a project to discuss this file"
-msgstr "יש לבחור פרויקט כדי לדון בקובץ זה"
+#~ msgid "Select a project to discuss this file"
+#~ msgstr "יש לבחור פרויקט כדי לדון בקובץ זה"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -26046,6 +26081,10 @@ msgstr "שמור"
 msgid "stored →"
 msgstr "שמור →"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Stored in"
+msgstr ""
+
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
 msgstr ""
@@ -26849,8 +26888,8 @@ msgid "The credentials could not be saved."
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "The dataset this source mirrors into could not be made current."
-msgstr "לא ניתן היה לעדכן את מערך הנתונים שמקור זה משתקף אליו."
+#~ msgid "The dataset this source mirrors into could not be made current."
+#~ msgstr "לא ניתן היה לעדכן את מערך הנתונים שמקור זה משתקף אליו."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."

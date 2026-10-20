@@ -2,6 +2,7 @@ import { useLingui } from '@lingui/react/macro';
 import { Check, LayoutGrid } from 'lucide-react';
 import type { Project } from '@sdk';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
+import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { chromeEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Badge } from '@src/components/ui/badge';
@@ -23,26 +24,29 @@ import { projectAppDock, useProjectApps, type ProjectApp } from './use-project-a
  * The project's apps and agents, with registry icons for each type. A lone app
  * opens directly; otherwise the button offers the full list.
  *
- * The click only navigates: the app opens in place, where the user already is (no tab of its own),
- * and the load that starts an app that is not running belongs to the view it lands on. Which app is showing is
- * read off the URL. Absent when the project has no apps or agents, and on the hub, which starts nothing.
+ * An app opens as its OWN top-level tab (never a child of the Vibe workspace on screen); the load
+ * that starts an app that is not running belongs to the view it lands on. An agent opens in Vibe:
+ * its last chat in this project, else a new one (`agentSessionDock`). Which app is showing is read
+ * off the URL. Absent when the project has no apps or agents, and on the hub, which starts nothing.
  */
 export function AppButton({ project }: { project?: Project | null }) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
   const apps = useProjectApps(project);
   const { agents } = useProjectAgents(project);
+  const { launch } = useAgentLauncher();
   if (isHubOnly() || !project || (!apps.length && !agents.length)) return null;
 
   const projectId = String(project.id);
   const shownId = appDockAddress(currentDock ?? null)?.microAppId ?? null;
-  const open = (entry: ProjectApp) => navigation.openDock(projectAppDock(entry, projectId));
+  const open = (entry: ProjectApp) =>
+    navigation.openDock(projectAppDock(entry, projectId), undefined, { topLevel: true });
 
   const tooltipContent = (
     <div className="space-y-1">
       <div className="font-medium">{t`Apps and agents`}</div>
       {[
-        ...apps.map(({ app }) => ({ id: app.id, type: app.type, name: app.name })),
+        ...apps.map(({ app }) => ({ id: app.id, type: app.type, name: app.displayName })),
         ...agents.map((agent) => ({ id: agent.id, type: agent.type, name: agent.displayName })),
       ].map((entry) => {
         const Icon = iconForType(entry.type);
@@ -104,7 +108,7 @@ export function AppButton({ project }: { project?: Project | null }) {
               className="gap-2"
             >
               <Icon className="size-4 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{entry.app.name}</span>
+              <span className="min-w-0 flex-1 truncate">{entry.app.displayName}</span>
               {entry.providerProjectId !== projectId && <Badge variant="outline">{t`Package`}</Badge>}
               <Badge variant="secondary">{entry.app.audience === 'admin' ? t`Admin` : t`User`}</Badge>
               <Check
@@ -120,7 +124,7 @@ export function AppButton({ project }: { project?: Project | null }) {
             <DropdownMenuItem
               key={agent.typeId.toString()}
               data-testid={`top-nav-agent-${agent.name}`}
-              onSelect={() => navigation.openDock(agent.dockPointer)}
+              onSelect={() => void launch(agent, projectId)}
               className="gap-2"
             >
               <Icon className="size-4 shrink-0" aria-hidden />

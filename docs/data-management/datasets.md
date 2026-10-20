@@ -69,6 +69,7 @@ configuration + metadata, in the two-section form:
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
     "field_spec": { "input": "question" },          // CSV column remap only (§2)
     "delimiter": ",",                               // CSV only
+    "location": "local",                            // where the rows live (default "local")
     "spec": {                                       // a DatasetSpec authoring form (§ Spec)
       "rows": [ { "input":  { "question": "string" },
                       "output": { "category": "string" } } ]
@@ -83,6 +84,11 @@ configuration + metadata, in the two-section form:
 Computed fields you **do not** write — the indexer fills them in:
 `num_rows`, `kind_counts`, `num_annotated`, `num_multi_output`,
 `num_binary_inputs`.
+
+`location` says where the rows live: `"local"` (`<dataset>/rows/`, kept out of git), `"file:<folder>"`,
+`"<driver>:<target>"` (`gdrive:GTM/Rows/leads`, `s3:my-bucket/gtm/leads`), or a record system
+(`{"driver", "config", "map", "by"?}`). The dataset folder holds the shape; the rows go where the
+person puts them — see [dataset locations](dataset-locations.md).
 
 ### The `spec`
 
@@ -408,17 +414,17 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl` (the full REST li
 | sync | `sync(rows, prune, match)` | `sync(rows, …)` | `sync-rows` | hold exactly these rows |
 
 (`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
-verbs carry `_row`. Async (awaited): `append`, `put`, `put_many`, `sync`, `mirror`, `promote`,
+verbs carry `_row`. Async (awaited): `append`, `put`, `put_many`, `sync`, `mirror`, `pull`, `promote`,
 `annotate`. Synchronous: `delete_row`, `delete_rows`, `rename_row`, `set_data` (replace one row's
 free `data`, Python only), `store_ids`, and every read.)
 
-Four laws. (1) Every write is checked first and is all or nothing — except a MIRROR of an outside
+Four laws. (1) Every write is checked first and is all or nothing — except the pull of a record
 system (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
-writes the rest (see [mirroring a system of record](mirroring-a-system-of-record.md)). (2) A refusal is read by
+writes the rest (see [dataset locations](dataset-locations.md)). (2) A refusal is read by
 `details[].code` — `[{path, code, message}]` on every refusal, with `errors` as its lines: **400** the
 row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`,
-and in a mirrored dataset `not_writable`, `source_refused`, `unlinked`),
-**404** no such row, **409** it changed since (`conflict`, `gone`) or is still linked to (`referenced`).
+and in a record-system location `not_writable`, `source_refused`, `unlinked`),
+**404** no such row, **409** it changed since (`conflict`, `gone`, or another writer at the location got there first) or is still linked to (`referenced`).
 In Python these are `RowRefused` (alias `LinkError`), `LookupError`, `ConflictError`. (3) One bad row
 never hides the others. (4) A change is announced as a hint (`dataset.rows.changed`: keys, never
 values) — re-read.
@@ -458,7 +464,8 @@ chooses is `a-z 0-9 _ -`, starts with a letter or digit, at most 120 chars; `app
 | `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
-| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows` plus `misfit?: [{key, details}]` (records kept as problem rows) and `unlinked?: [{key, field, value}]`; NOT all or nothing — one record that does not fit never stops the rest; see [mirroring a system of record](mirroring-a-system-of-record.md) |
+| `POST pull` | `{moved, num_rows}`: bring a remote location's working copy up to date now (`Dataset.pull`, TS `pull()`); see [dataset locations](dataset-locations.md) |
+| `POST move-rows {location}` | `{from, to, rows}`: copy every row to another location, check the count, rewrite `dataset.json`; the old location keeps its rows. Refused into a non-empty location or a record system (TS `moveRows(location)`) |
 | `POST store-ids` | `{stamped}`: store each row's id in `row.json` where it still has only the legacy derived one (`Dataset.store_ids`; run once on an old dataset) |
 | `GET evals` · `GET eval/<run>[/<row>]` · `POST run-eval {eval?, kinds?}` | eval runs: the list, one run with its rows (or one row's `trace`), a new run — TS `evalRuns` / `evalRun` / `evalTrace` / `runEval`; see [evals](evals.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
@@ -468,11 +475,11 @@ chooses is `a-z 0-9 _ -`, starts with a letter or digit, at most 120 chars; `app
 Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
 those, not the lines. Three numbers are not the same: `num_rows` counts every row folder,
 `count().total` and `query().total` count the rows that FIT (the rest are `problems`).
-A field that must live both here and in an outside system is THAT SYSTEM'S field: mirrored in,
-marked `owned_by`, and an edit here is sent there first
-([mirroring a system of record](mirroring-a-system-of-record.md)) — never kept in step by hand.
+A field that must live both here and in an outside system is THAT SYSTEM'S field: the rows live in
+that system (`location`), the field is mapped and marked `owned_by`, and an edit here is sent there
+first ([dataset locations](dataset-locations.md)) — never kept in step by hand.
 `flow_sdk.datasets.merge.three_way(here, there, agreed)` → `(decision, value)`, decision `"same"` / `"here"` / `"there"` / `"hold"`,
-is for two stores with no source between them (a file copied to a drive), not for a mirrored row.
+is for two stores with no source between them (a file copied to a drive), not for a row in a record system.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
 `ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;
@@ -539,7 +546,7 @@ once and read what their checks need once. A delete reads only the datasets whos
 the row's kind (`links.linkers_of`) — none when nothing links to it — where it used to re-read every
 row of the project per row deleted.
 
-**One run at a time.** A script that mirrors an outside system wraps its whole run in
+**One run at a time.** A script that copies an outside system in wraps its whole run in
 `flow_sdk.datasets.run.single_run(project_root, "<name>")`: two runs at once (a trigger's and a
 person's "Sync now") would decide on the same reading and overwrite each other's state. The lock is a
 file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `RunBusy`.
