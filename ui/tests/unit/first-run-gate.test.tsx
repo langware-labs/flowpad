@@ -24,12 +24,14 @@ import {
   FirstRunWaiting,
   isFirstRunBlocked,
   useFirstRunResume,
+  useGateAnswerStore,
   type FirstRunGate,
 } from '@src/components/project-setup/first-run-gate';
 
 const refusal = { response: { status: 412, data: { data: { blocked: FIRST_RUN_BLOCKED } } } };
 
 afterEach(() => {
+  useGateAnswerStore.setState({ asked: null, started: false });
   cleanup();
   useFirstRunFlowStore.getState().end();
 });
@@ -67,7 +69,7 @@ describe('a screen that waits for the first-run wizard', () => {
 describe('going on by itself when the wizard is done', () => {
   const gate = (state: FirstRunGate['state']): FirstRunGate => ({
     state,
-    finish: vi.fn(),
+    
     continueAnyway: vi.fn(() => Promise.resolve(true)),
   });
 

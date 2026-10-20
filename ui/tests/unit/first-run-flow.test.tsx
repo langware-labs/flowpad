@@ -10,9 +10,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  gate: { state: 'closed', finish: vi.fn(), continueAnyway: vi.fn() } as {
+  gate: { state: 'closed', continueAnyway: vi.fn() } as {
     state: 'loading' | 'closed' | 'open';
-    finish: () => void;
     continueAnyway: () => Promise<boolean>;
   },
   openSetupWizard: vi.fn(),
@@ -46,7 +45,7 @@ import { renderHook } from '@testing-library/react';
 const step = () => useFirstRunFlowStore.getState().step;
 
 beforeEach(() => {
-  h.gate = { state: 'closed', finish: vi.fn(), continueAnyway: vi.fn(() => Promise.resolve(true)) };
+  h.gate = { state: 'closed', continueAnyway: vi.fn(() => Promise.resolve(true)) };
   // Opening the wizard puts its popup up, as the real door does.
   h.openSetupWizard.mockReset().mockImplementation(() => {
     openWizardPopup('wizard-1');

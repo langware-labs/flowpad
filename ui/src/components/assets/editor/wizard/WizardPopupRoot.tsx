@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { recordContentRef } from '@src/components/assets/editor/AssetEditorRouter';
 
+import { useFirstRunFlowStore } from '@src/components/first-run-flow/first-run-flow-store';
 import { useLaunchStore } from '@src/components/task-receive/launch-store';
 import { useWizardPopupStore } from './wizard-popup-store';
 import { WizardViewer } from './WizardViewer';
@@ -25,11 +26,14 @@ export function WizardPopupRoot() {
   // A launch the person asked for is on screen: a popup the app opens by itself (first-run setup
   // on a new install) would cover it — and whatever it has to say — so it waits for the launch.
   const launching = useLaunchStore((s) => s.open);
+  // ...unless the first-run flow is up: a launch that arrived before setup is DEFERRED behind it (its dialog waits
+  // for the gate), so waiting here would leave each waiting for the other and nothing on screen.
+  const flowUp = useFirstRunFlowStore((s) => s.step !== 'idle');
   // The chooser takes the screen while it asks; the popup waits and returns when the tab leaves it. Waiting is
   // SUSPENDED, not unmounted: an unmounted popup forgot that Start was pressed (it came back blank, with no sign
   // that anything was running) and had to load its entity and document again (the page behind showed for a moment).
   if (!open || !typeId) return null;
-  return <WizardPopupHost typeIdStr={typeId} suspended={launching || pathname.startsWith(LLM_SETUP_PATH)} />;
+  return <WizardPopupHost typeIdStr={typeId} suspended={(launching && !flowUp) || pathname.startsWith(LLM_SETUP_PATH)} />;
 }
 
 function WizardPopupHost({ typeIdStr, suspended }: { typeIdStr: string; suspended: boolean }) {

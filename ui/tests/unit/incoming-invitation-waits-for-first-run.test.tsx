@@ -21,7 +21,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/components/project-setup/first-run-gate', () => ({
-  useFirstRunGate: () => ({ state: h.gateState, finish: vi.fn(), continueAnyway: vi.fn() }),
+  useFirstRunGate: () => ({ state: h.gateState, continueAnyway: vi.fn() }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),

@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({ question: null as string | null }));
 // Project setup waits for the first-run wizard (`first-run-gate.tsx`); here that wizard is done.
 vi.mock('@src/components/project-setup/first-run-gate', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/project-setup/first-run-gate')>()),
-  useFirstRunGate: () => ({ state: 'open', finish: vi.fn(), continueAnyway: vi.fn() }),
+  useFirstRunGate: () => ({ state: 'open', continueAnyway: vi.fn() }),
 }));
 
 vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }) }));

@@ -30,7 +30,7 @@ vi.mock('@src/components/setup-incomplete/open-setup-wizard', () => ({
 }));
 
 import { useFirstRunFlowStore } from '@src/components/first-run-flow/first-run-flow-store';
-import { FirstRunWaiting, useFirstRunGate } from '@src/components/project-setup/first-run-gate';
+import { FirstRunWaiting, useFirstRunGate, useGateAnswerStore } from '@src/components/project-setup/first-run-gate';
 
 const wizard = (open: boolean) => ({ typeId: { toString: () => 'wizard-1' }, first_run_gate_open: open });
 
@@ -42,6 +42,7 @@ function slowAnswer() {
 }
 
 beforeEach(() => {
+  useGateAnswerStore.setState({ asked: null, started: false }); // one answer per page load
   h.isDesktop = true;
   h.entity = null;
   h.get.mockReset();
@@ -54,6 +55,18 @@ afterEach(() => {
 });
 
 describe('useFirstRunGate', () => {
+  it('asks the backend ONCE however many screens read the gate, and they all read the same answer', async () => {
+    h.find.mockResolvedValue(wizard(false));
+    h.entity = { first_run_gate_open: false };
+    h.get.mockResolvedValue({ state: 'closed' });
+    const first = renderHook(() => useFirstRunGate());
+    const second = renderHook(() => useFirstRunGate());
+
+    await waitFor(() => expect(first.result.current.state).toBe('closed'));
+    await waitFor(() => expect(second.result.current.state).toBe('closed'));
+    expect(h.get).toHaveBeenCalledTimes(1);
+  });
+
   it('is loading until the backend answers -- never open on a wizard row that is not there yet', async () => {
     const answer = slowAnswer();
     h.find.mockResolvedValue(wizard(false));

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { create } from 'zustand';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useContext, useEntity } from '@sdk/react/hooks';
 import { Wizard } from '@sdk';
@@ -35,6 +36,32 @@ export interface FirstRunGate {
 }
 
 /**
+ * What the backend answered, shared by every `useFirstRunGate()` on the page -- the root's, a dialog's, a waiting
+ * line's. They used to ask one GET each, so one that failed (or was lost to a restart) read `open` while another
+ * read `closed`, and a screen could wait forever on a gate the root had written off. One question, one answer.
+ */
+interface GateAnswerStore {
+  /** null: not answered yet. */
+  asked: 'open' | 'closed' | null;
+  /** The request in flight or done: asked once per page load, by whichever hook mounts first. */
+  started: boolean;
+  ask: () => void;
+}
+
+export const useGateAnswerStore = create<GateAnswerStore>((set, get) => ({
+  asked: null,
+  started: false,
+  ask: () => {
+    if (get().started) return;
+    set({ started: true });
+    Wizard.firstRunState()
+      .then((answer) => set({ asked: answer }))
+      // A gate that cannot tell must not hold anyone.
+      .catch(() => set({ asked: 'open' }));
+  },
+}));
+
+/**
  * The gate, live. Two answers make it:
  *
  * 1. The BACKEND's, asked once at load (`GET /wizard/first-run-state`). It answers only once the shipped wizard can be
@@ -51,21 +78,11 @@ export function useFirstRunGate(): FirstRunGate {
   const { isDesktop } = useContext();
   const { t } = useLingui();
   // null: the backend has not answered yet.
-  const [asked, setAsked] = useState<'open' | 'closed' | null>(null);
+  const asked = useGateAnswerStore((s) => s.asked);
+  const ask = useGateAnswerStore((s) => s.ask);
   useEffect(() => {
-    if (!isDesktop) return undefined;
-    let cancelled = false;
-    Wizard.firstRunState()
-      .then((answer) => {
-        if (!cancelled) setAsked(answer);
-      })
-      .catch(() => {
-        if (!cancelled) setAsked('open');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isDesktop]);
+    if (isDesktop) ask();
+  }, [isDesktop, ask]);
   // undefined: still looking. null: no such wizard here (or the lookup failed).
   const [found, setFound] = useState<Wizard | null | undefined>(undefined);
   useEffect(() => {

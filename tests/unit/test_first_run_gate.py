@@ -18,7 +18,6 @@ from flow_sdk.core.wizard.first_run import (
     BLOCKED_FIRST_RUN,
     FIRST_RUN_WIZARD,
     FirstRunSetupRequired,
-    begin_first_run,
     finish_first_run,
     first_run_gate_open,
     first_run_state,
@@ -27,7 +26,7 @@ from flow_sdk.core.wizard.first_run import (
     require_first_run_setup,
     waive_for_session,
 )
-from flow_sdk.core.wizard.state import mark_first_run_done, read_state, record_result, reset_run
+from flow_sdk.core.wizard.state import first_run_done, mark_first_run_done, record_result, reset_run, run_dir
 from flow_sdk.fs_store import record_paths
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
@@ -66,50 +65,33 @@ def test_the_stamp_survives_every_later_run():
     reset_run(WIZARD_ID)  # "Run setup again" archives the run
     record_result(WIZARD_ID, WizardResult.not_yet("a person declined an install"))
 
-    assert read_state(WIZARD_ID).get("first_run_done") is True
+    assert first_run_done(WIZARD_ID) is True
     assert first_run_gate_open(WIZARD_ID) is True, "a later run that falls short must not close the gate again"
 
 
-def test_a_green_result_from_before_runs_were_tracked_counts_as_done():
+def test_a_result_on_disk_proves_nothing_there_is_no_migration():
+    """An install that ran the wizard before this gate existed sees it once more; no result is read as "done"."""
     record_result(WIZARD_ID, WizardResult.satisfied("an older install ran fully"))
-    assert first_run_gate_open(WIZARD_ID) is True
-
-
-def test_a_result_that_fell_short_proves_nothing():
-    """A failed or check-only run from the CLI/API writes a result too; it must not open the gate for good."""
-    record_result(WIZARD_ID, WizardResult.not_yet("a check-only run found a tool missing"))
     assert first_run_gate_open(WIZARD_ID) is False
 
 
-def test_a_tracked_run_still_going_does_not_open_it():
-    begin_first_run(_wizard())
+def test_a_run_still_going_does_not_open_it():
     record_result(WIZARD_ID, WizardResult.not_yet("still running"))  # a run writes this as it goes
-
     assert first_run_gate_open(WIZARD_ID) is False
 
 
-def test_an_older_install_keeps_its_standing_when_it_runs_the_wizard_again():
-    record_result(WIZARD_ID, WizardResult.satisfied("ran under an older version"))
+def test_stamping_never_waits_on_the_run_lock():
+    """`execute_wizard` holds `run.lock` for a whole run; a writer waiting on it from the event loop froze the
+    server for as long as the run took. The stamp lives in a file of its own, so it needs no such wait."""
+    from filelock import FileLock
 
-    begin_first_run(_wizard())  # the start about to archive that result
-    reset_run(WIZARD_ID)
-
-    assert first_run_gate_open(WIZARD_ID) is True
-
-
-def test_a_gate_open_for_another_reason_is_not_stamped_by_a_start(monkeypatch):
-    """Skip switch / hub box open the gate without the wizard having run: starting it must not make that permanent."""
-    monkeypatch.setenv(first_run.SKIP_FIRST_RUN_SETUP_ENV, "true")
-    begin_first_run(_wizard())
-    assert read_state(WIZARD_ID).get("first_run_done") is None
-
-    monkeypatch.delenv(first_run.SKIP_FIRST_RUN_SETUP_ENV)
-    assert first_run_gate_open(WIZARD_ID) is False
+    run_dir(WIZARD_ID).mkdir(parents=True, exist_ok=True)
+    with FileLock(str(run_dir(WIZARD_ID) / "run.lock")):  # a run is in flight
+        mark_first_run_done(WIZARD_ID)  # returns at once (the module timeout is the proof)
+        assert first_run_gate_open(WIZARD_ID) is True
 
 
 def test_only_a_green_finish_stamps_it():
-    begin_first_run(_wizard())
-
     assert finish_first_run(_wizard(), WizardResult.not_yet("declined")) is False
     assert first_run_gate_open(WIZARD_ID) is False
 
@@ -119,15 +101,14 @@ def test_only_a_green_finish_stamps_it():
 
 def test_another_wizard_never_gates_anything():
     assert first_run_gate_open(WIZARD_ID, False) is True
-    begin_first_run(_wizard(False))
     finish_first_run(_wizard(False), WizardResult.satisfied("done"))
-    assert read_state(WIZARD_ID).get("first_run_done") is None
+    assert first_run_done(WIZARD_ID) is False
 
 
 def test_continue_anyway_opens_it_for_this_session_only():
     waive_for_session(WIZARD_ID)
     assert first_run_gate_open(WIZARD_ID) is True
-    assert read_state(WIZARD_ID).get("first_run_done") is None, "a waiver is never written down"
+    assert first_run_done(WIZARD_ID) is False, "a waiver is never written down"
 
     _WAIVED.clear()  # what a restart does
     assert first_run_gate_open(WIZARD_ID) is False
@@ -147,7 +128,7 @@ def test_a_gate_that_cannot_read_its_state_stays_open(monkeypatch):
     def broken(_wizard_id):
         raise OSError("disk gone")
 
-    monkeypatch.setattr(first_run, "read_state", broken)
+    monkeypatch.setattr(first_run, "first_run_done", broken)
     assert first_run_gate_open(WIZARD_ID) is True
 
 
@@ -263,3 +244,22 @@ async def test_the_type_level_action_answers_with_the_state(monkeypatch):
     answer = await Wizard.first_run_state_action()
 
     assert answer.data == {"state": "closed"}
+
+
+async def test_an_instance_that_never_runs_the_wizard_is_not_held_for_the_index(monkeypatch):
+    """A test backend (skip switch) or a hub-launched box has no one to run the wizard: neither the state nor a
+    setup waits on an index that has not ended."""
+    indexing_started()  # the index is running and its wizard row does not exist yet
+
+    async def none():
+        return None
+
+    monkeypatch.setattr(first_run, "first_run_wizard", none)
+    monkeypatch.setenv(first_run.SKIP_FIRST_RUN_SETUP_ENV, "true")
+    assert await first_run_state() == "open"
+    await require_first_run_setup()
+
+    monkeypatch.delenv(first_run.SKIP_FIRST_RUN_SETUP_ENV)
+    monkeypatch.setattr("flow_sdk.instance_settings.runtime.get_assigned_runtime", lambda: "e2b")
+    assert await first_run_state() == "open"
+    await require_first_run_setup()

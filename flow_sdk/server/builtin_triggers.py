@@ -345,7 +345,7 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
     from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
 
     # A test backend is a fresh install every run, so this would fire on the first tab of
-    # every suite, steer it to the wizard page and start installing tools on the runner.
+    # every suite and start installing tools on the runner.
     # The wizard's own Start button (`POST /wizard/<id>/start`) is a person acting and is not gated.
     if os.environ.get(SKIP_FIRST_RUN_SETUP_ENV, "").lower() == "true":
         _log.info("llm setup trigger %r: skipped (%s=true)", trigger.uname, SKIP_FIRST_RUN_SETUP_ENV)
@@ -359,15 +359,14 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
     from flow_sdk.core.compute.llm_source import person_is_watching  # noqa: PLC0415
     from flow_sdk.core.wizard.start import start_wizard  # noqa: PLC0415
 
-    # A popup wizard, and a person looking: put its page in front of them — steps blank, its
-    # explanation readable — and stop. Racing an install question onto the screen the instant the
-    # popup opens leaves no time to read what any of it is for; they press its own Start
-    # (`POST /wizard/<id>/start`, the same `start_wizard`). With nobody watching there is no Start to
-    # press, so it starts itself.
+    # A popup wizard, and a person looking: do nothing here. The APP opens it (the first-run flow in the UI: every
+    # load, before a project setup, on an invitation) and the person presses its own Start
+    # (`POST /wizard/<id>/start`, the same `start_wizard`). With nobody watching there is no Start to press, so it
+    # starts itself.
     #
     # Not on a box the hub launched (a sandbox, an agent's machine): its template already carries
     # every tool this wizard asks about, so there is nothing to read first and nothing to install —
-    # the popup would only cover what the person opened the box for. There it runs itself, off screen.
+    # a popup would only cover what the person opened the box for. There it runs itself, off screen.
     from flow_sdk.instance_settings.runtime import get_assigned_runtime  # noqa: PLC0415
 
     on_hub_box = get_assigned_runtime() is not None

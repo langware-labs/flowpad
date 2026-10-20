@@ -7,12 +7,15 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
+import { useDialogsAllowed } from '@src/components/first-run-flow/first-run-flow-store';
 import { FIRST_RUN_BLOCKED, FirstRunWaiting, useFirstRunGate, useFirstRunResume } from './first-run-gate';
 import { useProjectLoad } from './use-project-load';
 import { openProjectLoad, useProjectLoadStore, type ProjectLoadPayload } from './project-load-store';
 
 export function ProjectLoadDialogRoot() {
   const { open, payload, setOpen } = useProjectLoadStore();
+  // Hidden, not unmounted, while the first-run flow is up: the dialog remembers it was refused and goes on by itself.
+  const dialogsAllowed = useDialogsAllowed();
   useEffect(
     () =>
       onDependencyLoaded((dependency) => {
@@ -27,11 +30,17 @@ export function ProjectLoadDialogRoot() {
     [],
   );
   return open && payload ? (
-    <ProjectLoadDialog key={payload.projectId} {...payload} onClose={() => setOpen(false)} />
+    <ProjectLoadDialog key={payload.projectId} {...payload} hidden={!dialogsAllowed} onClose={() => setOpen(false)} />
   ) : null;
 }
 
-function ProjectLoadDialog({ projectId, projectName, initial, onClose }: ProjectLoadPayload & { onClose: () => void }) {
+function ProjectLoadDialog({
+  projectId,
+  projectName,
+  initial,
+  hidden,
+  onClose,
+}: ProjectLoadPayload & { hidden: boolean; onClose: () => void }) {
   const { t } = useLingui();
   // The question was asked about one app when the verdict names one: the approval is for that app too.
   const load = useProjectLoad(projectId, initial, '', true, initial.asset ?? '');
@@ -57,7 +66,7 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   }, [result, check, onClose]);
   return (
     <Dialog
-      open
+      open={!hidden}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}

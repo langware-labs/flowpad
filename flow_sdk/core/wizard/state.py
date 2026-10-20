@@ -184,11 +184,6 @@ def reset_run(wizard_id: str) -> Optional[dict[str, Any]]:
         fresh: dict[str, Any] = {}
         if previous.get("approved"):
             fresh["approved"] = True
-        # The first-run facts are about the INSTANCE, not about one run: forgetting a run must not
-        # re-close the gate it opened (see ``core/wizard/first_run``).
-        for kept in FIRST_RUN_KEYS:
-            if previous.get(kept):
-                fresh[kept] = previous[kept]
         write_json_atomic(path, fresh)
         # `_mutate` owns the only other invalidation, and we deliberately did
         # not go through it.
@@ -255,22 +250,28 @@ def read_tree(run: str) -> "Optional[SetupTreeResult]":
         return None
 
 
-#: ``first_run_done``: the first-run wizard finished (all green, or the person chose to go on without it)
-#: and project setup may begin. ``first_run_tracked``: a run began under a version that writes the former, so
-#: a result on disk is no longer proof of an older finished run. Both survive ``reset_run``.
+#: The first-run wizard has run fully (or the person chose to go on without it) and project setup may begin.
+#: A fact about the INSTANCE, not about one run, so it lives in a file of its own beside the run record: not
+#: archived by ``reset_run``, and written WITHOUT the run lock -- ``execute_wizard`` holds that lock for a whole
+#: run, and a writer waiting on it from the event loop froze the server for as long as the run took.
+FIRST_RUN_FILENAME = "first_run.json"
 FIRST_RUN_DONE = "first_run_done"
-FIRST_RUN_TRACKED = "first_run_tracked"
-FIRST_RUN_KEYS = (FIRST_RUN_DONE, FIRST_RUN_TRACKED)
+
+
+def _first_run_path(wizard_id: str) -> Path:
+    return run_dir(wizard_id) / FIRST_RUN_FILENAME
+
+
+def first_run_done(wizard_id: str) -> bool:
+    """Whether the first-run wizard was stamped done. Never raises: unreadable reads as not done."""
+    return bool(read_json(_first_run_path(wizard_id)).get(FIRST_RUN_DONE))
 
 
 def mark_first_run_done(wizard_id: str) -> None:
     """Record, durably, that the first-run wizard is done. Idempotent; never cleared by a later run."""
-    _mutate(wizard_id, lambda _state: {FIRST_RUN_DONE: True})
-
-
-def mark_first_run_tracked(wizard_id: str) -> None:
-    """Record that a run began under a version that writes ``first_run_done``. Idempotent."""
-    _mutate(wizard_id, lambda _state: {FIRST_RUN_TRACKED: True})
+    path = _first_run_path(wizard_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(path, {FIRST_RUN_DONE: True})
 
 
 #: Step fields that carry OUTPUT rather than a verdict — what `strip_heavy` drops.
