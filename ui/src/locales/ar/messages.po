@@ -3438,15 +3438,17 @@ msgstr ""
 msgid "Approve now"
 msgstr "وافق الآن"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
-#: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "موافقة لمرة واحدة"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "وافق، واسمح لـ {guestName} ببدء الجلسات دون أن يطلب"
+msgid "Approve this live session only"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+#~ msgid "Approve, and let {guestName} start sessions without asking"
+#~ msgstr "وافق، واسمح لـ {guestName} ببدء الجلسات دون أن يطلب"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4760,6 +4762,10 @@ msgstr "إلغاء"
 msgid "Cancel reply"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Cancel request"
+msgstr ""
+
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "أُلغي"
@@ -5677,6 +5683,7 @@ msgstr "إغلاق"
 msgid "Close (Esc)"
 msgstr "إغلاق (Esc)"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "إغلاق (Escape)"
@@ -11496,6 +11503,10 @@ msgstr ""
 msgid "Find an event"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
+msgid "Find in document…"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Find machine"
 msgstr ""
@@ -16467,6 +16478,7 @@ msgstr "التالي"
 msgid "next {0}"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "المطابقة التالية (Enter)"
@@ -20427,6 +20439,7 @@ msgstr "آخر 30 يومًا"
 msgid "Previous 7 days"
 msgstr "آخر 7 أيام"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "المطابقة السابقة (Shift+Enter)"
