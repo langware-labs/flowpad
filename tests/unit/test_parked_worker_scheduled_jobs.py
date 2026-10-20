@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCLIStreamWorker, session_history
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import restored_cron_jobs
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCLIStreamWorker, stream_worker
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import restored_cron_jobs
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowElementType
 from tests.utils.fake_cli import patch_build_spawn
@@ -279,7 +279,7 @@ async def test_a_resumed_worker_stays_parked_for_the_jobs_the_cli_restored(sched
     """The new process never announces a restored job; the worker reads it from the session's transcript."""
     now = datetime.now(timezone.utc)
     path = _transcript(tmp_path, _create("t1", "c1", recurring=True, next_fire_at=now + timedelta(hours=1), at=now))
-    monkeypatch.setattr(session_history, "get_session_jsonl_path", lambda session_id, project_path=None: path)
+    monkeypatch.setattr(stream_worker, "get_session_jsonl_path", lambda session_id, project_path=None: path)
     worker, context = scheduler_cli("hello")
     context.resume_session_id = "resumed-session"
     frames: list[FlowData] = []
@@ -299,7 +299,7 @@ async def test_a_fresh_session_restores_nothing(scheduler_cli, monkeypatch):
     def unexpected(*_args, **_kwargs):
         raise AssertionError("a fresh session has no transcript to read")
 
-    monkeypatch.setattr(session_history, "get_session_jsonl_path", unexpected)
+    monkeypatch.setattr(stream_worker, "get_session_jsonl_path", unexpected)
     worker, context = scheduler_cli("hello")
     frames = [fd async for fd in worker.execute(prompt="hello", context=context)]
 

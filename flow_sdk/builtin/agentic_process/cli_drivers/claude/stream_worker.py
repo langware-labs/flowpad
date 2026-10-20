@@ -51,9 +51,6 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -65,6 +62,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.credential import (
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_event,
     final_end_frame,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+    ClaudeCronJob,
+    content_blocks,
+    cron_job_from_result,
+    get_session_jsonl_path,
+    restored_cron_jobs,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     STREAM_JSON_LINE_LIMIT_BYTES,
@@ -111,89 +115,8 @@ _AUTH_ERROR_TEXT = (
 
 #: The tools that put a job on the CLI's own scheduler, or take one off it.
 SCHEDULE_TOOLS = frozenset({"CronCreate", "CronDelete", "ScheduleWakeup"})
-#: A recurring CronCreate job deletes itself this long after it was created (after one last fire).
-CRON_EXPIRY_SECONDS = 7 * 24 * 3600
-
-
-@dataclass(frozen=True)
-class ClaudeCronJob:
-    """A CronCreate job the CLI holds. Claude Code runs it; Flowpad only needs to know when it is gone."""
-
-    #: The CLI's job id (``tool_use_result.id``), the key ``CronDelete`` names.
-    id: str
-    recurring: bool
-    #: When the CLI drops the job on its own, epoch seconds: a one-shot after its fire
-    #: (``nextFireAt``, which already includes the CLI's jitter), a recurring job at expiry.
-    ends_at: float
-
-
-def _content_blocks(event: dict) -> list[dict]:
-    message = event.get("message")
-    content = message.get("content") if isinstance(message, dict) else None
-    return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
-
-
-def _cron_job_from_result(result: dict, *, seen_at: float) -> ClaudeCronJob | None:
-    """A CronCreate result (``{id, recurring, durable, nextFireAt}``) as the job it created."""
-    job_id = result.get("id")
-    next_fire_at = result.get("nextFireAt")
-    if not isinstance(job_id, str) or not job_id or not isinstance(next_fire_at, (int, float)):
-        return None
-    recurring = bool(result.get("recurring"))
-    ends_at = seen_at + CRON_EXPIRY_SECONDS if recurring else next_fire_at / 1000
-    return ClaudeCronJob(id=job_id, recurring=recurring, ends_at=ends_at)
-
-
-def restored_cron_jobs(path: Path, now: float) -> dict[str, ClaudeCronJob]:
-    """The CronCreate jobs ``claude --resume`` restores from this session's transcript.
-
-    The CLI's own rule: every job created and not deleted, except a recurring job past its
-    expiry and a one-shot whose fire time has passed. Scans the whole file — a job can be
-    days older than the transcript's tail.
-    """
-    calls: dict[str, str] = {}
-    jobs: dict[str, ClaudeCronJob] = {}
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return jobs
-    for line in lines:
-        # A call names its tool; its result only links back by id (``Cancelled job X.``).
-        if "Cron" not in line and not (calls and '"tool_result"' in line):
-            continue
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("type") == "assistant":
-            for block in _content_blocks(entry):
-                if block.get("type") == "tool_use" and block.get("name") in ("CronCreate", "CronDelete"):
-                    calls[str(block.get("id"))] = block["name"]
-        elif entry.get("type") == "user":
-            result = entry.get("toolUseResult")
-            if not isinstance(result, dict):
-                continue
-            for block in _content_blocks(entry):
-                name = calls.pop(str(block.get("tool_use_id")), None) if block.get("type") == "tool_result" else None
-                if name is None or block.get("is_error"):
-                    continue
-                if name == "CronDelete":
-                    jobs.pop(str(result.get("id")), None)
-                elif job := _cron_job_from_result(result, seen_at=_entry_time(entry) or now):
-                    jobs[job.id] = job
-    return {job_id: job for job_id, job in jobs.items() if job.ends_at > now}
-
-
-def _entry_time(entry: dict) -> float | None:
-    stamp = entry.get("timestamp")
-    if not isinstance(stamp, str):
-        return None
-    try:
-        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
+#: The tools that put a job on the CLI's own scheduler, or take one off it.
+SCHEDULE_TOOLS = frozenset({"CronCreate", "CronDelete", "ScheduleWakeup"})
 
 
 class _TranscriptDurabilityGate(TranscriptDurabilityGate):
@@ -762,7 +685,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         """
         etype = event.get("type")
         if etype == "assistant":
-            for block in _content_blocks(event):
+            for block in content_blocks(event):
                 if block.get("type") == "tool_use" and block.get("name") in SCHEDULE_TOOLS and block.get("id"):
                     self._schedule_calls[block["id"]] = (block["name"], block.get("input") or {})
         elif etype == "user":
@@ -774,7 +697,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         """Apply a schedule tool call once its result says it succeeded."""
         result = event.get("tool_use_result")
         result = result if isinstance(result, dict) else {}
-        for block in _content_blocks(event):
+        for block in content_blocks(event):
             if block.get("type") != "tool_result":
                 continue
             call = self._schedule_calls.pop(block.get("tool_use_id"), None)
@@ -782,7 +705,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 continue
             name, args = call
             if name == "CronCreate":
-                job = _cron_job_from_result(result, seen_at=time.time())
+                job = cron_job_from_result(result, seen_at=time.time())
                 if job is not None:
                     self._cron_jobs[job.id] = job
             elif name == "CronDelete":
@@ -809,10 +732,6 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         """The cron jobs ``--resume`` brings back for this session; none for a fresh one."""
         if not context.resume_session_id:
             return {}
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (  # noqa: PLC0415
-            get_session_jsonl_path,
-        )
-
         path = get_session_jsonl_path(context.resume_session_id)
         if path is None:
             return {}
