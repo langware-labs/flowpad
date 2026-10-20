@@ -92,10 +92,19 @@ def backend_version() -> str:
     raise AssertionError  # unreachable
 
 
-def validate_files() -> tuple[str, str]:
+def validate_files(version_override: "str | None" = None) -> tuple[str, str]:
+    """Both declarations parse, and the backend version satisfies the desktop floor it bundles. ``version_override``
+    is the version ABOUT to be released (the deploy script runs this before it writes ``_version.py``, so that a
+    failure costs nothing -- and so a floor raised to exactly the release it ships in is not rejected for the
+    version it is replacing)."""
     min_backend = load_floor(REPO / "electron" / "engine-compat.json", "min_backend_version")
     min_desktop = load_floor(REPO / "flow_sdk" / "compat.json", "min_desktop_version")
-    version = backend_version()
+    if version_override is not None:
+        if semver.string2semver(version_override) is None:
+            fail(f"--backend-version {version_override!r} is not a parseable version")
+        version = version_override
+    else:
+        version = backend_version()
     if compat.meets_floor(version, min_backend) is not True:
         fail(
             f"this backend ({version}) is below the desktop floor it bundles "
@@ -200,8 +209,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--resolve", action="store_true", help="also resolve a compatible PyPI release (network)")
     parser.add_argument("--desktop-version", help="desktop version to resolve for (required with --resolve)")
+    parser.add_argument("--backend-version", help="check this backend version instead of flow_sdk/_version.py (the release about to be cut)")
     args = parser.parse_args()
-    min_backend, _ = validate_files()
+    min_backend, _ = validate_files(args.backend_version)
     if args.resolve:
         if not args.desktop_version:
             parser.error("--resolve requires --desktop-version")
