@@ -256,3 +256,55 @@ def test_when_only_pre_releases_exist_the_failure_says_so(gate, monkeypatch, cap
         gate.resolve("0.2.45", "0.2.0")
 
     assert "2 release(s) are pre-releases or tagged builds" in capsys.readouterr().err
+
+
+# ── the gate checks the release ABOUT to be cut, and runs before anything expensive ──────────────────────
+
+def test_it_validates_the_version_about_to_be_released_not_the_one_on_disk(gate, capsys):
+    gate.validate_files("99.0.0")
+
+    assert "backend 99.0.0 satisfies the bundled desktop floor" in capsys.readouterr().out
+
+
+def test_a_release_below_the_floor_it_bundles_is_refused(gate, capsys):
+    floor = gate.load_floor(gate.REPO / "electron" / "engine-compat.json", "min_backend_version")
+    below = "0.0.1"
+    assert gate.compat.meets_floor(below, floor) is False, "precondition: the shipped floor is above 0.0.1"
+
+    with pytest.raises(SystemExit) as stop:
+        gate.validate_files(below)
+
+    assert stop.value.code == 1 and "below the desktop floor it bundles" in capsys.readouterr().err
+
+
+def test_a_floor_raised_to_the_release_it_ships_in_passes_for_that_release(gate, monkeypatch):
+    """The reason the gate takes the target version: raising min_backend_version to X in the PR that releases X
+    must not be rejected because the version still on disk is X-1."""
+    monkeypatch.setattr(gate, "load_floor", lambda path, key: "0.2.500" if key == "min_backend_version" else "0.2.0")
+
+    gate.validate_files("0.2.500")
+    with pytest.raises(SystemExit):
+        gate.validate_files("0.2.499")
+
+
+def test_an_unparseable_target_version_is_refused(gate):
+    with pytest.raises(SystemExit) as stop:
+        gate.validate_files("nonsense")
+
+    assert stop.value.code == 1
+
+
+def test_the_cli_takes_backend_version():
+    for version, code in (("99.0.0", 0), ("0.0.1", 1)):
+        done = subprocess.run([sys.executable, "-I", str(SCRIPT), "--backend-version", version], capture_output=True, text=True, timeout=60)
+        assert done.returncode == code, (version, done.stdout + done.stderr)
+
+
+def test_the_deploy_script_runs_the_gate_before_the_expensive_steps():
+    """A failure must cost nothing: the gate precedes the test run, the remote flow-rs signing and the version write
+    (it used to run after all three, wasting a signing run and leaving _version.py bumped but uncommitted)."""
+    text = (REPO / "scripts" / "deploy_to_github.sh").read_text(encoding="utf-8")
+    gate = text.index("check_version_compat.py --backend-version")
+    for later in ("Running tests...", "Signing standalone flow-rs", "update_version_file \"$NEW_VERSION\""):
+        assert gate < text.index(later), f"the gate must come before {later!r}"
+    assert text.count("check_version_compat.py") == 1, "one call, at the start"
