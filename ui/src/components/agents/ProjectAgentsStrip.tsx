@@ -17,12 +17,15 @@ export function ProjectAgentsStrip({
   projectId,
   className,
   presentation = 'launch',
+  startsNew = false,
   headerExtra,
   fallback = null,
 }: {
   projectId?: string | null;
   className?: string;
   presentation?: 'launch' | 'browse';
+  /** A tile STARTS a new chat with the agent (Vibe's New) instead of opening its last one. */
+  startsNew?: boolean;
   /** Shown beside the section title (e.g. counter chips). */
   headerExtra?: ReactNode;
   /** Rendered instead of the strip when there are no agents. */
@@ -49,7 +52,7 @@ export function ProjectAgentsStrip({
       <TileSection title={labelForType(Agent.type)} headerExtra={headerExtra}>
         {agents.map((agent) => {
           const useDisabled = !browsing && (!agent.enabled || !!busyId);
-          const useAgent = () => void launch(agent, project?.id ?? null);
+          const useAgent = () => void launch(agent, project?.id ?? null, { fresh: startsNew });
           const editLabel = `${t`Edit`} ${agent.displayName}`;
           return (
             <div key={agent.id} className="relative h-20 w-20">

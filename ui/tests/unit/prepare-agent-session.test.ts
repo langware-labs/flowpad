@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   drainById: vi.fn(),
   embed: vi.fn(),
   openShellProcess: vi.fn(),
+  openDock: vi.fn(),
+  query: vi.fn(),
   notifyError: vi.fn(),
 }));
 
@@ -27,6 +29,7 @@ vi.mock('@sdk', async (importOriginal) => {
   class FakeAgenticProcess {
     static type = 'agentic_process';
     static getById = mocks.getById;
+    static query = mocks.query;
     id: string;
     constructor(init: { id: string }) {
       this.id = init.id;
@@ -39,7 +42,7 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({ embedVibeSubagent: mocks.embed }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { openShellProcess: mocks.openShellProcess } }),
+  useDockNavigation: () => ({ navigation: { openShellProcess: mocks.openShellProcess, openDock: mocks.openDock } }),
 }));
 vi.mock('@src/notifications', () => ({ notify: { error: mocks.notifyError } }));
 
@@ -56,6 +59,7 @@ beforeEach(async () => {
   mocks.drainQueue.mockResolvedValue(undefined);
   mocks.drainById.mockResolvedValue(undefined);
   mocks.openShellProcess.mockResolvedValue(undefined);
+  mocks.query.mockResolvedValue([]);
   mocks.getById.mockResolvedValue({
     id: PROCESS_ID,
     watch: mocks.watch,
@@ -120,18 +124,33 @@ describe('prepareAgentSession', () => {
 });
 
 describe('useAgentLauncher', () => {
-  it('opens the session with the auto prompt, starts it, then navigates — no error toast on a refused drain', async () => {
+  it('with no chat yet: opens a new session with the auto prompt, starts it, then opens it in Vibe', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     mocks.drainQueue.mockRejectedValue(new Error('409 remote refusal'));
     const use = vi.fn().mockResolvedValue({ process_id: PROCESS_ID });
-    const agent = { id: 'agent-a', displayName: 'Greeter', use } as never;
+    const agent = { id: 'agent-a', typeId: 'agent-a', displayName: 'Greeter', use } as never;
     const { result } = renderHook(() => useAgentLauncher());
 
     await result.current.launch(agent, 'proj-1');
 
     expect(use).toHaveBeenCalledWith('proj-1', true);
     expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
-    expect(mocks.openShellProcess).toHaveBeenCalledWith(PROCESS_ID, expect.anything());
+    expect(mocks.openDock.mock.calls[0][0].pointer).toBe(`agentic_process-${PROCESS_ID}`);
+    expect(mocks.openDock.mock.calls[0][0].viewMode).toBe('vibe');
     expect(mocks.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('with a chat already: resumes it (re-applying auto_open) instead of starting another', async () => {
+    mocks.query.mockResolvedValue([{ id: PROCESS_ID, last_active_at: 1 }]);
+    const use = vi.fn();
+    const resume = vi.fn().mockResolvedValue(undefined);
+    const agent = { id: 'agent-a', typeId: 'agent-a', displayName: 'Greeter', use, resume } as never;
+    const { result } = renderHook(() => useAgentLauncher());
+
+    await result.current.launch(agent, 'proj-1');
+
+    expect(use).not.toHaveBeenCalled();
+    expect(resume).toHaveBeenCalledWith(PROCESS_ID);
+    expect(mocks.openDock.mock.calls[0][0].pointer).toBe(`agentic_process-${PROCESS_ID}`);
   });
 });

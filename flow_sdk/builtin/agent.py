@@ -579,6 +579,16 @@ class Agent(Entity):
                 logger.warning("auto_open for agent %s failed", self.id, exc_info=True)
         return process
 
+    async def resume(self, process: "AgenticProcess") -> None:
+        """Opening the agent again lands on its last chat: re-apply ``auto_open`` there, opening
+        only what is not open yet and never moving what the session shows. Runs nothing
+        (ops and wizards ran when the session started)."""
+        try:
+            plan = await self.auto_open_plan()
+            await open_auto_tabs(process, await self.auto_open_tabs(plan.places), resume=True)
+        except Exception:  # noqa: BLE001 -- a tab that cannot open never fails the resume
+            logger.warning("auto_open on resume for agent %s failed", self.id, exc_info=True)
+
     async def auto_open_plan(self) -> AutoOpenPlan:
         """``auto_open`` resolved: an op or a wizard is looked up in this agent's own
         project and its direct context folders — never another project's."""
@@ -1571,6 +1581,24 @@ class Agent(Entity):
                 "deployment_id": deployment.id,
             }
         )
+
+    @action.post(action_name="resume")
+    async def resume_action(self):
+        """Re-apply this agent's ``auto_open`` to one of its sessions. ``POST /agent/<id>/resume``
+        with body ``process_id`` — a session of THIS agent, else 404."""
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        process_id = str((body or {}).get("process_id") or "").strip()
+        agent = await self.fresh()
+        process = await AgenticProcess.get_by_id(process_id) if process_id else None
+        if process is None or process.target_typeid_str != str(agent.typeid):
+            return ApiFailResponse(message="no session of this agent", status_code=404)
+        await agent.resume(process)
+        return ApiSuccessResponse(data={"process_id": process.id})
 
     # ── projection into the launch bundle ─────────────────────────────────
 
