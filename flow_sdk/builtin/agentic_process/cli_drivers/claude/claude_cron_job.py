@@ -14,6 +14,8 @@ from pathlib import Path
 
 from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import parse_iso_datetime
 
+#: The tools that put a job on the CLI's own scheduler, or take one off it.
+SCHEDULE_TOOLS = frozenset({"CronCreate", "CronDelete", "ScheduleWakeup"})
 #: A recurring CronCreate job deletes itself this long after it was created (after one last fire).
 CRON_EXPIRY_SECONDS = 7 * 24 * 3600
 
