@@ -967,6 +967,13 @@ require('electron-context-menu')({
   showSearchWithGoogle: false, // sends the selection to an external search
 });
 
+ipcMain.on('focus-window', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 ipcMain.on('set-menu-visible', (_event, visible) => {
   const next = !!visible;
   if (next === menuVisible) return;

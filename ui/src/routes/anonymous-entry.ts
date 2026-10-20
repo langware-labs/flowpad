@@ -21,10 +21,13 @@
  */
 const ANONYMOUS_ENTRY_PATHS: ReadonlySet<string> = new Set(['/launch']);
 
+/** A received message's email link (`/flow_message/<id>`): it says who sent it and offers Log in. */
+const MESSAGE_LANDING = /^\/flow_message\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Whether `pathname` is an entry route that renders without a session. */
 export function isAnonymousEntryPath(pathname: string): boolean {
   // Trailing slashes come from hand-typed and pasted links, which is precisely
   // how these routes are reached.
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  return ANONYMOUS_ENTRY_PATHS.has(normalized);
+  return ANONYMOUS_ENTRY_PATHS.has(normalized) || MESSAGE_LANDING.test(normalized);
 }
