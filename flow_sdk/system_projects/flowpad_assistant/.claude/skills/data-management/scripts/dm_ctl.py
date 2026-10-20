@@ -32,8 +32,9 @@ Verbs
                                      (--expected JSON: {key: version})
   ds-sync DATASET ROWS               make the dataset hold exactly ROWS: created / updated / unchanged / deleted
                                      (--no-prune: remove nothing; --match JSON: prune only the rows it selects)
-  ds-mirror DATASET SOURCE_ID MAP    make the dataset the typed mirror of a data source's items; MAP is
-                                     {"key": "<path in the item>", "input": {"<field>": "<path>"}} (--by, --no-prune, --match)
+  ds-pull DATASET                    bring the rows of a remote location (Drive, S3, a record system) up to date now
+  ds-move DATASET LOCATION           copy every row to LOCATION (local | file:<folder> | <driver>:<target> | JSON),
+                                     check it holds them all, then make it the dataset's location
   ds-delete DATASET KEY [KEY ...]    remove rows -- several go in ONE step, or none (--expected VERSION, one key:
                                      refuse a row changed since)
   ds-store-ids DATASET               store each row's id where it only has the legacy derived one
@@ -375,10 +376,15 @@ def cmd_ds_put(args) -> dict:
     return _ds(args, "put-row", body=_by(args, {**body, "expected": args.expected} if args.expected else body))
 
 
-def cmd_ds_mirror(args) -> dict:
-    """Make the dataset the typed mirror of a data source's items (``map``: how an item becomes a row)."""
-    body: dict = {"source_id": args.source_id, "map": _json(args.map), "prune": not args.no_prune}
-    return _ds(args, "mirror", body=_by(args, {**body, "match": _json(args.match)} if args.match else body))
+def cmd_ds_pull(args) -> dict:
+    """Bring a remote location's rows up to date now: ``{moved, num_rows}``."""
+    return _ds(args, "pull", body={})
+
+
+def cmd_ds_move(args) -> dict:
+    """Move every row to another location (``{from, to, rows}``); a JSON object is a record system."""
+    where = args.location.strip()
+    return _ds(args, "move-rows", body={"location": _json(where) if where.startswith("{") else where})
 
 
 def cmd_ds_delete(args) -> dict:
@@ -434,9 +440,8 @@ VERBS: dict[str, tuple] = {
     "ds-used-by": (cmd_ds_used_by, [_DS, ("key", {"nargs": "*", "help": "row keys (every row when none)"})]),
     "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"}), _BY]),
     "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
-    "ds-mirror": (cmd_ds_mirror, [_DS, ("source_id", {"help": "the data source whose items become rows"}),
-                                  ("map", {"help": 'JSON: {"key": "<path>", "input": {"<field>": "<path>"}}'}),
-                                  _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
+    "ds-pull": (cmd_ds_pull, [_DS]),
+    "ds-move": (cmd_ds_move, [_DS, ("location", {"help": "local | file:<folder> | <driver>:<target>"})]),
     "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
     "ds-append": (cmd_ds_append, [_DS, ("rows", {}), _BY]),
     "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),

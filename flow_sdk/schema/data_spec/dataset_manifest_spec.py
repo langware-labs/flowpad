@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional, Union
 
 from pydantic import ValidationError, model_validator
 
@@ -62,5 +62,8 @@ class DatasetManifestSpec(FrontMatter):
     field_spec: Optional[Dict[str, str]] = None
     delimiter: Optional[str] = None
     spec: Optional[ShapeForm] = None
+    #: Where the rows live: ``local`` (default), ``file:<folder>``, ``<driver>:<target>``, or a
+    #: record system ``{"driver", "config", "map", "by"}`` -- ``flow_sdk/datasets/locations.py``.
+    location: Optional[Union[str, Dict[str, Any]]] = None
     #: The free ``data`` section of ``dataset.json`` — the document's second half.
     data: Optional[FreeForm] = None
