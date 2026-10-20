@@ -27,15 +27,17 @@ from flow_sdk.sources.values.subject import normalize_subject
 class Payload(DataSpec):
     """The base of every ``data`` a source emits.
 
-    ``volatile`` names fields that describe the observation rather than the resource — a
-    provider's ``raw`` echo — so the application's change digest leaves them out.
+    ``digest_exclude`` names fields that describe the observation rather than the resource — a
+    provider's ``raw`` echo, a score, a fetch-time stamp — so the stored item's change digest
+    (computed over the payload) leaves them out. ``raw`` is excluded by default; a class that
+    declares its own set names every field it wants left out.
     """
 
-    volatile: ClassVar[frozenset[str]] = frozenset()
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     def stable_dump(self) -> dict:
         """The fields a change digest may look at."""
-        return self.model_dump(mode="json", exclude=set(self.volatile))
+        return self.model_dump(mode="json", exclude=set(self.digest_exclude))
 
     # ── accessors ───────────────────────────────────────────────────────────
     # One way to read what an item says, whatever its payload class: a subclass overrides the

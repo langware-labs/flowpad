@@ -162,7 +162,7 @@ class WhatsAppMessageSpec(MessageSpec):
 
 class WhatsAppMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.whatsapp"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     raw: Optional[dict] = None
 

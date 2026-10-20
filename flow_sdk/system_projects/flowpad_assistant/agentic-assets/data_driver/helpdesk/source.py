@@ -62,7 +62,7 @@ class HubTransport(Protocol):
 
 class HelpdeskMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.helpdesk"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     #: The hub conversation this ticket message lives in, for adoption.
     hub_conversation_id: Optional[str] = None
