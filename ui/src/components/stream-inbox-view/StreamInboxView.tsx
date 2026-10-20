@@ -682,8 +682,8 @@ export function StreamInboxView({
     [fromWidth, commitFromWidth],
   );
   const columnFilterActive = isColumnFilterActive(columnFilter);
-  // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own inbox
-  // listens; a fresh mount already starts unfiltered.
+  // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own
+  // stream listens; a fresh mount already starts unfiltered.
   useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
     setViewMode('all');
     setChannelFilter(new Set());
