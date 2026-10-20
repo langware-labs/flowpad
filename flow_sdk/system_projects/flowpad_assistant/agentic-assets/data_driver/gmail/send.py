@@ -12,6 +12,7 @@ from typing import Sequence
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources import http
+from flow_sdk.schema.data_spec.io.native import Binary
 from flow_sdk.sources.errors import SourceUnavailable
 
 SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
@@ -22,7 +23,7 @@ class InlineImage(DataSpec):
     """An image the HTML body shows by ``cid:<content_id>``."""
 
     content_id: str
-    content: bytes
+    content: Binary
     filename: str
     media_type: str = "image/png"
 

@@ -2,7 +2,7 @@ import { Tab, TabLifecycleState, perfTime, tabForDockKey, tabKey, tabManager, to
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
-import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
+import { isAdoptableChildDock, isWorkspaceChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
 import { dockLabel, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 
@@ -86,12 +86,9 @@ async function materializeTab(
   // `parentTabId` instead — so a shown SCREEN arriving by navigation would have been
   // judged non-adoptable and silently dropped out of the workspace.
   // Anything opened inside a workspace is a tab of it, except an Assets list (one tab per scope).
-  const addressesAdoptable = isAdoptableChildDock(dock, {
-    shown: !!dock.hostProcessId && dock.viewType !== ViewType.ASSETS,
-  });
-  const parentTabId = addressesAdoptable
-    ? (options.parentTabId ?? hostTabIdFromDock(dock))
-    : null;
+  const addressesAdoptable = isAdoptableChildDock(dock) || isWorkspaceChildDock(dock);
+  const hostTabId = hostTabIdFromDock(dock);
+  const parentTabId = addressesAdoptable ? (options.parentTabId ?? hostTabId) : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
@@ -133,7 +130,7 @@ async function materializeTab(
     addressesAdoptable &&
     !!existingTab?.parent_tab_id &&
     options.parentTabId === undefined &&
-    !hostTabIdFromDock(dock);
+    !hostTabId;
   // A lens dock can't trust the row's denormalized project_id: the loader
   // activates the TARGET entity's project on every load, and the indexer may
   // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
