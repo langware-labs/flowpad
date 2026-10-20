@@ -18,6 +18,9 @@ import { editorsFor } from './editors';
 import { projectScope, scopeFilterToDockOptions } from '../utils/scope-filter';
 import { ViewType } from '../utils/ui/view-types';
 import { appOption, applyHostTheme, navigateHost } from './host';
+import { DataDriver } from '../entities/data-driver';
+import { locationLabel } from '../entities/dataset';
+import { QueryRequest } from '../FlowSync/query';
 
 /** A row a run answered and nobody has labelled yet -- what a reviewer works through. */
 export function needsLabel(row: { output?: unknown; ground_truth?: unknown }): boolean {
@@ -75,6 +78,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   showCounts();
   const filter = h('select', { 'data-testid': 'dataset-editor-filter' },
     ...[['', 'all'], ['needs-label', 'needs label'], ['train', 'train'], ['eval', 'eval'], ['test', 'test']].map(([v, t]) => h('option', { value: v }, t))) as HTMLSelectElement;
+  const place = locationBar(dataset, () => location.reload());
   const list = h('div', { 'data-testid': 'dataset-editor-rows' });
   const detail = h('div', { class: 'detail', 'data-testid': 'dataset-editor-form' });
   const split = h('div', { class: 'split closed' }, list, detail);
@@ -88,6 +92,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
       h('button', { 'data-testid': 'dataset-editor-schema', onclick: openSchema }, 'Schema'),
       h('button', { 'data-testid': 'dataset-editor-validate', onclick: () => void validate() }, 'Validate'),
       status),
+    place,
     split,
   );
 
@@ -203,4 +208,48 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   await Promise.all([renderList(), renderDetail()]);
   status.textContent = 'Live';
   status.className = 'small ok';
+}
+
+/** Where the rows live, and moving them: "Stored in <location>" and, on Move, a picker of the places
+ *  rows can go -- this project, a folder on this machine, or a store of any driver that holds rows
+ *  (`DataDriver.holds_rows`, so no provider is named here) -- with the target typed in. */
+function locationBar(dataset: any, moved: () => void): HTMLElement {
+  const shown = h('span', { class: 'mono small', 'data-testid': 'dataset-editor-location' }, locationLabel(dataset.location));
+  const said = h('span', { class: 'small', 'data-testid': 'dataset-editor-move-status' });
+  const where = h('select', { 'data-testid': 'dataset-editor-move-kind' },
+    h('option', { value: 'local' }, 'This project'), h('option', { value: 'file' }, 'A folder on this machine')) as HTMLSelectElement;
+  const target = h('input', { 'data-testid': 'dataset-editor-move-target', placeholder: 'folder, bucket/prefix …', style: 'min-width:16rem' }) as HTMLInputElement;
+  const go = h('button', { class: 'primary', 'data-testid': 'dataset-editor-move-go' }, 'Move rows') as HTMLButtonElement;
+  const form = h('span', { class: 'bar', style: 'margin:0', hidden: true }, where, target, go);
+  const open = h('button', { 'data-testid': 'dataset-editor-move' }, 'Move…');
+  const sync = () => (target.hidden = where.value === 'local');
+  where.addEventListener('change', sync);
+  sync();
+  let listed = false;
+  open.addEventListener('click', async () => {
+    form.hidden = !form.hidden;
+    if (form.hidden || listed) return;
+    listed = true;
+    const drivers = await DataDriver.query(new QueryRequest({ type: DataDriver.type, scope: [], name: 'dataset-editor:row-stores' }));
+    for (const d of drivers as any[]) if (d.holds_rows) where.append(h('option', { value: d.name }, d.title || d.name));
+  });
+  go.addEventListener('click', async () => {
+    const value = where.value === 'local' ? 'local' : `${where.value}:${target.value.trim()}`;
+    go.disabled = true;
+    said.className = 'small muted';
+    said.textContent = 'Moving…';
+    try {
+      const done = await dataset.moveRows(value);
+      said.className = 'small ok';
+      said.textContent = `${done.rows} rows moved to ${done.to}`;
+      moved();
+    } catch (error: any) {
+      said.className = 'small err';
+      said.textContent = String(error?.response?.data?.message ?? error?.message ?? error);
+    } finally {
+      go.disabled = false;
+    }
+  });
+  return h('div', { class: 'bar', style: 'padding:.4rem 1rem;margin:0;border-bottom:1px solid hsl(var(--border))' },
+    h('span', { class: 'muted small' }, 'Stored in'), shown, open, form, said);
 }

@@ -70,7 +70,9 @@ def dataset_asset_hash(ref: FSRef) -> int:
             pass
     # IO_FOLDER content lives in nested files; a folder's own mtime doesn't move
     # when a child's content is edited, so walk the row files for freshness.
-    rows_dir = base / ROWS_DIR
+    from flow_sdk.datasets.locations import rows_root_of  # noqa: PLC0415
+
+    rows_dir = rows_root_of(base) / ROWS_DIR
     if rows_dir.is_dir():
         for inner in rows_dir.rglob("*"):
             try:

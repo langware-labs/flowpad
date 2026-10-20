@@ -145,16 +145,16 @@ async def test_ask_across_links_count_and_find_by_text(project):
     assert [r["key"] for r in ns["colleagues"]["rows"]] == ["dana", "eli", "fay"]      # everyone at a company a Levi is at
 
 
-from tests.unit.test_data_spec.test_declared_mirror import served  # noqa: E402,F401 -- a tasks dataset a CRM source mirrors into
+from tests.unit.test_data_spec.test_record_location import served  # noqa: E402,F401 -- a tasks dataset whose rows live in a CRM
 
 
 async def test_change_a_field_the_outside_system_owns(served, monkeypatch):  # noqa: F811
     from flow_sdk.tags import ws_forward
-    from tests.unit.test_data_spec.test_declared_mirror import _seed
+    from tests.unit.test_data_spec.test_record_location import _seed
 
     await _seed(served)
     monkeypatch.setattr(ws_forward, "_started", True)   # the server: the one process that holds a driver
     ns = await run_fence(fence_under(DOC, "11."), {"tasks": served.tasks})
-    assert served.store.calls == [("update", "T-1", {"status": "DONE"})]      # only what changed, and only the CRM's field
-    assert (ns["now"]["status"], ns["now"]["notes"]) == ("DONE", "called twice")
+    assert served.crm.calls == [("update", "T-1", {"status": "DONE", "label": "hot"})]      # only what changed
+    assert (ns["now"]["status"], ns["now"]["label"]) == ("DONE", "hot")
     assert ns["code"] == "not_writable"

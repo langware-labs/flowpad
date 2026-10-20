@@ -14,6 +14,7 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import (
     AccessDenied,
+    Conflict,
     InvalidCursor,
     NotFound,
     OutcomeUnknown,
@@ -38,6 +39,7 @@ from flow_sdk.sources.protocols import (
     Openable,
     Reacting,
     Readable,
+    RowFiles,
     StableHandle,
     Verdict,
     Verifiable,
@@ -90,6 +92,7 @@ __all__ = [
     "read_file",
     "DEFAULT_PAGE_SIZE",
     "AccessDenied",
+    "Conflict",
     "Altitude",
     "AuthShape",
     "ByteStore",
@@ -133,6 +136,7 @@ __all__ = [
     "RecordData",
     "RecordItem",
     "Readable",
+    "RowFiles",
     "RecordQuery",
     "RecordSource",
     "Rejected",

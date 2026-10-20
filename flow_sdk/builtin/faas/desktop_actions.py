@@ -123,7 +123,9 @@ class DesktopActionsMixin:
                 if system == "Darwin":
                     subprocess.Popen(["open", "-R", resolved_path])
                 elif system == "Windows":
-                    subprocess.Popen(["explorer", f"/select,{resolved_path}"])
+                    # Raw string, not a list: a list quotes the whole "/select,<path>"
+                    # when the path has a space, and Explorer then opens Documents.
+                    subprocess.Popen(f'explorer /select,"{resolved_path}"')
                 else:
                     # Most Linux file managers lack a universal --select flag;
                     # opening the parent directory is the consistent fallback.

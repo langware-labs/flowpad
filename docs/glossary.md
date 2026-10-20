@@ -190,6 +190,10 @@ Three words were used for neighbours. Say which:
   unrelated use: "a schema with fields".)
 - **item** — a `SourceItem`: one record a data source ingested. A row links to one with
   `ingest.source_item.id.<id>`.
+- **location** — where a dataset's rows live: `dataset.json` `location` — `local` (default),
+  `file:<folder>`, `<driver>:<target>` (`gdrive:`, `s3:`) or a record system. The dataset folder
+  holds the shape; the rows go where the person puts them
+  ([dataset locations](data-management/dataset-locations.md)). Not a workspace's folder.
 - **version** means the row's digest here (`expected=`); an asset's `v<n>` and a git revision are
   other things.
 
