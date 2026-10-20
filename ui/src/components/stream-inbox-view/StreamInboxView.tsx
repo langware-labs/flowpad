@@ -821,8 +821,8 @@ export function StreamInboxView({
 
   // Unread: backend-owned (StreamInboxManager.unread) — the rail badge's number, so the two always
   // agree. It counts the user's own stream inbox, so an agent's or a source's view does not use it.
-  const { unread: inboxUnread } = useStreamInboxManager();
-  const ownInbox = !agentId && !sourceId;
+  const { unread: streamInboxUnread } = useStreamInboxManager();
+  const ownStreamInbox = !agentId && !sourceId;
 
   // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
   // A channel waiting on setup or paused is not read; it says so on its own strip.
@@ -1165,10 +1165,10 @@ export function StreamInboxView({
   // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
-    // Unread in the user's own inbox: the backend total, on the pill whether or not it is active.
+    // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active.
     // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
     let badge: string | null = null;
-    if (mode === 'unread' && ownInbox) badge = inboxUnread > 0 ? String(inboxUnread) : null;
+    if (mode === 'unread' && ownStreamInbox) badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
     else if (active && visibleCount > 0)
       badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
     return (
