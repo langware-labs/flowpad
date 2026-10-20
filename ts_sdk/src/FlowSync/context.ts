@@ -213,6 +213,9 @@ class DataContext extends EventEmitter {
     runInAction(() => {
       this._cloudConnectionStatus = v;
     });
+    // ``useContext`` re-reads only on CONTEXT_CHANGED: without it a reconnect left the
+    // "Cloud Connection Lost" warning up until something unrelated changed the context.
+    this.emit(ContextEventType.CONTEXT_CHANGED);
   }
   setLocalLoginStatus(v: LocalLoginStatus) {
     if (this._localLoginStatus === v) return;
