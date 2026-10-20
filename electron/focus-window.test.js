@@ -25,12 +25,13 @@ function load() {
   const mk = () => new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 'stub' : k === 'then' ? undefined : mk()), apply: () => mk(), construct: () => mk(), set: () => true });
   const BW = function () {}; BW.getAllWindows = () => []; BW.getFocusedWindow = () => null;
   const handlers = {};
+  const appFocus = [];
   const ipcMain = new EventEmitter();
   ipcMain.handle = (channel, fn) => { handlers[channel] = fn; };
   const opened = [];
   const electron = {
     app: {
-      requestSingleInstanceLock: () => true, setAsDefaultProtocolClient() {}, getPath: () => HOME, whenReady: () => new Promise(() => {}),
+      requestSingleInstanceLock: () => true, focus: (opts) => appFocus.push(opts), setAsDefaultProtocolClient() {}, getPath: () => HOME, whenReady: () => new Promise(() => {}),
       on() {}, isPackaged: true, getVersion: () => '0.2.47', quit() {}, exit() {}, commandLine: { appendSwitch() {} }, setName() {}, setAppUserModelId() {},
     },
     BrowserWindow: BW,
@@ -61,7 +62,7 @@ function load() {
     exposed = m.exports.__t;
   } finally { process.on = realProcessOn; }
   // The handler asks for `electron` when it runs, so the stub stays until the test is over.
-  return { ipcMain, exposed, restore: () => { Module._load = origLoad; } };
+  return { ipcMain, exposed, appFocus, restore: () => { Module._load = origLoad; } };
 }
 
 function fakeWindow({ minimized = false, destroyed = false } = {}) {
@@ -77,7 +78,7 @@ function fakeWindow({ minimized = false, destroyed = false } = {}) {
 }
 
 (() => {
-  const { ipcMain, exposed, restore } = load();
+  const { ipcMain, exposed, appFocus, restore } = load();
   assert.ok(ipcMain.listenerCount('focus-window') === 1, 'main.js listens for focus-window');
 
   ipcMain.emit('focus-window', {});
@@ -87,6 +88,9 @@ function fakeWindow({ minimized = false, destroyed = false } = {}) {
   exposed.setMainWindow(hidden);
   ipcMain.emit('focus-window', {});
   assert.deepStrictEqual(hidden.calls, ['show', 'focus'], 'a window behind others is shown and focused');
+  if (process.platform === 'darwin') {
+    assert.deepStrictEqual(appFocus, [{ steal: true }], 'on macOS the app comes in front of the other app');
+  }
 
   const minimized = fakeWindow({ minimized: true });
   exposed.setMainWindow(minimized);
@@ -99,6 +103,6 @@ function fakeWindow({ minimized = false, destroyed = false } = {}) {
   assert.deepStrictEqual(gone.calls, [], 'a destroyed window is left alone');
 
   restore();
-  console.log('focus-window: 4 checks passed');
+  console.log('focus-window: 5 checks passed');
   process.exit(0);
 })();
