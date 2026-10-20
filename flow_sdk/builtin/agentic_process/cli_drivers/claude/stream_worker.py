@@ -55,6 +55,12 @@ from typing import AsyncIterator
 from uuid import uuid4
 
 from flow_sdk import toplog
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.claude_cron_job import (
+    ClaudeCronJob,
+    content_blocks,
+    cron_job_from_result,
+    restored_cron_jobs,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.credential import (
     ensure_fresh_before_turn,
@@ -63,13 +69,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata impor
     convert_event,
     final_end_frame,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
-    ClaudeCronJob,
-    content_blocks,
-    cron_job_from_result,
-    get_session_jsonl_path,
-    restored_cron_jobs,
-)
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import get_session_jsonl_path
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
