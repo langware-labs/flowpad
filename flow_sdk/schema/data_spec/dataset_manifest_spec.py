@@ -23,7 +23,7 @@ class DatasetManifestSpec(FrontMatter):
     rows, and writing them back would make the manifest lie after an append.
 
     A malformed ``spec`` ON DISK degrades the SLOT, never the dataset: raising
-    would cost every example row, and an ``orphan_action=DELETE`` sweep would
+    would cost every row, and an ``orphan_action=DELETE`` sweep would
     then reap rows that parsed fine. That is a disk-read policy — the entity
     field itself is strict — so it lives here, at the header read.
     """

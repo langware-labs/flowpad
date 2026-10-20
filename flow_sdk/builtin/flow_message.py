@@ -977,6 +977,19 @@ class FlowMessage(Entity):
         """
         return self.attachment
 
+    @property
+    def author_label(self) -> str:
+        """Who wrote this message, for display — read off the typed ``sender``, never the wire
+        pair alone: an agent's reply carries the authenticated PERSON in ``sender_id`` /
+        ``sender_name`` (see ``_lift_sender``), so reading those names the human."""
+        sender = self.sender
+        if sender is not None and sender.kind is SenderKind.AGENT:
+            return sender.wire_id
+        if sender is not None and sender.kind is SenderKind.EXTERNAL:
+            profile = self.envelope.sender if self.envelope else None
+            return (profile and (profile.name or profile.address)) or sender.address or sender.wire_id
+        return self.sender_name or self.sender_id or "unknown"
+
     def summary(self) -> str:
         """One-line human summary: ``[<status>] <sender>: <text preview> (+N attachments)``.
 
@@ -986,7 +999,7 @@ class FlowMessage(Entity):
         """
         text = " ".join((self.text or "").split())
         preview = text if len(text) <= 80 else text[:77] + "..."
-        sender = self.sender_name or self.sender_id or "unknown"
+        sender = self.author_label
         n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
@@ -1039,7 +1052,7 @@ class FlowMessage(Entity):
             "id": self.id,
             "conversation_id": self.conversation_id,
             "ts": ts.isoformat() if ts else None,
-            "sender": self.sender_name or self.sender_id or "unknown",
+            "sender": self.author_label,
             "from": "you" if self.sender_id and self.sender_id in self_ids else "them",
             "delivery_status": self.delivery_status,
             "is_read": self.is_read,

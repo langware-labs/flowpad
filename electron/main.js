@@ -967,6 +967,15 @@ require('electron-context-menu')({
   showSearchWithGoogle: false, // sends the selection to an external search
 });
 
+ipcMain.on('focus-window', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  // macOS keeps another app in front of a focused window; the person asked for this one.
+  if (process.platform === 'darwin') app.focus({ steal: true });
+});
+
 ipcMain.on('set-menu-visible', (_event, visible) => {
   const next = !!visible;
   if (next === menuVisible) return;

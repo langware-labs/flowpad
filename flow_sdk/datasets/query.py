@@ -32,6 +32,7 @@ from typing import Any, Callable, Iterable, Optional
 
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.schema.data_spec.value_ref import parse_ref
+from flow_sdk.utils.field_path import step as field_step
 
 #: ``follow(reference) -> the linked row as the API hands it out ({key, id, ref, input, ...})``, or
 #: None when it names no row. Given by whoever can read the datasets beside (``Dataset``).
@@ -52,11 +53,7 @@ def _step(at: Any, step: str, follow: Optional[Follow]) -> Any:
         if step in ROW_NAMES:
             return linked.get(step)
         at = linked.get("input")
-    if isinstance(at, dict):
-        return at.get(step)
-    if isinstance(at, list) and step.isdigit() and int(step) < len(at):
-        return at[int(step)]
-    return None
+    return field_step(at, step)
 
 
 def field_of(row: Any, path: Any, follow: Optional[Follow] = None) -> Any:
@@ -72,7 +69,7 @@ def field_of(row: Any, path: Any, follow: Optional[Follow] = None) -> Any:
     for step in path.split("."):
         if step == "*":
             many = True
-            current = [item for at in current if isinstance(at, list) for item in at]
+            current = [item for at in current if isinstance(at, (list, tuple)) for item in at]
         else:
             current = [_step(at, step, follow) for at in current]
         if not current:

@@ -35,13 +35,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+from flow_sdk.sources.values.subject import normalize_subject
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry, single_flight
 from flow_sdk.utils.serialization import iso_to_utc
 
@@ -197,41 +197,6 @@ def _follow_ending(conversation, item) -> bool:
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
 RECONCILE_BATCH = 500
-
-#: Reply/forward prefixes stripped when a provider gives us no native thread
-#: handle and the subject is all we have. Deliberately multi-lingual: a
-#: two-entry English list silently forks every non-English thread. Applied
-#: repeatedly to a fixed point, so `Re: Fwd: RE:` collapses.
-_SUBJECT_PREFIX = re.compile(
-    r"^\s*(?:re|rif|aw|antw|sv|vs|vb|res|enc|tr|fwd?|wg|encaminhada|回复|答复|转发)\s*(?:\[\d+\])?\s*:\s*",
-    re.IGNORECASE,
-)
-#: Bracketed list/banner tags: `[team]`, `[EXTERNAL]`.
-_SUBJECT_TAG = re.compile(r"^\s*\[[^\]]{1,40}\]\s*")
-
-
-def normalize_subject(subject: str) -> str:
-    """A subject reduced to its threading key.
-
-    The FALLBACK thread key — used only when the provider offers nothing
-    better. Every channel worth supporting ships a native handle (Gmail
-    ``threadId``, Slack ``thread_ts``, a Jira issue key) and the driver should
-    put it in ``SourceItem.thread_key``; this is what happens when it can't.
-
-    Known and accepted failure modes, documented so nobody rediscovers them as
-    bugs: two unrelated ``Re: hello`` threads IN ONE MAILBOX collapse into one, and
-    editing a subject mid-thread forks it. Both are why the native handle wins when
-    it exists; the thread key is also scoped by channel, owner and the source that
-    read it, so the collapse never crosses accounts.
-    """
-    text = (subject or "").strip()
-    while True:
-        stripped = _SUBJECT_TAG.sub("", _SUBJECT_PREFIX.sub("", text))
-        if stripped == text:
-            break
-        text = stripped
-    return " ".join(text.split()).casefold()
-
 
 def thread_key_for(item, subject: str) -> str:
     """The item's grouping key: the driver's handle, else the subject."""
@@ -508,14 +473,14 @@ def _origins(item, source, channel: str, key: str):
 
 def _origin_of(item, source):
     """The row's origin — lifted on read for a row the cutover migration has not reached."""
-    from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import origin_of  # noqa: PLC0415
 
     return getattr(item, "origin", None) or origin_of(source, item)
 
 
 def _payload_of(item, source):
     """The row's typed payload — lifted on read for a row the cutover migration has not reached."""
-    from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import data_of  # noqa: PLC0415
 
     return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
 

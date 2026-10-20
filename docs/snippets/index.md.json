@@ -142,7 +142,7 @@
       "name": "gmail-source.md",
       "rel_path": "gmail-source.md",
       "title": "Gmail source",
-      "summary": "Gmail source creation from the shipped driver with an app password kept out of the row, and the OAuth gmail_send helper for report senders.",
+      "summary": "Gmail source creation from the shipped driver with an app password kept out of the row, and the Gmail driver's send-only module for report senders.",
       "content_hash": "e9f49ae526451d5eb643f8539f16f63d21101d9a5629551b848c026d4ff03827",
       "size_bytes": 1649
     },
@@ -217,14 +217,6 @@
       "summary": "RagIndex snippets: covering folders, embedding only unseen chunks, pending versus indexing status, and semantic search over indexed markdown.",
       "content_hash": "fa14ecb9f786bd50842d595a20d86ebf2c58effb74606e87e382d194cf151479",
       "size_bytes": 7470
-    },
-    {
-      "name": "relationship-pickers.md",
-      "rel_path": "relationship-pickers.md",
-      "title": "Relationship pickers in SDK viewers",
-      "summary": "SDK relationship candidate providers, dependent queries, search and pagination, ordered selections, readonly controls, and Dataset-owned validation and version conflicts.",
-      "content_hash": "1c08fb99780925f358b8743bb96f8e946c47638aa5aba7176cead77b45cbdffe",
-      "size_bytes": 2463
     },
     {
       "name": "scan-and-index.md",

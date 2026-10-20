@@ -179,7 +179,7 @@ class MergedSession:
 
     async def reply(self, item: Any, *, body: str, files=()):
         """Answer ``item`` through the source it came from, in that channel's own shape."""
-        from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
+        from flow_sdk.ingest.envelope_lift import envelope_of  # noqa: PLC0415
 
         source = self.source_of(item)
         envelope = envelope_of(item, data_source_id=str(source.id), provider=str(source.provider))

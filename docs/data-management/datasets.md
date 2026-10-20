@@ -6,8 +6,9 @@ id: 214b0833-33ad-5a42-b825-688700d6277a
 
 How to lay out a **dataset** on disk so the Flowpad library discovers and parses
 it. This is the user-facing contract — the folders and files *you* create. The
-parser lives in `flow_sdk/fs_store/indexer/functions/dataset.py`; the entity and
-row models in `flow_sdk/builtin/dataset.py`.
+parser is `flow_sdk/schema/data_spec/layout.py` + `flow_sdk/assets/types/dataset.py`
+(registered in `flow_sdk/schema/type_info/dataset_type_info.py`); the entity in
+`flow_sdk/builtin/dataset.py`, the row model in `flow_sdk/schema/data_spec/dataset_spec.py`.
 
 A dataset is a **folder** under `agentic-assets/dataset/<slug>/`, marked by a
 `dataset.json` manifest at its root. Without that manifest the folder is **not**
@@ -233,10 +234,10 @@ Per-row metadata lives in `row.json`.
 - Reserved keys `kind` and `layout` (in the **metadata** section) are lifted onto
   `Row.kind` / `Row.layout`, and the whole metadata section is kept on
   `Row.metadata`; the data section is kept on `Row.data`.
-- A row-level `id` is **ignored** — row ids are derived deterministically
-  (`derived_row_id`: a uuid5 of `<dataset id>:<folder name>`, or the CSV row index) so
-  re-indexing is idempotent. A row is a value inside the dataset, not an
-  entity, which is why a derived id is allowed here.
+- The row's `id` is `metadata.id` (a v4 minted on first write). A row that stores none
+  falls back to the legacy `derived_row_id` (uuid5 of `<dataset id>:<folder name>`) and
+  stores it on its next write. **The one exception: CSV rows** have nowhere to store an
+  id, so theirs is always computed — uuid5 of `<dataset id>:<row index>`.
 
 ### 3.4 Resolution rules (the fine print)
 
@@ -278,7 +279,9 @@ list, populated eagerly by `DiskSerializer.load` (a Dataset is written by `save(
 
 ```python
 class RowSpec(DataSpec, Generic[I, O, C]):
-    id: str                          # deterministic uuid5(dataset_id : key) — the row index (csv) or folder name (io_folder)
+    id: str                          # io_folder: row.json metadata.id (legacy fallback uuid5); csv: always uuid5(dataset_id : row index)
+    key: str                         # the row folder's name
+    version: str                     # digest of the row's files — pass back as `expected`
     kind: RowKind                # train | eval | test  (from row.json metadata; a FIELD, not the spec_kind hook)
     input: I
     output: O | list[O] | None       # one occurrence → O; numbered output-1, output-2… → list[O], canonical order
@@ -387,16 +390,16 @@ agent.
 **The model, on one page.** Five nouns: a **kind** is a name (`--acme--.crm.lead`); a **schema** is
 the definition under it (fields, `rules`, `owned_by`, `include`); a **dataset** is the folder that
 keeps the rows of one kind; a **row** is one value of it, with a `key` (its name, yours to choose),
-an `id` (stored in the row, never computed), a `ref` (`<kind>.id.<id>` — what a link holds) and a
+an `id` (stored in the row — computed only for a CSV row, which has nowhere to store one), a `ref` (`<kind>.id.<id>` — what a link holds) and a
 `version` (pass it back as `expected`); a **problem** is a row that does not fit, reported beside
 the rows that do. "Row" is the word, in the API, on disk (`rows/<key>/row.json`) and in evals.
 
-Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
+Eight verbs, the same in Python, TypeScript, REST and `dm_ctl` (the full REST list is below):
 
 | Verb | Python | TypeScript | REST | Says |
 |---|---|---|---|---|
-| rows | `rows(match, …)` (= `query`) | `rows(query)` | `GET rows` | some or all rows, plus every problem |
-| count | `count(match, group_by, metrics)` | `count(query)` | `GET count` | how many match — the SAME question as rows |
+| query | `query(match, …)` | `query(query)` | `GET rows` | some or all rows, plus every problem (`Dataset.rows` in Python is the parsed list, not a verb) |
+| count | `count(match, group_by, metrics)` | `count(query)` | `GET count` | how many match — the SAME question as query |
 | check | `check_row(row)` (`check` → its lines) | `check(row)` | `check-row` | would this write pass? A row that names its `key` is judged exactly as `put` would judge it (merged with the slots it leaves out, against the rules of the rows that reach it); writes nothing |
 | append | `append(rows)` | `append(rows)` | `append` | new rows |
 | put | `put` / `put_many` | `put` / `putMany` | `put-row` / `put-rows` | create or replace, by key |
@@ -405,7 +408,9 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
 | sync | `sync(rows, prune, match)` | `sync(rows, …)` | `sync-rows` | hold exactly these rows |
 
 (`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
-verbs carry `_row`. Writes are awaited; reads are plain calls.)
+verbs carry `_row`. Async (awaited): `append`, `put`, `put_many`, `sync`, `mirror`, `promote`,
+`annotate`. Synchronous: `delete_row`, `delete_rows`, `rename_row`, `set_data` (replace one row's
+free `data`, Python only), `store_ids`, and every read.)
 
 Four laws. (1) Every write is checked first and is all or nothing — except a MIRROR of an outside
 system (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
@@ -432,8 +437,10 @@ one is right.
 A row's **key** is its row folder's name (`rows/<key>/`); its **id** is stored in the row
 (`row.json` `metadata.id`, a v4 minted on first write — a row written before that adopts its legacy
 `layout.row_id` on its next write), so a rename or a re-clone keeps it. Every read hands back `key`,
-`id`, `ref` (`<row kind>.id.<id>`, how another row links to this one) and `version`. A key a caller
-chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`, …).
+`id`, `ref` (`<row kind>.id.<id>`, how another row links to this one) and `version`. The row kind
+is `Dataset.row_kind`, a computed field sent to clients — TS `rowKind` / `refOf(id)` read it, so a
+dataset whose `spec` names a kind links its rows too. A key a caller
+chooses is `a-z 0-9 _ -`, starts with a letter or digit, at most 120 chars; `append` numbers rows that bring none (`0001`, `0002`, …).
 
 | verb | what |
 |---|---|
@@ -452,17 +459,19 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
 | `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows` plus `misfit?: [{key, details}]` (records kept as problem rows) and `unlinked?: [{key, field, value}]`; NOT all or nothing — one record that does not fit never stops the rest; see [mirroring a system of record](mirroring-a-system-of-record.md) |
+| `POST store-ids` | `{stamped}`: store each row's id in `row.json` where it still has only the legacy derived one (`Dataset.store_ids`; run once on an old dataset) |
+| `GET evals` · `GET eval/<run>[/<row>]` · `POST run-eval {eval?, kinds?}` | eval runs: the list, one run with its rows (or one row's `trace`), a new run — TS `evalRuns` / `evalRun` / `evalTrace` / `runEval`; see [evals](evals.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
 | `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `row_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
 Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
 those, not the lines. Three numbers are not the same: `num_rows` counts every row folder,
-`count().total` and `rows().total` count the rows that FIT (the rest are `problems`).
+`count().total` and `query().total` count the rows that FIT (the rest are `problems`).
 A field that must live both here and in an outside system is THAT SYSTEM'S field: mirrored in,
 marked `owned_by`, and an edit here is sent there first
 ([mirroring a system of record](mirroring-a-system-of-record.md)) — never kept in step by hand.
-`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`
+`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `(decision, value)`, decision `"same"` / `"here"` / `"there"` / `"hold"`,
 is for two stores with no source between them (a file copied to a drive), not for a mirrored row.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
@@ -536,7 +545,7 @@ person's "Sync now") would decide on the same reading and overwrite each other's
 file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `RunBusy`.
 
 **Rows changing is an event.** Every row write — a label (`annotate`) and a row's free `data` included — emits `dataset.rows.changed` once per call — target
-`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
+`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count, version}`, never a value — and
 the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
 TypeScript. A writer outside the server process tells the running instance (`Dataset.announce`, the
 `rows-changed` action) — telling is never a reason for a write to fail. A write made while a page
@@ -556,8 +565,10 @@ A dataset opens in the app that edits it (`flow_sdk/builtin/faas/editors.py`, `G
 its own nested editor (`<dataset>/agentic-assets/webapp/<name>/`, kind `application.web.editor`),
 else an editor whose `webapp.json` `edits` names the dataset's kind or an ancestor of it (most
 specific first), else one that edits the `dataset` type — the shipped generic editor. The SDK app
-behind them is `mountDatasetEditor`: it builds every form from the declared kinds
-(`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
+behind them is `mountDatasetEditor`: it draws nothing itself — it mounts the kind's collection and
+single [value viewers](../display-capabilities.md#viewers-for-a-kind) (a kind with none gets the
+generic viewer, built from the kind definitions at `GET /api/v1/kinds/<kind>`), so one editor serves
+every typed dataset.
 
 The example is the SmartNavigator eval set. Its row schemas ship as flat `data_schema` folders
 (`flowpad_assistant/agentic-assets/data_schema/navigat*`); its rows do not — they live beside the

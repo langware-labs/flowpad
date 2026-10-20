@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isValidUUIDv4, type Project } from '@sdk';
+import { normalizeEntityId, type Project, ENTITY_UUID_SOURCE } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -18,15 +18,13 @@ import { projectListToSelectorItems } from '@src/components/project-selector/pro
 import { canonicalPath } from '@src/components/project-selector/use-ensure-project';
 import { useProjects } from '@src/hooks/use-projects';
 
-const UUID_IN_TEXT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const ENTITY_ID_IN_TEXT = new RegExp(ENTITY_UUID_SOURCE);
 
 /** The hub project id a pasted value names — a bare id, a `hub:<id>` source,
  *  or a hub link carrying one — or null. */
 export function hubProjectIdFrom(text: string): string | null {
   const raw = text.trim().replace(/^hub:/i, '');
-  if (isValidUUIDv4(raw)) return raw.toLowerCase();
-  const found = raw.match(UUID_IN_TEXT)?.[0];
-  return found && isValidUUIDv4(found) ? found.toLowerCase() : null;
+  return normalizeEntityId(raw) ?? normalizeEntityId(raw.toLowerCase().match(ENTITY_ID_IN_TEXT)?.[0]);
 }
 
 /** What a picked project is saved as: its hub id when it is published (fetched wherever this

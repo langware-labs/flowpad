@@ -5,5 +5,4 @@ export { PRIMITIVES, checkKind, enumValues, kindForm, linkTargets, namedKind, pa
 export { GENERIC_VIEWER_STYLES, datasetSlots, flatten, genericCollection, genericSingle, genericViewers, goldDiff, plain } from './generic';
 export { EVAL_VIEWER_STYLES, COLUMN_HELP, VERDICT_HELP, byCause, columnHelp, evalViewers, formatMetric, isIssue, issueGroups, rowOf } from './eval';
 export { createViewerContext, type ViewerHost } from './registry';
-export { mountRelationshipPicker, type RelationshipPickerOptions } from './relationship';
 export { FLOW_VIEWER_STYLES, flowViewers } from './flow';

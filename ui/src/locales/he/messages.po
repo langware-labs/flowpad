@@ -129,6 +129,14 @@ msgstr "· נבחר"
 msgid "· remote"
 msgstr "· מרוחק"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "› Messages"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "› Messages › from {from}"
+msgstr ""
+
 #. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
@@ -702,6 +710,11 @@ msgstr ""
 #. placeholder {1}: a.recent_runs
 #: src/components/automations/AutomationRow.tsx
 msgid "{0} of last {1} failed"
+msgstr ""
+
+#. placeholder {0}: live.length
+#: src/components/footer/LiveSessionsChip.tsx
+msgid "{0} open live sessions"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -1284,6 +1297,14 @@ msgstr "{selectedCount} נבחרו"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "{senderName} has shared {sharedThing}"
 msgstr "{senderName} שיתף/ה את {sharedThing}"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "{senderName} is still uploading — try again in a moment."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "{senderName} sent you a message"
+msgstr ""
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
@@ -5027,6 +5048,7 @@ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Check again"
 msgstr "בדוק שוב"
 
@@ -5073,6 +5095,10 @@ msgstr "בודק את {0}"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Checking access…"
 msgstr "בודקים את הגישה…"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Checking FlowPad status…"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Checking Git eligibility…"
@@ -5273,7 +5299,6 @@ msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -5851,7 +5876,6 @@ msgid "Code expires"
 msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Codex"
 msgstr "Codex"
@@ -6499,11 +6523,11 @@ msgid "Copied to project"
 msgstr ""
 
 #: src/pages/entry/entry-shell.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copied!"
 msgstr "הועתק!"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
@@ -6528,6 +6552,7 @@ msgstr "כרטיסיית Copilot"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copy"
 msgstr "העתק"
 
@@ -8176,7 +8201,6 @@ msgstr "הזמן הנוכחי"
 msgid "cursor"
 msgstr "סמן"
 
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Cursor"
 msgstr "Cursor"
@@ -9541,6 +9565,7 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Download"
 msgstr "הורד"
 
@@ -11744,6 +11769,10 @@ msgstr ""
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad היא אפליקציית דסקטופ חינמית בקוד פתוח לעבודה על פרויקטים עם סוכני הקוד שלך. פתחו את הפרויקט הזה ו-FlowPad יגדיר אותו במחשב שלך."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is offline"
+msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -14551,6 +14580,7 @@ msgid "live"
 msgstr "חי"
 
 #: src/components/automations/BusStream.tsx
+#: src/components/footer/LiveSessionsChip.tsx
 msgid "Live"
 msgstr ""
 
@@ -15058,7 +15088,13 @@ msgid "locked after first message"
 msgstr "נעול לאחר ההודעה הראשונה"
 
 #: src/navigation/smart-ask.ts
+#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Log in"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Log in to read the message here — or open it in FlowPad."
 msgstr ""
 
 #~ msgid "Log mode"
@@ -15564,6 +15600,10 @@ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Message Flowpad's own {title} account. Nothing to set up — link your phone once with a code."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Message not found."
 msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
@@ -18546,6 +18586,7 @@ msgstr ""
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open"
@@ -18870,6 +18911,7 @@ msgstr ""
 msgid "Open in Flowpad"
 msgstr ""
 
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "פתיחה ב-FlowPad"
@@ -18930,6 +18972,10 @@ msgstr "פתיחת דפדפן הידע"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Open link"
 msgstr "פתח קישור"
+
+#: src/components/footer/LiveSessionsChip.tsx
+msgid "Open live sessions"
+msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Open LLM Indexers"
@@ -19402,6 +19448,10 @@ msgstr "הודעה לבעלים (אופציונלי)…"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Or copy an invite link"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "or download the message (.flowmsg)"
 msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -20075,6 +20125,7 @@ msgstr "הצמד — הוסף לספריית הפרומפטים"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 #: src/i18n/type-labels.ts
+#: src/pages/entry/MessageLanding.tsx
 #: src/types/ViewType.ts
 msgid "Plan"
 msgstr "תוכנית"
@@ -24946,6 +24997,7 @@ msgstr "תצוגת גרף Sigma"
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "היכנסו"
 
@@ -25437,6 +25489,7 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Someone"
 msgstr "מישהו"
 
@@ -27207,6 +27260,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "The upload didn't complete — ask {senderName} to resend."
+msgstr ""
 
 #~ msgid "The value could not be written."
 #~ msgstr ""
@@ -30519,6 +30576,10 @@ msgstr "אין לך הרשאה לפעולה זו. יש לפנות למנהל ה�
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "You don't have this repo yet."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You have a message"
 msgstr ""
 
 #: src/pages/entry/entry-shell.tsx

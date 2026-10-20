@@ -48,6 +48,7 @@ import {
 import { getIconPacks, resolveIcon } from '@sdk/icons';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
@@ -208,6 +209,10 @@ export function UserDropdown() {
   const { navigation } = useDockNavigation();
   const { login, connection, cloudUrl } = useCloudStatus();
   const dotClass = statusDotClass(login.status, connection.status);
+  // The avatar needs a hub sign-in, not just the local desktop user (always set) —
+  // otherwise a dropped login keeps drawing the local initials and no Sign in button.
+  const cloudAuthed = useCloudAuthed();
+  const showAvatar = isLocal ? Boolean(user) : cloudAuthed;
   // Derive up-to-2-char initials from whatever identity we have. `currentUser`
   // is `cloudUser ?? localUser`, so after cloud logout it falls back to the
   // local desktop user — we still show those initials rather than blanking the
@@ -422,7 +427,7 @@ export function UserDropdown() {
       </Dialog>
 
       <div className="flex flex-col items-center gap-2">
-        {user ? (
+        {showAvatar ? (
           <>
             <TooltipProvider>
               <Tooltip>
@@ -565,26 +570,31 @@ export function UserDropdown() {
             </TooltipProvider>
           </>
         ) : isLocal ? null : (
-          // Logged-out: a round, avatar-sized icon button in the rail's icon language
-          // (not a filled CTA pill — de-emphasized per NN/g). Reuses the shared Button
-          // for focus-ring/disabled a11y; className carries the round/dashed look.
+          // Logged-out: the avatar's slot becomes a filled Sign in button with a red dot
+          // and a label, so a dropped login is visible without hovering.
           <TooltipProvider>
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t`Sign in`}
-                  data-testid="user-login-button"
-                  onClick={() => {
-                    trackEvent({ event: 'login_clicked', event_source: 'page_header' });
-                    void navigator.navigateToLogin();
-                  }}
-                  className="h-8 w-8 rounded-full border border-dashed border-border text-muted-foreground hover:border-solid hover:text-foreground"
-                >
-                  <LogIn className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
+              <div className="flex flex-col items-center gap-1">
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="icon"
+                    aria-label={t`Sign in`}
+                    data-testid="user-login-button"
+                    onClick={() => {
+                      trackEvent({ event: 'login_clicked', event_source: 'page_header' });
+                      void navigator.navigateToLogin();
+                    }}
+                    className="relative h-8 w-8 rounded-full shadow-sm ring-2 ring-primary/40"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    <span aria-hidden className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />
+                  </Button>
+                </TooltipTrigger>
+                <span aria-hidden className="text-[10px] font-medium leading-none text-primary">
+                  <Trans>Sign in</Trans>
+                </span>
+              </div>
               <TooltipContent side="top">{cloudLoginTooltip('logged_out', 'disconnected', cloudUrl)}</TooltipContent>
             </Tooltip>
           </TooltipProvider>

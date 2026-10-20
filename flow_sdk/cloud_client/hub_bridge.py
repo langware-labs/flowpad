@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from typing import Any, Optional
 
@@ -286,7 +287,53 @@ class HubWsBridge:
         # A desktop webhook's delivery (the hub's public URL for this laptop): replayed here, then acked.
         self.manager.register_handler("webhook_delivery", webhook_relay.on_delivery)
         self.manager.register_handler("source_nudge", self._on_source_nudge)
+        self.manager.register_handler("open_message", self._on_open_message)
         self._installed = True
+
+    async def _on_open_message(self, message: dict) -> None:
+        """Hub → this desktop: "open this message" (its email landing page, the person
+        asked to open it here). Resolved exactly as the deep link is (fetch, unpack,
+        sync the conversation), then the active tab is sent there and brought forward."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.core.navigate import pick_connection  # noqa: PLC0415
+        from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
+
+        fm_id = str((message or {}).get("flow_message_id") or "")
+        if not fm_id:
+            logger.warning("[hub-bridge] open_message without a flow_message_id: %s", message)
+            return
+        local_user = await User.get_local()
+        link = await FlowMessage.resolve_open(fm_id, local_user.typeid if local_user else None)
+        tab = pick_connection(None)
+        if isinstance(tab, tuple):
+            # macOS never lets a background app put itself in front: the banner is how a window
+            # left behind gets the person there (its click raises the window on the conversation).
+            # Sent first — the open reloads the page, and a command after it would be lost.
+            conversation_id = getattr(link, "conversation_id", "") or ""
+            if conversation_id:
+                from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+
+                await notify_desktop(
+                    "message",
+                    title=getattr(link, "sender_name", "") or "Message",
+                    body="Opened in FlowPad",
+                    click_target={"view_type": "conversation", "pointer": f"{conversation_id}/message/{fm_id}"},
+                )
+            await send_ui_command(tab[1], "open_link", query=link.to_query())
+            return
+        # No Flowpad tab is open: open one at the message, as an ask does (`ask_window._open_a_window`).
+        # Never under Electron (it has its own window) or a test (`FLOWPAD_NO_BROWSER`).
+        if os.environ.get("FLOWPAD_NO_BROWSER"):
+            logger.info("[hub-bridge] open_message %s: no Flowpad tab is open", fm_id)
+            return
+        import webbrowser  # noqa: PLC0415
+        from urllib.parse import urlencode  # noqa: PLC0415
+
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        url = f"http://localhost:{get_instance_settings().ui_port}/dock/home?{urlencode(link.to_query())}"
+        await asyncio.to_thread(webbrowser.open, url)
 
     async def _on_source_nudge(self, message: dict) -> None:
         """The hub holds something new for a driver's sources here (a message waiting for them): poll

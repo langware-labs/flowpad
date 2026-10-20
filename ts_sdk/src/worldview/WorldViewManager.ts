@@ -1,7 +1,7 @@
 import { dataManager } from '../APIEntity';
 import apiClient from '../client';
 import { Deployment } from '../entities/deployment';
-import { isValidUUIDv4 } from '../models/TypeId';
+import { isValidEntityId } from '../models/TypeId';
 import { parseWorldViewGraph, type WorldViewGraph } from './models';
 import { WorldViewProjection } from './projection';
 
@@ -41,8 +41,8 @@ export class WorldViewManager {
 
   /** Explicitly connect one Deployment to one Artifact; no inferred matching. */
   async linkArtifact(deploymentId: string, artifactId: string): Promise<Deployment> {
-    if (!isValidUUIDv4(deploymentId)) throw new Error('deploymentId must be a UUID v4 or v5');
-    if (!isValidUUIDv4(artifactId)) throw new Error('artifactId must be a UUID v4 or v5');
+    if (!isValidEntityId(deploymentId)) throw new Error('deploymentId must be a UUID v4 or v5');
+    if (!isValidEntityId(artifactId)) throw new Error('artifactId must be a UUID v4 or v5');
     const raw = await this.client.post<Record<string, unknown>>(
       `/api/v1/graph/deployment/${encodeURIComponent(deploymentId)}/link-artifact`,
       { artifact_id: artifactId },

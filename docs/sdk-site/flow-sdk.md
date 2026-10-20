@@ -298,7 +298,7 @@ async with await issues.open() as live:
 Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.
 
 ```python
-from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow("channel-helper"):
@@ -308,7 +308,7 @@ async with workflow("channel-helper"):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
-            await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # into the thread
 ```
 
 ## `flow.Agent`

@@ -1086,7 +1086,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
     <span class="k">async</span> <span class="k">for</span> <span class="n">page</span> <span class="ow">in</span> <span class="n">live</span><span class="o">.</span><span class="n">pages</span><span class="p">(</span><span class="n">page_size</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>       <span class="c1"># a page is a slice of the table</span>
         <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">row</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_dump</span><span class="p">()</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">page</span><span class="o">.</span><span class="n">items</span><span class="p">])</span>   <span class="c1"># columns = the record&#39;s fields</span>
         <span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[[</span><span class="s2">&quot;key&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;assignee&quot;</span><span class="p">]])</span>
-        <span class="k">await</span> <span class="n">page</span><span class="o">.</span><span class="n">ack</span><span class="p">()</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-1" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Messages — MessageSource</b><span>Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.</span></div><figure class="snip" id="si-2"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 2 imports</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.blocks</span><span class="w"> </span><span class="kn">import</span> <span class="n">StreamInbox</span><span class="p">,</span> <span class="n">SlackMessageSpec</span><span class="p">,</span> <span class="n">workflow</span>
+        <span class="k">await</span> <span class="n">page</span><span class="o">.</span><span class="n">ack</span><span class="p">()</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-1" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Messages — MessageSource</b><span>Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.</span></div><figure class="snip" id="si-2"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 2 imports</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.blocks</span><span class="w"> </span><span class="kn">import</span> <span class="n">StreamInbox</span><span class="p">,</span> <span class="n">workflow</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 
 </span><span class="k">async</span> <span class="k">with</span> <span class="n">workflow</span><span class="p">(</span><span class="s2">&quot;channel-helper&quot;</span><span class="p">):</span>
@@ -1096,7 +1096,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
     <span class="k">async</span> <span class="k">with</span> <span class="n">agent</span><span class="o">.</span><span class="n">process_messages</span><span class="p">():</span>
         <span class="k">async</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">stream_inbox</span><span class="o">.</span><span class="n">listen</span><span class="p">():</span>
             <span class="n">out</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">process_message</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>       <span class="c1"># session per thread</span>
-            <span class="k">await</span> <span class="n">m</span><span class="o">.</span><span class="n">reply</span><span class="p">(</span><span class="n">SlackMessageSpec</span><span class="o">.</span><span class="n">reply_to</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">text</span><span class="p">))</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-2" aria-label="Copy code">Copy</button></figcaption></figure></div></div>
+            <span class="k">await</span> <span class="n">m</span><span class="o">.</span><span class="n">reply</span><span class="p">(</span><span class="k">await</span> <span class="n">m</span><span class="o">.</span><span class="n">reply_spec</span><span class="p">(</span><span class="n">body</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>   <span class="c1"># into the thread</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="si-2" aria-label="Copy code">Copy</button></figcaption></figure></div></div>
   </section>
 
   <section class="blocks connectors agent-sec" id="agent" aria-labelledby="agent-h">
@@ -2580,7 +2580,7 @@ async with await issues.open() as live:
 Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.
 
 ```python
-from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow(&quot;channel-helper&quot;):
@@ -2590,7 +2590,7 @@ async with workflow(&quot;channel-helper&quot;):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
-            await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # into the thread
 ```
 
 ## `flow.Agent`

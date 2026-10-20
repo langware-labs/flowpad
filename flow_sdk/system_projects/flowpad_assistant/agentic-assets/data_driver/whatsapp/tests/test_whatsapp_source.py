@@ -20,7 +20,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.ingest.envelope_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
@@ -731,7 +731,7 @@ async def test_a_reply_to_a_group_message_through_the_driver_goes_to_the_group(s
 
 
 def test_the_reply_spec_of_a_group_message_addresses_the_group():
-    from flow_sdk.builtin.source_item import WhatsAppMessageSpec  # noqa: PLC0415
+    WhatsAppMessageSpec = asset_module("whatsapp").WhatsAppMessageSpec
 
     class _Row:
         thread_key, external_id, author_external_id, subject = GROUP, "wamid.G1", WA_ID, ""

@@ -41,6 +41,7 @@ from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapp
 
 from pydantic import StringConstraints
 
+from flow_sdk.builtin.source_item import ChannelMessageSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
@@ -164,9 +165,7 @@ class SlackSource(MessageSource):
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
     def outbound_spec(cls) -> type:
-        from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
-
-        return SlackMessageSpec
+        return ChannelMessageSpec
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
         """The application's send arguments as a Slack message: ``to`` is the channel (a Slack thread

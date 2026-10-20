@@ -42,6 +42,8 @@ function noticeFor(ma: MessageAttachment, res: OpenSharedResult): void {
       id: `no-git-${id}`,
       // The only word on why the copy opened instead of Git; it stays in the warnings list too.
       forceToast: true,
+      // Long enough to act on: the reply is the point of this notice.
+      durationMs: 15000,
       title: t`No Git access — opened the copy`,
       message: res.git_share_message ?? res.git_share_error,
       actions: [{ label: t`Request access`, command: REQUEST_GIT_ACCESS, args: { id } }],
@@ -51,6 +53,7 @@ function noticeFor(ma: MessageAttachment, res: OpenSharedResult): void {
     notify.warning({
       id: `mismatch-${id}`,
       forceToast: true,
+      durationMs: 15000,
       title: t`This conversation's project is not a checkout of the shared repo`,
       actions: [{ label: t`Tell sender`, command: REPORT_SHARE_MISMATCH, args: { id } }],
     });

@@ -4,13 +4,17 @@ from email.parser import BytesParser
 
 import pytest
 
-from flow_sdk.sources.gmail_send import InlineImage, compose_message, raw_message, send_message
+from flow_sdk.ingest.driver_registry import asset_module
+
+_send = asset_module("gmail", "send")
+InlineImage, compose_message, raw_message, send_message = (
+    _send.InlineImage, _send.compose_message, _send.raw_message, _send.send_message)
 
 
 def test_send_only_message_preserves_alternatives_recipients_and_cid():
     msg = compose_message(sender="sender@example.test", to=["one@example.test", "two@example.test"],
         cc=["cc@example.test"], subject="Weekly café", text="Plain report", html='<img src="cid:score">',
-        inline_images=[InlineImage("score", b"image bytes", "score.png")])
+        inline_images=[InlineImage(content_id="score", content=b"image bytes", filename="score.png")])
     parsed = BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(raw_message(msg)["raw"]))
     assert str(parsed["To"]) == "one@example.test, two@example.test"
     assert str(parsed["Cc"]) == "cc@example.test"
@@ -24,7 +28,7 @@ def test_send_only_message_preserves_alternatives_recipients_and_cid():
 def test_unreferenced_inline_image_is_rejected():
     with pytest.raises(ValueError, match="referenced"):
         compose_message(sender="s@example.test", to=["r@example.test"], subject="Report", text="Text", html="HTML",
-            inline_images=[InlineImage("missing", b"png", "image.png")])
+            inline_images=[InlineImage(content_id="missing", content=b"png", filename="image.png")])
 
 
 async def test_confirmation_is_required_before_network():
