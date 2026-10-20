@@ -24269,6 +24269,10 @@ msgstr "סשנים ({0})"
 msgid "Sessions that used this skill — analyze, improve, commit"
 msgstr "סשנים שהשתמשו במיומנות הזו — ניתוח, שיפור, commit"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions are reached from Recent."
+msgstr ""
+
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "set"
@@ -29496,6 +29500,11 @@ msgstr ""
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
 msgstr "סוכני Vibe"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Vibe only"
+msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
