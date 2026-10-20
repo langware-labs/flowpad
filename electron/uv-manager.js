@@ -479,6 +479,16 @@ class QuitInProgressError extends Error {
   }
 }
 
+// Bounds on reading a candidate release's compat.json BEFORE the backend can start. Approved by the repository
+// owner (2026-10-20, review of PR #663), who asked that these steps not be unbounded:
+//   - a ranged GET moves a few KB; one that has not finished in this long is abandoned (the fallback below, or the
+//     post-install check, decides);
+//   - the fallback unpacks a WHOLE wheel (tens of MB). Behind a proxy that strips Range headers every candidate
+//     would fall back to it, so at most this many per resolution -- the rest are "unknown" and the post-install
+//     verification is the authoritative gate.
+const RANGE_FETCH_TIMEOUT_MS = 20 * 1000;
+const MAX_WHOLE_WHEEL_READS = 2;
+
 class UvManager {
   constructor(log, { stateDir = null, appVersion = null } = {}) {
     this.log = log;
@@ -492,6 +502,8 @@ class UvManager {
     // Per-session cache of engine releases' min_desktop_version (version → {minDesktopVersion}
     // or 'invalid'); indeterminate reads are NOT cached so a transient failure can heal.
     this._minDesktopCache = new Map();
+    this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
+    this._rangeIgnored = false; // a server answered a Range request with the whole file: stop asking it
     // Lets native failure dialogs offer "Send Report" (set by main.js; null in tests → "OK" only).
     this._failureSharer = null;
     this._installing = false;
@@ -1246,7 +1258,14 @@ class UvManager {
     if (!engineCompat.isInstallableVersion(version)) return 'invalid'; // never becomes an argument
     if (this._minDesktopCache.has(version)) return this._minDesktopCache.get(version);
     let result = await this._readCandidateViaRange(version);
-    if (result === null) result = await this._readCandidateViaUv(version);
+    if (result === null) {
+      if (this._wholeWheelReadsLeft <= 0) {
+        this.log.info(`[compat] not unpacking ${PYPI_PACKAGE} ${version} to read its floor: ${MAX_WHOLE_WHEEL_READS} whole-wheel reads already used this time`);
+        return null; // unknown, and not cached: the post-install verification decides
+      }
+      this._wholeWheelReadsLeft -= 1;
+      result = await this._readCandidateViaUv(version);
+    }
     if (result !== null) this._minDesktopCache.set(version, result);
     return result;
   }
@@ -1272,8 +1291,9 @@ class UvManager {
 
   /** One ranged GET. A server that ignores Range answers 200 with the whole file: dropped unread. */
   async _fetchRange(url, rangeHeader) {
-    const res = await fetch(url, { headers: { Range: rangeHeader } });
+    const res = await fetch(url, { headers: { Range: rangeHeader }, signal: AbortSignal.timeout(RANGE_FETCH_TIMEOUT_MS) });
     if (res.status !== 206) {
+      if (res.status === 200) this._rangeIgnored = true; // the whole file is coming: this server (or proxy) ignores Range
       try { await res.body.cancel(); } catch { /* best effort */ }
       return { status: res.status };
     }
@@ -1281,6 +1301,7 @@ class UvManager {
   }
 
   async _readCandidateViaRange(version) {
+    if (this._rangeIgnored) return null;
     try {
       const url = await this._wheelUrl(version);
       if (!url) return null;
@@ -1306,7 +1327,8 @@ class UvManager {
     let result = null;
     try {
       await this._runStreaming('uv', [
-        'pip', 'install', '--no-deps', '--target', target, '--python', pin,
+        // --only-binary: an sdist-only release must not run its build code just so we can read one JSON file
+        'pip', 'install', '--no-deps', '--only-binary', ':all:', '--target', target, '--python', pin,
         `${PYPI_PACKAGE}==${version}`,
       ], {});
       const file = path.join(target, 'flow_sdk', 'compat.json');
@@ -1339,6 +1361,7 @@ class UvManager {
     // Update-cycle harness: a forced engine spec wins over resolution (engineSpec()), so don't
     // spend staged metadata reads on a scenario that has already decided what to install.
     if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
+    this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
     const data = await this._getPypiData();
     if (!data || !data.releases) return null;
     this._pypiDoc = data;
@@ -1395,17 +1418,45 @@ class UvManager {
     const issue = this.installedPairIssue(undefined, { strict: true });
     if (!issue) return;
     this.log.error(`[compat] installed pair is incompatible: ${issue.reasons.join('; ')}`);
-    if (previousVersion && previousVersion !== issue.engineVersion && engineCompat.isInstallableVersion(previousVersion)) {
-      this.log.warn(`[compat] rolling the engine back to ${previousVersion}`);
-      if (onProgress) onProgress(`Restoring FlowPad engine ${previousVersion}`);
-      const pin = await this._pythonPinForUpgrade();
-      await this._uvToolInstallForce(
-        ['tool', 'install', `${PYPI_PACKAGE}==${previousVersion}`, '--python', pin, '--force'],
-        { onProgress },
-      );
-      this._flowBin = await this._resolveFlowBin();
+    const restorable = previousVersion && previousVersion !== issue.engineVersion && engineCompat.isInstallableVersion(previousVersion);
+    // What the user is told when the old engine could not be put back (or there was none): the "existing
+    // installation has been preserved" line would be false, and the app repairs the pair at its next launch.
+    const unrestored = (why) => installFailure(
+      engineCompat.incompatibleMessage({ desktopVersion: this._appVersion, engineVersion: issue.engineVersion, reasons: issue.reasons, preserved: false }) +
+      `\n\n${why} FlowPad will install a compatible engine the next time it starts.`
+    );
+    if (!restorable) throw unrestored('There was no earlier engine to restore.');
+    this.log.warn(`[compat] rolling the engine back to ${previousVersion}`);
+    if (onProgress) onProgress(`Restoring FlowPad engine ${previousVersion}`);
+    try {
+      await this._restoreEngine(previousVersion, { onProgress });
+    } catch (restoreErr) {
+      const reason = String((restoreErr && restoreErr.message) || restoreErr).split('\n')[0];
+      throw unrestored(`Restoring FlowPad engine ${previousVersion} failed (${reason}). To do it by hand, run: uv tool install ${PYPI_PACKAGE}==${previousVersion} --force.`);
     }
     throw installFailure(issue.message);
+  }
+
+  /**
+   * Put `previousVersion` back. uv's cache still holds the wheel it installed, and the network may be exactly what
+   * just failed (a dropped connection mid-install) or never have had the version at all (a local build): so the
+   * cache is asked first (`--offline`), the network second.
+   */
+  async _restoreEngine(previousVersion, { onProgress } = {}) {
+    const pin = await this._pythonPinForUpgrade();
+    const args = ['tool', 'install', `${PYPI_PACKAGE}==${previousVersion}`, '--python', pin, '--force'];
+    let lastErr = null;
+    for (const mode of ['offline', 'online']) {
+      try {
+        await this._uvToolInstallForce(mode === 'offline' ? [...args, '--offline'] : args, { onProgress });
+        this._flowBin = await this._resolveFlowBin();
+        return;
+      } catch (err) {
+        lastErr = err;
+        this.log.warn(`[compat] restoring ${previousVersion} (${mode}) failed: ${String((err && err.message) || err).split('\n')[0]}`);
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -2551,8 +2602,13 @@ class UvManager {
   async _resolveEngineTarget(version) {
     const info = await this._getPypiVersionInfo(version);
     if (info && info.yanked === true) {
-      this.log.warn(`[uv] ${PYPI_PACKAGE} ${version} was yanked on PyPI${info.yanked_reason ? ` (${info.yanked_reason})` : ''} — installing the latest release instead`);
-      const latest = await this._getLatestPypiInfo();
+      this.log.warn(`[uv] ${PYPI_PACKAGE} ${version} was yanked on PyPI${info.yanked_reason ? ` (${info.yanked_reason})` : ''} — installing the newest compatible release instead`);
+      // "Latest" is not necessarily compatible with this desktop (it may need a newer one): the replacement is the
+      // newest release passing both directions -- the same pick every other install makes. Throws, with the
+      // existing engine untouched, when PyPI answered and none does.
+      const picked = await this.resolveCompatibleEngineVersion();
+      if (picked) return { version: picked.version, info: await this._getPypiVersionInfo(picked.version) };
+      const latest = await this._getLatestPypiInfo(); // the contract cannot be evaluated (offline, no app version)
       if (latest && latest.version) return { version: latest.version, info: latest };
     }
     return { version, info };
@@ -2635,15 +2691,41 @@ class UvManager {
       });
       if (!res.ok) return null;
       const data = await res.json();
-      return {
+      return await this._applyCompatToStatus({
         currentVersion: upgradeInfo.version,
         latestVersion: data.latest_version || null,
         required: data.status === UpdateStatus.REQUIRED,
-      };
+      });
     } catch (err) {
       this.log.warn(`[uv] update check failed: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * The cloud names ITS latest release; the dialog must name the one the install will actually put on disk, which
+   * is the newest release compatible with this desktop. Without this the dialog offered X and `upgrade()` then
+   * installed an older compatible release -- a silent downgrade that skipped the downgrade warning, offered again
+   * on every launch. null = nothing worth offering.
+   */
+  async _applyCompatToStatus(status) {
+    if (!status || !status.required || !this._appVersion) return status;
+    let picked;
+    try {
+      picked = await this.resolveCompatibleEngineVersion();
+    } catch (err) {
+      this.log.warn(`[compat] not offering an engine update: ${String(err.message).split('\n')[0]}`);
+      return null; // PyPI answered and nothing is compatible
+    }
+    if (!picked) return status; // cannot evaluate (offline): keep the cloud's verdict, the post-install check decides
+    if (status.currentVersion && !isNewer(status.currentVersion, picked.version)) {
+      this.log.info(`[compat] newest compatible release is ${picked.version}, installed is ${status.currentVersion} — no update offered`);
+      return null;
+    }
+    if (picked.version !== status.latestVersion) {
+      this.log.info(`[compat] the cloud's latest ${status.latestVersion} is not what this desktop can run — offering ${picked.version}`);
+    }
+    return { ...status, latestVersion: picked.version };
   }
 
   /**
@@ -2953,6 +3035,7 @@ class UvManager {
    */
   async _assertCandidateCompatible(version) {
     if (!this._appVersion) return;
+    this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
     const compat = await this._readCandidateMinDesktop(version);
     if (compat === 'invalid') {
       throw installFailure(

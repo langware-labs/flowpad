@@ -1970,7 +1970,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       m._uvToolInstallForce = async (args) => { installs.push(args.join(' ')); };
       m._resolveFlowBin = async () => incompatible.flowBin;
       await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /not compatible/); passed++;
-      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force'], 'the previous release is pinned back');
+      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force --offline'], 'the previous release is pinned back (from uv\'s cache first: --offline)');
 
       // No previous version (first install): throw without any rollback install.
       installs.length = 0;
@@ -2147,7 +2147,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       m._uvToolInstallForce = async (args) => { installs.push(args.join(' ')); };
       m._resolveFlowBin = async () => flowBin;
       await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /invalid compatibility metadata/); passed++;
-      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force'], 'and the previous release is put back');
+      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force --offline'], 'and the previous release is put back');
       fs.rmSync(venv, { recursive: true, force: true });
     }
 
@@ -2168,6 +2168,103 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       m._readCandidateMinDesktop = async () => ({ minDesktopVersion: null });
       eq((await m.resolveCompatibleEngineVersion()).version, '0.2.223', 'resolve picks the final release, not its rc');
       eq(await m._compatibleEngineSpec('flowpad'), 'flowpad==0.2.223', 'and so does the spec every install/upgrade/repair uses');
+    }
+
+    // ── review follow-ups (PR #663): restore, update dialog, withdrawn version, bounded candidate reads ──────
+    {
+      // (c) the restore asks the cache first, then the network, and is honest when neither works.
+      const { venv, flowBin } = makeVenv('0.2.70', '{"min_desktop_version": "0.2.60"}');
+      const m = mk('0.2.45');
+      m._flowBin = flowBin; m._pythonPinForUpgrade = async () => '3.11'; m._resolveFlowBin = async () => flowBin;
+      const attempts = [];
+      m._uvToolInstallForce = async (args) => { attempts.push(args.includes('--offline') ? 'offline' : 'online'); if (attempts.length === 1) throw new Error('cache miss'); };
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /existing installation has been preserved/); passed++;
+      eq(attempts, ['offline', 'online'], 'the cache first; the network when the cache cannot serve it');
+
+      m._uvToolInstallForce = async () => { throw new Error('network is down'); };
+      let msg = '';
+      try { await m._verifyInstalledPairOrRollback('0.2.50'); } catch (e) { msg = e.message; }
+      ok(!/has been preserved/.test(msg), 'a restore that failed must NOT claim the installation was preserved');
+      ok(/Restoring FlowPad engine 0\.2\.50 failed \(network is down\)/.test(msg) && /uv tool install flowpad==0\.2\.50 --force/.test(msg), 'it says what failed and how to do it by hand');
+      ok(/next time it starts/.test(msg), 'and what repairs it otherwise');
+
+      msg = '';
+      try { await m._verifyInstalledPairOrRollback(null); } catch (e) { msg = e.message; }
+      ok(!/has been preserved/.test(msg) && /no earlier engine to restore/.test(msg), 'a first install has nothing to preserve, and says so');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+    {
+      // (a) the update dialog names what the install will actually put on disk.
+      const mkStatus = (over = {}) => ({ currentVersion: '0.2.220', latestVersion: '0.2.230', required: true, ...over });
+      const m = mk('0.2.45');
+      m.resolveCompatibleEngineVersion = async () => ({ version: '0.2.222', minDesktopVersion: null });
+      eq((await m._applyCompatToStatus(mkStatus())).latestVersion, '0.2.222', "the cloud's latest needs a newer desktop -> the dialog names the compatible release");
+      eq(await m._applyCompatToStatus(mkStatus({ currentVersion: '0.2.222' })), null, 'the best compatible release is what is installed -> nothing is offered (no prompt on every launch)');
+      eq(await m._applyCompatToStatus(mkStatus({ currentVersion: '0.2.250' })), null, '...or older than what is installed -> nothing is offered');
+      eq((await m._applyCompatToStatus(mkStatus({ required: false }))).latestVersion, '0.2.230', 'a verdict that requires nothing is passed through');
+      m.resolveCompatibleEngineVersion = async () => { throw new Error('No compatible FlowPad engine release found'); };
+      eq(await m._applyCompatToStatus(mkStatus()), null, 'PyPI answered and nothing is compatible -> nothing is offered');
+      m.resolveCompatibleEngineVersion = async () => null;
+      eq((await m._applyCompatToStatus(mkStatus())).latestVersion, '0.2.230', 'cannot evaluate (offline) -> the cloud verdict stands; the post-install check decides');
+      eq(await mk(null)._applyCompatToStatus(mkStatus()), mkStatus(), 'no app version (dev run) -> untouched');
+
+      // ...and through the real getUpdateStatus, with the cloud stubbed.
+      const realFetch = global.fetch;
+      global.fetch = async () => ({ ok: true, json: async () => ({ status: 'required', latest_version: '0.2.230' }) });
+      try {
+        const g = mk('0.2.45');
+        g._getUpgradeInfo = async () => ({ version: '0.2.220' });
+        g.resolveCompatibleEngineVersion = async () => ({ version: '0.2.222', minDesktopVersion: null });
+        eq(await g.getUpdateStatus('http://cloud'), { currentVersion: '0.2.220', latestVersion: '0.2.222', required: true }, 'getUpdateStatus returns the compatible release, not the cloud\'s');
+      } finally { global.fetch = realFetch; }
+    }
+    {
+      // (b) an agreed version that was withdrawn is replaced by the newest COMPATIBLE release, not by "latest".
+      const m = mk('0.2.45');
+      m._getPypiVersionInfo = async (v) => (v === '0.2.225' ? { yanked: true, yanked_reason: 'broken' } : { version: v, requires_python: '>=3.11' });
+      m._getLatestPypiInfo = async () => ({ version: '0.2.230' });
+      m.resolveCompatibleEngineVersion = async () => ({ version: '0.2.222', minDesktopVersion: null });
+      eq((await m._resolveEngineTarget('0.2.225')).version, '0.2.222', 'the replacement is compatible with this desktop');
+      m.resolveCompatibleEngineVersion = async () => null;
+      eq((await m._resolveEngineTarget('0.2.225')).version, '0.2.230', 'only when the contract cannot be evaluated does it fall back to latest');
+      m.resolveCompatibleEngineVersion = async () => { throw new Error('No compatible FlowPad engine release found'); };
+      await assert.rejects(() => m._resolveEngineTarget('0.2.225'), /No compatible/); passed++;
+      eq((await m._resolveEngineTarget('0.2.221')).version, '0.2.221', 'a version that was not withdrawn is left alone');
+    }
+    {
+      // (d) bounded candidate reads: a request timeout, a cap on whole-wheel fallbacks, no build code.
+      const realFetch = global.fetch;
+      let opts;
+      global.fetch = async (url, o) => { opts = o; return { status: 206, headers: { get: () => 'bytes 0-0/1' }, arrayBuffer: async () => new ArrayBuffer(1) }; };
+      try {
+        const m = mk('0.2.45');
+        await m._fetchRange('https://files.pythonhosted.org/x.whl', 'bytes=0-0');
+        ok(opts.signal && typeof opts.signal.aborted === 'boolean', 'every ranged GET carries an abort signal (a timeout)');
+      } finally { global.fetch = realFetch; }
+
+      const m = mk('0.2.45');
+      m._rangeIgnored = true;
+      m._wheelUrl = async () => { throw new Error('must not even look the URL up'); };
+      eq(await m._readCandidateViaRange('0.2.70'), null, 'once a server ignored Range, it is not asked again');
+
+      const uv = [];
+      const c = mk('0.2.45');
+      c._readCandidateViaRange = async () => null;
+      c._readCandidateViaUv = async (v) => { uv.push(v); return { minDesktopVersion: null }; };
+      c._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: Object.fromEntries(['0.2.70', '0.2.69', '0.2.68', '0.2.67'].map((v) => [v, [{}]])) });
+      c._pypiDoc = null;
+      c._minDesktopCache.clear();
+      eq((await c.resolveCompatibleEngineVersion()).version, '0.2.70', 'resolution still picks the newest');
+      c._minDesktopCache.clear();
+      for (const v of ['0.2.70', '0.2.69', '0.2.68', '0.2.67']) await c._readCandidateMinDesktop(v);
+      eq(uv.length, 2, 'at most 2 whole-wheel fallbacks per resolution, however many candidates (a proxy that strips Range)');
+      eq(await c._readCandidateMinDesktop('0.2.66'), null, 'the rest are unknown, not guessed');
+
+      let args;
+      const w = mk('0.2.45');
+      w._runStreaming = async (cmd, a) => { args = a; throw new Error('stop'); };
+      await w._readCandidateViaUv('0.2.70');
+      ok(args.includes('--only-binary') && args[args.indexOf('--only-binary') + 1] === ':all:', 'an sdist-only release cannot run build code to have its floor read');
     }
 
     // #6: a version that is not release-shaped never reaches an install command.
