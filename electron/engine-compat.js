@@ -162,11 +162,11 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
  * The user-facing text for a pair the contract forbids, built from the verdict's own `reasons`
  * (checkPair) so it names whichever direction actually failed -- never a floor that was not declared.
  */
-function incompatibleMessage({ desktopVersion, engineVersion, reasons }) {
+function incompatibleMessage({ desktopVersion, engineVersion, reasons, preserved = true }) {
   return (
     `FlowPad Desktop ${desktopVersion} is not compatible with FlowPad Backend ${engineVersion}.\n\n` +
-    `${(reasons || []).join('\n')}\n\n` +
-    'Your existing installation has been preserved.'
+    `${(reasons || []).join('\n')}` +
+    (preserved ? '\n\nYour existing installation has been preserved.' : '')
   );
 }
 
