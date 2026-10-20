@@ -613,7 +613,7 @@ function ContentPanelBody({
   };
 
   const providerProject = currentDock?.options?.[PROVIDER_PROJECT_PARAM];
-  const display = currentDock?.isActiveDisplay ? (currentDock.hostProcessId ?? '') : '';
+  const display = currentDock?.hostProcessId ?? '';
   const isAppBody = bodyViewType === ViewType.APP;
   // Only an app needs its project running; a file or entity in the display opens as it is.
   const loadProject = providerProject || (display && isAppBody ? project?.id : undefined);

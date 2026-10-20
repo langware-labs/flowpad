@@ -85,7 +85,10 @@ async function materializeTab(
   // exactly this and had no caller — the non-vibe listener passes an explicit
   // `parentTabId` instead — so a shown SCREEN arriving by navigation would have been
   // judged non-adoptable and silently dropped out of the workspace.
-  const addressesAdoptable = isAdoptableChildDock(dock, { shown: dock.isActiveDisplay });
+  // Anything opened inside a workspace is a tab of it, except an Assets list (one tab per scope).
+  const addressesAdoptable = isAdoptableChildDock(dock, {
+    shown: !!dock.hostProcessId && dock.viewType !== ViewType.ASSETS,
+  });
   const parentTabId = addressesAdoptable
     ? (options.parentTabId ?? hostTabIdFromDock(dock))
     : null;
@@ -93,22 +96,6 @@ async function materializeTab(
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
     !!parentTabId && !!existingTab && existingTab.id !== parentTabId && existingTab.parent_tab_id !== parentTabId;
-  // The workspace's ACTIVE DISPLAY is the one dock whose identity is stable while
-  // its TARGET moves: `tabHash` is the host, so the lookup above finds the same row
-  // on every `flow show` and the reuse short-circuit would return before the backend
-  // ever hears about the new target — leaving the chip frozen on whatever was shown
-  // first. Compare the stored pointer, which is the field that actually changes, so
-  // a re-show falls through to `ensureDock` and the backend's repoint clause runs.
-  // Same shape as `derivedProjectStale` below: a per-dock reason the cached row is out
-  // of date, expressed where the reuse decision is made.
-  //
-  // Decided BEFORE the re-parent shortcut below, which must not take a re-pointed
-  // display: that shortcut re-sends the ROW's pointer and name (`existingTab.*`),
-  // i.e. the PREVIOUS target, so the backend never hears about the new one and
-  // the chip keeps the first target's label ("metallb.io" while the frame shows
-  // cert-manager.io). A display whose parent edge the backend will not keep —
-  // `needsReparent` true on every show — never got past it at all.
-  const displayRepoint = dock.isActiveDisplay && !!existingTab && existingTab.pointer !== dock.toJSON();
 
   // Re-parenting an already-resolved asset must not resolve/download that same
   // entity a second time. On a live editor the entity ref can be FETCHING for
@@ -116,7 +103,7 @@ async function materializeTab(
   // Vibe transition half-open. The existing Tab already carries the exact
   // denormalized target/project metadata; send it through the same backend
   // `new_tab` ensure seam with only the new parent edge.
-  if (needsReparent && existingTab?.pointer && !displayRepoint) {
+  if (needsReparent && existingTab?.pointer) {
     await perfTime('materializeTab.newTab(reparent)', () =>
       tabManager.newTab(existingTab.pointer, {
         targetType: existingTab.target_type,
@@ -140,6 +127,13 @@ async function materializeTab(
   // to the mint below, where the backend (`ensure_tab`'s adoptable-pointer
   // guard) null-heals the row — same self-heal seam as its stale siblings.
   const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAdoptable;
+  // Opened with NO workspace in the URL (the Apps menu, a top-level chip): it is its own tab,
+  // so a row still grouped under a workspace leaves it (`""` = detach, `ensure_tab`).
+  const detach =
+    addressesAdoptable &&
+    !!existingTab?.parent_tab_id &&
+    options.parentTabId === undefined &&
+    !hostTabIdFromDock(dock);
   // A lens dock can't trust the row's denormalized project_id: the loader
   // activates the TARGET entity's project on every load, and the indexer may
   // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
@@ -176,10 +170,10 @@ async function materializeTab(
   if (
     existingTab &&
     !derivedProjectStale &&
-    !displayRepoint &&
     (existingTab.project_id || !isContentAssetDock(dock)) &&
     !needsReparent &&
-    !staleParentEdge
+    !staleParentEdge &&
+    !detach
   ) {
     // A process is ONE row whether it is shown as the Vibe host or as a shell (the
     // Vibe dock's tabHash folds onto the shell's). The row's stored pointer is what
@@ -208,7 +202,7 @@ async function materializeTab(
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
   const { tabs: scoped } = await perfTime('materializeTab.ensureDock', () =>
-    tabManager.ensureDock(dock, { parentTabId, viewMode: dock.viewMode }),
+    tabManager.ensureDock(dock, { parentTabId: detach ? '' : parentTabId, viewMode: dock.viewMode }),
   );
   const scopedTab = tabForDockKey(scoped, dock.tabHash);
 
@@ -289,25 +283,17 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // its workspace adoption when it is reopened from inside the workspace.
   //
   // The skip rests on "same key ⇒ same content", which holds for every dock whose
-  // key IS its content. The workspace's ACTIVE DISPLAY is keyed by its host, so the
-  // agent's next `flow show` arrives under the same key with a different target —
-  // taking the presentation-morph path there would swap what is on screen while
-  // never telling the backend, and the chip would stay pinned to whatever was shown
-  // first. Tested as STALENESS rather than as "is it the active display", so a
-  // re-show of the same target still takes the cheap path instead of paying a tab
-  // round trip for a navigation that changes nothing.
+  // key IS its content.
   //
   // Same for a HOST EDGE the row does not carry yet: a URL naming a host
   // (`?host=` — Discuss puts an open file under its chat) is a re-parent the
   // backend has to hear, and the cheap path never would. A pure store read.
   const opened = tabManager.lifecycle.get(key);
   const row = tabForDockKey(tabManager.getSnapshot(), key);
-  const displayStale = dock.isActiveDisplay && row?.pointer !== dock.toJSON();
   const hostTabId = hostTabIdFromDock(dock);
   const hostEdgeStale = !!hostTabId && !!row && row.id !== hostTabId && row.parent_tab_id !== hostTabId;
   if (
     isContentAssetDock(dock) &&
-    !displayStale &&
     !hostEdgeStale &&
     opened?.state === TabLifecycleState.Opened &&
     opened.tabId &&

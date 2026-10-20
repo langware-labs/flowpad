@@ -302,12 +302,6 @@ async def test_switching_a_vibe_tab_to_its_terminal_carries_its_children_out() -
     proc = "agentic_process-%s" % uuid.uuid4()
     host = await ensure_tab('{"viewType":"vibe","pointer":"%s","tabHash":"shell|%s"}' % (proc, proc), project_id=P1)
     child = await ensure_tab('{"viewType":"editor","pointer":"t/c.md"}', project_id=P1, parent_tab_id=host.id)
-    display = await ensure_tab(
-        '{"viewType":"editor","pointer":"t/shown.md","options":{"activeDisplay":"1"},"tabHash":"workspaceActive|%s","workspaceContent":true}'
-        % proc,
-        project_id=P1,
-        parent_tab_id=host.id,
-    )
     other = await ensure_tab("t/other", project_id=P1)
 
     await ensure_tab('{"viewType":"shell","pointer":"%s"}' % proc, project_id=P1)
@@ -316,8 +310,6 @@ async def test_switching_a_vibe_tab_to_its_terminal_carries_its_children_out() -
     assert moved is not None and moved.parent_tab_id is None and moved.visible is True
     ids = await _order(P1)
     assert ids.index(child.id) == ids.index(host.id) + 1, "carried out right after the terminal tab"
-    shown = await Tab.get_one({"id": display.id})
-    assert shown is not None and shown.parent_tab_id == host.id, "the active display stays workspace chrome"
 
 
 async def test_http_close_returns_before_teardown() -> None:

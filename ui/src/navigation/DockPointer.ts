@@ -25,6 +25,7 @@ import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewTy
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAddress } from './url-builder';
 import { isValidView } from './validators';
+import { isWorkspaceChildDock } from './adoptable-child-dock';
 import {
   AssetEditor,
   AssetMode,
@@ -186,51 +187,6 @@ function liftChild(pointer: string | undefined): {
   }
   return { pointer: seg.slice(0, at).join('/'), section: seg[at + 1] as ChildSection, child: seg[at + 2] };
 }
-
-/**
- * Marks a dock as the workspace's ACTIVE DISPLAY — the one surface the agent's
- * `flow show` pins, as opposed to a child the USER opened from inside the
- * workspace. Written only by the show→navigate path.
- *
- * It exists because both are the same address. `/dock/project/<P>/process/<H>/display/
- * editor/…` is one document either way; what differs is whether the row is
- * REPLACEABLE (the agent's next show re-points it) or DURABLE (the user opened
- * it and owns it until they close it). That is a property of how the dock was
- * reached, so it rides in the URL rather than in ambient state.
- *
- * **It inverts {@link HOST_PARAM}'s rule, and that is the one thing to know
- * here.** Host is normally identity-NEUTRAL: which workspace shows a document is
- * presentation context, so it is excluded from `tabHash` and one document stays
- * one tab however many agents display it. When this flag is set the host becomes
- * identity-BEARING: the tab is "workspace H's active display", and its target is
- * the part that varies. Hence the null-host guard in `tabHash` — a flagged dock
- * with no host must fall through to normal identity, so neither a hand-edited URL
- * nor the standard-mode strip can mint a hostless `workspaceActive|` row.
- *
- * Deliberately NOT in `STICKY_OPTION_PARAMS` (`NavigationActions.ts`): `host` is
- * carried onto whatever the user opens next (they stay in the workspace), but the
- * active-display bit is per-navigation, so their click yields its own durable row
- * while the agent's next show re-points the single replaceable one.
- */
-export const ACTIVE_DISPLAY_PARAM = 'activeDisplay';
-
-/**
- * Tab-identity namespace for {@link ACTIVE_DISPLAY_PARAM}.
- *
- * NOT spelled with the word "display", deliberately. `Tab._reap_orphans`
- * (`flow_sdk/builtin/tab.py`) pre-filters its legacy-display sweep on the raw
- * substring `"display" in pointer` before parsing anything, as a cheap way to keep
- * the steady state from paying a JSON parse per tab per list read. This hash is
- * stored in the pointer JSON's `tabHash` field, so a `workspace-display|…` spelling
- * would hit that prefilter on every list read and sit one string comparison away
- * from a reaper it has nothing to do with.
- *
- * The keyspace is disjoint from every other hash form by construction: no
- * `ViewType` equals this string, `|` cannot appear in one, and `PageId` values are
- * enumerated — so `uuid5` ids can never collide with `vt|sub`, `page|vt|sub` or
- * `assets|project:<id>`.
- */
-const ACTIVE_DISPLAY_HASH_NS = 'workspaceActive';
 
 /**
  * Lift `process/<typeid>/display/` out of a PROJECT pointer, returning the
@@ -652,20 +608,6 @@ export class DockPointer implements IDockPointer {
   /** Clone this dock hosted by a process's display, or unhosted with null. */
   withHost(processId: string | null): DockPointer {
     return this.withOption(HOST_PARAM, processId);
-  }
-
-  /**
-   * Is this dock the hosting workspace's ACTIVE DISPLAY (the agent's `flow show`
-   * pin) rather than a durable child the user opened? See
-   * {@link ACTIVE_DISPLAY_PARAM}.
-   */
-  get isActiveDisplay(): boolean {
-    return this.options?.[ACTIVE_DISPLAY_PARAM] === '1';
-  }
-
-  /** Clone this dock marked as (or cleared of) the workspace's active display. */
-  withActiveDisplay(on: boolean): DockPointer {
-    return this.withOption(ACTIVE_DISPLAY_PARAM, on ? '1' : null);
   }
 
   /** Clone this dock with a page-local view-mode override, or remove it with null. */
@@ -2311,6 +2253,18 @@ export class DockPointer implements IDockPointer {
    * canonicalizer to keep in agreement.
    */
   get tabHash(): string | null {
+    const base = this.baseTabHash;
+    const host = this.workspaceHost;
+    return base && host ? `${base}|@${host}` : base;
+  }
+
+  /** The workspace this dock is a tab OF (`isWorkspaceChildDock`), else null. Part of identity:
+   *  each workspace has its own row for a thing, apart from that thing's top-level tab. */
+  private get workspaceHost(): string | null {
+    return isWorkspaceChildDock(this) ? this.hostProcessId : null;
+  }
+
+  private get baseTabHash(): string | null {
     if (!this.viewType) return null;
     // A full-bleed surface (Home) takes over the panel — no strip, hence no chip.
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
@@ -2327,18 +2281,6 @@ export class DockPointer implements IDockPointer {
     // Chat never mints a second chip.
     if (this.viewType === ViewType.VIBE) {
       return this.pointer ? `${pagePrefix}${ViewType.SHELL}|${this.pointer}` : null;
-    }
-    // The workspace's ACTIVE DISPLAY is ONE tab per workspace whose TARGET varies:
-    // identity is the host, and the pointer — the thing that changes on every
-    // `flow show` — is deliberately excluded. That is what makes the row
-    // replaceable: the backend reconciles by this hash, finds the same row, and
-    // rewrites its stored pointer in place instead of minting a chip per show.
-    // Checked BEFORE the scope-keyed / pointer-folding branches: an active display
-    // may address an assets- or preferences-shaped dock, and workspace identity
-    // has to win over both. The host guard is load-bearing — see
-    // ACTIVE_DISPLAY_PARAM on why this flag inverts the host's usual neutrality.
-    if (this.isActiveDisplay && this.hostProcessId) {
-      return `${pagePrefix}${ACTIVE_DISPLAY_HASH_NS}|${this.hostProcessId}`;
     }
     // A dependency home is one tab per provider/consumer pair. Its runtime options
     // remain presentation-only, but two consumers must never configure one another.
@@ -2371,8 +2313,8 @@ export class DockPointer implements IDockPointer {
    *
    * Shared by `tabHash` and `toJSON` so the key and the persisted JSON cannot
    * disagree about which pointer a folded view is keyed on. The `scopeKeyed`
-   * and active-display arms stay separate: their `toJSON` also carries
-   * `options` / `tabHash` / `workspaceContent`, so they are not this shape.
+   * arm stays separate: its `toJSON` also carries `options` / `tabHash` /
+   * `workspaceContent`, so it is not this shape.
    */
   private get foldedPointer(): string | null {
     const meta = this.viewType ? VIEWER_REGISTRY[this.viewType] : undefined;
@@ -2424,6 +2366,14 @@ export class DockPointer implements IDockPointer {
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
+    const json = this.baseJSON();
+    // A workspace tab stores its workspace-keyed hash: the stored pointer has no host, and the
+    // backend reconciles by this hash (`_pointer_to_hash`), so it is the row's identity.
+    if (!json || !this.workspaceHost) return json;
+    return JSON.stringify({ ...JSON.parse(json), tabHash: this.tabHash });
+  }
+
+  private baseJSON(): string | null {
     // `viewType` is restated rather than left to `tabHash` (which already returns
     // null without one) so the registry lookups below narrow.
     if (!this.viewType || !this.tabHash) return null;
@@ -2432,28 +2382,6 @@ export class DockPointer implements IDockPointer {
     // click reopens.
     if (this.viewType === ViewType.VIBE) {
       return JSON.stringify({ viewType: this.viewType, pointer: this.pointer ?? '', tabHash: this.tabHash });
-    }
-    // The active display persists its REAL target (viewType + pointer) alongside the
-    // host-keyed hash. That asymmetry is the whole mechanism: the hash is what the
-    // backend reconciles by (constant → the same row every show), the pointer is what
-    // it rewrites in place (`ensure_tab`'s repoint clause), so one row re-points
-    // rather than N rows accumulating. It is the inverse of the scope-keyed branch
-    // below, which keeps its pointer constant and lets the scope vary.
-    //
-    // `workspaceContent` rides along because the backend's adoptable-child check reads
-    // the RAW viewType/pointer, not the hash: an assets-shaped active display needs the
-    // same flag a normal assets editor row carries or the list-path reaper null-heals
-    // its parent edge and ejects it from the child strip. The host is deliberately NOT
-    // serialized — `hostToCarry` re-stamps it from the live URL on a chip click, which
-    // is what keeps a click inside workspace A in workspace A.
-    if (this.isActiveDisplay && this.hostProcessId) {
-      return JSON.stringify({
-        viewType: this.viewType,
-        pointer: this.pointer ?? '',
-        options: { [ACTIVE_DISPLAY_PARAM]: '1' },
-        tabHash: this.tabHash,
-        workspaceContent: true,
-      });
     }
     // Dependency homes retain their execution provider and consuming-project context
     // in storage, so the backend and a reopened chip share the URL's pair identity.

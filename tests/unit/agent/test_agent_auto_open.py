@@ -56,7 +56,7 @@ async def test_auto_open_round_trips_through_agent_json(tmp_path):
     assert "auto_open" not in json.loads((tmp_path / "p/agentic-assets/agent/plain/agent.json").read_text())
 
 
-async def test_use_opens_the_first_as_display_and_the_rest_under_the_session_tab(tmp_path):
+async def test_every_entry_is_a_workspace_tab_and_the_first_is_shown(tmp_path):
     root = tmp_path / "p"
     project = await seed_project(root)
     for name in ("a.html", "b.html", "c.html"):
@@ -69,11 +69,39 @@ async def test_use_opens_the_first_as_display_and_the_rest_under_the_session_tab
 
     tabs = [t for t in await Tab.get_all({"project_id": project.id}) if t.visible]
     anchor = next(t for t in tabs if t.target_id == str(process.id))
+    assert json.loads(anchor.pointer)["viewType"] == "vibe"
     children = [t for t in tabs if t.parent_tab_id == anchor.id]
-    assert sorted(json.loads(t.pointer)["pointer"].rsplit("/", 1)[-1] for t in children) == ["b.html", "c.html"]
-    assert sorted(t.name for t in children) == ["b.html", "c.html"]
+    assert sorted(t.name for t in children) == ["a.html", "b.html", "c.html"]
+    # Tabs OF the workspace: keyed on it, so the same file's top-level tab is another row.
+    assert all(json.loads(t.pointer)["tabHash"].endswith(f"|@agentic_process-{process.id}") for t in children)
     shown = (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]
     assert shown["path"].endswith("/a.html")
+
+
+async def test_resume_opens_only_what_is_missing_and_keeps_the_display(tmp_path):
+    root = tmp_path / "p"
+    project = await seed_project(root)
+    for name in ("a.html", "b.html"):
+        (root / name).write_text(f"<title>{name}</title>")
+    agent = await seed_agent(root, "scrooge", auto_open=[_file_tab(project.id, n) for n in ("a.html", "b.html")])
+    process = AgenticProcess(project_id=project.id, pty_mode=False)
+    await process.save()
+    await open_auto_tabs(process, await agent.auto_open_tabs())
+    tabs = [t for t in await Tab.get_all({"project_id": project.id}) if t.visible]
+    closed = next(t for t in tabs if t.name == "b.html")
+    closed.visible = False
+    await closed.save()
+    process = await AgenticProcess.get_by_id(process.id)
+    await process.on_show({"kind": "vfs", "path": "/elsewhere.md"})  # the agent showed something else
+    process = await AgenticProcess.get_by_id(process.id)
+
+    await open_auto_tabs(process, await agent.auto_open_tabs(), resume=True)
+
+    tabs = [t for t in await Tab.get_all({"project_id": project.id}) if t.visible]
+    names = sorted(t.name for t in tabs if t.parent_tab_id)
+    assert names == ["a.html", "b.html"], "the closed one is back, nothing doubled"
+    shown = (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]
+    assert shown["path"] == "/elsewhere.md", "a resume never moves the display"
 
 
 def test_auto_open_commands_reopen_a_file_and_a_screen(tmp_path):
@@ -100,3 +128,20 @@ def test_prompt_block_lists_what_opened_and_alerts_only_on_failures():
     assert "op:serve" not in block
     assert [line for line in block.splitlines() if line.startswith("⚠")] == [
         "⚠ op:dev did not open: connection refused — tell the user if it matters."]
+
+
+async def test_a_new_session_leaves_the_apps_own_tab_alone(tmp_path):
+    root = tmp_path / "p"
+    project = await seed_project(root)
+    (root / "a.html").write_text("<title>a</title>")
+    agent = await seed_agent(root, "scrooge", auto_open=[_file_tab(project.id, "a.html")])
+    tabs = await agent.auto_open_tabs()
+    from flow_sdk.builtin.tab import ensure_tab
+
+    own = await ensure_tab(tabs[0].pointer, project_id=project.id)
+    process = AgenticProcess(project_id=project.id, pty_mode=False)
+    await process.save()
+
+    await open_auto_tabs(process, tabs)
+
+    assert (await Tab.get_one({"id": own.id})).parent_tab_id is None

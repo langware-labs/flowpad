@@ -35,8 +35,7 @@ export function activeDisplayDock(
   // instead of getting an identity of its own.
   return DockPointer.rebaseAssetsOntoProject(dock, projectId)
     .withHost(host)
-    .withViewMode(ViewMode.Vibe)
-    .withActiveDisplay(true);
+    .withViewMode(ViewMode.Vibe);
 }
 
 export interface OpenActiveDisplayArgs {
