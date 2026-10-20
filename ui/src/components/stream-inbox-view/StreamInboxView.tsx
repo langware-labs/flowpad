@@ -76,6 +76,7 @@ import {
   STREAM_INBOX_PAGE_SIZE,
   type StreamInboxViewMode,
 } from './channel-owner';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
 import { StreamInboxPager } from './StreamInboxPager';
 import { useContext } from '@src/hooks/useContext';
 import {
@@ -681,6 +682,15 @@ export function StreamInboxView({
     [fromWidth, commitFromWidth],
   );
   const columnFilterActive = isColumnFilterActive(columnFilter);
+  // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own inbox
+  // listens; a fresh mount already starts unfiltered.
+  useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
+    setViewMode('all');
+    setChannelFilter(new Set());
+    setColumnFilter(NO_COLUMN_FILTER);
+    setSearchQuery('');
+    setSelectedIds(new Set());
+  });
   const setColumn = useCallback(
     <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
       setColumnFilter((cur) => ({ ...cur, [key]: value })),
