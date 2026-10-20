@@ -79,6 +79,7 @@ import {
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 import { StreamInboxPager } from './StreamInboxPager';
 import { useContext } from '@src/hooks/useContext';
+import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
   conversationFacets,
   actionsFor,
@@ -818,8 +819,10 @@ export function StreamInboxView({
 
   const visibleCount = visibleIds.size;
 
-  // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
-  // the entity channel) — no client-side recount here anymore.
+  // Unread: backend-owned (StreamInboxManager.unread) — the rail badge's number, so the two always
+  // agree. It counts the user's own stream inbox, so an agent's or a source's view does not use it.
+  const { unread: inboxUnread } = useStreamInboxManager();
+  const ownInbox = !agentId && !sourceId;
 
   // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
   // A channel waiting on setup or paused is not read; it says so on its own strip.
@@ -1159,10 +1162,15 @@ export function StreamInboxView({
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
   // Segmented view pill — All | Unread | Archived. Active mode is filled,
-  // inactive is ghost. Count badge sits inside the active pill so it
-  // reflects exactly what the user is looking at.
+  // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
+    // Unread in the user's own inbox: the backend total, on the pill whether or not it is active.
+    // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
+    let badge: string | null = null;
+    if (mode === 'unread' && ownInbox) badge = inboxUnread > 0 ? String(inboxUnread) : null;
+    else if (active && visibleCount > 0)
+      badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
     return (
       <button
         type="button"
@@ -1175,12 +1183,12 @@ export function StreamInboxView({
       >
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>
-        {active && visibleCount > 0 && (
+        {badge !== null && (
           // Fixed min-width + tabular figures: the badge keeps the same box up
           // to three digits, so a growing count doesn't reflow the search input
           // and the buttons to its right.
           <span className="inline-block min-w-[30px] rounded bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground">
-            {visibleCount}
+            {badge}
           </span>
         )}
       </button>
