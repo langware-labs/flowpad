@@ -281,7 +281,10 @@ export function AppDisplayViewer({
   );
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
   const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
-  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+  // Files served as they are need nothing set up, wherever they live (a mock in $TMPDIR):
+  // the tab belongs to the project, the page does not wait on it.
+  const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
+  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
     ? (
       <ProjectLoadGate
         key={provider}
