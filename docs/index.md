@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
-inputs_hash: 5c242676b77e279de4d11d497fa9cd4eb316d9a9199abe2a36e9b4609e79756a
+inputs_hash: 64a64f6e53ee25c569f8294e33f7f39abb408e293377615465a3be91098387b0
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
-generated_at: '2026-10-20T09:49:59.934612+00:00'
+generated_at: '2026-10-20T10:58:09.637445+00:00'
 latest_process_ref: ''
 file_count: 54
 subfolder_count: 16

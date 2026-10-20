@@ -75,20 +75,37 @@ and are not part of it.
    directory, and just the bytes of `flow_sdk/compat.json` with HTTP Range requests — tens of KB,
    CRC-checked, so the pre-start update check never waits on a whole-wheel download. When that cannot
    be done (no Range support, ZIP64, an unexpected wheel URL) it falls back to
-   `uv pip install --no-deps --target <tmp> flowpad==X`, which unpacks only that wheel (wheels run
-   nothing at install time) and leaves it in uv's cache for the activation install. A wheel without
-   `compat.json` is a pre-contract release (legacy). Results are cached per session
-   (`resolveCompatibleEngineVersion`, `_readCandidateMinDesktop`). Integrity rests on TLS plus the
-   post-install check in step 4; PyPI's whole-file digest cannot cover a partial read.
+   `uv pip install --no-deps --only-binary :all: --target <tmp> flowpad==X`, which unpacks only that
+   wheel (wheels run nothing at install time, and `--only-binary` means a release that ships only a
+   source distribution is never built just to read one JSON file) and leaves it in uv's cache for the
+   activation install. A wheel without `compat.json` is a pre-contract release (legacy).
+   Both reads are bounded, so none of this can hold the app back from starting: a ranged request is
+   abandoned after 20 seconds; once a server has answered a Range request with the whole file it is
+   not asked again; and at most **two** whole wheels are unpacked per resolution — a proxy that strips
+   `Range` therefore costs two downloads, not ten. A candidate whose floor stays unknown is accepted
+   as legacy, and step 4 has the last word. Only each candidate's *floor* is cached for the session
+   (`_readCandidateMinDesktop`); the resolution itself runs again on every call. Integrity rests on TLS
+   plus the post-install check in step 4; PyPI's whole-file digest cannot cover a partial read.
 3. The newest release passing both directions is installed with the existing pinned
    `uv tool install flowpad==X` path — all existing recovery machinery (interrupted-install
    marker, failed-upgrade restore, tool-dir lock handling) is unchanged.
-4. After every install/upgrade the installed pair is re-verified from disk
+4. After `installLatest` and `upgrade` the installed pair is re-verified from disk
    (`_verifyInstalledPairOrRollback`); if it fails (the selection ran on indeterminate
-   metadata), the previous release is pinned back and a user-readable error is raised.
+   metadata, or the engine ships invalid `compat.json`), the previous release is put back — from
+   uv's cache first (`--offline`), because the network may be exactly what just failed or may never
+   have held that version (a local build) — and a user-readable error is raised. When the old engine
+   cannot be restored (or there was none) the error says so instead of claiming the installation was
+   preserved, gives the command to run by hand, and the desktop repairs the pair at its next launch
+   (step 6). `reinstall` (the broken-install repair) resolves the newest compatible release but does
+   not verify afterwards: there is no healthy engine to roll back to, and step 6 is its backstop.
 5. The pre-start update offer (`_pypiUpdateStatus`) names the newest **compatible** release, so
    the dialog never offers a version the install would then refuse. If PyPI's latest is
-   incompatible and nothing newer than the installed engine is, no update is offered.
+   incompatible and nothing newer than the installed engine is, no update is offered. The
+   post-boot check, which asks the cloud for *its* latest, is filtered the same way
+   (`_applyCompatToStatus`): otherwise the dialog would name one version and `upgrade()` install an
+   older one — a silent downgrade, offered again on every launch. An agreed version that was
+   withdrawn from PyPI in the meantime is replaced by the newest *compatible* release, not by
+   "latest".
 6. At startup, `main.js` checks the installed pair (`installedPairIssue`) — a desktop
    downgrade or a hand-moved engine is repaired by installing the newest compatible release,
    under the same `engineChangePolicy` gate as every other engine change. The repair has a
@@ -115,11 +132,14 @@ pre-contract behaviour is kept — install `latest` — and step 4 has the last 
   (`self_update.desktop_compat_block`, reason `incompatible_desktop`).
 - After an in-place reinstall, the **new** on-disk `flow_sdk/compat.json` is checked against the
   running desktop (`verify_installed_against_desktop`); on failure the previous version is
-  reinstalled and the endpoint reports `backend_requires_newer_desktop` — an incompatible pair
+  reinstalled (from uv's cache first, then the network) and the endpoint reports
+  `backend_requires_newer_desktop` — an incompatible pair
   is never scheduled to boot.
 - `flow upgrade` applies the same pre-check and the same post-install verify→rollback
   (`self_update.rollback_if_incompatible`, shared by the route, the CLI and the detached Windows
-  relay `upgrade_after_exit`, which records the outcome in its log file). The desktop's startup
+  relay `upgrade_after_exit`, which records the outcome in its log file and loads `flow_sdk.utils.compat` from the
+  running release *before* the install replaces it on disk, so a later release that renames what the check calls
+  cannot kill the detached process with no log and no rollback). The desktop's startup
   pair check remains the backstop for anything that slips past.
 
 **CLI check** (works against a staged install, no server, no network):
@@ -140,8 +160,10 @@ flow compat --desktop-version 0.2.45 [--desktop-min-backend 0.2.50] [--json]
     gate cannot drift from the code it guards. Wheel URLs are accepted only on
     `files.pythonhosted.org` over https, and a yanked wheel is never the one read.
   - no flags: both files parse, floors are semver-parseable, and the backend version satisfies
-    the desktop floor it bundles. Runs in `scripts/deploy_to_github.sh` right after the version
-    bump, before anything is committed, tagged or published. `tests/unit/test_version_compat.py`
+    the desktop floor it bundles. `scripts/deploy_to_github.sh` runs it **first** — before the test
+    run, the remote flow-rs signing and the version write, so a failure costs nothing — passing
+    `--backend-version <the release about to be cut>`, so a floor raised to exactly the release it
+    ships in is not rejected for the version it replaces. `tests/unit/test_version_compat.py`
     enforces the same invariants in CI.
   - `--resolve --desktop-version X`: proves desktop release X can resolve at least one
     compatible PyPI backend (reads candidate wheels' `compat.json` from the zip — no code
