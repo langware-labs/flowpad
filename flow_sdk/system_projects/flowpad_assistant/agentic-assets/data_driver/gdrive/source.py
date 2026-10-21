@@ -638,39 +638,48 @@ class DriveSource(ObjectSource):
         self._rows_folder = parent
         return parent
 
-    async def _list_children(self, folder: str) -> list[dict]:
-        params = {"q": f"{_quoted(folder)} in parents and trashed = false",
-                  "fields": "nextPageToken,files(id,name,mimeType,headRevisionId)", "pageSize": "1000", **self._drive_params()}
-        out, token = [], None
-        while True:
-            body = (await self._request("GET", "/files", {**params, **({"pageToken": token} if token else {})})).json()
-            out.extend(body.get("files") or ())
-            token = body.get("nextPageToken")
-            if not token:
-                return out
+    #: How many folders one listing query asks about (``'a' in parents or 'b' in parents ...``).
+    PARENTS_PER_QUERY = 50
+
+    async def _children_of(self, folders: list[str]) -> list[dict]:
+        """Every file and folder directly inside any of ``folders``, a few folders per query."""
+        out: list[dict] = []
+        for at in range(0, len(folders), self.PARENTS_PER_QUERY):
+            batch = folders[at:at + self.PARENTS_PER_QUERY]
+            params = {"q": f"({' or '.join(f'{_quoted(f)} in parents' for f in batch)}) and trashed = false",
+                      "fields": "nextPageToken,files(id,name,mimeType,headRevisionId,parents)", "pageSize": "1000",
+                      **self._drive_params()}
+            token = None
+            while True:
+                body = (await self._request("GET", "/files", {**params, **({"pageToken": token} if token else {})})).json()
+                out.extend(body.get("files") or ())
+                token = body.get("nextPageToken")
+                if not token:
+                    break
+        return out
 
     async def list_files(self) -> dict[str, str]:
+        """Every row file under the rows folder, walked a LEVEL at a time: a few requests per level,
+        however many rows."""
         self._require_open()
         parent = await self._rows_parent()
         ids, out, dirs = {}, {}, {}
-        gate = asyncio.Semaphore(8)
-
-        async def walk(folder: str, prefix: str, depth: int) -> None:
-            async with gate:
-                children = await self._list_children(folder)
-            below = []
-            for meta in children:
-                name = str(meta["name"])
-                rel = f"{prefix}{name}"
+        level = {parent: ""}                     # folder id → its path under the rows folder ("" at the top)
+        for _ in range(MAX_DEPTH):
+            if not level:
+                break
+            below: dict[str, str] = {}
+            for meta in await self._children_of(list(level)):
+                prefix = next((level[p] for p in meta.get("parents") or () if p in level), None)
+                if prefix is None:
+                    continue
+                rel = f"{prefix}{meta['name']}"
                 if meta.get("mimeType") == FOLDER_MIME:
-                    if depth < MAX_DEPTH:
-                        dirs[rel] = str(meta["id"])
-                        below.append(walk(str(meta["id"]), f"{rel}/", depth + 1))
+                    dirs[rel] = str(meta["id"])
+                    below[str(meta["id"])] = f"{rel}/"
                 else:
                     ids[rel], out[rel] = str(meta["id"]), str(meta.get("headRevisionId") or "")
-            await asyncio.gather(*below)
-
-        await walk(parent, "", 0)
+            level = below
         self._row_ids, self._row_dirs, self._rows_listed = ids, dirs, True
         return out
 
@@ -681,7 +690,8 @@ class DriveSource(ObjectSource):
         for name in _segments(rel_dir):
             walked = f"{walked}/{name}" if walked else name
             if walked not in self._row_dirs:
-                found = await self._children(folder, name=name, folders=True)
+                # Right after a listing, every folder there is known: one it did not see is new.
+                found = [] if self._rows_listed else await self._children(folder, name=name, folders=True)
                 if len(found) > 1:
                     raise Rejected(f"Drive has {len(found)} folders named {walked!r}; rename one")
                 self._row_dirs[walked] = str(found[0]["id"]) if found else str((await self._request(

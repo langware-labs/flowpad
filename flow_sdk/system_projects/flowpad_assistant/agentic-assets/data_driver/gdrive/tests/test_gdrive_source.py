@@ -93,9 +93,9 @@ class _Drive:
         for term in q.split(" and "):
             if term == "trashed = false":
                 ok = not meta.get("trashed")
-            elif m := re.fullmatch(r"'(.+)' in parents", term):
-                parent = m.group(1)
-                ok = parent in (meta.get("parents") or ()) or (parent in ("root",) and not meta.get("parents"))
+            elif m := re.fullmatch(r"\(?((?:'[^']+' in parents(?: or )?)+)\)?", term):
+                parents = re.findall(r"'([^']+)' in parents", m.group(1))
+                ok = any(p in (meta.get("parents") or ()) or (p == "root" and not meta.get("parents")) for p in parents)
             elif m := re.fullmatch(r"name = '(.*)'", term):
                 ok = meta.get("name") == m.group(1).replace("\\'", "'")
             elif m := re.fullmatch(r"mimeType (!?=) '(.+)'", term):
