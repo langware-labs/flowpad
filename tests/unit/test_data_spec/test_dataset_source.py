@@ -174,3 +174,22 @@ async def test_a_source_that_turns_ready_fills_each_working_copy_once(project):
 
     root = locations.rows_folder(reader, reader._location())
     assert (root / locations.STATE_FILE).is_file() and (root / "rows" / "ada" / "row.json").is_file()
+
+
+async def test_at_startup_each_hosting_source_answers_once(project):
+    """After a restart no dataset reads as local just because its source was not asked yet."""
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.datasets import locations
+
+    project.refusal["why"] = ""
+    name = "drive" + uuid.uuid4().hex[:8]
+    _source(project.root, name)
+    people = await project.dataset("people", data_source=name)
+    await DataSource(id=str(uuid.uuid4()), name=name, provider="mem").save()
+    locations._checked.clear()
+    assert locations.held_back(people.asset_ref, name) is None          # a fresh process: not asked
+
+    await locations.refresh_all_hosted()
+    await asyncio.gather(*locations._filling)
+
+    assert locations.held_back(people.asset_ref, name) == ""
