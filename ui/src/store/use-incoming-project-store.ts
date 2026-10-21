@@ -14,7 +14,8 @@ export interface IncomingProjectParams {
   gitOrigin: ProjectOrigin;
   /** Display name for the copy ("… shared <projectName> with you"). */
   projectName: string;
-  senderName: string;
+  /** Who shared it; unset when only the hub row is known, which names no sharer. */
+  senderName?: string;
   /**
    * The SHARED project's id, when this came from a membership grant rather than
    * a template deep link. Present means "materialize this row in place"

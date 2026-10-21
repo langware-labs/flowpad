@@ -17,10 +17,16 @@ from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, Runti
 #: evidence left that the browser is on https.
 E2B_PUBLIC_DOMAIN = "e2b.dev"
 
+#: Every domain E2B serves sandbox ports on. Live sandboxes are reached on
+#: ``e2b.app``; a host check that knows only ``E2B_PUBLIC_DOMAIN`` misreads them
+#: as plain http.
+E2B_PUBLIC_DOMAINS = (E2B_PUBLIC_DOMAIN, "e2b.app")
+
 
 def is_e2b_public_host(host: str) -> bool:
     """Is ``host`` (a Host header, port optional) an E2B public sandbox host?"""
-    return host.split(":")[0].strip().lower().endswith("." + E2B_PUBLIC_DOMAIN)
+    name = host.split(":")[0].strip().lower()
+    return any(name.endswith("." + domain) for domain in E2B_PUBLIC_DOMAINS)
 
 
 def sandbox_public_url(port: int, sandbox_id: str) -> str:
