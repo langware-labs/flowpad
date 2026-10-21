@@ -639,7 +639,7 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Absolute row index in the terminal scroll buffer (0 = top of all output)">
+          <CoordLabel title={t`Absolute row index in the terminal scroll buffer (0 = top of all output)`}>
             <Trans>buffer row</Trans>
           </CoordLabel>
           <span className="text-foreground">
@@ -659,7 +659,9 @@ function AnnotationCell({
           </span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="PTY write-sequence anchor: seq = write sequence number, Δ = row offset from that write. Used for scroll-stable positioning when buffer scrolls.">
+          <CoordLabel
+            title={t`PTY write-sequence anchor: seq = write sequence number, Δ = row offset from that write. Used for scroll-stable positioning when buffer scrolls.`}
+          >
             <Trans>anchor</Trans>
           </CoordLabel>
           <span className="text-foreground">
@@ -675,16 +677,23 @@ function AnnotationCell({
           </span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport.">
+          <CoordLabel
+            title={t`Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport.`}
+          >
             <Trans>viewport row</Trans>
           </CoordLabel>
           <span className="text-foreground">
-            {row} <span className="text-muted-foreground">of [{viewportTopRow}…]</span>
+            {row}{' '}
+            <span className="text-muted-foreground">
+              <Trans>of [{viewportTopRow}…]</Trans>
+            </span>
           </span>
         </div>
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Pixel Y offset from the top of the full scroll buffer (absRow × cellHeight). Used for absolute positioning overlays.">
+          <CoordLabel
+            title={t`Pixel Y offset from the top of the full scroll buffer (absRow × cellHeight). Used for absolute positioning overlays.`}
+          >
             <Trans>buffer px</Trans>
           </CoordLabel>
           <span className="text-foreground">
@@ -692,7 +701,9 @@ function AnnotationCell({
           </span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="Pixel Y offset from the top of the visible viewport (viewportRow × cellHeight). Used for placing UI elements relative to the current view.">
+          <CoordLabel
+            title={t`Pixel Y offset from the top of the visible viewport (viewportRow × cellHeight). Used for placing UI elements relative to the current view.`}
+          >
             <Trans>viewport px</Trans>
           </CoordLabel>
           <span className="text-foreground">
@@ -762,7 +773,7 @@ function AnnotationCell({
           <span className="text-foreground">{storedLine ?? el.absRow}</span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="Current resolved buffer row (may differ from stored line if terminal scrolled)">
+          <CoordLabel title={t`Current resolved buffer row (may differ from stored line if terminal scrolled)`}>
             <Trans>live row</Trans>
           </CoordLabel>
           <span
@@ -783,7 +794,7 @@ function AnnotationCell({
         )}
         {annotation.target_id && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="ID of the entity this annotation targets (e.g. AgenticProcess)">
+            <CoordLabel title={t`ID of the entity this annotation targets (e.g. AgenticProcess)`}>
               <Trans>target</Trans>
             </CoordLabel>
             <span className="max-w-[130px] truncate text-foreground" title={annotation.target_id}>

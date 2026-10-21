@@ -534,7 +534,9 @@ function AtlasDrawer({
               <code>{node.id}</code>
             </div>
             <div className="atlas-drawer-row">
-              <span>degree</span>
+              <span>
+                <Trans>degree</Trans>
+              </span>
               <strong>{node.degree}</strong>
             </div>
           </div>

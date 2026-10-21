@@ -7,7 +7,6 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { Trans } from '@lingui/react/macro';
 
-
 interface DiffContentProps {
   diffString: string;
   /** Side-by-side (default) vs unified inline rendering. Narrow hosts (e.g.
@@ -88,11 +87,17 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
       const lineHeight = 20;
       const vPad = 16;
       const height = maxLines * lineHeight + vPad * 2;
+      const hunkNumber = hunkIndex + 1;
+      const oldStart = hunk.oldStart;
+      const oldEnd = hunk.oldStart + hunk.oldLines - 1;
+      const newStart = hunk.newStart;
+      const newEnd = hunk.newStart + hunk.newLines - 1;
       return (
         <div key={editorKey} className="border-t last:border-t-0">
           <div className="bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
-            Hunk {hunkIndex + 1}: Lines {hunk.oldStart}–{hunk.oldStart + hunk.oldLines - 1} → {hunk.newStart}–
-            {hunk.newStart + hunk.newLines - 1}
+            <Trans>
+              Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}
+            </Trans>
           </div>
           <DiffEditor
             height={`${height}px`}

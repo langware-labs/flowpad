@@ -1705,7 +1705,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             />
           </FrozenWhenHidden>
         )}
-        {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
+        {activePane === 'shell' && sidecarShellId && (
+          <PaneBar label={t`Shell`} onClose={() => void handleKillSidecar()} />
+        )}
 
         {/* Runtime-error banner — populated by the shell-dock loader on soft
           ProcessLoadError (PTY dead, process stopped, project missing,

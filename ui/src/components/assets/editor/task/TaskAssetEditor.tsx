@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
 import { PRIORITY_CONFIG, STATUS_LABELS, statusLabel } from '@src/components/task-bar/constants';
 import { isDelegatedTask, openArtifact, STATUS_FAMILIES, statusFamily } from '@src/components/task-bar/task-utils';
@@ -146,7 +147,11 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   );
 
   if (!task) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Trans>Loading…</Trans>
+      </div>
+    );
   }
 
   // Received / shared tasks keep the collaboration surface (mapping + conversation).
@@ -161,6 +166,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   // status and its own attachments. Parent missing (deleted / not yet
   // materialized) → plain editor on the child's own fields, never a blank screen.
   const memberMode = !!parentId && !!parent;
+  const assignee = task.assignee;
 
   // Status segmented control — always the task's OWN status (a member task owns
   // nothing but this), so it's identical in both modes. A delegated task's status
@@ -195,7 +201,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       title={t`Archive task`}
     >
       <Archive className="h-3.5 w-3.5" />
-      Archive
+      <Trans>Archive</Trans>
     </button>
   );
 
@@ -210,7 +216,9 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
               className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              <span className="uppercase tracking-wide">Member task</span>
+              <span className="uppercase tracking-wide">
+                <Trans>Member task</Trans>
+              </span>
             </button>
             <AssetCollisionBadge />
           </div>
@@ -246,9 +254,11 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               <UserIcon className="h-3.5 w-3.5" />
-              This task
-              {task.assignee ? (
-                <span className="normal-case tracking-normal">· assigned to {task.assignee}</span>
+              <Trans>This task</Trans>
+              {assignee ? (
+                <span className="normal-case tracking-normal">
+                  <Trans>· assigned to {assignee}</Trans>
+                </span>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -263,7 +273,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
                   data-testid="task-analysis-report"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  Report
+                  <Trans>Report</Trans>
                 </button>
               )}
             </div>
@@ -292,7 +302,9 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wide">Task</span>
+            <span className="uppercase tracking-wide">
+              <Trans>Task</Trans>
+            </span>
           </button>
           {archiveButton}
         </div>
@@ -341,7 +353,9 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           </div>
 
           <label className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Due</span>
+            <span className="text-[10px] uppercase tracking-wide">
+              <Trans>Due</Trans>
+            </span>
             <input
               type="date"
               value={toDateInput(task.due_at)}
@@ -350,7 +364,9 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             />
           </label>
           <label className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Start</span>
+            <span className="text-[10px] uppercase tracking-wide">
+              <Trans>Start</Trans>
+            </span>
             <input
               type="date"
               value={toDateInput(task.start_date)}
@@ -369,7 +385,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
               data-testid="task-analysis-report"
             >
               <FileText className="h-3.5 w-3.5" />
-              Report
+              <Trans>Report</Trans>
             </button>
           )}
         </div>

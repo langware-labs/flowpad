@@ -1,4 +1,6 @@
-import { t } from '@lingui/core/macro';
+import { msg, t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import { i18n, type MessageDescriptor } from '@lingui/core';
 import type { APIEntity, AssetOccurrence, AnyEntity } from '@sdk';
 import { AlertTriangle } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
@@ -79,11 +81,11 @@ const ORIGIN_LABEL: Record<string, string> = {
   local: 'A file in your workspace',
 };
 
-const BASIS_LABEL: Record<string, string> = {
-  git: 'oldest in Git history',
-  created: 'oldest file on disk',
-  first_seen: 'indexed first',
-  path: 'first by path — nothing else separated them',
+const BASIS_LABEL: Record<string, MessageDescriptor> = {
+  git: msg`oldest in Git history`,
+  created: msg`oldest file on disk`,
+  first_seen: msg`indexed first`,
+  path: msg`first by path — nothing else separated them`,
 };
 
 /**
@@ -139,16 +141,34 @@ export function AssetCollisionPanel({ entity: explicitEntity }: { entity?: Colli
   const shared = commonPathPrefix(occurrences.map((o) => o.path));
   const primaryBasis = occurrences[0]?.rank_basis;
   const assistantWikiSpace = useAssistantWikiSpace();
+  const placeCount = occurrences.length;
+  const otherCount = occurrences.length - 1;
+  const basisDescriptor = primaryBasis ? BASIS_LABEL[primaryBasis] : undefined;
+  const basisLabel = basisDescriptor ? i18n._(basisDescriptor) : '';
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="asset-collision-panel">
       <div className="border-b px-4 py-3">
-        <div className="text-sm font-medium">This file exists in {occurrences.length} places</div>
+        <div className="text-sm font-medium">
+          <Trans>This file exists in {placeCount} places</Trans>
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Same asset id in all of them — FlowPad reads only the live copy, so edits to the{' '}
-          {occurrences.length === 2 ? 'other one' : `other ${occurrences.length - 1}`} will not appear.
-          {primaryBasis && BASIS_LABEL[primaryBasis] ? (
-            <span data-testid="asset-collision-basis"> Live copy: {BASIS_LABEL[primaryBasis]}.</span>
+          {occurrences.length === 2 ? (
+            <Trans>
+              Same asset id in all of them — FlowPad reads only the live copy, so edits to the other one will not
+              appear.
+            </Trans>
+          ) : (
+            <Trans>
+              Same asset id in all of them — FlowPad reads only the live copy, so edits to the other {otherCount} will
+              not appear.
+            </Trans>
+          )}
+          {basisLabel ? (
+            <span data-testid="asset-collision-basis">
+              {' '}
+              <Trans>Live copy: {basisLabel}.</Trans>
+            </span>
           ) : null}
         </p>
         <div className="mt-2 text-xs">
@@ -160,7 +180,9 @@ export function AssetCollisionPanel({ entity: explicitEntity }: { entity?: Colli
       </div>
       {shared ? (
         <div className="border-b px-4 py-2 text-[11px] text-muted-foreground">
-          <span className="me-1">Common path</span>
+          <span className="me-1">
+            <Trans>Common path</Trans>
+          </span>
           <span className="break-all font-mono" title={shared}>
             {shared}
           </span>

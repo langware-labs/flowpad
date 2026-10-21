@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { ActionInfo, dataContext, dataManager, shellQuote } from '@sdk';
 import type { HookEventData } from '@sdk/claude_hook_events/hook-event-data';
 import { getEventSummaryLine } from '@sdk/claude_hook_events/field-extractors';
@@ -234,14 +235,20 @@ export function CliLogViewer() {
   );
 
   if (loading && entries.length === 0) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Trans>Loading...</Trans>
+      </div>
+    );
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="text-sm font-medium">CLI Invocation Log</span>
+        <span className="text-sm font-medium">
+          <Trans>CLI Invocation Log</Trans>
+        </span>
         <Badge variant="secondary" className="text-[10px]">
           {entries.length}
         </Badge>
@@ -285,7 +292,10 @@ export function CliLogViewer() {
       <div className="flex flex-1 flex-col overflow-auto">
         {entries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            No log entries. Run a <code className="mx-1 rounded bg-muted px-1">flow</code> command to see entries here.
+            <Trans>
+              No log entries. Run a <code className="mx-1 rounded bg-muted px-1">flow</code> command to see entries
+              here.
+            </Trans>
           </div>
         ) : (
           <>
@@ -435,7 +445,9 @@ function EntryDetail({ entry, onReplay }: { entry: CliLogEntry; onReplay: (entry
         {/* Command breakdown */}
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-muted-foreground">command:</span>
+            <span className="font-medium text-muted-foreground">
+              <Trans>command:</Trans>
+            </span>
             <CopyButton value={Array.isArray(entry.command) ? entry.command.join(' ') : String(entry.command)} />
           </div>
 
@@ -474,7 +486,9 @@ function EntryDetail({ entry, onReplay }: { entry: CliLogEntry; onReplay: (entry
         <CopyableField label="workdir" value={entry.workdir} />
 
         <div className="flex items-center gap-2">
-          <span className="font-medium text-muted-foreground">time:</span>
+          <span className="font-medium text-muted-foreground">
+            <Trans>time:</Trans>
+          </span>
           <span className="font-mono">{formatTime(entry.created_at)}</span>
         </div>
 
@@ -491,7 +505,7 @@ function EntryDetail({ entry, onReplay }: { entry: CliLogEntry; onReplay: (entry
 
         <Button variant="outline" size="sm" className="mt-1 w-fit" onClick={() => void onReplay(entry)}>
           <Play className="me-1 h-3 w-3" />
-          Re-invoke
+          <Trans>Re-invoke</Trans>
         </Button>
       </div>
     </div>
@@ -510,7 +524,9 @@ function HookDataView({ hookData, rawStdin }: { hookData: HookEventData; rawStdi
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <span className="font-medium text-muted-foreground">hook data:</span>
+        <span className="font-medium text-muted-foreground">
+          <Trans>hook data:</Trans>
+        </span>
         <button
           onClick={() => setShowRaw(!showRaw)}
           className="text-[10px] text-muted-foreground hover:text-foreground"
@@ -547,7 +563,9 @@ function HookDataView({ hookData, rawStdin }: { hookData: HookEventData; rawStdi
           {hookData.cwd && <CopyableField label="cwd" value={hookData.cwd} />}
           {hookData.transcript_path && (
             <div className="flex items-center gap-2">
-              <span className="font-medium text-muted-foreground">transcript:</span>
+              <span className="font-medium text-muted-foreground">
+                <Trans>transcript:</Trans>
+              </span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="cursor-help font-mono text-muted-foreground">
@@ -583,6 +601,8 @@ function CollapsibleJson({ label, data }: { label: string; data: Record<string, 
   const [open, setOpen] = useState(false);
   const jsonStr = useMemo(() => JSON.stringify(data, null, 2), [data]);
   const keys = useMemo(() => Object.keys(data), [data]);
+  const keyCount = keys.length;
+  const moreCount = keys.length - 6;
 
   return (
     <div className="flex flex-col gap-1">
@@ -593,7 +613,9 @@ function CollapsibleJson({ label, data }: { label: string; data: Record<string, 
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rtl:-scale-x-100" />}
           <span className="font-medium">{label}</span>
-          <span className="text-[10px]">({keys.length} keys)</span>
+          <span className="text-[10px]">
+            <Trans>({keyCount} keys)</Trans>
+          </span>
         </button>
         <CopyButton value={jsonStr} />
       </div>
@@ -625,7 +647,11 @@ function CollapsibleJson({ label, data }: { label: string; data: Record<string, 
               </Badge>
             );
           })}
-          {keys.length > 6 && <span className="text-[10px] text-muted-foreground">+{keys.length - 6} more</span>}
+          {keys.length > 6 && (
+            <span className="text-[10px] text-muted-foreground">
+              <Trans>+{moreCount} more</Trans>
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -656,7 +682,9 @@ function CollapsibleOutput({ label, value }: { label: string; value: string }) {
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rtl:-scale-x-100" />}
           <span className="font-medium">{label}</span>
-          <span className="text-[10px]">({lineCount} lines)</span>
+          <span className="text-[10px]">
+            <Trans>({lineCount} lines)</Trans>
+          </span>
         </button>
         <CopyButton value={value} />
       </div>

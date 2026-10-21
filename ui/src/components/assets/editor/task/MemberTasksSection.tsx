@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { ActionInfo, dataManager, QueryRequest, Task, TaskKind } from '@sdk';
 import { useContacts } from '@src/components/contact-picker/use-contacts';
 import { statusLabel } from '@src/components/task-bar/constants';
@@ -53,6 +54,7 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
   if (task.kind !== TaskKind.GROUP && members.length === 0) return null;
 
   const done = members.filter((m) => statusFamily(m.status) === 'done').length;
+  const memberCount = members.length;
 
   return (
     <div className="border-b">
@@ -68,16 +70,22 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
           <ChevronRight className="h-3 w-3 text-muted-foreground" />
         )}
         <Users className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Member tasks</span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <Trans>Member tasks</Trans>
+        </span>
         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          {done}/{members.length} done
+          <Trans>
+            {done}/{memberCount} done
+          </Trans>
         </span>
       </button>
 
       {open && (
         <div className="flex flex-col pb-2" data-testid="member-tasks-list">
           {members.length === 0 ? (
-            <div className="px-6 py-2 text-sm text-muted-foreground">No member tasks yet.</div>
+            <div className="px-6 py-2 text-sm text-muted-foreground">
+              <Trans>No member tasks yet.</Trans>
+            </div>
           ) : (
             members.map((m) => (
               <button

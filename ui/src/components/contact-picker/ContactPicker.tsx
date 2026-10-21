@@ -1,4 +1,4 @@
-import { Trans } from '@lingui/react/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
@@ -52,6 +52,7 @@ export function ContactPicker({
   includeTeams = false,
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
+  const typedEmail = filterText.trim();
   const [listOpen, setListOpen] = useState(false);
 
   const { contacts } = useContacts(excludeUserId, enabled);
@@ -196,9 +197,15 @@ export function ContactPicker({
               <span className="flex min-w-0 items-center gap-1.5">
                 <UsersRound className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{g.displayName}</span>
-                {g.computed && <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">auto</span>}
+                {g.computed && (
+                  <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">
+                    <Trans>auto</Trans>
+                  </span>
+                )}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                <Plural value={(g.contacts ?? []).length} one="# member" other="# members" />
+              </span>
             </button>
           ))}
           {/* Teams — one click adds every member of the team. */}
@@ -246,7 +253,9 @@ export function ContactPicker({
             onClick={addFreeFormEmail}
             disabled={disabled}
           >
-            Add <span className="font-medium text-foreground">{filterText.trim()}</span>
+            <Trans>
+              Add <span className="font-medium text-foreground">{typedEmail}</span>
+            </Trans>
           </button>
         )}
     </div>
