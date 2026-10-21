@@ -10,7 +10,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, HelpCircle, KeyRound, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Cloud, Globe, HelpCircle, KeyRound, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
@@ -32,9 +32,12 @@ import {
   navigator,
   Page,
   PAGE_TYPE,
+  PageId,
   QueryFilter,
   QueryRequest,
   TypeId,
+  ViewType,
+  WorldViewProjection,
 } from '@sdk';
 import {
   useAuth,
@@ -441,7 +444,10 @@ export function UserDropdown() {
                       {/* The fire ring marks developer mode — unless the box is
                           unreachable, whose orange pulse must not be mistaken for it. */}
                       <div
-                        className={cn('relative cursor-pointer rounded-full', devMode && isConnected && 'dev-fire-ring')}
+                        className={cn(
+                          'relative cursor-pointer rounded-full',
+                          devMode && isConnected && 'dev-fire-ring',
+                        )}
                         data-dev-mode={devMode ? 'true' : undefined}
                       >
                         <Avatar
@@ -510,6 +516,16 @@ export function UserDropdown() {
                             <Trans>Go to Console</Trans>
                           </DropdownMenuItem>
                         </>
+                      )}
+                      {isHubOnly() && (
+                        <DropdownMenuItem
+                          onClick={() => navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, WorldViewProjection.WORLD)}
+                          className="cursor-pointer"
+                          data-testid="app-worldview-button"
+                        >
+                          <Globe className="me-2 h-4 w-4" />
+                          <Trans>World view</Trans>
+                        </DropdownMenuItem>
                       )}
                       <DropdownMenuItem
                         onClick={() => navigation.openPreferences()}

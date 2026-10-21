@@ -31,7 +31,6 @@ export type RailItemId =
  * would have made that removal look like a hub change.
  */
 export type HubRailItemId =
-  | 'world'
   | 'organization'
   | 'stream_inbox'
   | 'tasks'
