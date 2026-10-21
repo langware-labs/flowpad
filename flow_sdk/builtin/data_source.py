@@ -2232,7 +2232,7 @@ class DataSource(SetupSkippable, Entity):
         if driver is None:
             return None
 
-        need = await self._verify_connection(driver) or await self._verify_credentials()
+        need = await self._verify_connection(driver) or (await self._verify_credentials() if self.holds_rows else None)
         if need is not None:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = need.detail
@@ -2308,8 +2308,9 @@ class DataSource(SetupSkippable, Entity):
         return await connection_need(provider)
 
     async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
-        """None unless the source reads a credential and NOT ONE of its values is stored: then what it
-        needs. Some values may be optional (an address the config can give), so only "none at all" is
+        """For a source that holds datasets' rows (asked only for those: a feed's values may live in a
+        deployment's store this machine does not read): None unless the source reads a credential and NOT
+        ONE of its values is stored here, then what it needs. Some values may be optional (an address the config can give), so only "none at all" is
         sure enough to call the source not set up; the driver's own check judges the rest."""
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
