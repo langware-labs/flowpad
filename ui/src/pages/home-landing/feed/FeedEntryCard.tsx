@@ -618,6 +618,10 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
   const { navigation } = useDockNavigation();
   const day = report.period_start ? report.period_start.slice(0, 10) : '';
   const headline = report.period_kind === 'day' ? t`Yesterday` : t`Last ${report.period_kind}`;
+  const cost = report.total_cost_usd.toFixed(2);
+  const sessions = report.session_count;
+  const duration = formatDuration(report.total_duration_ms);
+  const prompts = report.prompt_count;
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
@@ -627,11 +631,13 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
         onClick={() => navigation.openDock(report.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
-          {headline} usage{day ? ` · ${day}` : ''}
+          <Trans>{headline} usage</Trans>
+          {day ? ` · ${day}` : ''}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          ${report.total_cost_usd.toFixed(2)} · {report.session_count} sessions ·{' '}
-          {formatDuration(report.total_duration_ms)} active · {report.prompt_count} prompts
+          <Trans>
+            ${cost} · {sessions} sessions · {duration} active · {prompts} prompts
+          </Trans>
         </p>
       </button>
     </FeedEntryFrame>

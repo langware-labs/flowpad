@@ -1,4 +1,5 @@
 import { cn } from '@src/lib/utils';
+import { Trans } from '@lingui/react/macro';
 import { FlowData, FlowElementTypes } from '@sdk';
 import { Activity, AlertTriangle, ChevronDown, ChevronRight, Sparkles, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -253,7 +254,9 @@ function OtherEventItem({ event }: { event: FlowData }) {
 function OrphanResultItem({ event }: { event: FlowData }) {
   return (
     <li data-testid="tool-entry" data-state="done" className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}>
-      <span className="opacity-60">tool result (no matching call):</span>{' '}
+      <span className="opacity-60">
+        <Trans>tool result (no matching call):</Trans>
+      </span>{' '}
       <span className="truncate font-mono text-[10px]">{extractText(event)}</span>
     </li>
   );

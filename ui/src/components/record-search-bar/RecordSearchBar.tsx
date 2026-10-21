@@ -88,6 +88,7 @@ function CustomDateRangeInputs({
   filters: SearchFilters;
   onFiltersChange: (f: SearchFilters) => void;
 }) {
+  const { t } = useLingui();
   const toDateValue = (iso?: string) => (iso ? iso.slice(0, 10) : '');
   return (
     <>
@@ -101,7 +102,7 @@ function CustomDateRangeInputs({
           })
         }
         className="rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground"
-        placeholder="Start"
+        placeholder={t`Start`}
       />
       <span className="text-muted-foreground">–</span>
       <input
@@ -111,7 +112,7 @@ function CustomDateRangeInputs({
           onFiltersChange({ ...filters, time_end: e.target.value ? new Date(e.target.value).toISOString() : undefined })
         }
         className="rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground"
-        placeholder="End"
+        placeholder={t`End`}
       />
     </>
   );

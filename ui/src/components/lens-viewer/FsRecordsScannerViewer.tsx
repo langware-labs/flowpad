@@ -164,6 +164,11 @@ function TypeRow({
 }) {
   const { t } = useLingui();
   const dimmed = row.count === 0;
+  const sizeLabel = detail ? fmtBytes(detail.total_bytes) : '';
+  const avgLabel = detail ? fmtBytes(detail.avg_bytes) : '';
+  const minLabel = detail ? fmtBytes(detail.min_bytes) : '';
+  const maxLabel = detail ? fmtBytes(detail.max_bytes) : '';
+  const scanLabel = detail ? fmtMs(detail.scan_ms) : '';
 
   return (
     <>
@@ -285,27 +290,45 @@ function TypeRow({
             ) : detail ? (
               <div className="flex flex-col gap-1">
                 <div className="mb-1 flex gap-4 text-xs text-muted-foreground">
-                  <span>size: {fmtBytes(detail.total_bytes)}</span>
-                  <span>avg: {fmtBytes(detail.avg_bytes)}</span>
-                  <span>min: {fmtBytes(detail.min_bytes)}</span>
-                  <span>max: {fmtBytes(detail.max_bytes)}</span>
-                  <span>scan: {fmtMs(detail.scan_ms)}</span>
+                  <span>
+                    <Trans>size: {sizeLabel}</Trans>
+                  </span>
+                  <span>
+                    <Trans>avg: {avgLabel}</Trans>
+                  </span>
+                  <span>
+                    <Trans>min: {minLabel}</Trans>
+                  </span>
+                  <span>
+                    <Trans>max: {maxLabel}</Trans>
+                  </span>
+                  <span>
+                    <Trans>scan: {scanLabel}</Trans>
+                  </span>
                 </div>
                 <div className="max-h-52 overflow-y-auto rounded border bg-card">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b bg-muted/50 text-muted-foreground">
-                        <th className="py-1 pe-4 ps-3 text-start font-medium">uid</th>
-                        <th className="py-1 pe-4 text-start font-medium">name</th>
-                        <th className="py-1 pe-4 text-end font-medium">size</th>
-                        <th className="py-1 pe-3 text-end font-medium">status</th>
+                        <th className="py-1 pe-4 ps-3 text-start font-medium">
+                          <Trans>uid</Trans>
+                        </th>
+                        <th className="py-1 pe-4 text-start font-medium">
+                          <Trans>name</Trans>
+                        </th>
+                        <th className="py-1 pe-4 text-end font-medium">
+                          <Trans>size</Trans>
+                        </th>
+                        <th className="py-1 pe-3 text-end font-medium">
+                          <Trans>status</Trans>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {detail.records.map((r) => (
                         <tr key={r.id} className="border-b last:border-0 hover:bg-accent/20">
                           <td className="max-w-[10rem] truncate py-1 pe-4 ps-3 font-mono">{r.id}</td>
-                          <td className="max-w-[14rem] truncate py-1 pe-4">{r.name || '(unnamed)'}</td>
+                          <td className="max-w-[14rem] truncate py-1 pe-4">{r.name || t`(unnamed)`}</td>
                           <td className="py-1 pe-4 text-end tabular-nums">{fmtBytes(r.size_bytes)}</td>
                           <td className="py-1 pe-3 text-end text-muted-foreground">{r.status ?? '—'}</td>
                         </tr>
@@ -313,7 +336,7 @@ function TypeRow({
                       {detail.records.length === 0 && (
                         <tr>
                           <td colSpan={4} className="py-3 text-center text-muted-foreground">
-                            No records
+                            <Trans>No records</Trans>
                           </td>
                         </tr>
                       )}

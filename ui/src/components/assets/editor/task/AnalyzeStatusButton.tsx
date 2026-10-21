@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { ActionInfo, dataManager, Task, TaskKind, type WizardData, type WizardProcessResult } from '@sdk';
 import { openArtifact, TaskStatus } from '@src/components/task-bar/task-utils';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -119,29 +120,29 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
         wizardName="task-analyze"
         buildRequest={buildRequest}
         successMessage={(data) => {
-          if (isGroup) return 'Your group status report is ready';
-          if (data?.readyForDone) return 'This task looks done — you can switch its status to Done';
-          return 'Your status report is ready';
+          if (isGroup) return t`Your group status report is ready`;
+          if (data?.readyForDone) return t`This task looks done — you can switch its status to Done`;
+          return t`Your status report is ready`;
         }}
-        errorTitle="Analyze Status failed"
+        errorTitle={t`Analyze Status failed`}
         onResult={handleResult}
         adopt={adopt}
-        runningLabel="Analyzing"
+        runningLabel={t`Analyzing`}
         className={className}
         disabled={!task.id}
         testId="task-analyze-status"
         title={t`Let an agent assess progress and fill in missing fields`}
       >
         <ScanSearch className="h-3.5 w-3.5" />
-        Analyze Status
+        <Trans>Analyze Status</Trans>
       </WizardButton>
       <ConfirmDialog
         open={confirmDone}
         onOpenChange={setConfirmDone}
         title={t`Mark this task as Done?`}
-        description="The analysis found every requirement satisfied and a submission recorded. Setting the status is yours to confirm."
-        confirmLabel="Mark Done"
-        cancelLabel="Not yet"
+        description={t`The analysis found every requirement satisfied and a submission recorded. Setting the status is yours to confirm.`}
+        confirmLabel={t`Mark Done`}
+        cancelLabel={t`Not yet`}
         onConfirm={markDone}
       />
     </>

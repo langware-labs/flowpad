@@ -1,5 +1,6 @@
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { useCallback } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { Conversation, type Task } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { buildConversationStatusPrompt } from './prompt-building';
@@ -39,6 +40,7 @@ export function ConversationHeaderSession({
   launchOnly?: boolean;
   testIdPrefix?: string;
 }) {
+  const { t } = useLingui();
   const { ensureMapped, dialogProps } = useProjectMappingGate(task ?? undefined, conversation ?? undefined);
   // Only called by a launch, which needs a conversation — so it has one here.
   const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversation!.typeId), [conversation]);
@@ -57,7 +59,7 @@ export function ConversationHeaderSession({
         {!launchOnly && conversationProcess && (
           <OpenSessionButton
             onOpen={open}
-            title="Open the conversation session"
+            title={t`Open the conversation session`}
             name={resolveProcessDisplayName(conversationProcess)}
             testIdPrefix={testIdPrefix}
           />

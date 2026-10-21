@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { Tag } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -14,7 +16,7 @@ interface EntityTypePopoverProps {
 }
 
 function chipLabel(value: string | null): string {
-  if (!value) return 'All types';
+  if (!value) return t`All types`;
   return TYPE_DISPLAY_NAMES[value] ?? value;
 }
 
@@ -39,24 +41,23 @@ export function EntityTypePopover({ value, onChange, allowedEntityTypes }: Entit
           <span>{chipLabel(value)}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-72 p-2"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
+      <PopoverContent align="start" className="w-72 p-2" onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="flex flex-wrap items-center gap-1">
           {showAll && (
             <button
               type="button"
-              onClick={() => { onChange(null); setOpen(false); }}
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
               className={cn(
                 'rounded px-1.5 py-0.5 text-xs transition-colors',
                 value === null
                   ? 'bg-primary/20 text-primary'
-                  : 'border border-border/50 bg-background text-muted-foreground hover:bg-muted hover:border-border',
+                  : 'border border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-muted',
               )}
             >
-              All
+              <Trans>All</Trans>
             </button>
           )}
           {types.map((t) => {
@@ -65,12 +66,15 @@ export function EntityTypePopover({ value, onChange, allowedEntityTypes }: Entit
               <button
                 key={t}
                 type="button"
-                onClick={() => { onChange(active ? null : t); setOpen(false); }}
+                onClick={() => {
+                  onChange(active ? null : t);
+                  setOpen(false);
+                }}
                 className={cn(
                   'rounded px-1.5 py-0.5 text-xs transition-colors',
                   active
                     ? (TYPE_COLORS[t] ?? 'bg-primary/20 text-primary')
-                    : 'border border-border/50 bg-background text-muted-foreground hover:bg-muted hover:border-border',
+                    : 'border border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-muted',
                 )}
               >
                 {TYPE_DISPLAY_NAMES[t] ?? t}

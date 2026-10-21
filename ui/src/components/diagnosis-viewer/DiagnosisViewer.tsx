@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { FlowpadDiagnosis, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -16,17 +17,15 @@ interface DiagnosisViewerProps {
  * arrow in the popup, or by navigating to the URL directly.
  */
 export function DiagnosisViewer({ pointer }: DiagnosisViewerProps) {
-  const typeId = useMemo(
-    () => (pointer ? new TypeId(FlowpadDiagnosis.type, pointer) : null),
-    [pointer],
-  );
+  const { t } = useLingui();
+  const typeId = useMemo(() => (pointer ? new TypeId(FlowpadDiagnosis.type, pointer) : null), [pointer]);
   const { data: diag } = useEntity<FlowpadDiagnosis>(typeId, { enabled: !!typeId });
   const Icon = iconForType(FlowpadDiagnosis.type);
 
   if (!pointer) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        No diagnosis selected.
+        <Trans>No diagnosis selected.</Trans>
       </div>
     );
   }
@@ -36,9 +35,7 @@ export function DiagnosisViewer({ pointer }: DiagnosisViewerProps) {
       <div className="mx-auto w-full max-w-3xl px-8 py-10">
         <div className="mb-8 flex items-center gap-3 border-b pb-5">
           <Icon className="h-7 w-7 shrink-0 text-muted-foreground" />
-          <h1 className="text-2xl font-semibold leading-tight">
-            {diag?.title || diag?.name || 'Diagnosis'}
-          </h1>
+          <h1 className="text-2xl font-semibold leading-tight">{diag?.title || diag?.name || t`Diagnosis`}</h1>
         </div>
         <DiagnosisDetails diagnosisId={pointer} variant="page" />
       </div>

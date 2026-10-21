@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Minus, Plus, Sparkles, User, Zap } from 'lucide-react';
 
 import { formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
@@ -34,6 +35,7 @@ function writeThinkingExpanded(entry: UnifiedEntry, expanded: boolean): void {
 }
 
 export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props) {
+  const { t } = useLingui();
   const [showThinking, setShowThinking] = useState(() => readThinkingExpanded(entry));
   const timestamp = formatEntryTime(entry);
 
@@ -58,16 +60,20 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
           </div>
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex items-center gap-2">
-              <span className="text-xs font-semibold text-blue-600">You</span>
+              <span className="text-xs font-semibold text-blue-600">
+                <Trans>You</Trans>
+              </span>
               <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               {entry.isSidechain && (
-                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
+                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">
+                  <Trans>sidechain</Trans>
+                </span>
               )}
             </div>
             <p
               className={`break-words text-sm leading-relaxed text-blue-700 dark:text-blue-300 ${isCollapsed ? 'line-clamp-3' : 'whitespace-pre-wrap'}`}
             >
-              {content || '(empty)'}
+              {content || t`(empty)`}
             </p>
             {canTruncate && (
               <button
@@ -76,7 +82,7 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
                 className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
               >
                 {isExpanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                {isExpanded ? 'Show less' : 'Show more'}
+                {isExpanded ? t`Show less` : t`Show more`}
               </button>
             )}
           </div>
@@ -106,7 +112,9 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
               <span className="text-xs font-semibold text-foreground/80">{workerLabel(entry.worker)}</span>
               <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               {entry.isSidechain && (
-                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
+                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">
+                  <Trans>sidechain</Trans>
+                </span>
               )}
               {isAdvanced && entry.usage && totalTokens > 0 && (
                 <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
@@ -139,7 +147,7 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
                     className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                   >
                     {isExpanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                    {isExpanded ? 'Show less' : 'Show more'}
+                    {isExpanded ? t`Show less` : t`Show more`}
                   </button>
                 )}
               </>
@@ -153,7 +161,7 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
                   <div className="ms-3 mt-3 rounded-e border-s-2 border-purple-400/60 bg-purple-500/[0.04] py-1.5 pe-2 ps-3 dark:border-purple-300/40 dark:bg-purple-400/[0.06]">
                     <div className="mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-purple-600/80 dark:text-purple-300/80">
                       <Sparkles className="h-2.5 w-2.5" />
-                      thinking
+                      <Trans>thinking</Trans>
                     </div>
                     <p
                       className={`break-words font-serif text-[12px] italic leading-relaxed text-purple-800/85 dark:text-purple-200/80 ${
@@ -169,7 +177,7 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
                         className="mt-1.5 flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200"
                       >
                         {showThinking ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                        {showThinking ? 'Show less' : 'Show more'}
+                        {showThinking ? t`Show less` : t`Show more`}
                       </button>
                     )}
                   </div>

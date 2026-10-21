@@ -1,7 +1,7 @@
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { SnifferScope, SnifferLevel, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
 import type { FilterMask } from '@src/hooks/use-event-filter-mask';
-import { Trans } from '@lingui/react/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import { Badge } from '@src/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
@@ -56,7 +56,7 @@ export function EventListPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-1 pb-1">
         <p className="text-xs font-medium text-muted-foreground">
-          {events.length} {events.length === 1 ? 'Event' : 'Events'} captured
+          <Plural value={events.length} one="# Event captured" other="# Events captured" />
         </p>
         {onClear && events.length > 0 && (
           <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={onClear}>

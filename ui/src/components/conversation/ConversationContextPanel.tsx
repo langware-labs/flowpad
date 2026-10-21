@@ -505,6 +505,8 @@ function SharedEntityRow({
   const isSpec = typeId.type === Spec.type;
   const primaryLabel = isSpec ? t`View` : t`Open`;
   const primaryIcon = isSpec ? <Eye className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />;
+  const typeWord = humanType(typeId.type);
+  const messageCount = originMessageIds.length;
   return (
     <Row
       icon={Icon}
@@ -513,9 +515,9 @@ function SharedEntityRow({
       isHighlighted={isHighlighted}
       onFocus={onSelect}
       focusTitle={
-        originMessageIds.length > 1
-          ? `Light up the ${originMessageIds.length} messages this is attached to`
-          : 'Reveal the message that introduced this'
+        messageCount > 1
+          ? t`Light up the ${messageCount} messages this is attached to`
+          : t`Reveal the message that introduced this`
       }
     >
       {missing ? (
@@ -525,9 +527,9 @@ function SharedEntityRow({
           onDownload={onDownload}
         />
       ) : needsDownload && onDownload ? (
-        <RowAction onClick={onDownload} title={`Download ${humanType(typeId.type)} — not pulled to this device yet`}>
+        <RowAction onClick={onDownload} title={t`Download ${typeWord} — not pulled to this device yet`}>
           <Download className="h-3 w-3" />
-          Download {humanType(typeId.type)}
+          <Trans>Download {typeWord}</Trans>
         </RowAction>
       ) : (
         <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>

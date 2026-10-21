@@ -42,7 +42,7 @@ import { useContext } from '@src/hooks/useContext';
 import { streamInboxConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { formatTimeAgo } from './project-activity-utils';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 
 const VISIBLE_COUNT = 5;
 
@@ -641,7 +641,7 @@ function ConversationRow({
           <span>{formatTimeAgo(conv.updated_date)}</span>
           {!isInvitationRow && messageCount > 0 && (
             <span>
-              · {messageCount} msg{messageCount === 1 ? '' : 's'}
+              · <Plural value={messageCount} one="# msg" other="# msgs" />
             </span>
           )}
           {!isInvitationRow && (conv.members?.length ?? 0) > 0 && (

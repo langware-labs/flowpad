@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { ViewerChatSlotProvider } from './ViewerChatToggle';
 import {
@@ -135,7 +136,7 @@ function ConnectingFallback() {
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
       <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-      Connecting…
+      <Trans>Connecting…</Trans>
     </div>
   );
 }
@@ -266,7 +267,9 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
 
   if (!ptr || !ptr.editor) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Invalid asset pointer</div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Trans>Invalid asset pointer</Trans>
+      </div>
     );
   }
 
@@ -676,12 +679,14 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
             wikiLinkTarget={wikiLinkTarget}
           />
         );
-      default:
+      default: {
+        const editorName = ptr.editor;
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            No editor for: {ptr.editor}
+            <Trans>No editor for: {editorName}</Trans>
           </div>
         );
+      }
     }
   })();
   // A received git share says which version it is, and offers the sender's

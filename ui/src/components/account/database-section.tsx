@@ -202,7 +202,7 @@ export function DatabaseSection() {
               className="flex h-8 flex-1 rounded-md border border-input bg-background px-2 py-1 font-mono text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <Button size="sm" disabled={isSwitching || !customInputValue.trim()} onClick={() => void applyCustomPath()}>
-              Apply
+              <Trans>Apply</Trans>
             </Button>
             <Button
               size="sm"
@@ -212,7 +212,7 @@ export function DatabaseSection() {
                 setCustomInputValue('');
               }}
             >
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
           </div>
         )}
