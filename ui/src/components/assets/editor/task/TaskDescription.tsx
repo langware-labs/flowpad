@@ -64,7 +64,7 @@ export function TaskDescription({ task, save, readOnly = false, heading }: TaskD
           text.trim() ? (
             <p className="whitespace-pre-wrap text-sm text-foreground/80">{text}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">No description</p>
+            <p className="text-sm text-muted-foreground">{t`No description`}</p>
           )
         ) : (
           <textarea

@@ -1,12 +1,6 @@
 import React from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@src/components/ui/table';
+import { Trans } from '@lingui/react/macro';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import {
   Pagination,
   PaginationContent,
@@ -43,7 +37,16 @@ function formatDate(iso: string): string {
   }
 }
 
-export function AssetDataTable({ results, total, page, pageSize, onPageChange, recordType, onRowClick, onProjectFilter }: Props) {
+export function AssetDataTable({
+  results,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  recordType,
+  onRowClick,
+  onProjectFilter,
+}: Props) {
   const typeColumns = getColumns(recordType);
   const colActions: ColumnActions = { filterByProject: onProjectFilter };
   const totalPages = Math.ceil(total / pageSize);
@@ -62,16 +65,19 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
     return trimmed.slice(0, lastSlash);
   }, []);
 
-  const openScopeFolder = React.useCallback(async (r: SearchRow) => {
-    if (!computeNode?.typeId) return;
-    const folder = folderPathForRow(r);
-    if (!folder) return;
-    try {
-      await fsManager.open(computeNode.typeId, folder.replace(/^\//, ''));
-    } catch (err) {
-      console.error('[AssetDataTable] Failed to open scope folder:', err);
-    }
-  }, [computeNode?.typeId, folderPathForRow]);
+  const openScopeFolder = React.useCallback(
+    async (r: SearchRow) => {
+      if (!computeNode?.typeId) return;
+      const folder = folderPathForRow(r);
+      if (!folder) return;
+      try {
+        await fsManager.open(computeNode.typeId, folder.replace(/^\//, ''));
+      } catch (err) {
+        console.error('[AssetDataTable] Failed to open scope folder:', err);
+      }
+    },
+    [computeNode?.typeId, folderPathForRow],
+  );
 
   // Build a project_id → display-name lookup so the scope column can render
   // human-readable project names instead of the project_id UUID. The API today
@@ -101,9 +107,10 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
         void openScopeFolder(r);
       };
       const tag = scopeTag(r.scope);
-      const projectLabel = r.scope === 'project'
-        ? ((r.project_name || (r.project_id ? projectNameById.get(r.project_id) : undefined)) ?? r.project_id ?? '')
-        : '';
+      const projectLabel =
+        r.scope === 'project'
+          ? ((r.project_name || (r.project_id ? projectNameById.get(r.project_id) : undefined)) ?? r.project_id ?? '')
+          : '';
       return React.createElement(
         'span',
         {
@@ -117,7 +124,9 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
           },
         },
         tag,
-        projectLabel ? React.createElement('span', { style: { fontSize: '12px', color: '#64748b' } }, projectLabel) : null,
+        projectLabel
+          ? React.createElement('span', { style: { fontSize: '12px', color: '#64748b' } }, projectLabel)
+          : null,
       );
     },
     [projectNameById, folderPathForRow, computeNode?.typeId, openScopeFolder],
@@ -132,23 +141,25 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
 
   // Merge base cols with per-type cols (deduplicate by key)
   const baseKeys = new Set(baseColumns.map((c) => c.key));
-  const allColumns = [
-    ...baseColumns,
-    ...typeColumns.filter((c) => !baseKeys.has(c.key)),
-  ];
+  const allColumns = [...baseColumns, ...typeColumns.filter((c) => !baseKeys.has(c.key))];
 
   if (results.length === 0) {
     return (
       <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-        No results found
+        <Trans>No results found</Trans>
       </div>
     );
   }
 
+  const rangeStart = (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="text-xs text-muted-foreground">
-        Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+        <Trans>
+          Showing {rangeStart}–{rangeEnd} of {total}
+        </Trans>
       </div>
       <Table>
         <TableHeader>
@@ -186,7 +197,9 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
             </PaginationItem>
             <PaginationItem>
               <span className="px-3 text-sm">
-                Page {page} of {totalPages}
+                <Trans>
+                  Page {page} of {totalPages}
+                </Trans>
               </span>
             </PaginationItem>
             <PaginationItem>

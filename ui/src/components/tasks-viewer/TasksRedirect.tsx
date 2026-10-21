@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Task, TypeId, isTypeId } from '@sdk';
@@ -14,11 +15,7 @@ export function TasksRedirect() {
 
   useEffect(() => {
     const head = pointer?.split('/')[0];
-    const typeId = head
-      ? isTypeId(head)
-        ? new TypeId(head)
-        : new TypeId(Task.type, head)
-      : null;
+    const typeId = head ? (isTypeId(head) ? new TypeId(head) : new TypeId(Task.type, head)) : null;
     navigation.replaceDock(
       typeId ? DockPointer.forAssetEditorByTypeId('task', typeId) : DockPointer.forAssetList('task'),
     );
@@ -26,7 +23,7 @@ export function TasksRedirect() {
 
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      Loading…
+      <Trans>Loading…</Trans>
     </div>
   );
 }

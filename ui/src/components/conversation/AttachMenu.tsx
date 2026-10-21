@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { Paperclip, FileUp, Boxes, X, ChevronDown } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { AssetDescriptor } from '@sdk';
@@ -82,7 +83,9 @@ export function AttachMenu({
             data-testid="attach-menu-trigger"
           >
             <Paperclip className="h-3.5 w-3.5" />
-            <span>Attach</span>
+            <span>
+              <Trans>Attach</Trans>
+            </span>
             <ChevronDown className="h-3 w-3" />
           </PopoverTrigger>
           <PopoverContent align="start" className="w-40 p-1">
@@ -96,7 +99,7 @@ export function AttachMenu({
               data-testid="attach-menu-file"
             >
               <FileUp className="h-3.5 w-3.5" />
-              File
+              <Trans>File</Trans>
             </button>
             <button
               type="button"
@@ -105,7 +108,7 @@ export function AttachMenu({
               data-testid="attach-menu-asset"
             >
               <Boxes className="h-3.5 w-3.5" />
-              Asset
+              <Trans>Asset</Trans>
             </button>
           </PopoverContent>
         </Popover>

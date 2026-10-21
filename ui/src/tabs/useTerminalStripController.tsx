@@ -452,7 +452,7 @@ export function useTerminalStripController({
         onOpenChange={setResumeByIdOpen}
         title={t`Resume Claude session`}
         description={t`Paste a Claude CLI session id (UUID) to resume it in a new tab.`}
-        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        placeholder={t`e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa`}
         confirmLabel={t`Resume`}
         onConfirm={(sessionId) =>
           resumeInTerminal(sessionId, undefined, undefined, undefined, { viewMode: ViewMode.Advanced })

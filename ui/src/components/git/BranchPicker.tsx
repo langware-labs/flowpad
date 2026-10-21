@@ -46,6 +46,8 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
     return pinDefault(matched, repo.default_branch);
   }, [branches, query, repo.default_branch]);
 
+  const errorMessage = error?.message ?? t`unknown error`;
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-xs">
@@ -76,7 +78,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load branches: {error?.message ?? 'unknown error'}
+            <Trans>Failed to load branches: {errorMessage}</Trans>
           </div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">

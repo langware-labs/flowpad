@@ -4,7 +4,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 
 export interface HookTableRow {
   id: string;
@@ -60,7 +60,7 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {rows.length} hook{rows.length !== 1 ? 's' : ''} configured
+          <Plural value={rows.length} one="# hook configured" other="# hooks configured" />
         </p>
         <Button onClick={onAddClick} size="sm">
           <Plus className="me-2 h-4 w-4" />

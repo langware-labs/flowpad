@@ -1,5 +1,6 @@
 import { cloudManager } from '@sdk';
 import { useCloudStatus } from '@sdk/react/hooks';
+import { Trans } from '@lingui/react/macro';
 import { ShieldAlert, LogIn } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { trackEvent } from '@src/utils/analytics';
@@ -48,9 +49,13 @@ export function SessionTakenOverOverlay() {
           <ShieldAlert className="h-6 w-6 text-destructive" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-foreground">Someone else is using this machine</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            <Trans>Someone else is using this machine</Trans>
+          </h3>
           <p className="text-xs text-muted-foreground">
-            Another person signed in to this shared machine, so you were signed out. Sign back in to take it back.
+            <Trans>
+              Another person signed in to this shared machine, so you were signed out. Sign back in to take it back.
+            </Trans>
           </p>
         </div>
         <Button
@@ -60,7 +65,7 @@ export function SessionTakenOverOverlay() {
           data-testid="session-taken-over-overlay-button"
         >
           <LogIn className="me-2 h-4 w-4" />
-          Log in
+          <Trans>Log in</Trans>
         </Button>
       </div>
     </div>

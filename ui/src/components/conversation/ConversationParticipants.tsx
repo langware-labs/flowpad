@@ -1,3 +1,5 @@
+import { plural } from '@lingui/core/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Users } from 'lucide-react';
 import { ConversationKind, isHelpdeskKind, type ConversationParticipant } from '@sdk';
@@ -37,6 +39,7 @@ interface ConversationParticipantsProps {
  * use MembersAvatarStack instead.
  */
 export function ConversationParticipants({ participants, kind }: ConversationParticipantsProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
   const { cloudUser, currentUser } = useAuth();
@@ -49,6 +52,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
   const others = participants.filter((p) => !participantIsUser(p, me));
   if (others.length === 0) return null;
 
+  const participantCount = participants.length;
   const allowNames = !isHelpdeskKind(kind);
   const showNames = allowNames && others.length <= NAME_LIMIT;
 
@@ -81,7 +85,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
             // navigate). The popover still opens — Radix's own handler runs.
             onClick={(e) => e.stopPropagation()}
             className="flex min-w-0 max-w-[150px] items-center gap-1 rounded text-muted-foreground transition-colors hover:text-foreground"
-            aria-label={`${participants.length} participant${participants.length === 1 ? '' : 's'}`}
+            aria-label={t`${plural(participantCount, { one: '# participant', other: '# participants' })}`}
             data-testid="conversation-participants"
           >
             <Users className="h-2.5 w-2.5 shrink-0" />
@@ -90,7 +94,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
         </PopoverTrigger>
         <PopoverContent align="start" side="top" className="w-56 p-2" onClick={(e) => e.stopPropagation()}>
           <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Participants ({participants.length})
+            <Trans>Participants ({participantCount})</Trans>
           </div>
           <ul className="flex flex-col gap-1">
             {participants.map((p, i) => {

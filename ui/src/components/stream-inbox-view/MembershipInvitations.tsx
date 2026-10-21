@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Invitation,
@@ -139,10 +140,14 @@ function MembershipInvitationRow({
   // Label + noun come from the backend type registry (never a hardcoded per-type
   // map), so coverage tracks the icon and can't drift as new target types ship.
   const typeLabel = labelForType(targetType);
-  const kindLabel = `${typeLabel} invitation`;
-  const noun = `the ${typeLabel.toLowerCase()}`;
-  const targetLabel = inv.target_name ? `${noun} “${inv.target_name}”` : noun;
-  const who = inv.sender_name ? `${inv.sender_name} invited you` : 'You’ve been invited';
+  const kindLabel = t`${typeLabel} invitation`;
+  const typeNoun = typeLabel.toLowerCase();
+  const noun = t`the ${typeNoun}`;
+  const targetName: string | undefined = inv.target_name;
+  const targetLabel = targetName ? t`${noun} “${targetName}”` : noun;
+  const senderName: string | undefined = inv.sender_name;
+  const who = senderName ? t`${senderName} invited you` : t`You’ve been invited`;
+  const role: string | undefined = inv.target_role;
 
   const accept = useCallback(async () => {
     if (!invitation.id) return;
@@ -203,18 +208,25 @@ function MembershipInvitationRow({
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{kindLabel}</div>
         <div className="truncate text-xs text-muted-foreground">
-          {who} to {targetLabel}
-          {inv.target_role ? ` as ${inv.target_role}` : ''}.
+          {role ? (
+            <Trans>
+              {who} to {targetLabel} as {role}.
+            </Trans>
+          ) : (
+            <Trans>
+              {who} to {targetLabel}.
+            </Trans>
+          )}
         </div>
         {inv.message && <div className="truncate text-xs text-muted-foreground/80">{inv.message}</div>}
       </div>
       <Button size="sm" disabled={busy !== null} onClick={() => void accept()}>
         {busy === 'accept' && <Loader2 className="h-4 w-4 animate-spin" />}
-        Accept
+        <Trans>Accept</Trans>
       </Button>
       <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void decline()}>
         {busy === 'decline' && <Loader2 className="h-4 w-4 animate-spin" />}
-        Decline
+        <Trans>Decline</Trans>
       </Button>
     </div>
   );

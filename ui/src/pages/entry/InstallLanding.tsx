@@ -150,6 +150,8 @@ export default function InstallLanding() {
     </div>
   );
 
+  const intentName = intent.name;
+
   return (
     <>
       {page}
@@ -158,11 +160,13 @@ export default function InstallLanding() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PackagePlus className="h-5 w-5" />
-              Where do you want to install {intent.name}?
+              <Trans>Where do you want to install {intentName}?</Trans>
             </DialogTitle>
             <DialogDescription>
-              Flowpad will propose the install on <code>{INSTALL_REVIEW_BRANCH}</code>. Your default branch is not
-              changed and no pull request is opened automatically.
+              <Trans>
+                Flowpad will propose the install on <code>{INSTALL_REVIEW_BRANCH}</code>. Your default branch is not
+                changed and no pull request is opened automatically.
+              </Trans>
             </DialogDescription>
           </DialogHeader>
 
@@ -208,7 +212,7 @@ export default function InstallLanding() {
               </div>
               <div className="mt-1 font-mono text-xs text-muted-foreground">{branch.name}</div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {intent.name} stays linked as shared project context after the workspace opens.
+                <Trans>{intentName} stays linked as shared project context after the workspace opens.</Trans>
               </p>
             </div>
           ) : null}

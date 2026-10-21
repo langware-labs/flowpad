@@ -292,7 +292,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
   const handleCopyLog = useCallback(() => {
     if (!data || !shell) return;
     const text = buildLogText(shell.id, data, chunks);
-    navigator.clipboard.writeText(text).then(() => {
+    void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -334,6 +334,8 @@ export function PTYViewer({ open, onClose, shell }: Props) {
   }, []);
 
   const baseTimestamp = chunks[0]?.timestamp;
+  const chunkSeq = selectedChunk?.seq;
+  const chunkSize = selectedChunk ? formatBytes(selectedChunk.size) : '';
 
   return (
     <Dialog
@@ -403,9 +405,15 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                 <table className="w-full font-mono text-xs">
                   <thead className="sticky top-0 bg-background">
                     <tr className="border-b text-muted-foreground">
-                      <th className="w-16 px-2 py-1 text-start">seq</th>
-                      <th className="w-24 px-2 py-1 text-start">time</th>
-                      <th className="w-16 px-2 py-1 text-end">size</th>
+                      <th className="w-16 px-2 py-1 text-start">
+                        <Trans>seq</Trans>
+                      </th>
+                      <th className="w-24 px-2 py-1 text-start">
+                        <Trans>time</Trans>
+                      </th>
+                      <th className="w-16 px-2 py-1 text-end">
+                        <Trans>size</Trans>
+                      </th>
                       <th className="px-2 py-1 text-start">
                         <span className="flex items-center gap-1">
                           <Trans>preview</Trans>
@@ -479,7 +487,9 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                 <div className="flex min-h-0 flex-1 flex-col ps-2">
                   <div className="mb-1 flex items-center justify-between border-b pb-1 text-xs text-muted-foreground">
                     <span>
-                      Chunk <b className="text-foreground">{selectedChunk.seq}</b> — {formatBytes(selectedChunk.size)}
+                      <Trans>
+                        Chunk <b className="text-foreground">{chunkSeq}</b> — {chunkSize}
+                      </Trans>
                     </span>
                     <div className="flex items-center gap-2">
                       <label className="flex cursor-pointer select-none items-center gap-1">

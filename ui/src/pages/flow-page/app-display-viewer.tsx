@@ -145,7 +145,10 @@ export function AppDisplayViewer({
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
   // (keyed on `src`) does not remount.
-  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, route, options: options ?? {} }, runtime ?? null);
+  const appDisplay = useAppDisplay(
+    { artifactId, microAppId, endpointId, route, options: options ?? {} },
+    runtime ?? null,
+  );
 
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
@@ -228,7 +231,7 @@ export function AppDisplayViewer({
   if (!appDisplay.src) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-        This app has no running dev server and no built output yet.
+        <Trans>This app has no running dev server and no built output yet.</Trans>
       </div>
     );
   }
@@ -261,21 +264,21 @@ export function AppDisplayViewer({
           </Button>
         </div>
       ) : (
-      <div className="min-h-0 flex-1">
-        <WebappDisplay
-          // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
-          // place leaves both the outgoing and incoming frames parked at opacity-0:
-          // the iframe registry activates a container on mount, and an in-place src
-          // change retires the old one without ever activating the new one.
-          key={appDisplay.src}
-          ref={frameRef}
-          endpoint={appDisplay.endpoint}
-          testId="vibe-app-frame"
-          src={appDisplay.src}
-          // The repair run attaches to the webapp definition when there is one.
-          targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
-        />
-      </div>
+        <div className="min-h-0 flex-1">
+          <WebappDisplay
+            // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
+            // place leaves both the outgoing and incoming frames parked at opacity-0:
+            // the iframe registry activates a container on mount, and an in-place src
+            // change retires the old one without ever activating the new one.
+            key={appDisplay.src}
+            ref={frameRef}
+            endpoint={appDisplay.endpoint}
+            testId="vibe-app-frame"
+            src={appDisplay.src}
+            // The repair run attaches to the webapp definition when there is one.
+            targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
+          />
+        </div>
       )}
     </div>
   );
@@ -284,18 +287,18 @@ export function AppDisplayViewer({
   // Files served as they are need nothing set up, wherever they live (a mock in $TMPDIR):
   // the tab belongs to the project, the page does not wait on it.
   const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
-  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.hostProcessId
-    ? (
-      <ProjectLoadGate
-        key={provider}
-        projectId={provider}
-        // An artifact-addressed app is judged on the webapp serving it, not the whole project.
-        asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
-      >
-        {display}
-      </ProjectLoadGate>
-    )
-    : display;
+  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.hostProcessId ? (
+    <ProjectLoadGate
+      key={provider}
+      projectId={provider}
+      // An artifact-addressed app is judged on the webapp serving it, not the whole project.
+      asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
+    >
+      {display}
+    </ProjectLoadGate>
+  ) : (
+    display
+  );
 }
 
 /** `host:port` of a direct address, for the toolbar label. */
