@@ -161,6 +161,15 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   // A folder's id (`…/<uuid>`) followed by `/rest` is one path going on.
   const tailWhole = WHOLE_FILE.test(tail.text) || (ENDS_WHOLE.test(tail.text) && !/^[/\\]/.test(head.text));
   if (tailWhole && (FRESH_START.test(head.text) || linkMatches(head.text)[0]?.text === head.text)) return undefined;
+  // An ASCII table is not a broken path: its rule row (`+----+`) names nothing, and a data
+  // row has more cells after a divider, where the rest of a path leaves its row's cells blank.
+  if (!/[\p{L}\p{N}]/u.test(head.text)) return undefined;
+  let divider = false;
+  for (let col = below.start + head.cells; col < below.end; col++) {
+    const char = shown(next, col);
+    if (char && BORDER.test(char)) divider = true;
+    else if (char && divider) return undefined;
+  }
   return { kind: 'hard', end: tail.end };
 }
 
