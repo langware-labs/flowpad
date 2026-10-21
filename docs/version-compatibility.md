@@ -149,6 +149,10 @@ flow compat --desktop-version 0.2.45 [--desktop-min-backend 0.2.50] [--json]
 # exit 0 = compatible, 1 = incompatible or broken metadata
 ```
 
+With `--json` the verdict uses the shared CLI envelope: `{"ok": true, "compatible": ..., "reasons": [...], ...}`
+(`ok` means the check ran; read `compatible` for the verdict). Broken metadata is
+`{"ok": false, "error_code": "INVALID_COMPAT_METADATA", "error": ...}` on stderr.
+
 ## Releasing
 
 - **Raising a floor** is a one-line edit to the owning file, in the same PR as the change that

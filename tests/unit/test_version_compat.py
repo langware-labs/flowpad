@@ -259,4 +259,25 @@ def test_flow_compat_json_verdict_is_machine_readable():
     out = CliRunner().invoke(app, ["compat", "--desktop-version", "99.0.0", "--json"])
     assert out.exit_code == 0, out.output
     data = json.loads(re.search(r"\{.*\}", out.output, re.S).group(0))
-    assert data["compatible"] is True and data["desktop_version"] == "99.0.0"
+    assert data["ok"] is True and data["compatible"] is True and data["desktop_version"] == "99.0.0"
+
+
+def test_flow_compat_json_uses_the_shared_envelope_for_an_incompatible_verdict(monkeypatch):
+    monkeypatch.setattr(compat, "backend_min_desktop_version", lambda path=None: "0.2.60")
+    out = CliRunner().invoke(app, ["compat", "--desktop-version", "0.2.45", "--json"])
+    assert out.exit_code == 1
+    data = json.loads(re.search(r"\{.*\}", out.output, re.S).group(0))
+    assert data["ok"] is True and data["compatible"] is False
+    assert data["reasons"]
+
+
+def test_flow_compat_json_reports_broken_metadata_as_an_error_envelope(monkeypatch):
+    def broken(path=None):
+        raise compat.CompatError("compat.json is not valid JSON")
+
+    monkeypatch.setattr(compat, "backend_min_desktop_version", broken)
+    out = CliRunner().invoke(app, ["compat", "--desktop-version", "99.0.0", "--json"])
+    assert out.exit_code == 1
+    data = json.loads(re.search(r"\{.*\}", out.output, re.S).group(0))
+    assert data["ok"] is False and data["error_code"] == "INVALID_COMPAT_METADATA"
+    assert "not valid JSON" in data["error"]
