@@ -45,8 +45,7 @@ def project(tmp_path, monkeypatch):
 
     monkeypatch.setattr(locations, "OPENER", opener)
     monkeypatch.setattr(locations, "source_refusal", refused)
-    locations._ready.clear()
-    locations._unready.clear()
+    locations._checked.clear()
 
     async def dataset(name="people", **fields):
         made = Dataset(id=str(uuid.uuid4()), name=name, asset_ref=str(root / "agentic-assets/dataset" / name),
@@ -155,5 +154,4 @@ async def test_a_source_knows_the_datasets_it_hosts(project):
     await project.dataset("c")
     drive = DataSource(id=str(uuid.uuid4()), name=name, provider="mem")
     assert sorted(d.name for d in await drive.datasets()) == ["a", "b"]
-    assert await drive.hosts_datasets()
-    assert not await DataSource(id=str(uuid.uuid4()), name="other", provider="mem").hosts_datasets()
+    assert not await DataSource(id=str(uuid.uuid4()), name="other", provider="mem").datasets()

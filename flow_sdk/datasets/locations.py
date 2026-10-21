@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import functools
 import hashlib
 import json
 import logging
@@ -122,30 +123,33 @@ def parse(value: Any) -> Location:
 
 # ── a dataset's data source ──────────────────────────────────────────────────────────────────────
 
-def project_root_of(folder: Path | str) -> Optional[Path]:
+def _project_of_folder(folder: Path | str) -> Optional[Path]:
     """The project a dataset folder sits in (the folder above its ``agentic-assets``), or None."""
-    for parent in Path(folder).parents:
-        if parent.name == "agentic-assets":
-            return parent.parent
-    return None
+    return next((parent.parent for parent in Path(folder).parents if parent.name == "agentic-assets"), None)
+
+
+@functools.lru_cache(maxsize=256)
+def _source_spec(manifest: str, mtime_ns: int) -> tuple[str, dict]:
+    """``(driver, config)`` of one ``data_source.json`` as ``DataSourceSpec`` reads it -- cached per file version."""
+    from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+    whole = load_json_dict(Path(manifest))
+    spec = DataSourceSpec.model_validate(whole["metadata"] if isinstance(whole.get("metadata"), dict) else whole)
+    return spec.provider, dict(spec.config)
 
 
 def source_document(folder: Path | str, name: str) -> dict:
     """``data_source.json`` of the source ``name`` in the project of the dataset in ``folder``, as
     ``{"provider", "config"}``; ``ValueError`` naming what is missing."""
-    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
-
-    root = project_root_of(folder)
+    root = _project_of_folder(folder)
     manifest = root / "agentic-assets" / "data_source" / name / "data_source.json" if root else None
     if manifest is None or not manifest.is_file():
         raise ValueError(f"data_source: the project has no data source {name!r} (agentic-assets/data_source/{name}/)")
-    whole = load_json_dict(manifest)
-    metadata = whole["metadata"] if isinstance(whole.get("metadata"), dict) else whole   # flat, as the source writes it
-    provider = metadata.get("data_driver_name") or metadata.get("provider") or ""
-    config = metadata.get("data_driver_config") or metadata.get("config") or {}
-    if not provider or not isinstance(config, dict):
+    provider, config = _source_spec(str(manifest), manifest.stat().st_mtime_ns)
+    if not provider:
         raise ValueError(f"data_source: {name!r} names no driver")
-    return {"provider": str(provider), "config": dict(config)}
+    return {"provider": provider, "config": dict(config)}
 
 
 def declared(folder: Path | str, source: Any, path: Any, location: Any) -> Any:
@@ -164,27 +168,25 @@ def declared(folder: Path | str, source: Any, path: Any, location: Any) -> Any:
     return value
 
 
-#: What keeps a named source's rows local on this machine: ``{(dataset folder, source): why}``. Filled
-#: by ``readiness`` (async: it asks the source's row); a source not asked yet reads as local too.
-_unready: dict[tuple[str, str], str] = {}
-_ready: set[tuple[str, str]] = set()
+#: What a named source answered for a dataset in this process: ``{(dataset folder, source): why}``, ``""``
+#: when the rows are in it. Filled by ``readiness`` (async: it asks the source's row).
+_checked: dict[tuple[str, str], str] = {}
 
 
-def held_back(folder: Path | str, source: Any) -> str:
+def held_back(folder: Path | str, source: Any) -> Optional[str]:
     """Why the rows of the dataset in ``folder`` stay local instead of in ``source`` -- ``""`` when
-    they are in it."""
+    they are in it, None when the source has not been asked yet in this process (the rows read as local)."""
     if source in (None, "", LOCAL):
         return ""
-    key = (str(folder), str(source))
-    if key in _ready:
-        return ""
-    return _unready.get(key, f"{source} has not been checked on this machine yet")
+    return _checked.get((str(folder), str(source)))
 
 
-def asked(folder: Path | str, source: Any) -> bool:
-    """Has this process asked ``source`` about the dataset in ``folder`` yet?"""
-    key = (str(folder), str(source))
-    return key in _ready or key in _unready
+def effective(folder: Path | str, source: Any, path: Any, location: Any) -> Location:
+    """Where a dataset's rows are NOW: its declared place, or the default local one while its source has
+    not said it can hold them. The one rule every reader and writer of the rows uses."""
+    if held_back(folder, source) != "":
+        return parse(None) if source not in (None, "", LOCAL) else parse(location)
+    return parse(declared(folder, source, path, location))
 
 
 async def source_refusal(name: str, project_id: str = "") -> str:
@@ -210,37 +212,41 @@ async def source_refusal(name: str, project_id: str = "") -> str:
     return ""
 
 
-async def readiness(dataset: Any) -> str:
+def remember(folder: Path | str, source: Any, why: str) -> None:
+    _checked[(str(folder), str(source))] = why
+
+
+async def readiness(dataset: Any, *, cached: bool = False) -> str:
     """Ask the dataset's source whether it can hold the rows now, and remember the answer for the
-    sync paths (``held_back``). ``""`` when the rows are in the source; else why they stay local."""
+    sync paths (``held_back``). ``""`` when the rows are in the source; else why they stay local.
+    ``cached``: an answer already given in this process stands (a source's verify refreshes it)."""
     source = getattr(dataset, "data_source", None)
     if source in (None, "", LOCAL) or not getattr(dataset, "asset_ref", ""):
         return ""
-    key = (str(dataset.asset_ref), str(source))
+    if cached and (held := held_back(dataset.asset_ref, source)) is not None:
+        return held
     try:
         why = await source_refusal(str(source), await project_of(dataset))
     except Exception as exc:  # noqa: BLE001 -- an index that cannot answer keeps the rows local, never fails a read
         why = f"{source} could not be checked ({exc})"
-    if why:
-        _ready.discard(key)
-        _unready[key] = why
-    else:
-        _unready.pop(key, None)
-        _ready.add(key)
+    remember(dataset.asset_ref, source, why)
     return why
 
 
-async def refresh_hosted(source: Any) -> None:
-    """Every dataset ``source`` hosts asks it again where its rows are, and its row says so."""
-    for dataset in await source.datasets():
-        before = getattr(dataset, "rows_note", "")
-        try:
-            await readiness(dataset)
-            dataset._location()
-            if dataset.rows_note != before:
-                await dataset.save()
-        except Exception:  # noqa: BLE001 -- one dataset's note never fails the source's check
-            logger.warning("dataset %s: could not refresh where its rows are", getattr(dataset, "name", ""), exc_info=True)
+async def refresh_hosted(source: Any, datasets: Optional[list] = None) -> None:
+    """Every dataset ``source`` hosts takes the source's answer -- asked once -- and its row says where its
+    rows are now."""
+    datasets = await source.datasets() if datasets is None else datasets
+    if not datasets:
+        return
+    try:
+        why = await source_refusal(str(source.name), str(getattr(source, "project_id", "") or ""))
+    except Exception as exc:  # noqa: BLE001 -- the check never fails over a note
+        why = f"{source.name} could not be checked ({exc})"
+    for dataset in datasets:
+        if getattr(dataset, "asset_ref", ""):
+            remember(dataset.asset_ref, source.name, why)
+            await dataset.note_where_rows_are()
 
 
 def rows_root(folder: Path | str, location: Location, dataset_id: str) -> Path:
@@ -268,9 +274,7 @@ def rows_root_of(folder: Path | str, header: Optional[dict] = None, dataset_id: 
 
         header = load_doc(folder / "dataset.json")[0]
     try:
-        if held_back(folder, header.get("data_source")):
-            return folder
-        location = parse(declared(folder, header.get("data_source"), header.get("path"), header.get("location")))
+        location = effective(folder, header.get("data_source"), header.get("path"), header.get("location"))
     except ValueError:
         return folder
     if location.kind == LOCAL:
@@ -731,8 +735,7 @@ async def move_rows(dataset: Any, value: Any) -> dict:
             final.parent.mkdir(parents=True, exist_ok=True)
             target.rename(final)
         if source is not None:   # moved there means it holds rows here: no need to ask again first
-            _unready.pop((str(dataset.asset_ref), str(source)), None)
-            _ready.add((str(dataset.asset_ref), str(source)))
+            remember(dataset.asset_ref, source, "")
     await dataset.save()
     return {"from": old.label(), "to": new.label(), "rows": len(there), "adopted": len(there_before),
             "conflicts": conflicts}

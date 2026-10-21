@@ -556,12 +556,11 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
         elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
             from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
-            from flow_sdk.datasets.locations import declared, held_back, parse, rows_root  # noqa: PLC0415
+            from flow_sdk.datasets.locations import effective, parse, rows_root  # noqa: PLC0415
 
             source = getattr(obj, "asset_ref", None)
-            named = getattr(obj, "data_source", None)
             try:   # the same rule ``rows_root_of`` reads them back by, for the folder written to
-                held = parse(None) if held_back(root, named) else parse(declared(root, named, getattr(obj, "path", None), getattr(obj, "location", None)))
+                held = effective(root, getattr(obj, "data_source", None), getattr(obj, "path", None), getattr(obj, "location", None))
             except ValueError:
                 held = parse(None)
             dataset_layout_for(getattr(obj, info.rows_layout_field)).write(

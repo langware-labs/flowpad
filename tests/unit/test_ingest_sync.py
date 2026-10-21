@@ -349,10 +349,10 @@ async def test_a_source_that_hosts_datasets_is_checked_never_ingested(monkeypatc
     driver = _FakeType(Pass(items=[_item(src.id, 1)], cursor="c1"), is_object=True)   # an object source, reflect=record
     DataDriver.register(driver)
 
-    async def hosts(self):
-        return True
+    async def hosted(self):
+        return ["a dataset"]
 
-    monkeypatch.setattr(DataSource, "hosts_datasets", hosts)
+    monkeypatch.setattr(DataSource, "datasets", hosted)
     report = await sync_source(src, now=NOW)
 
     assert report.created == 0 and driver.positions == []                                  # never traversed

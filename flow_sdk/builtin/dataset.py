@@ -310,7 +310,7 @@ class Dataset(ProjectedFields, Entity):
                 self._location()
             except ValueError as exc:   # a source the project does not declare: said, never raised here
                 object.__setattr__(self, "rows_at", "local")
-                object.__setattr__(self, "rows_note", f"kept locally: {exc}")
+                self._set_rows_note(str(exc))
         return self
 
     def of_kind(self, kind: RowKind) -> List[RowSpec]:
@@ -348,27 +348,32 @@ class Dataset(ProjectedFields, Entity):
         return Path(self.asset_ref)
 
     def _location(self) -> Any:
-        """Where the rows are now: the declared location (its ``source`` resolved), or the default
-        local one while that source is not set up on this machine -- parsed once per value (every row
-        access asks)."""
-        from flow_sdk.datasets.locations import asked, declared, held_back, parse  # noqa: PLC0415
+        """Where the rows are now (``locations.effective``): the declared place, or the default local one
+        while its source has not said it can hold them -- parsed once per value (every row access asks)."""
+        from flow_sdk.datasets.locations import effective, held_back, parse  # noqa: PLC0415
 
         why = held_back(self.asset_ref, self.data_source) if self.asset_ref else ""
         key = (self.location, self.data_source, self.path, self.asset_ref, why)
         held = getattr(self, "_parsed_location", None)
         if held is None or held[0] != key:
-            if why or (self.data_source and not self.asset_ref):
-                location = parse(None)
-            else:
-                location = parse(declared(self.asset_ref, self.data_source, self.path, self.location) if self.asset_ref else self.location)
-            held = (key, location)
-            object.__setattr__(self, "_parsed_location", held)
-            if why and not asked(self.asset_ref, self.data_source) and str(self.rows_note or "").startswith("kept locally: "):
-                pass   # not asked since this process started: the row's last answer stands
-            else:
-                object.__setattr__(self, "rows_note", f"kept locally: {why}" if why else "")
+            location = effective(self.asset_ref, self.data_source, self.path, self.location) if self.asset_ref else \
+                parse(None if self.data_source else self.location)
+            object.__setattr__(self, "_parsed_location", held := (key, location))
+            if why is not None:   # not asked yet in this process: the row's last answer stands
+                self._set_rows_note(why)
             object.__setattr__(self, "rows_at", location.label())
         return held[1]
+
+    def _set_rows_note(self, why: str) -> None:
+        object.__setattr__(self, "rows_note", f"kept locally: {why}" if why else "")
+
+    async def note_where_rows_are(self) -> None:
+        """Re-derive ``rows_at`` / ``rows_note`` from the source's latest answer; save the row when they
+        moved (the lists read them)."""
+        before = (self.rows_at, self.rows_note)
+        self._location()
+        if (self.rows_at, self.rows_note) != before:
+            await self.save()
 
     def _rows_root(self) -> Path:
         """The local folder whose ``rows/`` holds this dataset's rows: the dataset's own, the folder
@@ -388,11 +393,8 @@ class Dataset(ProjectedFields, Entity):
 
         self._folder()
         if self.data_source and not inside(self._rows_root()):
-            before = self.rows_note
-            await readiness(self)
-            self._location()
-            if self.rows_note != before:   # the row says where the rows are now (the lists read it)
-                await self.save()
+            await readiness(self, cached=True)   # a source's verify refreshes the answer (refresh_hosted)
+            await self.note_where_rows_are()
         async with session(self, self._location(), write=write) as root:
             yield root
 

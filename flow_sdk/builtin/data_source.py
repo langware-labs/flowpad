@@ -404,13 +404,14 @@ class DataSource(SetupSkippable, Entity):
         return ""
 
     # ── the datasets it hosts ──────────────────────────────────────────────
-    #: Set by ``verify`` from ``hosts_datasets`` for the driver's check (``SourceBinding.holds_rows``);
+    #: Set by ``verify`` (does it host datasets?) for the driver's check (``SourceBinding.holds_rows``);
     #: a fact about this run, never stored.
     holds_rows: bool = APIField(default=False, persist=Persist.FALSE, sharing=Sharing.PRIVATE)
 
     async def datasets(self) -> list:
         """The datasets whose rows this source holds (``"data_source": <name>`` in their dataset.json), in
-        this source's project."""
+        this source's project. A source that hosts any is a container, not a feed: a poll only proves it is
+        still set up, and nothing in it is ingested."""
         from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
 
         if not self.name:
@@ -419,11 +420,6 @@ class DataSource(SetupSkippable, Entity):
         if self.project_id:
             rows = [row for row in rows if str(getattr(row, "project_id", "") or self.project_id) == str(self.project_id)]
         return rows
-
-    async def hosts_datasets(self) -> bool:
-        """Does this source hold datasets' rows? Then it is a container, not a feed: a poll only proves it is
-        still set up, and nothing in it is ingested."""
-        return bool(await self.datasets())
 
     # ── the access pattern: declare → get and check → bind ──────────────────
     @classmethod
@@ -2200,14 +2196,17 @@ class DataSource(SetupSkippable, Entity):
             return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
         return ApiSuccessResponse(data=verdict)
 
-    async def verify(self) -> Optional[dict]:
+    async def verify(self, hosted: Optional[list] = None) -> Optional[dict]:
         """``_verify`` -- then the datasets this source hosts re-read where their rows are, so their
-        "kept locally" line follows the source's setup the moment it changes."""
+        "kept locally" line follows the source's setup the moment it changes. ``hosted``: those datasets,
+        when the caller already has them."""
+        hosted = await self.datasets() if hosted is None else hosted
+        self.holds_rows = bool(hosted)
         verdict = await self._verify()
-        if self.holds_rows:
+        if hosted:
             from flow_sdk.datasets.locations import refresh_hosted  # noqa: PLC0415
 
-            await refresh_hosted(self)
+            await refresh_hosted(self, hosted)
         return verdict
 
     async def _verify(self) -> Optional[dict]:
@@ -2232,7 +2231,6 @@ class DataSource(SetupSkippable, Entity):
         driver = self._driver()
         if driver is None:
             return None
-        self.holds_rows = await self.hosts_datasets()
 
         need = await self._verify_connection(driver) or await self._verify_credentials()
         if need is not None:

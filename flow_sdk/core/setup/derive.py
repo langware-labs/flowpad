@@ -246,7 +246,7 @@ class ProjectTree:
                 "steps": [{"id": "verify", "label": "Check the sign-in", "kind": "compute", "ref": op.name}],
             })
         label = str(source.name or source.provider)
-        hosted = len(await source.datasets()) if hasattr(source, "datasets") else 0
+        hosted = len(await source.datasets())
         if hosted:   # a container of datasets reads as one: what setting it up is for
             label = f"{label} · hosts {hosted} dataset{'s' if hosted != 1 else ''}"
         self.nodes[node_id] = SetupNode(
