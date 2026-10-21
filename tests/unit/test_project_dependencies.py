@@ -366,6 +366,19 @@ async def test_a_local_package_is_used_here_and_recorded_nowhere_in_the_project(
     assert project_dependencies.warnings_for(str(site.id), await site.dependencies()) == []
 
 
+async def test_adding_a_local_package_leaves_an_existing_flow_json_untouched(tmp_path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    site = await _project(tmp_path, "site")
+    root = Path(site.fs_storage_mount_path)
+    _declare(root, {"dependencies": {}})
+    before = (root / "flow.json").read_bytes()
+    await site.add_dependency(str(notes), local=True)
+    await site.dependencies()
+    assert (root / "flow.json").read_bytes() == before
+    assert [p.name for p in root.iterdir()] == ["flow.json"], "nothing else is written into the project"
+
+
 async def test_removing_a_local_package_leaves_its_folder_and_the_project_files(tmp_path):
     notes = tmp_path / "notes"
     notes.mkdir()

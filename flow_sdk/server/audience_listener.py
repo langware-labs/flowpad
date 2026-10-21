@@ -17,8 +17,11 @@ The door's three answers:
   ticket for THIS door (``server/grants.py``): trade it for the ``__Host-grant`` cookie, land on ``next``.
 * a valid grant for this door → serve the endpoint the grant names: a browser is told the
   caller the hub vouched for, and a static page is based at this door's origin.
-* no grant → a browser navigation is sent to the hub's ``open`` for the row this door serves, which
-  decides and issues a ticket; anything else is a 401. ``/__flowpad/*`` is reserved: 404.
+* no grant, at the ``app`` door → served as a visitor: ``app`` is the placement's PUBLIC face, what
+  someone built here, open to anyone with the link (``PUBLIC_AUDIENCES``). The app is told nobody.
+* no grant, at any other door (``admin``) → a browser navigation is sent to the hub's ``open`` for the
+  row this door serves, which decides and issues a ticket; anything else is a 401. ``/__flowpad/*`` is
+  reserved: 404.
 
 Unarmed (every desktop), there are no grants and nothing points a browser here; the doors answer
 a plain 404 and the app display loads a dev server at its own loopback address as before.
@@ -30,7 +33,7 @@ import asyncio
 import logging
 import time
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
@@ -42,9 +45,20 @@ from flow_sdk.schema.data_spec.service_endpoint_spec import WEB_AUDIENCES
 from flow_sdk.server import grants
 from flow_sdk.server.listener import Listener, serve_on_socket, stop_listener
 from flow_sdk.server.service_proxy import VISITOR, Grant
-from flow_sdk.server.service_serving import WS_POLICY, close, fail, serve_http, serve_socket
+from flow_sdk.server.service_serving import WS_POLICY, close, fail, serve_http, serve_socket, served
 
 logger = logging.getLogger(__name__)
+
+#: Doors a browser enters with no grant. ``app`` is public by default: an app made on this machine
+#: opens for whoever holds its link, with no hub round trip — a hub that never adopted the row (a
+#: sandbox's own placement) would otherwise refuse everyone, its owner included. ``admin`` stays gated.
+PUBLIC_AUDIENCES = frozenset({"app"})
+
+#: The app (route mount) a browser last opened at this door. An app served under a mount still asks
+#: for ABSOLUTE paths — a framework's own bundles (``/_next/…``), its API (``fetch('/api/…')``) — and
+#: those name no mount. The page's ``Referer`` says which app asked; this cookie answers when nothing
+#: does (a font a stylesheet loads, a WebSocket). Partitioned for the same reason as the grant cookie.
+ROUTE_COOKIE = "__flowpad_route"
 
 #: How long a door trusts its reading of an endpoint row: every asset of a page asks, and the row
 #: changes only when the placement is edited.
@@ -77,6 +91,39 @@ async def door_row(audience: str) -> Optional[ServiceEndpoint]:
         if row.backend.type == "routed" and not row.remote
     ]
     return max(rows, key=lambda r: r.updated_date or "", default=None)
+
+
+def page_mount(endpoint: ServiceEndpoint, path: str, host: str, headers, cookies) -> Optional[str]:
+    """The mount of the app that asked for *path*, when *path* is an absolute path no route serves — else
+    None. Read off the asking page (``Referer`` on this door's own host), then the remembered route."""
+    backend = endpoint.backend
+    if backend.type != "routed" or served(endpoint, path) is not None:
+        return None
+    referer = urlsplit(headers.get("referer") or "")
+    if referer.netloc == host:
+        head = referer.path.lstrip("/").partition("/")[0]
+        if head and head in backend.routes:
+            return head
+    remembered = cookies.get(ROUTE_COOKIE)
+    return remembered if remembered and remembered in backend.routes else None
+
+
+def _in_app(endpoint: ServiceEndpoint, path: str, host: str, headers, cookies) -> str:
+    """*path* as the route it belongs to: an absolute path an app asked for, placed under that app's mount."""
+    sub = path.lstrip("/")
+    mount = page_mount(endpoint, sub, host, headers, cookies)
+    return f"{mount}/{sub}" if mount else sub
+
+
+def _remember_route(response: Response, endpoint: ServiceEndpoint, sub: str) -> Response:
+    """Remember the app a page navigation opened, so its later absolute requests find their way back."""
+    if endpoint.backend.type == "routed":
+        mount = endpoint.backend.resolve(sub)[0]
+        if mount:
+            response.headers.append(
+                "set-cookie", f"{ROUTE_COOKIE}={quote(mount, safe='')}; Path=/; Secure; SameSite=None; Partitioned"
+            )
+    return response
 
 
 def hub_open_url(endpoint_id: str, next_path: str) -> Optional[str]:
@@ -126,12 +173,22 @@ class AudienceDoor:
                 request.query_params.get(grants.TICKET_PARAM), audience=self.audience, landing=landing
             )
             return traded if traded is not None else fail(403, "this link is not valid for this door")
+        host = request.headers.get("host") or request.url.netloc
+        origin = f"{_browser_scheme(request, None)}://{host}"
         admitted = await self._admitted(request.cookies, path)
         if admitted is None:
-            return await self._no_grant(request)
-        grant, endpoint = admitted
-        origin = f"{_browser_scheme(request, None)}://{request.headers.get('host') or request.url.netloc}"
-        return await serve_http(request, endpoint, path.lstrip("/"), user=_user(grant), base_root=origin)
+            if self.audience not in PUBLIC_AUDIENCES:
+                return await self._no_grant(request)
+            endpoint = await door_row(self.audience)
+            if endpoint is None:
+                return fail(404, f"nothing is served to the {self.audience} audience here")
+            user = None
+        else:
+            grant, endpoint = admitted
+            user = _user(grant)
+        sub = _in_app(endpoint, path, host, request.headers, request.cookies)
+        response = await serve_http(request, endpoint, sub, user=user, base_root=origin)
+        return _remember_route(response, endpoint, sub) if _wants_html(request) else response
 
     async def _no_grant(self, request: Request) -> Response:
         if request.method != "GET" or not _wants_html(request):
@@ -146,12 +203,22 @@ class AudienceDoor:
         return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
 
     async def socket(self, websocket: WebSocket) -> None:
-        admitted = await self._admitted(websocket.cookies, websocket.url.path)
-        if admitted is None or websocket.url.path.startswith(grants.RESERVED_PREFIX):
+        if websocket.url.path.startswith(grants.RESERVED_PREFIX):
             await close(websocket, WS_POLICY, "Forbidden")
             return
-        grant, endpoint = admitted
-        await serve_socket(websocket, endpoint, websocket.url.path.lstrip("/"), user=_user(grant))
+        admitted = await self._admitted(websocket.cookies, websocket.url.path)
+        if admitted is not None:
+            grant, endpoint = admitted
+            user = _user(grant)
+        else:
+            endpoint = await door_row(self.audience) if self.audience in PUBLIC_AUDIENCES else None
+            if endpoint is None:
+                await close(websocket, WS_POLICY, "Forbidden")
+                return
+            user = None
+        host = websocket.headers.get("host") or websocket.url.netloc
+        sub = _in_app(endpoint, websocket.url.path, host, websocket.headers, websocket.cookies)
+        await serve_socket(websocket, endpoint, sub, user=user)
 
 
 def _user(grant: Grant) -> Optional[str]:
@@ -182,4 +249,4 @@ async def stop() -> None:
     await asyncio.gather(*(stop_listener(door) for door in doors))
 
 
-__all__ = ["AudienceDoor", "start", "stop"]
+__all__ = ["PUBLIC_AUDIENCES", "AudienceDoor", "start", "stop"]

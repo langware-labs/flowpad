@@ -35,20 +35,39 @@ def app(tmp_path, monkeypatch):
     (folder / "index.html").write_text("ok")
     state = SimpleNamespace(endpoint=None, started=[], procs=[], rows={}, services={}, by_hand=[])
 
-    def make(*, install_cmd="", port=None, ports=None, package=False, start_cmd=SERVER, services=(), id="a1",
-             install_check="", at=None):
+    def make(
+        *,
+        install_cmd="",
+        port=None,
+        ports=None,
+        package=False,
+        start_cmd=SERVER,
+        services=(),
+        id="a1",
+        install_check="",
+        at=None,
+    ):
         home = at or folder
         home.mkdir(exist_ok=True)
         if package:
             (home / "package.json").write_text("{}")
-        serving = {"type": "proxy", "start_cmd": start_cmd, "health": "/", "install_cmd": install_cmd,
-                   "install_check": install_check}
+        serving = {
+            "type": "proxy",
+            "start_cmd": start_cmd,
+            "health": "/",
+            "install_cmd": install_cmd,
+            "install_check": install_check,
+        }
         if port:
             serving["port"] = port
         if ports:
             serving["ports"] = {"local": ports}
         row = SimpleNamespace(
-            id=id, name=home.name, asset_ref=str(home), build=".", project_id=None,
+            id=id,
+            name=home.name,
+            asset_ref=str(home),
+            build=".",
+            project_id=None,
             mounts=[WebappMountSpec(serving=serving)],
             services=[WebappServiceSpec.model_validate(service) for service in services],
         )
@@ -82,7 +101,10 @@ def app(tmp_path, monkeypatch):
         """A server somebody starts themselves, in the app folder — no Flowpad start involved."""
         proc = subprocess.Popen(  # noqa: S603
             command or [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
-            cwd=str(folder), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            cwd=str(folder),
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         state.by_hand.append(proc)
         assert dev_server.wait_for_port(port, 10), "the hand-started server never opened its port"
@@ -193,7 +215,7 @@ async def test_a_start_command_that_crashes_is_reported_at_once_with_its_own_wor
 @pytest.mark.asyncio
 async def test_a_server_that_opens_its_port_but_never_answers_is_killed_not_left_holding_it(app, monkeypatch):
     hang = (
-        f"{sys.executable} -c \"import socket,time; s=socket.socket(); "
+        f'{sys.executable} -c "import socket,time; s=socket.socket(); '
         "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
         "s.bind(('127.0.0.1', {port})); s.listen(); time.sleep(600)\""
     )
@@ -204,6 +226,37 @@ async def test_a_server_that_opens_its_port_but_never_answers_is_killed_not_left
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET and "does not answer" in answer.detail
     assert not _alive(app.started[0]), "the hung server we started must not outlive the failed start"
+
+
+@pytest.mark.asyncio
+async def test_a_start_the_machine_ran_out_of_memory_during_says_so(app, monkeypatch, tmp_path):
+    """A dev server the kernel killed for lack of memory looks, from here, like one that never answers.
+    Naming the real reason is the difference between "fix your app" and "this machine is too small"."""
+    vmstat = tmp_path / "vmstat"
+    vmstat.write_text("nr_free_pages 1\noom_kill 5\n")
+    monkeypatch.setattr(dev_server, "VMSTAT", vmstat)
+    # It opens its port, never answers, and meanwhile the kernel's out-of-memory counter moves.
+    starved = (
+        f'{sys.executable} -c "import pathlib,socket,time; '
+        f"pathlib.Path({str(vmstat)!r}).write_text('nr_free_pages 1\\noom_kill 6\\n'); "
+        "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
+        "s.bind(('127.0.0.1', {port})); s.listen(); time.sleep(600)\""
+    )
+    app.make(start_cmd=starved)
+    monkeypatch.setattr(webapp_setup, "PROBE_SECONDS", 0.5)
+    monkeypatch.setattr(webapp_setup, "START_SECONDS", 2.0)
+    answer = await webapp_setup.step("a1", "start", check=False)
+    assert answer.exit_code is ExitCode.NOT_YET
+    assert "ran out of memory" in answer.detail and "killed 1 process " in answer.detail, answer.detail
+    assert not _alive(app.started[0])
+
+
+def test_the_out_of_memory_count_is_unknown_where_the_system_does_not_keep_one(monkeypatch, tmp_path):
+    monkeypatch.setattr(dev_server, "VMSTAT", tmp_path / "absent")
+    assert dev_server.oom_kills() is None
+    (tmp_path / "vmstat").write_text("nr_free_pages 1\n")
+    monkeypatch.setattr(dev_server, "VMSTAT", tmp_path / "vmstat")
+    assert dev_server.oom_kills() is None
 
 
 @pytest.mark.asyncio
@@ -290,7 +343,9 @@ async def test_a_start_with_nowhere_to_record_its_endpoint_fails_and_leaves_noth
 
 @pytest.mark.asyncio
 async def test_an_app_that_is_only_files_has_nothing_to_set_up(app):
-    row = SimpleNamespace(id="a1", name="site", asset_ref=str(app.folder), build=".", project_id=None, mounts=[], services=[])
+    row = SimpleNamespace(
+        id="a1", name="site", asset_ref=str(app.folder), build=".", project_id=None, mounts=[], services=[]
+    )
     app.rows["a1"] = row
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.ok and not answer.ran
@@ -312,18 +367,28 @@ async def test_a_failed_recheck_answered_in_process_says_its_own_reason(monkeypa
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ReturnedValue
 
     async def step(webapp, which, *, check, display=""):
-        return ReturnedValue(exit_code=ExitCode.NOT_YET if check else ExitCode.OK,
-                             detail="port 3000 is held by another program" if check else "started")
+        return ReturnedValue(
+            exit_code=ExitCode.NOT_YET if check else ExitCode.OK,
+            detail="port 3000 is held by another program" if check else "started",
+        )
 
     monkeypatch.setattr(webapp_setup, "step", step)
-    op = ComputeOpSpec.model_validate({"name": "start", "label": "Start", "subkind": "cli",
-                                       "exe_data": {"webapp_step": "start"}, "completion_check": {"webapp_step": "start"}})
+    op = ComputeOpSpec.model_validate(
+        {
+            "name": "start",
+            "label": "Start",
+            "subkind": "cli",
+            "exe_data": {"webapp_step": "start"},
+            "completion_check": {"webapp_step": "start"},
+        }
+    )
 
     async def shell(command, **_kw):
         return CliResult.of_process(command, 0)
 
-    answer = await runner.run_op(op, trusted=True, platform="linux", workdir=tmp_path, shell=shell,
-                                 env={"FLOWPAD_WIZARD_INPUT_WEBAPP": "a1"})
+    answer = await runner.run_op(
+        op, trusted=True, platform="linux", workdir=tmp_path, shell=shell, env={"FLOWPAD_WIZARD_INPUT_WEBAPP": "a1"}
+    )
     assert answer.exit_code is ExitCode.NOT_YET
     assert answer.detail == "Start: port 3000 is held by another program"
 
@@ -400,7 +465,9 @@ async def test_a_required_port_held_by_another_program_names_who_holds_it_and_st
         for check in (True, False):
             answer = await webapp_setup.step("a1", "start", check=check)
             assert answer.exit_code is ExitCode.NOT_YET
-            assert f"port {port} is held by another program: " in answer.detail and f"(pid {os.getpid()})" in answer.detail
+            assert (
+                f"port {port} is held by another program: " in answer.detail and f"(pid {os.getpid()})" in answer.detail
+            )
     finally:
         held.close()
     assert app.started == [] and app.endpoint is None
@@ -424,7 +491,9 @@ async def test_a_preferred_port_that_is_busy_moves_to_a_free_one_and_says_so(app
 async def test_the_app_started_by_hand_on_another_port_than_it_requires_is_reported(app):
     wrong, right = _free(), _free()
     # Not the app's own start command: one started with exactly that is Flowpad's to move.
-    app.by_hand_start(wrong, command=[sys.executable, "-m", "http.server", str(wrong), "--bind", "127.0.0.1", "--directory", "."])
+    app.by_hand_start(
+        wrong, command=[sys.executable, "-m", "http.server", str(wrong), "--bind", "127.0.0.1", "--directory", "."]
+    )
     app.make(ports={"port": right, "required": True})
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET
@@ -440,9 +509,11 @@ async def test_the_server_outlives_the_shell_that_started_it_and_is_still_found_
     shell = app.started[0]
     import psutil
 
-    server = next(child for child in psutil.Process(shell).children(recursive=True) if child.pid != shell) if (
-        psutil.Process(shell).children()
-    ) else None
+    server = (
+        next(child for child in psutil.Process(shell).children(recursive=True) if child.pid != shell)
+        if (psutil.Process(shell).children())
+        else None
+    )
     if server is None:
         pytest.skip("this shell became the server itself: there is no shell to lose")
     os.kill(shell, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
@@ -540,7 +611,10 @@ async def test_two_apps_started_together_get_different_ports(app, tmp_path):
 
 
 def _service(port=None, command=None, name="api"):
-    serving = {"type": "proxy", "start_cmd": command or f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory ."}
+    serving = {
+        "type": "proxy",
+        "start_cmd": command or f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory .",
+    }
     if port:
         serving["ports"] = {"local": {"port": port}}
     return {"name": name, "protocol": {"spec_kind": "api.rest"}, "serving": serving}
@@ -634,7 +708,9 @@ async def test_the_ports_of_an_app_are_listed_declared_and_live(app):
     app.make(ports={"port": port}, services=[_service()])
     before = await webapp_setup.ports("a1")
     assert [(row["process"], row["declared"], row["state"], row["port"]) for row in before] == [
-        ("api", None, "stopped", None), ("page", port, "stopped", None)]
+        ("api", None, "stopped", None),
+        ("page", port, "stopped", None),
+    ]
     assert (await webapp_setup.step("a1", "start", check=False)).ok
     api, page = await webapp_setup.ports("a1")
     assert (page["state"], page["port"], page["required"]) == ("running", port, True) and page["pid"]
@@ -718,13 +794,12 @@ async def test_an_app_whose_folder_is_gone_reserves_no_port(app, tmp_path, monke
     assert await webapp_setup._project_apps(None) == []
 
 
-
 @pytest.mark.asyncio
 async def test_a_server_that_answers_a_moment_after_its_port_opens_is_up_on_the_first_start(app):
     """A container's published port opens at once and the server behind it answers later: the first
     start must not call that a failure (it did, and the container was left running behind it)."""
     late = (
-        f"{sys.executable} -c \"import socket,sys,time,http.server,threading; "
+        f'{sys.executable} -c "import socket,sys,time,http.server,threading; '
         "p=int(sys.argv[1]); s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
         "s.bind(('127.0.0.1', p)); s.listen(); time.sleep(1.5); s.close(); "
         "http.server.ThreadingHTTPServer(('127.0.0.1', p), http.server.SimpleHTTPRequestHandler).serve_forever()\" {port}"
