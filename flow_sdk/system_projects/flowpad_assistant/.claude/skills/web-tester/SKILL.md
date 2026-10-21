@@ -87,17 +87,20 @@ invent targets.
 
 Use `uv`'s ephemeral env so nothing is installed into the user's project. The
 Chromium binary lands in the shared Playwright cache (a tool cache, not a user dir),
-so this is a no-op after the first run:
+so this is a no-op after the first run. `--with-deps` also installs the system libraries
+Chromium links against (`libglib`, `libnss3`, `libX11`, …): a Flowpad sandbox is a slim
+image that ships without them, and without them the browser dies at launch with
+`error while loading shared libraries`. Where they are already present it changes nothing:
 
 ```bash
-uv run --with playwright python -m playwright install chromium
+uv run --with playwright python -m playwright install --with-deps chromium
 ```
 
 If `uv` isn't available, fall back to a venv **inside `$OUT`** (still isolated):
 
 ```bash
 python3 -m venv "$OUT/.venv" && "$OUT/.venv/bin/pip" -q install playwright \
-  && "$OUT/.venv/bin/python" -m playwright install chromium
+  && "$OUT/.venv/bin/python" -m playwright install --with-deps chromium
 ```
 
 ## 3. Run the sweep
