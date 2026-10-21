@@ -17,6 +17,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
+import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
@@ -80,6 +81,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
+  const introTranslations = profile.intro_translations ?? {};
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
@@ -376,8 +378,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   />
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
+                  <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
                     <Trans>Intro — shown as the agent's first message, not sent to the model</Trans>
+                    <AddIntroTranslationButton
+                      translations={introTranslations}
+                      onAdd={(code) => content.setField('intro_translations', { ...introTranslations, [code]: '' })}
+                    />
                   </div>
                   <Textarea
                     value={intro}
@@ -388,6 +394,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     data-testid="agent-intro-field"
                     className="min-h-16 resize-none text-sm"
                     rows={2}
+                  />
+                  <IntroTranslationFields
+                    translations={introTranslations}
+                    onChange={(next) => content.setField('intro_translations', next)}
+                    onCommit={(next) => commit('intro_translations', next)}
                   />
                 </div>
                 <AgentPhoneField
