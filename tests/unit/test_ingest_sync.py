@@ -340,3 +340,22 @@ async def test_only_a_proven_whole_listing_removes():
     assert (await sync_source(await _reread(src), now=NOW)).removed == 0
     assert (await sync_source(await _reread(src), now=NOW)).removed == 1
     assert await _stored(src) == {"item 1"}
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_source_that_hosts_datasets_is_checked_never_ingested(monkeypatch):
+    """A container of datasets' rows is not a feed: a poll proves it is set up, and nothing is fetched."""
+    src = await _source()
+    driver = _FakeType(Pass(items=[_item(src.id, 1)], cursor="c1"), is_object=True)   # an object source, reflect=record
+    DataDriver.register(driver)
+
+    async def hosts(self):
+        return True
+
+    monkeypatch.setattr(DataSource, "hosts_datasets", hosts)
+    report = await sync_source(src, now=NOW)
+
+    assert report.created == 0 and driver.positions == []                                  # never traversed
+    row = await _reread(src)
+    assert (row.health, row.error_code, row.cursor) == (SourceHealth.OK.value, None, None)
+    assert row.last_synced_at is not None

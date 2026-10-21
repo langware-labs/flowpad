@@ -262,6 +262,22 @@ export interface IDataset extends IEntity {
   /** Where the rows live (`dataset.json` `location`): `local` (the default), `file:<folder>`,
    *  `<driver>:<target>` (`gdrive:GTM/Rows`, `s3:bucket/prefix`), or a record system. */
   location?: DatasetLocation | null;
+  /** The data source the rows live in, by name — null/absent/`local` is the project's own file system. */
+  data_source?: string | null;
+  /** The folder inside that source. */
+  path?: string | null;
+  /** Where the rows are, as a person reads it (`local`, `gtm-drive · GTM Studio/gtm-personas`). */
+  rows_at?: string;
+  /** Why the rows are not where asked ("kept locally: Google Drive is not connected"), else "". */
+  rows_note?: string;
+}
+
+/** The name of the implicit data source every project has: its own file system. */
+export const LOCAL_SOURCE = 'local';
+
+/** The data source a dataset's rows live in — `local` when it names none. */
+export function datasetSourceName(dataset: { data_source?: string | null }): string {
+  return dataset.data_source || LOCAL_SOURCE;
 }
 
 /** A record system the rows live in: one record per row, shaped by `map`. */
