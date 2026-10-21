@@ -1826,6 +1826,11 @@ msgstr "المشروع الموجود على Hub يُجلب أينما فُتح 
 #~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "A project was shared with you"
+msgstr "تمت مشاركة مشروع معك"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "يوجد مشروع بهذا الاسم بالفعل"
 
@@ -25543,6 +25548,7 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Someone"
 msgstr "شخص ما"
