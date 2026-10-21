@@ -39,6 +39,9 @@ WINDOWS_APP = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Googl
 #: Drive for desktop's settings domain (macOS ``defaults``).
 SETTINGS_DOMAIN = "com.google.drivefs.settings"
 NOT_MOUNTED = "~/Google Drive (not mounted)"
+#: macOS keeps the Drive folder behind a privacy permission: the app running Flowpad needs it once.
+_ALLOW_ACCESS = ("macOS is not letting Flowpad into the Google Drive folder. Allow it once: System Settings → "
+                 "Privacy & Security → Files and Folders (or Full Disk Access) → the app Flowpad runs in.")
 
 
 class MountConfig(SourceConfig):
@@ -145,10 +148,13 @@ class MountedDriveSource(FolderSource):
             folder.mkdir(parents=True, exist_ok=True)   # a source holding rows makes its folder
         probe = folder / f".flowpad-check-{uuid.uuid4().hex[:8]}"
         try:
+            os.listdir(folder)               # reading is what macOS guards first: a write can pass while a list fails
             probe.write_bytes(b"ok")
             probe.unlink()
+        except PermissionError:
+            return Verdict(ready=False, detail=_ALLOW_ACCESS)
         except OSError as exc:
-            return Verdict(ready=False, detail=f"Cannot write in {folder}: {exc.strerror or exc}.")
+            return Verdict(ready=False, detail=f"Cannot use {folder}: {exc.strerror or exc}.")
         return Verdict(ready=True)
 
     @setup_step("install")
