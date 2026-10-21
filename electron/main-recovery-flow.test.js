@@ -103,6 +103,8 @@ function load(opts = {}) {
     async installLatest() { uv.installs = (uv.installs || 0) + 1; if (opts.installFails) throw opts.installFails(uv.installs); this._flowBin = '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.203'; }
+    installedPairIssue() { return null; }
+    async resolveCompatibleEngineVersion() { return null; }
     _toolVenvDir() { return venv; }
     async _pypiUpdateStatus() { return null; }
     deferPackageVersion() {}

@@ -1863,6 +1863,11 @@ msgstr "A project on the hub is fetched wherever this project opens; any other i
 #~ msgstr "A project on the hub, fetched by its id wherever this project opens."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "A project was shared with you"
+msgstr "A project was shared with you"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
 
@@ -6236,6 +6241,10 @@ msgstr "Compute Op"
 #: src/components/inbound/DestinationPicker.tsx
 msgid "compute_node-…"
 msgstr "compute_node-…"
+
+#: src/components/explorer-view/useExplorerModel.tsx
+msgid "Computer"
+msgstr "Computer"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
@@ -13080,6 +13089,7 @@ msgstr "History of {scopeLabel}’s budget"
 msgid "Holds"
 msgstr "Holds"
 
+#: src/components/explorer-view/useExplorerModel.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -21007,6 +21017,7 @@ msgstr "project"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
+#: src/components/explorer-view/useExplorerModel.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -26055,6 +26066,7 @@ msgstr "Some things need attention."
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Someone"
 msgstr "Someone"

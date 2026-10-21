@@ -66,7 +66,7 @@ pyproject.toml                      # Python package config (published to PyPI a
    - Dev mode (true):  Assume backend running externally
    - Prod mode (false): Run uv-based install and start:
      a. uvManager.ensureUv()         — ensure uv is available (auto-installs if needed)
-     b. uvManager.installLatest()    — uv tool install flowpad (from PyPI)
+     b. uvManager.installLatest()    — uv tool install flowpad==<newest release compatible with this desktop> (from PyPI)
      c. uvManager.start()            — flow start (launches server in background)
 5. Poll GET /api/v1/graph/bootstrap every 500ms (max 120 seconds)
 6. Backend responds 200 -> load UI from http://localhost:9007
@@ -178,11 +178,11 @@ Installs and manages the Python backend via `uv` and the `flow` CLI.
 
 **Methods:**
 - `ensureUv()` — Ensures uv is installed (auto-installs if needed)
-- `installLatest()` — Installs the flowpad package: `uv tool install flowpad` (from PyPI)
+- `installLatest()` — Installs the newest flowpad release that is compatible with this desktop in both directions (a pinned `uv tool install flowpad==X`; plain `flowpad` only when PyPI cannot be asked), then verifies the installed pair and rolls back on a mismatch — see [version-compatibility.md](version-compatibility.md)
 - `start()` — Runs `flow start` (launches backend server in background with monitoring)
 - `stop()` — Runs `flow stop` (terminates monitor and server processes)
 - `restart()` — Calls `stop()` then `start()`
-- `upgrade()` — Runs `uv tool upgrade flowpad`
+- `upgrade({ version })` — Installs the newest compatible release (or exactly `version`, if it still satisfies the contract) as a pinned `uv tool install flowpad==X`, then verifies the pair and restores the previous release on a mismatch
 
 **Cross-platform support:**
 - **Enriched PATH**: Prepends `~/.local/bin`, `~/.cargo/bin`, Homebrew paths, python.org framework paths, Windows Python/Scripts dirs
@@ -280,7 +280,12 @@ This runs the following steps in order:
 
 ### Version Synchronization
 
-The Electron app version (in `electron/package.json`) should match the PyPI package version (in `flow_sdk/_version.py`).
+The Electron app version (`electron/package.json`, overridden by `RELEASE_VERSION` in CI) and the
+PyPI package version (`flow_sdk/_version.py`) are **independent** release streams. What keeps an
+installed pair workable is the bidirectional compatibility contract — `electron/engine-compat.json`
+(`min_backend_version`) and `flow_sdk/compat.json` (`min_desktop_version`), enforced by
+`electron/engine-compat.js` / `flow_sdk/utils/compat.py`. See
+[`docs/version-compatibility.md`](version-compatibility.md).
 
 ### Platform Build Commands
 
@@ -321,7 +326,7 @@ To release a new version:
 5. Distribute the .dmg / .exe / .AppImage
 ```
 
-On first launch, the Electron app will `uv tool install flowpad` from PyPI.
+On first launch, the Electron app will `uv tool install flowpad==<newest compatible release>` from PyPI.
 
 ## Code Signing & Notarization
 
