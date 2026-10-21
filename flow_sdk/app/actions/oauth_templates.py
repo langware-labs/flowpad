@@ -10,32 +10,16 @@ from fastapi.responses import HTMLResponse
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.core.oauth.flows import AuthFlowResult
 
-#: Delivered: the initiating screen already confirmed it, so this page has no result
-#: to report — it just tells the user they can leave. It still TRIES window.close(),
-#: but that is refused for a tab opened externally and redirected through the provider
-#: ("Scripts may close only the windows that were opened by them"), so the message must
-#: be visible and styled: a bare window.close() left an empty body that dark mode paints
-#: solid black (FLOWPAD-2233).
+#: Delivered: the app already confirmed it over its socket, so this page only tells the
+#: user they can leave and tries to close itself. window.close() is refused for a tab the
+#: browser opened and redirected through the provider, so the text must be visible —
+#: color-scheme paints light text on a dark canvas, where a bare close() left a black void
+#: (FLOWPAD-2233).
 _CLOSE_ONLY_HTML = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>FlowPad</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f6f7f9; color: #1b1f23; }
-  main { background: #fff; border-radius: 12px; padding: 36px 40px; max-width: 420px; text-align: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06); }
-  p { margin: 0; color: #57606a; }
-  @media (prefers-color-scheme: dark) {
-    body { background: #0d1117; color: #e6edf3; }
-    main { background: #161b22; box-shadow: none; border: 1px solid #30363d; }
-    p { color: #8b949e; }
-  }
-</style></head>
-<body><main><p>This window is safe to close. Return to FlowPad to check the connection.</p></main>
-<script>try { window.close(); } catch (e) {}</script></body></html>
+<p style="font:15px/1.5 sans-serif;text-align:center;margin-top:40vh">This window is safe to close. Return to FlowPad to check the connection.</p>
+<script>window.close()</script>
 """
 
 _CONFIRMATION_HTML = """<!doctype html>
