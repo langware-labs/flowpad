@@ -279,15 +279,20 @@ async def refresh_all_hosted() -> None:
     """Every source that hosts datasets answers once -- at startup, so no dataset reads as local only
     because this process has not asked its source yet. Reads the source rows only; no network."""
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-    for source in await DataSource.get_all({}) or []:
+    # Only the sources some dataset names: ask the datasets, then look those sources up by name.
+    in_source = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["data_source"]))
+    names = sorted({str(d.data_source) for d in await Dataset.get_all(in_source) or [] if getattr(d, "data_source", None)})
+    sources = [s for name in names for s in await DataSource.get_all({"name": name}) or []]
+    for source in sources:
         try:
             if hosted := await source.datasets():
                 await refresh_hosted(source, hosted)
         except Exception:  # noqa: BLE001 -- one source never holds up the rest
             logger.warning("data source %s: could not tell its datasets where their rows are",
                            getattr(source, "name", ""), exc_info=True)
-
 
 #: The first-pull passes running now (held so a task is not collected mid-run).
 _filling: set = set()

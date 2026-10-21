@@ -10,8 +10,9 @@
 export function needsGitConnection(
   hubReflect: boolean,
   cloudFileTransport: string | null | undefined,
-  entity: { origin?: unknown; git_origin?: unknown } | null | undefined,
+  entity: object | null | undefined,
 ): boolean {
   if (!hubReflect || !entity || cloudFileTransport !== 'git') return false;
-  return !entity.origin && !entity.git_origin;
+  const { origin, git_origin } = entity as { origin?: unknown; git_origin?: unknown };
+  return !origin && !git_origin;
 }

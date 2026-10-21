@@ -18,7 +18,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _as(monkeypatch, code: str) -> None:
-    monkeypatch.setattr(self_update, "build_install_command", lambda _v: [sys.executable, "-c", code])
+    monkeypatch.setattr(self_update, "build_install_command", lambda _v, offline=False: [sys.executable, "-c", code])
 
 
 def test_a_clean_install_is_ok(monkeypatch):
