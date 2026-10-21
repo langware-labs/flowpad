@@ -164,6 +164,16 @@ export function serviceUrlOf(endpointId: string, path: string = '', route?: stri
 }
 
 /**
+ * `…/service_endpoint/<id>/open` — the hub's browser door into a web audience's app, or null for an
+ * endpoint that has none. The hub admits the caller and 302s into the app on its own host; the
+ * client names the door, never a host.
+ */
+export function browserDoorUrl(endpoint: Pick<IServiceEndpoint, 'id' | 'subkind'>): string | null {
+  if (!WEB_AUDIENCES.includes(endpoint.subkind as WebAudience)) return null;
+  return new ActionInfo('open', 'service_endpoint', endpoint.id, 'GET').fullActionUrl;
+}
+
+/**
  * One app as it is served on a placement — what a display loads, probes and repairs.
  *
  * An app is a ROUTE of its placement's audience proxy (`mount` on `endpoint`), so its address is
