@@ -497,13 +497,17 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                             setEditingId(d.id);
                           }}
                           disabled={!cardEnabled(d)}
-                          className="min-w-0 flex-1 truncate text-start text-sm hover:underline disabled:pointer-events-none"
-                          title={cardEnabled(d) ? t`Click to rename` : undefined}
+                          className="min-w-0 flex-1 truncate text-start text-sm font-semibold hover:underline disabled:pointer-events-none"
+                          title={d.name || t`Sandbox`}
                           data-testid="sandbox-name"
                         >
                           {d.name || t`Sandbox`}
                         </button>
                       )}
+                    </div>
+                    {/* Actions get their own line under the title, so a long name
+                    is not squeezed to a few letters by the buttons. */}
+                    <div className="flex items-center gap-3">
                       {/* A labelled button, and visible WITHOUT hovering.
                       Opening is the one thing you come to this card to do, and
                       as a hover-only icon it was both undiscoverable and
