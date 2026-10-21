@@ -941,10 +941,9 @@ msgstr "{0} سجل على القرص"
 msgid "{0} removed"
 msgstr "{0} محذوفة"
 
-#. placeholder {0}: d.num_rows ?? 0
 #: src/components/data-sources/HostedDatasets.tsx
-msgid "{0} rows"
-msgstr "{0} صفوف"
+#~ msgid "{0} rows"
+#~ msgstr "{0} صفوف"
 
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -14007,10 +14006,9 @@ msgstr "المضيف"
 msgid "Hosts"
 msgstr "يستضيف"
 
-#. placeholder {0}: datasets.length
 #: src/components/data-sources/HostedDatasets.tsx
-msgid "Hosts {0} datasets"
-msgstr "يستضيف {0} مجموعات بيانات"
+#~ msgid "Hosts {0} datasets"
+#~ msgstr "يستضيف {0} مجموعات بيانات"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "hosts {n} datasets"
