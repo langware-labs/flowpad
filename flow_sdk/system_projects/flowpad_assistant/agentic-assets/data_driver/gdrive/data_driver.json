@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "name": "gdrive",
-  "title": "Google Drive",
+  "title": "Google Drive (API)",
   "icon_name": "GoogleDrive",
-  "description": "Files from Drive \u2014 a whole drive or one folder of it \u2014 downloaded, indexed, and written back unless the source is read-only. Needs a Google connection.",
+  "description": "Files from Drive — a whole drive or one folder of it — downloaded, indexed, and written back unless the source is read-only. Needs a Google connection.",
   "kind": "datasource.fs.gdrive",
   "auth": {
     "connector": "google",
