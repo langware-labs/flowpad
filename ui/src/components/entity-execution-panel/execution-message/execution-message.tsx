@@ -119,7 +119,12 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
           language. Anything not on the whitelist renders exactly as written, and
           a user's own message is never rewritten.
         */}
-        <MarkdownView value={isUser ? currentContent : translateCliMessage(currentContent)} compact links={links} />
+        <MarkdownView
+          value={isUser ? currentContent : translateCliMessage(currentContent)}
+          compact
+          links={links}
+          typedListNumbers
+        />
         {isStreaming && (
           <span className="mt-1 inline-flex" aria-label={t`Assistant is responding`}>
             <DotPulse />

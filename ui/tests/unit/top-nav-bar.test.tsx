@@ -30,7 +30,7 @@ vi.mock('@src/navigation/use-history-nav', () => ({ useHistoryNav: () => nav }))
 // The magic line asks NavigationDecision first; by default it answers like a box with no
 // decision API -- the prompt, unchanged -- so every ask below is today's ask.
 const navigationDecision = vi.hoisted(() =>
-  vi.fn(async (utterance: string) => ({ decision: { route: 'agentic' }, candidates: [], prompt: utterance })),
+  vi.fn((utterance: string) => Promise.resolve({ decision: { route: 'agentic' }, candidates: [], prompt: utterance })),
 );
 vi.mock('@sdk/decision', () => ({ navigationDecision }));
 // The bar's Home falls back to the app root through the router.
@@ -214,8 +214,8 @@ describe('the navigation bar', () => {
   it('disables each history button when there is nowhere to go', () => {
     renderBar();
 
-    expect((screen.getByTestId('top-nav-back') as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByTestId('top-nav-forward') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('top-nav-back').disabled).toBe(false);
+    expect(screen.getByTestId('top-nav-forward').disabled).toBe(true);
   });
 
   it('carries Home, which the rail no longer does', () => {
@@ -224,19 +224,18 @@ describe('the navigation bar', () => {
     expect(screen.getByTestId('top-nav-home')).toBeTruthy();
   });
 
-  describe('Home always opens the main home', () => {
-    it.each([
-      { tabHash: 'h1' },
-      { viewType: 'home', tabHash: null },
-      { viewType: 'project', pointer: PROJECT_ID },
-    ])('opens the main home from %j', async (current) => {
-      dock.current = current;
-      renderBar();
+  describe('Home always asks for the project home page', () => {
+    it.each([{ tabHash: 'h1' }, { viewType: 'home', tabHash: null }, { viewType: 'project', pointer: PROJECT_ID }])(
+      'asks for the project home page from %j',
+      async (current) => {
+        dock.current = current;
+        renderBar();
 
-      expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
-      await userEvent.click(screen.getByTestId('top-nav-home'));
-      expect(goHome).toHaveBeenCalledWith();
-    });
+        expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
+        await userEvent.click(screen.getByTestId('top-nav-home'));
+        expect(goHome).toHaveBeenCalledWith({ homePage: true });
+      },
+    );
   });
 
   // Inherited from the rail's project item when that icon moved up here
