@@ -513,6 +513,10 @@
     if (!row) throw new Error(`no mock row "${CFG.key}" in the mocks dataset`);
     const changed = row.version !== data.mock?.version;
     data.mock = row;
+    // A fast mock is the person's choice, never the builder's: without its reason it is not reviewable.
+    if (row.input.mode === 'fast' && !(row.input.fast_reason || '').trim()) {
+      throw new Error('fast mock without fast_reason — rebuild it in real mode (SKILL.md §2)');
+    }
     J = row.input.journey || [];
     if (changed) render();
   });

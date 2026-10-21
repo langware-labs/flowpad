@@ -103,24 +103,6 @@ function mountWithShownDoc(): void {
   act(() => showListener?.({ kind: 'vfs', path: DOC_PATH }));
 }
 
-/**
- * Follow the navigation a `flow show` now performs: land on the display address
- * it opened and re-render as a workspace CHILD, which is where the display
- * chrome (promote, history, annotate) lives once the display is a URL.
- */
-function landOnShownDisplay(): DockPointer {
-  const displayed = lastOpened();
-  currentDock = displayed;
-  session.onProcessUrl = false;
-  cleanup();
-  render(
-    <Wrap>
-      <VibeWorkspace session={session as never} />
-    </Wrap>,
-  );
-  return displayed;
-}
-
 /** The dock the last click navigated to. */
 function lastOpened(): DockPointer {
   return openDock.mock.calls.at(-1)![0] as DockPointer;
@@ -170,28 +152,6 @@ afterEach(() => {
 });
 
 describe('vibe display → promoting a shown document to its own tab', () => {
-  it('the toolbar button opens the doc, and the tab it mints stays that doc', () => {
-    mountWithShownDoc();
-    // The show itself is now a navigation onto the display's own address, and
-    // that address is REPLACEABLE — the agent's next show re-points it.
-    const displayed = landOnShownDisplay();
-    expect(displayed.isActiveDisplay).toBe(true);
-    expect(displayed.pointer).toContain(DOC_NAME);
-
-    openDock.mockReset();
-    fireEvent.click(screen.getByTestId('display-open-in-tab'));
-    const opened = lastOpened();
-    // Promotion is the SAME address minus the marker: that is the whole difference
-    // between the row the agent owns and the one the user now owns.
-    expect(opened.isActiveDisplay).toBe(false);
-    expect(opened.pointer).toContain(DOC_NAME);
-    cleanup();
-
-    const { label, reopened } = chipFor(opened);
-    expect(label).toBe(DOC_NAME); // (A) the chip still names the document
-    expect(reopened.pointer ?? '').toContain(DOC_NAME); // (B) it reopens the document
-  });
-
   it('the display-history popover promotes a past display the same way', () => {
     mountWithShownDoc();
     openDock.mockReset();
@@ -228,6 +188,5 @@ describe('vibe display → promoting a shown document to its own tab', () => {
     const opened = lastOpened();
     expect(opened.viewType).toBe('app');
     expect(opened.pointer).toBe('service_endpoint-e1');
-    expect(opened.isActiveDisplay).toBe(false);
   });
 });

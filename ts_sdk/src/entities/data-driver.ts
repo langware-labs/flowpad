@@ -120,6 +120,8 @@ export interface IDataDriver extends IEntity {
   family?: DataSourceFamily;
   /** A message source that answers on its channel: it sends and replies. */
   sends?: boolean;
+  /** A dataset's rows can live in a store of this driver (`"location": "<name>:<target>"`). */
+  holds_rows?: boolean;
   /** Why the folder's source did not load, or empty. */
   load_error?: string;
   /** What a person calls the sign-in it reads through (`GitHub`), or empty when it needs none. */

@@ -105,7 +105,7 @@ def register_discovery_functions(idx: FSIndexer) -> None:
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.markdown import markdown_in_folder_fn
+    from flow_sdk.fs_store.indexer.functions.markdown import document_files_in_folder_fn, markdown_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.mcp_server import (
         mcp_servers_in_file_fn,
         mcp_source_files_fn,
@@ -201,6 +201,7 @@ def register_discovery_functions(idx: FSIndexer) -> None:
     # every ``.md`` under a family dir another type claims, and the skill doc
     # by name) is a cross-type rule the per-type ``Walk`` cannot state.
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
+    idx.add_function(RecordType.FOLDER, document_files_in_folder_fn, RecordType.DOCUMENT_FILE)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
 
     # Declared walks. Every type carrying ``TypeInfo.walk`` is scanned by the

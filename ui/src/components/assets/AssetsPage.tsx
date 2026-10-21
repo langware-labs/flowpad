@@ -641,7 +641,7 @@ export function AssetsPage() {
                 />
                 <div className="min-h-0 flex-1">
                   <AssetListView
-                    recordType="markdown"
+                    recordType={`${RecordType.MARKDOWN},${RecordType.DOCUMENT_FILE}`}
                     onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
                     refreshKey={refreshKey}
                     onRowClick={hasEditor('markdown') ? handleRowClick : undefined}

@@ -75,25 +75,31 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
 - `repo` is the repo root (absolute) — where **💾 Save to repo** puts the mock (§8).
 - `DM check` the value against `mockify.mock` before the put; a refused put writes nothing.
 
-## 2. Pick the mode — real is the default
+## 2. The mode is real — fast only when the person says so
 
 | mode | when | fidelity |
 |---|---|---|
-| **real** (default) | any screen of an app that runs here — Flowpad, the user's app — new, redesigned or existing | identical |
-| **fast** | only a product that does not run here (a third-party site), or when the user asks for a rough sketch | recognisable |
+| **real** (always, for an app that runs here) | any screen of Flowpad or the user's app — new, redesigned or existing | identical |
+| **fast** | ONLY (a) the person asked for a rough sketch in their own words, or (b) the product does not run here at all (a third-party site) | recognisable |
 
-Use **real** unless one of fast's two reasons holds. A screen being "new" is not one: every redesigned
-screen is new, and it still has to be built from the app's own components. `/sdk/flowpad.css` carries
-tokens only (colours, radius, theme) — no button, card, tab, badge or dialog — so a fast Flowpad screen is
-hand-made components that match the colours and miss the shapes. When the user says the mock "doesn't
-look like our app", it was built fast: rebuild it real — do not restyle by hand again.
+**You do not get to pick fast.** Effort is never a reason: "the state is hard to reach", "it needs an agent /
+a test instance / a running app", "it would take long" — none of those. Reach the state (`reference/real-capture.md`
+§2 has the recipe for the hard ones, including a Vibe tab with a project app running). If you truly cannot,
+STOP and ask the person; do not build fast and explain afterwards.
+
+A fast mock's row MUST carry `fast_reason` — the person's quoted words, or the product that does not run
+here. The journey bar refuses a fast mock without it (the bar shows the error instead of the journey), so
+there is no silent fallback.
+
+**Keep everything that is not under discussion.** Every screen starts from a full-window capture — top bar,
+rail, tab rows, status bar. Change only what the proposal changes. A control missing from a mock reads as
+"remove it": a hand-drawn frame that dropped the nav buttons and the favourites star was read exactly that way.
 
 - **real**: follow `reference/real-capture.md` — capture the live app's DOM and CSS on a test instance,
   build new screens by cloning its real elements and using its components' own classes (checked with
   `scripts/check_classes.py`), assemble with `scripts/build_mock.py --key <slug> --project <project_id>` into the same webapp folder.
-- **fast**: copy `templates/fast-mock/` to `<mock project>/agentic-assets/webapp/mock-<slug>/`, fill
-  `webapp.json`, set `MOCKIFY.key = '<slug>'` and `MOCKIFY.project = '<project_id>'` (from §0), one `<section data-step="<id>">` per step. The product gets its
-  recognisable frame (colours, font, logo text); a Flowpad sketch uses `/sdk/flowpad.css` for its tokens.
+- **fast** (with `fast_reason`): copy `templates/fast-mock/` to `<mock project>/agentic-assets/webapp/mock-<slug>/`, fill
+  `webapp.json`, set `MOCKIFY.key = '<slug>'` and `MOCKIFY.project = '<project_id>'` (from §0), one `<section data-step="<id>">` per step.
 
 ## 3. The journey bar — always, never hand-made
 
@@ -138,9 +144,12 @@ and go, `DM ds-rows`). Real mode: put each new screen beside the live app (`refe
 Phone width: when the window will not resize, load the mock in a 390px `<iframe>` on a scratch page.
 Never report a mock you have not looked at.
 
+**Real mode: the side-by-side is required.** Put the first screen beside the live app, screenshot both, and
+attach the pair in your reply. No pair, no presenting.
+
 ## 6. Present
 
-`flow show webapp` with the served app, then reply with: the step list (one line each), what is real vs
+`flow show webapp` with the served app, then reply with: the mode in the first line (and `fast_reason` if fast), the side-by-side pair, the step list (one line each), what is real vs
 invented, the open decisions (D1…), and one line: "Walk it, use 🎯 or ☰ → 💬 Feedback to leave a comment or
 an image, then **▶ Execute** sends me what you have so far (☰ → Review shows exactly what I receive)." Mention anything the real app did along the
 way that looked wrong.

@@ -3,8 +3,8 @@
 A provider's ``scopes`` are what every connection of it consents to. Some permissions are needed only by
 some uses: writing back to Drive needs full ``drive`` where reading needs ``drive.readonly``. Those
 are asked for exactly while something on this machine needs them — a data source that writes back
-(not ``read_only``) and whose driver declares a ``writes`` permission on this connection — so a person
-who only reads never consents to more. A local provider bounds them by its ``optional_scopes``; a hub
+(not ``read_only``), or a dataset whose rows live in a store of that driver (its ``location``), whose
+driver declares a ``writes`` permission on this connection — so a person who only reads never consents to more. A local provider bounds them by its ``optional_scopes``; a hub
 provider's own manifest bounds them on the hub.
 
 A declared credential whose ONE_OF group offers a sign-in with this provider as one of its ways wants that
@@ -22,15 +22,22 @@ async def wanted_extra_scopes(provider: str) -> list[str]:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_registry import get_local_provider, local_providers  # noqa: PLC0415
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
-    from flow_sdk.permissions import write_scopes_of_driver  # noqa: PLC0415
+    from flow_sdk.permissions import row_scopes_of_driver, write_scopes_of_driver  # noqa: PLC0415
 
     asked = (provider or "").strip().lower()
     local = get_local_provider(asked) or next((p for p in local_providers() if (p.hub_name or "").lower() == asked), None)
     names = {asked, *([local.name.lower(), (local.hub_name or "").lower()] if local is not None else [])} - {""}
     wanted: set[str] = set()
+    holding = await _drivers_holding_rows()
     # Only the drivers that write through this connection, then whether any of their sources writes back.
+    def for_this(by_connector: dict[str, list[str]]) -> list[str]:
+        return [s for connector, listed in by_connector.items() if connector.lower() in names for s in listed]
+
     for driver in DRIVERS.kinds():
-        scopes = [s for connector, listed in write_scopes_of_driver(driver).items() if connector.lower() in names for s in listed]
+        if driver in holding:
+            wanted.update(for_this(row_scopes_of_driver(driver)))
+            continue
+        scopes = for_this(write_scopes_of_driver(driver))
         if not scopes:
             continue
         try:
@@ -45,6 +52,31 @@ async def wanted_extra_scopes(provider: str) -> list[str]:
         wanted &= set(local.optional_scopes)
         wanted -= set(local.scopes)
     return sorted(wanted)
+
+
+async def _drivers_holding_rows() -> set[str]:
+    """The drivers whose stores hold a dataset's rows on this machine (``location`` ``<driver>:<target>``,
+    or a record system that is not ``read_only``): keeping rows there writes."""
+    from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+    from flow_sdk.datasets.locations import parse  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    try:
+        # Only the datasets that name a location: one without keeps its rows locally.
+        placed = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["location"]))
+        datasets = await Dataset.get_all(placed) or []
+    except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
+        logger.warning("[oauth] could not list datasets for their locations' scopes", exc_info=True)
+        return set()
+    out: set[str] = set()
+    for dataset in datasets:
+        try:
+            location = parse(getattr(dataset, "location", None))
+        except ValueError:
+            continue
+        if location.remote and not location.read_only:
+            out.add(location.driver)
+    return out
 
 
 async def _credential_way_scopes(names: set[str]) -> set[str]:

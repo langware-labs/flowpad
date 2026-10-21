@@ -48,6 +48,11 @@ def get_current_request_info():
     return None
 
 
+def split_record_types(record_type: str) -> list[str]:
+    """``record_type`` may be a comma list ("markdown,document_file") matching any of them."""
+    return [t.strip() for t in record_type.split(",") if t.strip()]
+
+
 class TransactionHandler:
     pass
 
@@ -809,8 +814,11 @@ class SQLiteDBDriver(DBDriver):
             fetch_limit = limit + (cal.overfetch or 0)
             params: dict[str, Any] = {"query": fts_query, "limit": fetch_limit}
             if record_type:
-                sql += " AND e.type = :record_type"
-                params["record_type"] = record_type
+                # A comma list ("markdown,document_file") matches any of the types.
+                types = split_record_types(record_type)
+                marks = ", ".join(f":record_type_{i}" for i in range(len(types)))
+                sql += f" AND e.type IN ({marks})"
+                params.update({f"record_type_{i}": t for i, t in enumerate(types)})
             if status:
                 sql += " AND json_extract(e.data, '$.status') = :status"
                 params["status"] = status

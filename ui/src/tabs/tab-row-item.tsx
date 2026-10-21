@@ -36,7 +36,7 @@ import { useTabLifecycles } from '@src/tabs/use-tab-manager';
 import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
 import { DocTabCard } from '@src/tabs/doc-tab-card';
 import { EntityCard, UrlTabCard } from '@src/components/entity-card/EntityCard';
-import { isReviewableDocDock } from '@src/navigation/content-asset-dock';
+import { offersDocChat } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
@@ -103,7 +103,7 @@ function tabFavorite(tab: Tab, title: string): FavoriteRef | null {
  *  decides which hover card to show by whether this is set. */
 function docCard(props: Omit<React.ComponentProps<typeof DocTabCard>, 'dock'> & { dock?: DockPointer | null }) {
   const { dock } = props;
-  if (!dock || !isReviewableDocDock(dock)) return undefined;
+  if (!dock || !offersDocChat(dock)) return undefined;
   return <DocTabCard {...props} dock={dock} />;
 }
 

@@ -22,7 +22,7 @@ export function ProcessSourceChips({ process }: { process: AgenticProcess }) {
         .filter((tid) => isSource(tid.type))
         .map((tid) => (
           <span key={String(tid)} data-testid={`process-source-${tid.type}`}>
-            <ContextEntityChip typeId={tid} />
+            <ContextEntityChip typeId={tid} collapsed />
           </span>
         ))}
     </span>

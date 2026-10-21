@@ -5,7 +5,7 @@ Covers the doc-folder scope (only ``.md`` inside a ``docs``/``doc`` folder is a
 document — a project-root README is not) plus the full gitignore matcher
 contract: ``_WALK_IGNORED`` fast-path, ``.claude/`` force-include, file- and
 dir-pattern ``.gitignore`` rules, nested ``.gitignore`` last-match-wins, symlink
-non-following, and non-``.md`` exclusion.
+non-following, and non-document exclusion.
 
 The matcher tests walk a root that is itself a ``docs`` folder, so every file
 under it is in scope and only the gitignore rules decide.
@@ -64,12 +64,15 @@ def test_root_that_is_a_doc_folder_walks_everything(tmp_path: Path) -> None:
     assert walk_markdown_files(tmp_path / "docs") == ["guides/g.md", "top.md"]
 
 
-def test_only_md_files(docs_root: Path) -> None:
+def test_only_document_files(docs_root: Path) -> None:
+    """Markdown plus the read-only document files (.docx / .txt); nothing else."""
     _touch(docs_root / "keep.md")
-    _touch(docs_root / "skip.txt")
+    _touch(docs_root / "keep.txt")
+    _touch(docs_root / "keep.docx")
     _touch(docs_root / "skip.py")
+    _touch(docs_root / "skip.pdf")
     _touch(docs_root / "README.MD")  # case-insensitive extension
-    assert walk_markdown_files(docs_root) == ["README.MD", "keep.md"]
+    assert walk_markdown_files(docs_root) == ["README.MD", "keep.docx", "keep.md", "keep.txt"]
 
 
 def test_walk_ignored_dirs_pruned(docs_root: Path) -> None:

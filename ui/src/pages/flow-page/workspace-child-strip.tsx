@@ -40,22 +40,12 @@ export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildS
   useTabLifecycles();
   const workspaceChildren = useWorkspaceChildren(processTab?.id);
   const children = tabManager.lifecycle.excludeClosing(workspaceChildren);
-  // The workspace's OWN active display is already the fixed "Display" square, so
-  // its adopted child row must not ALSO be a chip. Dropped from the STRIP only.
-  const visibleChildren = useMemo(
-    () => children.filter((tab) => !(tab.dockPointer && new DockPointer(tab.dockPointer).isActiveDisplay)),
-    [children],
-  );
-  // The child TABS only — the Display is NOT a tab (it renders as a fixed,
-  // square header to the left of the strip). The strip starts after it.
-  const items: TabStripItem[] = useTabStripItems(visibleChildren);
+  // Every child is a tab — what the agent showed and what the user opened alike.
+  const items: TabStripItem[] = useTabStripItems(children);
 
   const processKey = processDock.tabHash ?? 'workspace-display';
   const activeKey = currentDock?.tabHash ?? '';
-  // The active display's dock is keyed by `ACTIVE_DISPLAY_HASH_NS`, not the
-  // process's tabHash, so a plain comparison never lit the square for it — and
-  // with no chip in the strip either, nothing marked the Display as active.
-  const processActive = activeKey === processKey || !!currentDock?.isActiveDisplay;
+  const processActive = activeKey === processKey;
 
   const childByKey = useMemo(() => {
     const m = new Map<string, Tab>();

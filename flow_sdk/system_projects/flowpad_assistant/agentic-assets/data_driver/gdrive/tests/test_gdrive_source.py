@@ -81,7 +81,7 @@ class _Drive:
 
     def _mint(self, meta: dict, data: bytes = b"") -> dict:
         self._next += 1
-        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}"}
+        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}", "version": "1"}
         if meta.get("mimeType") != self.FOLDER:
             meta.setdefault("mimeType", "application/octet-stream")
             meta["size"] = str(len(data))
@@ -123,6 +123,7 @@ class _Drive:
                 return 404, b"{}", {}
             if method == "PATCH":
                 found.update(json.loads(headers["_body"] or "{}"))
+                found["version"] = str(int(found.get("version") or 0) + 1)
                 return 200, json.dumps(found).encode(), {}
             if verb == "export":
                 return 200, b"# exported", {}
@@ -166,6 +167,7 @@ class _Drive:
                 return 404, b"{}", {}
             self.content[file_id] = raw
             found["size"] = str(len(raw))
+            found["version"] = str(int(found.get("version") or 0) + 1)
             return 200, json.dumps(found).encode(), {}
         return 404, b"{}", {}
 
@@ -583,3 +585,37 @@ async def test_deleting_the_last_file_of_a_folder_trashes_the_folder_but_never_t
             await source.delete(source.origin("f2"))   # notes.txt, at the scope's top
     assert drive._known("acme")["trashed"] is True, "the row's emptied folder goes too"
     assert not drive._known("res").get("trashed"), "the scope folder itself is never trashed"
+
+
+# ── rows (``RowFiles``): a dataset's rows in a Drive folder ─────────────────
+
+
+async def test_rows_in_a_drive_folder_keep_the_row_files_contract():
+    from flow_sdk.sources.testing import check_row_files
+
+    drive = _Drive()
+    with _serving(drive) as base:
+        source = DriveSource(SourceBinding(source_id="ds-rows", config={"base_url": base, "path": "GTM/Rows"}, credentials=TOKEN))
+        async with source:
+            await check_row_files(source)
+    gtm = next(f for f in drive.files if f.get("name") == "GTM")
+    rows = next(f for f in drive.files if f.get("name") == "Rows")
+    assert gtm["mimeType"] == rows["mimeType"] == _Drive.FOLDER and rows["parents"] == [gtm["id"]]
+    kept = [f for f in drive.files if f.get("parents") == [rows["id"]]]
+    assert {f["name"] for f in kept} == {"rows/a/row.json", "rows/a/input/x.json"}        # one file per path, flat
+    assert all(f.get("trashed") for f in kept)                                            # a delete is Drive's trash
+
+
+async def test_rows_in_a_read_only_drive_source_are_never_written():
+    from flow_sdk.sources.errors import AccessDenied
+
+    with _serving(_Drive([_folder("rows", "Rows")])) as base:
+        source = DriveSource(SourceBinding(source_id="ds-rows", config={"base_url": base, "path": "Rows"}, credentials=TOKEN, read_only=True))
+        async with source:
+            assert await source.list_files() == {}
+            with pytest.raises(AccessDenied):
+                await source.write_file("rows/a/row.json", b"{}")
+
+
+async def test_a_drive_location_names_the_folder():
+    assert DriveSource.row_files_target("GTM/Rows/leads") == {"path": "GTM/Rows/leads"}

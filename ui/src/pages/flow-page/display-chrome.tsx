@@ -63,11 +63,6 @@ export function DisplayChrome({ process, latestShown, active = true, children }:
 
   const historySlot = <DisplayHistoryButton stack={stack} onOpen={openHistoryEntry} />;
 
-  /** Promote the active display to a durable tab: the same address, minus the marker. */
-  const promote = useCallback(() => {
-    if (currentDock) navigation.openDock(currentDock.withActiveDisplay(false));
-  }, [currentDock, navigation]);
-
   const annotate = useCallback(
     async (target: HTMLElement) => {
       try {
@@ -89,7 +84,6 @@ export function DisplayChrome({ process, latestShown, active = true, children }:
       // One switch: a hidden strip is neither clickable nor focusable, so the
       // slots below do not need a second `active` gate of their own.
       hideStrip={!active}
-      onOpenInTab={currentDock?.isActiveDisplay ? promote : undefined}
       onAnnotate={(target) => void annotate(target)}
       historySlot={historySlot}
     >

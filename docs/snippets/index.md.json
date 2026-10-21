@@ -5,7 +5,7 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "4d1a29b97bb5de373a8985dce096141d176edd1489542d971ec0ca6898a61c59",
+  "inputs_hash": "2aa7b235081c7f2f191fd9d067ad0e7ecae2fd33591c65073e3b05bee1ef63c2",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
@@ -118,9 +118,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Datasets — snippets",
-      "summary": "Runnable snippets for datasets: defining row schemas as data_schema folders, reading and writing typed rows and labels, evaluating the navigator, keyed records, links.",
-      "content_hash": "1be58904b1b85fc58553d85d409cd582a9c63918692eab38644d7bb845f7a258",
-      "size_bytes": 17223
+      "summary": "Runnable snippets for datasets: defining row schemas as data_schema folders, typed slots, the SmartNavigator eval set, and reading rows, pinned by unit tests.",
+      "content_hash": "cb8c66d4c65a6618b165f35b9908a86e7276474c7f77b606e418dfa58eb7d26d",
+      "size_bytes": 17301
     },
     {
       "name": "decisions.md",
@@ -219,6 +219,14 @@
       "size_bytes": 7470
     },
     {
+      "name": "relationship-pickers.md",
+      "rel_path": "relationship-pickers.md",
+      "title": "Relationship pickers in SDK viewers",
+      "summary": "SDK relationship picker contract: ViewerHost.candidates provider shape, mountRelationshipPicker usage in create forms and inline editors, and item key, label and value semantics.",
+      "content_hash": "143a513ffe4f9314ff9b423ce00e556c05b110a177464b4873e541bbc504d2ed",
+      "size_bytes": 2512
+    },
+    {
       "name": "scan-and-index.md",
       "rel_path": "scan-and-index.md",
       "title": "Scan and index — snippets",
@@ -268,6 +276,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-20T12:52:40.795640+00:00",
+  "generated_at": "2026-10-21T09:22:57.521016+00:00",
   "latest_process_ref": ""
 }

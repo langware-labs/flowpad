@@ -32,5 +32,7 @@ from flow_sdk.schema.data_spec.source_item_spec import DIGESTED_FIELDS
 
 
 def content_digest(item: Any) -> str:
-    """Stable sha256 over the normalized fields of an item."""
+    """Stable sha256 over an item's content: its payload minus the payload class's
+    ``digest_exclude`` (``SourceItemSpec.digest_view``); the header fields only for an
+    envelope that was never lifted."""
     return digest_over(item, DIGESTED_FIELDS)

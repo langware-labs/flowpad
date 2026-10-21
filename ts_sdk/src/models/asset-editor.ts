@@ -19,6 +19,7 @@ export enum AssetEditor {
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
+  DOCUMENT_FILE = 'document_file', // .docx / .txt read-only preview — entity-backed
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
@@ -130,6 +131,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
   [AssetEditor.DECK]: [RecordType.DECK],
   [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
+  [AssetEditor.DOCUMENT_FILE]: [RecordType.DOCUMENT_FILE],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
   [AssetEditor.WIZARD]: [RecordType.WIZARD],
@@ -273,6 +275,16 @@ export function markdownExtensions(): string[] {
 export function spreadsheetExtensions(): string[] {
   const fromRegistry = registryExtensionsForType(RecordType.SPREADSHEET);
   return fromRegistry.length ? fromRegistry : STATIC_SPREADSHEET_EXTENSIONS;
+}
+
+/** Static document-file extensions — the fallback when the registry is unbound. */
+const STATIC_DOCUMENT_FILE_EXTENSIONS = ['docx', 'txt'];
+
+/** Extensions of the read-only `document_file` type (listed in the Documents
+ *  tree beside markdown) — same derivation as markdown. */
+export function documentFileExtensions(): string[] {
+  const fromRegistry = registryExtensionsForType(RecordType.DOCUMENT_FILE);
+  return fromRegistry.length ? fromRegistry : STATIC_DOCUMENT_FILE_EXTENSIONS;
 }
 
 /** Extension → file-only viewer/editor for the rows that never come from the

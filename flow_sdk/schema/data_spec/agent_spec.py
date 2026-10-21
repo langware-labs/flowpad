@@ -1,4 +1,5 @@
 """Filesystem contracts independent of application entities."""
+
 from typing import ClassVar, Optional
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
@@ -77,6 +78,8 @@ class AgentSpec(AssetDocumentSpec):
     intro: Optional[str] = None
     auto_launch: Optional[bool] = None
     auto_launch_prompt: Optional[str] = None
+    #: Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal.
+    vibe_only: Optional[bool] = None
     #: What every new session as this agent opens with: a place, a ``navigate`` op that can repair
     #: it (``{"op": name}``) or a wizard (``{"wizard": name}``); the first place is the active one.
     auto_open: Optional[list[AutoOpenEntry]] = None

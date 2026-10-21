@@ -11,6 +11,7 @@ and reached.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
@@ -48,6 +49,11 @@ class WebApp(SetupSkippable, Entity):
     # NOT unique: identity is ``id``, name is a label — the second app anyone
     # names "frontend" must still save.
     _unique: ClassVar[List[str]] = []
+
+    async def reconcile_name(self) -> SimpleNamespace:
+        """A tab showing the app is labelled by its title ("GTM Studio"), else its folder name —
+        always, like a chat tab follows its chat (``Tab.reconcile_target_name``)."""
+        return SimpleNamespace(name=(self.title or "").strip() or self.name)
 
     def is_file_backed(self) -> bool:
         """A row with no folder is a delivery row from before endpoints — DB-only,
