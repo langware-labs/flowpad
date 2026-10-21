@@ -1,12 +1,4 @@
-import {
-  type ComputeNode,
-  CredentialsSubview,
-  dataContext,
-  ExecutionEnvironmentStatus,
-  PageId,
-  ViewType,
-  WorldViewProjection,
-} from '@sdk';
+import { type ComputeNode, CredentialsSubview, dataContext, ExecutionEnvironmentStatus, PageId, ViewType } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -37,7 +29,6 @@ import { MembershipInvitations } from '@src/components/stream-inbox-view/Members
 import {
   ArrowUpCircle,
   Building2,
-  Globe,
   KeyRound,
   Laptop,
   Loader2,
@@ -348,9 +339,6 @@ export function HubHome() {
   // another one's interpolation, and the fallback needs translating too.
   const upgradeTargetName = upgrading?.name || t`this sandbox`;
 
-  const openWorldView = (projection: WorldViewProjection) =>
-    navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, projection);
-
   // People & teams is a plain screen, not a projection of the graph.
   const openOrganization = () => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION);
 
@@ -377,21 +365,6 @@ export function HubHome() {
 
         {/* Primary cards — WorldView projections + the token plan glance */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => openWorldView(WorldViewProjection.WORLD)}
-            data-testid="hub-home-world"
-            className={HUB_HOME_CARD}
-          >
-            <Globe className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-base font-semibold">
-              <Trans>Your world</Trans>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              <Trans>Everything you can reach, as a live graph.</Trans>
-            </span>
-          </button>
-
           <button
             type="button"
             onClick={() => openOrganization()}
