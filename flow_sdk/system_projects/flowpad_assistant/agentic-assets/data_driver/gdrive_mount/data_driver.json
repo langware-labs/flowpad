@@ -35,5 +35,6 @@
       "wizard": "gdrive-mount-setup"
     }
   ],
-  "icon_name": "GoogleDrive"
+  "icon_name": "SourceFolder",
+  "group_icon_name": "GoogleDrive"
 }
