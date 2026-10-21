@@ -599,7 +599,8 @@ class DriveSource(ObjectSource):
     # ── rows (``RowFiles``): a dataset's rows kept in a Drive folder ────────
     # ``dataset.json`` ``"location": "gdrive:GTM/Rows/leads"``. Each row file is ONE Drive file in that
     # folder, NAMED by its whole relative path (``rows/acme/row.json``): one listing reads every row,
-    # however deep its slots. Drive has no conditional write, so ``expected`` is checked right before
+    # however deep its slots. A file's version is its ``headRevisionId``: Drive's ``version`` also moves on
+    # metadata and on Drive's own work after an upload, so it reads as a change nobody made. Drive has no conditional write, so ``expected`` is checked right before
     # the write -- a second writer inside that gap is not caught; the working copy's pull before every
     # write keeps the gap to one request.
 
@@ -631,12 +632,12 @@ class DriveSource(ObjectSource):
         self._require_open()
         parent = await self._rows_parent()
         params = {"q": f"{_quoted(parent)} in parents and trashed = false and mimeType != {_quoted(FOLDER_MIME)}",
-                  "fields": "nextPageToken,files(id,name,version)", "pageSize": "1000", **self._drive_params()}
+                  "fields": "nextPageToken,files(id,name,headRevisionId)", "pageSize": "1000", **self._drive_params()}
         ids, out, token = {}, {}, None
         while True:
             body = (await self._request("GET", "/files", {**params, **({"pageToken": token} if token else {})})).json()
             for meta in body.get("files") or ():
-                ids[str(meta["name"])], out[str(meta["name"])] = str(meta["id"]), str(meta.get("version") or "")
+                ids[str(meta["name"])], out[str(meta["name"])] = str(meta["id"]), str(meta.get("headRevisionId") or "")
             token = body.get("nextPageToken")
             if not token:
                 break
@@ -657,9 +658,9 @@ class DriveSource(ObjectSource):
         if not file_id:
             return ""
         response = await self._request("GET", f"/files/{quote(file_id, safe='')}",
-                                       {"fields": "version,trashed", "supportsAllDrives": "true"}, ok_statuses=(404,))
+                                       {"fields": "headRevisionId,trashed", "supportsAllDrives": "true"}, ok_statuses=(404,))
         meta = response.json() if response.status_code < 400 else {}
-        return "" if not meta or meta.get("trashed") else str(meta.get("version") or "")
+        return "" if not meta or meta.get("trashed") else str(meta.get("headRevisionId") or "")
 
     async def read_file(self, path: str) -> bytes:
         self._require_open()
@@ -673,10 +674,10 @@ class DriveSource(ObjectSource):
         self._require_writable()
         file_id = await self._row_id(path)
         await self._check_expected(path, file_id, expected)
-        meta = await self._upload_content(file_id, data, fields="id,version") if file_id else \
-            await self._create(await self._rows_parent(), path, data, fields="id,version")
+        meta = await self._upload_content(file_id, data, fields="id,headRevisionId") if file_id else \
+            await self._create(await self._rows_parent(), path, data, fields="id,headRevisionId")
         self._row_ids[path] = str(meta["id"])
-        return str(meta.get("version") or await self._row_version(str(meta["id"])))
+        return str(meta.get("headRevisionId") or await self._row_version(str(meta["id"])))
 
     async def delete_file(self, path: str, *, expected: Optional[str] = None) -> None:
         self._require_open()
