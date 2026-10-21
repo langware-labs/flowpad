@@ -4,6 +4,8 @@ const extractBody = (raw: string) => parseFrontmatterDoc(raw).body;
 import { AssetDiffTabs } from './AssetDiffTabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import React, { useEffect, useState } from 'react';
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 
 interface RevisionDiffModalProps {
   computeNodeId: string;
@@ -48,17 +50,13 @@ export const RevisionDiffModal: React.FC<RevisionDiffModalProps> = ({
     setError(null);
 
     const git = new GitWorkdir(workdir, computeNodeId);
-    Promise.all([
-      git.show(filepath, hash),
-      git.show(filepath, 'HEAD'),
-      git.revisionDiff(filepath, hash),
-    ])
+    Promise.all([git.show(filepath, hash), git.show(filepath, 'HEAD'), git.revisionDiff(filepath, hash)])
       .then(([oldRes, newRes, diffRes]) => {
         setOldContent(oldRes?.content ?? '');
         setNewContent(newRes?.content ?? '');
         setDiff(diffRes?.diff ?? '');
       })
-      .catch(() => setError('Failed to load comparison'))
+      .catch(() => setError(t`Failed to load comparison`))
       .finally(() => setLoading(false));
   }, [open, computeNodeId, workdir, filepath, hash]);
 
@@ -68,11 +66,19 @@ export const RevisionDiffModal: React.FC<RevisionDiffModalProps> = ({
   // version, …) is metadata, not prose, and diffing it produces a garbled blob.
   // The Code-diff tab still shows the full file.
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="flex flex-col" style={{ width: '95vw', maxWidth: '95vw', height: '90vh' }}>
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-medium">
-            {filename} <span className="text-xs font-normal text-muted-foreground">— {label} vs current</span>
+            {filename}{' '}
+            <span className="text-xs font-normal text-muted-foreground">
+              <Trans>— {label} vs current</Trans>
+            </span>
           </DialogTitle>
         </DialogHeader>
         <AssetDiffTabs

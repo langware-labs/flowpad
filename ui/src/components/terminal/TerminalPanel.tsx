@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { AgenticProcess, connectionManager, dataContext, Shell, tabManager, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
@@ -57,12 +58,14 @@ export const TerminalPanelErrorState: React.FC<{
       <TerminalRuntimeErrorBanner processId={processId} />
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
         <AlertTriangle className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
-        <div className="text-sm font-medium">This session has nothing to display</div>
+        <div className="text-sm font-medium">
+          <Trans>This session has nothing to display</Trans>
+        </div>
         <div className="max-w-md text-xs text-muted-foreground">
           {/* Prefer the server-recorded launch failure (`start_failure` latch)
               over the generic copy when the entity carries one. */}
           {liveProcess?.start_failure ??
-            'No terminal or chat is attached to this process. Restart it to spawn a fresh session, or reload if this looks like a stale page.'}
+            t`No terminal or chat is attached to this process. Restart it to spawn a fresh session, or reload if this looks like a stale page.`}
         </div>
         <div className="mt-2 flex gap-2">
           {processId && (
@@ -73,7 +76,7 @@ export const TerminalPanelErrorState: React.FC<{
               data-testid="terminal-panel-error-restart"
             >
               <PlayCircle className="h-3.5 w-3.5" />
-              {busy ? 'Working…' : 'Restart session'}
+              {busy ? t`Working…` : t`Restart session`}
             </Button>
           )}
           <Button
@@ -84,7 +87,7 @@ export const TerminalPanelErrorState: React.FC<{
             data-testid="terminal-panel-error-reload"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Reload
+            <Trans>Reload</Trans>
           </Button>
         </div>
       </div>
@@ -98,7 +101,7 @@ const TerminalPanelStartingState: React.FC = () => (
     data-testid="terminal-panel-starting"
   >
     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-    Starting session…
+    <Trans>Starting session…</Trans>
   </div>
 );
 

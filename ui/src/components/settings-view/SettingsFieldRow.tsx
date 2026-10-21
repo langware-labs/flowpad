@@ -1,4 +1,5 @@
 import type { SettingsField, Scope } from './settings-utils';
+import { Trans } from '@lingui/react/macro';
 import { ScopeBadge } from './ScopeBadge';
 import { cn } from '@src/lib/utils';
 
@@ -81,7 +82,11 @@ function stringifyPrimitive(v: unknown): string {
 
 function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string }) {
   if (value === undefined || value === null) {
-    return <span className="text-sm italic text-muted-foreground/50">(not set)</span>;
+    return (
+      <span className="text-sm italic text-muted-foreground/50">
+        <Trans>(not set)</Trans>
+      </span>
+    );
   }
 
   if (fieldType === 'boolean' && typeof value === 'boolean') {
@@ -93,7 +98,12 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
   }
 
   if (fieldType === 'string' && typeof value === 'string') {
-    if (!value) return <span className="text-sm italic text-muted-foreground/50">(not set)</span>;
+    if (!value)
+      return (
+        <span className="text-sm italic text-muted-foreground/50">
+          <Trans>(not set)</Trans>
+        </span>
+      );
     return <span className="font-mono text-sm text-foreground">{value}</span>;
   }
 
@@ -104,7 +114,11 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
   if (fieldType === 'string[]' && Array.isArray(value)) {
     const arr = value as string[];
     if (arr.length === 0) {
-      return <span className="text-sm italic text-muted-foreground/50">(empty)</span>;
+      return (
+        <span className="text-sm italic text-muted-foreground/50">
+          <Trans>(empty)</Trans>
+        </span>
+      );
     }
     return (
       <div className="flex flex-wrap gap-1">
@@ -123,8 +137,13 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
   if (fieldType === 'dict' && typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     const entries = Object.entries(obj);
+    const extraCount = entries.length - 8;
     if (entries.length === 0) {
-      return <span className="text-sm italic text-muted-foreground/50">(empty)</span>;
+      return (
+        <span className="text-sm italic text-muted-foreground/50">
+          <Trans>(empty)</Trans>
+        </span>
+      );
     }
     return (
       <div className="flex flex-wrap gap-1">
@@ -136,7 +155,11 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
             {k}={stringifyPrimitive(v)}
           </span>
         ))}
-        {entries.length > 8 && <span className="text-xs text-muted-foreground">+{entries.length - 8} more</span>}
+        {entries.length > 8 && (
+          <span className="text-xs text-muted-foreground">
+            <Trans>+{extraCount} more</Trans>
+          </span>
+        )}
       </div>
     );
   }
@@ -145,7 +168,11 @@ function ValueDisplay({ value, fieldType }: { value: unknown; fieldType: string 
   if (typeof value === 'object') {
     const keys = Object.keys(value as Record<string, unknown>);
     if (keys.length === 0) {
-      return <span className="text-sm italic text-muted-foreground/50">(empty)</span>;
+      return (
+        <span className="text-sm italic text-muted-foreground/50">
+          <Trans>(empty)</Trans>
+        </span>
+      );
     }
     return (
       <span className="text-sm text-muted-foreground">

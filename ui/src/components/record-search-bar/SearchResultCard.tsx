@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { SearchResult, getSearchResultBadgeLabel } from '@src/hooks/use-record-search';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isResultNavigable, navigateToResult, getActionsForResult } from '@src/navigation/record-type-nav';
@@ -52,6 +53,7 @@ export function SearchResultCard({
   const showSnippet = snippetText && !(result.fts_title && snippetText.replace(/<\/?mark>/g, '') === result.fts_title);
   const typeColor = TYPE_COLORS[result.record_type] ?? 'bg-muted text-muted-foreground';
   const typeBadgeLabel = getSearchResultBadgeLabel(result);
+  const messageCount = result.message_count;
   const statusColor = STATUS_COLORS[result.status] ?? 'text-muted-foreground';
   // Snippet / description hang under the title, past the badge, in inline mode.
   const indent = inline ? 'ps-[calc(theme(spacing.1)+0.5rem)]' : '';
@@ -85,7 +87,9 @@ export function SearchResultCard({
         </span>
         <span className={cn('flex-1 truncate font-semibold', !inline && 'text-sm')}>{title}</span>
         {!inline && result.message_count != null && result.message_count > 0 && (
-          <span className="shrink-0 text-xs text-muted-foreground">{result.message_count} msgs</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            <Trans>{messageCount} msgs</Trans>
+          </span>
         )}
         {(relativeTime || inline) && <span className="shrink-0 text-xs text-muted-foreground">{relativeTime}</span>}
       </div>

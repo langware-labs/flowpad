@@ -1,5 +1,5 @@
 import { Button } from '@src/components/ui/button';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Loader2, TriangleAlert, X } from 'lucide-react';
 import type { WebappVerdict } from './classify';
 import { headlineForCode } from './messages';
@@ -19,6 +19,7 @@ interface Props {
  * dismissible — a known, accepted console error should not nag on every reload.
  */
 export function WebappErrorBanner({ verdict, fixRunning, onFix, onDismiss }: Props) {
+  const { t } = useLingui();
   return (
     <div
       className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs"
@@ -33,7 +34,7 @@ export function WebappErrorBanner({ verdict, fixRunning, onFix, onDismiss }: Pro
         type="button"
         onClick={onDismiss}
         className="shrink-0 text-muted-foreground hover:text-foreground"
-        aria-label="Dismiss"
+        aria-label={t`Dismiss`}
         data-testid="webapp-banner-dismiss"
       >
         <X className="h-3.5 w-3.5" />

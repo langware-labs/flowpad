@@ -8,7 +8,7 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useState } from 'react';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Activity, isTerminal } from '@sdk/activity';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
@@ -72,7 +72,7 @@ export function ActivityDetailsModalRoot() {
             </ul>
           ) : (
             <p className="px-3 py-2 text-xs italic text-muted-foreground">
-              Nothing is running at this address anymore.
+              <Trans>Nothing is running at this address anymore.</Trans>
             </p>
           )}
         </div>

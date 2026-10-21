@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation';
 import type { DockLoadErrorEntry } from '@src/routes/loaders/dock-load-error-store';
@@ -23,7 +24,7 @@ export function DockLoadErrorView({ error }: DockLoadErrorViewProps) {
             {error.retryable ? (
               <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
                 <RefreshCw className="me-1 h-3.5 w-3.5" />
-                Retry
+                <Trans>Retry</Trans>
               </Button>
             ) : null}
             {error.link ? (

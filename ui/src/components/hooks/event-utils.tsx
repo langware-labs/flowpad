@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { LAYER_COLORS } from '@src/hooks/sniffer-layers';
 import type { EventLayer } from '@src/hooks/use-hooks-sniffer';
 import type { TraceEvent } from '@src/types/trace-event';
@@ -246,8 +247,12 @@ export function getOneLiner(event: RenderableEvent): string {
   const raw = hookData.raw_hook_data as Record<string, unknown> | undefined;
   if (raw) {
     for (const key of Object.keys(raw)) {
-      if ((key === 'message' || key === 'prompt' || key.includes('message')) && typeof raw[key] === 'string' && raw[key]) {
-        return cropText(raw[key] as string);
+      if (
+        (key === 'message' || key === 'prompt' || key.includes('message')) &&
+        typeof raw[key] === 'string' &&
+        raw[key]
+      ) {
+        return cropText(raw[key]);
       }
     }
   }
@@ -286,9 +291,7 @@ export function getOneLiner(event: RenderableEvent): string {
  *
  * Returns null when not enough information is available.
  */
-export function getTranscriptLensPointer(
-  event: TraceEvent,
-): { ref: string; options: Record<string, string> } | null {
+export function getTranscriptLensPointer(event: TraceEvent): { ref: string; options: Record<string, string> } | null {
   // Sniffer events: pre-computed at parse time (SessionStart already filtered out)
   if (event.source === FlowDataSource.Sniffer) return event.transcriptDockPointer;
 
@@ -327,10 +330,10 @@ export function EventTooltipContent({ event }: { event: RenderableEvent }) {
   // Read sniffer-only details from canonical FlowData attributes; fall back
   // to the legacy hook_data path for events that haven't been dispatched
   // through `convert_hook_event` yet.
-  const entryId =
-    event.attributes?.['hook-entry-id'] ?? (event.hook_data as any)?.hook_entry_id;
-  const filePath =
-    event.attributes?.['hook-file-path'] ?? (event.hook_data as any)?.hook_file_path;
+  const entryId = event.attributes?.['hook-entry-id'] ?? (event.hook_data as any)?.hook_entry_id;
+  const filePath = event.attributes?.['hook-file-path'] ?? (event.hook_data as any)?.hook_file_path;
+  const warning = event.warning;
+  const sessionId = event.session_id;
 
   return (
     <div className="space-y-1.5">
@@ -338,21 +341,33 @@ export function EventTooltipContent({ event }: { event: RenderableEvent }) {
         <Icon className={cn('h-3.5 w-3.5 shrink-0', getEventColor(event))} />
         <span className="font-semibold text-popover-foreground">{event.event_type}</span>
       </div>
-      {event.warning && <div className="text-xs font-medium text-yellow-500">Warning: {event.warning}</div>}
+      {warning && (
+        <div className="text-xs font-medium text-yellow-500">
+          <Trans>Warning: {warning}</Trans>
+        </div>
+      )}
       <div className="text-xs text-popover-foreground/60">{new Date(event.timestamp).toLocaleString()}</div>
       {event.source === FlowDataSource.Sniffer && entryId && (
-        <div className="truncate text-xs text-popover-foreground/60">Entry: {entryId}</div>
+        <div className="truncate text-xs text-popover-foreground/60">
+          <Trans>Entry: {entryId}</Trans>
+        </div>
       )}
       {event.source === FlowDataSource.Sniffer && filePath && (
-        <div className="truncate text-xs text-popover-foreground/60">Source: {filePath}</div>
+        <div className="truncate text-xs text-popover-foreground/60">
+          <Trans>Source: {filePath}</Trans>
+        </div>
       )}
-      {event.session_id && <div className="truncate text-xs text-popover-foreground/60">Session: {event.session_id}</div>}
+      {sessionId && (
+        <div className="truncate text-xs text-popover-foreground/60">
+          <Trans>Session: {sessionId}</Trans>
+        </div>
+      )}
       <div className="relative mt-1">
         <button
           onClick={() => void copy(JSON.stringify(event.raw, null, 2))}
           className="absolute right-1 top-1 rounded bg-popover-foreground/10 px-1.5 py-0.5 text-[9px] text-popover-foreground/60 opacity-0 transition-opacity hover:text-popover-foreground [div:hover>&]:opacity-100"
         >
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
         </button>
         <pre className="whitespace-pre-wrap break-all rounded-md border border-border bg-popover-foreground/5 p-1.5 text-[10px] leading-tight text-popover-foreground/70">
           {JSON.stringify(event.raw, null, 2)}

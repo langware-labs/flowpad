@@ -65,7 +65,9 @@ export function NodeDetails({ node, showWorldViewProperties = false, onNeighborC
           <Trans>Identity</Trans>
         </h3>
         <div className="kv-row">
-          <span className="k">type</span>
+          <span className="k">
+            <Trans>type</Trans>
+          </span>
           <span className="v">{node.type}</span>
         </div>
         <div className="kv-row">
@@ -73,11 +75,15 @@ export function NodeDetails({ node, showWorldViewProperties = false, onNeighborC
           <span className="v">{node.id}</span>
         </div>
         <div className="kv-row">
-          <span className="k">community</span>
+          <span className="k">
+            <Trans>community</Trans>
+          </span>
           <span className="v">{node.community}</span>
         </div>
         <div className="kv-row">
-          <span className="k">degree</span>
+          <span className="k">
+            <Trans>degree</Trans>
+          </span>
           <span className="v">{node.degree}</span>
         </div>
       </div>

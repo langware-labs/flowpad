@@ -230,12 +230,16 @@ function Dashboard({ data, todayCost }: { data: ClaudeContextData; todayCost: nu
             <div className="flex flex-col gap-3">
               {Object.entries(mcpByServer).map(([server, tools]) => {
                 const total = tools.reduce((s, t) => s + t.tokens_int, 0);
+                const toolCount = tools.length;
+                const tokens = fmtTok(total);
                 return (
                   <div key={server}>
                     <div className="mb-1 flex items-center gap-2">
                       <span className="text-[12px] font-medium text-cyan-400">{server}</span>
                       <span className="text-[10px] text-muted-foreground">
-                        {tools.length} tools · {fmtTok(total)}
+                        <Trans>
+                          {toolCount} tools · {tokens}
+                        </Trans>
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 ps-3 lg:grid-cols-3">

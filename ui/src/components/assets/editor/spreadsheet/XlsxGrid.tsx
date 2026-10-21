@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { RevoGrid } from '@revolist/react-datagrid';
@@ -47,8 +48,7 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
     const load = async () => {
       try {
         const blob = await fsRef.readBlob();
-        const buf = blob instanceof Blob ? await blob.arrayBuffer()
-          : new TextEncoder().encode(String(blob)).buffer;
+        const buf = blob instanceof Blob ? await blob.arrayBuffer() : new TextEncoder().encode(String(blob)).buffer;
         if (cancelled) return;
         const wb = XLSX.read(buf, { type: 'array' });
         const gridBySheet: Record<string, GridData> = {};
@@ -73,7 +73,9 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
       }
     };
     void load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // the blob is read through the same fsRef as path; keying on path + reloadKey
     // is the stable signal (see useFSRefContent's path-keying rationale).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,14 +89,14 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
   if (error) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-destructive">
-        Failed to load workbook: {error}
+        <Trans>Failed to load workbook: {error}</Trans>
       </div>
     );
   }
   if (loading || !workbook || !activeGrid) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        <Trans>Loading…</Trans>
       </div>
     );
   }

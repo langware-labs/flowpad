@@ -7,6 +7,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabLifecycle, useTerminalTabs } from '@src/tabs/use-tab-manager';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { terminalPool } from './terminal-pool';
 import { TerminalPanelErrorState } from './TerminalPanel';
 
@@ -131,7 +132,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   if (hostDisconnected) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-        <span className="text-sm">Disconnected</span>
+        <span className="text-sm">
+          <Trans>Disconnected</Trans>
+        </span>
       </div>
     );
   }

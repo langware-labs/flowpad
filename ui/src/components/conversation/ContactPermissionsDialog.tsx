@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { MessagesSquare, ShieldCheck, Trash2, User as UserIcon } from 'lucide-react';
 import { ActionInfo, PermissionAction, type User } from '@sdk';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -95,10 +96,18 @@ function ContactConversations({ user, active }: { user: User; active: boolean })
   const conversations = data ?? [];
 
   if (loading && conversations.length === 0) {
-    return <p className="text-xs text-muted-foreground">Loading…</p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>Loading…</Trans>
+      </p>
+    );
   }
   if (conversations.length === 0) {
-    return <p className="text-xs text-muted-foreground">No conversations with this contact yet.</p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>No conversations with this contact yet.</Trans>
+      </p>
+    );
   }
   return (
     <ul className="flex flex-col gap-1" data-testid="contact-conversations-tab">
@@ -126,6 +135,7 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
 
   const globalRow = permissions.find((p) => (p.project_id ?? null) === null);
   const projectRows = permissions.filter((p) => (p.project_id ?? null) !== null);
+  const autoApproveLabel = actionLabel(PermissionAction.AUTO_APPROVE_SESSION);
   const hasGlobal = (action: PermissionAction) => !!globalRow?.allowed_actions?.includes(action);
 
   const toggleGlobal = async (action: PermissionAction, on: boolean) => {
@@ -152,7 +162,9 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
   return (
     <div className="flex flex-col gap-4 text-sm">
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">All projects</legend>
+        <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">
+          <Trans>All projects</Trans>
+        </legend>
         <label className="flex items-center gap-2">
           <Checkbox
             checked={hasGlobal(PermissionAction.AUTO_APPROVE_SESSION)}
@@ -161,14 +173,18 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
             data-testid={`contact-perm-global-${PermissionAction.AUTO_APPROVE_SESSION}`}
           />
           <span>
-            {actionLabel(PermissionAction.AUTO_APPROVE_SESSION)} from {who}
+            <Trans>
+              {autoApproveLabel} from {who}
+            </Trans>
           </span>
         </label>
       </fieldset>
 
       {projectRows.length > 0 && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">Per-project</legend>
+          <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">
+            <Trans>Per-project</Trans>
+          </legend>
           {projectRows.map((row) => (
             <div key={row.id} className="rounded-md border border-border px-2 py-1.5">
               <div className="truncate font-mono text-[10px] text-muted-foreground" title={row.project_id ?? ''}>
@@ -200,7 +216,7 @@ function ContactPermissions({ contact }: { contact: ContactKey & { name?: string
 
       {permissions.length === 0 && (
         <p className="text-xs text-muted-foreground">
-          No standing grant yet. Grant one here, or from a session's header when a request arrives.
+          <Trans>No standing grant yet. Grant one here, or from a session's header when a request arrives.</Trans>
         </p>
       )}
     </div>
@@ -242,15 +258,15 @@ export function ContactPermissionsDialog({ open, onClose, contact, user }: Conta
           <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="details" data-testid="contact-tab-details">
-                Details
+                <Trans>Details</Trans>
               </TabsTrigger>
               <TabsTrigger value="conversations" data-testid="contact-tab-conversations">
                 <MessagesSquare className="me-1 h-3.5 w-3.5" />
-                Conversations
+                <Trans>Conversations</Trans>
               </TabsTrigger>
               <TabsTrigger value="permissions" data-testid="contact-tab-permissions">
                 <ShieldCheck className="me-1 h-3.5 w-3.5" />
-                Permissions
+                <Trans>Permissions</Trans>
               </TabsTrigger>
             </TabsList>
             <TabsContent value="details" className="mt-4">
@@ -270,7 +286,9 @@ export function ContactPermissionsDialog({ open, onClose, contact, user }: Conta
         )}
 
         <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>
+            <Trans>Done</Trans>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1146,6 +1146,7 @@ function SessionsSection({
       {entries.map((entry) => {
         const s = entry._session;
         const totalTokens = s ? (s.input_tokens || 0) + (s.output_tokens || 0) : 0;
+        const tokenCount = formatNumber(totalTokens);
         const isSelected = entry.session_id === selectedItemId || entry.id === selectedItemId;
         return (
           <div
@@ -1188,7 +1189,7 @@ function SessionsSection({
               <div className="mt-1 flex items-center gap-3 text-[10px] text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Zap className="h-2.5 w-2.5" />
-                  {formatNumber(totalTokens)} tokens
+                  <Trans>{tokenCount} tokens</Trans>
                 </span>
                 {s.duration_ms > 0 && (
                   <span className="flex items-center gap-1">
@@ -1247,7 +1248,11 @@ function ProjectsSection() {
 
   // Error state
   if (projectsError && projects.length === 0) {
-    return <p className="text-xs text-destructive">Error loading projects: {projectsError}</p>;
+    return (
+      <p className="text-xs text-destructive">
+        <Trans>Error loading projects: {projectsError}</Trans>
+      </p>
+    );
   }
 
   // Empty state (no projects at all)
@@ -1334,7 +1339,11 @@ function ProjectResourcesDashboard({
   }
 
   if (error) {
-    return <p className="text-xs text-destructive">Error: {error}</p>;
+    return (
+      <p className="text-xs text-destructive">
+        <Trans>Error: {error}</Trans>
+      </p>
+    );
   }
 
   if (!resources) {
@@ -1497,6 +1506,7 @@ function TodosSection({ data }: { data: SystemProfile }) {
   const [hideEmpty, setHideEmpty] = useState(true);
   const todos = data.todos || [];
 
+  const todoCount = todos.length;
   if (todos.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -1540,7 +1550,7 @@ function TodosSection({ data }: { data: SystemProfile }) {
       {/* Empty state when all todos are filtered */}
       {sortedTodos.length === 0 && (
         <p className="text-center text-xs text-muted-foreground">
-          All {todos.length} todo files are empty.{' '}
+          <Trans>All {todoCount} todo files are empty.</Trans>{' '}
           <button onClick={() => setHideEmpty(false)} className="text-primary underline">
             <Trans>Show all</Trans>
           </button>

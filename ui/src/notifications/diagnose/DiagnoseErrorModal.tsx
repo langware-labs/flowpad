@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -21,6 +22,7 @@ function diagnosePrompt(detail: string, kind: DiagnoseKind): string {
  * then streams the Flowpad self-diagnosis seeded with `analyze the <kind>: <detail>`.
  */
 export function DiagnoseErrorModal() {
+  const { t } = useLingui();
   const errorText = useDiagnoseErrorStore((s) => s.detail);
   const kind = useDiagnoseErrorStore((s) => s.kind);
   const close = useDiagnoseErrorStore((s) => s.close);
@@ -76,13 +78,13 @@ export function DiagnoseErrorModal() {
     } catch (e) {
       if (!controller.signal.aborted) {
         const text = e instanceof Error ? e.message : String(e);
-        setLines((p) => [...p, { kind: 'error', text: `Diagnose failed: ${text}` }]);
+        setLines((p) => [...p, { kind: 'error', text: t`Diagnose failed: ${text}` }]);
       }
     } finally {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [errorText, kind, handleEvent]);
+  }, [errorText, kind, handleEvent, t]);
 
   const handleClose = useCallback(() => {
     abortRef.current?.abort();
@@ -105,21 +107,30 @@ export function DiagnoseErrorModal() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4" />
-            {isWarning ? 'Diagnose this warning' : 'Diagnose this error'}
+            {isWarning ? <Trans>Diagnose this warning</Trans> : <Trans>Diagnose this error</Trans>}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           {!started && (
             <p className="text-xs text-muted-foreground">
-              Run a diagnosis on the {isWarning ? 'warning' : 'error'} below? The assistant inspects Flowpad, repairs
-              what's safe, and records the result.
+              {isWarning ? (
+                <Trans>
+                  Run a diagnosis on the warning below? The assistant inspects Flowpad, repairs what's safe, and records
+                  the result.
+                </Trans>
+              ) : (
+                <Trans>
+                  Run a diagnosis on the error below? The assistant inspects Flowpad, repairs what's safe, and records
+                  the result.
+                </Trans>
+              )}
             </p>
           )}
 
           {/* The subject being diagnosed — formatted as a quoted code block. */}
           <div className={detailBlockClass}>
-            <div className={detailLabelClass}>{isWarning ? 'Warning' : 'Error'}</div>
+            <div className={detailLabelClass}>{isWarning ? <Trans>Warning</Trans> : <Trans>Error</Trans>}</div>
             <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
               {errorText}
             </pre>
@@ -147,7 +158,9 @@ export function DiagnoseErrorModal() {
               {running && (
                 <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>Working…</span>
+                  <span>
+                    <Trans>Working…</Trans>
+                  </span>
                 </div>
               )}
               {done && (
@@ -157,7 +170,13 @@ export function DiagnoseErrorModal() {
                   }`}
                 >
                   {done.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-                  <span>{done.ok ? 'Diagnosis recorded.' : 'Diagnosis was not recorded — try again.'}</span>
+                  <span>
+                    {done.ok ? (
+                      <Trans>Diagnosis recorded.</Trans>
+                    ) : (
+                      <Trans>Diagnosis was not recorded — try again.</Trans>
+                    )}
+                  </span>
                 </div>
               )}
             </div>
@@ -171,7 +190,7 @@ export function DiagnoseErrorModal() {
                   onClick={handleClose}
                   className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
                 >
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </button>
                 <button
                   type="button"
@@ -179,7 +198,7 @@ export function DiagnoseErrorModal() {
                   className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   <Stethoscope className="h-3.5 w-3.5" />
-                  Run diagnosis
+                  <Trans>Run diagnosis</Trans>
                 </button>
               </>
             ) : (
@@ -189,7 +208,7 @@ export function DiagnoseErrorModal() {
                   onClick={handleClose}
                   className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
-                  Close
+                  <Trans>Close</Trans>
                 </button>
               )
             )}

@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import {
   dataContext,
   Folder,
@@ -451,14 +452,14 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
                 onClick={() => void pickAndAdd('file')}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted"
               >
-                <FileIcon className="h-4 w-4 text-muted-foreground" /> File…
+                <FileIcon className="h-4 w-4 text-muted-foreground" /> <Trans>File…</Trans>
               </button>
               <button
                 type="button"
                 onClick={() => void pickAndAdd('folder')}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted"
               >
-                <FolderIcon className="h-4 w-4 text-muted-foreground" /> Folder…
+                <FolderIcon className="h-4 w-4 text-muted-foreground" /> <Trans>Folder…</Trans>
               </button>
             </PopoverContent>
           </Popover>
@@ -486,8 +487,14 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       >
         {attachments.length === 0 ? (
           <div className="flex h-full min-h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-            <span>No files or folders yet</span>
-            {!readOnly && <span className="text-xs">Drag files or folders here, or use the + button</span>}
+            <span>
+              <Trans>No files or folders yet</Trans>
+            </span>
+            {!readOnly && (
+              <span className="text-xs">
+                <Trans>Drag files or folders here, or use the + button</Trans>
+              </span>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-0.5">

@@ -14,6 +14,7 @@
  * look like one control.
  */
 import { useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { X } from 'lucide-react';
 import { PROCESS_RUN_SCOPE_KEYS, type ProcessRunScope } from '@src/navigation/DockPointer';
 import type { RunSummary } from './RunRow';
@@ -35,9 +36,7 @@ export function matchesFilters(run: RunSummary, f: RunFilterState): boolean {
   if (f.agent && run.agent !== f.agent) return false;
   const needle = f.text.trim().toLowerCase();
   if (!needle) return true;
-  return [run.name, run.agent, run.prompt, run.flow_id].some((v) =>
-    (v ?? '').toLowerCase().includes(needle),
-  );
+  return [run.name, run.agent, run.prompt, run.flow_id].some((v) => (v ?? '').toLowerCase().includes(needle));
 }
 
 export function RunFilters({
@@ -55,6 +54,7 @@ export function RunFilters({
   scope: ProcessRunScope;
   onClearScope?: () => void;
 }) {
+  const { t } = useLingui();
   // Counts come from the loaded page, so a chip never promises rows it can't
   // show — and a status nobody has doesn't take up a slot.
   const counts = useMemo(() => {
@@ -70,9 +70,7 @@ export function RunFilters({
   const toggleBadge = (badge: string) =>
     onChange({
       ...value,
-      badges: value.badges.includes(badge)
-        ? value.badges.filter((b) => b !== badge)
-        : [...value.badges, badge],
+      badges: value.badges.includes(badge) ? value.badges.filter((b) => b !== badge) : [...value.badges, badge],
     });
 
   const scopePills = PROCESS_RUN_SCOPE_KEYS.filter((k) => scope[k]);
@@ -84,13 +82,13 @@ export function RunFilters({
         <input
           className="runs-filter"
           value={value.text}
-          placeholder="filter runs…"
+          placeholder={t`filter runs…`}
           onChange={(e) => onChange({ ...value, text: e.target.value })}
         />
         <span className="runs-count">{shown}</span>
         {dirty && (
-          <button className="lnk" onClick={() => onChange(NO_RUN_FILTERS)} title="clear filters">
-            clear
+          <button className="lnk" onClick={() => onChange(NO_RUN_FILTERS)} title={t`clear filters`}>
+            <Trans>clear</Trans>
           </button>
         )}
       </div>
@@ -101,7 +99,7 @@ export function RunFilters({
             <span key={key} className="chip scope" title={`${key} = ${scope[key]}`}>
               {key.replace(/_id$/, '')}: {shorten(scope[key]!)}
               {onClearScope && (
-                <button className="chip-x" onClick={onClearScope} title="show every run">
+                <button className="chip-x" onClick={onClearScope} title={t`show every run`}>
                   <X size={9} />
                 </button>
               )}
@@ -114,7 +112,7 @@ export function RunFilters({
         {BADGES.filter((b) => counts.byBadge.get(b)).map((badge) => (
           <button
             key={badge}
-            className={`facet b-${badge}${value.badges.includes(badge) ? ' on' : ''}`}
+            className={`facet b-${badge}${value.badges.includes(badge) ? 'on' : ''}`}
             onClick={() => toggleBadge(badge)}
           >
             {badge} <b>{counts.byBadge.get(badge)}</b>
@@ -126,7 +124,9 @@ export function RunFilters({
             value={value.agent}
             onChange={(e) => onChange({ ...value, agent: e.target.value })}
           >
-            <option value="">every agent</option>
+            <option value="">
+              <Trans>every agent</Trans>
+            </option>
             {[...counts.byAgent.entries()]
               .sort((a, b) => b[1] - a[1])
               .map(([agent, n]) => (
