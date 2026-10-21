@@ -502,7 +502,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: true,
   },
   [ViewType.SCHEMA_TREE]: {
-    title: msg`Schema`,
+    title: msg`Data model`,
     iconName: 'ListTree',
     tabLocation: 'dedicated',
     canAddAsTab: true,

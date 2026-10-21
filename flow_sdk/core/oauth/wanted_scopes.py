@@ -58,20 +58,23 @@ async def _drivers_holding_rows() -> set[str]:
     """The drivers whose stores hold a dataset's rows on this machine (``location`` ``<driver>:<target>``,
     or a record system that is not ``read_only``): keeping rows there writes."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.datasets.locations import parse  # noqa: PLC0415
+    from flow_sdk.datasets.locations import declared, parse  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     try:
         # Only the datasets that name a location: one without keeps its rows locally.
         placed = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["location"]))
-        datasets = await Dataset.get_all(placed) or []
+        in_source = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["data_source"]))
+        datasets = [*(await Dataset.get_all(placed) or []), *(await Dataset.get_all(in_source) or [])]
     except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
         logger.warning("[oauth] could not list datasets for their locations' scopes", exc_info=True)
         return set()
     out: set[str] = set()
     for dataset in datasets:
         try:
-            location = parse(getattr(dataset, "location", None))
+            # The DECLARED place, even while its source is not set up: connecting is what sets it up.
+            location = parse(declared(dataset.asset_ref, dataset.data_source, dataset.path, dataset.location)
+                             if getattr(dataset, "asset_ref", None) else getattr(dataset, "location", None))
         except ValueError:
             continue
         if location.remote and not location.read_only:

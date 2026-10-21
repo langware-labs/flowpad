@@ -2,6 +2,7 @@ import {
   Agent,
   Chart,
   Credential,
+  Dataset,
   DiagnosisRequest,
   credentialsService,
   SubAgent,
@@ -19,6 +20,8 @@ import {
 import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
 import { ChartCreateDialog } from './ChartCreateDialog';
+import { DatasetCreateDialog } from './DatasetCreateDialog';
+import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { DiagnosisRequestCreateDialog } from '@src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog';
 import { openRequest } from '@src/components/assets/editor/diagnosis-request/diagnosis-request-api';
 import { CredentialQuickCreateDialog } from '@src/components/credentials/CredentialQuickCreateDialog';
@@ -219,6 +222,21 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       };
     },
     Dialog: ChartCreateDialog,
+  },
+  {
+    type: Dataset.type,
+    group: 'write',
+    label: msg`Dataset`,
+    wikiword: 'Datasets',
+    Dialog: DatasetCreateDialog,
+    // The name-only "+" asks no kind: an empty local dataset, its kind set later in its editor.
+    create: async ({ project, name }) => {
+      const saved = await new Dataset({ name: name.trim(), title: name.trim(), data_layout: 'io_folder' }).save(project?.typeId ? [project.typeId] : []);
+      return {
+        pointer: (await subjectEditorPointer(`dataset-${saved.id}`)) ?? undefined,
+        toastTitle: msg`Dataset created`,
+      };
+    },
   },
   {
     type: 'mcp',

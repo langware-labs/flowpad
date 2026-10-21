@@ -41,6 +41,9 @@ class FakeSource:
     def typeid(self) -> str:
         return f"data_source-{self.id}"
 
+    async def datasets(self) -> list:   # hosts none: a feed, labelled by its name alone
+        return []
+
 
 @dataclass
 class FakeWizard:
