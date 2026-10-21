@@ -1,3 +1,4 @@
+flow.json
 # Local Docker config
 .dockerignore
 docker-compose.local.yml
