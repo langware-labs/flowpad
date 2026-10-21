@@ -347,19 +347,8 @@ export function HubHome() {
         {/* Projects other people gave you — the way from here to FlowPad. */}
         <SharedProjectsBanner projects={sharedProjects} />
 
-        {/* Projects — real hub data (graph/project). Always rendered, zero
-            projects included: the hub has projects and a current project like
-            the desktop does, so "get me into a project" must be reachable from
-            an empty hub home too. The actions are project home's tiles, one
-            shared component with the Vibe hero (see ProjectActionsRow). */}
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            <Trans>Projects</Trans>
-          </h2>
-          <ProjectActionsRow variant="tiles" />
-          {/* No project grid here on purpose: the current project is in the address
-              bar and the footer, and a long list only buries the sandboxes below. */}
-        </div>
+        {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
+        <ProjectActionsRow className="w-full self-start" />
 
         {/* Pending invitations.
             Lives here because the hub page has no Stream Inbox: `renderHubBody`
