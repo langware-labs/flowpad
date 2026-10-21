@@ -25,6 +25,7 @@ writable: writing it back would replace a Doc with a markdown file. A read-only 
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -182,6 +183,8 @@ class DriveSource(ObjectSource):
         self._rows_folder: Optional[str] = None
         self._row_ids: dict[str, str] = {}
         self._rows_listed = False
+        #: The row folders seen or made under the rows folder: relative path ("rows/acme") → Drive id.
+        self._row_dirs: dict[str, str] = {}
 
     @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:
@@ -210,7 +213,7 @@ class DriveSource(ObjectSource):
     async def _open(self) -> None:
         self._http = http.client()
         self._folders, self._scope_id = {}, None
-        self._rows_folder, self._row_ids, self._rows_listed = None, {}, False
+        self._rows_folder, self._row_ids, self._rows_listed, self._row_dirs = None, {}, False, {}
 
     async def _close(self) -> None:
         if self._http is not None:
@@ -597,9 +600,11 @@ class DriveSource(ObjectSource):
         return response.json()
 
     # ── rows (``RowFiles``): a dataset's rows kept in a Drive folder ────────
-    # ``dataset.json`` ``"location": "gdrive:GTM/Rows/leads"``. Each row file is ONE Drive file in that
-    # folder, NAMED by its whole relative path (``rows/acme/row.json``): one listing reads every row,
-    # however deep its slots. A file's version is its ``headRevisionId``: Drive's ``version`` also moves on
+    # ``dataset.json`` ``"location": "gdrive:GTM/Rows/leads"`` (or a data source's folder). The folder holds
+    # the rows exactly as on disk -- real folders, ``rows/acme/row.json`` -- so Drive (or a mounted Drive
+    # folder) reads like the dataset's own ``rows/``. A listing walks the folders, one request per folder,
+    # side by side. A file NAMED by a whole relative path (``rows/acme/row.json``, how rows were kept
+    # before) is still read and updated where it is. A file's version is its ``headRevisionId``: Drive's ``version`` also moves on
     # metadata and on Drive's own work after an upload, so it reads as a change nobody made. Drive has no conditional write, so ``expected`` is checked right before
     # the write -- a second writer inside that gap is not caught; the working copy's pull before every
     # write keeps the gap to one request.
@@ -607,6 +612,11 @@ class DriveSource(ObjectSource):
     @classmethod
     def row_files_target(cls, target: str) -> dict:
         return {"path": target}
+
+    @classmethod
+    def rows_within(cls, config: dict, path: str) -> dict:
+        """A dataset's rows in the folder ``path`` inside this source's folder."""
+        return {**config, "path": "/".join(_segments(f"{config.get('path') or ''}/{path}"))}
 
     async def _rows_parent(self) -> str:
         """The folder the rows live in, made (with any folder above it) on first use."""
@@ -628,21 +638,58 @@ class DriveSource(ObjectSource):
         self._rows_folder = parent
         return parent
 
+    async def _list_children(self, folder: str) -> list[dict]:
+        params = {"q": f"{_quoted(folder)} in parents and trashed = false",
+                  "fields": "nextPageToken,files(id,name,mimeType,headRevisionId)", "pageSize": "1000", **self._drive_params()}
+        out, token = [], None
+        while True:
+            body = (await self._request("GET", "/files", {**params, **({"pageToken": token} if token else {})})).json()
+            out.extend(body.get("files") or ())
+            token = body.get("nextPageToken")
+            if not token:
+                return out
+
     async def list_files(self) -> dict[str, str]:
         self._require_open()
         parent = await self._rows_parent()
-        params = {"q": f"{_quoted(parent)} in parents and trashed = false and mimeType != {_quoted(FOLDER_MIME)}",
-                  "fields": "nextPageToken,files(id,name,headRevisionId)", "pageSize": "1000", **self._drive_params()}
-        ids, out, token = {}, {}, None
-        while True:
-            body = (await self._request("GET", "/files", {**params, **({"pageToken": token} if token else {})})).json()
-            for meta in body.get("files") or ():
-                ids[str(meta["name"])], out[str(meta["name"])] = str(meta["id"]), str(meta.get("headRevisionId") or "")
-            token = body.get("nextPageToken")
-            if not token:
-                break
-        self._row_ids, self._rows_listed = ids, True
+        ids, out, dirs = {}, {}, {}
+        gate = asyncio.Semaphore(8)
+
+        async def walk(folder: str, prefix: str, depth: int) -> None:
+            async with gate:
+                children = await self._list_children(folder)
+            below = []
+            for meta in children:
+                name = str(meta["name"])
+                rel = f"{prefix}{name}"
+                if meta.get("mimeType") == FOLDER_MIME:
+                    if depth < MAX_DEPTH:
+                        dirs[rel] = str(meta["id"])
+                        below.append(walk(str(meta["id"]), f"{rel}/", depth + 1))
+                else:
+                    ids[rel], out[rel] = str(meta["id"]), str(meta.get("headRevisionId") or "")
+            await asyncio.gather(*below)
+
+        await walk(parent, "", 0)
+        self._row_ids, self._row_dirs, self._rows_listed = ids, dirs, True
         return out
+
+    async def _row_folder(self, rel_dir: str) -> str:
+        """The folder ``rel_dir`` (``rows/acme``) under the rows folder, made (with those above it) when missing."""
+        folder = await self._rows_parent()
+        walked = ""
+        for name in _segments(rel_dir):
+            walked = f"{walked}/{name}" if walked else name
+            if walked not in self._row_dirs:
+                found = await self._children(folder, name=name, folders=True)
+                if len(found) > 1:
+                    raise Rejected(f"Drive has {len(found)} folders named {walked!r}; rename one")
+                self._row_dirs[walked] = str(found[0]["id"]) if found else str((await self._request(
+                    "POST", "/files", {"supportsAllDrives": "true", "fields": "id"},
+                    json={"name": name, "mimeType": FOLDER_MIME, "parents": [folder]},
+                )).json()["id"])
+            folder = self._row_dirs[walked]
+        return folder
 
     async def _row_id(self, path: str) -> Optional[str]:
         """A row file's Drive id; one listing per session -- a path it did not list is a new file."""
@@ -674,8 +721,11 @@ class DriveSource(ObjectSource):
         self._require_writable()
         file_id = await self._row_id(path)
         await self._check_expected(path, file_id, expected)
-        meta = await self._upload_content(file_id, data, fields="id,headRevisionId") if file_id else \
-            await self._create(await self._rows_parent(), path, data, fields="id,headRevisionId")
+        if file_id:
+            meta = await self._upload_content(file_id, data, fields="id,headRevisionId")
+        else:
+            rel_dir, _, leaf = path.rpartition("/")
+            meta = await self._create(await self._row_folder(rel_dir), leaf, data, fields="id,headRevisionId")
         self._row_ids[path] = str(meta["id"])
         return str(meta.get("headRevisionId") or await self._row_version(str(meta["id"])))
 
@@ -687,6 +737,14 @@ class DriveSource(ObjectSource):
         if file_id is not None:
             await self._trash(file_id)
             self._row_ids.pop(path, None)
+        # A row folder left empty goes too (``rows/acme``), never the rows folder or ``rows`` itself.
+        rel_dir = path.rpartition("/")[0]
+        while rel_dir.count("/") >= 1 and (folder := self._row_dirs.get(rel_dir)):
+            if (await self._list_page(folder, page_size=1)).get("files"):
+                break
+            await self._trash(folder)
+            self._row_dirs.pop(rel_dir, None)
+            rel_dir = rel_dir.rpartition("/")[0]
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
@@ -696,7 +754,13 @@ class DriveSource(ObjectSource):
         try:
             async with self:
                 await self._request("GET", "/about", {"fields": "user(emailAddress)"})
-                await self._scope_root()
+                try:
+                    await self._scope_root()
+                except NotFound:
+                    if self.binding.read_only or not self.binding.holds_rows:
+                        raise
+                    # A source holding datasets' rows makes its folder on the first write
+                    # (``_rows_parent``): a project's new data source starts with nothing there yet.
                 if not self.binding.read_only and DRIVE_WRITE_SCOPE not in await self._granted_scopes():
                     return Verdict(ready=False, detail=(
                         "This source writes back to Drive, and the Google connection can only read. "

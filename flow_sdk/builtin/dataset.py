@@ -253,6 +253,14 @@ class Dataset(ProjectedFields, Entity):
     # kept out of git), ``file:<folder>``, ``<driver>:<target>`` (Drive, S3) or a record system
     # (``{"driver", "config", "map", "by"}``). ``dataset.json`` stays in the project either way.
     location: Optional[Union[str, Dict[str, Any]]] = APIField(None)
+    # The data source the rows are in (``agentic-assets/data_source/<name>/``) and their folder inside
+    # it (the dataset's folder name by default). None / ``local``: the default source, ``<dataset>/rows/``.
+    data_source: Optional[str] = APIField(None)
+    path: Optional[str] = APIField(None)
+    # Where the rows are, as a person reads it, and why they are local when the source is not set up
+    # here ("" when they are where the dataset says). Derived by ``_location``; never in dataset.json.
+    rows_at: str = APIField("", persist=Persist.FALSE)
+    rows_note: str = APIField("", persist=Persist.FALSE)
 
     # The rows. EAGER — `from_fs` reads them all — but DB-excluded: the record
     # file and `from_fs_ref` carry them, the SQLite row does not.
@@ -293,6 +301,18 @@ class Dataset(ProjectedFields, Entity):
             self._write_derived(**derive_counts(row_facts(row) for row in self.rows))
         return self
 
+    @model_validator(mode="after")
+    def _says_where_the_rows_are(self) -> "Dataset":
+        """``rows_at`` / ``rows_note`` follow ``location`` / ``data_source`` -- derived on every value
+        (an index read included), so a list never shows a stale or empty place."""
+        if self.asset_ref:
+            try:
+                self._location()
+            except ValueError as exc:   # a source the project does not declare: said, never raised here
+                object.__setattr__(self, "rows_at", "local")
+                object.__setattr__(self, "rows_note", f"kept locally: {exc}")
+        return self
+
     def of_kind(self, kind: RowKind) -> List[RowSpec]:
         """'The eval set' is ``dataset.of_kind(RowKind.EVAL)``."""
         return [e for e in self.rows if e.kind == kind]
@@ -328,13 +348,26 @@ class Dataset(ProjectedFields, Entity):
         return Path(self.asset_ref)
 
     def _location(self) -> Any:
-        """The parsed ``location`` -- parsed once per value (every row access asks)."""
-        from flow_sdk.datasets.locations import parse  # noqa: PLC0415
+        """Where the rows are now: the declared location (its ``source`` resolved), or the default
+        local one while that source is not set up on this machine -- parsed once per value (every row
+        access asks)."""
+        from flow_sdk.datasets.locations import asked, declared, held_back, parse  # noqa: PLC0415
 
+        why = held_back(self.asset_ref, self.data_source) if self.asset_ref else ""
+        key = (self.location, self.data_source, self.path, self.asset_ref, why)
         held = getattr(self, "_parsed_location", None)
-        if held is None or held[0] != self.location:
-            held = (self.location, parse(self.location))
+        if held is None or held[0] != key:
+            if why or (self.data_source and not self.asset_ref):
+                location = parse(None)
+            else:
+                location = parse(declared(self.asset_ref, self.data_source, self.path, self.location) if self.asset_ref else self.location)
+            held = (key, location)
             object.__setattr__(self, "_parsed_location", held)
+            if why and not asked(self.asset_ref, self.data_source) and str(self.rows_note or "").startswith("kept locally: "):
+                pass   # not asked since this process started: the row's last answer stands
+            else:
+                object.__setattr__(self, "rows_note", f"kept locally: {why}" if why else "")
+            object.__setattr__(self, "rows_at", location.label())
         return held[1]
 
     def _rows_root(self) -> Path:
@@ -345,19 +378,29 @@ class Dataset(ProjectedFields, Entity):
         self._folder()
         return rows_folder(self, self._location())
 
-    def rows_session(self, *, write: bool = False) -> Any:
+    @contextlib.asynccontextmanager
+    async def rows_session(self, *, write: bool = False) -> Any:
         """``async with dataset.rows_session(write=...)``: the rows of a remote location pulled first,
         and a write's changes pushed after -- what every async read and write here runs in. A no-op for
-        rows on this machine, and inside another session of the same dataset."""
-        from flow_sdk.datasets.locations import session  # noqa: PLC0415
+        rows on this machine, and inside another session of the same dataset. A named source is asked
+        first whether it can hold the rows now; while it cannot, they are read and written locally."""
+        from flow_sdk.datasets.locations import inside, readiness, session  # noqa: PLC0415
 
         self._folder()
-        return session(self, self._location(), write=write)
+        if self.data_source and not inside(self._rows_root()):
+            before = self.rows_note
+            await readiness(self)
+            self._location()
+            if self.rows_note != before:   # the row says where the rows are now (the lists read it)
+                await self.save()
+        async with session(self, self._location(), write=write) as root:
+            yield root
 
     async def pull(self) -> list[str]:
         """Bring a remote location's working copy up to date now; the keys of the rows that moved."""
-        from flow_sdk.datasets.locations import pull  # noqa: PLC0415
+        from flow_sdk.datasets.locations import pull, readiness  # noqa: PLC0415
 
+        await readiness(self)
         return await pull(self, self._location())
 
     @contextlib.contextmanager
@@ -365,8 +408,13 @@ class Dataset(ProjectedFields, Entity):
         """A sync read or write of a remote location. From a script (no running loop) it pulls and
         pushes itself; inside the server a write must come through a session (an action, the async
         API) and a read reads the working copy as last pulled."""
-        from flow_sdk.datasets.locations import inside  # noqa: PLC0415
+        from flow_sdk.datasets.locations import inside, readiness  # noqa: PLC0415
 
+        if self.data_source and self.asset_ref:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:   # a script: ask the source itself (the server's sessions ask for it)
+                asyncio.run(readiness(self))
         location = self._location()
         if write and location.kind == "local" and self.asset_ref:
             _keep_out_of_git(Path(self.asset_ref) / ROWS_DIR)

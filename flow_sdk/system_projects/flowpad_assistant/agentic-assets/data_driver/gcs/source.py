@@ -178,6 +178,12 @@ class GcsSource(ObjectSource):
 
     # ── rows (``RowFiles``) ─────────────────────────────────────────────────
     @classmethod
+    def rows_within(cls, config: dict, path: str) -> dict:
+        """A dataset's rows under ``path`` inside this source's prefix."""
+        prefix = "/".join(p for p in (str(config.get("prefix") or "").strip("/"), path.strip("/")) if p)
+        return {**config, "prefix": prefix}
+
+    @classmethod
     def row_files_target(cls, target: str) -> dict:
         """``gcs:<bucket>/<prefix>`` → the bucket and the prefix rows live under."""
         bucket, _, prefix = str(target).strip().removeprefix("gs://").strip("/").partition("/")
