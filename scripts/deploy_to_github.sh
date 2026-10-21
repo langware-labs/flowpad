@@ -223,6 +223,18 @@ if [[ "$NEW_VERSION" == "$CURRENT_VERSION" ]] || \
     exit 1
 fi
 
+# Desktop <-> backend compatibility gate (docs/version-compatibility.md). It is offline, stdlib-only and takes
+# seconds, so it runs FIRST: before the test run, before the remote flow-rs signing, before anything is written.
+# Checked against the version about to be released, not the one in _version.py. A release that fails this must
+# never be tagged or published -- and a failure here costs nothing.
+echo -e "${YELLOW}Validating version-compatibility declarations for ${NEW_VERSION}...${NC}"
+if ! python3 scripts/check_version_compat.py --backend-version "$NEW_VERSION"; then
+    echo -e "${RED}Error: version-compatibility validation failed -- fix electron/engine-compat.json / flow_sdk/compat.json${NC}"
+    exit 1
+fi
+echo -e "${GREEN}Version-compatibility declarations valid${NC}"
+echo ""
+
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
 echo -e "Branch: ${GREEN}$CURRENT_BRANCH${NC}"

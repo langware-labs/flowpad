@@ -130,6 +130,9 @@ include = ["flow_sdk*"]
     "rag/vcruntime/**/*",
     # The UI actions the smart navigator can pick (flow_sdk/core/navigator.py).
     "core/ui_actions.json",
+    # Desktop <-> backend version-compatibility declaration (flow_sdk/utils/compat.py).
+    # Plain data in the wheel, so a staged install's floor can be read without running code.
+    "compat.json",
 ]
 
 # Keep skill UI source + the built main.html, but never ship node_modules,
