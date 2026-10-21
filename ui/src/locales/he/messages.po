@@ -941,10 +941,9 @@ msgstr "רשומות בדיסק"
 msgid "{0} removed"
 msgstr "{0} הוסרו"
 
-#. placeholder {0}: d.num_rows ?? 0
 #: src/components/data-sources/HostedDatasets.tsx
-msgid "{0} rows"
-msgstr "{0} שורות"
+#~ msgid "{0} rows"
+#~ msgstr "{0} שורות"
 
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -14007,10 +14006,9 @@ msgstr "מארח"
 msgid "Hosts"
 msgstr "מארח"
 
-#. placeholder {0}: datasets.length
 #: src/components/data-sources/HostedDatasets.tsx
-msgid "Hosts {0} datasets"
-msgstr "מארח {0} מאגרי נתונים"
+#~ msgid "Hosts {0} datasets"
+#~ msgstr "מארח {0} מאגרי נתונים"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "hosts {n} datasets"

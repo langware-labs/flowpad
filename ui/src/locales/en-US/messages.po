@@ -944,10 +944,9 @@ msgstr "{0} records on disk"
 msgid "{0} removed"
 msgstr "{0} removed"
 
-#. placeholder {0}: d.num_rows ?? 0
 #: src/components/data-sources/HostedDatasets.tsx
-msgid "{0} rows"
-msgstr "{0} rows"
+#~ msgid "{0} rows"
+#~ msgstr "{0} rows"
 
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -14115,10 +14114,9 @@ msgstr "Host"
 msgid "Hosts"
 msgstr "Hosts"
 
-#. placeholder {0}: datasets.length
 #: src/components/data-sources/HostedDatasets.tsx
-msgid "Hosts {0} datasets"
-msgstr "Hosts {0} datasets"
+#~ msgid "Hosts {0} datasets"
+#~ msgstr "Hosts {0} datasets"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "hosts {n} datasets"
