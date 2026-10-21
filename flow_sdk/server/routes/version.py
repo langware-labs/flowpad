@@ -288,6 +288,10 @@ async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse
         return InstallVersionResponse(success=False, reason="invalid", error="Invalid version string")
     if version == __version__:
         return InstallVersionResponse(success=False, reason="same_version", error="Already on this version")
+    compat_block = self_update.desktop_compat_block(version)
+    if compat_block:
+        logger.warning("[version/install] refused %s: %s", version, compat_block)
+        return InstallVersionResponse(success=False, reason="incompatible_desktop", error=compat_block)
     if self_update.is_editable_install():
         return InstallVersionResponse(
             success=False,
@@ -308,6 +312,21 @@ async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse
             reason="install_failed",
             error=answer.detail or "Install failed",
             output=(answer.stdout + answer.stderr)[-2000:],
+        )
+
+    # The other direction of the compatibility contract: the release now on disk may require a
+    # NEWER desktop than the one managing this backend -- never schedule that pair to boot.
+    rolled = await asyncio.to_thread(self_update.rollback_if_incompatible, __version__)
+    if rolled is not None:
+        kept = (
+            f"Your existing installation ({__version__}) has been preserved."
+            if rolled.restored
+            else f"Automatic restore of {__version__} also failed -- run: {rolled.manual_command}"
+        )
+        return InstallVersionResponse(
+            success=False,
+            reason="backend_requires_newer_desktop",
+            error=f"Cannot switch to {version}: {rolled.reason}. {kept}",
         )
 
     self_update.schedule_restart()

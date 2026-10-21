@@ -32,6 +32,7 @@ cli_init()
 #: alone was 10.7s, so a setup step that ran `flow status --check` blew its 30s budget.
 _EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
 LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
+    "compat": ("flow_sdk.cli.commands.compat_cmd", "compat_check", None),
     "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
     "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
     "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),
@@ -244,6 +245,12 @@ def upgrade(
     if self_update.is_editable_install():
         typer.echo(f"flowpad {__version__} is an editable (source) install; update the checkout instead.", err=True)
         raise typer.Exit(1)
+    # Desktop-managed backends carry the desktop's compatibility floor in the env
+    # (FLOWPAD_DESKTOP_MIN_BACKEND_VERSION); a headless install has no constraint.
+    compat_block = self_update.desktop_compat_block(latest)
+    if compat_block:
+        typer.echo(compat_block, err=True)
+        raise typer.Exit(1)
 
     # An explicit flowpad==<latest> -- never `uv tool upgrade`: the desktop app and the version
     # picker install an exact pin, and `uv tool upgrade` refreshes the dependencies under that pin
@@ -274,6 +281,16 @@ def upgrade(
     if result.returncode != 0:
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
+    rolled = self_update.rollback_if_incompatible(__version__)
+    if rolled is not None:
+        typer.echo(f"flowpad {latest} is not compatible with the running desktop: {rolled.reason}.", err=True)
+        typer.echo(
+            f"flowpad {__version__} has been restored."
+            if rolled.restored
+            else f"Restoring {__version__} failed -- run: {rolled.manual_command}",
+            err=True,
+        )
+        raise typer.Exit(1)
     typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
     _echo_restart_hint(latest)
 
