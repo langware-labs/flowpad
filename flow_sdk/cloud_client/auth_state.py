@@ -25,6 +25,7 @@ _login_status: HubLoginStatus | None = None
 def _initial_login_status() -> HubLoginStatus:
     try:
         from flow_sdk.cli.auth.hub_login import is_logged_in
+
         return HubLoginStatus.LOGGED_IN if is_logged_in() else HubLoginStatus.LOGGED_OUT
     except Exception:
         return HubLoginStatus.LOGGED_OUT
@@ -82,6 +83,7 @@ async def broadcast_auth_expired(reason: str) -> None:
     """Legacy back-compat broadcast — kept for one release alongside CloudLoginStatusMessage."""
     try:
         from flow_sdk.server.routes.websocket import broadcast
+
         await broadcast(AuthExpiredMessage(reason=reason).model_dump_json())
     except Exception:
         pass
@@ -104,6 +106,7 @@ async def set_login_status(
 
     try:
         from flow_sdk.server.routes.websocket import broadcast
+
         msg = CloudLoginStatusMessage(status=status, user=user, reason=reason)
         await broadcast(msg.model_dump_json())
     except Exception:
@@ -133,6 +136,7 @@ async def set_connection_status(
     """
     try:
         from flow_sdk.server.routes.websocket import broadcast
+
         msg = CloudConnectionStatusMessage(status=status, error=error)
         await broadcast(msg.model_dump_json())
     except Exception:
@@ -147,12 +151,16 @@ async def set_connection_status(
     publish_status_changed()  # the hub login reads the verified connection
 
 
-async def invalidate_hub_login(reason: str) -> None:
+async def invalidate_hub_login(reason: str, *, detail: str | None = None) -> None:
     """Real credential loss: clear keyring + login_status → LOGGED_OUT.
 
     Delegates to ``clear_cloud_credentials`` so the WS is stopped and both
     statuses (login + connection) are broadcast in the right order, with
     ``reason`` carried into the login broadcast for UI copy / telemetry.
+    ``detail`` names the signal that triggered it (which close, which response),
+    so the log says why a user was signed out.
     """
     from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
+
+    logger.warning("hub login invalidated: reason=%s (%s)", reason, detail or "no detail")
     await clear_cloud_credentials(reason=reason)

@@ -222,7 +222,7 @@ async def connect_hub_websocket(
                     reason = (
                         "expired" if (current_creds and current_creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
                     )
-                    await invalidate_hub_login(reason)
+                    await invalidate_hub_login(reason, detail=f"WS handshake close {exc.code}: {exc.reason}")
                     raise HubWebSocketAuthError("hub websocket auth rejected") from exc
                 raise
             yield websocket
@@ -751,7 +751,7 @@ class HubWebSocketManager:
             # Hub-side auth close — treat as canonical credential loss whether
             # the local clock agrees or not. If the hub said no, the token is
             # no longer valid; reason just disambiguates the cause for telemetry.
-            await invalidate_hub_login(reason)
+            await invalidate_hub_login(reason, detail=f"WS close {exc.code}: {exc.reason}")
             await self._set_state(
                 HubConnectionStatus.DISCONNECTED,
                 connected=False,
