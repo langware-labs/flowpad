@@ -90,7 +90,7 @@ describe('HubHome sandbox secrets button', () => {
     // gets one from the page shell; this test renders HubHome alone.
     render(
       <TooltipProvider>
-        <HubHome />
+        <HubHome view="machines" />
       </TooltipProvider>,
     );
 
@@ -107,7 +107,7 @@ describe('HubHome sandbox secrets button', () => {
     h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
     render(
       <TooltipProvider>
-        <HubHome />
+        <HubHome view="machines" />
       </TooltipProvider>,
     );
 
