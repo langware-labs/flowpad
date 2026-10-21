@@ -3,7 +3,7 @@
  * so its simple view lists them -- each with its rows and, while the source is not set up here, why its rows are local.
  */
 import { Dataset, type DataSource, ExpressionNode, QueryFilter, QueryRequest } from '@sdk';
-import { Trans } from '@lingui/react/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -34,7 +34,7 @@ export function HostedDatasets({ datasets }: { datasets: Dataset[] }) {
   return (
     <section className="rounded-lg border border-border" data-testid="hosted-datasets">
       <h3 className="border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Trans>Hosts {datasets.length} datasets</Trans>
+        <Plural value={datasets.length} one="Hosts # dataset" other="Hosts # datasets" />
       </h3>
       <ul>
         {[...datasets].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((d) => (
@@ -43,7 +43,7 @@ export function HostedDatasets({ datasets }: { datasets: Dataset[] }) {
               {d.name}
             </button>
             <span className="text-xs text-muted-foreground">
-              <Trans>{d.num_rows ?? 0} rows</Trans>
+              <Plural value={d.num_rows ?? 0} one="# row" other="# rows" />
             </span>
             {d.rows_note ? <span className="ms-auto truncate text-xs text-muted-foreground">{d.rows_note}</span> : null}
           </li>

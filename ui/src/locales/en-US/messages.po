@@ -425,6 +425,11 @@ msgstr "{0, plural, one {# person} other {# people}}"
 msgid "{0, plural, one {# result} other {# results}}"
 msgstr "{0, plural, one {# result} other {# results}}"
 
+#. placeholder {0}: d.num_rows ?? 0
+#: src/components/data-sources/HostedDatasets.tsx
+msgid "{0, plural, one {# row} other {# rows}}"
+msgstr "{0, plural, one {# row} other {# rows}}"
+
 #. placeholder {0}: sessions.length
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "{0, plural, one {# session used this skill} other {# sessions used this skill}}"
@@ -448,6 +453,11 @@ msgstr "{0, plural, one {# team} other {# teams}}"
 #: src/components/hooks-manager/index.tsx
 msgid "{0, plural, one {# trigger} other {# triggers}}"
 msgstr "{0, plural, one {# trigger} other {# triggers}}"
+
+#. placeholder {0}: datasets.length
+#: src/components/data-sources/HostedDatasets.tsx
+msgid "{0, plural, one {Hosts # dataset} other {Hosts # datasets}}"
+msgstr "{0, plural, one {Hosts # dataset} other {Hosts # datasets}}"
 
 #. placeholder {0}: action.runCount
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
