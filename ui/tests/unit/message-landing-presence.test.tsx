@@ -1,18 +1,20 @@
 /**
- * The email landing page for a message: one CTA, decided by asking the hub whether the
- * user's FlowPad desktop is connected — checking → Open in FlowPad, or "FlowPad is offline"
- * with Check again and Open | Download. Signed out: Log in, no preview.
+ * The email landing page for a message: Open in FlowPad (the deep link, which also starts a
+ * closed FlowPad) with a line under it saying whether the user's FlowPad desktop is connected
+ * to the hub — re-asked on Check again and live when the hub announces a desktop came or went.
+ * Signed out: Log in, no preview.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
+import { ConnectionManager } from '@sdk';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const MSG = '123e4567-e89b-4456-8abc-def123456789';
 const state = vi.hoisted(() => ({
   entity: {} as Record<string, unknown>,
-  online: [] as boolean[],
-  delivered: 1,
+  online: [] as (boolean | 'fail')[],
   calls: [] as { name: string; body: unknown }[],
 }));
 
@@ -30,9 +32,9 @@ vi.mock('@sdk', async (orig) => {
         state.calls.push({ name, body: action.bodyParameters });
         if (name === 'current-user-desktops') {
           const online = state.online.length > 1 ? state.online.shift() : state.online[0];
+          if (online === 'fail') throw new Error('422 Unknown entity type or action: current-user-desktops');
           return { online };
         }
-        if (name === 'open_on_desktop') return { delivered: state.delivered };
         return null;
       }),
       getCurrentUser: vi.fn(async () => null),
@@ -62,42 +64,56 @@ const open = () =>
 beforeEach(() => {
   state.entity = { data: MESSAGE, isLoading: false, notFound: false, error: null };
   state.online = [true];
-  state.delivered = 1;
   state.calls = [];
   sessionStorage.clear();
 });
 afterEach(cleanup);
 
-it('checks first, then offers Open in FlowPad, and Open asks the hub to open it on the desktop', async () => {
-  open();
-  expect(screen.getByTestId('landing-checking')).toHaveTextContent('Checking FlowPad status');
-  expect(screen.getByTestId('landing-title')).toHaveTextContent('bsend-1 sent you a message');
-  expect(screen.getByTestId('landing-preview')).toHaveTextContent('laser use-cases');
-  expect(screen.getByTestId('landing-profile')).toHaveTextContent('brecv-2');
+const line = () => screen.getByTestId('landing-connection');
+const desktopChecks = () => state.calls.filter((c) => c.name === 'current-user-desktops').length;
 
-  fireEvent.click(await screen.findByTestId('landing-open'));
-  await waitFor(() => expect(state.calls.some((c) => c.name === 'open_on_desktop')).toBe(true));
-  expect(state.calls.find((c) => c.name === 'open_on_desktop')?.body).toEqual({ flow_message_id: MSG });
+it('the old card: Open in FlowPad, the agents, Download — and a connected line under the button', async () => {
+  open();
+  expect(screen.getByTestId('landing-title')).toHaveTextContent('Conversation with bsend-1');
+  expect(screen.getByTestId('landing-preview')).toHaveTextContent('laser use-cases');
+  expect(screen.getByRole('button', { name: 'Open in FlowPad' })).toBeInTheDocument();
+  expect(screen.getByAltText('Claude Code')).toBeInTheDocument();
   expect(screen.getByTestId('landing-download')).toHaveAttribute('download', 'body.flowmsg');
+  expect(line()).toHaveAttribute('data-presence', 'checking');
+  await waitFor(() => expect(line()).toHaveTextContent('FlowPad is connected'));
 });
 
-it('offline: says so with Check again, Open and Download; Check again asks the hub again', async () => {
+it('not connected: says so, and Open stays the deep link', async () => {
+  state.online = [false];
+  open();
+  await waitFor(() => expect(line()).toHaveTextContent("FlowPad isn't connected"));
+  expect(screen.getByRole('button', { name: 'Open in FlowPad' })).toBeEnabled();
+});
+
+it('a hub that cannot answer is not "offline" — it says it could not check', async () => {
+  state.online = ['fail'];
+  open();
+  await waitFor(() => expect(line()).toHaveTextContent("Couldn't check FlowPad's connection"));
+});
+
+it('Check again asks the hub again', async () => {
   state.online = [false, true];
   open();
-  expect(await screen.findByTestId('landing-offline')).toHaveTextContent('FlowPad is offline');
-  expect(screen.getByTestId('landing-launch')).toBeInTheDocument();
-  expect(screen.getByTestId('landing-download')).toBeInTheDocument();
-
+  await waitFor(() => expect(line()).toHaveTextContent("FlowPad isn't connected"));
   fireEvent.click(screen.getByTestId('landing-check-again'));
-  expect(await screen.findByTestId('landing-open')).toBeInTheDocument();
-  expect(state.calls.filter((c) => c.name === 'current-user-desktops')).toHaveLength(2);
+  await waitFor(() => expect(line()).toHaveTextContent('FlowPad is connected'));
+  expect(desktopChecks()).toBe(2);
 });
 
-it('a desktop that went away between the check and the click flips to offline', async () => {
-  state.delivered = 0;
+it('flips live when the hub announces a desktop came or went — no reload, no click', async () => {
+  state.online = [false, true, false];
   open();
-  fireEvent.click(await screen.findByTestId('landing-open'));
-  expect(await screen.findByTestId('landing-offline')).toBeInTheDocument();
+  await waitFor(() => expect(line()).toHaveTextContent("FlowPad isn't connected"));
+  act(() => ConnectionManager.getInstance().onMessage({ message_type: 'desktop_presence' } as never));
+  await waitFor(() => expect(line()).toHaveTextContent('FlowPad is connected'));
+  act(() => ConnectionManager.getInstance().onMessage({ message_type: 'desktop_presence' } as never));
+  await waitFor(() => expect(line()).toHaveTextContent("FlowPad isn't connected"));
+  expect(desktopChecks()).toBe(3);
 });
 
 it('signed out: Log in in the bar and the card, no message text', () => {

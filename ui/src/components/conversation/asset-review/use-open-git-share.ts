@@ -64,10 +64,15 @@ function noticeFor(ma: MessageAttachment, res: OpenSharedResult): void {
 export interface OpenShareOutcome {
   /** It could not open at all. */
   error?: string;
-  /** Ask the receiver: which project (`choice`), or clone vs copy (`placement`). */
+  /** Ask the receiver: which project (`choice`), clone vs copy (`placement`), or replace
+   *  what they already have (`overwrite`). */
   needs?: OpenSharedResult['needs'];
   candidates?: OpenSharedResult['candidates'];
+  /** The open that asked, to repeat with the answer (`overwrite: true`). */
+  asked?: OpenShareOpts;
 }
+
+export type OpenShareOpts = { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean };
 
 /**
  * Open a received share and show it. ONE implementation for the 1-click chip
@@ -84,14 +89,14 @@ export function useOpenGitShare(attachment: MessageAttachment | undefined, proje
   const running = useRef(false);
 
   const run = useCallback(
-    async (opts: { projectId?: string; choice?: 'clone' | 'copy' } = {}): Promise<OpenShareOutcome> => {
+    async (opts: OpenShareOpts = {}): Promise<OpenShareOutcome> => {
       if (!attachment || running.current) return {};
       running.current = true;
       setBusy(true);
       try {
         if (attachment.transfer_mode === 'both') {
           const res = await attachment.openShared(opts);
-          if (res.needs) return { needs: res.needs, candidates: res.candidates ?? [] };
+          if (res.needs) return { needs: res.needs, candidates: res.candidates ?? [], asked: opts };
           openDisplayTarget(res.show ?? null, navigation);
           noticeFor(attachment, res);
           return {};

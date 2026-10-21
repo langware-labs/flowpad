@@ -79,6 +79,8 @@ export default defineConfig(({ mode }) => {
         allow: [
           path.resolve(__dirname, './'),
           path.resolve(__dirname, '../ts_sdk'),
+          // Vendor marks the landing pages bundle (they render on the hub, which serves no icon packs).
+          path.resolve(__dirname, '../flow_sdk/server/icons/brands/assets'),
           path.resolve(env.HOME || '~', 'pty_sync/src/pty-sync'),
         ],
       },
