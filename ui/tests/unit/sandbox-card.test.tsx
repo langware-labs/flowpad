@@ -1,5 +1,5 @@
 /**
- * The sandbox card on hub home: the Open affordance and the login line.
+ * The sandbox card on the hub Machines page: the Open affordance and the login line.
  *
  * Opening is the one thing you come to a card to do, and it used to be an
  * `ExternalLink` icon that was `opacity-0` until hover — undiscoverable, and
@@ -88,7 +88,7 @@ import { HubHome } from '@src/pages/hub-home/HubHome';
 function renderHome() {
   return render(
     <TooltipProvider>
-      <HubHome />
+      <HubHome view="machines" />
     </TooltipProvider>,
   );
 }
