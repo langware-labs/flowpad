@@ -6269,6 +6269,10 @@ msgstr "جارِ الاستنساخ…"
 msgid "Close"
 msgstr "إغلاق"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Close ({closeIn})"
+msgstr "إغلاق ({closeIn})"
+
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 msgid "Close (Esc)"
 msgstr "إغلاق (Esc)"
