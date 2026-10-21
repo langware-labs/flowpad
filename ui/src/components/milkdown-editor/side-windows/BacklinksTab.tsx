@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { APIEntity, TypeId, type AnyEntity } from '@sdk';
 import type { WikiLink } from '@sdk/types/wiki';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
@@ -108,7 +108,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
     <div className="flex h-full flex-col gap-1 overflow-y-auto p-2 text-[11px]" data-testid="md-backlinks-panel">
       <div className="flex items-center justify-between px-1 pb-1 text-[10px] uppercase text-muted-foreground">
         <span>
-          {links.length} backlink{links.length === 1 ? '' : 's'}
+          <Plural value={links.length} one="# backlink" other="# backlinks" />
         </span>
         <button
           onClick={() => void refresh()}

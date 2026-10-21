@@ -6,6 +6,7 @@
  * its own attachments), rendered by the caller below this block.
  */
 
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Task } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { ExternalLink } from 'lucide-react';
@@ -32,6 +33,7 @@ function toDateLabel(v?: Date | string | null): string {
 }
 
 export function ParentTaskBlock({ parent, onOpenParent, compact, className, children }: ParentTaskBlockProps) {
+  const { t } = useLingui();
   const priority = parent.priority;
   const due = toDateLabel(parent.due_at);
   const start = toDateLabel(parent.start_date);
@@ -51,12 +53,12 @@ export function ParentTaskBlock({ parent, onOpenParent, compact, className, chil
         disabled={!onOpenParent}
         className="flex items-center gap-1.5 self-start text-[10px] font-medium uppercase tracking-wide text-muted-foreground enabled:hover:text-foreground"
       >
-        Parent task
+        <Trans>Parent task</Trans>
         {onOpenParent && <ExternalLink className="h-3 w-3" />}
       </button>
 
       <h2 className={cn('font-semibold leading-tight', compact ? 'text-sm' : 'text-lg')}>
-        {parent.title || 'Untitled task'}
+        {parent.title || t`Untitled task`}
       </h2>
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -69,13 +71,17 @@ export function ParentTaskBlock({ parent, onOpenParent, compact, className, chil
         )}
         {due && (
           <span className="rounded-full border px-2 py-0.5">
-            <span className="text-[10px] uppercase tracking-wide">Due </span>
+            <span className="text-[10px] uppercase tracking-wide">
+              <Trans>Due</Trans>{' '}
+            </span>
             {due}
           </span>
         )}
         {start && (
           <span className="rounded-full border px-2 py-0.5">
-            <span className="text-[10px] uppercase tracking-wide">Start </span>
+            <span className="text-[10px] uppercase tracking-wide">
+              <Trans>Start</Trans>{' '}
+            </span>
             {start}
           </span>
         )}

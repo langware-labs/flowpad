@@ -1,4 +1,5 @@
 import { i18n } from '@lingui/core';
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import {
@@ -39,7 +40,9 @@ export function FileFilters({ filters, enabledFilters, onFiltersChange }: FileFi
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>Filters</TooltipContent>
+        <TooltipContent>
+          <Trans>Filters</Trans>
+        </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className="w-48">
         {filters.map((filter) => (

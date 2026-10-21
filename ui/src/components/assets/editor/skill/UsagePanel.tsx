@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Eye, GitCompare, GraduationCap, Loader2, Play, RefreshCw } from 'lucide-react';
-import { useLingui, Trans } from '@lingui/react/macro';
+import { useLingui, Plural, Trans } from '@lingui/react/macro';
 import { ActionInfo, FSRef, Skill, dataManager } from '@sdk';
 import { getGitStatus, invalidateGitStatus } from '@src/lib/git-status-cache';
 
@@ -111,10 +111,12 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
   }, [computeNodeId, workdir, file, reload]);
 
   const cleanGit = rev.hasRepo && dirty === false && rev.unpushed === 0;
+  const unpushedCount = rev.unpushed;
 
   // Traces + verified findings for the selected session (drives Review + Improve).
   const { traces } = useSessionAnalyses(selected);
   const latestTrace = traces[0] ?? null;
+  const traceVerdict = latestTrace?.verdict ?? '—';
   const { doc: traceDoc } = useAgentTraceDoc(latestTrace?.doc ?? null);
   const findings = useMemo(() => traceDoc?.annotations?.by_skill?.[skillName]?.findings ?? [], [traceDoc, skillName]);
 
@@ -260,8 +262,13 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         </div>
         {!cleanGit && rev.hasRepo && (
           <p className="text-[10px] text-muted-foreground">
-            {dirty ? 'Asset has uncommitted changes' : rev.unpushed > 0 ? `${rev.unpushed} unpushed` : ''} — Improve
-            runs only on a clean-git asset.
+            {dirty ? (
+              <Trans>Asset has uncommitted changes — Improve runs only on a clean-git asset.</Trans>
+            ) : unpushedCount > 0 ? (
+              <Trans>{unpushedCount} unpushed — Improve runs only on a clean-git asset.</Trans>
+            ) : (
+              <Trans>— Improve runs only on a clean-git asset.</Trans>
+            )}
           </p>
         )}
       </div>
@@ -289,7 +296,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         ) : (
           <>
             <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-              {sessions.length} session{sessions.length === 1 ? '' : 's'} used this skill
+              <Plural value={sessions.length} one="# session used this skill" other="# sessions used this skill" />
             </p>
             {sessions.map((s) => {
               const isSel = s.sessionId === selected;
@@ -321,8 +328,10 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
           {latestTrace ? (
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-muted-foreground">
-                Trace: <span className="font-medium text-foreground">{latestTrace.verdict ?? '—'}</span> ·{' '}
-                {findings.length} finding{findings.length === 1 ? '' : 's'}
+                <Trans>
+                  Trace: <span className="font-medium text-foreground">{traceVerdict}</span> ·{' '}
+                  <Plural value={findings.length} one="# finding" other="# findings" />
+                </Trans>
               </span>
               <button
                 type="button"

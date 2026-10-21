@@ -15,6 +15,7 @@
  * reload lands where you were. The scope keys go to the backend untranslated —
  * see PROCESS_RUN_SCOPE_KEYS.
  */
+import { Trans } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import apiClient from '@sdk/client';
 import { useOnTag } from '@sdk/react/hooks';
@@ -82,7 +83,7 @@ export function RunsView({
 
   const load = useCallback(async () => {
     try {
-      const data = (await apiClient.get(`/runs?limit=${PAGE}${scopeQuery(scope)}`)) as RunsResponse | null;
+      const data = await apiClient.get<RunsResponse | null>(`/runs?limit=${PAGE}${scopeQuery(scope)}`);
       setRuns(data?.runs ?? []);
     } catch {
       // An empty list is the honest fallback; the detail pane explains itself.
@@ -114,7 +115,7 @@ export function RunsView({
   const shown = useMemo(() => runs.filter((r) => matchesFilters(r, filters)), [runs, filters]);
 
   return (
-    <div className={`runs${compact ? ' compact' : ''}`}>
+    <div className={`runs ${compact ? 'compact' : ''}`}>
       <aside className="runs-list">
         <RunFilters
           runs={runs}
@@ -127,12 +128,18 @@ export function RunsView({
           onClearScope={embedded ? undefined : () => navigation.openDock(DockPointer.forProcessRuns())}
         />
         {loading ? (
-          <p className="runs-empty">loading…</p>
+          <p className="runs-empty">
+            <Trans>loading…</Trans>
+          </p>
         ) : shown.length === 0 ? (
           <p className="runs-empty">
-            {runs.length === 0
-              ? 'No runs yet. Anything that spawns a worker — a flow, an agent, a data source — shows up here.'
-              : 'No run matches these filters.'}
+            {runs.length === 0 ? (
+              <Trans>
+                No runs yet. Anything that spawns a worker — a flow, an agent, a data source — shows up here.
+              </Trans>
+            ) : (
+              <Trans>No run matches these filters.</Trans>
+            )}
           </p>
         ) : (
           <ol className="runs-rows">
@@ -151,7 +158,9 @@ export function RunsView({
         {selected ? (
           <RunDetail runId={selected} />
         ) : (
-          <p className="runs-empty pad">Select a run to see what it produced.</p>
+          <p className="runs-empty pad">
+            <Trans>Select a run to see what it produced.</Trans>
+          </p>
         )}
       </section>
     </div>

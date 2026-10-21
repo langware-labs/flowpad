@@ -233,6 +233,15 @@ export const MachineOverview: React.FC = () => {
     });
   }, [machineStatus?.network, networkFilter, networkSort]);
 
+  const cpuCount = machineStatus?.node_info?.cpu_count;
+  const memoryGb = machineStatus?.node_info?.memory_gb;
+  const processCount = processFilter
+    ? `${sortedProcesses.length}/${machineStatus?.processes?.length ?? 0}`
+    : `${sortedProcesses.length}`;
+  const networkCount = networkFilter
+    ? `${sortedNetwork.length}/${machineStatus?.network?.length ?? 0}`
+    : `${sortedNetwork.length}`;
+
   const fetchMachineStatus = useCallback(async () => {
     if (!computeNode?.id) return;
 
@@ -482,13 +491,13 @@ export const MachineOverview: React.FC = () => {
                           <span className="font-medium">
                             <Trans>CPU:</Trans>
                           </span>{' '}
-                          {machineStatus.node_info.cpu_count} cores
+                          <Trans>{cpuCount} cores</Trans>
                         </div>
                         <div>
                           <span className="font-medium">
                             <Trans>Memory:</Trans>
                           </span>{' '}
-                          {machineStatus.node_info.memory_gb} GB
+                          <Trans>{memoryGb} GB</Trans>
                         </div>
                         <div>
                           <span className="font-medium">
@@ -563,9 +572,7 @@ export const MachineOverview: React.FC = () => {
                   onClick={() => void handleRefresh()}
                   disabled={isRefreshing || isLoading}
                 >
-                  <RefreshCw
-                    className={`h-4 w-4 ${isRefreshing || isLoading ? 'animate-spin' : ''}`}
-                  />
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing || isLoading ? 'animate-spin' : ''}`} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -599,13 +606,11 @@ export const MachineOverview: React.FC = () => {
               <TabsList className="h-8">
                 <TabsTrigger value={MachineSubview.PROCESSES} className="h-7 text-xs">
                   <Server className="me-1.5 h-3.5 w-3.5" />
-                  Processes ({sortedProcesses.length}
-                  {processFilter ? `/${machineStatus.processes.length}` : ''})
+                  <Trans>Processes ({processCount})</Trans>
                 </TabsTrigger>
                 <TabsTrigger value={MachineSubview.NETWORK} className="h-7 text-xs">
                   <Network className="me-1.5 h-3.5 w-3.5" />
-                  Network ({sortedNetwork.length}
-                  {networkFilter ? `/${machineStatus.network.length}` : ''})
+                  <Trans>Network ({networkCount})</Trans>
                 </TabsTrigger>
                 <TabsTrigger value={MachineSubview.SECRETS} className="h-7 text-xs">
                   <KeyRound className="me-1.5 h-3.5 w-3.5" />

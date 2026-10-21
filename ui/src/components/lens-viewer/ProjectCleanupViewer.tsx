@@ -22,6 +22,9 @@
  * Nothing is ever pre-selected. The verdict is advisory; a person picks rows.
  */
 
+import { msg, plural } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -41,16 +44,7 @@ import {
   type ProjectCleanupItem,
   type CleanupVerdict,
 } from '@sdk/entities/compute-node/system-profile';
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  FolderX,
-  GitBranch,
-  RefreshCw,
-  Trash2,
-  Unplug,
-} from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, FolderX, GitBranch, RefreshCw, Trash2, Unplug } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /** Above this many files a row is flagged: it holds real work, whatever the verdict. */
@@ -58,8 +52,8 @@ const CONTENT_WARNING_FILES = 4;
 
 interface TabSpec {
   verdict: CleanupVerdict;
-  label: string;
-  hint: string;
+  label: MessageDescriptor;
+  hint: MessageDescriptor;
 }
 
 /**
@@ -70,23 +64,23 @@ interface TabSpec {
 const TABS: TabSpec[] = [
   {
     verdict: 'empty',
-    label: 'Empty',
-    hint: 'No sessions, no files, untouched for over a week. Safe to remove.',
+    label: msg`Empty`,
+    hint: msg`No sessions, no files, untouched for over a week. Safe to remove.`,
   },
   {
     verdict: 'stale',
-    label: 'Has files',
-    hint: 'No sessions, but something is in the folder or it changed recently.',
+    label: msg`Has files`,
+    hint: msg`No sessions, but something is in the folder or it changed recently.`,
   },
   {
     verdict: 'active',
-    label: 'In use',
-    hint: 'A harness has sessions here, or the project was opened recently.',
+    label: msg`In use`,
+    hint: msg`A harness has sessions here, or the project was opened recently.`,
   },
   {
     verdict: 'orphaned',
-    label: 'Missing folder',
-    hint: 'The folder is already gone. Only the Flowpad project remains.',
+    label: msg`Missing folder`,
+    hint: msg`The folder is already gone. Only the Flowpad project remains.`,
   },
 ];
 
@@ -96,9 +90,9 @@ function fmtBytes(bytes: number): string {
   return bytes ? formatBytes(bytes) : '—';
 }
 
-function whenever(iso: string | null): string {
+function whenever(iso: string | null, justNow: string): string {
   if (!iso) return '—';
-  return formatTimeAgo(iso) || 'just now';
+  return formatTimeAgo(iso) || justNow;
 }
 
 /** One source for every column width, so a cell cannot drift from its label. */
@@ -117,12 +111,24 @@ function ColumnHeader() {
     <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
       <span className={cn(COL.check, 'shrink-0')} />
       <span className={cn(COL.chevron, 'shrink-0')} />
-      <span className="min-w-0 flex-1">Project</span>
-      <span className={cn(COL.harness, 'shrink-0')}>Harness · sessions</span>
-      <span className={cn(COL.git, 'shrink-0 text-center')}>Git</span>
-      <span className={cn(COL.updated, 'shrink-0 text-end')}>Updated</span>
-      <span className={cn(COL.files, 'shrink-0 text-end')}>Files</span>
-      <span className={cn(COL.size, 'shrink-0 text-end')}>Size</span>
+      <span className="min-w-0 flex-1">
+        <Trans>Project</Trans>
+      </span>
+      <span className={cn(COL.harness, 'shrink-0')}>
+        <Trans>Harness · sessions</Trans>
+      </span>
+      <span className={cn(COL.git, 'shrink-0 text-center')}>
+        <Trans>Git</Trans>
+      </span>
+      <span className={cn(COL.updated, 'shrink-0 text-end')}>
+        <Trans>Updated</Trans>
+      </span>
+      <span className={cn(COL.files, 'shrink-0 text-end')}>
+        <Trans>Files</Trans>
+      </span>
+      <span className={cn(COL.size, 'shrink-0 text-end')}>
+        <Trans>Size</Trans>
+      </span>
     </div>
   );
 }
@@ -138,6 +144,7 @@ interface RowProps {
  *  `onToggle` from a `useCallback`), so without this one checkbox click
  *  re-renders every row in the tab. */
 const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeNodeId }: RowProps) {
+  const { t } = useLingui();
   const [expanded, setExpanded] = useState(false);
   const [git, setGit] = useState<GitInfo | null>(item.git);
   // Asked-once latch. `git.resolved` says whether the ANSWER is complete, which
@@ -165,6 +172,12 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
 
   const heavy = item.file_count >= CONTENT_WARNING_FILES;
   const sessions = item.harnesses.reduce((total, use) => total + use.session_count, 0);
+  const justNow = t`just now`;
+  const itemName = item.name;
+  const lastSession = whenever(item.modified_at, justNow);
+  const lastOpened = whenever(item.last_active_at, justNow);
+  const remote = git?.remote || t`none`;
+  const harnessNames = item.harnesses.map((use) => use.harness).join(', ');
 
   return (
     <>
@@ -178,12 +191,12 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
           className={cn(COL.check, 'shrink-0')}
           checked={selected}
           onCheckedChange={() => onToggle(item.project_id)}
-          aria-label={`Select ${item.name}`}
+          aria-label={t`Select ${itemName}`}
         />
         <button
           onClick={() => setExpanded((open) => !open)}
           className={cn(COL.chevron, 'shrink-0 text-muted-foreground hover:text-foreground')}
-          aria-label={expanded ? 'Collapse' : 'Expand'}
+          aria-label={expanded ? t`Collapse` : t`Expand`}
         >
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </button>
@@ -213,7 +226,7 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
         </span>
 
         <span className={cn(COL.updated, 'shrink-0 text-end tabular-nums text-muted-foreground')}>
-          {whenever(item.dir_modified_at)}
+          {whenever(item.dir_modified_at, justNow)}
         </span>
 
         <span
@@ -222,7 +235,7 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
             'flex shrink-0 items-center justify-end gap-1 tabular-nums',
             heavy ? 'font-medium text-amber-600 dark:text-amber-500' : 'text-muted-foreground',
           )}
-          title={heavy ? 'This folder holds files' : undefined}
+          title={heavy ? t`This folder holds files` : undefined}
         >
           {heavy && <AlertTriangle className="h-3 w-3" />}
           {item.file_count_capped ? `${item.file_count}+` : item.file_count}
@@ -237,25 +250,34 @@ const CleanupRow = memo(function CleanupRow({ item, selected, onToggle, computeN
         <div className="border-b bg-muted/20 px-3 py-2 ps-12 text-[11px] text-muted-foreground">
           <div className="font-mono">{item.cwd}</div>
           <div className="mt-1 flex flex-wrap gap-x-6 gap-y-1">
-            <span>sessions: {sessions}</span>
-            <span>last session: {whenever(item.modified_at)}</span>
-            <span>last opened: {whenever(item.last_active_at)}</span>
+            <span>
+              <Trans>sessions: {sessions}</Trans>
+            </span>
+            <span>
+              <Trans>last session: {lastSession}</Trans>
+            </span>
+            <span>
+              <Trans>last opened: {lastOpened}</Trans>
+            </span>
             {git?.has_repo &&
               (git.resolved ? (
                 <>
-                  <span>remote: {git.remote || 'none'}</span>
-                  <span>{git.dirty ? 'uncommitted changes' : 'clean'}</span>
+                  <span>
+                    <Trans>remote: {remote}</Trans>
+                  </span>
+                  <span>{git.dirty ? <Trans>uncommitted changes</Trans> : <Trans>clean</Trans>}</span>
                 </>
               ) : (
                 // Saying "clean" before the check has run would be a claim about
                 // the user's uncommitted work that we have not verified.
-                <span>git repo — checking…</span>
+                <span>
+                  <Trans>git repo — checking…</Trans>
+                </span>
               ))}
           </div>
           {item.harnesses.length > 0 && (
             <div className="mt-1">
-              clearing harness history removes sessions for:{' '}
-              {item.harnesses.map((use) => use.harness).join(', ')}
+              <Trans>clearing harness history removes sessions for: {harnessNames}</Trans>
             </div>
           )}
         </div>
@@ -270,6 +292,7 @@ interface Props {
 }
 
 export function ProjectCleanupViewer({ focusProjectId }: Props) {
+  const { t, i18n } = useLingui();
   const { computeNode } = useAgentContext();
   const [items, setItems] = useState<ProjectCleanupItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -324,19 +347,13 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
 
   // Selection is scoped to the visible tab. A checkbox the reader cannot see is
   // one they cannot untick, so no action may ever act on it.
-  const selectedRows = useMemo(
-    () => rows.filter((item) => selected.has(item.project_id)),
-    [rows, selected],
-  );
+  const selectedRows = useMemo(() => rows.filter((item) => selected.has(item.project_id)), [rows, selected]);
   // Gate on whether a harness CLAIMS the project, not on `state_paths`: the
   // listing omits those on purpose (resolving them means scanning the harness
   // stores per project), so gating on them disables the button for every row.
   // The backend resolves the paths when the action runs and refuses per project
   // if there turn out to be none.
-  const selectedWithHarness = useMemo(
-    () => selectedRows.filter((item) => item.harnesses.length > 0),
-    [selectedRows],
-  );
+  const selectedWithHarness = useMemo(() => selectedRows.filter((item) => item.harnesses.length > 0), [selectedRows]);
   const selectedWithFilesCount = useMemo(
     () => selectedRows.filter((item) => item.file_count > 0).length,
     [selectedRows],
@@ -401,19 +418,28 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
   const nothingSelected = selectedRows.length === 0;
   /** Why clearing is unavailable, in the user's terms. Empty ⇒ available. */
   const harnessBlocked = nothingSelected
-    ? 'Select a project first'
+    ? t`Select a project first`
     : selectedWithHarness.length === 0
-      ? 'None of the selected projects has harness history'
+      ? t`None of the selected projects has harness history`
       : '';
 
   const activeTab = TABS.find((spec) => spec.verdict === tab);
+  const tabLabel = activeTab ? i18n._(activeTab.label).toLowerCase() : '';
+  const selectedCount = selectedRows.length;
+  const rowCount = rows.length;
+  const harnessCount = selectedWithHarness.length;
+  const untouchedCount = selectedRows.length - selectedWithHarness.length;
+  const succeededCount = outcome?.succeeded ?? 0;
+  const failedCount = outcome?.failed ?? 0;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Title */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <FolderX className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Projects status &amp; cleanup</span>
+        <span className="text-sm font-medium">
+          <Trans>Projects status &amp; cleanup</Trans>
+        </span>
         <Badge variant="secondary" className="text-[10px]">
           {items.length}
         </Badge>
@@ -422,7 +448,7 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
           size="icon"
           className="ms-auto h-6 w-6"
           onClick={() => void load()}
-          aria-label="Refresh"
+          aria-label={t`Refresh`}
         >
           <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
         </Button>
@@ -441,7 +467,7 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
                 value={spec.verdict}
                 className="gap-1.5 rounded-t border-b-2 border-transparent px-3 py-1.5 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-medium data-[state=active]:shadow-none"
               >
-                {spec.label}
+                {i18n._(spec.label)}
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
                   {count}
                 </span>
@@ -455,42 +481,43 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
           always rendered — disabled with a reason, never absent. */}
       <div className="flex items-center gap-3 border-b bg-muted/20 px-3 py-1.5">
         <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-          {activeTab?.hint}
+          {activeTab ? i18n._(activeTab.hint) : null}
         </span>
         <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {selectedRows.length > 0 ? `${selectedRows.length} selected` : 'none selected'}
+          {selectedCount > 0 ? t`${selectedCount} selected` : t`none selected`}
         </span>
         <Button
           variant="outline"
           size="sm"
           className="h-7 shrink-0 gap-1 text-xs"
           disabled={busy || !!harnessBlocked}
-          title={harnessBlocked || 'Delete the harness session history, keeping the folder'}
+          title={harnessBlocked || t`Delete the harness session history, keeping the folder`}
           onClick={() => setConfirming('harness')}
         >
           <Unplug className="h-3 w-3" />
-          Clear harness history
+          <Trans>Clear harness history</Trans>
         </Button>
         <Button
           variant="destructive"
           size="sm"
           className="h-7 shrink-0 gap-1 text-xs"
           disabled={busy || nothingSelected}
-          title={
-            nothingSelected ? 'Select a project first' : 'Move the folder to the Trash and remove the project'
-          }
+          title={nothingSelected ? t`Select a project first` : t`Move the folder to the Trash and remove the project`}
           onClick={() => setConfirming('delete')}
         >
           <Trash2 className="h-3 w-3" />
-          Move to Trash
+          <Trans>Move to Trash</Trans>
         </Button>
       </div>
 
       {outcome && (
         <div className="border-b bg-muted/30 px-3 py-1.5 text-xs">
-          {outcome.succeeded} done{outcome.failed > 0 ? `, ${outcome.failed} refused` : ''}
+          <Trans>{succeededCount} done</Trans>
+          {failedCount > 0 ? t`, ${failedCount} refused` : ''}
           {outcome.results.some((r) => r.trashed) && (
-            <span className="ms-2 text-muted-foreground">Folders are in your Trash.</span>
+            <span className="ms-2 text-muted-foreground">
+              <Trans>Folders are in your Trash.</Trans>
+            </span>
           )}
           {outcome.results
             .filter((r) => !r.ok)
@@ -506,11 +533,11 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
       <div className="flex flex-1 flex-col overflow-auto">
         {loading && items.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Reading projects…
+            <Trans>Reading projects…</Trans>
           </div>
         ) : rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            No {activeTab?.label.toLowerCase()} projects.
+            <Trans>No {tabLabel} projects.</Trans>
           </div>
         ) : (
           <>
@@ -520,9 +547,11 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
                 className={cn(COL.check, 'shrink-0')}
                 checked={allShownSelected}
                 onCheckedChange={toggleAllShown}
-                aria-label={`Select all ${activeTab?.label.toLowerCase()} projects`}
+                aria-label={t`Select all ${tabLabel} projects`}
               />
-              <span>Select all {rows.length}</span>
+              <span>
+                <Trans>Select all {rowCount}</Trans>
+              </span>
             </div>
             <ColumnHeader />
             {rows.map((item) => (
@@ -541,28 +570,34 @@ export function ProjectCleanupViewer({ focusProjectId }: Props) {
       <ConfirmDialog
         open={confirming === 'harness'}
         onOpenChange={(open) => !open && setConfirming(null)}
-        title={`Clear harness history for ${selectedWithHarness.length} project${selectedWithHarness.length === 1 ? '' : 's'}?`}
+        title={plural(harnessCount, {
+          one: 'Clear harness history for # project?',
+          other: 'Clear harness history for # projects?',
+        })}
         description={
           selectedWithHarness.length < selectedRows.length
-            ? `Deletes the harness's own session history. The folders and their files are not touched. ${selectedRows.length - selectedWithHarness.length} of the selected projects have no harness history and are left alone.`
-            : "Deletes the harness's own session history. The folders and their files are not touched."
+            ? t`Deletes the harness's own session history. The folders and their files are not touched. ${untouchedCount} of the selected projects have no harness history and are left alone.`
+            : t`Deletes the harness's own session history. The folders and their files are not touched.`
         }
-        confirmLabel="Clear history"
+        confirmLabel={t`Clear history`}
         onConfirm={() => void apply('harness')}
       />
 
       <ConfirmDialog
         open={confirming === 'delete'}
         onOpenChange={(open) => !open && setConfirming(null)}
-        title={`Move ${selectedRows.length} folder${selectedRows.length === 1 ? '' : 's'} to the Trash?`}
+        title={plural(selectedCount, {
+          one: 'Move # folder to the Trash?',
+          other: 'Move # folders to the Trash?',
+        })}
         description={
           // Trash is recoverable, so this must not claim otherwise — but a
           // selection holding real files still deserves to be named out loud.
           selectedWithFilesCount > 0
-            ? `${selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder.`
-            : 'The folders go to your Trash and their Flowpad projects are removed. You can restore them from Finder.'
+            ? t`${selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder.`
+            : t`The folders go to your Trash and their Flowpad projects are removed. You can restore them from Finder.`
         }
-        confirmLabel="Move to Trash"
+        confirmLabel={t`Move to Trash`}
         variant="destructive"
         onConfirm={() => void apply('delete')}
       />

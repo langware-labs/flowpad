@@ -22,6 +22,8 @@ import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
 
+const exampleSessionId = '0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa';
+
 /**
  * Chats left-menu — the navigator (Zone B) for the Shell/chat view. Lists past
  * chats (the existing worker-history list) grouped into time buckets, with the
@@ -229,7 +231,7 @@ export function ChatsNavigator() {
         onOpenChange={setResumeByIdOpen}
         title={t`Resume session by id`}
         description={t`Paste a session id (UUID) to restore it in a new tab.`}
-        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        placeholder={t`e.g. ${exampleSessionId}`}
         confirmLabel={t`Resume`}
         onConfirm={(sessionId) => resumeInTerminal(sessionId)}
       />

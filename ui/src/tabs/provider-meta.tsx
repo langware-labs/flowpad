@@ -1,6 +1,6 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { CopyButton } from '@src/components/ui/copy-button';
 /**
  * Terminal provider presentation — the vendor chip glyph/label table and the
@@ -116,6 +116,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
   process,
   statusReason,
 }) => {
+  const { t } = useLingui();
   const workdir = process.workdir;
   const isAlive = isProcessRunning(process.status ?? ProcessStatus.NEW);
   const status = getDisplayStatus(process) ?? ProcessStatus.NEW;
@@ -144,14 +145,14 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
       {workdir && <WorkdirLine workdir={workdir} className="max-w-[240px]" />}
       <div className="space-y-1 border-t pt-1.5">
         <InfoRow
-          label="Created"
+          label={t`Created`}
           value={`${formatDateTime(process.created_date)} · ${formatTimeAgoShort(process.created_date)}`}
         />
         <InfoRow
-          label="Updated"
+          label={t`Updated`}
           value={`${formatDateTime(process.updated_date)} · ${formatTimeAgoShort(process.updated_date)}`}
         />
-        {workerSessionId && <InfoRow label="Session" value={workerSessionId.slice(0, 8) + '…'} />}
+        {workerSessionId && <InfoRow label={t`Session`} value={workerSessionId.slice(0, 8) + '…'} />}
       </div>
     </div>
   );
@@ -209,9 +210,7 @@ export const ProcessTabCard: React.FC<{
       {details ? (
         <div className="border-t border-border p-2.5">{details}</div>
       ) : (
-        process?.workdir && (
-          <WorkdirLine workdir={process.workdir} className="border-t border-border px-3 py-2" />
-        )
+        process?.workdir && <WorkdirLine workdir={process.workdir} className="border-t border-border px-3 py-2" />
       )}
     </div>
   );
@@ -236,6 +235,7 @@ export const ContentTabTooltip: React.FC<{
   statusReason?: string;
   location?: boolean;
 }> = ({ tab, typeLabel, statusReason, location }) => {
+  const { t } = useLingui();
   const dock = tab.dockPointer;
   const address = dock?.pointer || (tab.target_type && tab.target_id ? `${tab.target_type}/${tab.target_id}` : '');
   const lastActive = tab.last_active_at;
@@ -253,7 +253,11 @@ export const ContentTabTooltip: React.FC<{
       <div className="flex items-center gap-2">
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
         <span className="text-[11px] font-semibold text-foreground">{typeLabel}</span>
-        {tab.worktree && <span className="text-[10px] font-medium text-amber-500">worktree</span>}
+        {tab.worktree && (
+          <span className="text-[10px] font-medium text-amber-500">
+            <Trans>worktree</Trans>
+          </span>
+        )}
       </div>
       {address && (
         <p className="max-w-[240px] truncate font-mono text-[10px] text-muted-foreground" title={address}>
@@ -263,19 +267,19 @@ export const ContentTabTooltip: React.FC<{
       <div className="space-y-1 border-t pt-1.5">
         {tab.created_date && (
           <InfoRow
-            label="Opened"
+            label={t`Opened`}
             value={`${formatDateTime(tab.created_date)} · ${formatTimeAgoShort(tab.created_date)}`}
           />
         )}
         {tab.updated_date && (
           <InfoRow
-            label="Updated"
+            label={t`Updated`}
             value={`${formatDateTime(tab.updated_date)} · ${formatTimeAgoShort(tab.updated_date)}`}
           />
         )}
         {lastActive != null && lastActive !== '' && (
           <InfoRow
-            label="Active"
+            label={t`Active`}
             value={formatTimeAgoShort(typeof lastActive === 'number' ? new Date(lastActive) : lastActive)}
           />
         )}

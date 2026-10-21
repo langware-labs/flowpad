@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -91,6 +92,7 @@ const DIAGNOSE_BTN_CLASS =
 
 /** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
 function CopyButton({ text }: { text: string }) {
+  const { t } = useLingui();
   const [copied, setCopied] = useState(false);
 
   const copy = useCallback(async () => {
@@ -111,8 +113,8 @@ function CopyButton({ text }: { text: string }) {
         void copy();
       }}
       className={ICON_BTN_CLASS}
-      title={copied ? 'Copied!' : 'Copy warning text'}
-      aria-label={copied ? 'Copied' : 'Copy warning text'}
+      title={copied ? t`Copied!` : t`Copy warning text`}
+      aria-label={copied ? t`Copied` : t`Copy warning text`}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
@@ -184,6 +186,8 @@ function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
  * over so the user can still act on it from here.
  */
 function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: () => void }) {
+  const { t } = useLingui();
+  const alertTitle = alert.title;
   const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
   const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
 
@@ -221,8 +225,8 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
           type="button"
           onClick={onDismiss}
           className={ICON_BTN_CLASS}
-          title="Dismiss"
-          aria-label={`Dismiss ${alert.title}`}
+          title={t`Dismiss`}
+          aria-label={t`Dismiss ${alertTitle}`}
           data-testid="warnings-popover-dismiss"
         >
           <X className="h-3.5 w-3.5" />
@@ -325,7 +329,7 @@ export function WarningsPopover() {
               className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               data-testid="warnings-popover-dismiss-all"
             >
-              Dismiss all
+              <Trans>Dismiss all</Trans>
             </button>
           )}
         </div>

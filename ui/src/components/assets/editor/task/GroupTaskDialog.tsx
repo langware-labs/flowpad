@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Plural, Trans } from '@lingui/react/macro';
 import { ActionInfo, ContactsGroup, dataManager, normalizeEmail, Task, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
@@ -73,11 +74,11 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
       const created = result?.created?.length ?? 0;
       const failed = result?.failed ?? [];
       if (failed.length) {
+        const failedCount = failed.length;
+        const failedList = failed.map((f) => f.email ?? f.error).join(', ');
         notify.warning({
           title: t`Group task created with issues`,
-          message: `${created} member task(s) created; ${failed.length} failed (${failed
-            .map((f) => f.email ?? f.error)
-            .join(', ')}). Re-run to retry.`,
+          message: t`${created} member task(s) created; ${failedCount} failed (${failedList}). Re-run to retry.`,
         });
       } else {
         notify.success({
@@ -114,22 +115,28 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
     } catch (e) {
       notify.error({
         title: t`Could not create group task`,
-        message: e instanceof Error ? e.message : 'The group task could not be created.',
+        message: e instanceof Error ? e.message : t`The group task could not be created.`,
       });
     } finally {
       setBusy(false);
     }
   };
 
+  const selectedMemberCount = (selected?.contacts ?? []).length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create a task group</DialogTitle>
+          <DialogTitle>
+            <Trans>Create a task group</Trans>
+          </DialogTitle>
           <DialogDescription>
-            This creates a <span className="font-medium text-foreground">task group</span>: the same task, instantiated
-            once for every member of a contacts group. Each member gets their own member task to work and track; this
-            task becomes the group overview and single source of truth. Learn more:{' '}
+            <Trans>
+              This creates a <span className="font-medium text-foreground">task group</span>: the same task,
+              instantiated once for every member of a contacts group. Each member gets their own member task to work and
+              track; this task becomes the group overview and single source of truth. Learn more:
+            </Trans>{' '}
             <WikiLabel wikiword="Group Tasks" label="W" />
           </DialogDescription>
         </DialogHeader>
@@ -137,7 +144,7 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
         <div className="flex max-h-56 flex-col gap-1 overflow-y-auto py-1" data-testid="group-task-group-list">
           {groups.length === 0 && (
             <div className="px-1 py-4 text-center text-sm text-muted-foreground">
-              No contacts groups yet — create one from the Stream Inbox first.
+              <Trans>No contacts groups yet — create one from the Stream Inbox first.</Trans>
             </div>
           )}
           {groups.map((g: ContactsGroup) => (
@@ -153,10 +160,14 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
               <span className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
                 {g.displayName ?? g.name}
-                {g.computed && <span className="text-[10px] uppercase text-muted-foreground/70">auto</span>}
+                {g.computed && (
+                  <span className="text-[10px] uppercase text-muted-foreground/70">
+                    <Trans>auto</Trans>
+                  </span>
+                )}
               </span>
               <span className="text-xs text-muted-foreground">
-                {(g.contacts ?? []).length} member{(g.contacts ?? []).length === 1 ? '' : 's'}
+                <Plural value={(g.contacts ?? []).length} one="# member" other="# members" />
               </span>
             </button>
           ))}
@@ -181,10 +192,10 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void create()} disabled={!selected || busy} data-testid="group-task-confirm">
-            {busy ? 'Creating…' : selected ? `Assign to ${(selected.contacts ?? []).length} members` : 'Assign'}
+            {busy ? t`Creating…` : selected ? t`Assign to ${selectedMemberCount} members` : t`Assign`}
           </Button>
         </DialogFooter>
       </DialogContent>

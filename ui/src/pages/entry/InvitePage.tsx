@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { redeemInviteLink } from '@sdk';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router';
@@ -8,14 +10,14 @@ import { errorDetail } from '@src/lib/error-message';
 /** What a redeem failure means to the person holding the link. A 200 never gets
  *  here — it navigates. */
 function messageForStatus(status: number | undefined, detail: string | undefined): string {
-  if (status === 404) return "This invite link doesn't exist.";
+  if (status === 404) return t`This invite link doesn't exist.`;
   // Revoked, expired, author gone, or the thing it pointed at was deleted — all
   // 410. They are one outcome to the reader: the link is dead.
-  if (status === 410) return 'This invite link is no longer active.';
+  if (status === 410) return t`This invite link is no longer active.`;
   // The author-lost-permission 403. (The domain 403 never reaches here — it
   // renders the account-switch panel instead.)
-  if (status === 403) return detail ?? 'Ask whoever shared this for a new link.';
-  return 'Something went wrong opening this invite link.';
+  if (status === 403) return detail ?? t`Ask whoever shared this for a new link.`;
+  return t`Something went wrong opening this invite link.`;
 }
 
 /** The "not open to your email domain" 403 — the one failure the holder can fix
@@ -94,7 +96,9 @@ const InvitePage: React.FC = () => {
         {error ? (
           <>
             <div className="mb-4 text-4xl">🔗</div>
-            <h2 className="mb-3 text-xl font-bold text-[#1a1a2e]">Invite link</h2>
+            <h2 className="mb-3 text-xl font-bold text-[#1a1a2e]">
+              <Trans>Invite link</Trans>
+            </h2>
             <p className="text-[15px] leading-relaxed text-neutral-700">
               {messageForStatus(error.status, error.detail)}
             </p>
@@ -102,7 +106,9 @@ const InvitePage: React.FC = () => {
         ) : (
           <>
             <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-b-2 border-neutral-400" />
-            <p className="text-[15px] leading-relaxed text-neutral-700">Opening your invite…</p>
+            <p className="text-[15px] leading-relaxed text-neutral-700">
+              <Trans>Opening your invite…</Trans>
+            </p>
           </>
         )}
       </div>

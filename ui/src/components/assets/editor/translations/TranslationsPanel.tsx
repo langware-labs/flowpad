@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import { Check, FileText, Loader2, Plus } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -66,7 +67,9 @@ export function TranslationsPanel({
         )}
       >
         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="flex-1">Original</span>
+        <span className="flex-1">
+          <Trans>Original</Trans>
+        </span>
         {activeLang === null && <Check className="h-4 w-4" />}
       </button>
 
@@ -90,7 +93,7 @@ export function TranslationsPanel({
             {tr.status === 'translating' ? (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Translating…
+                <Trans>Translating…</Trans>
               </span>
             ) : (
               active && <Check className="h-4 w-4" />
@@ -108,14 +111,18 @@ export function TranslationsPanel({
             className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-start text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
             {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            <span>Add translation</span>
+            <span>
+              <Trans>Add translation</Trans>
+            </span>
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-0">
           <Command>
             <CommandInput placeholder={t`Search languages…`} />
             <CommandList>
-              <CommandEmpty>No languages found.</CommandEmpty>
+              <CommandEmpty>
+                <Trans>No languages found.</Trans>
+              </CommandEmpty>
               <CommandGroup heading={t`Translate to`}>
                 {available.map((target) => (
                   <CommandItem

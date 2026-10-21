@@ -1,4 +1,13 @@
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@src/components/ui/alert-dialog';
+import { Trans } from '@lingui/react/macro';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
 
 interface ConfirmDialogProps {
@@ -56,7 +65,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
           {entity?.remote && (
             <AlertDialogDescription className="font-medium text-destructive">
-              This is a cloud resource — it will be destroyed in the cloud, not just here.
+              <Trans>This is a cloud resource — it will be destroyed in the cloud, not just here.</Trans>
             </AlertDialogDescription>
           )}
         </AlertDialogHeader>

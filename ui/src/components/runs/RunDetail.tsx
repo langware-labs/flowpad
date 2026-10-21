@@ -6,6 +6,7 @@
  * shown as escaped markup in a 340px `<pre>`. Here a renderable file renders,
  * in a pane wide enough for it.
  */
+import { Plural, Trans } from '@lingui/react/macro';
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
 import { formatBytes } from '@src/utils/format-bytes';
@@ -61,7 +62,7 @@ export function RunDetail({ runId }: { runId: string }) {
     let alive = true;
     void (async () => {
       try {
-        const data = (await apiClient.get(`/runs/${runId}`)) as RunDetailData | null;
+        const data = await apiClient.get<RunDetailData | null>(`/runs/${runId}`);
         if (!alive || !data) return;
         setRun(data);
         // Open the most interesting output straight away — a run's product is
@@ -83,10 +84,13 @@ export function RunDetail({ runId }: { runId: string }) {
       setAsSource(false);
       const q = `key=${encodeURIComponent(key)}&name=${encodeURIComponent(name)}`;
       try {
-        setContent((await apiClient.get(`/runs/${runId}/artifact?${q}`)) as ArtifactContent);
+        setContent(await apiClient.get<ArtifactContent>(`/runs/${runId}/artifact?${q}`));
       } catch (e) {
         setContent({
-          name, size: 0, path: '', renderable: false,
+          name,
+          size: 0,
+          path: '',
+          renderable: false,
           text: e instanceof Error ? e.message : String(e),
         });
       }
@@ -98,7 +102,12 @@ export function RunDetail({ runId }: { runId: string }) {
     if (openFile) void show(openFile.key, openFile.name);
   }, [openFile, show]);
 
-  if (!run) return <p className="runs-empty pad">loading…</p>;
+  if (!run)
+    return (
+      <p className="runs-empty pad">
+        <Trans>loading…</Trans>
+      </p>
+    );
 
   const outputs = run.executions.flatMap((ex) =>
     ex.files.filter((f) => f.direction === 'output').map((f) => ({ ex, f })),
@@ -118,23 +127,29 @@ export function RunDetail({ runId }: { runId: string }) {
           {run.agent && <span className="chip agent">{run.agent}</span>}
           {run.worker_type && <span className="chip">{run.worker_type}</span>}
           <span>{timeSince(run.started_at)}</span>
-          {typeof run.cost_usd === 'number' && run.cost_usd > 0 && (
-            <span>${run.cost_usd.toFixed(3)}</span>
-          )}
+          {typeof run.cost_usd === 'number' && run.cost_usd > 0 && <span>${run.cost_usd.toFixed(3)}</span>}
           {/* A run IS its process: the transcript is what it did, live while it runs. */}
-          <button className="lnk" data-testid="run-open-transcript" onClick={() => void openAgenticProcess(run.id, navigation)}>
-            transcript
+          <button
+            className="lnk"
+            data-testid="run-open-transcript"
+            onClick={() => void openAgenticProcess(run.id, navigation)}
+          >
+            <Trans>transcript</Trans>
           </button>
         </div>
         {run.start_failure && <p className="run-fail">{run.start_failure}</p>}
       </header>
 
       <section className="files">
-        <h3>Output {outputs.length > 0 && <span className="muted">{outputs.length}</span>}</h3>
+        <h3>
+          <Trans>Output</Trans> {outputs.length > 0 && <span className="muted">{outputs.length}</span>}
+        </h3>
         {outputs.length === 0 ? (
           <p className="muted">
-            This run wrote no files. Runs launched outside a flow only produce artifacts
-            when the agent is told where to write them.
+            <Trans>
+              This run wrote no files. Runs launched outside a flow only produce artifacts when the agent is told where
+              to write them.
+            </Trans>
           </p>
         ) : (
           <ul className="filelist">
@@ -172,12 +187,7 @@ export function RunDetail({ runId }: { runId: string }) {
           {content.renderable && !asSource ? (
             // Sandboxed: an artifact is agent-generated content, so it renders
             // with no script execution and no same-origin access to the app.
-            <iframe
-              className="viewer-frame"
-              title={content.name}
-              sandbox=""
-              srcDoc={content.text}
-            />
+            <iframe className="viewer-frame" title={content.name} sandbox="" srcDoc={content.text} />
           ) : (
             <pre className="viewer-src">{content.text}</pre>
           )}
@@ -185,13 +195,22 @@ export function RunDetail({ runId }: { runId: string }) {
       )}
 
       <details className="raw">
-        <summary>What it was asked ({inputs.length} input file{inputs.length === 1 ? '' : 's'})</summary>
+        <summary>
+          <Plural
+            value={inputs.length}
+            one="What it was asked (# input file)"
+            other="What it was asked (# input files)"
+          />
+        </summary>
         {run.instruction && <pre className="viewer-src">{run.instruction}</pre>}
         <ul className="filelist">
           {inputs.map(({ ex, f }) => (
             <li key={`${ex.key}/${f.name}`}>
-              <button disabled={!f.previewable} title={f.path}
-                      onClick={() => setOpenFile({ key: ex.key, name: f.name })}>
+              <button
+                disabled={!f.previewable}
+                title={f.path}
+                onClick={() => setOpenFile({ key: ex.key, name: f.name })}
+              >
                 <span className="fn">{f.name}</span>
                 <span className="sz">{formatBytes(f.size)}</span>
               </button>
@@ -214,7 +233,6 @@ function pickHeadline(executions: Execution[]): { key: string; name: string } | 
     .flatMap((ex) => ex.files.filter((f) => f.direction === 'output').map((f) => ({ ex, f })))
     .filter(({ f }) => f.previewable);
   if (!outputs.length) return null;
-  const best =
-    [...outputs].reverse().find(({ f }) => f.renderable) ?? outputs[outputs.length - 1];
+  const best = [...outputs].reverse().find(({ f }) => f.renderable) ?? outputs[outputs.length - 1];
   return { key: best.ex.key, name: best.f.name };
 }

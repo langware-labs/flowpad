@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { InteractiveTerminal } from '@src/components/terminal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { AgenticProcess, WebappSubview } from '@sdk';
@@ -12,12 +13,7 @@ interface WebappTerminalPanelProps {
   onTabChange: (tab: WebappSubview) => void;
 }
 
-export const WebappTerminalPanel: React.FC<WebappTerminalPanelProps> = ({
-  flow,
-  isActive,
-  activeTab,
-  onTabChange,
-}) => {
+export const WebappTerminalPanel: React.FC<WebappTerminalPanelProps> = ({ flow, isActive, activeTab, onTabChange }) => {
   return (
     <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as WebappSubview)} className="flex h-full flex-col">
       <TabsList className="h-8 w-full justify-start rounded-none border-b bg-transparent px-2">
@@ -26,14 +22,14 @@ export const WebappTerminalPanel: React.FC<WebappTerminalPanelProps> = ({
           className="h-7 gap-1.5 rounded-sm px-3 text-xs data-[state=active]:bg-muted"
         >
           <Terminal className="h-3.5 w-3.5" />
-          Run Shell
+          <Trans>Run Shell</Trans>
         </TabsTrigger>
         <TabsTrigger
           value={WebappSubview.ARTIFACTS}
           className="h-7 gap-1.5 rounded-sm px-3 text-xs data-[state=active]:bg-muted"
         >
           <Cloud className="h-3.5 w-3.5" />
-          Deployments
+          <Trans>Deployments</Trans>
         </TabsTrigger>
       </TabsList>
 

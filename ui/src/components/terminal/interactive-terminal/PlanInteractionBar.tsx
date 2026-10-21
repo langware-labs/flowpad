@@ -267,7 +267,7 @@ function QuestionCard({
           data-testid="plan-question-submit"
         >
           <ClipboardCheck className="h-3.5 w-3.5" />
-          Submit answer
+          <Trans>Submit answer</Trans>
         </button>
       </div>
     </div>
@@ -294,7 +294,13 @@ function PlanReadyCard({
           className="flex items-center gap-1.5 text-[13px] font-medium text-foreground hover:text-blue-300"
         >
           <ClipboardCheck className="h-4 w-4 text-blue-400" />
-          Plan ready{plan ? (open ? ' — hide' : ' — review') : ''}
+          {!plan ? (
+            <Trans>Plan ready</Trans>
+          ) : open ? (
+            <Trans>Plan ready — hide</Trans>
+          ) : (
+            <Trans>Plan ready — review</Trans>
+          )}
         </button>
         <button
           type="button"
@@ -304,7 +310,7 @@ function PlanReadyCard({
           data-testid="plan-execute"
         >
           <Play className="h-3.5 w-3.5" />
-          Execute
+          <Trans>Execute</Trans>
         </button>
       </div>
       {open && plan && (
