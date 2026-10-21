@@ -4,6 +4,7 @@ moved into it adopting what is already there."""
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import uuid
@@ -155,3 +156,21 @@ async def test_a_source_knows_the_datasets_it_hosts(project):
     drive = DataSource(id=str(uuid.uuid4()), name=name, provider="mem")
     assert sorted(d.name for d in await drive.datasets()) == ["a", "b"]
     assert not await DataSource(id=str(uuid.uuid4()), name="other", provider="mem").datasets()
+
+
+async def test_a_source_that_turns_ready_fills_each_working_copy_once(project):
+    """Links read another dataset's rows from disk: a hosted dataset never opened is pulled when its source is ready."""
+    from flow_sdk.datasets import locations
+
+    project.refusal["why"] = ""
+    writer = await project.dataset("writer", data_source="drive", path="shared")
+    await _call(writer, "put-row", {"key": "ada", "row": {"input": {"name": "Ada"}}})
+    reader = await project.dataset("reader", data_source="drive", path="shared")    # never opened
+    assert not (locations.rows_folder(reader, reader._location()) / locations.STATE_FILE).exists()
+
+    source = SimpleNamespace(name="drive", project_id="", datasets=None)
+    await locations.refresh_hosted(source, [reader])
+    await asyncio.gather(*locations._filling)        # the first pull runs behind the check
+
+    root = locations.rows_folder(reader, reader._location())
+    assert (root / locations.STATE_FILE).is_file() and (root / "rows" / "ada" / "row.json").is_file()
