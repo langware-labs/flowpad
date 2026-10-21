@@ -99,36 +99,67 @@ def rebase_auto_open(entries: list[DockPointerSpec] | None, *, roots: dict[str, 
     return tabs
 
 
-async def open_auto_tabs(process: "AgenticProcess", tabs: list[AutoOpenTab]) -> None:
-    """Open ``tabs`` for a fresh session: the first as its active display, the rest
-    as workspace tabs under the session's own tab."""
+async def open_auto_tabs(process: "AgenticProcess", tabs: list[AutoOpenTab], *, resume: bool = False) -> None:
+    """Open ``tabs`` as tabs of the session's Vibe workspace (children of its own tab).
+
+    Each is an ordinary workspace tab, idempotent by identity, so a resumed session
+    (``resume=True``) gets only what is not open yet. The first is SELECTED (shown)
+    only when the session shows nothing yet — a resume never steals the display."""
     if not tabs:
         return
     from flow_sdk.builtin.tab import broadcast_tabs_changed, ensure_tab  # noqa: PLC0415
     from flow_sdk.core.display_target import dock_target, resolve_display_target  # noqa: PLC0415
 
-    # The session's own tab FIRST: a child whose parent row does not exist yet is
-    # orphaned by the next tab-list read (the dangling-parent sweep).
+    # The session's own tab FIRST — as the Vibe workspace it is (the frontend's shape: viewType
+    # vibe, keyed on the shell hash), so it hosts its children from the start. A child whose
+    # parent row does not exist yet is orphaned by the next tab-list read.
+    session = f"{process.get_type()}-{process.id}"
     anchor = await ensure_tab(
-        tab_pointer_json("shell", f"{process.get_type()}-{process.id}"),
+        json.dumps({"viewType": "vibe", "pointer": session, "tabHash": f"shell|{session}"}),
         target_type=process.get_type(),
         target_id=str(process.id),
         project_id=process.project_id,
     )
-    for tab in tabs[1:]:
-        # Named on create: a nameless row falls back to the view's generic label.
-        name = tab.path.name if tab.path is not None else None
-        await ensure_tab(tab.pointer, project_id=process.project_id, parent_tab_id=anchor.id, name=name)
-    first = tabs[0]
-    if first.path is not None:
-        target = await resolve_display_target(path=str(first.path))
-    else:
-        target = await dock_target(first.address)
-    # What a Vibe worker is told is already open (``auto_open_prompt_block``) — saved
-    # by ``on_show`` below.
+    for tab in tabs:
+        await ensure_tab(workspace_tab_pointer(tab.pointer, session), project_id=process.project_id,
+                         parent_tab_id=anchor.id, name=await _tab_name(tab))
+    # What a Vibe worker is told is already open (``auto_open_prompt_block``).
     process.context_data = {**(process.context_data or {}), "auto_open": auto_open_commands(tabs)}
-    await process.on_show(target)
+    if resume and (process.context_data or {}).get("last_shown"):
+        await process.save()
+    else:
+        first = tabs[0]
+        if first.path is not None:
+            target = await resolve_display_target(path=str(first.path))
+        else:
+            target = await dock_target(first.address)
+        await process.on_show(target)  # saves
     await broadcast_tabs_changed()
+
+
+def workspace_tab_pointer(pointer: str, session: str) -> str:
+    """``pointer`` as a tab OF the Vibe workspace ``session``: its own row, apart from the same
+    thing's top-level tab — the hash the frontend gives a hosted dock (``DockPointer.tabHash``)."""
+    from flow_sdk.builtin.tab import _pointer_to_hash  # noqa: PLC0415
+
+    found = json.loads(pointer)
+    found["tabHash"] = f"{_pointer_to_hash(pointer)}|@{session}"
+    return json.dumps(found)
+
+
+async def _tab_name(tab: AutoOpenTab) -> str | None:
+    """A file is named by its file name, an app by its title; anything else by its view's label."""
+    if tab.path is not None:
+        return tab.path.name
+    found = json.loads(tab.pointer)
+    pointer = str(found.get("pointer") or "")
+    if found.get("viewType") == "app" and pointer.startswith("micro_app-"):
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+        app = await WebApp.get_by_id(pointer.removeprefix("micro_app-"))
+        if app is not None:
+            return app.title or app.name
+    return None
 
 
 def auto_open_commands(tabs: list[AutoOpenTab]) -> list[str]:

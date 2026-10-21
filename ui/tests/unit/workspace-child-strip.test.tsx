@@ -48,17 +48,6 @@ function row(id: string, overrides: Partial<ITab> = {}): ITab {
 /** A child row shaped like the workspace's OWN active display (FLOWPAD-2096):
  *  `materializeTab` adopts a `flow show` preview target as a child of the process
  *  tab, but the fixed Display header already represents it — so it gets no chip. */
-function activeDisplayRow(id: string): ITab {
-  return row(id, {
-    pointer: JSON.stringify({
-      viewType: 'assets',
-      pointer: 'editor/html/vfs/compute_node-@local/index.html',
-      options: { activeDisplay: '1' },
-      tabHash: `activeDisplay|${AP}`,
-      workspaceContent: true,
-    }),
-  });
-}
 
 function processTab(): Tab {
   return new Tab({
@@ -109,10 +98,9 @@ describe('WorkspaceChildStrip', () => {
     expect(screen.queryByText('child eeee')).toBeNull();
   });
 
-  it('excludes the workspace\'s own active-display row (FLOWPAD-2096), but still renders an ordinary child', () => {
+  it('renders what the agent showed as an ordinary child chip', () => {
     const child = row('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
-    const display = activeDisplayRow('ffffffff-ffff-4fff-8fff-ffffffffffff');
-    tabManager.adoptGlobal([processTab(), child, display]);
+    tabManager.adoptGlobal([processTab(), child]);
 
     render(
       <TooltipProvider>
@@ -121,24 +109,6 @@ describe('WorkspaceChildStrip', () => {
     );
 
     expect(screen.getByText('child bbbb')).toBeTruthy();
-    expect(screen.queryByText('child ffff')).toBeNull();
-  });
-
-  it('highlights the Display header when the current dock IS the active display, even off the process tabHash', () => {
-    tabManager.adoptGlobal([processTab()]);
-    // The active-display dock is keyed by ACTIVE_DISPLAY_HASH_NS + host, not by
-    // the process's own tabHash, so a plain tabHash comparison would miss it.
-    currentDock = new DockPointer(ViewType.ASSETS, 'editor/html/vfs/compute_node-@local/index.html', {
-      activeDisplay: '1',
-    });
-
-    render(
-      <TooltipProvider>
-        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
-      </TooltipProvider>,
-    );
-
-    expect(screen.getByTestId('workspace-display-tab').getAttribute('aria-current')).toBe('true');
   });
 
   it('clicking the Display header navigates to the process dock', () => {

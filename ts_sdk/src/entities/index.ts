@@ -83,6 +83,7 @@ export * from './deck-template';
 export * from './mcp';
 export * from './deck';
 export * from './spreadsheet';
+export * from './document-file';
 export * from './agent-trace';
 export * from './dynamic-workflow';
 export * from './usage-report';

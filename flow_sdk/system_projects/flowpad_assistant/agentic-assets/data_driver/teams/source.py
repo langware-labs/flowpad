@@ -79,7 +79,7 @@ class TeamsMessageSpec(ChannelMessageSpec):
 
 class TeamsMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.teams"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     #: A root message's subject; a reply has none.
     subject: Optional[str] = None

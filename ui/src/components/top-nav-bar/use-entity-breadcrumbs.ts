@@ -409,7 +409,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         if (!live) return;
         setResolved({ typeId: targetTypeId ?? null, entity: (target as AnyEntity) ?? null });
 
-        const parentRef = (target as { parent_type_id?: string | null } | null)?.parent_type_id ?? null;
+        const containedIn = (target as { parent_type_id?: string | null } | null)?.parent_type_id ?? null;
+        // An app is never an agent's: an agent only lists apps to open, so an app folder that
+        // happens to sit in an agent's folder does not put the agent in the app's address.
+        const parentRef =
+          targetTypeId?.type === 'micro_app' && containedIn?.startsWith('agent-') ? null : containedIn;
         const chain = await resolveAncestorChain(parentRef, () => live);
         if (!live) return;
         setAncestors(chain);

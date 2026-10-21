@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
@@ -239,6 +240,11 @@ export function useAssetsModel() {
     // missing — a count only ever gates a row IN.
     for (const group of assetMenu?.root?.groups ?? []) {
       counts.set(group.type_name, Math.max(counts.get(group.type_name) ?? 0, group.count));
+    }
+    // A section counts what it lists: Documents = markdown + its .docx / .txt files.
+    for (const [type, n] of Array.from(counts)) {
+      const extra = sectionRecordTypes(type).slice(1).reduce((sum, other) => sum + (counts.get(other) ?? 0), 0);
+      if (extra) counts.set(type, n + extra);
     }
     // LLM endpoints are neither indexed nor path-attributed, so neither source above can
     // see them and the row would be hidden for everyone outside dev mode. Their count is

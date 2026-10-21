@@ -23,6 +23,8 @@ export interface ISourceItem extends IEntity {
   origin_namespace?: string;
   origin_key?: string;
   data?: SourceItemData | null;
+  item_scope?: string;
+  item_key?: string;
   thread_key?: string | null;
   reply_to_external_id?: string | null;
   permalink?: string | null;

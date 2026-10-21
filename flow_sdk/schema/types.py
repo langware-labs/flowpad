@@ -149,6 +149,9 @@ class EntityType(StrEnum):
     # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)
     # discovered anywhere in a project, rendered in a grid editor.
     SPREADSHEET = "spreadsheet"
+    # A read-only document file (.docx / .txt) inside a docs folder — listed with
+    # the markdown Documents and opened in a read-only preview.
+    DOCUMENT_FILE = "document_file"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     # A diagnosis someone ELSE runs and writes into on the hub, by id, with no login
     # (``flow diagnose <id>``). Subclass of FLOWPAD_DIAGNOSIS — see builtin/diagnosis_request.py.

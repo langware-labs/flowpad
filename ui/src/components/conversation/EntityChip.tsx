@@ -63,6 +63,8 @@ interface EntityChipProps {
   /** The loaded entity row. Transcripts open by file location, so their
    *  pointer needs fields (`asset_ref`, `received`) a bare TypeId lacks. */
   row?: object | null;
+  /** Icon only; the name slides out on hover/focus. */
+  collapsed?: boolean;
 }
 
 /**
@@ -118,6 +120,10 @@ const DEFAULT_STYLE = 'border border-border bg-muted/30 text-muted-foreground ho
 export const CHIP_LAYOUT =
   'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors';
 
+/** Icon-only pill whose label expands on hover (``collapsed``). */
+const COLLAPSED_CHIP_LAYOUT =
+  'group/chip inline-flex h-6 items-center rounded-full px-1.5 text-[11px] font-medium transition-colors';
+
 /** A chip's colors for an entity type (neutral when the type has none). */
 export function chipStyleFor(type?: string): string {
   return (type && STYLE_BY_TYPE[type]) || DEFAULT_STYLE;
@@ -166,6 +172,7 @@ export function EntityChip({
   muted = false,
   staged = false,
   row,
+  collapsed = false,
 }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
@@ -198,8 +205,15 @@ export function EntityChip({
     };
   }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
 
-  const baseLayout =
-    size === 'chip' ? CHIP_LAYOUT : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
+  const baseLayout = collapsed
+    ? COLLAPSED_CHIP_LAYOUT
+    : size === 'chip'
+      ? CHIP_LAYOUT
+      : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
+  // Collapsed: the label is zero-width until the chip is hovered/focused; its margin is the gap.
+  const labelCls = collapsed
+    ? 'max-w-0 transition-[max-width,margin] duration-200 group-hover/chip:mx-1 group-hover/chip:max-w-[20rem] group-focus-visible/chip:mx-1 group-focus-visible/chip:max-w-[20rem]'
+    : '';
 
   return (
     <button
@@ -210,14 +224,14 @@ export function EntityChip({
       aria-disabled={muted}
       data-testid={`entity-chip-${entity.type}-${entity.id}`}
       data-state={muted ? 'unavailable' : staged ? 'staged' : 'installed'}
+      aria-label={collapsed ? label : undefined}
       className={`${baseLayout} ${typeStyle}${muted ? 'cursor-default opacity-60' : ''}`}
     >
-      <Icon className="h-3 w-3" />
-      <span className="truncate">{label}</span>
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className={`truncate ${labelCls}`}>{label}</span>
     </button>
   );
 }
-
 
 interface ContextEntityChipProps {
   /** TypeId from one of an entity's two context buckets
@@ -228,6 +242,7 @@ interface ContextEntityChipProps {
   projectId?: string | null;
   title?: string;
   size?: 'chip' | 'inline';
+  collapsed?: boolean;
 }
 
 /**
@@ -240,7 +255,15 @@ interface ContextEntityChipProps {
  * hand-constructing each chip.
  */
 
-export function ContextEntityChip({ typeId, inside, onClick, projectId, title, size }: ContextEntityChipProps) {
+export function ContextEntityChip({
+  typeId,
+  inside,
+  onClick,
+  projectId,
+  title,
+  size,
+  collapsed,
+}: ContextEntityChipProps) {
   // Resolve the display name; navigation is owned by the single ``EntityChip``.
   // Asset types navigate by TypeId (the loader resolves the entity), so there's
   // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
@@ -262,6 +285,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
       title={title}
       size={size}
       muted={notFound}
+      collapsed={collapsed}
     />
   );
 }

@@ -67,6 +67,7 @@ export function VibeNewChat() {
         {installDialog}
         <ProjectActionsRow className="w-full self-start" />
         <ProjectAgentsStrip
+          startsNew
           className="w-full self-start"
           headerExtra={<AssetCounterChips group={agentCounterGroup} />}
           fallback={<AssetCounterRow group={agentCounterGroup} />}

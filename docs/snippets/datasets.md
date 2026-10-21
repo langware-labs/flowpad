@@ -184,16 +184,15 @@ refuses while one points at the row. Rows carry `ref` and `version` over HTTP to
 back as `put-row {key, row, expected}` and a row changed since answers 409. The datasets holding a
 kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forKind(kind, projectId)`).
 
-## 9. Mirror an outside system, and read only what you show
+## 9. Hold an outside system's rows, and read only what you show
 
-A system of record reached through a data source is mirrored by DECLARING it on the source
-(`"mirror": {dataset, map, by?}` in its `data_source.json`): every sync keeps the dataset so, and a
-row's outside-owned fields write back through the source. The map turns ids into links
-(`{"link": <kind>, "by": <unique field>, "path": "data.deal_ids.*"}`). See
-[mirroring a system of record](../data-management/mirroring-a-system-of-record.md). What follows is
-the same mirror done by hand, from rows your own code builds.
+A dataset's rows can live in a system of record: its `dataset.json` `location` names the driver
+and a `map` (`{"driver": "twenty", "config": {...}, "map": {"key": "external_id", "input": {...}}, "by": "crm"}`).
+Every read pulls the records into rows, and a row's outside-owned fields write back through the
+driver. See [dataset locations](../data-management/dataset-locations.md). What follows is the same
+idea done by hand, from rows your own code builds.
 
-An app that keeps real records — a mirror of a CRM, a log of outreach — writes many rows per run and
+An app that keeps real records — a copy of a CRM, a log of outreach — writes many rows per run and
 shows a few of them. `sync` makes the dataset hold exactly the rows given, in one step; `query` and
 `count` answer the rows that match, so a number on a dashboard and the list behind it are one question.
 
@@ -259,27 +258,28 @@ values `path` takes in the rows that match". TypeScript `bucketOf(day, 'week', '
 
 ## 11. Change a field the outside system owns
 
-In a dataset a data source mirrors (§9, the declared `mirror`), every field the map names is the
-outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
-change is sent to that system first, through the source's driver, and the row is then written as
-the system answered. The app's own fields (`notes`) are written as given. There is no merge to write
-and no client of your own to keep.
+In a dataset whose rows live in a record system (§9, a `location` with a `map`), every field the map
+names is the outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
+change is sent to that system first, through the location's driver, and the row is then written as
+the system answered. Every field of such a row lives in the system: one the map does not hold is
+refused (`not_stored`) -- kept, it would live only in this machine's working copy. There is no merge
+to write and no client of your own to keep.
 
 ```python
 from flow_sdk.datasets import LinkError
 
-row = tasks.query({"key": "t-1"})["rows"][0]                   # status is the CRM's; notes is ours
-await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "notes": "called twice"}}, expected=row["version"])
-now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE' as the CRM answered, notes kept
+row = tasks.query({"key": "t-1"})["rows"][0]                   # status and label are the CRM's
+await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "label": "hot"}}, expected=row["version"])
+now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE', label 'hot', as the CRM answered
 try:
-    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mirrored from a path nothing can write
+    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mapped from a path nothing can write
 except LinkError as refused:
     code = refused.details[0]["code"]                        # 'not_writable' -- nothing was sent
 ```
 
 The refusals, by `details[].code`: `not_writable` (the map reads the field from a path it cannot
-write), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
-ids no row here resolves yet), `owned` (the source is read-only, or this process holds no driver). A
+write), `not_stored` (the map holds no such field), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
+ids no row here resolves yet), `owned` (the location is read-only, or this process holds no driver). A
 record the system made but could not finish is written, with `warnings: [{error_code:
 "source_partial", message, key}]` in the answer — show them.
 
@@ -287,6 +287,6 @@ Only the server holds a driver. Over HTTP — what an app and a script use — i
 `POST dataset/<id>/put-row {key, row, expected?}`, `put-rows`, `append`, and `delete-row` /
 `delete-rows` to delete the record outside too. TypeScript: `dataset.put(key, {input}, {expected})`.
 A script calls the action (`flow_sdk.local_client.graph_post(f"dataset/{ds.id}/put-row", {...})`);
-`Dataset.put` in a script is refused `owned`. A mirror whose map names a field the schema does not
-mark `owned_by` its `by` is refused as a whole (`mirror_failed`, `not_owned`): such a field would
-take an edit and lose it at the next sweep.
+`Dataset.put` in a script is refused `owned`. A map that names a field the schema does not mark
+`owned_by` its `by` is refused at the pull (`not_owned`): such a field would take an edit and lose it
+at the next pull.

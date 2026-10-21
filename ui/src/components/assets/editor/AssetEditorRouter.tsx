@@ -1,4 +1,5 @@
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
+import { ViewerChatSlotProvider } from './ViewerChatToggle';
 import {
   AssetSetup,
   ComputeOp,
@@ -11,6 +12,7 @@ import {
   dataManager,
   Deck,
   DeckTemplate,
+  DocumentFile,
   DynamicWorkflow,
   FSRef,
   Journey,
@@ -86,6 +88,9 @@ const McpAppPreview = lazy(() =>
 const SpreadsheetAssetEditor = lazy(() =>
   import('./spreadsheet/SpreadsheetAssetEditor').then((m) => ({ default: m.SpreadsheetAssetEditor })),
 );
+const DocumentFileViewer = lazy(() =>
+  import('./document-file/DocumentFileViewer').then((m) => ({ default: m.DocumentFileViewer })),
+);
 
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
@@ -141,7 +146,16 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
+/** Every asset viewer, with its Chat toggle (`ViewerChatSlotProvider`). */
+export function AssetEditorRouter(props: AssetEditorRouterProps) {
+  return (
+    <ViewerChatSlotProvider>
+      <AssetEditorRouterInner {...props} />
+    </ViewerChatSlotProvider>
+  );
+}
+
+function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
   const { currentDock, navigation } = useDockNavigation();
   const readOnly = useAssetReadOnly();
   const occurrenceType = useReadOnlyOccurrenceType();
@@ -534,6 +548,23 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
               <AssetCollisionShell entity={spreadsheet}>
                 <Suspense fallback={<ConnectingFallback />}>
                   <SpreadsheetAssetEditor fsRef={fsRef} spreadsheet={spreadsheet} />
+                </Suspense>
+              </AssetCollisionShell>
+            )}
+          />
+        );
+      case AssetEditor.DOCUMENT_FILE:
+        return (
+          <EntityResolutionGate<DocumentFile>
+            type={DocumentFile.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="document"
+            resolvedEntity={typeIdEntity as DocumentFile | undefined}
+            render={(documentFile) => (
+              <AssetCollisionShell entity={documentFile}>
+                <Suspense fallback={<ConnectingFallback />}>
+                  <DocumentFileViewer fsRef={fsRef} documentFile={documentFile} />
                 </Suspense>
               </AssetCollisionShell>
             )}

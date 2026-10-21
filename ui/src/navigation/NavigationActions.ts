@@ -42,7 +42,7 @@ import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
-import { contentAssetTargetForDock, reviewPromptFor, isContentAssetDock } from './content-asset-dock';
+import { contentAssetTargetForDock, isContentAssetDock, offersDocChat } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
@@ -188,7 +188,7 @@ function hostToCarry(here: DockPointer | null, target: DockPointer): string | nu
  * at click time, long after mount, when the effective mode is settled.
  */
 /** An asset as a Vibe host's child: rebased onto its project, `?host=` the session. */
-function hostedAssetDock(asset: DockPointer, projectId: string, processId: string): DockPointer {
+function hostedAssetDock(asset: DockPointer, projectId: string | null, processId: string): DockPointer {
   return DockPointer.rebaseAssetsOntoProject(asset, projectId)
     .withHost(new TypeId(AgenticProcess.type, processId).toString())
     .withViewMode(ViewMode.Vibe);
@@ -1039,17 +1039,22 @@ export class NavigationActions {
   }
 
   /**
-   * Discuss an asset: a Vibe HOST tab with the asset as its child — the chat beside
-   * the asset is that host's session. Resumes the latest Vibe chat about this asset
-   * (`target_typeid_str` = the asset) and creates one only when there is none.
-   * The host tab is placed first; opening the asset under `?host=` then makes it
-   * that tab's child (the tab loader re-parents a warm tab whose host edge is new).
+   * THE way into "chat with this doc": a Vibe HOST tab with the doc as its child,
+   * the chat beside it. Resumes the latest chat about the doc (`target_typeid_str`
+   * = the doc) in the place it runs, and creates one only when there is none.
+   * The place: the doc tab's project → the active project → no project (the
+   * backend's chat-scratch folder). Viewers that have no chat-beside mode
+   * (`offersDocChat`) are a no-op.
    */
-  async discussAsset(asset: DockPointer, projectId: string): Promise<void> {
-    // The same chat identity the chat beside an asset uses (`asset-work-context`).
+  async enterChat(asset: DockPointer): Promise<void> {
+    if (!offersDocChat(asset)) return;
+    const [tabs, { lastVibeChatQuery, pickLastVibeChat }, { createVibeProcessForProject }] = await Promise.all([
+      tabManager.snapshotOrRefresh(),
+      import('@src/pages/flow-page/vibe-process-resolver'),
+      import('@src/pages/flow-page/use-start-vibe-session'),
+    ]);
+    const projectId = tabForDockKey(tabs, asset.tabHash ?? '')?.project_id ?? dataContext.project?.id ?? null;
     const target = contentAssetTargetForDock(asset)?.targetVfsPath;
-    const { lastVibeChatQuery, pickLastVibeChat } = await import('@src/pages/flow-page/vibe-process-resolver');
-    const { createVibeProcessForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
     const last = target
       ? pickLastVibeChat(
           await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, target, { openedOnly: false })),
@@ -1057,39 +1062,20 @@ export class NavigationActions {
       : null;
     const processId =
       last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
+    await this.openDocInChat(asset, processId, projectId);
+  }
+
+  /** `asset` beside the chat `processId` — the doc as a child of that chat's Vibe host
+   *  tab. `enterChat` ends here; the chat's doc chip comes straight here. */
+  async openDocInChat(asset: DockPointer, processId: string, projectId: string | null): Promise<void> {
     await this.placeVibeTabBeside(processId);
     this.openDock(hostedAssetDock(asset, projectId, processId));
   }
 
-  /**
-   * Start a NEW session that reviews a document, on the surface asked for. The
-   * document is the session's target and the prompt names it; an entity-backed
-   * one also rides in the session's shared context. The launching tab stays as
-   * it is: Terminal and Chat open their own tab, Vibe opens a host tab placed
-   * right after the tab on screen. `path` is the file of a document addressed
-   * by id, which its dock does not carry — the caller has the entity in hand.
-   */
-  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null, path?: string): Promise<void> {
-    const target = contentAssetTargetForDock(asset);
-    if (!target) return;
-    const prompt = reviewPromptFor({ ...target, path: target.path ?? path });
-    const about = {
-      targetVfsPath: target.targetVfsPath,
-      sharedContextEntities: target.typeId ? [target.typeId] : undefined,
-    };
-    if (mode === ViewMode.Vibe) {
-      if (!projectId) return;
-      const { launchVibeSessionForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
-      await launchVibeSessionForProject({
-        ...about,
-        projectId,
-        message: prompt,
-        navigation: { openShellProcess: (processId) => void this.openVibeTabBeside(processId) },
-      });
-      return;
-    }
-    const { openNewChat } = await import('./open-new-chat');
-    await openNewChat(this, { ...about, mode, projectId: projectId ?? undefined, prompt });
+  /** Out of "chat with this doc": the same doc, plain. The chat keeps running (Recent, the chat chip). */
+  leaveChat(asset: DockPointer): void {
+    // `topLevel`: otherwise `hostToCarry` puts the host we are leaving straight back.
+    this.openDock(asset.withHost(null).withViewMode(null), undefined, { topLevel: true });
   }
 
   async openShellProcess(

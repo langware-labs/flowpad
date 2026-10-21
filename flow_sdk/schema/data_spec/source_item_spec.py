@@ -55,6 +55,21 @@ class SourceItemSpec(DataSpec):
 
     @model_validator(mode="before")
     @classmethod
+    def _scope_when_known(cls, data):
+        """``item_scope`` when the envelope already says it: the scope its origin was minted in
+        (``Scope.origin``), or ``""`` for an unlifted flat envelope — its lifted origin is scoped by
+        the account (or the kind) alone. Left ``None`` only for an origin that lost its scope in
+        transit; ``ingestor.lift_page`` recovers that one from the source's account."""
+        if isinstance(data, dict) and data.get("item_scope") is None:
+            origin = data.get("origin")
+            if origin is None:
+                data = {**data, "item_scope": ""}
+            elif isinstance(origin, CloudOrigin) and origin._scope is not None:
+                data = {**data, "item_scope": origin._scope}
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def _epoch_id_is_the_clock(cls, data):
         """When the provider's own id IS a timestamp, it outranks the caller.
 
@@ -117,24 +132,55 @@ class SourceItemSpec(DataSpec):
 
     # ── the contract's value, lifted from the header above (``ingest/envelope_lift.py``) ──
     # The ingestor fills both before it resolves the row; a caller may pass them already
-    # lifted. Neither is digested: each is a function of digested fields and the source.
+    # lifted. ``data`` is the AUTHORITATIVE body: the row stores it as ``payload`` and the change
+    # digest is computed over it. The flat header above is its queryable copy until every reader
+    # moves to the payload accessors.
     origin: Optional[CloudOrigin] = None
+    # Stored under ``data`` until the readers that address it by path (``data.stage`` in mirror
+    # maps, dataset files) move with the migration; ``payload`` is the name new code reads.
     data: Optional[Tagged[Payload]] = None
+    #: The account-free scope of the item (``flow_sdk.sources.base.scope_of``): with
+    #: ``data_source_id`` and ``item_key`` it IS the stored identity. ``None`` until the ingestor
+    #: fills it (``ingestor.lift_page``); a caller that knows it passes it.
+    item_scope: Optional[str] = None
 
-    def digest_extra(self) -> Optional[dict]:
-        """What joins ``DIGESTED_FIELDS`` in the change digest: a RECORD's typed fields. A record is a
-        row "updated in place" -- an issue's status, a deal's stage -- and those live in ``data``, not
-        in the header: without them a changed status reads as *unchanged* and the stored record (and
-        every mirror of it) goes stale. A message joins only its ``mark`` (a review re-stated as
-        approved), and only when it has one, so an unmarked message keeps the digest it had. None for
-        files, whose header says it all."""
+    @property
+    def payload(self) -> Optional[Payload]:
+        """The authoritative typed value (stored as ``data``)."""
+        return self.data
+
+    @property
+    def item_key(self) -> str:
+        """The remote id, unique within ``(data_source_id, item_scope)``."""
+        return self.origin.key if self.origin is not None else self.external_id
+
+    def digest_view(self) -> dict:
+        """What the change digest hashes: the payload — minus the fields its class declares in
+        ``digest_exclude`` — its schema, and the link the origin carries. An envelope never lifted
+        (no payload) falls back to the flat header's view."""
+        if self.data is None:
+            return self.legacy_digest_view()
+        return {
+            "spec_kind": getattr(type(self.data), "spec_kind", None),
+            "payload": self.data.stable_dump(),
+            "url": self.origin.url if self.origin is not None else None,
+        }
+
+    def legacy_digest_view(self) -> dict:
+        """The digest rows written before the payload digest carry (``DIGESTED_FIELDS`` plus a
+        record's typed fields, a message's mark). The gate accepts it as *unchanged* so the switch
+        rewrites nothing; the data migration re-digests every row once."""
+        view = {name: getattr(self, name, None) for name in DIGESTED_FIELDS}
         fields = record_fields(self.data)
         if fields is not None:
-            return {"data": fields}
-        mark = getattr(self.data, "mark", None)
-        return {"mark": mark.model_dump(mode="json")} if mark is not None else None
+            view["data"] = fields
+        else:
+            mark = getattr(self.data, "mark", None)
+            if mark is not None:
+                view["mark"] = mark.model_dump(mode="json")
+        return view
 
-    # The flat triple the row's natural key reads (``SOURCE_ITEM.natural_key``).
+    # The flat triple the legacy natural key reads (``SOURCE_ITEM.legacy_natural_key``).
     @property
     def origin_kind(self) -> str:
         return self.origin.kind if self.origin else ""
