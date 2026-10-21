@@ -17,6 +17,11 @@ import json
 import logging
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    final_end_frame,
+    safe_dump,
+    status_frame,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -37,11 +42,6 @@ from flow_sdk.transcript_analyzer.parsers.claude import (
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 from .session_history import entry_to_flowdata
-from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
-    final_end_frame,
-    safe_dump,
-    status_frame,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,13 @@ logger = logging.getLogger(__name__)
 
 _parser = ClaudeParser()
 _line_index = 0
+# message.id -> the timestamp of its FIRST line. Claude writes one line per
+# content block (thinking, then text) under one message.id, and the transcript
+# folds them into one entry stamped with the first line's time
+# (``_fold_assistant_messages``). A live frame must carry that same time, or the
+# pane can't match it to its observe-turn twin and renders the answer twice.
+_message_started_at: dict[str, str] = {}
+_MESSAGE_STARTED_AT_CAP = 512
 
 
 def convert_event(event: dict[str, Any]) -> list[FlowData]:
@@ -149,8 +156,28 @@ def _with_process_entry(fd: FlowData, entry) -> FlowData:
     return fd
 
 
+def _folded_timestamp(event: dict[str, Any]) -> dict[str, Any]:
+    """``event`` stamped with the time of its message's first text/thinking line.
+
+    Only text and thinking lines fold into one transcript entry; a tool call keeps
+    its own row and time, so it neither sets nor takes the folded time.
+    """
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    msg_id = str(message.get("id") or "")
+    stamp = str(event.get("timestamp") or "")
+    folds = any(isinstance(b, dict) and b.get("type") in ("text", "thinking") for b in _content_blocks(event))
+    if not msg_id or not stamp or not folds:
+        return event
+    if msg_id not in _message_started_at:
+        if len(_message_started_at) >= _MESSAGE_STARTED_AT_CAP:
+            del _message_started_at[next(iter(_message_started_at))]
+        _message_started_at[msg_id] = stamp
+    return {**event, "timestamp": _message_started_at[msg_id]}
+
+
 def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[FlowData]:
     out: list[FlowData] = []
+    folded = _folded_timestamp(event)
     for block_index, block in enumerate(_content_blocks(event)):
         if not isinstance(block, dict):
             continue
@@ -161,17 +188,22 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
                 continue
             entry = AssistantMessageEntry(
                 text=text,
-                **_base_for_event(event, line_index, block_index, str(block.get("id") or "")),
+                **_base_for_event(folded, line_index, block_index, str(block.get("id") or "")),
             )
-            out.append(_with_process_entry(FlowData(
-                flow_value=text,
-                created_time=entry.timestamp,
-                attributes={
-                    "element-type": FlowElementType.CHAT,
-                    "data-type": FlowDataType.TEXT,
-                    "role": "assistant",
-                },
-            ), entry))
+            out.append(
+                _with_process_entry(
+                    FlowData(
+                        flow_value=text,
+                        created_time=entry.timestamp,
+                        attributes={
+                            "element-type": FlowElementType.CHAT,
+                            "data-type": FlowDataType.TEXT,
+                            "role": "assistant",
+                        },
+                    ),
+                    entry,
+                )
+            )
         elif btype == "thinking":
             thinking = str(block.get("thinking") or block.get("text") or "")
             if not thinking:
@@ -179,17 +211,22 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
             entry = AssistantMessageEntry(
                 text="",
                 thinking=thinking,
-                **_base_for_event(event, line_index, block_index, str(block.get("id") or "")),
+                **_base_for_event(folded, line_index, block_index, str(block.get("id") or "")),
             )
-            out.append(_with_process_entry(FlowData(
-                flow_value=thinking,
-                created_time=entry.timestamp,
-                attributes={
-                    "element-type": FlowElementType.REASONING,
-                    "data-type": FlowDataType.TEXT,
-                    "role": "assistant",
-                },
-            ), entry))
+            out.append(
+                _with_process_entry(
+                    FlowData(
+                        flow_value=thinking,
+                        created_time=entry.timestamp,
+                        attributes={
+                            "element-type": FlowElementType.REASONING,
+                            "data-type": FlowDataType.TEXT,
+                            "role": "assistant",
+                        },
+                    ),
+                    entry,
+                )
+            )
         elif btype == "tool_use":
             tool_name = str(block.get("name") or "")
             tool_use_id = str(block.get("id") or "")
@@ -198,13 +235,15 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
             # then the SAME converter the history path uses, so a live frame is
             # identical to the one a reload replays — including the semantic
             # subtype (file_write / skill_call / flow_command …) the chips read.
-            entry = derive_entry(build_semantic_tool_entry(
-                tool_name=tool_name,
-                tool_use_id=tool_use_id,
-                tool_input=tool_input,
-                envelope={},
-                base=_base_for_event(event, line_index, block_index, tool_use_id),
-            ))
+            entry = derive_entry(
+                build_semantic_tool_entry(
+                    tool_name=tool_name,
+                    tool_use_id=tool_use_id,
+                    tool_input=tool_input,
+                    envelope={},
+                    base=_base_for_event(event, line_index, block_index, tool_use_id),
+                )
+            )
             out.extend(entry_to_flowdata(entry, observation_kind="live"))
     return out
 
@@ -244,20 +283,25 @@ def _convert_user_event(event: dict[str, Any], line_index: int) -> list[FlowData
             is_error=bool(block.get("is_error", False)),
             **_base_for_event(event, line_index, block_index, tool_use_id),
         )
-        out.append(_with_process_entry(FlowData(
-            flow_value={
-                "tool_call_id": tool_use_id,
-                "tool_use_id": tool_use_id,
-                "content": output,
-                "output": output,
-            },
-            created_time=entry.timestamp,
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
-                "data-type": FlowDataType.OBJECT,
-                "tool-use-id": tool_use_id,
-            },
-        ), entry))
+        out.append(
+            _with_process_entry(
+                FlowData(
+                    flow_value={
+                        "tool_call_id": tool_use_id,
+                        "tool_use_id": tool_use_id,
+                        "content": output,
+                        "output": output,
+                    },
+                    created_time=entry.timestamp,
+                    attributes={
+                        "element-type": FlowElementType.TOOL_RESULT,
+                        "data-type": FlowDataType.OBJECT,
+                        "tool-use-id": tool_use_id,
+                    },
+                ),
+                entry,
+            )
+        )
     return out
 
 
@@ -275,10 +319,20 @@ def _wrap_live(entry) -> FlowData:
     )
 
 
-_TOOL_USE_KINDS = frozenset({
-    "tool_use", "shell_command", "file_write", "file_edit", "file_read",
-    "search", "web_fetch", "todo_update", "agent_spawn", "exit_plan_mode",
-})
+_TOOL_USE_KINDS = frozenset(
+    {
+        "tool_use",
+        "shell_command",
+        "file_write",
+        "file_edit",
+        "file_read",
+        "search",
+        "web_fetch",
+        "todo_update",
+        "agent_spawn",
+        "exit_plan_mode",
+    }
+)
 
 
 def _element_type_for_kind(kind: str) -> str:
@@ -309,10 +363,10 @@ def _convert_result(event: dict[str, Any]) -> list[FlowData]:
         attrs["cost-usd"] = str(cost)
     return [
         FlowData(
-            flow_value={k: event.get(k) for k in ("subtype", "total_cost_usd", "usage", "result", "duration_ms") if k in event},
+            flow_value={
+                k: event.get(k) for k in ("subtype", "total_cost_usd", "usage", "result", "duration_ms") if k in event
+            },
             attributes=attrs,
         ),
         final_end_frame(),
     ]
-
-
