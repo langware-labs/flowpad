@@ -3472,15 +3472,17 @@ msgstr "Approve and continue"
 msgid "Approve now"
 msgstr "Approve now"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
-#: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "Approve once"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "Approve, and let {guestName} start sessions without asking"
+msgid "Approve this live session only"
+msgstr "Approve this live session only"
+
+#: src/components/collaboration/LiveSessionView.tsx
+#~ msgid "Approve, and let {guestName} start sessions without asking"
+#~ msgstr "Approve, and let {guestName} start sessions without asking"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4800,6 +4802,10 @@ msgstr "Cancel"
 msgid "Cancel reply"
 msgstr "Cancel reply"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Cancel request"
+msgstr "Cancel request"
+
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "cancelled"
@@ -5037,6 +5043,10 @@ msgstr "Charts"
 #: src/i18n/pref-labels.ts
 msgid "Chat"
 msgstr "Chat"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Chat about this file"
+msgstr "Chat about this file"
 
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
@@ -5720,6 +5730,7 @@ msgstr "Close"
 msgid "Close (Esc)"
 msgstr "Close (Esc)"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "Close (Escape)"
@@ -5758,6 +5769,10 @@ msgstr "Close all side tabs"
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
 msgstr "Close bookmark"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Close chat"
+msgstr "Close chat"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Close details"
@@ -7256,6 +7271,10 @@ msgstr "Could not open the sub-flow"
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
 msgstr "Could not open the workspace folder"
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Could not open this document: {error}"
+msgstr "Could not open this document: {error}"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not pause"
@@ -9438,8 +9457,8 @@ msgstr "Discovering {typeLabel}…"
 #~ msgstr "Discovering…"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Discuss"
-msgstr "Discuss"
+#~ msgid "Discuss"
+#~ msgstr "Discuss"
 
 #: src/i18n/pref-labels.ts
 msgid "Disk I/O backend"
@@ -9536,6 +9555,7 @@ msgstr "Document not on the hub: sign in to Flowpad cloud on this desk, then pub
 msgid "Documentation"
 msgstr "Documentation"
 
+#: src/i18n/type-labels.ts
 #: src/i18n/type-labels.ts
 msgid "Documents"
 msgstr "Documents"
@@ -11582,6 +11602,10 @@ msgstr "Find agent rules"
 msgid "Find an event"
 msgstr "Find an event"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
+msgid "Find in document…"
+msgstr "Find in document…"
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Find machine"
 msgstr "Find machine"
@@ -11639,8 +11663,8 @@ msgid "finishing"
 msgstr "finishing"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Finishing asset load…"
-msgstr "Finishing asset load…"
+#~ msgid "Finishing asset load…"
+#~ msgstr "Finishing asset load…"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 #~ msgid "Fire (synthetic test)"
@@ -11736,8 +11760,8 @@ msgid "Fix the configuration — credentials or settings — then press Verify t
 msgstr "Fix the configuration — credentials or settings — then press Verify to resume polling."
 
 #: src/components/data-sources/source-attention.ts
-msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "Fix the setup"
@@ -15141,6 +15165,7 @@ msgstr "Loading..."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -15850,8 +15875,8 @@ msgid "minutes"
 msgstr "minutes"
 
 #: src/components/data-sources/source-attention.ts
-msgid "Mirror needs attention"
-msgstr "Mirror needs attention"
+#~ msgid "Mirror needs attention"
+#~ msgstr "Mirror needs attention"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -16619,6 +16644,7 @@ msgstr "Next"
 msgid "next {0}"
 msgstr "next {0}"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
@@ -18803,6 +18829,10 @@ msgstr "open {name}"
 msgid "Open {name}"
 msgstr "Open {name}"
 
+#: src/pages/flow-page/vibe-doc-chip.tsx
+msgid "Open {name} beside this chat"
+msgstr "Open {name} beside this chat"
+
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
@@ -20614,6 +20644,7 @@ msgstr "Previous 30 days"
 msgid "Previous 7 days"
 msgstr "Previous 7 days"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "Previous match (Shift+Enter)"
@@ -21396,6 +21427,10 @@ msgstr "Read only"
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "Read the result in FlowPad"
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Read-only"
+msgstr "Read-only"
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Reader"
@@ -22758,8 +22793,8 @@ msgid "Review each attached asset and choose how to install it."
 msgstr "Review each attached asset and choose how to install it."
 
 #: src/tabs/doc-tab-card.tsx
-msgid "Review in"
-msgstr "Review in"
+#~ msgid "Review in"
+#~ msgstr "Review in"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -23987,8 +24022,8 @@ msgid "Select a project"
 msgstr "Select a project"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Select a project to discuss this file"
-msgstr "Select a project to discuss this file"
+#~ msgid "Select a project to discuss this file"
+#~ msgstr "Select a project to discuss this file"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -24487,6 +24522,10 @@ msgstr "Sessions ({0})"
 #: src/components/assets/editor/skill/SkillAssetEditor.tsx
 msgid "Sessions that used this skill — analyze, improve, commit"
 msgstr "Sessions that used this skill — analyze, improve, commit"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions are reached from Recent."
+msgstr "Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions are reached from Recent."
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -26278,6 +26317,10 @@ msgstr "stored"
 msgid "stored →"
 msgstr "stored →"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Stored in"
+msgstr "Stored in"
+
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
 msgstr "Stored in the project's repository on the hub"
@@ -27089,8 +27132,8 @@ msgid "The credentials could not be saved."
 msgstr "The credentials could not be saved."
 
 #: src/components/data-sources/source-attention.ts
-msgid "The dataset this source mirrors into could not be made current."
-msgstr "The dataset this source mirrors into could not be made current."
+#~ msgid "The dataset this source mirrors into could not be made current."
+#~ msgstr "The dataset this source mirrors into could not be made current."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -29756,6 +29799,11 @@ msgstr "Vibe"
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
 msgstr "Vibe agents"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Vibe only"
+msgstr "Vibe only"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx

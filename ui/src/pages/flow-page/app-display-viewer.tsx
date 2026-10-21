@@ -284,7 +284,7 @@ export function AppDisplayViewer({
   // Files served as they are need nothing set up, wherever they live (a mock in $TMPDIR):
   // the tab belongs to the project, the page does not wait on it.
   const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
-  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.hostProcessId
     ? (
       <ProjectLoadGate
         key={provider}

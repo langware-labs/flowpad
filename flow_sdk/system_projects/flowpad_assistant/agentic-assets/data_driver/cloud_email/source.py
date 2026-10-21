@@ -85,7 +85,7 @@ class MailboxTransport(Protocol):
 
 class CloudEmailMessageData(EmailMessageData):
     spec_kind: ClassVar[str] = "ingest.message.email.cloud"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     raw: Optional[dict] = None
 

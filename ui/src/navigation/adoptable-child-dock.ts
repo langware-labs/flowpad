@@ -65,3 +65,13 @@ export function isWorkspaceAnchorDock(dock: DockPointer): boolean {
   if (viewHostsTabs(dock.viewType)) return true;
   return dock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(dock.pointer?.trim() ?? '');
 }
+
+/**
+ * Is this dock a tab OF the Vibe workspace named in its URL (`host`)? Anything opened inside a
+ * workspace is, except a workspace anchor and an Assets list (one tab per scope). Such a tab is
+ * its OWN row per workspace (`DockPointer.tabHash` appends `|@<host>`), so an app the agent loads
+ * and the same app opened from the Apps menu are two tabs, never one row moving between them.
+ */
+export function isWorkspaceChildDock(dock: DockPointer): boolean {
+  return !!dock.hostProcessId && isAdoptableChildDock(dock, { shown: dock.viewType !== ViewType.ASSETS });
+}

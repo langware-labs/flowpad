@@ -177,6 +177,8 @@ export class Agent extends APIEntity<Agent> {
    *  with `use(…, true)` — auto-launch included — delivered via
    *  the prompt queue. Independent of `auto_launch`. */
   auto_launch_prompt?: string;
+  /** Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal. */
+  vibe_only: boolean;
   /** What every new session as this agent opens with: a place (`Tab.pointer` JSON, a
    *  file named inside the agent's project), a `navigate` compute op in the agent's
    *  project that repairs it when it cannot be used yet (`{op}`), or a wizard
@@ -223,6 +225,7 @@ export class Agent extends APIEntity<Agent> {
     this.intro = entity.intro;
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
+    this.vibe_only = entity.vibe_only ?? false;
     this.auto_open = entity.auto_open ?? null;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
@@ -376,6 +379,14 @@ export class Agent extends APIEntity<Agent> {
       ...autoPromptBody(autoPrompt),
       ...launchSurfaceField(),
     })) as AgentUseResult;
+  }
+
+  /**
+   * Opening the agent again lands on its last chat: re-apply `auto_open` there
+   * (`POST /agent/<id>/resume`) — only what is not open yet; the display is not moved.
+   */
+  async resume(processId: string): Promise<void> {
+    await this.post('resume', { process_id: processId });
   }
 
   /**

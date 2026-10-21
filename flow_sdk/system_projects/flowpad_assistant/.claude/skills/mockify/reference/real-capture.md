@@ -18,6 +18,20 @@ down what the real app does on the way** (a dialog that never opens, a "complete
 wants that feedback too. After every reload take a NEW screenshot (or `find` a ref) before clicking — a
 stale screenshot after the layout and webfont settle is the usual reason a click "does nothing".
 
+### Hard states — recipes (none of them needs an agent)
+
+- **The person's own data / projects** (their app, their open tabs): copy prod into your own instance
+  (`prodit` skill, `latest`: sqlite `.backup` each DB, rsync the rest incl. `sodot/`, `instance_ctl.sh launch
+  prodit-<N> --hub <prod hub> --email <their email> --password ""`). Never capture on prod itself.
+- **A Vibe tab with a project web app in the display** (the agent chat left, the app right): open
+  `http://localhost:<fe>/dock/app/micro_app-<id>?scope-mode=project&scope-activeProjectId=<project id>`.
+  The micro_app id is in the instance DB: `select id from entities where type='micro_app' and
+  json_extract(data,'$.name')='<app>'`. It opens with the chat that owns the app, exactly as the person sees it.
+- **The app inside the display is a cross-origin `<iframe>`** (`[data-testid=vibe-app-frame]`, portaled into
+  a fixed layer): the shell capture does NOT contain it. Open the iframe's `src` in its own tab, inline its
+  linked stylesheets (`fetch` each `link[rel=stylesheet]`), capture it, save it as `app.html` in the mock,
+  and in the states script move the iframe into the display's content slot with `src="app.html"`.
+
 ## 3. Capture
 
 Start the receiver; it binds 127.0.0.1 on a port the OS picks and prints it:

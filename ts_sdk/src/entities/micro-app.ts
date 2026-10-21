@@ -57,6 +57,11 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
     this.mounts = app.mounts ?? [];
   }
 
+  /** An app is labelled by its title ("Sales Desk"); `name` is the folder slug. */
+  override getDisplayName(): string | null {
+    return this.title?.trim() || null;
+  }
+
   /** Who the app is for. Known from the definition alone, so it holds before the app ever ran. */
   get audience(): WebAudience {
     return this.mounts[0]?.audience ?? 'app';

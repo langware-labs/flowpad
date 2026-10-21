@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-f8c2dd24-51c7-5d6b-9374-e56547a6d0b0
-inputs_hash: 4f7049e931b17d6f0e4d413b62cf07ff8d59685dac13272b7533dc37568a308e
+inputs_hash: cd0084afe273162846a56d7bd580d4dd66ad12fb7a2b426d144b27aadc88abf8
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
 vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
-generated_at: '2026-10-20T12:52:40.795640+00:00'
+generated_at: '2026-10-21T09:22:57.227994+00:00'
 latest_process_ref: ''
 file_count: 32
 subfolder_count: 0
@@ -23,10 +23,11 @@ subfolder_count: 0
 - [ComputeNode `fs-records` Action](compute-node-fs-records.md) — ComputeNode fs-records action: type-based and path-based CRUD routes for filesystem-backed records, query parameters, entity sync, WebSocket broadcast, errors.
 - [Data source assets](data-source-asset.md) — Data source asset folder layout: data_driver manifest, source.py, DataSource config files, runtime state, ownership, and manifest fields such as auth, webhook, reflect
 - [Data Sources UI (Frontend)](data-sources-ui.md) — Frontend Data Sources screen: components under ui/src/components/data-sources, dataManager entities and actions, URL-first navigation, status and health rendering, channels still to connect.
-- [Data sources](data-sources.md) — Backend model of data sources: pipeline from driver fetch to SourceItem ingestion, source contract and traits, status and health, identity, change envelope.
+- [Data sources](data-sources.md) — Data sources: one DataSource per stream with its driver, config, polling and local payload, plus the connect, sample, define flow producing a dataset.
 - [DataSpec — schemas as Pydantic, the schema as the layout](data-spec.md) — DataSpec base class for Pydantic schemas: kind registration, parsing schemas arriving as data, RowSpec and DatasetSpec generics, and asset layouts modeled by the schema class.
 - [Database Architecture](database.md) — SQLite database architecture after the async refactor: single engine, pooling, pragmas, BEGIN IMMEDIATE, per-request transactions, session resolution, and fixes for database-is-locked errors
-- [Dataset Layout (Authoring Guide)](datasets.md) — Authoring guide for dataset folder layout: dataset.json manifest, csv and io_folder layouts, slots, sidecars, row metadata, parsing rules, typed rows, and editors.
+- [Dataset locations — where a dataset's rows live](dataset-locations.md) — Dataset locations: the five forms of the location field (local, file, gdrive, s3, record-system driver), the working copy, and where a dataset's rows live.
+- [Dataset Layout (Authoring Guide)](datasets.md) — Authoring guide to dataset layout on disk: dataset.json manifest, csv versus io_folder layouts, rows, slots and how the library discovers and parses a dataset.
 - [diskio — measured results](diskio-benchmarks.md) — Measured diskio benchmark results comparing base, python and rust backends: methodology, per-operation speedups, what did not improve, correctness checks, and the shadow-folder rename migration
 - [Benchmark results (FIXED unless a benchmark is rerun)](diskio-design-benchmarks.md) — Benchmark results comparing Python SDK disk-IO paths (walk, gitignore, frontmatter, hashing, git, session stats) against throwaway Rust implementations, with speedups and verdicts per unit.
 - [Interface proposal — v6 — FINAL (iteration 6)](diskio.md) — Final v6 interface proposal for the flow_sdk diskio kernel: eight Protocol pieces (walker, scanner, reader, hasher), Python and Rust backends, rules, open decisions, excluded I/O.
@@ -41,7 +42,6 @@ subfolder_count: 0
 - [The LLM Folder-Index Pipeline](llm-index.md) — LLMIndexer pipeline that builds Merkle-tree index.md folder indexes with cached LLM summaries, plus the MarkdownIndex entity, rebuild process, server routes, and contrast with FSIndexer
 - [MCP Server Operations](mcp-operations.md) — The flow_sdk MCP server: launch paths, tool registration, the registered tools (ping, entity CRUD, tag, context, session analysis), .mcp.json configuration and logging.
 - [Meeting sources — Zoom, Teams, Google Meet](meeting-sources.md) — Research comparing Zoom, Teams and Google Meet recordings, transcripts, AI notes, auth, webhooks and plan limits as data sources, with fit to the driver model.
-- [Mirroring a system of record](mirroring-a-system-of-record.md) — Mirroring typed rows from an external system of record such as a CRM: credential, driver, source and dataset roles, field ownership, failure handling, deliberate gaps.
 - [Record Model](record-model.md) — FSRecord class and fs_store infrastructure: on-disk record layout, identity, save/load, DB sync, SchemaRegistry and TypeInfo, RecordList, RecordQuery and CollectionManifest.
 - [Record Search (FTS5/SQLite)](record-search.md) — SQLite FTS5 record search: indexing via sync_to_db, FTS table, TypeInfo index_fields, Entity.search, HTTP search and reindex endpoints, and performance notes
 - [Scan and Discovery](scan-and-discovery.md) — FSIndexer depth-first disk walker design: roots, walker registration, per-type dispatch, RecordQuery, when indexing runs, scan/index API endpoints, error records, performance and known issues.

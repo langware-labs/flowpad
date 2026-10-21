@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
-inputs_hash: 619135d3050e1308e7420d25aed50aac39482d74ca93e9ac20bf41b0a948f7ce
+inputs_hash: 9c0a565f20048630c967ebf6d0a7d734be95f3a3063a6a4f5add645fcc6418de
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
-generated_at: '2026-10-20T12:52:40.795640+00:00'
+generated_at: '2026-10-21T09:23:02.549175+00:00'
 latest_process_ref: ''
 file_count: 54
 subfolder_count: 16
@@ -43,7 +43,7 @@ subfolder_count: 16
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console debug cheatsheet: registered debug globals and snippets for entity, PTY, agentic process, hook, WebSocket, context, navigation and auth bugs, plus state snapshots.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef declarative file and folder references: the class family, indexer walk tags, read-only semantics for borrowed checkouts, and freshness fingerprint.
 - [fs_store: Record System Architecture](fs_store.md) — Pointer page for the fs_store file-backed record system, mapping each subject to its current doc and noting the SQLite entities table is a rebuildable index.
-- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Glossary of Flowpad nouns versus Claude Code and OpenClaw terms: FlowCall, SubAgent, Agent, kind/schema/value, workspaces, row/record/item, naming rules
+- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Glossary cross-walking Flowpad nouns with Claude Code and OpenClaw, including FlowCall, provider mirrors versus native assets, and which words are already taken.
 - [Icons](icons.md) — Icon system design: the backend names a glyph, the frontend resolves it; dot-tag names, packs, rendering, the bundle seam, lucide validity and adding an icon.
 - [Flowpad](intro.md) — Flowpad introduction presenting a collaboration tool for humans and AI workers to share agent work securely, with use cases like product specs and forward-deployment engineering.
 - [Listen Webhook Pipeline](listen_webhook.md) — Listen webhook pipeline: the listen endpoint, webhook types, agent hook identification, sniffer hook, FlowData conversion, and TypeScript SDK processing and rendering of hook events.
@@ -68,7 +68,7 @@ subfolder_count: 16
 - [Toplog — tag-based runtime logging](toplog.md) — Toplog tag-based runtime debug logging: backend and frontend usage, toplog.json as authority, architecture, tags that switch behavior, components, REST API and limitations.
 - [TraceGutter - FlowData Trace Events in the Terminal Left Gutter](trace-gutter.md) — TraceGutter design: rendering FlowData trace events against terminal rows, covering data sources, frontend hooks, row mapping, backend history flow, prompt index and file map.
 - [typeid](typeid.md) — Redirect stub stating that the TypeId doctrine has moved to primitives/typeid.md.
-- [Desktop <-> Backend Version Compatibility](version-compatibility.md) — Version-compatibility contract between the Electron desktop and PyPI backend: min_backend_version and min_desktop_version floors, enforcement per flow, release steps, and troubleshooting
+- [Desktop <-> Backend Version Compatibility](version-compatibility.md) — Desktop and backend version-compatibility contract: two JSON floors, enforcement at install, upgrade and startup, the flow compat check, release gates and troubleshooting.
 - [VFS Path Specification](vfs.md) — VFS path specification: the vfs://type-id/sub_path URI format for addressing files under entities, with supported id formats and path rules.
 - [View Modes — Vibe / Standard / Advanced / Dev "skin" system](viewmodes.md) — View-mode skin system (Vibe, Standard, Advanced, Dev): the skin-layer rule, component toolkit, decision tree for gating a surface, testing recipe, checklist and decision log.
 - [WikiTip](wikitip.md) — WikiTip mechanism connecting inline UI elements to wiki pages: click round-trip, URL-carried highlight lifecycle, openWikiModal peek utility, link-interception extension point, reused building blocks and files.

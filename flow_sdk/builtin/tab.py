@@ -391,8 +391,10 @@ class Tab(ProjectedFields, Entity):
         reconcile = getattr(target, "reconcile_name", None)
         if callable(reconcile):
             current = await reconcile()
-            if current is not None:
+            if current is not None and current.name and self.name != current.name:
                 self.name = current.name
+                if self.exist_in_db:
+                    await self.save()
 
     async def set_label(self, name: str) -> None:
         """Set an ordinary label; worker labels always project their target."""
@@ -738,6 +740,10 @@ async def _reap_orphans(
         if shell_row is not None:
             reparent[tab.id] = shell_row.id
     reaped_display = await _delete_rows(display_rows, deleted_ids)
+    # Retired active-display rows (``workspaceActive|<host>``): dropped, not migrated.
+    reaped_retired = await _delete_rows(
+        [t for t in tabs if t.id not in deleted_ids and _is_retired_active_display(t.pointer)], deleted_ids
+    )
 
     # Every hard-deleted row's children heal in ONE pass: display children
     # re-anchor to their process's shell tab; everything else nulls (soft-close
@@ -809,7 +815,7 @@ async def _reap_orphans(
             except Exception:
                 continue
 
-    if reaped_target or reaped_pointer or reaped_display or healed_children or healed_nonadoptable or healed_dangling:
+    if reaped_target or reaped_pointer or reaped_display or reaped_retired or healed_children or healed_nonadoptable or healed_dangling:
         # Background reap (no user navigation) — ONE ping per cycle so clients
         # refetch once and the dangling chips drop live.
         await broadcast_tabs_changed()
@@ -1108,6 +1114,10 @@ async def ensure_tab_created(
             elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
                 existing.parent_tab_id = parent_tab_id
                 dirty = True
+            elif parent_tab_id == "" and existing.parent_tab_id is not None:
+                # ``""`` = opened as its OWN tab, outside any workspace: it leaves its group.
+                existing.parent_tab_id = None
+                dirty = True
             elif not parent_tab_id and existing.parent_tab_id is not None:
                 # Reopened from outside any workspace while its group is closed: no
                 # strip can show a child of a closed parent, so it comes back top-level.
@@ -1166,28 +1176,23 @@ async def ensure_tab_created(
     return tab, True
 
 
-#: The hash namespace of a Vibe workspace's ACTIVE DISPLAY row
-#: (``workspaceActive|<host>``) — mirrors ``ACTIVE_DISPLAY_HASH_NS`` in
-#: ``ui/src/navigation/DockPointer.ts``.
-ACTIVE_DISPLAY_HASH_NS = "workspaceActive"
+#: The hash namespace of the RETIRED active-display row (``workspaceActive|<host>``): one
+#: re-pointed row per Vibe workspace. A shown thing is now an ordinary child tab, so such
+#: rows are dropped on read (``_reap_orphans``) and rebuilt as children on the next show.
+_RETIRED_ACTIVE_DISPLAY_NS = "workspaceActive"
 
 
-def _is_active_display(pointer: str | None) -> bool:
-    """Is this the Vibe workspace's active-display row (its hash is host-keyed)?"""
-    return bool(pointer) and _pointer_to_hash(pointer).split('|', 1)[0] == ACTIVE_DISPLAY_HASH_NS
+def _is_retired_active_display(pointer: str | None) -> bool:
+    return (
+        _RETIRED_ACTIVE_DISPLAY_NS in (pointer or "")
+        and _pointer_to_hash(pointer).split('|', 1)[0] == _RETIRED_ACTIVE_DISPLAY_NS
+    )
 
 
 async def _carry_children_out(tab: Tab) -> None:
     """``tab`` stopped being a host (its Vibe tab became a terminal): its visible
-    nested tabs become top-level tabs, right after it, in their order. The
-    workspace's ACTIVE DISPLAY row (``workspaceActive|<host>``) is workspace
-    chrome, not a tab of its own: it stays attached (the global strip never shows
-    a child) and is the Display again when the session returns to Vibe."""
-    children = [
-        child
-        for child in await Tab.get_all({"parent_tab_id": tab.id, "visible": True})
-        if not _is_active_display(child.pointer)
-    ]
+    nested tabs become top-level tabs, right after it, in their order."""
+    children = await Tab.get_all({"parent_tab_id": tab.id, "visible": True})
     if not children:
         return
     for child in children:
@@ -1499,9 +1504,8 @@ def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
     ``_resolve_tab_projects`` (the read path, for rows never re-minted).
 
     Discriminated on the scope-key grammar (``scopeFilterKey``,
-    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash": the workspace's
-    active display carries an explicit hash too (``workspaceActive|<host>``) and
-    is NOT scope-keyed — its project legitimately follows its target. Reads the
+    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash" (a dependency home
+    carries an explicit hash too and is NOT scope-keyed). Reads the
     hash through ``_pointer_to_hash`` (the one owner of the pointer-format
     grammar), like ``_pointer_view_type``; the ``rsplit`` also tolerates the
     non-desk ``page|vt|scope`` form.

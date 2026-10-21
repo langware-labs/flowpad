@@ -44,6 +44,7 @@ class AssetEditor(StrEnum):
     DECK_TEMPLATE = "deck_template"
     DECK = "deck"
     SPREADSHEET = "spreadsheet"  # CSV (editable) / XLSX (read-only) grid
+    DOCUMENT_FILE = "document_file"  # .docx / .txt read-only preview
     AGENT_TRACE = "agent_trace"
     DYNAMIC_WORKFLOW = "dynamic_workflow"
     USAGE_REPORT = "usage_report"
@@ -98,6 +99,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.DECK_TEMPLATE: [EntityType.DECK_TEMPLATE],
     AssetEditor.DECK: [EntityType.DECK],
     AssetEditor.SPREADSHEET: [EntityType.SPREADSHEET],
+    AssetEditor.DOCUMENT_FILE: [EntityType.DOCUMENT_FILE],
     AssetEditor.AGENT_TRACE: [EntityType.AGENT_TRACE],
     AssetEditor.DYNAMIC_WORKFLOW: [EntityType.DYNAMIC_WORKFLOW],
     AssetEditor.USAGE_REPORT: [EntityType.USAGE_REPORT],

@@ -5,7 +5,7 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "619135d3050e1308e7420d25aed50aac39482d74ca93e9ac20bf41b0a948f7ce",
+  "inputs_hash": "9c0a565f20048630c967ebf6d0a7d734be95f3a3063a6a4f5add645fcc6418de",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's architecture, terminology and design docs: the record and entity model, agents and agentic processes, terminals and PTY, collaboration and sharing, navigation and tabs, the desktop app and its version-compatibility contract, FlowCall, runnable SDK snippets, and proven debugging findings with their benchmarks.",
@@ -214,9 +214,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Glossary of Flowpad nouns versus Claude Code and OpenClaw terms: FlowCall, SubAgent, Agent, kind/schema/value, workspaces, row/record/item, naming rules",
-      "content_hash": "156259ecf029ceceee432bbf79ccf9eaeb785b91ee3c8c15209487539f3fd511",
-      "size_bytes": 70057
+      "summary": "Glossary cross-walking Flowpad nouns with Claude Code and OpenClaw, including FlowCall, provider mirrors versus native assets, and which words are already taken.",
+      "content_hash": "e2a5e66e6d6aa4093438e825f332346775b2df0836e9f6547e2e370708fe1939",
+      "size_bytes": 70398
     },
     {
       "name": "icons.md",
@@ -414,9 +414,9 @@
       "name": "version-compatibility.md",
       "rel_path": "version-compatibility.md",
       "title": "Desktop <-> Backend Version Compatibility",
-      "summary": "Version-compatibility contract between the Electron desktop and PyPI backend: min_backend_version and min_desktop_version floors, enforcement per flow, release steps, and troubleshooting",
-      "content_hash": "07ba3e0fb14b1dff5f482191631057363fcd9f1610fb56730c136e93d17174bb",
-      "size_bytes": 13289
+      "summary": "Desktop and backend version-compatibility contract: two JSON floors, enforcement at install, upgrade and startup, the flow compat check, release gates and troubleshooting.",
+      "content_hash": "59186de47f819b4dcbda3543a1e37ba026aa01960354e3cb923dc8f9fe5b9113",
+      "size_bytes": 13567
     },
     {
       "name": "vfs.md",
@@ -477,7 +477,7 @@
       "rel_path": "data-management/index.md",
       "self_summary": "How Flowpad stores, discovers and indexes data: filesystem-backed records and assets, the SchemaRegistry, DataSpec schemas and datasets, data sources and their ingest contract, the SQLite entity index and full-text search, folder indexing, invalidation, and measured disk-IO benchmarks and interface proposals.",
       "child_typeid": "markdown_index-f8c2dd24-51c7-5d6b-9374-e56547a6d0b0",
-      "child_inputs_hash": "4f7049e931b17d6f0e4d413b62cf07ff8d59685dac13272b7533dc37568a308e"
+      "child_inputs_hash": "cd0084afe273162846a56d7bd580d4dd66ad12fb7a2b426d144b27aadc88abf8"
     },
     {
       "name": "flows",
@@ -547,7 +547,7 @@
       "rel_path": "snippets/index.md",
       "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
       "child_typeid": "markdown_index-c6cc7e2f-a8f7-5be3-a69e-2c70a334bd60",
-      "child_inputs_hash": "4d1a29b97bb5de373a8985dce096141d176edd1489542d971ec0ca6898a61c59"
+      "child_inputs_hash": "2aa7b235081c7f2f191fd9d067ad0e7ecae2fd33591c65073e3b05bee1ef63c2"
     },
     {
       "name": "tabs",
@@ -557,6 +557,6 @@
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-20T12:52:40.795640+00:00",
+  "generated_at": "2026-10-21T09:23:02.549175+00:00",
   "latest_process_ref": ""
 }

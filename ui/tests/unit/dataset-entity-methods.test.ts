@@ -4,7 +4,7 @@
  * "examples is not a function" -- found in the browser, pinned here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConnectionManager, DATASET_ROWS_CHANGED, DataSource, Dataset, EventBus, dataManager } from '@sdk';
+import { ConnectionManager, DATASET_ROWS_CHANGED, DataSource, Dataset, EventBus, dataManager, locationLabel } from '@sdk';
 import type { CheckDetail } from '@sdk/entities/dataset';
 import { ExpressionNode } from '@sdk/FlowSync/query';
 import type { KindForm, KindRule } from '@sdk/viewers/contract';
@@ -431,9 +431,9 @@ describe('asking more of rows and count', () => {
   });
 });
 
-/** A system of record through a data source: its items mirrored as typed rows, and an app-owned
- *  field written back through the source's driver — never a client or a key in the frame. */
-describe('mirroring a data source and writing back through it', () => {
+/** Rows at a location (Drive, S3, a record system), and a source's own write-back through its
+ *  driver — never a client or a key in the frame. */
+describe('where the rows live, and writing back through a source', () => {
   let call: ReturnType<typeof vi.spyOn>;
   const sent = (n = 0) => call.mock.calls[n][0] as { name: string; method: string; bodyParameters: Record<string, unknown> };
 
@@ -442,13 +442,20 @@ describe('mirroring a data source and writing back through it', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('mirror() posts the source and the map; by / prune / match only when given', async () => {
-    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n' } as never);
-    const map = { key: 'external_id', input: { name: 'name', stage: 'data.stage' } };
-    await ds.mirror('src-1', map);
-    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['mirror', 'POST', { source_id: 'src-1', map }]);
-    await ds.mirror('src-1', map, { by: 'crm', prune: false, match: { 'input.source': 'crm' } });
-    expect(sent(1).bodyParameters).toEqual({ source_id: 'src-1', map, by: 'crm', prune: false, match: { 'input.source': 'crm' } });
+  it('pull() and moveRows() post to the dataset, the location as given', async () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n', location: 's3:acme/leads' } as never);
+    expect(ds.location).toBe('s3:acme/leads');
+    await ds.pull();
+    expect([sent().name, sent().method, sent().bodyParameters]).toEqual(['pull', 'POST', {}]);
+    const crm = { driver: 'twenty', config: { resource: 'companies' }, map: { key: 'external_id', input: { crm_id: 'external_id' } } };
+    await ds.moveRows('gdrive:GTM/Rows');
+    await ds.moveRows(crm);
+    expect([sent(1).name, sent(1).bodyParameters, sent(2).bodyParameters]).toEqual(['move-rows', { location: 'gdrive:GTM/Rows' }, { location: crm }]);
+  });
+
+  it('a location reads as one short label', () => {
+    expect([locationLabel(null), locationLabel('file:~/rows'), locationLabel({ driver: 'twenty', config: { resource: 'companies' } })])
+      .toEqual(['local', 'file:~/rows', 'twenty: companies']);
   });
 
   it('createItem() asks the source to make a record in its own system, and answers the record kept here', async () => {

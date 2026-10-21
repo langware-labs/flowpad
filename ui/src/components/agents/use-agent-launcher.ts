@@ -1,16 +1,18 @@
 import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { Agent, AgenticProcess } from '@sdk';
+import { Agent, AgenticProcess, tabManager } from '@sdk';
 
 import { notify } from '@src/notifications';
 import { ViewMode } from '@src/contexts/view-mode-context';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
+import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { holdLaunchWatch, releaseLaunchWatch } from './launch-watch';
 
 /**
- * Launch an agent: open a NEW session as it, in Vibe mode, starting with the
- * agent's auto prompt when it has one.
+ * Open an agent: its last chat in this project, else a NEW session as it — in Vibe mode,
+ * a new one starting with the agent's auto prompt when it has one.
  *
  *   agent.use()  →  the process (built from the agent's deployment: worker,
  *                   model, permissions, system prompt, dirs, deployment_id),
@@ -23,9 +25,8 @@ import { holdLaunchWatch, releaseLaunchWatch } from './launch-watch';
  *                   BEFORE the pane opens, so turn 1 is already running.
  *   open         →  the vibe workspace for that process
  *
- * No prompt dialog: using an agent is starting a conversation with it. Every
- * call mints a fresh session — there is deliberately no reuse key, so clicking
- * an agent twice gives two conversations, the way "New chat" does.
+ * No prompt dialog: opening an agent is continuing the conversation with it.
+ * A fresh session is "+ New" inside Vibe.
  *
  * The agent is a PARAMETER, not a closure: a list of agent tiles needs one
  * controller for the whole list rather than a hook per row, so `busy` is the
@@ -75,8 +76,29 @@ export async function startAgentSession(agent: Agent, projectId: string | null):
   return process_id;
 }
 
+/**
+ * Where OPENING an agent lands: its last chat in this project, else a new one — always in Vibe.
+ * The one answer for every place an agent is opened (Apps menu, agent tiles, project home).
+ * A resumed chat re-applies the agent's `auto_open` (only what is not open yet) — `Agent.resume`.
+ */
+export async function agentSessionDock(agent: Agent, projectId: string): Promise<DockPointer> {
+  const last = pickLastVibeChat(
+    await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, agent.typeId.toString())),
+  );
+  let processId: string;
+  if (last) {
+    processId = last.id;
+    await agent.resume(processId).catch((e) => console.warn('[agent-launcher] auto_open on resume failed', e));
+    // What the resume re-opened must be in the strip the moment the workspace shows.
+    await tabManager.refresh().catch(() => {});
+  } else {
+    processId = await startAgentSession(agent, projectId);
+  }
+  return DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
+}
+
 export function useAgentLauncher(): {
-  launch: (agent: Agent, projectId?: string | null) => Promise<void>;
+  launch: (agent: Agent, projectId?: string | null, opts?: { fresh?: boolean }) => Promise<void>;
   busyId: string | null;
 } {
   const { t } = useLingui();
@@ -84,11 +106,16 @@ export function useAgentLauncher(): {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const launch = useCallback(
-    async (agent: Agent, projectId?: string | null) => {
+    async (agent: Agent, projectId?: string | null, { fresh = false }: { fresh?: boolean } = {}) => {
       setBusyId(agent.id);
       try {
-        const processId = await startAgentSession(agent, projectId ?? null);
-        await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+        const project = projectId ?? null;
+        if (project && !fresh) {
+          navigation.openDock(await agentSessionDock(agent, project), undefined, { topLevel: true });
+        } else {
+          const processId = await startAgentSession(agent, project);
+          await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+        }
       } catch (e) {
         notify.error({
           title: t`Could not use ${agent.displayName}`,

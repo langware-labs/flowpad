@@ -5,7 +5,7 @@
   "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "4f7049e931b17d6f0e4d413b62cf07ff8d59685dac13272b7533dc37568a308e",
+  "inputs_hash": "cd0084afe273162846a56d7bd580d4dd66ad12fb7a2b426d144b27aadc88abf8",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How Flowpad stores, discovers and indexes data: filesystem-backed records and assets, the SchemaRegistry, DataSpec schemas and datasets, data sources and their ingest contract, the SQLite entity index and full-text search, folder indexing, invalidation, and measured disk-IO benchmarks and interface proposals.",
@@ -54,9 +54,9 @@
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "Backend model of data sources: pipeline from driver fetch to SourceItem ingestion, source contract and traits, status and health, identity, change envelope.",
-      "content_hash": "7838979c18e40023f88e535bd5b656257ec2f36155b2c1fb9d85fbee9a1f0508",
-      "size_bytes": 35253
+      "summary": "Data sources: one DataSource per stream with its driver, config, polling and local payload, plus the connect, sample, define flow producing a dataset.",
+      "content_hash": "ba0d859315d20367b60919c9d467fffa94bec26b43a9f5abb790c67aaea88852",
+      "size_bytes": 34990
     },
     {
       "name": "data-spec.md",
@@ -75,12 +75,20 @@
       "size_bytes": 15907
     },
     {
+      "name": "dataset-locations.md",
+      "rel_path": "dataset-locations.md",
+      "title": "Dataset locations — where a dataset's rows live",
+      "summary": "Dataset locations: the five forms of the location field (local, file, gdrive, s3, record-system driver), the working copy, and where a dataset's rows live.",
+      "content_hash": "c3f66cb5236cb938cf4191a155adb78c5db6a573b322be6fd9adf6c85662dfeb",
+      "size_bytes": 7548
+    },
+    {
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring guide for dataset folder layout: dataset.json manifest, csv and io_folder layouts, slots, sidecars, row metadata, parsing rules, typed rows, and editors.",
-      "content_hash": "1a2d77e1e010c36301610c0d96d5beaf7c0197a941001632edd27ce0b0a46b34",
-      "size_bytes": 37855
+      "summary": "Authoring guide to dataset layout on disk: dataset.json manifest, csv versus io_folder layouts, rows, slots and how the library discovers and parses a dataset.",
+      "content_hash": "0368bef043c466ae3903817e472d62a9b326d2c371afc58187c0761c86bd8f37",
+      "size_bytes": 38385
     },
     {
       "name": "diskio-benchmarks.md",
@@ -195,14 +203,6 @@
       "size_bytes": 4438
     },
     {
-      "name": "mirroring-a-system-of-record.md",
-      "rel_path": "mirroring-a-system-of-record.md",
-      "title": "Mirroring a system of record",
-      "summary": "Mirroring typed rows from an external system of record such as a CRM: credential, driver, source and dataset roles, field ownership, failure handling, deliberate gaps.",
-      "content_hash": "b735c957d279b36d0a2d0ddc1f303bb0f3282b097410317b8621e07a6b014e34",
-      "size_bytes": 13092
-    },
-    {
       "name": "record-model.md",
       "rel_path": "record-model.md",
       "title": "Record Model",
@@ -268,6 +268,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-20T12:52:40.795640+00:00",
+  "generated_at": "2026-10-21T09:22:57.227994+00:00",
   "latest_process_ref": ""
 }

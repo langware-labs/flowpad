@@ -31,7 +31,7 @@ INDEXED_TYPES = {
     "claude_session", "codex_session", "command", "copilot_session",
     "deepagents_session", "opencode_session",
     "asset_setup", "credential", "compute_op", "data_source", "data_driver", "data_schema",
-    "dataset", "deck_template", "deck", "dynamic_workflow",
+    "dataset", "deck_template", "deck", "document_file", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
     "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run", "icon_pack",
@@ -113,7 +113,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
     # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op` and
     # `data_source`, which carry their ids.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 8, 17)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 8, 18)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -300,7 +300,7 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         return ref, "plugin:demo@market", uuid.NAMESPACE_DNS
     if type_name == "project":
         return FSRef(path), f"project-fsref:{path}", uuid.NAMESPACE_DNS
-    if type_name == "spreadsheet":
+    if type_name in ("spreadsheet", "document_file"):
         return FSRef(path), str(path.resolve()), namespace
     if type_name == "todo_file":
         return FSRef(path), "todo_file:todo:todo_file", uuid.NAMESPACE_DNS
@@ -314,7 +314,7 @@ DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
     "deepagents_session", "opencode_session",
     "data_driver", "dynamic_workflow", "markdown_index", "mcp_server",
-    "plugin", "project", "spreadsheet", "todo_file",
+    "plugin", "project", "spreadsheet", "document_file", "todo_file",
     "workflow_run",
 )
 

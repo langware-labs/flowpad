@@ -339,6 +339,10 @@ class TypeInfo:
     # existing row (``SourceItem``: data_source · segment · external id). None ⇒
     # identity is ``id`` alone. Read by ``DbSerializer.resolve``/``upsert``.
     natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The key rows written before ``natural_key`` changed still answer to: a lookup that finds
+    # nothing by ``natural_key`` asks this one (``DbSerializer.resolve``/``resolve_many``) — the
+    # dual read that lets the key move before a data migration rewrites the old rows.
+    legacy_natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The no-op gate: the fields whose canonical digest decides "unchanged" on
     # re-delivery. None ⇒ no gate (every save writes).
     digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)

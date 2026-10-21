@@ -12,6 +12,7 @@ import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
 import { AssetVibeWorkspace } from './asset-vibe-workspace';
 import { UnifiedTabStrip } from './content-panel/unified-tab-strip';
+import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 
 export default function FlowPage() {
   const isVibe = useIsVibe();
@@ -32,8 +33,11 @@ export default function FlowPage() {
   // tab like any other, and one owner means switching between a Vibe tab and a
   // terminal tab never remounts the strip (ContentPanels below see
   // `TabStripOwnedAbove` and don't draw their own). The Vibe home (new chat / no
-  // process) is the tabless open screen; the win/ focus layout has no strip.
-  const framedByStrip = !windowMode && layout !== DockLayout.VIBE_NEW_CHAT && layout !== DockLayout.VIBE_NO_PROCESS;
+  // process) is the tabless open screen; the win/ focus layout has no strip. A
+  // session of a vibe-only agent has none either: it has no other tab to reach.
+  const vibeOnly = !!useVibeOnlyAgent(vibeSession?.processId);
+  const framedByStrip =
+    !windowMode && !vibeOnly && layout !== DockLayout.VIBE_NEW_CHAT && layout !== DockLayout.VIBE_NO_PROCESS;
 
   return (
     /* `flex-col` on the provider's own root (it appends className to a flex div)

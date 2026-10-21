@@ -25,14 +25,20 @@ SOURCE_ITEM = TypeInfo(
     fts_content=("body",),
     asset_spec=SourceItemSpec,
     # The DB medium's identity and no-op policy: a re-poll resolves the row by
-    # its natural key and is silent when the digested fields are unchanged. The
-    # key is the resource's origin triple, partitioned by the source that mirrors
-    # it — two sources reading one account keep their own rows.
-    natural_key=("data_source_id", "origin_kind", "origin_namespace", "origin_key"),
+    # its natural key and is silent when its digest (over the payload) is unchanged.
+    # The key is the item's account-free scope and remote id, partitioned by the
+    # source that mirrors it — two sources reading one account keep their own rows,
+    # and a source whose account changes keeps its rows.
+    natural_key=("data_source_id", "item_scope", "item_key"),
+    # Rows written before the key moved (no item_scope/item_key yet) still resolve by
+    # the origin triple — until the data migration stamps them.
+    legacy_natural_key=("data_source_id", "origin_kind", "origin_namespace", "origin_key"),
     digest_fields=DIGESTED_FIELDS,
     indexes=(
-        # The natural key: ingestion resolves every record by its origin on EVERY poll to
-        # consult the digest gate — one indexed lookup, not a scan of the type.
+        # The natural key: ingestion resolves every record on EVERY poll to consult the
+        # digest gate — one indexed lookup, not a scan of the type.
+        ("data_source_id", "item_scope", "item_key"),
+        # The legacy key, for the fallback lookup of not-yet-migrated rows.
         ("data_source_id", "origin_kind", "origin_namespace", "origin_key"),
         # A consumer drains a source in INGEST order — ``(created_date, id)`` are real
         # columns, so ORDER BY and LIMIT push to SQL.
