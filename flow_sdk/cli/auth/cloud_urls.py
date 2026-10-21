@@ -38,10 +38,10 @@ def desktop_oauth_complete_url(provider: str) -> str:
 
 def get_login_url(redirect_url: str) -> str:
     """Build the cloud login URL with ``redirect_url`` URL-encoded into the template,
-    entered through ``wrap_url_auth_gate`` so the browser holds the cookie-gate cookie when the
+    entered through ``wrap_url_auth_gate_if_desktop`` so the browser holds the cookie-gate cookie when the
     hub sends it back here."""
     template = ApiConfig.from_env().get_full_login_url()
-    return wrap_url_auth_gate(template.replace("{redirect_url}", quote(redirect_url, safe="")))
+    return wrap_url_auth_gate_if_desktop(template.replace("{redirect_url}", quote(redirect_url, safe="")))
 
 
 def wrap_url_auth_gate(url: str, base_url: str | None = None) -> str:
@@ -55,6 +55,15 @@ def wrap_url_auth_gate(url: str, base_url: str | None = None) -> str:
 
     gate = URL(f"{base_url or _desktop_base_url()}/auth/gate").include_query_params(next=url)
     return str(cookie_gate.add_query_param(gate))
+
+
+def wrap_url_auth_gate_if_desktop(url: str, base_url: str | None = None) -> str:
+    """``wrap_url_auth_gate`` on a desktop; ``url`` as-is on a hub box, whose browser is on another machine."""
+    from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
+
+    if get_assigned_compute_node():
+        return url
+    return wrap_url_auth_gate(url, base_url)
 
 
 def desktop_login_callback_url() -> str:

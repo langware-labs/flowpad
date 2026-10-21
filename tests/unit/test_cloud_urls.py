@@ -62,6 +62,7 @@ def test_the_login_url_enters_through_the_gate_on_the_callback_host():
     with (
         patch("flow_sdk.instance_settings.get_instance_settings", return_value=_Settings(port=9008)),
         patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value="tok"),
+        patch("flow_sdk.instance_settings.runtime.get_assigned_compute_node", return_value=None),
     ):
         url = get_login_url("http://127.0.0.1:9008/auth/login_callback")
 
