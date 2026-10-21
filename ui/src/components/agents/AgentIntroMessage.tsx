@@ -3,16 +3,19 @@ import { Agent } from '@sdk';
 import { AgentSignature } from '@src/components/agents/AgentSignature';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
+import { useLocale } from '@src/contexts/locale-context';
 import { surfaceForViewMode, useViewMode } from '@src/contexts/view-mode-context';
 
 /**
- * The agent's `intro` for the CURRENT skin, or null. Chat surfaces (Vibe,
- * Standard) show it; the terminal surface (Advanced/Dev) fronts the raw
- * session, where a row that is not in the transcript would mislead.
+ * The agent's `intro` for the CURRENT skin and language, or null. Chat surfaces
+ * (Vibe, Standard) show it; the terminal surface (Advanced/Dev) fronts the raw
+ * session, where a row that is not in the transcript would mislead. The active
+ * locale's `intro_translations` entry wins over the default `intro`.
  */
 export function useAgentIntro(agent?: Agent | null): string | null {
   const surface = surfaceForViewMode(useViewMode());
-  const intro = agent?.intro?.trim();
+  const locale = useLocale();
+  const intro = (agent?.intro_translations?.[locale]?.trim() || agent?.intro)?.trim();
   return intro && surface !== 'terminal' ? intro : null;
 }
 

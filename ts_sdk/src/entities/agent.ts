@@ -169,6 +169,8 @@ export class Agent extends APIEntity<Agent> {
   /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
    *  Presentation only — never part of the transcript, never sent to the model. */
   intro?: string;
+  /** `intro` in other languages, keyed by locale code (`he`, `ar`, `en-US`). */
+  intro_translations: Record<string, string>;
   /** Launch once, the first time the project this agent lives in is opened.
    *  Oldest wins when several agents in a project set it; the rest are
    *  cancelled with a warning. See `Agent.auto_launch_for` (backend). */
@@ -223,6 +225,7 @@ export class Agent extends APIEntity<Agent> {
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
+    this.intro_translations = entity.intro_translations || {};
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
     this.vibe_only = entity.vibe_only ?? false;
