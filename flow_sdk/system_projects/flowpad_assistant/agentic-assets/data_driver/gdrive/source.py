@@ -25,7 +25,6 @@ writable: writing it back would replace a Doc with a markdown file. A read-only 
 """
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -44,8 +43,8 @@ from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import (
-    Conflict,
     AccessDenied,
+    Conflict,
     InvalidCursor,
     NotFound,
     Rejected,
