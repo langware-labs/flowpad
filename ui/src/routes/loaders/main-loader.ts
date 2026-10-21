@@ -95,7 +95,7 @@ async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string):
  * project holds stays unscoped — the global tab is right for it.
  */
 async function scopeAssetFileToItsProject(dock: DockPointer, requestPath: string): Promise<void> {
-  if (dock.viewType !== ViewType.ASSETS || dock.scopeFilter || dock.isActiveDisplay || isHubOnly()) return;
+  if (dock.viewType !== ViewType.ASSETS || dock.scopeFilter || dock.hostProcessId || isHubOnly()) return;
   const machinePath = dock.vfsPath?.machinePath;
   if (!machinePath) return;
   const project = await Project.getProjectByPath(machinePath);

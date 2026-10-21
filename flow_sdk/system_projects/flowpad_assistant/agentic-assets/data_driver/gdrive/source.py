@@ -43,6 +43,7 @@ from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import (
+    Conflict,
     AccessDenied,
     InvalidCursor,
     NotFound,
@@ -177,6 +178,10 @@ class DriveSource(ObjectSource):
         #: Folder metadata seen this session, by id — a path is a walk up these.
         self._folders: dict[str, dict] = {}
         self._scope_id: Optional[str] = None
+        #: Rows kept here (``RowFiles``): their folder's id, and each row file's id by its path.
+        self._rows_folder: Optional[str] = None
+        self._row_ids: dict[str, str] = {}
+        self._rows_listed = False
 
     @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:
@@ -205,6 +210,7 @@ class DriveSource(ObjectSource):
     async def _open(self) -> None:
         self._http = http.client()
         self._folders, self._scope_id = {}, None
+        self._rows_folder, self._row_ids, self._rows_listed = None, {}, False
 
     async def _close(self) -> None:
         if self._http is not None:
@@ -559,10 +565,10 @@ class DriveSource(ObjectSource):
             parent = created["id"]
         return parent
 
-    async def _create(self, parent: str, name: str, data: bytes) -> dict:
+    async def _create(self, parent: str, name: str, data: bytes, *, fields: str = FILE_FIELDS) -> dict:
         metadata = {"name": name, "parents": [parent]}
         mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        params = {"supportsAllDrives": "true", "fields": FILE_FIELDS}
+        params = {"supportsAllDrives": "true", "fields": fields}
         if len(data) <= MULTIPART_LIMIT:
             boundary = f"flowpad-{uuid.uuid4().hex}"
             body = (
@@ -583,12 +589,103 @@ class DriveSource(ObjectSource):
             raise SourceUnavailable("Drive opened no upload session")
         return (await self._send("PUT", location, content=data, headers={"Content-Type": mime})).json()
 
-    async def _upload_content(self, file_id: str, data: bytes) -> dict:
+    async def _upload_content(self, file_id: str, data: bytes, *, fields: str = FILE_FIELDS) -> dict:
         response = await self._request(
-            "PATCH", f"/files/{quote(file_id, safe='')}", {"uploadType": "media", "supportsAllDrives": "true", "fields": FILE_FIELDS},
+            "PATCH", f"/files/{quote(file_id, safe='')}", {"uploadType": "media", "supportsAllDrives": "true", "fields": fields},
             upload=True, content=data, origin=self.origin(file_id),
         )
         return response.json()
+
+    # ── rows (``RowFiles``): a dataset's rows kept in a Drive folder ────────
+    # ``dataset.json`` ``"location": "gdrive:GTM/Rows/leads"``. Each row file is ONE Drive file in that
+    # folder, NAMED by its whole relative path (``rows/acme/row.json``): one listing reads every row,
+    # however deep its slots. Drive has no conditional write, so ``expected`` is checked right before
+    # the write -- a second writer inside that gap is not caught; the working copy's pull before every
+    # write keeps the gap to one request.
+
+    @classmethod
+    def row_files_target(cls, target: str) -> dict:
+        return {"path": target}
+
+    async def _rows_parent(self) -> str:
+        """The folder the rows live in, made (with any folder above it) on first use."""
+        if self._rows_folder:
+            return self._rows_folder
+        try:
+            parent = await self._scope_root() or self._drive_root
+        except NotFound:
+            self._require_writable()
+            parent = self._drive_root
+            for name in _segments(self.config.get("path") or ""):
+                found = await self._children(parent, name=name, folders=True)
+                if len(found) > 1:
+                    raise Rejected(f"Drive has {len(found)} folders named {name!r} in one place; rename one")
+                parent = found[0]["id"] if found else (await self._request(
+                    "POST", "/files", {"supportsAllDrives": "true", "fields": "id"},
+                    json={"name": name, "mimeType": FOLDER_MIME, "parents": [parent]},
+                )).json()["id"]
+        self._rows_folder = parent
+        return parent
+
+    async def list_files(self) -> dict[str, str]:
+        self._require_open()
+        parent = await self._rows_parent()
+        params = {"q": f"{_quoted(parent)} in parents and trashed = false and mimeType != {_quoted(FOLDER_MIME)}",
+                  "fields": "nextPageToken,files(id,name,version)", "pageSize": "1000", **self._drive_params()}
+        ids, out, token = {}, {}, None
+        while True:
+            body = (await self._request("GET", "/files", {**params, **({"pageToken": token} if token else {})})).json()
+            for meta in body.get("files") or ():
+                ids[str(meta["name"])], out[str(meta["name"])] = str(meta["id"]), str(meta.get("version") or "")
+            token = body.get("nextPageToken")
+            if not token:
+                break
+        self._row_ids, self._rows_listed = ids, True
+        return out
+
+    async def _row_id(self, path: str) -> Optional[str]:
+        """A row file's Drive id; one listing per session -- a path it did not list is a new file."""
+        if not self._rows_listed:
+            await self.list_files()
+        return self._row_ids.get(path)
+
+    async def _check_expected(self, path: str, file_id: Optional[str], expected: Optional[str]) -> None:
+        if expected is not None and (held := await self._row_version(file_id)) != expected:
+            raise Conflict(f"{path} is at version {held or 'nothing'} in Drive, not {expected or 'nothing'}")
+
+    async def _row_version(self, file_id: Optional[str]) -> str:
+        if not file_id:
+            return ""
+        response = await self._request("GET", f"/files/{quote(file_id, safe='')}",
+                                       {"fields": "version,trashed", "supportsAllDrives": "true"}, ok_statuses=(404,))
+        meta = response.json() if response.status_code < 400 else {}
+        return "" if not meta or meta.get("trashed") else str(meta.get("version") or "")
+
+    async def read_file(self, path: str) -> bytes:
+        self._require_open()
+        file_id = await self._row_id(path)
+        if file_id is None:
+            raise NotFound(f"Drive has no row file {path!r}")
+        return (await self._request("GET", f"/files/{quote(file_id, safe='')}", {"alt": "media", "supportsAllDrives": "true"})).content
+
+    async def write_file(self, path: str, data: bytes, *, expected: Optional[str] = None) -> str:
+        self._require_open()
+        self._require_writable()
+        file_id = await self._row_id(path)
+        await self._check_expected(path, file_id, expected)
+        meta = await self._upload_content(file_id, data, fields="id,version") if file_id else \
+            await self._create(await self._rows_parent(), path, data, fields="id,version")
+        self._row_ids[path] = str(meta["id"])
+        return str(meta.get("version") or await self._row_version(str(meta["id"])))
+
+    async def delete_file(self, path: str, *, expected: Optional[str] = None) -> None:
+        self._require_open()
+        self._require_writable()
+        file_id = await self._row_id(path)
+        await self._check_expected(path, file_id, expected)
+        if file_id is not None:
+            await self._trash(file_id)
+            self._row_ids.pop(path, None)
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:

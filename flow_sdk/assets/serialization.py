@@ -305,8 +305,10 @@ def read_asset_data_with_header(path: Path, info: Any, *, identity: str | None =
         from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum
         from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for
         rows_layout = coerce_dataset_enum(header.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
+        from flow_sdk.datasets.locations import rows_root_of
+
         data[info.rows_field] = dataset_layout_for(rows_layout).read(
-            layout.root, DEFAULT_DATASET_SPEC.row_type(), dataset_id=resolved_id,
+            rows_root_of(layout.root, header, resolved_id or ""), DEFAULT_DATASET_SPEC.row_type(), dataset_id=resolved_id,
             field_spec=header.get("field_spec") or {}, delimiter=header.get("delimiter") or ",",
         )
     if info.derive_fields_fn is not None:
@@ -554,9 +556,15 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
         elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
             from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
+            from flow_sdk.datasets.locations import parse, rows_root  # noqa: PLC0415
+
             source = getattr(obj, "asset_ref", None)
+            try:
+                held = parse(getattr(obj, "location", None))
+            except ValueError:
+                held = parse(None)
             dataset_layout_for(getattr(obj, info.rows_layout_field)).write(
-                root, value or [], dataset_id=str(getattr(obj, "id", "") or ""),
+                rows_root(root, held, str(getattr(obj, "id", "") or "")), value or [], dataset_id=str(getattr(obj, "id", "") or ""),
                 field_spec=getattr(obj, "field_spec", None) or {}, delimiter=getattr(obj, "delimiter", None) or ",",
                 source=Path(source) if source else None,
             )

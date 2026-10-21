@@ -108,10 +108,12 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     def _item(self, key, raw) -> SourceItemSpec: ...
 
     # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
-    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A source then
-    # mirrors into a dataset (`mirror` in data_source.json) and the app's row writes reach the system
-    # through these (the data-management skill's `references/mirroring.md`; in a repo checkout also
-    # docs/data-management/mirroring-a-system-of-record.md)
+    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A driver
+    # that is `Mutable` AND lists its records (`iterate`) can then hold a dataset's rows: the dataset's
+    # `dataset.json` says `"location": {"driver": "<name>", "config": {...}, "map": {...}, "by": "<owner>"}`,
+    # every read pulls the records, and the app's row writes reach the system through these (the
+    # data-management skill's `references/locations.md`; in a repo checkout also
+    # docs/data-management/dataset-locations.md)
     async def create(self, data: WikiPageData) -> SourceItemSpec: ...
     async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
     async def delete(self, origin) -> None: ...
@@ -122,7 +124,16 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     # READ-BACK counts: when the write succeeded and re-reading the record fails (a rate limit), answer it
     # from what the write itself returned, with a warning -- the record exists.
     # NEVER INVENT A VALUE for a field the system owns (`stage or "prospect"`): record what it has, None
-    # when it has none -- an invented value is mirrored into a row as if the system had said it.
+    # when it has none -- an invented value lands in a row as if the system had said it.
+
+    # A FILE STORE (a drive, a bucket) can hold a dataset's rows as files: implement `RowFiles`
+    # (flow_sdk.sources.protocols) -- list_files / read_file / write_file / delete_file, each write and delete
+    # conditional on `expected` (the version read, or "" for "must not exist"; a mismatch raises
+    # `sources.Conflict` and changes nothing) -- plus the classmethod `row_files_target(target) -> dict`, which
+    # maps the text after `<driver>:` in `"location": "<driver>:<target>"` onto this driver's config. The
+    # driver then shows in the dataset editor's Move… picker (`DataDriver.holds_rows`). Prove it with
+    # `sources.testing.check_row_files`; `MemoryRowFiles` is the in-memory double. The shipped `s3` and
+    # `gdrive` drivers are the templates.
 
     # A system that POSTS changes: take them, and a change outside lands at once instead of at the next poll
     # (docs/data-management/data-sources.md, Webhooks): webhook_challenge / webhook_account / events_from_webhook (+ webhook_authentic).

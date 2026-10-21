@@ -32,10 +32,21 @@ router = APIRouter(prefix="/api/v1/ingest")
 MAX_ITEMS_PER_REQUEST = 500
 
 
+#: The keys a TYPED item may carry: its identity within the source and its payload.
+TYPED_KEYS = frozenset({"data_source_id", "scope", "key", "payload", "url"})
+
+
+def _is_typed(raw: dict[str, Any]) -> bool:
+    return "key" in raw and "payload" in raw and "external_id" not in raw
+
+
 def _to_item(raw: dict[str, Any]):
     """One wire dict → the envelope. The spec's own contract does the refusing:
     a missing header field and an unknown key (a caller that misspelled `name`
-    as `subject` would otherwise get a row with an empty name) both raise."""
+    as `subject` would otherwise get a row with an empty name) both raise.
+
+    The flat shape is still accepted (and lifted by the ingestor); new callers send the typed
+    one, ``_typed_item``."""
     from pydantic import ValidationError  # noqa: PLC0415
 
     from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
@@ -46,11 +57,50 @@ def _to_item(raw: dict[str, Any]):
         raise ValueError(str(exc)) from exc
 
 
+async def _typed_item(raw: dict[str, Any], sources: dict[str, Any]):
+    """A typed wire item — ``{data_source_id, scope?, key, payload: {spec_kind, …}, url?}`` — as
+    the envelope the ingestor stores: the payload is the record, ``(data_source_id, scope, key)``
+    its identity, and the flat header is derived from the payload (``envelope_of``), exactly as
+    for an item a driver emitted."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import envelope_of, origin_kind_of  # noqa: PLC0415
+    from flow_sdk.sources.base import scope_parts  # noqa: PLC0415
+    from flow_sdk.sources.values.items import SourceItemSpec as Item  # noqa: PLC0415
+    from flow_sdk.sources.values.origin import CloudOrigin  # noqa: PLC0415
+
+    unknown = set(raw) - TYPED_KEYS
+    if unknown:
+        raise ValueError(f"unknown keys {sorted(unknown)}; a typed item carries {sorted(TYPED_KEYS)}")
+    sid = str(raw.get("data_source_id") or "").strip()
+    if not sid:
+        raise ValueError("a typed item needs data_source_id")
+    if sid not in sources:
+        sources[sid] = await DataSource.get_one({"id": sid})
+    source = sources[sid]
+    if source is None:
+        raise ValueError(f"no data source {sid}")
+    scope = str(raw.get("scope") or "")
+    account = str(getattr(source, "account_key", None) or "").strip()
+    kind = origin_kind_of(source, None)
+    # The origin a driver of this source would have minted: ``<account>/<scope parts>``.
+    namespace = "/".join(part for part in (account, *scope_parts(scope)) if part) or kind
+    try:
+        origin = CloudOrigin(kind=kind, namespace=namespace, key=str(raw.get("key") or ""), url=raw.get("url") or None)
+        origin._scope = scope
+        item = Item(origin=origin, data=raw.get("payload"))
+        return envelope_of(item, data_source_id=sid, provider=str(getattr(source, "provider", "") or kind))
+    except (ValidationError, TypeError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
 @router.post("/items")
 async def ingest_items_route(request: Request):
     """Ingest a batch through the same path the poller uses.
 
-    Body: ``{"items": [ {<SourceItemSpec>}, … ]}``. The batch's SIZE decides
+    Body: ``{"items": [ … ]}``, each item either TYPED — ``{data_source_id, scope?, key,
+    payload: {spec_kind, …}, url?}`` — or the legacy flat envelope. The batch's SIZE decides
     how loudly it announces itself, exactly as it does for a driver
     (``IngestMode.for_run``).
     """
@@ -72,8 +122,13 @@ async def ingest_items_route(request: Request):
             message=f"{len(raw_items)} items exceeds the {MAX_ITEMS_PER_REQUEST} per-request limit"
         )
 
+    sources: dict[str, Any] = {}
     try:
-        items = [_to_item(r) for r in raw_items]
+        items = []
+        for r in raw_items:
+            if not isinstance(r, dict):
+                raise ValueError("each item must be a JSON object")
+            items.append(await _typed_item(r, sources) if _is_typed(r) else _to_item(r))
     except (TypeError, ValueError) as exc:
         return ApiFailResponse(message=str(exc))
 

@@ -4,7 +4,7 @@ A source is an HTTP client, so testing it honestly means real sockets — a stub
 the conditional-GET path pass without ever negotiating a 304. A responder is
 ``(path, request_headers) -> (status, body, headers)``; a request body rides the headers as ``_body``
 (decoded text) and ``_raw`` (the bytes — a multipart upload), the verb as ``_method`` (POST, PUT,
-PATCH, DELETE).
+PATCH, DELETE, HEAD -- a HEAD is answered with the responder's status and headers, never a body).
 Standard library only, so a data source asset's own tests import nothing but the SDK.
 """
 from __future__ import annotations
@@ -34,6 +34,17 @@ def local_http_server(respond: Responder) -> Iterator[str]:
             seen["_raw"] = raw  # type: ignore[assignment] — bytes; a responder reading an upload wants them
             seen["_method"] = self.command
             self._answer(respond(self.path, seen))
+
+        def do_HEAD(self):  # noqa: N802 -- the GET's status and headers, never a body
+            seen = {k: v for k, v in self.headers.items()}
+            seen["_method"] = "HEAD"
+            status, body, headers = respond(self.path, seen)
+            self.send_response(status)
+            for key, value in (headers or {}).items():
+                self.send_header(key, value)
+            if "Content-Length" not in (headers or {}):
+                self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
 
         do_PUT = do_POST  # noqa: N815 — a body-carrying verb; `_method` tells the responder which
         do_DELETE = do_POST  # noqa: N815

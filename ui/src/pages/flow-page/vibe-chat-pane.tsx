@@ -3,7 +3,6 @@ import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
 import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
-import { startAgentSession } from '@src/components/agents/use-agent-launcher';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import {
   continueVibeSessionForProject,
@@ -16,9 +15,11 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
+import { VibeDocChip } from './vibe-doc-chip';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
-import { AgenticProcess, ProcessKind, toplog } from '@sdk';
+import { Agent, AgenticProcess, ProcessKind, toplog, TypeId } from '@sdk';
+import { startAgentSession } from '@src/components/agents/use-agent-launcher';
 import { SessionSurfaceSwitch } from '@src/components/terminal/interactive-terminal/SessionSurfaceSwitch';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useCallback, useEffect, useState } from 'react';
@@ -60,8 +61,8 @@ export function VibeChatPane({
   // the tier the next build (from the home or here) starts with.
   const [vibeModelTier, setVibeModelTier] = useVibeModelTier();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
-  // A vibe-only agent's session has no tabs and no surface switch: New starts
-  // another session AS that agent, and New / Recent replace this one in place.
+  // A vibe-only agent's session has no tabs and no surface switch: New / Recent
+  // replace this session in place instead of opening a tab beside it.
   const vibeOnlyAgent = useVibeOnlyAgent(process?.id);
   const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
     workerType: WorkerType;
@@ -133,12 +134,15 @@ export function VibeChatPane({
       // prompt into the previous chat, and the new one stayed empty forever.
       markNewSessionPending(true);
       try {
-        rememberLaunch('vibe', ViewMode.Vibe);
-        if (vibeOnlyAgent) {
-          const processId = await startAgentSession(vibeOnlyAgent, projectId);
+        // An agent's workspace: New is a new chat WITH that agent (its auto prompt, its auto_open).
+        const agentTypeId = process?.target_typeid_str?.startsWith(`${Agent.type}-`) ? process.target_typeid_str : null;
+        const agent = agentTypeId ? await Agent.getById<Agent>(new TypeId(agentTypeId).id) : null;
+        if (agent) {
+          const processId = await startAgentSession(agent, projectId);
           await navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
           return;
         }
+        rememberLaunch('vibe', ViewMode.Vibe);
         await createVibeProcessForProject({
           projectId,
           workdir: project?.fs_storage_mount_path ?? undefined,
@@ -154,12 +158,12 @@ export function VibeChatPane({
     },
     [
       startingNewSession,
+      process,
       project?.id,
       project?.fs_storage_mount_path,
       process?.project_id,
       navigation,
       defaultWorkerType,
-      vibeOnlyAgent,
       markNewSessionPending,
       t,
     ],
@@ -287,7 +291,10 @@ export function VibeChatPane({
         historyProjectId={chatProjectId}
         showProcessNameBar
         afterHistorySlot={
-          <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+          <>
+            <VibeDocChip process={process} />
+            <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+          </>
         }
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}

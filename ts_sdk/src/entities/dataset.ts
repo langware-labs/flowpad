@@ -259,6 +259,29 @@ export interface IDataset extends IEntity {
   asset_ref?: string;
   /** The kind each row is, resolved by the backend (`Dataset.row_kind`) — named specs too. */
   row_kind?: string;
+  /** Where the rows live (`dataset.json` `location`): `local` (the default), `file:<folder>`,
+   *  `<driver>:<target>` (`gdrive:GTM/Rows`, `s3:bucket/prefix`), or a record system. */
+  location?: DatasetLocation | null;
+}
+
+/** A record system the rows live in: one record per row, shaped by `map`. */
+export interface RecordLocation {
+  driver: string;
+  target?: string;
+  config?: Record<string, unknown>;
+  map?: { key: string; input: Record<string, unknown> };
+  by?: string;
+  read_only?: boolean;
+}
+
+export type DatasetLocation = string | RecordLocation;
+
+/** How a location reads to a person: `local`, `file:~/rows`, `s3:bucket/prefix`, `twenty: companies`. */
+export function locationLabel(location: DatasetLocation | null | undefined): string {
+  if (!location) return 'local';
+  if (typeof location === 'string') return location;
+  const target = location.target || Object.values(location.config ?? {}).filter((v) => typeof v === 'string').join('/');
+  return target ? `${location.driver}: ${target}` : location.driver;
 }
 
 // `implements IDataset` only checks the class; it contributes no members, so every
@@ -278,6 +301,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   field_spec: Record<string, string> = {};
   delimiter: string = ',';
   spec: DatasetSpecForm | null = null;
+  location: DatasetLocation | null = null;
   num_rows: number = 0;
   kind_counts: Record<string, number> = {};
   num_annotated: number = 0;
@@ -292,6 +316,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     this.field_spec = entity.field_spec ?? this.field_spec;
     this.delimiter = entity.delimiter ?? this.delimiter;
     this.spec = entity.spec ?? this.spec;
+    this.location = entity.location ?? this.location;
     this.num_rows = entity.num_rows ?? this.num_rows;
     this.kind_counts = entity.kind_counts ?? this.kind_counts;
     this.num_annotated = entity.num_annotated ?? this.num_annotated;
@@ -552,23 +577,17 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
-   *  row of this dataset's kind, and the dataset is made to hold exactly those (as `sync`). `map`
-   *  says how an item becomes a row, in the path grammar — `{key: 'external_id', input: {name:
-   *  'name', stage: 'data.stage'}}` (`{value: x}` is a constant). `by` is the outside system the
-   *  rows are written as (default: the source's provider). */
-  async mirror(
-    sourceId: string,
-    map: { key: string; input: Record<string, unknown> },
-    options: { by?: string; prune?: boolean; match?: DatasetRowQuery['match'] } = {},
-  ): Promise<DatasetSyncResult> {
-    return this.post('mirror', {
-      source_id: sourceId,
-      map,
-      ...writer(options),
-      ...(options.prune === undefined ? {} : { prune: options.prune }),
-      ...(options.match ? { match: matchJson(options.match) } : {}),
-    });
+  /** Bring the rows of a remote location (Drive, S3, a record system) up to date now — what every
+   *  read does first. `moved` names the rows that changed. */
+  async pull(): Promise<{ moved: string[]; num_rows: number }> {
+    return this.post('pull', {});
+  }
+
+  /** Copy every row to `location`, check it holds them all, then make it this dataset's location
+   *  (`dataset.json`). The old location keeps its rows. Refused (400) when the new location already
+   *  holds rows or is a record system. */
+  async moveRows(location: DatasetLocation): Promise<{ from: string; to: string; rows: number }> {
+    return this.post('move-rows', { location });
   }
 
   /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value

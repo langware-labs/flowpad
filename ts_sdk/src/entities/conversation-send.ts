@@ -285,7 +285,14 @@ export async function createAndSendConversation(
 ): Promise<CreateAndSendResult> {
   const { conversation_id: conversationId } = await createConversationForShare(params, opts);
 
-  await sendToExistingConversation(conversationId, payload);
+  // A conversation may start with just a title — send only when there is content.
+  const hasContent =
+    !!payload.text?.trim() ||
+    !!payload.files?.length ||
+    !!payload.assetReferences?.length ||
+    !!payload.sharedContextEntities?.length ||
+    !!payload.shareConfig;
+  if (hasContent) await sendToExistingConversation(conversationId, payload);
 
   if (opts?.draftRef) opts.draftRef.current = null;
   return { conversation_id: conversationId };

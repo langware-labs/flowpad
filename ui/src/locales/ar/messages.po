@@ -3438,15 +3438,17 @@ msgstr ""
 msgid "Approve now"
 msgstr "وافقوا الآن"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
-#: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "موافقة لمرة واحدة"
 
 #: src/components/collaboration/LiveSessionView.tsx
-msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "وافقوا، واسمحوا لـ {guestName} ببدء الجلسات دون أن يطلب"
+msgid "Approve this live session only"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+#~ msgid "Approve, and let {guestName} start sessions without asking"
+#~ msgstr "وافق، واسمح لـ {guestName} ببدء الجلسات دون أن يطلب"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4760,6 +4762,10 @@ msgstr "إلغاء"
 msgid "Cancel reply"
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Cancel request"
+msgstr ""
+
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "أُلغي"
@@ -4997,6 +5003,10 @@ msgstr "المخططات"
 #: src/i18n/pref-labels.ts
 msgid "Chat"
 msgstr "المحادثة"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Chat about this file"
+msgstr ""
 
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
@@ -5677,6 +5687,7 @@ msgstr "إغلاق"
 msgid "Close (Esc)"
 msgstr "إغلاق (Esc)"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "إغلاق (Escape)"
@@ -5715,6 +5726,10 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
 msgstr "إغلاق الإشارة المرجعية"
+
+#: src/components/assets/editor/ViewerChatToggle.tsx
+msgid "Close chat"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Close details"
@@ -7197,6 +7212,10 @@ msgstr "تعذّر فتح التدفق الفرعي"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
+msgstr ""
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Could not open this document: {error}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -9370,8 +9389,8 @@ msgstr "جارٍ اكتشاف {typeLabel}…"
 #~ msgstr "جارٍ الاكتشاف…"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Discuss"
-msgstr "نقاش"
+#~ msgid "Discuss"
+#~ msgstr "نقاش"
 
 #: src/i18n/pref-labels.ts
 msgid "Disk I/O backend"
@@ -9468,6 +9487,7 @@ msgstr ""
 msgid "Documentation"
 msgstr "التوثيق"
 
+#: src/i18n/type-labels.ts
 #: src/i18n/type-labels.ts
 msgid "Documents"
 msgstr "المستندات"
@@ -11496,6 +11516,10 @@ msgstr ""
 msgid "Find an event"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
+msgid "Find in document…"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Find machine"
 msgstr ""
@@ -11552,8 +11576,8 @@ msgid "finishing"
 msgstr "جارٍ الإنهاء"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Finishing asset load…"
-msgstr "إنهاء تحميل الملف…"
+#~ msgid "Finishing asset load…"
+#~ msgstr "إنهاء تحميل الملف…"
 
 #~ msgid "Fire (synthetic test)"
 #~ msgstr "إطلاق (اختبار اصطناعي)"
@@ -11644,8 +11668,8 @@ msgid "Fix the configuration — credentials or settings — then press Verify t
 msgstr "أصلحوا الإعداد — بيانات الاعتماد أو الإعدادات — ثم اضغطوا «تحقق» لاستئناف الجلب."
 
 #: src/components/data-sources/source-attention.ts
-msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr "أصلِحوا خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحبوا، أو انتظروا المزامنة التالية."
+#~ msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
+#~ msgstr "أصلِح خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحب، أو انتظر المزامنة التالية."
 
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "Fix the setup"
@@ -15003,6 +15027,7 @@ msgstr "جاري التحميل..."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
 #: src/components/assets/LlmEndpointsAssetList.tsx
@@ -15708,8 +15733,8 @@ msgid "minutes"
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "Mirror needs attention"
-msgstr "النسخة المطابقة تحتاج إلى انتباه"
+#~ msgid "Mirror needs attention"
+#~ msgstr "النسخة المطابقة تحتاج إلى انتباه"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -16467,6 +16492,7 @@ msgstr "التالي"
 msgid "next {0}"
 msgstr ""
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "المطابقة التالية (Enter)"
@@ -18628,6 +18654,10 @@ msgstr ""
 msgid "Open {name}"
 msgstr "افتحوا {name}"
 
+#: src/pages/flow-page/vibe-doc-chip.tsx
+msgid "Open {name} beside this chat"
+msgstr ""
+
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
 msgstr "فتح {title}"
@@ -20427,6 +20457,7 @@ msgstr "آخر 30 يومًا"
 msgid "Previous 7 days"
 msgstr "آخر 7 أيام"
 
+#: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "المطابقة السابقة (Shift+Enter)"
@@ -21205,6 +21236,10 @@ msgstr ""
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "اقرأوا النتيجة في FlowPad"
+
+#: src/components/assets/editor/document-file/DocumentFileViewer.tsx
+msgid "Read-only"
+msgstr ""
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Reader"
@@ -22558,8 +22593,8 @@ msgid "Review each attached asset and choose how to install it."
 msgstr "يُرجى مراجعة كل عنصر مرفق واختيار كيفية تثبيته."
 
 #: src/tabs/doc-tab-card.tsx
-msgid "Review in"
-msgstr "مراجعة في"
+#~ msgid "Review in"
+#~ msgstr "مراجعة في"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -23776,8 +23811,8 @@ msgid "Select a project"
 msgstr "اختيار مشروع"
 
 #: src/components/assets/editor/AssetDiscussButton.tsx
-msgid "Select a project to discuss this file"
-msgstr "يرجى اختيار مشروع لمناقشة هذا الملف"
+#~ msgid "Select a project to discuss this file"
+#~ msgstr "يرجى اختيار مشروع لمناقشة هذا الملف"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -26054,6 +26089,10 @@ msgstr "محفوظ"
 msgid "stored →"
 msgstr "محفوظ →"
 
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Stored in"
+msgstr ""
+
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
 msgstr ""
@@ -26857,8 +26896,8 @@ msgid "The credentials could not be saved."
 msgstr ""
 
 #: src/components/data-sources/source-attention.ts
-msgid "The dataset this source mirrors into could not be made current."
-msgstr "تعذّر تحديث مجموعة البيانات التي يُنسخ إليها هذا المصدر."
+#~ msgid "The dataset this source mirrors into could not be made current."
+#~ msgstr "تعذّر تحديث مجموعة البيانات التي يُنسخ إليها هذا المصدر."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."

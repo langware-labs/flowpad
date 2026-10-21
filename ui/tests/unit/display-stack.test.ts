@@ -54,7 +54,6 @@ describe('historyEntryDock', () => {
     // row becomes a durable tab instead of re-pointing the agent's replaceable one.
     const dock = historyEntryDock({ kind: 'vfs', path: '/w/a.md' }, PROJ);
     expect(dock).not.toBeNull();
-    expect(dock!.isActiveDisplay).toBe(false);
   });
 
   it('rebases an assets-shaped dock onto the project', () => {

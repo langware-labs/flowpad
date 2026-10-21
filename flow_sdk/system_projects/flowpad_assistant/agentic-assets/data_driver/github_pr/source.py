@@ -116,7 +116,7 @@ _GREEN = frozenset({"success", "neutral", "skipped"})
 
 class GithubPrMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.github_pr"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw"})
 
     #: The PR's title — the conversation's subject.
     subject: Optional[str] = None

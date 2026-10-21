@@ -1,6 +1,7 @@
 /**
  * The apps and agents button: a lone app opens directly; otherwise a list
- * opens each entry by URL with its registered type icon.
+ * opens each entry with its registered type icon — an app as its own top-level
+ * tab, an agent in Vibe (`useAgentLauncher`).
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -8,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const openDock = vi.hoisted(() => vi.fn());
+const launch = vi.hoisted(() => vi.fn());
+vi.mock('@src/components/agents/use-agent-launcher', () => ({ useAgentLauncher: () => ({ launch, busyId: null }) }));
 const dock = vi.hoisted(() => ({ current: null as unknown }));
 const agents = vi.hoisted(() => ({ current: [] as unknown[] }));
 vi.mock('@src/hooks/use-project-agents', () => ({ useProjectAgents: () => ({ agents: agents.current }) }));
@@ -30,7 +33,7 @@ const ADMIN = '22222222-2222-4222-8222-222222222222';
 const DEP = '33333333-3333-4333-8333-333333333333';
 const project = { id: 'p1', name: 'Trips' } as unknown as Project;
 const entry = (id: string, name: string, audience = 'app', providerProjectId = 'p1') =>
-  ({ app: { id, name, audience, type: 'micro_app' }, providerProjectId }) as unknown as ProjectApp;
+  ({ app: { id, name, displayName: name, audience, type: 'micro_app' }, providerProjectId }) as unknown as ProjectApp;
 const shop = entry(SHOP, 'shop');
 const admin = entry(ADMIN, 'back-office', 'admin');
 const docs = entry(DEP, 'docs', 'app', 'dep');
@@ -44,6 +47,7 @@ const mount = () =>
 
 beforeEach(() => {
   openDock.mockClear();
+  launch.mockClear();
   dock.current = DockPointer.forAutomations();
   apps.current = [];
   agents.current = [];
@@ -68,7 +72,8 @@ describe('the apps button', () => {
     expect(item.querySelector('svg')).not.toBeNull();
     if (withApps) expect(screen.getByTestId('top-nav-app-shop').querySelector('svg')).not.toBeNull();
     await user.click(item);
-    expect(openDock).toHaveBeenCalledWith(agent.dockPointer);
+    expect(launch).toHaveBeenCalledWith(agent, 'p1');
+    expect(openDock).not.toHaveBeenCalled();
   });
 
   describe('with one app', () => {
@@ -76,14 +81,14 @@ describe('the apps button', () => {
       apps.current = [shop];
     });
 
-    it('opens it in place, by URL alone', async () => {
+    it('opens it as its own top-level tab, by URL alone', async () => {
       mount();
       const button = screen.getByTestId('top-nav-app');
       expect(button.getAttribute('aria-label')).toBe('Apps and agents');
       await userEvent.setup().click(button);
       expect(openDock).toHaveBeenCalledTimes(1);
       expect(openDock.mock.calls[0][0].toUrl('/')).toBe(projectAppDock(shop, 'p1').toUrl('/'));
-      expect(openDock.mock.calls[0][2]).toBeUndefined();
+      expect(openDock.mock.calls[0][2]).toEqual({ topLevel: true });
     });
 
     it('rests while that app is the one on screen', () => {
@@ -110,14 +115,14 @@ describe('the apps button', () => {
       expect(openDock).not.toHaveBeenCalled();
     });
 
-    it('opens the chosen app in place', async () => {
+    it('opens the chosen app as its own top-level tab', async () => {
       mount();
       const user = userEvent.setup();
       await user.click(screen.getByTestId('top-nav-apps'));
       await user.click(screen.getByTestId('top-nav-app-back-office'));
       expect(openDock).toHaveBeenCalledTimes(1);
       expect(openDock.mock.calls[0][0].toUrl('/')).toBe(projectAppDock(admin, 'p1').toUrl('/'));
-      expect(openDock.mock.calls[0][2]).toBeUndefined();
+      expect(openDock.mock.calls[0][2]).toEqual({ topLevel: true });
     });
 
     it('marks the app on screen', async () => {

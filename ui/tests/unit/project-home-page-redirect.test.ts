@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getById: vi.fn(),
   agentGetById: vi.fn(),
   use: vi.fn(),
+  resume: vi.fn(),
   watch: vi.fn(),
   drainQueue: vi.fn(),
   embed: vi.fn(),
@@ -55,7 +56,8 @@ beforeEach(() => {
   });
   mocks.drainQueue.mockReset().mockResolvedValue(undefined);
   mocks.use.mockReset().mockResolvedValue({ process_id: NEW_CHAT });
-  mocks.agentGetById.mockReset().mockResolvedValue({ use: mocks.use });
+  mocks.resume.mockReset().mockResolvedValue(undefined);
+  mocks.agentGetById.mockReset().mockResolvedValue({ typeId: AGENT, use: mocks.use, resume: mocks.resume });
   mocks.embed.mockReset().mockResolvedValue(undefined);
   mocks.watch.mockReset().mockResolvedValue(undefined);
   mocks.hubOnly.mockReturnValue(false);
@@ -113,18 +115,18 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(locationOf(response)).toContain(`/dock/vibe/agentic_process-${LAST_CHAT}`);
     expect(locationOf(response)).not.toContain('viewMode=');
     expect(mocks.use).not.toHaveBeenCalled();
+    expect(mocks.resume).toHaveBeenCalledWith(LAST_CHAT);
     expect(mocks.embed).not.toHaveBeenCalled();
     // A resumed chat already had its turn 1: nothing is re-sent.
     expect(mocks.drainQueue).not.toHaveBeenCalled();
   });
 
-  it('a resumed chat keeps its remembered mode — landing never switches a session', async () => {
+  it('opening an agent is always Vibe, whatever mode its chat was last shown in', async () => {
     mocks.query.mockResolvedValue([{ id: LAST_CHAT, last_active_at: 5, last_mode: 'advanced' }]);
 
     const response = await projectHomePageRedirect(new Request(HOME_BUTTON_URL));
 
-    expect(locationOf(response)).toContain(`/dock/shell/agentic_process-${LAST_CHAT}`);
-    expect(locationOf(response)).toContain('viewMode=advanced');
+    expect(locationOf(response)).toContain(`/dock/vibe/agentic_process-${LAST_CHAT}`);
     expect(mocks.use).not.toHaveBeenCalled();
   });
 

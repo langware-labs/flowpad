@@ -146,6 +146,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Spreadsheet: {e}")
 
 try:
+    from flow_sdk.builtin.document_file import DocumentFile  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import DocumentFile: {e}")
+
+try:
     from flow_sdk.builtin.group import Group  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Group: {e}")
