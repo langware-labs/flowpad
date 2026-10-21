@@ -11,8 +11,8 @@ already its own build output, which is what lets Flowpad serve it as-is.
 ## Bootstrap
 
 ```bash
-cp -R "<this skill's directory>/template-flowpad/." "<project root>/assets/apps/<app name>/"
-cd "<project root>/assets/apps/<app name>"
+cp -R "<this skill's directory>/template-flowpad/." "<project root>/agentic-assets/webapp/<app name>/"
+cd "<project root>/agentic-assets/webapp/<app name>"
 # edit the three files, then:
 flow app serve "<App Name>"
 ```

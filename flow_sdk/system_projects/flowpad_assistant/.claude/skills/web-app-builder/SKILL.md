@@ -93,25 +93,27 @@ to Vercel + Supabase without restructuring.
 The skill ships a complete, tested template in `template/` next to this file.
 Bootstrapping a new app is a *copy*, not a *generation*:
 
-**Target directory = `<project root>/assets/apps/<app name>`**, where
+**Target directory = `<project root>/agentic-assets/webapp/<app name>`**, where
 `<project root>` is the session's current working directory and `<app name>` is
 a short kebab-case name derived from what the user asked to build (or the name
 they provided). The user may explicitly name another location, which overrides
 this default. Do not relocate the app to a Flowpad workspace project or any path
 from `flow context` — the process workdir IS the project the user asked to build
-in; the app nests under `assets/apps/` within it, and multiple apps can coexist
-there. In this skill's `references/` guides and the template's own docs,
+in; the app nests under `agentic-assets/webapp/` within it, and multiple apps can coexist
+there. That folder is not a convention but the one place Flowpad reads a `webapp.json` from
+(the `webapp` family): an app built anywhere else is not an app to Flowpad — nothing starts its
+`api` service or tells the page that service's port, and every `/api` call is refused. In this skill's `references/` guides and the template's own docs,
 "project root" and relative paths like `cd frontend` mean the app directory
-(`assets/apps/<app name>`), not the enclosing project.
+(`agentic-assets/webapp/<app name>`), not the enclosing project.
 
-If `<project root>/assets/apps/<app name>` already contains an app made from
+If `<project root>/agentic-assets/webapp/<app name>` already contains an app made from
 this template (`frontend/package.json` + `backend/main.py` present), skip
 bootstrap and go straight to the development guides.
 
 1. **Copy the template verbatim** into the target app directory:
 
    ```bash
-   cp -R "<this skill's directory>/template/." "<project root>/assets/apps/<app name>/"
+   cp -R "<this skill's directory>/template/." "<project root>/agentic-assets/webapp/<app name>/"
    ```
 
    Do NOT scaffold by hand, do NOT run `create-next-app`, `npx shadcn init`, or
@@ -135,9 +137,9 @@ bootstrap and go straight to the development guides.
 
 3. **Update the enclosing project's documentation** — if `README.md`,
    `CLAUDE.md`, or `AGENTS.md` exist at `<project root>`, add a brief note
-   recording that the web app is at `assets/apps/<app name>`, built from the
+   recording that the web app is at `agentic-assets/webapp/<app name>`, built from the
    web-app-builder template, plus the start commands from "Start the app" below
-   prefixed with the app path (`cd assets/apps/<app name>/backend && …`). If a
+   prefixed with the app path (`cd agentic-assets/webapp/<app name>/backend && …`). If a
    note for a previous app is already present, extend it rather than adding a
    duplicate. Never create these root files; only edit existing ones. The
    template's own `CLAUDE.md` and `AGENTS.md` in the app directory are separate

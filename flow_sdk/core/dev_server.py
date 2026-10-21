@@ -158,6 +158,27 @@ def start_detached(command: str, *, cwd: Path, port: int, name: str) -> tuple[in
     return proc.pid, log_file
 
 
+#: The kernel's running counters. Its ``oom_kill`` line counts the processes it killed for lack of memory
+#: since boot (Linux 4.13+); a machine with no such file (macOS, Windows) keeps no count.
+VMSTAT = Path("/proc/vmstat")
+
+
+def oom_kills() -> Optional[int]:
+    """How many processes the kernel has killed for lack of memory since boot, or None where it does not say.
+
+    Read before and after a start: a dev server the kernel killed mid-compile looks, from outside, exactly
+    like one that never answers — the counter moving is how the two are told apart."""
+    try:
+        text = VMSTAT.read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        name, _, value = line.partition(" ")
+        if name == "oom_kill":
+            return int(value) if value.strip().isdigit() else None
+    return None
+
+
 def log_tail(log_file: str, lines: int = 8) -> str:
     """The log's last lines. A dev server's log is appended to across every start and never rotated:
     only its end is read."""
