@@ -18,6 +18,7 @@ import {
 import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
+import { ConnectMachineDialog } from './ConnectMachineDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
@@ -32,6 +33,7 @@ import {
   Loader2,
   LogOut,
   Monitor,
+  Plug,
   Plus,
   ShieldCheck,
   Trash2,
@@ -52,6 +54,7 @@ const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: stri
   [ExecutionEnvironmentStatus.NOT_FOUND]: { dot: 'bg-muted-foreground/40', card: 'border-border opacity-60' },
   [ExecutionEnvironmentStatus.ERROR]: { dot: 'bg-destructive', card: 'border-destructive/40 bg-destructive/5' },
   [ExecutionEnvironmentStatus.NEW]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
+  [ExecutionEnvironmentStatus.DISCONNECTED]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
 };
 
 /**
@@ -83,6 +86,19 @@ function statusCardClass(status?: ExecutionEnvironmentStatus): string {
  */
 function isUnreachable(info?: SandboxDetails): boolean {
   return info?.status === ExecutionEnvironmentStatus.ERROR;
+}
+
+/**
+ * A connected machine with no live connection to the hub. Open, Terminal and
+ * Upgrade can only fail — the hub cannot wake it — so the card offers Connect.
+ */
+function isDisconnected(info?: SandboxDetails): boolean {
+  return info?.status === ExecutionEnvironmentStatus.DISCONNECTED;
+}
+
+/** Can the box be acted on (opened, shelled into, upgraded)? Not while unreachable or disconnected. */
+function isOperable(info?: SandboxDetails): boolean {
+  return !isUnreachable(info) && !isDisconnected(info);
 }
 
 /** "12m", "1h 5m" — minutes granularity, clamped at 0. */
@@ -170,6 +186,7 @@ function SandboxStatus({
     [ExecutionEnvironmentStatus.NOT_FOUND]: t`Not found`,
     [ExecutionEnvironmentStatus.ERROR]: t`Unreachable`,
     [ExecutionEnvironmentStatus.NEW]: t`New`,
+    [ExecutionEnvironmentStatus.DISCONNECTED]: t`Disconnected`,
   };
   const parts: string[] = [];
   if (status === ExecutionEnvironmentStatus.READY) {
@@ -180,9 +197,14 @@ function SandboxStatus({
   if (size) parts.push(size);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="flex min-w-0 items-center gap-1.5 ps-7 text-[11px] text-muted-foreground" title={status}>
+      <span
+        className="flex min-w-0 items-center gap-1.5 ps-7 text-[11px] text-muted-foreground"
+        title={info.status_msg || status}
+      >
         <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
-        <span className="shrink-0">{labels[status] ?? status}</span>
+        <span className="shrink-0" data-testid="sandbox-status-label">
+          {labels[status] ?? status}
+        </span>
         {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
       </span>
       {login}
@@ -267,7 +289,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
     upgradingId,
     details,
     refetch,
-  } = useSandboxes();
+  } = useSandboxes({ pollMachines: showMachines });
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
   const sandboxesEnabled = dataContext.bootstrapInfo?.sandboxes_enabled !== false;
   // `sandboxes_enabled` says the hub can provision CLOUD sandboxes. A machine a
@@ -305,6 +327,8 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
   // auto-login can only be chosen before the box signs anyone in. Opening an
   // already-launched box stays one click — it asks nothing and starts nothing.
   const [launching, setLaunching] = useState<ComputeNode | null>(null);
+  // The disconnected machine whose Connect instructions are open, or null.
+  const [connecting, setConnecting] = useState<ComputeNode | null>(null);
   // The sandbox whose upgrade confirm is open, or null. Asks first because the
   // upgrade STOPS the app inside the box: anyone working in it — the owner in
   // another tab, or someone they shared it with — is interrupted for as long as
@@ -525,7 +549,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                       would just be a second way to learn that. The slot comes
                       back on its own when the next poll finds the box. */}
                       {isLaunched(d)
-                        ? !isUnreachable(details[d.id]) && (
+                        ? isOperable(details[d.id]) && (
                             <Button
                               size="sm"
                               variant="secondary"
@@ -541,7 +565,19 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         : null}
                       {/* A connected machine's own shells: each click spins out one more
                       terminal session on it (the same path as the terminal strip). */}
-                      {isUserMachine(d) && (
+                      {isDisconnected(details[d.id]) && (
+                        <Button
+                          size="sm"
+                          onClick={() => setConnecting(d)}
+                          aria-label={t`Connect this machine`}
+                          data-testid="machine-connect"
+                          className="h-7 shrink-0 px-2.5 text-xs"
+                        >
+                          <Plug className="me-1.5 h-3 w-3" />
+                          <Trans>Connect</Trans>
+                        </Button>
+                      )}
+                      {isUserMachine(d) && isOperable(details[d.id]) && (
                         <Button
                           size="sm"
                           variant="secondary"
@@ -577,7 +613,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                       hover-only, unlike the icons after it: this is how a box
                       gets a fix, and an upgrade nobody can find is an upgrade
                       nobody runs. */}
-                      {isLaunched(d) && !isUnreachable(details[d.id]) && (
+                      {isLaunched(d) && isOperable(details[d.id]) && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
@@ -737,6 +773,13 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
         onLaunch={launchSandbox}
         onOpen={openSandbox}
         steps={steps}
+      />
+
+      <ConnectMachineDialog
+        where={connecting ? details[connecting.id]?.hostname || connecting.name || '' : null}
+        onOpenChange={(o) => {
+          if (!o) setConnecting(null);
+        }}
       />
 
       {/* Share / hand over a sandbox. `isOwner` is a UI courtesy only — the hub

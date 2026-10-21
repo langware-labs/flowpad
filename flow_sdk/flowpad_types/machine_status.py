@@ -41,7 +41,7 @@ class MachineStatus(BaseModel):
     """Complete machine status including processes and network."""
 
     node_provider_status: ExecutionEnvironmentStatus = Field(
-        default=ExecutionEnvironmentStatus.NEW, description="Provider status (READY, PAUSED, ERROR, NOT_FOUND)"
+        default=ExecutionEnvironmentStatus.NEW, description="Provider status (READY, PAUSED, ERROR, NOT_FOUND, DISCONNECTED)"
     )
     status_msg: str | None = Field(default=None, description="Status message (informational or error)")
     processes: list[ProcessInfo] = Field(default_factory=list, description="List of running processes")

@@ -198,6 +198,9 @@ function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): 
   return { ...node.toJSON(), node_provider: readProvider(node) ?? defaultSandboxProvider(), ...patch };
 }
 
+/** How often a connected machine's card re-reads its status (it can connect or drop at any time). */
+export const MACHINE_STATUS_POLL_MS = 5_000;
+
 /**
  * The absolute URL that opens a sandbox's workspace app: `compute_node/<id>/open/system`.
  *
@@ -465,7 +468,7 @@ async function provisionSandboxProject(
 
 const NO_NODES: ComputeNode[] = [];
 
-export function useSandboxes() {
+export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean } = {}) {
   const { user } = useAuth();
 
   const sandboxesRequest = useMemo(
@@ -499,6 +502,24 @@ export function useSandboxes() {
     }
   }, []);
 
+  // Probe these boxes and merge the answers; an unchanged status keeps the same
+  // object, so a poll that learns nothing re-renders nothing.
+  const probeInto = useCallback(
+    async (nodes: ComputeNode[]) => {
+      const entries = await Promise.all(nodes.map(async (d) => [d.id, await probeDetails(d)] as const));
+      setDetails((prev) => {
+        const changed = entries.filter(([id, next]) => {
+          const cur = prev[id];
+          return (
+            !cur || cur.status !== next.status || cur.status_msg !== next.status_msg || cur.hostname !== next.hostname
+          );
+        });
+        return changed.length ? { ...prev, ...Object.fromEntries(changed) } : prev;
+      });
+    },
+    [probeDetails],
+  );
+
   // Probe only machines we haven't seen yet, and forget ones that vanished —
   // re-probing the whole list on every add/delete would be one call per machine.
   useEffect(() => {
@@ -511,11 +532,25 @@ export function useSandboxes() {
     // id to ask about, so the answer would be an error — painting a card red for
     // a machine that is simply not built yet.
     const fresh = sandboxes.filter((d) => isLaunched(d) && !(d.id in detailsRef.current));
-    if (!fresh.length) return;
-    void Promise.all(fresh.map(async (d) => [d.id, await probeDetails(d)] as const)).then((entries) =>
-      setDetails((prev) => ({ ...prev, ...Object.fromEntries(entries) })),
-    );
-  }, [sandboxes, probeDetails]);
+    if (fresh.length) void probeInto(fresh);
+  }, [sandboxes, probeInto]);
+
+  // A connected machine comes and goes on its own (`flow connect` started or
+  // stopped on it), so the screen showing its card (opt-in: `pollMachines`)
+  // re-reads its status. Only while the tab is visible, one probe at a time.
+  const userMachines = useMemo(() => sandboxes.filter((d) => isLaunched(d) && isUserMachine(d)), [sandboxes]);
+  useEffect(() => {
+    if (!pollMachines || !userMachines.length) return;
+    let inFlight = false;
+    const id = setInterval(() => {
+      if (inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      void probeInto(userMachines).finally(() => {
+        inFlight = false;
+      });
+    }, MACHINE_STATUS_POLL_MS);
+    return () => clearInterval(id);
+  }, [pollMachines, userMachines, probeInto]);
 
   // ---- create / launch ----
   const [steps, setSteps] = useState<Step[]>(() => plannedSteps());

@@ -114,3 +114,5 @@ class ExecutionEnvironmentStatus(StrEnum):
     PAUSED = "PAUSED"
     ERROR = "ERROR"
     NOT_FOUND = "NOT_FOUND"
+    #: An enrolled machine with no live connection; only `flow connect` on it brings it back.
+    DISCONNECTED = "DISCONNECTED"
