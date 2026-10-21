@@ -229,13 +229,26 @@ async def _send(spec: ActivityProgressSpec) -> None:
         if spec.subject_entity:
             from flow_sdk.core.network.resource_tracker import send_flow_data_to_entity
 
-            await send_flow_data_to_entity(spec.subject_entity, envelope(spec))
+            # A connection that was shown this root keeps hearing it until it ends, even after it stops
+            # watching the subject: otherwise it never hears the end and shows the root running forever.
+            key = (spec.subject_entity, spec.path, spec.activity_id)
+            sent = await send_flow_data_to_entity(spec.subject_entity, envelope(spec), also=_heard.get(key, ()))
+            # ``sent`` already holds every earlier listener still connected, so a gone one drops out here.
+            if spec.is_terminal:
+                _heard.pop(key, None)
+            else:
+                _heard[key] = sent
         else:
             from flow_sdk.core.network.resource_tracker import broadcast_progress
 
             await broadcast_progress(local_subject_typeid(), envelope(spec))
     except Exception:  # noqa: BLE001 — reporting must never fail a producer
         logger.debug("activity emit failed for %s", spec.path, exc_info=True)
+
+
+#: Connections each live scoped root has reached, by ``(subject_entity, path, activity_id)``. Dropped when
+#: the root ends; a connection that has gone drops out on the next send.
+_heard: "dict[tuple[str, str, str], set[str]]" = {}
 
 
 #: The one emitter. ``install()`` it from server startup.

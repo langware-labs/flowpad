@@ -47,7 +47,10 @@ export interface UseUserApiKeys {
 
 const FLOWPAD_KEY_NAME = 'FLOWPAD_API_KEY';
 
-export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKeys {
+/** `keyName`: the name the panel's key is generated under (default FLOWPAD_API_KEY) — a link can ask for another
+ *  (`?name=WAHA_API_KEY`), so the key a service asked for is the one made and found. */
+export function useUserApiKeys(opts?: { onMutated?: () => void; keyName?: string }): UseUserApiKeys {
+  const keyName = opts?.keyName || FLOWPAD_KEY_NAME;
   const { t } = useLingui();
   const { user } = useAuth();
   const [generatedKey, setGeneratedKey] = useState<ApiKeyCredentials | null>(null);
@@ -67,7 +70,7 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
 
   // Derived, not mirrored into state: the previous copies kept a `hasFlowPadApiKey`
   // boolean in sync with this via an effect, which could only ever lag it.
-  const flowpadKey = useMemo(() => apiKeys.find((k) => k.name?.includes(FLOWPAD_KEY_NAME) && k.is_active), [apiKeys]);
+  const flowpadKey = useMemo(() => apiKeys.find((k) => k.name?.includes(keyName) && k.is_active), [apiKeys, keyName]);
 
   const generate = useCallback(async () => {
     if (!user?.typeId) {
@@ -75,7 +78,7 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
       return;
     }
     try {
-      setGeneratedKey(await ApiKey.generateSelfKey(user.typeId));
+      setGeneratedKey(await ApiKey.generateSelfKey(user.typeId, keyName));
       reload();
       onMutated?.();
       notify.success({
@@ -88,7 +91,7 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
         message: errorMessage(error, t`Failed to generate API key`),
       });
     }
-  }, [user?.typeId, reload, onMutated, t]);
+  }, [user?.typeId, keyName, reload, onMutated, t]);
 
   const remove = useCallback(
     async (key: Pick<UserApiKeyItem, 'name'>) => {

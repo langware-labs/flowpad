@@ -13275,6 +13275,10 @@ msgid "General"
 msgstr "General"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
+msgid "Generate {keyName}"
+msgstr "Generate {keyName}"
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate an API key to authenticate API requests to FlowPad"
 msgstr "Generate an API key to authenticate API requests to FlowPad"
 
