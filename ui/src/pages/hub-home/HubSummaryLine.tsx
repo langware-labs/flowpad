@@ -17,7 +17,7 @@ function InboundChip() {
   return (
     <CounterChip
       count={numbers.length}
-      label={<Trans>Inbound</Trans>}
+      label={<Trans>Channels</Trans>}
       isLoading={loading}
       onClick={() => openInbound(navigation)}
       testId="summary-chip-inbound"

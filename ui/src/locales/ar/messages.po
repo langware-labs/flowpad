@@ -5014,8 +5014,11 @@ msgstr ""
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/types/ViewType.ts
 msgid "Channels"
 msgstr ""
 
@@ -13502,8 +13505,8 @@ msgstr ""
 #: src/components/inbound/InboundView.tsx
 #: src/pages/hub-home/HubSummaryLine.tsx
 #: src/types/ViewType.ts
-msgid "Inbound"
-msgstr ""
+#~ msgid "Inbound"
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Inbound routing"
