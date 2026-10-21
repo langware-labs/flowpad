@@ -6,7 +6,8 @@ import { credentialsPointer } from '@src/components/credentials-view/credentials
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
-import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
+import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
   useSandboxes,
   isLaunched,
@@ -24,7 +25,18 @@ import { HubSummaryLine } from './HubSummaryLine';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
-import { ArrowUpCircle, KeyRound, Laptop, Loader2, LogOut, Monitor, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import {
+  ArrowUpCircle,
+  KeyRound,
+  Laptop,
+  Loader2,
+  LogOut,
+  Monitor,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
@@ -308,6 +320,7 @@ export function HubHome() {
   }, [pendingInviteCount, refetch]);
   // `flow connect` device-code approval: null = closed, '' = open blank, 'XXXX-XXXX' = prefilled.
   const [addMachineCode, setAddMachineCode] = useState<string | null>(null);
+  const [addMachineOpen, setAddMachineOpen] = useState(false);
   // "create a sandbox" / "add a machine" (smart navigation): the same dialogs the buttons open.
   useUiActionRequest(['new-sandbox-hub', 'add-machine-hub'], (id) =>
     id === 'new-sandbox-hub' ? setNewSandbox({}) : setAddMachineCode(''),
@@ -365,56 +378,79 @@ export function HubHome() {
           </p>
         )}
 
-        {/* Sandboxes — cloud FlowPad instances running in E2B (ComputeNode flavor=workspace) */}
+        {/* Machines — cloud sandboxes (E2B, ComputeNode flavor=workspace) and your own
+            computers. One "+" tile opens the sub-type catalogue, the same shape as
+            the desktop's "Add connection" (DesktopTile + TileSection dialog). */}
         <div className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">
-            <Trans>Sandboxes</Trans>
+            <Trans>Machines</Trans>
           </h2>
-          {/* New sandbox — same DesktopTile shape the Projects section uses. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DesktopTile
-                Icon={Monitor}
-                label={creating ? t`Creating…` : t`New Sandbox`}
-                loading={creating}
-                disabled={!canCreateSandbox}
-                onClick={() => setNewSandbox({})}
-                data-testid="new-sandbox-button"
-              />
-            </TooltipTrigger>
-            {!canCreateSandbox && (
-              <TooltipContent>
-                {!sandboxesEnabled ? (
-                  // `sandboxes_enabled` is the hub reporting it holds no sandbox
-                  // provider credential — an operator's missing config, not a
-                  // transient outage and nothing the viewer can retry. Say that,
-                  // so nobody burns time re-clicking a tile that cannot work.
-                  <Trans>This hub isn't configured to run sandboxes</Trans>
-                ) : (
-                  <Trans>Sign in to create sandboxes</Trans>
-                )}
-              </TooltipContent>
-            )}
-          </Tooltip>
-          {/* Add machine — approve a `flow connect` code from your own computer/server. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DesktopTile
-                Icon={Laptop}
-                label={t`Add Machine`}
-                disabled={!currentUser}
-                onClick={() => setAddMachineCode('')}
-                data-testid="add-machine-button"
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              {currentUser ? (
-                <Trans>Run `flow connect` on a machine and enter its code here</Trans>
-              ) : (
-                <Trans>Sign in to add machines</Trans>
-              )}
-            </TooltipContent>
-          </Tooltip>
+          <DesktopTile
+            Icon={Plus}
+            label={creating ? t`Creating…` : t`Add machine`}
+            loading={creating}
+            onClick={() => setAddMachineOpen(true)}
+            data-testid="add-machine-open"
+          />
+          <Dialog open={addMachineOpen} onOpenChange={setAddMachineOpen}>
+            <DialogContent className="max-w-2xl" data-testid="add-machine-dialog">
+              <DialogHeader>
+                <DialogTitle>
+                  <Trans>Add machine</Trans>
+                </DialogTitle>
+                <DialogDescription>
+                  <Trans>Start a cloud sandbox, or connect a computer you own.</Trans>
+                </DialogDescription>
+              </DialogHeader>
+              <TileSection title={<Trans>Machine type</Trans>}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DesktopTile
+                      Icon={Monitor}
+                      label={t`Sandbox`}
+                      disabled={!canCreateSandbox}
+                      onClick={() => {
+                        setAddMachineOpen(false);
+                        setNewSandbox({});
+                      }}
+                      data-testid="new-sandbox-button"
+                    />
+                  </TooltipTrigger>
+                  {!canCreateSandbox && (
+                    <TooltipContent>
+                      {!sandboxesEnabled ? (
+                        // An operator's missing provider config, not something the viewer can retry.
+                        <Trans>This hub isn't configured to run sandboxes</Trans>
+                      ) : (
+                        <Trans>Sign in to create sandboxes</Trans>
+                      )}
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DesktopTile
+                      Icon={Laptop}
+                      label={t`Machine`}
+                      disabled={!currentUser}
+                      onClick={() => {
+                        setAddMachineOpen(false);
+                        setAddMachineCode('');
+                      }}
+                      data-testid="add-machine-button"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {currentUser ? (
+                      <Trans>Run `flow connect` on a machine and enter its code here</Trans>
+                    ) : (
+                      <Trans>Sign in to add machines</Trans>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </TileSection>
+            </DialogContent>
+          </Dialog>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {sandboxes.map((d) => (
