@@ -115,7 +115,7 @@ export function RunsView({
   const shown = useMemo(() => runs.filter((r) => matchesFilters(r, filters)), [runs, filters]);
 
   return (
-    <div className={`runs${compact ? 'compact' : ''}`}>
+    <div className={`runs ${compact ? 'compact' : ''}`}>
       <aside className="runs-list">
         <RunFilters
           runs={runs}

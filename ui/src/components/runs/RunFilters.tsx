@@ -112,7 +112,7 @@ export function RunFilters({
         {BADGES.filter((b) => counts.byBadge.get(b)).map((badge) => (
           <button
             key={badge}
-            className={`facet b-${badge}${value.badges.includes(badge) ? 'on' : ''}`}
+            className={`facet b-${badge} ${value.badges.includes(badge) ? 'on' : ''}`}
             onClick={() => toggleBadge(badge)}
           >
             {badge} <b>{counts.byBadge.get(badge)}</b>
