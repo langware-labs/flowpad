@@ -109,11 +109,14 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
 #: is a deploy, and paying a round trip a minute to notice one is not a trade.
 _PROVIDER_TTL_SECONDS = 600.0
 _PROVIDER_CACHE: dict[str, tuple[float, EntityEnvVars]] = {}
+#: The providers (hub names) the hub HOLDS a token for, per user -- read from the same table fetch.
+_HUB_HELD: dict[str, frozenset[str]] = {}
 
 
 def invalidate_hub_providers() -> None:
     """Drop the cached catalogue. Called after a completed OAuth flow."""
     _PROVIDER_CACHE.clear()
+    _HUB_HELD.clear()
 
 
 def _serve_stale(user_id: str, stale: EntityEnvVars | None) -> EntityEnvVars:
@@ -165,18 +168,27 @@ async def hub_provider_rows() -> EntityEnvVars:
     if not isinstance(values, list):
         return _serve_stale(user_id, stale)
 
-    rows = []
+    rows, held = [], set()
     for item in values:
         if not isinstance(item, dict):
             continue
         if str(item.get("var_type") or "") != EnvVarType.OAUTH_PROVIDER_ID.value:
             continue
+        if str(item.get("var_status") or "").upper() == "AVAILABLE" and item.get("name"):
+            held.add(str(item["name"]).strip().lower())
         row = _row_from_hub(item)
         if row is not None:
             rows.append(row)
     table = EntityEnvVars(values=rows)
+    _HUB_HELD[user_id] = frozenset(held)
     _PROVIDER_CACHE[user_id] = (time.monotonic(), table)
     return table
+
+
+def hub_held_providers() -> frozenset[str]:
+    """The providers (by their hub name) the hub holds a token for, as of the last ``hub_provider_rows``."""
+    user_id = _cloud_user_id()
+    return _HUB_HELD.get(user_id, frozenset()) if user_id else frozenset()
 
 
 def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:

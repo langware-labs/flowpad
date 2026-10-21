@@ -54,6 +54,8 @@ LOCAL, FOLDER, FILES, RECORDS = "local", "folder", "files", "records"
 _DRIVER = re.compile(r"^([a-z][a-z0-9_]*):(.*)$")
 #: The working copy's own record of what it last saw out there: ``{path: {"v": version, "h": hash}}``.
 STATE_FILE = ".location.json"
+#: How many files a pull reads at once.
+PULL_CONCURRENCY = 8
 
 
 @dataclass(frozen=True)
@@ -243,10 +245,54 @@ async def refresh_hosted(source: Any, datasets: Optional[list] = None) -> None:
         why = await source_refusal(str(source.name), str(getattr(source, "project_id", "") or ""))
     except Exception as exc:  # noqa: BLE001 -- the check never fails over a note
         why = f"{source.name} could not be checked ({exc})"
+    unfilled = []
     for dataset in datasets:
         if getattr(dataset, "asset_ref", ""):
             remember(dataset.asset_ref, source.name, why)
             await dataset.note_where_rows_are()
+            if not why:
+                unfilled.append(dataset)
+    if unfilled:   # behind the check, never in it: a big dataset's first pull takes minutes
+        task = asyncio.create_task(_first_pulls(unfilled))
+        _filling.add(task)
+        task.add_done_callback(_filling.discard)
+
+
+async def refresh_all_hosted() -> None:
+    """Every source that hosts datasets answers once -- at startup, so no dataset reads as local only
+    because this process has not asked its source yet. Reads the source rows only; no network."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    for source in await DataSource.get_all({}) or []:
+        try:
+            if hosted := await source.datasets():
+                await refresh_hosted(source, hosted)
+        except Exception:  # noqa: BLE001 -- one source never holds up the rest
+            logger.warning("data source %s: could not tell its datasets where their rows are",
+                           getattr(source, "name", ""), exc_info=True)
+
+
+#: The first-pull passes running now (held so a task is not collected mid-run).
+_filling: set = set()
+
+
+async def _first_pulls(datasets: list) -> None:
+    for dataset in datasets:
+        await _first_pull(dataset)
+
+
+async def _first_pull(dataset: Any) -> None:
+    """A dataset whose working copy was never filled gets it now: another dataset's links read these
+    rows from disk (``links._row_ids``) without a session of their own."""
+    location = dataset._location()
+    if not location.remote or (rows_folder(dataset, location) / STATE_FILE).is_file():
+        return
+    try:
+        async with session(dataset, location, write=False):
+            pass
+        await dataset.refresh_counts()
+    except Exception:  # noqa: BLE001 -- the next session of that dataset pulls it anyway
+        logger.warning("dataset %s: first pull from %s failed", getattr(dataset, "name", ""), location.label(), exc_info=True)
 
 
 def rows_root(folder: Path | str, location: Location, dataset_id: str) -> Path:
@@ -387,20 +433,26 @@ async def pull_files(store: Any, root: Path, location: Location) -> list[str]:
     committed = {_row_of(p) for p in remote if p.endswith("/row.json") and p.count("/") == 2}
     remote = {p: v for p, v in remote.items() if _row_of(p) in committed}
     local = _local_files(root)
-    files, moved = {}, set()
+    files, moved, stale = {}, set(), []
     for path, version in remote.items():
         held = seen.get(path) or {}
         here = local.get(path)
-        current = here is not None and held.get("v") == version and _digest(here.read_bytes()) == held.get("h")
-        if current:
+        if here is not None and held.get("v") == version and _digest(here.read_bytes()) == held.get("h"):
             files[path] = held
-            continue
-        data = await store.read_file(path)
+        else:
+            stale.append((path, version))
+    gate = asyncio.Semaphore(PULL_CONCURRENCY)
+
+    async def fetch(path: str, version: str) -> None:   # the files are independent: read side by side
+        async with gate:
+            data = await store.read_file(path)
         target = root / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         files[path] = {"v": version, "h": _digest(data)}
         moved.add(_row_of(path))
+
+    await asyncio.gather(*(fetch(path, version) for path, version in stale))
     for path, here in local.items():
         if path not in remote:
             here.unlink(missing_ok=True)

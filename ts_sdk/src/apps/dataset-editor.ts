@@ -19,6 +19,7 @@ import { projectScope, scopeFilterToDockOptions } from '../utils/scope-filter';
 import { ViewType } from '../utils/ui/view-types';
 import { appOption, applyHostTheme, navigateHost } from './host';
 import { DataDriver } from '../entities/data-driver';
+import { DataSource } from '../entities/data-source';
 import { locationLabel } from '../entities/dataset';
 import { QueryRequest } from '../FlowSync/query';
 
@@ -210,38 +211,54 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   status.className = 'small ok';
 }
 
-/** Where the rows live, and moving them: "Stored in <location>" and, on Move, a picker of the places
- *  rows can go -- this project, a folder on this machine, or a store of any driver that holds rows
- *  (`DataDriver.holds_rows`, so no provider is named here) -- with the target typed in. */
+/** Where the rows live, and moving them: "Stored in <where>" (the data source and folder, or the
+ *  location) with why they are local while that source is not set up here, and, on Move, a picker of
+ *  the places rows can go -- the project's data sources first, then this project, a folder on this
+ *  machine, or a store of any driver that holds rows (`DataDriver.holds_rows`, so no provider is
+ *  named here) with the target typed in. */
 function locationBar(dataset: any, moved: () => void): HTMLElement {
-  const shown = h('span', { class: 'mono small', 'data-testid': 'dataset-editor-location' }, locationLabel(dataset.location));
+  const shown = h('span', { class: 'mono small', 'data-testid': 'dataset-editor-location' },
+    dataset.rows_at || locationLabel(dataset.location));
+  const note = h('span', { class: 'muted small', 'data-testid': 'dataset-editor-rows-note' }, dataset.rows_note || '');
   const said = h('span', { class: 'small', 'data-testid': 'dataset-editor-move-status' });
   const where = h('select', { 'data-testid': 'dataset-editor-move-kind' },
     h('option', { value: 'local' }, 'This project'), h('option', { value: 'file' }, 'A folder on this machine')) as HTMLSelectElement;
   const target = h('input', { 'data-testid': 'dataset-editor-move-target', placeholder: 'folder, bucket/prefix …', style: 'min-width:16rem' }) as HTMLInputElement;
   const go = h('button', { class: 'primary', 'data-testid': 'dataset-editor-move-go' }, 'Move rows') as HTMLButtonElement;
-  const form = h('span', { class: 'bar', style: 'margin:0', hidden: true }, where, target, go);
+  // Shown by `display`, not `hidden`: the `bar` class sets `display: flex`, which wins over `hidden`.
+  const form = h('span', { class: 'bar', style: 'margin:0;display:none' }, where, target, go) as HTMLElement;
   const open = h('button', { 'data-testid': 'dataset-editor-move' }, 'Move…');
-  const sync = () => (target.hidden = where.value === 'local');
+  const sync = () => (target.hidden = where.value === 'local' || where.value.startsWith('source:'));
   where.addEventListener('change', sync);
   sync();
   let listed = false;
   open.addEventListener('click', async () => {
-    form.hidden = !form.hidden;
-    if (form.hidden || listed) return;
+    const showing = form.style.display === 'none';
+    form.style.display = showing ? '' : 'none';
+    if (!showing || listed) return;
     listed = true;
+    const sources = await DataSource.query(new QueryRequest({ type: DataSource.type, name: 'dataset-editor:data-sources' }));
+    const first = where.firstChild;
+    for (const s of sources as any[]) {
+      if (s.name && (!dataset.project_id || !s.project_id || s.project_id === dataset.project_id)) {
+        where.insertBefore(h('option', { value: `source:${s.name}` }, `${s.name} · ${s.provider}`), first);
+      }
+    }
     const drivers = await DataDriver.query(new QueryRequest({ type: DataDriver.type, scope: [], name: 'dataset-editor:row-stores' }));
     for (const d of drivers as any[]) if (d.holds_rows) where.append(h('option', { value: d.name }, d.title || d.name));
+    sync();
   });
   go.addEventListener('click', async () => {
-    const value = where.value === 'local' ? 'local' : `${where.value}:${target.value.trim()}`;
+    const value = where.value.startsWith('source:')
+      ? { data_source: where.value.slice('source:'.length) }
+      : where.value === 'local' ? 'local' : `${where.value}:${target.value.trim()}`;
     go.disabled = true;
     said.className = 'small muted';
     said.textContent = 'Moving…';
     try {
       const done = await dataset.moveRows(value);
       said.className = 'small ok';
-      said.textContent = `${done.rows} rows moved to ${done.to}`;
+      said.textContent = `${done.rows} rows at ${done.to}` + (done.adopted ? ` (${done.adopted} were already there)` : '');
       moved();
     } catch (error: any) {
       said.className = 'small err';
@@ -251,5 +268,5 @@ function locationBar(dataset: any, moved: () => void): HTMLElement {
     }
   });
   return h('div', { class: 'bar', style: 'padding:.4rem 1rem;margin:0;border-bottom:1px solid hsl(var(--border))' },
-    h('span', { class: 'muted small' }, 'Stored in'), shown, open, form, said);
+    h('span', { class: 'muted small' }, 'Stored in'), shown, note, open, form, said);
 }

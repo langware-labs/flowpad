@@ -327,6 +327,10 @@ async def _start_app_ready_signal() -> None:
         logging.getLogger(__name__).exception("App-ready signal: failed to start")
 
 
+#: The startup pass that tells hosted datasets where their rows are (held so it is not collected).
+_HOSTED_REFRESH: set = set()
+
+
 async def _app_ready_signal() -> None:
     """Emit ``app.ready`` once this boot, when the app is genuinely usable.
 
@@ -380,6 +384,14 @@ async def _app_ready_signal() -> None:
         await reconcile_wizard_triggers()
         await reap_stale_trigger_rows()
         system_content_ready.set()
+        # Each dataset in a data source hears from its source now, not at that source's next poll --
+        # beside the ready signal, never ahead of it.
+        import asyncio as _asyncio_hosted
+
+        from flow_sdk.datasets.locations import refresh_all_hosted  # noqa: PLC0415
+
+        _HOSTED_REFRESH.add(task := _asyncio_hosted.create_task(refresh_all_hosted(), name="hosted-datasets-refresh"))
+        task.add_done_callback(_HOSTED_REFRESH.discard)
 
         # make+publish rather than emit: `emit` returns None when nothing is
         # subscribed, and this line wants a stable event id in the log either

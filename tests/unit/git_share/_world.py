@@ -147,7 +147,8 @@ class World:
 
         ``before_unpack`` runs between pack and unpack (the sender keeps working,
         rewrites history, the remote goes away). Returns ``(install_response,
-        received_row)``. Raises what pack raises.
+        received_row)`` — or ``(attachment_id, None)`` with ``install=False``, for a
+        caller that opens it itself. Raises what pack raises.
         """
         key = f"{self.family.type}-{self.asset_id}"
         fm_id, conv_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -187,7 +188,7 @@ class World:
             await unpack_bundle(zip_path, local_user_id="receiver")
         ma_id = MessageAttachment.allocate_deterministic_id(fm_id, key)
         if not install:
-            return None, None
+            return ma_id, None
         async with self.phase("install"):
             res = await handle_attachment_install(
                 ma_id,

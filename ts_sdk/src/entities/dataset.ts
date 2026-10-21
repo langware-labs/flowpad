@@ -602,7 +602,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   /** Copy every row to `location`, check it holds them all, then make it this dataset's location
    *  (`dataset.json`). The old location keeps its rows. Refused (400) when the new location already
    *  holds rows or is a record system. */
-  async moveRows(location: DatasetLocation): Promise<{ from: string; to: string; rows: number }> {
+  /** Move the rows to a location, or into a data source (`{ data_source, path? }`); rows already there are kept. */
+  async moveRows(
+    location: DatasetLocation | { data_source: string; path?: string },
+  ): Promise<{ from: string; to: string; rows: number; adopted?: number; conflicts?: string[] }> {
     return this.post('move-rows', { location });
   }
 

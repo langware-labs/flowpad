@@ -30,6 +30,7 @@ type MessageType =
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
   | 'status_changed_msg'
+  | 'desktop_presence'
   | 'tag_msg'
   | 'ui_command'
   | 'recovered_msg'
@@ -666,6 +667,12 @@ export class ConnectionManager extends EventEmitter {
       // A status fact changed (harness install/login, a stored key, the hub login): a signal to
       // re-read `status` and `funding`, not a payload.
       this.emit('on_status_changed_msg');
+      return;
+    }
+    if (data.message_type === 'desktop_presence') {
+      // Hub → the user's browser tabs: one of their desktops connected or left. A signal to
+      // re-ask `current-user-desktops` (another desktop may still be online), not a payload.
+      this.emit('on_desktop_presence');
       return;
     }
     if (data.message_type === 'tag_msg') {
