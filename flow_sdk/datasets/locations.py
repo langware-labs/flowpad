@@ -258,6 +258,20 @@ async def refresh_hosted(source: Any, datasets: Optional[list] = None) -> None:
         task.add_done_callback(_filling.discard)
 
 
+async def refresh_all_hosted() -> None:
+    """Every source that hosts datasets answers once -- at startup, so no dataset reads as local only
+    because this process has not asked its source yet. Reads the source rows only; no network."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    for source in await DataSource.get_all({}) or []:
+        try:
+            if hosted := await source.datasets():
+                await refresh_hosted(source, hosted)
+        except Exception:  # noqa: BLE001 -- one source never holds up the rest
+            logger.warning("data source %s: could not tell its datasets where their rows are",
+                           getattr(source, "name", ""), exc_info=True)
+
+
 #: The first-pull passes running now (held so a task is not collected mid-run).
 _filling: set = set()
 

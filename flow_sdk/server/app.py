@@ -380,6 +380,10 @@ async def _app_ready_signal() -> None:
         await reconcile_wizard_triggers()
         await reap_stale_trigger_rows()
         system_content_ready.set()
+        # Each dataset in a data source hears from its source now, not at that source's next poll.
+        from flow_sdk.datasets.locations import refresh_all_hosted  # noqa: PLC0415
+
+        await refresh_all_hosted()
 
         # make+publish rather than emit: `emit` returns None when nothing is
         # subscribed, and this line wants a stable event id in the log either
