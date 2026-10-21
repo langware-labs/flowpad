@@ -42,6 +42,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `load_flowpad_assistant` | Give the worker the Flowpad Assistant's skills | yes | all |
 | `cli_options` | Vendor CLI keys passed through as-is | yes | all |
 | `intro` | Welcome text shown at the top of the chat — **the model never sees it** | yes | chat |
+| `intro_translations` | `intro` in other languages, keyed by locale code (`he`, `ar`, `en-US`); the chat shows the active locale's entry, else `intro` | yes | chat |
 | `auto_launch` | Start this agent when its project is opened (once per project, per machine) | yes | chat |
 | `auto_launch_prompt` | The first user message, sent on the user's behalf at auto-launch | yes | chat |
 | `chief_of_staff` | The agent delegates long work to `subagents` through the task ledger | yes | chat |

@@ -280,6 +280,11 @@ class Agent(Entity):
         description="Welcome text shown as the agent's first message in Vibe/Standard chat so a new "
         "session is not empty. Presentation only: it never enters the transcript or the model.",
     )
+    intro_translations: dict = APIField(
+        default_factory=dict,
+        description="``intro`` in other languages, keyed by locale code (``he``, ``ar``, ``en-US``). "
+        "The chat shows the entry for the active locale, else ``intro``.",
+    )
     auto_launch: bool = APIField(
         default=False,
         description="Launch this agent once, the first time the project it lives in is opened. "
