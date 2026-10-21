@@ -48,7 +48,7 @@ import { isHostDock } from './tab-hosts';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
-import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-page-state';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
@@ -476,13 +476,11 @@ export class NavigationActions {
       this.openDock(DockPointer.forHome().withPage(PageId.HUB));
       return;
     }
-    // `homePage`: the Home BUTTON asks for the project's home page, which the
-    // root's load redirect resolves (`project-home-page-redirect`). Only the
-    // button asks — a fallback "go home" (no chat to resume) wants the plain
-    // home. From the home page itself the button gives the plain home, or the
-    // default home could never be reached.
-    const wantsHomePage = options?.homePage && !isProjectHomePage(dataContext.project?.id, this.here);
-    this.openDock(wantsHomePage ? withHomePage(DockPointer.root()) : DockPointer.root());
+    // `homePage`: the Home BUTTON asks for the project's home page — every click,
+    // from anywhere — which the root's load redirect resolves
+    // (`project-home-page-redirect`). Only the button asks — a fallback "go home"
+    // (no chat to resume) wants the plain home.
+    this.openDock(options?.homePage ? withHomePage(DockPointer.root()) : DockPointer.root());
   }
 
   /** The journey shown where we are (or are going), or null. */
@@ -524,7 +522,11 @@ export class NavigationActions {
    * `openDock`'s carry-forward would put the OLD workspace straight back.
    */
   openWorkspace(workspaceId: string | null): void {
-    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null).withOption(WORKSPACE_ENTRY_PARAM, 'resume'));
+    this.commitPointer(
+      DockPointer.root()
+        .withOption(WORKSPACE_PARAM, workspaceId || null)
+        .withOption(WORKSPACE_ENTRY_PARAM, 'resume'),
+    );
   }
 
   /**
@@ -883,7 +885,12 @@ export class NavigationActions {
   }
 
   /** `openLinkInBrowser`, in one browser profile of this machine (`fetchBrowserProfiles`). */
-  async openLinkInBrowserProfile(link: string, source: LinkSource | null, browser: string, profile: string): Promise<void> {
+  async openLinkInBrowserProfile(
+    link: string,
+    source: LinkSource | null,
+    browser: string,
+    profile: string,
+  ): Promise<void> {
     try {
       await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);
     } catch (error) {

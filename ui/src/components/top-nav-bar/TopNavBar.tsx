@@ -83,7 +83,7 @@ export function TopNavBar() {
       <NavIconButton
         icon={Home}
         label={t`Home`}
-        onClick={() => navigation.goHome()}
+        onClick={() => navigation.goHome({ homePage: true })}
         testId="top-nav-home"
       />
       {/* Files sat on the rail; same destination, same one-liner, just beside
