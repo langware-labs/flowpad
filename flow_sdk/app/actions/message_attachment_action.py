@@ -1094,6 +1094,7 @@ async def handle_open_shared(
     *,
     project_id: str | None = None,
     choice: str | None = None,
+    overwrite: bool = False,
     someone_typeid=None,
 ) -> ApiResponse:
     """Open a received share in the right place — the receiver's one entry point.
@@ -1104,6 +1105,9 @@ async def handle_open_shared(
     one answer opens straight away, otherwise ``data.needs`` asks the UI for a
     ``choice`` (2+ projects) or a ``placement`` (none). The answer is saved by
     binding the conversation to the project, so it is asked once.
+
+    The receiver already has the asset (an earlier share of it): ``data.needs ==
+    "overwrite"`` asks to replace it; the same call with ``overwrite=True`` does.
     """
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
     from flow_sdk.builtin.drivers.git_driver import GitShareError  # noqa: PLC0415
@@ -1123,8 +1127,10 @@ async def handle_open_shared(
         except GitShareError as e:
             choice, clone_error = "copy", e  # the repo could not be cloned here: the copy, and why
     if choice == "copy":
-        res = await handle_attachment_install(
-            attachment_id, AttachmentScope.USER.value, None, someone_typeid=someone_typeid
+        res = _conflict_as_question(
+            await handle_attachment_install(
+                attachment_id, AttachmentScope.USER.value, None, overwrite=overwrite, someone_typeid=someone_typeid
+            )
         )
         return _with_git_share_error(res, clone_error) if clone_error else res
     conv = await Conversation.get_one({"id": ma.conversation_id}) if ma.conversation_id else None
@@ -1139,10 +1145,12 @@ async def handle_open_shared(
             needs = "choice" if target.candidates else "placement"
             return ApiSuccessResponse(data={"needs": needs, "candidates": target.candidates})
         project_id, mismatch = target.project_id, target.mismatch
-    res = await handle_attachment_install(
-        attachment_id, AttachmentScope.PROJECT.value, project_id, someone_typeid=someone_typeid
+    res = _conflict_as_question(
+        await handle_attachment_install(
+            attachment_id, AttachmentScope.PROJECT.value, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+        )
     )
-    if not isinstance(res, ApiSuccessResponse):
+    if not isinstance(res, ApiSuccessResponse) or (res.data or {}).get("needs"):
         return res
     if conv is not None and not conv.project_id:
         conv.project_id = project_id  # the answer, kept: later shares here open in it too
@@ -1151,6 +1159,15 @@ async def handle_open_shared(
     remember_project_for_sender(getattr(conv, "remote_project_id", None), project_id)
     if isinstance(res.data, dict):
         res.data = {**res.data, "project_id": project_id, "mismatch": mismatch}
+    return res
+
+
+def _conflict_as_question(res: ApiResponse) -> ApiResponse:
+    """The install's 409 ``asset_conflict`` as the open's own question — ``needs: overwrite`` —
+    asked like ``choice`` / ``placement``, so the UI answers it without reading HTTP errors."""
+    data = getattr(res, "data", None)
+    if getattr(res, "status_code", None) == 409 and isinstance(data, dict) and data.get("asset_conflict"):
+        return ApiSuccessResponse(data={"needs": "overwrite", "conflicts": data.get("conflicts")})
     return res
 
 
@@ -1165,6 +1182,7 @@ async def open_shared_attachment_action() -> ApiResponse:
             str(request_info.target_entity_typeid.id),
             project_id=body.get("project_id") or None,
             choice=body.get("choice") or None,
+            overwrite=bool(body.get("overwrite", False)),
             someone_typeid=await _local_owner_typeid(),
         )
     except Exception as e:

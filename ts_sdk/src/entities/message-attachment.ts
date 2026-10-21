@@ -68,7 +68,8 @@ export interface OpenSharedResult {
   show?: ReceiveShowTarget | null;
   project_id?: string;
   mismatch?: boolean;
-  needs?: 'choice' | 'placement';
+  /** What to ask: which checkout (`choice`), clone vs copy (`placement`), or replace the copy you already have (`overwrite`). */
+  needs?: 'choice' | 'placement' | 'overwrite';
   candidates?: { id: string; name: string; path: string }[];
   git_share_error?: string;
   git_share_message?: string;
@@ -177,14 +178,18 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
    * choice the backend picks the receiver's project; when it cannot, `needs`
    * says what to ask: `choice` (2+ checkouts, see `candidates`) or `placement`
    * (none: clone the repo, or open the copy). `git_share_error` is set when it
-   * opened from the copy because Git could not open it here.
+   * opened from the copy because Git could not open it here. `overwrite` answers
+   * `needs: overwrite` — replace the copy the receiver already has.
    */
-  async openShared(opts: { projectId?: string; choice?: 'clone' | 'copy' } = {}): Promise<OpenSharedResult> {
+  async openShared(
+    opts: { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean } = {},
+  ): Promise<OpenSharedResult> {
     if (!this.id) throw new Error('openShared requires this.id');
     const action = new ActionInfo('open-shared', MessageAttachment.type, this.id, 'POST');
     action.bodyParameters = {
       ...(opts.projectId ? { project_id: opts.projectId } : {}),
       ...(opts.choice ? { choice: opts.choice } : {}),
+      ...(opts.overwrite ? { overwrite: true } : {}),
     };
     return (await dataManager.callAction<unknown, OpenSharedResult>(action)) ?? {};
   }

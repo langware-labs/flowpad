@@ -294,3 +294,30 @@ async def test_a_newer_version_git_cannot_reach_opens_its_copy_over_the_older_on
     assert (res.data or {}).get("git_share_error")
     got = await Artifact.get_one({"id": art_id})
     assert "v2" in Path(got.asset_ref).read_text(encoding="utf-8"), "the older version is still what opens"
+
+
+@pytest.mark.parametrize("family", ["skill"])
+async def test_a_copy_you_already_have_asks_to_replace_and_overwrite_replaces_it(tmp_path, family):
+    """Open the copy of a skill the receiver already has (an earlier share of it): the
+    open asks ``needs: overwrite``; ``overwrite=True`` replaces it with this one."""
+    from flow_sdk.app.actions.message_attachment_action import handle_open_shared
+    from tests.unit.git_share._world import FAMILIES, World
+
+    world = World(tmp_path, FAMILIES[family])
+    world.seed()
+    first, _ = await world.share(project_root=None, transfer_mode="both", install=False)
+    assert isinstance(await handle_open_shared(first, choice="copy"), ApiSuccessResponse)
+
+    newer = f"tok{uuid.uuid4().hex[:12]}"
+    world.write_asset(newer)
+    git(world.sender, "commit", "-qam", "newer")
+    git(world.sender, "push", "-q")
+    again, _ = await world.share(project_root=None, transfer_mode="both", install=False)
+    asked = await handle_open_shared(again, choice="copy")
+    assert isinstance(asked, ApiSuccessResponse) and asked.data["needs"] == "overwrite"
+
+    replaced = await handle_open_shared(again, choice="copy", overwrite=True)
+    assert isinstance(replaced, ApiSuccessResponse), getattr(replaced, "message", replaced)
+    ma = await MessageAttachment.get_one({"id": again})
+    landed = [p for p in Path(ma.installed_root).rglob("*") if p.is_file() and newer in p.read_text(errors="ignore")]
+    assert landed, "the older copy was kept"
