@@ -214,6 +214,7 @@ opens a different screen and reports success.
 | Machines *(hub)* | `machines` | sandboxes, computers |
 | Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
+| Machines  *(hub)* | `machines` | sandboxes, computers |
 | LLM sources | `llm-sources` | harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
 | Machine | `machine` | system, this machine |
