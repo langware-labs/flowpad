@@ -1840,6 +1840,11 @@ msgstr "A project on the hub is fetched wherever this project opens; any other i
 #~ msgstr "A project on the hub, fetched by its id wherever this project opens."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "A project was shared with you"
+msgstr "A project was shared with you"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
 
@@ -25766,6 +25771,7 @@ msgstr "Some things need attention."
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Someone"
 msgstr "Someone"
