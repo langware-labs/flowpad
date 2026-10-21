@@ -339,6 +339,10 @@ class TypeInfo:
     # existing row (``SourceItem``: data_source · segment · external id). None ⇒
     # identity is ``id`` alone. Read by ``DbSerializer.resolve``/``upsert``.
     natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The key rows written before ``natural_key`` changed still answer to: a lookup that finds
+    # nothing by ``natural_key`` asks this one (``DbSerializer.resolve``/``resolve_many``) — the
+    # dual read that lets the key move before a data migration rewrites the old rows.
+    legacy_natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # The no-op gate: the fields whose canonical digest decides "unchanged" on
     # re-delivery. None ⇒ no gate (every save writes).
     digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
@@ -347,6 +351,16 @@ class TypeInfo:
     # A row-only (``db_only``) type that is nonetheless searchable: the row field
     # FTS indexes as ``content`` — fed from the row, no metadata.json shadow.
     fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # FTS weights by source: a field path or accessor name (dotted paths walk nested
+    # values, callables are called) → the bm25 bucket it feeds (see FTS_WEIGHT_*
+    # in ``fs_store/serializer/record.py``). None ⇒ ``fts_content`` alone.
+    fts: dict[str, int] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Declared expression indexes: each entry is the field PATHS of one index on
+    # the entities table, partial on ``type = '<type_name>'``. A path naming a real
+    # column (``created_date``, ``id``) indexes the column; anything else indexes
+    # ``json_extract(data, '$.<path>')``. Built idempotently by the SQLite driver
+    # at open (``ix_entities_<type>_<n>_<hash>``); a dropped declaration drops its index.
+    indexes: tuple[tuple[str, ...], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # --- Placement axis ---
     # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / REPO / …);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
@@ -409,6 +423,12 @@ class TypeInfo:
     # ``pack_reference`` / ``restore_reference`` hooks own what is particular
     # to the type (not the hub's ``cloud_file_transport``).
     receive_transfer: str | None = field(default=None, metadata=_MERGE)
+    # ``received_with``: the types a received git share of this type needs from
+    # the SAME checkout to work there — indexed over the whole worktree when it
+    # opens (a chart's sub-flows are sibling charts it opens by name, and its
+    # vendor logos are an icon pack). Bytes are already on disk at the pinned
+    # commit; this only makes them findable.
+    received_with: tuple[str, ...] = field(default=(), metadata=_MERGE)
 
     @property
     def git_publishable(self) -> bool:
@@ -509,6 +529,12 @@ class TypeInfo:
     def walks_anywhere(self) -> bool:
         """One of the type's walks is the folder-wide one (a skill is a skill anywhere)."""
         return any(walk.anywhere for walk in self.walk)
+
+    @property
+    def recursive_mounts(self) -> tuple[str, ...]:
+        """The declared mounts the type walks RECURSIVELY: an asset may sit at
+        any depth below one (``docs/network/net/CHART.md`` is a chart)."""
+        return tuple(dict.fromkeys(m for walk in self.walk if walk.recursive and not walk.anywhere for m in walk.mounts))
 
     @property
     def scan_mounts(self) -> tuple[str, ...]:
@@ -1367,6 +1393,14 @@ class SchemaRegistry:
         # sits directly in the mount, so its parent IS the mount.
         named_parts = p.parent.parent.parts
         singleton_parts = p.parent.parts
+        def below_recursive_mount(info) -> bool:
+            # The walk descends the whole mount, so any ancestor may be it.
+            return any(
+                mount_matches(named_parts[:k], Path(m).parts)
+                for m in info.recursive_mounts
+                for k in range(len(named_parts), 0, -1)
+            )
+
         return frozenset(
             info.type_name
             for info in candidates
@@ -1375,6 +1409,7 @@ class SchemaRegistry:
                 mount_matches(singleton_parts if info.singleton else named_parts, Path(m).parts)
                 for m in info.scan_mounts
             )
+            or below_recursive_mount(info)
         )
 
     @classmethod

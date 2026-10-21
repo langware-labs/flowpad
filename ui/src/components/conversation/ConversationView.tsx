@@ -1,5 +1,6 @@
 import { lifecyclesOf, onlyWithSessions, useHandledKeys } from './message-lifecycle';
-import { useMessageAutomationSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { continuesGroup } from './message-markdown';
+import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -23,6 +24,7 @@ import {
   RemoteWorkerSession,
   Task,
   toplog,
+  dataContext,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -41,6 +43,7 @@ import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
 import { MessageComposer } from './MessageComposer';
+import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
@@ -53,6 +56,7 @@ import {
   shouldShowSoloSendNotice,
   type ConversationItem,
 } from './conversation-items';
+import { indexCalls, runningProcessCalls } from './process-call';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -303,7 +307,11 @@ export function ConversationView({
   });
   const launchWorkerOnMessage = useCallback(
     (messageId: string, worker: WorkerType) =>
-      launchWorker(worker, () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId))),
+      launchWorker(
+        worker,
+        () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+        messageId,
+      ),
     [launchWorker, conversationTypeId],
   );
 
@@ -354,7 +362,7 @@ export function ConversationView({
   const handledKeys = useHandledKeys(answered ? conversation?.channel_source_id : null);
   // The sessions automations started on this conversation's messages (one live query): the chip on each
   // message, and the lifecycle line's handling / didn't-finish states.
-  const automationSessions = useMessageAutomationSessions(conversationId);
+  const { automation: automationSessions, manual: manualSessions } = useMessageSessions(conversationId);
   const lifecycles = useMemo(() => {
     // A channel nobody here answers still shows the way of a message an automation's agent took.
     if (!answered && automationSessions.size === 0) return null;
@@ -488,22 +496,64 @@ export function ConversationView({
   // messages collapse onto the message that opened the session (the anchor);
   // follow-ups, replies and lifecycle lines are hidden from the thread and
   // live in the session view.
+  // A prompt call's answer is a message of its own on the wire, but it reads as the call's status:
+  // it renders on the call's card, never as a bubble.
+  const calls = useMemo(() => indexCalls(messagesById.values()), [messagesById]);
+  // Calls running on this machine, asked once per conversation — and only while a call is still
+  // unanswered — so a card mounting mid-run says "working…".
+  const [runningCalls, setRunningCalls] = useState<ReadonlySet<string>>(() => new Set());
+  const askRunning = calls.unanswered;
+  useEffect(() => {
+    if (!askRunning) return;
+    let live = true;
+    void runningProcessCalls(conversationId)
+      .then((ids) => live && setRunningCalls(new Set(ids)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [conversationId, askRunning]);
+  const promptCallFor = (id: string) => {
+    const call = calls.callByMessage.get(id);
+    if (!call) return null;
+    return { call, answer: calls.answerByCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
+  };
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
+    const feed = orderedItems.filter(
+      (it) => !(it.kind === ConversationItemKind.POINTER && calls.answerMessageIds.has(it.messageId)),
+    );
     if (threadId) {
-      const inThread = orderedItems.filter((it) => itemThreadId(it, getFm) === threadId);
+      const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
       return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
     const threaded: ConversationItem[] = [];
     const plain: ConversationItem[] = [];
-    for (const item of orderedItems) {
+    for (const item of feed) {
       (itemThreadId(item, getFm) ? threaded : plain).push(item);
     }
     return [
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
+  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors, calls]);
+
+  // A message right under one from the same sender, moments later, drops its avatar and name.
+  const continuations = useMemo(() => {
+    const keys = new Set<string>();
+    let prev: { sender_id?: string | null; at: number } | null = null;
+    for (const item of groupedItems) {
+      const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : null;
+      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT) {
+        prev = null;
+        continue;
+      }
+      const cur = { sender_id: fm.sender_id, at: Date.parse(item.timestamp) };
+      if (continuesGroup(prev, cur)) keys.add(item.key);
+      prev = cur;
+    }
+    return keys;
+  }, [groupedItems, messagesById]);
 
   // Each live session's messages, in feed order: its card offers Retry on a failed prompt
   // (nothing answered it since) and names the prompt the host is working on.
@@ -550,7 +600,7 @@ export function ConversationView({
   // anchor) renders as a slim centered system line.
   /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
    *  so a task's thread offers its chips without expanding it. */
-  const renderConversationItem = (item: ConversationItem, threadTask: Task | null = null) => {
+  const renderConversationItem = (item: ConversationItem, threadTask: Task | null = null, continuation = false) => {
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
       const fm = messagesById.get(id) ?? null;
@@ -592,12 +642,16 @@ export function ConversationView({
           lifecycle={lifecycles?.get(id) ?? null}
           onAutomate={conversation?.channel_source_id ? handleAutomate : undefined}
           automationSession={automationSessions.get(id) ?? null}
+          session={manualSessions.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={taskOfMessage(id) ?? threadTask}
           onTaskIt={handleTaskIt}
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
+          promptCall={promptCallFor(id)}
+          callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
+          continuation={continuation}
         />
       );
     }
@@ -910,6 +964,15 @@ export function ConversationView({
   return (
     <div className="space-y-3">
       {approveSessionPicker}
+      {/* Its own row: a refusal spans the width under the buttons instead of squeezing beside them. */}
+      {conversation && (
+        <ConversationActions
+          conversation={conversation}
+          messages={conversationMessages}
+          selfIds={[cloudUserId, localUser?.id, dataContext.bootstrapInfo?.user?.id]}
+          onDone={() => void handleRefresh()}
+        />
+      )}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button
@@ -989,9 +1052,8 @@ export function ConversationView({
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
                     onApprove={
-                      role === 'host' && session ? () => approveSession(session, { remember: 'everywhere' }) : undefined
+                      role === 'host' && session ? () => approveSession(session) : undefined
                     }
-                    onApproveOnce={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!turns?.failed}
@@ -1015,7 +1077,7 @@ export function ConversationView({
                 </div>
               );
             }
-            return renderConversationItem(item);
+            return renderConversationItem(item, null, continuations.has(item.key));
           })}
         </div>
       )}
@@ -1057,6 +1119,7 @@ export function ConversationView({
           {notSent.text ? ` “${notSent.text}”` : ''} — {notSent.reason}
         </p>
       )}
+      <ConversationEndedLine endedAt={conversation?.ended_at} />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

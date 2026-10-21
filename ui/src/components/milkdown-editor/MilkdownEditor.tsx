@@ -17,6 +17,7 @@ import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { MarkdownFindBar, isFindShortcut } from './MarkdownFindBar';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
@@ -1142,6 +1143,18 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
   const markEditIntent = useCallback(() => onUserEdit?.(), [onUserEdit]);
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
+  const [findOpen, setFindOpen] = useState(false);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const handleFindKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isFindShortcut(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFindOpen(true);
+  }, []);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    scrollEl?.querySelector<HTMLElement>('.ProseMirror')?.focus({ preventScroll: true });
+  }, [scrollEl]);
 
   // Clear any open link popup when switching into view mode.
   useEffect(() => {
@@ -1339,9 +1352,11 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
 
   return (
     <MilkdownProvider>
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="relative flex h-full flex-col overflow-hidden outline-none" tabIndex={-1} onKeyDownCapture={handleFindKey}>
         {!isReadOnly && toolbarPortalTarget === undefined && formattingToolbar}
+        {findOpen && <MarkdownFindBar root={scrollEl} onClose={closeFind} />}
         <div
+          ref={setScrollEl}
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
           onMouseLeave={scheduleHide}

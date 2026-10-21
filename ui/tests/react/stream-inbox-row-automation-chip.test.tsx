@@ -37,8 +37,6 @@ function renderRow(mark?: AgenticProcess) {
         <ConversationListRow
           conv={conv}
           isFocused={false}
-          viewMode="all"
-          searchActive={false}
           onArchive={vi.fn()}
           onUnarchive={vi.fn()}
           onToggleRead={vi.fn()}

@@ -324,7 +324,9 @@ and (
 ```
 
 `is_turn_busy` counts a mid-turn `worker_status` only for PTY processes; headless
-turns are tracked by the prompt lock, the registered worker, or `_turn_in_flight`.
+turns are tracked by the prompt lock, the registered worker, or `_turn_in_flight` —
+except a worker *parked* on background work, which is registered but between turns
+(`busy` false, `background_work` true; see `agent/agentic_process_statuses.md` §3).
 
 The transcript parser lives in `flow_sdk/fs_records/agent_status.py`. The
 TypeScript mirror lives in `ts_sdk/src/process/agentic-types.ts`.

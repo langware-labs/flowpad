@@ -59,13 +59,13 @@ async def test_run_list_and_read_an_eval(bootstrapped_client, tmp_path):
     assert body["run"]["slices"]["data.group"]["a"]["correct"] == 1
     assert body["count_metrics"] == [], "the toy's metrics are all ratios"
     assert body["explain"] == {}, "the toy explains nothing; the browser falls back to its own words"
-    by_title = {e["title"]: e for e in body["examples"]}
+    by_title = {e["title"]: e for e in body["rows"]}
     ok = by_title["ok open it"]
     assert ok["verdict"] == "correct" and ok["row_input"]["here"]["view"] == "home", "joined to what was typed, where"
     assert by_title["bad one"]["row_data"] == {"group": "b"}
     # How an answer was reached rides only with the example a person opens -- not in the listing.
-    assert all("trace" not in e for e in body["examples"])
-    trace = (await bootstrapped_client.get(f"{base}/eval/{run_id}/{ok['example_id']}")).json()["data"]["trace"]
+    assert all("trace" not in e for e in body["rows"])
+    trace = (await bootstrapped_client.get(f"{base}/eval/{run_id}/{ok['row_id']}")).json()["data"]["trace"]
     assert trace == {"kind": "toy.trace", "value": {"saw": "ok open it"}}
     assert (await bootstrapped_client.get(f"{base}/eval/{run_id}/nope")).status_code == 404
 
@@ -80,4 +80,4 @@ async def test_a_run_outside_the_dataset_is_not_found(bootstrapped_client, tmp_p
 async def test_an_eval_that_cannot_load_is_a_400(bootstrapped_client, tmp_path):
     base, _ = await _toy(bootstrapped_client, tmp_path, eval_code="def nothing(): pass\n")
     resp = await bootstrapped_client.post(f"{base}/run-eval", json={})
-    assert resp.status_code == 400 and "evaluate_example" in resp.json()["message"]
+    assert resp.status_code == 400 and "evaluate_row" in resp.json()["message"]

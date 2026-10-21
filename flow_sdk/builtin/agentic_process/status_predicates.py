@@ -121,7 +121,8 @@ def is_turn_busy(
       3. ``_turn_in_flight`` is set (a worker spinning up before its transcript
          lands), OR
       4. the raw ``worker_status`` is a mid-turn activity state
-         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**, OR
+         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**, and
+         only if the live worker wrote that tail (:func:`_tail_predates_worker`), OR
       5. another live OS process is running a turn on it
          (:func:`turn_owned_elsewhere` — a local deployment's loop), OR
       6. its headless turn task is still running its tail (slot release, turn-end
@@ -168,7 +169,34 @@ def is_turn_busy(
     if get_worker_mode(process) is not WorkerMode.INTERACTIVE:
         return False
     resolved = worker_status if worker_status is not None else process.fetch_worker_status()
-    return resolved in _BUSY_WORKER_STATUSES
+    return resolved in _BUSY_WORKER_STATUSES and not _tail_predates_worker(process)
+
+
+def _tail_predates_worker(process: "AgenticProcess") -> bool:
+    """True when the live PTY worker has not written its transcript since it launched.
+
+    A mid-turn tail then belongs to the worker BEFORE it -- killed between a
+    tool's result and its reply -- and nobody is working on that turn. A resumed
+    ``claude --resume`` sits idle at its prompt and writes nothing until the next
+    message (it holds the closing "No response requested." in memory until then),
+    so without this a session reopened over an interrupted turn read ``busy`` and
+    greyed the Chat switch until a new turn ended.
+    """
+    from datetime import datetime  # noqa: PLC0415
+
+    from flow_sdk.builtin.agentic_process import transcript_cache  # noqa: PLC0415 -- cycle
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        AgenticProcessContextKey,
+    )
+
+    started_at = (getattr(process, "context_data", None) or {}).get(AgenticProcessContextKey.WORKER_STARTED_AT.value)
+    path = transcript_cache.transcript_path(process) if started_at else None
+    if path is None:
+        return False
+    try:
+        return path.stat().st_mtime < datetime.fromisoformat(started_at).timestamp()
+    except (OSError, ValueError):
+        return False
 
 
 def turn_owned_elsewhere(process: "AgenticProcess", worker_status: WorkerStatus | None = None) -> bool:

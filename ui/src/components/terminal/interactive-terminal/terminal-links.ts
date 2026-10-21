@@ -22,7 +22,19 @@ interface TextSpan {
   margin: number;
 }
 
-type Continuation = 'soft' | 'hard' | undefined;
+/** How a row runs on: `end` is the column after its last text cell when the break is hard. */
+type Continuation = { kind: 'soft' } | { kind: 'hard'; end: number } | undefined;
+
+/** Blank cells that set a right-hand column (a size, a timing, a count) apart from the text. */
+const COLUMN_GAP = 3;
+/** A word that is a path or URL in progress. */
+const PATH_LIKE = /[/\\]|:\/\//;
+/** A word that already reads as a whole reference: a file extension, a position, an id, a closer. */
+const WHOLE_FILE = /\.[A-Za-z]\w{0,5}$/;
+/** A word that starts a fresh reference of its own. */
+const FRESH_START = /^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/]|https?:)/i;
+/** What a path or URL is cut after mid-way: a separator or a query's punctuation. */
+const JOINER = String.raw`/\\._=&?#-`;
 
 /** What a cell shows; the second half of a wide character counts as shown. */
 function shown(line: IBufferLine, col: number): string {
@@ -88,25 +100,68 @@ function resumesProse(tail: string, head: string): boolean {
 }
 
 /**
+ * The path-like word that ends a row's text column when the row stops short of the edge:
+ * after it come only blanks, a box border, or a right-hand column at least COLUMN_GAP
+ * blanks away. `limit` is where the room on the row ends.
+ */
+function columnTail(line: IBufferLine, span: TextSpan, cols: number): { end: number; limit: number; text: string } | undefined {
+  // The rightmost path-like word on the row.
+  let end = span.end;
+  let text: string;
+  for (;;) {
+    for (let char = shown(line, end - 1); end > span.start && (!char || BORDER.test(char)); char = shown(line, --end - 1));
+    const word = edgeWord(line, { start: span.start, end, margin: 0 }, -1);
+    if (!word.cells) return undefined;
+    if (PATH_LIKE.test(word.text)) {
+      text = word.text;
+      break;
+    }
+    end -= word.cells;
+  }
+  // What follows it must be nothing, a border, or a column COLUMN_GAP blanks away.
+  let after = end;
+  while (after < span.end && !shown(line, after)) after++;
+  if (after === span.end) return { end, limit: Math.min(line.length, cols), text };
+  if (BORDER.test(shown(line, after))) return { end, limit: after, text };
+  return after - end >= COLUMN_GAP ? { end, limit: after - 1, text } : undefined;
+}
+
+/**
  * Whether buffer row `row` (0-based) runs on into the next one. Beyond xterm's own soft
  * wrap, a TUI (Claude Code, Codex) breaks a long URL itself: it fills the row and moves the
  * cursor to the next row, which then carries the rest after its indentation. A wrapper only
  * cuts a word that is longer than a whole row, so that is the test: the word ending this row
  * plus the word starting the next must not fit in one. A row that merely happens to be full
  * (prose ending at the edge, a rule, a reference followed by prose) is a line of its own.
+ *
+ * A wrapper may also stop short of the edge — its own wrap width, padding inside a box, or a
+ * right-hand column it keeps for a size or a count. Then only a path or URL in progress joins:
+ * the next row's first word must not have fitted in the room left, must not be prose, and the
+ * two must not each read as a whole reference (a list of files, one per row).
  */
 function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuation {
   const line = buffer.getLine(row);
   const next = buffer.getLine(row + 1);
   if (!line || !next) return undefined;
-  if (next.isWrapped) return 'soft';
-  const above = textSpan(line, cols);
-  if (above.margin > MAX_MARGIN) return undefined;
+  if (next.isWrapped) return { kind: 'soft' };
   const below = textSpan(next, cols);
-  const tail = edgeWord(line, above, -1);
   const head = edgeWord(next, below, 1);
-  if (!head.cells || !/[\p{L}\p{N}]/u.test(tail.text) || resumesProse(tail.text, head.text)) return undefined;
-  return tail.cells + head.cells > above.end - below.start ? 'hard' : undefined;
+  if (!head.cells) return undefined;
+  const above = textSpan(line, cols);
+  if (above.margin <= MAX_MARGIN) {
+    const tail = edgeWord(line, above, -1);
+    const joins = /[\p{L}\p{N}]/u.test(tail.text) && !resumesProse(tail.text, head.text);
+    if (joins && tail.cells + head.cells > above.end - below.start) return { kind: 'hard', end: above.end };
+  }
+  const tail = columnTail(line, above, cols);
+  if (!tail || head.cells <= tail.limit - tail.end - 1) return undefined;
+  const cutMidway = new RegExp(`[${JOINER}]$`).test(tail.text);
+  if (!(cutMidway || /[\p{L}\p{N}]$/u.test(tail.text)) || resumesProse(tail.text, head.text)) return undefined;
+  if (PLAIN_WORD.test(head.text) && !cutMidway) return undefined;
+  // A folder's id (`…/<uuid>`) followed by `/rest` is one path going on.
+  const tailWhole = WHOLE_FILE.test(tail.text) || (ENDS_WHOLE.test(tail.text) && !/^[/\\]/.test(head.text));
+  if (tailWhole && (FRESH_START.test(head.text) || linkMatches(head.text)[0]?.text === head.text)) return undefined;
+  return { kind: 'hard', end: tail.end };
 }
 
 /** The (soft- or hard-) wrapped logical line through buffer row `y` (1-based), with each character's cells. */
@@ -132,12 +187,13 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
     const bufferLine = buffer.getLine(row);
     if (!bufferLine) continue;
     const width = Math.min(bufferLine.length, cols);
-    const hardAbove = row > start && below(row - 1) === 'hard';
-    const hardBelow = row < end && below(row) === 'hard';
+    const hardAbove = row > start && below(row - 1)?.kind === 'hard';
+    const next = row < end ? below(row) : undefined;
+    const hardEnd = next?.kind === 'hard' ? next.end : undefined;
     // Around a hard break the indentation, a box's borders and the right margin are layout, not text.
-    const span = hardAbove || hardBelow ? textSpan(bufferLine, cols) : undefined;
-    const to = hardBelow ? span!.end : width;
-    for (let col = hardAbove ? span!.start : 0; col < to; col++) {
+    const from = hardAbove ? textSpan(bufferLine, cols).start : 0;
+    const to = hardEnd ?? width;
+    for (let col = from; col < to; col++) {
       const cell = bufferLine.getCell(col);
       if (!cell || cell.getWidth() === 0) continue;
       // A wide character can wrap one cell early, leaving a non-text spacer.

@@ -46,7 +46,7 @@ async def test_read_a_dataset():
 async def test_write_rows_and_labels(folder):
     ns = await run_fence(fence_under(DOC, "3."), {"folder": folder})
     assert [g["target"]["value"] for g in ns["gold"]] == ["data-sources", "connectors"]
-    assert (folder / "examples/0001/ground_truth-2/decision.json").is_file()
+    assert (folder / "rows/0001/ground_truth-2/decision.json").is_file()
 
 
 @pytest.fixture
@@ -88,14 +88,14 @@ async def test_log_real_decisions_into_a_training_set(tmp_path, monkeypatch, dec
     monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path))
     ns = await run_fence(fence_under(DOC, "6."), {"runs": tmp_path})
     assert ns["logged"] == ("summarize the README", "agentic", "summarize the README")
-    assert ns["run"].examples >= 1 and ns["run"].metrics["agentic_recall"] == 1.0
+    assert ns["run"].rows >= 1 and ns["run"].metrics["agentic_recall"] == 1.0
 
 
 async def test_keep_records_by_key(folder):
     ns = await run_fence(fence_under(DOC, "7."), {"folder": folder})
     assert ns["keys"] == ["sources"]
     assert ns["problems"] and ns["problems"][0].startswith("input.utterance:")
-    assert not (folder / "examples/sources").exists()
+    assert not (folder / "rows/sources").exists()
 
 
 @pytest.fixture
@@ -118,7 +118,7 @@ def project(tmp_path):
         folder = root / "agentic-assets/dataset" / name
         folder.mkdir(parents=True)
         (folder / "dataset.json").write_text(json.dumps(
-            {"metadata": {"data_layout": "io_folder", "spec": {"examples": [{"input": f"--{ns}--.{kind}"}]}}, "data": {}}))
+            {"metadata": {"data_layout": "io_folder", "spec": {"rows": [{"input": f"--{ns}--.{kind}"}]}}, "data": {}}))
     return root
 
 
@@ -145,16 +145,16 @@ async def test_ask_across_links_count_and_find_by_text(project):
     assert [r["key"] for r in ns["colleagues"]["rows"]] == ["dana", "eli", "fay"]      # everyone at a company a Levi is at
 
 
-from tests.unit.test_data_spec.test_declared_mirror import served  # noqa: E402,F401 -- a tasks dataset a CRM source mirrors into
+from tests.unit.test_data_spec.test_record_location import served  # noqa: E402,F401 -- a tasks dataset whose rows live in a CRM
 
 
 async def test_change_a_field_the_outside_system_owns(served, monkeypatch):  # noqa: F811
     from flow_sdk.tags import ws_forward
-    from tests.unit.test_data_spec.test_declared_mirror import _seed
+    from tests.unit.test_data_spec.test_record_location import _seed
 
     await _seed(served)
     monkeypatch.setattr(ws_forward, "_started", True)   # the server: the one process that holds a driver
     ns = await run_fence(fence_under(DOC, "11."), {"tasks": served.tasks})
-    assert served.store.calls == [("update", "T-1", {"status": "DONE"})]      # only what changed, and only the CRM's field
-    assert (ns["now"]["status"], ns["now"]["notes"]) == ("DONE", "called twice")
+    assert served.crm.calls == [("update", "T-1", {"status": "DONE", "label": "hot"})]      # only what changed
+    assert (ns["now"]["status"], ns["now"]["label"]) == ("DONE", "hot")
     assert ns["code"] == "not_writable"

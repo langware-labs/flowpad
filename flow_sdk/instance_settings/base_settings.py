@@ -576,27 +576,26 @@ class BaseInstanceSettings:
     def workspace_root(self) -> Path:
         """Where this instance's projects live — the agent mount ROOT.
 
-        ``~/Flowpad workspace`` is prod's. Any other instance sharing the user's
-        home (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>``,
-        so nothing it creates lands among the user's real projects. Not under the
-        instance dir: nothing under ``flow_home`` may be a project (``is_protected_path``).
+        ``~/Flowpad workspace`` is prod's. Any other instance (``oss``, ``dev-1``, an e2e
+        ``test-*``) keeps its projects in its own instance dir, ``<instance_dir>/workspace``:
+        nothing it creates lands among the user's real projects, and deleting the instance
+        dir removes them with it. ``is_protected_path`` exempts this subtree's projects from
+        the "nothing under ``flow_home`` is a project" rule (``INSTANCE_USER_DIRS``).
         """
         if self.instance_name == "prod":
             return self.user_home / "Flowpad workspace"
-        return self.user_home / "Flowpad workspaces" / self.instance_name
+        return self.instance_dir / "workspace"
 
     @property
     def workspaces_home(self) -> Path:
         """Where a NEW user-created workspace's folder goes by default — ``<it>/<name>``.
 
-        ``~/Flowpad`` is prod's. Any other instance gets a dot-dir under ``~/Flowpad
-        workspaces`` (the ``.home/<name>`` precedent of ``user_asset_home``): never inside
-        a workspace root, whose top-level folders are projects, and never ``~/Flowpad
-        workspaces/<name>``, which IS another instance's root.
+        ``~/Flowpad`` is prod's. Any other instance gets ``<instance_dir>/workspaces``:
+        beside its workspace root, never inside it (a root's top-level folders are projects).
         """
         if self.instance_name == "prod":
             return self.user_home / "Flowpad"
-        return self.user_home / "Flowpad workspaces" / ".workspaces" / self.instance_name
+        return self.instance_dir / "workspaces"
 
     @property
     def deepagents_data_dir(self) -> Path:

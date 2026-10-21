@@ -346,6 +346,17 @@ def _replace_tree(checkout: Path, files: list[str], mirror_root: Path) -> None:
         shutil.copy2(source, target, follow_symlinks=False)
 
 
+def _project_file_is_publishable(rel: str) -> bool:
+    """Keep portable identity capsules, but never private runtime files or environment secrets."""
+    from flow_sdk.assets.transfer import is_pack_cruft  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.io.identity import IDENTITY  # noqa: PLC0415
+
+    parts = PurePosixPath(rel).parts
+    if is_pack_cruft(rel) or any(part == ".env" or part.startswith(".env.") for part in parts):
+        return False
+    return ".flow" not in parts or parts[parts.index(".flow"):] == (".flow", "capsules", f"{IDENTITY}.json")
+
+
 async def sync_project_with_hub(*, mirror: HubRepoMirror, checkout: Path, author: GitAuthor, project_typeid: str) -> str:
     """Make the hub repo hold the project folder as it is now, and return the hub's head commit.
 
@@ -354,14 +365,15 @@ async def sync_project_with_hub(*, mirror: HubRepoMirror, checkout: Path, author
     sends. It goes through the mirror like an asset does, as one commit on top of the hub's
     branch: publishing again is always a fast-forward, whatever was published in between.
     """
-    code, listed = await mirror.git(
-        "-C", str(checkout), "ls-files", "-z", "--cached", "--others", "--exclude-standard", check=False, cwd=checkout
-    )
-    if code != 0:
-        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "The project folder is not a git checkout")
-    files = [f for f in listed.split("\0") if f]
     async with _lock(mirror.root):
         await mirror.sync()
+        # Git evaluates nested ignore rules even for a plain project folder when
+        # the private mirror supplies its git directory. Never initialize the user's folder.
+        args = ["-C", str(checkout)] if (checkout / ".git").exists() else [
+            "--git-dir", str(mirror.root / ".git"), "--work-tree", str(checkout),
+        ]
+        _, listed = await mirror.git(*args, "ls-files", "-z", "--cached", "--others", "--exclude-standard", cwd=checkout)
+        files = [rel for rel in listed.split("\0") if rel and _project_file_is_publishable(rel)]
         await asyncio.to_thread(_replace_tree, checkout, files, mirror.root)
         await mirror.git("add", "-A")
         _, tree = await mirror.git("write-tree")

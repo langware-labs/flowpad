@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.sources.values.items import UserProfile
+from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
 
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
@@ -228,7 +228,11 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # entity itself stays on the host (it declares no ``main_subdir``, so the
     # packer never ships it), and the receiver never gets a row or folder for it.
     # Probing for one reported EVERY reply as missing, forever.
-    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion"}
+    #
+    # ``process_call`` / ``returned_value`` are a call on a message and its answer
+    # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
+    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
+     "process_call", "returned_value"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -255,29 +259,36 @@ LIVE_SESSION_EVENT_MARKER_KEY = "live_session_event"
 SESSION_START_MARKER_KEY = "session_start"
 
 
-def carrier_marker(attachments) -> "dict | None":
-    """The JSON object in the session carrier's ``prompt_preview``, if any.
-    THE parser of that marker — ``attachments`` may be ``Attachment`` models
-    or the raw dicts a hub payload carries."""
+def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
+    """``(id, JSON object)`` from the first ``<kind>-<id>`` TYPE_ID attachment, if any —
+    a VALUE riding the header's ``prompt_preview`` (a hub-known field), not an entity.
+    THE parser of such carriers (the session marker, a process call, its answer).
+    ``attachments`` may be ``Attachment`` models or the raw dicts a hub payload carries;
+    a carrier whose preview is missing or not a JSON object reads as none."""
     import json as _json  # noqa: PLC0415
 
     def _get(a, key):
         return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
 
+    prefix = f"{kind}-"
     for a in attachments or []:
         if _get(a, "attachment_type") != AttachmentType.TYPE_ID:
             continue
-        if not str(_get(a, "data") or "").startswith("remote_worker_session-"):
+        data = str(_get(a, "data") or "")
+        if not data.startswith(prefix):
             continue
-        preview = _get(a, "prompt_preview")
-        if not preview:
-            return None
         try:
-            marker = _json.loads(preview)
+            value = _json.loads(_get(a, "prompt_preview") or "")
         except (ValueError, TypeError):
             return None
-        return marker if isinstance(marker, dict) else None
+        return (data[len(prefix):], value) if isinstance(value, dict) else None
     return None
+
+
+def carrier_marker(attachments) -> "dict | None":
+    """The JSON object in the session carrier's ``prompt_preview``, if any."""
+    found = carried_value(attachments, "remote_worker_session")
+    return found[1] if found else None
 
 
 def _carrier_marker(fm: "FlowMessage") -> "dict | None":
@@ -378,21 +389,32 @@ def _type_id_attachment_path(fm_id: "str | None", data: str) -> "Path | None":
         folder = shadow_dir_for(etype, eid)
         meta = folder / "metadata.json"
         if meta.exists():
-            if etype not in _BODY_BEARING_TYPE_IDS:
-                return folder
             import json  # noqa: PLC0415
 
-            # A metadata-only stub has no resolvable asset_ref → fall through
-            # to the staged check (a staged body still counts as downloaded).
-            asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
-            if asset_ref and Path(asset_ref).exists():
-                return folder
+            record = json.loads(meta.read_text(encoding="utf-8")) or {}
+            # A row that is itself a RECEIVED git share pins someone's earlier
+            # version: it is not this message's — only this message's own staged
+            # pointer counts below (so a re-share is fetched and offers its version).
+            origin = record.get("origin")
+            if not (isinstance(origin, dict) and origin.get("head_commit")):
+                if etype not in _BODY_BEARING_TYPE_IDS:
+                    return folder
+                # A metadata-only stub has no resolvable asset_ref → fall through
+                # to the staged check (a staged body still counts as downloaded).
+                asset_ref = record.get("asset_ref")
+                if asset_ref and Path(asset_ref).exists():
+                    return folder
         if fm_id:
-            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
+            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir, staged_git_entry_dir
 
             staged = staged_entry_dir(fm_id, record_stem(etype, eid))
             if staged.exists():
                 return staged
+            # A git share stages its pointer (metadata only); the bytes come by
+            # git at install, so the pointer IS the downloaded attachment.
+            pointer = staged_git_entry_dir(fm_id, record_stem(etype, eid))
+            if (pointer / "metadata.json").exists():
+                return pointer
         return None
     except Exception:
         return None
@@ -610,6 +632,9 @@ class FlowMessage(Entity):
     # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
     # never blanks it, and never sent where the hub would drop it.
     reactions: list[MessageReaction] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
+    # like ``envelope``: re-derived here, so a hub refresh never blanks it.
+    mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
@@ -952,6 +977,19 @@ class FlowMessage(Entity):
         """
         return self.attachment
 
+    @property
+    def author_label(self) -> str:
+        """Who wrote this message, for display — read off the typed ``sender``, never the wire
+        pair alone: an agent's reply carries the authenticated PERSON in ``sender_id`` /
+        ``sender_name`` (see ``_lift_sender``), so reading those names the human."""
+        sender = self.sender
+        if sender is not None and sender.kind is SenderKind.AGENT:
+            return sender.wire_id
+        if sender is not None and sender.kind is SenderKind.EXTERNAL:
+            profile = self.envelope.sender if self.envelope else None
+            return (profile and (profile.name or profile.address)) or sender.address or sender.wire_id
+        return self.sender_name or self.sender_id or "unknown"
+
     def summary(self) -> str:
         """One-line human summary: ``[<status>] <sender>: <text preview> (+N attachments)``.
 
@@ -961,7 +999,7 @@ class FlowMessage(Entity):
         """
         text = " ".join((self.text or "").split())
         preview = text if len(text) <= 80 else text[:77] + "..."
-        sender = self.sender_name or self.sender_id or "unknown"
+        sender = self.author_label
         n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
@@ -1014,7 +1052,7 @@ class FlowMessage(Entity):
             "id": self.id,
             "conversation_id": self.conversation_id,
             "ts": ts.isoformat() if ts else None,
-            "sender": self.sender_name or self.sender_id or "unknown",
+            "sender": self.author_label,
             "from": "you" if self.sender_id and self.sender_id in self_ids else "them",
             "delivery_status": self.delivery_status,
             "is_read": self.is_read,

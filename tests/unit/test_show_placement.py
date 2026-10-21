@@ -96,3 +96,41 @@ async def test_a_show_carries_the_process_project(tmp_path) -> None:
     assert response.status_code == 200, response.text
     shown = await AgenticProcess.get_by_id(process.id)
     assert shown.context_data["show_placement"] == {"tab_id": tab.id, "host": False, "project_id": project.id}
+
+
+@pytest.mark.asyncio
+async def test_cross_project_show_tab_keeps_callers_project(tmp_path) -> None:
+    from flow_sdk.builtin.claude_memory_entities import Docs
+
+    caller = Project(name="caller", fs_storage_mount_path=str(tmp_path / "caller"))
+    owner = Project(name="owner", fs_storage_mount_path=str(tmp_path / "owner"))
+    await caller.save()
+    await owner.save()
+    doc = Docs(title="Gaps", project_id=owner.id)
+    await doc.save()
+    pointer = json.dumps({"viewType": "project", "pointer": f"{caller.id}/editor/markdown/typeid/markdown-{doc.id}"})
+    response = await call_local("POST", "tab/new_tab", json={
+        "pointer": pointer, "target_type": "markdown", "target_id": doc.id, "project_id": owner.id,
+    })
+    assert response.status_code == 200, response.text
+    tab = await Tab.get_one({"pointer": pointer})
+    assert tab.project_id == caller.id
+    assert (await Docs.get_by_id(doc.id)).project_id == owner.id
+
+    listed = await call_local("GET", "tab/list", params={"project": caller.id})
+    assert tab.id in {row["id"] for row in listed.json()["data"]["tabs"]}
+    from flow_sdk.builtin.tab import reconcile_tab_project
+
+    await reconcile_tab_project("markdown", doc.id, owner.id)
+    assert (await Tab.get_by_id(tab.id)).project_id == caller.id
+
+
+@pytest.mark.asyncio
+async def test_show_placement_uses_the_open_tab_project(tmp_path) -> None:
+    project = Project(name="presentation", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    process = AgenticProcess(pty_mode=False)
+    await process.save()
+    tab = await ensure_tab(_pointer("shell", process.id), target_type="agentic_process",
+                           target_id=process.id, project_id=project.id)
+    assert (await show_placement(process.id))["project_id"] == tab.project_id

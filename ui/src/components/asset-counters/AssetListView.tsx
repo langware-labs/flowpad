@@ -112,7 +112,10 @@ function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; 
             {rows.map((item) => (
               <TableRow
                 key={group.itemKey(item)}
-                onClick={() => navigation.openDock(group.itemPointer(item))}
+                onClick={() => {
+                  const pointer = group.itemPointer(item);
+                  if (pointer) navigation.openDock(pointer);
+                }}
                 className="cursor-pointer"
                 data-testid="asset-list-row"
               >

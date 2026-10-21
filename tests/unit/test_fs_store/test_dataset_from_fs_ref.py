@@ -5,7 +5,7 @@
 entity generically from the returned ``FSRecord`` — no DB, no async. These tests
 assert it is **fully indexer-compatible**: the loaded entity's id, typed fields,
 denormalized counts, and ``examples()`` list match the indexer cold path
-(``extract_dataset`` + ``iter_examples``) across the whole shape matrix.
+(``extract_dataset`` + ``iter_rows``) across the whole shape matrix.
 
 Helpers (``_doc``/``_seed_*``) mirror ``test_indexer_dataset.py``.
 """
@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.types.dataset import iter_examples
+from tests.unit._dataset_read import iter_rows
 from flow_sdk.builtin.dataset import (
     DataLayoutEnum,
     Dataset,
-    ExampleKind,
+    RowKind,
 )
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -78,7 +78,7 @@ def _seed_io_dataset(
     project: Path,
     slug: str,
     *,
-    examples: dict[str, dict],
+    rows: dict[str, dict],
     manifest: dict | None = None,
     manifest_data: dict | None = None,
 ) -> Path:
@@ -86,25 +86,25 @@ def _seed_io_dataset(
 
     Per-example ``spec`` keys (all optional):
       - ``input`` / ``expected`` — shorthand → ``input.txt`` / ``expected.txt``
-      - ``meta`` / ``data`` — dicts → ``meta.json`` metadata / data sections
+      - ``meta`` / ``data`` — dicts → ``row.json`` metadata / data sections
       - ``files`` — ``{relpath: str | bytes}`` written verbatim (bytes → binary)
       - ``dirs``  — ``{dirname: {fname: str | bytes}}`` for folder artifacts
     """
     ds = project / "assets" / "datasets" / slug
-    (ds / "examples").mkdir(parents=True)
+    (ds / "rows").mkdir(parents=True)
     (ds / "dataset.json").write_text(
         _doc(metadata=manifest or {"data_layout": "io_folder"}, data=manifest_data),
         encoding="utf-8",
     )
-    for name, spec in examples.items():
-        ex = ds / "examples" / name
+    for name, spec in rows.items():
+        ex = ds / "rows" / name
         ex.mkdir()
         if "input" in spec:
             (ex / "input.txt").write_text(spec["input"], encoding="utf-8")
         if "expected" in spec:
             (ex / "expected.txt").write_text(spec["expected"], encoding="utf-8")
         if "meta" in spec or "data" in spec:
-            (ex / "meta.json").write_text(
+            (ex / "row.json").write_text(
                 _doc(metadata=spec.get("meta"), data=spec.get("data")), encoding="utf-8"
             )
         for rel, content in spec.get("files", {}).items():
@@ -139,20 +139,20 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     assert loaded.data_layout == meta.get("data_layout", "csv")
     assert loaded.field_spec == meta.get("field_spec", {})
     assert loaded.delimiter == meta.get("delimiter", ",")
-    assert loaded.num_examples == meta["num_examples"]
+    assert loaded.num_rows == meta["num_rows"]
     assert loaded.kind_counts == meta["kind_counts"]
 
     # examples(): full list equality vs the indexer parser (pydantic __eq__)
-    ref_rows = iter_examples(
+    ref_rows = iter_rows(
         str(ds_path),
         DataLayoutEnum(loaded.data_layout),
         loaded.field_spec or {},
         loaded.delimiter or ",",
         dataset_id=loaded.id,
     )
-    assert loaded.examples == ref_rows
+    assert loaded.rows == ref_rows
     if ref_rows:
-        assert type(loaded.examples[0]) is type(ref_rows[0])   # the same parametrized class
+        assert type(loaded.rows[0]) is type(ref_rows[0])   # the same parametrized class
     return loaded
 
 
@@ -180,7 +180,7 @@ def test_asset_ref_stamped_as_path_string(tmp_path: Path) -> None:
     loaded = Dataset.from_fs_ref(FSRef(ds))
     # the path STRING (not an FSRef repr) — examples() does str(asset_ref)
     assert loaded.asset_ref == str(Path(ds).resolve())
-    assert loaded.examples  # non-empty proves the path resolves
+    assert loaded.rows  # non-empty proves the path resolves
 
 
 def test_db_free_is_sync(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_db_free_is_sync(tmp_path: Path) -> None:
     loaded = Dataset.from_fs_ref(FSRef(ds))
     assert not inspect.isawaitable(loaded)
     assert isinstance(loaded, Dataset)
-    assert loaded.num_examples == 1
+    assert loaded.num_rows == 1
 
 
 # ── Group 2: CSV matrix ────────────────────────────────────────────────────────
@@ -208,12 +208,12 @@ def test_csv_happy_path(tmp_path: Path) -> None:
     )
     loaded = _assert_indexer_compatible(ds)
     assert loaded.title == "QA"
-    assert loaded.num_examples == 2
+    assert loaded.num_rows == 2
     assert loaded.kind_counts == {"train": 1, "eval": 1}
-    rows = loaded.examples
+    rows = loaded.rows
     assert _node(rows[0], "input") == "2+2"
     assert _node(rows[0], "ground_truth") == "4"
-    assert rows[1].kind == ExampleKind.EVAL
+    assert rows[1].kind == RowKind.EVAL
 
 
 def test_csv_field_spec_remap_and_leftover_metadata(tmp_path: Path) -> None:
@@ -224,11 +224,11 @@ def test_csv_field_spec_remap_and_leftover_metadata(tmp_path: Path) -> None:
         csv_text="question,answer,difficulty\ncapital of France?,Paris,easy\n",
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _node(ex, "input") == "capital of France?"
     assert _node(ex, "ground_truth") == "Paris"
     assert ex.metadata == {"difficulty": "easy"}  # unmapped column → metadata
-    assert ex.kind == ExampleKind.TRAIN  # no kind column → default
+    assert ex.kind == RowKind.TRAIN  # no kind column → default
 
 
 def test_csv_custom_delimiter(tmp_path: Path) -> None:
@@ -240,15 +240,15 @@ def test_csv_custom_delimiter(tmp_path: Path) -> None:
     )
     loaded = _assert_indexer_compatible(ds)
     assert loaded.delimiter == "\t"  # lifted from metadata (defaulted before the fix)
-    assert _node(loaded.examples[0], "input") == "a"
+    assert _node(loaded.rows[0], "input") == "a"
 
 
 # ── Group 3: IO_FOLDER slots & artifact forms ─────────────────────────────────
 
 def test_io_input_single_file(tmp_path: Path) -> None:
-    ds = _seed_io_dataset(tmp_path, "io", examples={"0001": {"input": "hello", "expected": "world"}})
+    ds = _seed_io_dataset(tmp_path, "io", rows={"0001": {"input": "hello", "expected": "world"}})
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _is_file(_node(ex, "input"))
     assert _node(ex, "input") == "input.txt"
     assert _node(ex, "ground_truth") == "expected.txt"
@@ -256,20 +256,20 @@ def test_io_input_single_file(tmp_path: Path) -> None:
 
 def test_io_input_folder(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
-        tmp_path, "io", examples={"0001": {"dirs": {"input": {"a.txt": "x", "b.txt": "y"}}}}
+        tmp_path, "io", rows={"0001": {"dirs": {"input": {"a.txt": "x", "b.txt": "y"}}}}
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert not _is_file(_node(ex, "input"))
     assert _paths(_node(ex, "input")) == ["input/a.txt", "input/b.txt"]
 
 
 def test_io_input_binary_pdf(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
-        tmp_path, "io", examples={"0001": {"files": {"input.pdf": b"%PDF-1.4 binary"}}}
+        tmp_path, "io", rows={"0001": {"files": {"input.pdf": b"%PDF-1.4 binary"}}}
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _is_file(_node(ex, "input"))
     assert _node(ex, "input") == "input.pdf"  # referenced, never decoded
     rec_meta = _extract(FSRef(ds))[0].meta_dict()
@@ -280,10 +280,10 @@ def test_io_input_file_beats_folder(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={"0001": {"input": "scalar", "dirs": {"input": {"ignored.txt": "z"}}}},
+        rows={"0001": {"input": "scalar", "dirs": {"input": {"ignored.txt": "z"}}}},
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _is_file(_node(ex, "input"))
     assert _node(ex, "input") == "input.txt"
 
@@ -292,7 +292,7 @@ def test_io_output_numbered_multi(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={
+        rows={
             "0001": {
                 "input": "q",
                 "files": {"output-1.txt": "a", "output-2.txt": "b", "output-3.txt": "c"},
@@ -300,7 +300,7 @@ def test_io_output_numbered_multi(tmp_path: Path) -> None:
         },
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _keys(ex, "output") == ["output-1", "output-2", "output-3"]
     assert not _keys(ex, "ground_truth")  # output never feeds the gold
     rec_meta = _extract(FSRef(ds))[0].meta_dict()
@@ -311,7 +311,7 @@ def test_io_ground_truth_numbered_folders_consensus(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={
+        rows={
             "0001": {
                 "input": "q",
                 "dirs": {
@@ -322,15 +322,15 @@ def test_io_ground_truth_numbered_folders_consensus(tmp_path: Path) -> None:
         },
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _keys(ex, "ground_truth") == ["ground_truth-1", "ground_truth-2"]
     assert all(isinstance(o, FolderSpec) for o in ex.ground_truth)
 
 
 def test_io_legacy_expected_folds_to_ground_truth(tmp_path: Path) -> None:
-    ds = _seed_io_dataset(tmp_path, "io", examples={"0001": {"input": "q", "expected": "gold"}})
+    ds = _seed_io_dataset(tmp_path, "io", rows={"0001": {"input": "q", "expected": "gold"}})
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _keys(ex, "ground_truth") == ["ground_truth"]
     assert _node(ex, "ground_truth") == "expected.txt"  # re-keyed, path unchanged
 
@@ -339,10 +339,10 @@ def test_io_native_gt_beats_legacy_expected(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={"0001": {"input": "q", "expected": "legacy", "files": {"ground_truth.txt": "native"}}},
+        rows={"0001": {"input": "q", "expected": "legacy", "files": {"ground_truth.txt": "native"}}},
     )
     loaded = _assert_indexer_compatible(ds)
-    assert _node(loaded.examples[0], "ground_truth") == "ground_truth.txt"
+    assert _node(loaded.rows[0], "ground_truth") == "ground_truth.txt"
 
 
 # ── Group 4: sidecars & example metadata ──────────────────────────────────────
@@ -351,7 +351,7 @@ def test_sidecar_attaches_to_artifact(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={
+        rows={
             "0001": {
                 "files": {
                     "input.pdf": b"%PDF binary",
@@ -361,7 +361,7 @@ def test_sidecar_attaches_to_artifact(tmp_path: Path) -> None:
         },
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _is_file(_node(ex, "input")) and _node(ex, "input") == "input.pdf"
     assert _sidecar(ex, "input.json") == {"metadata": {"pages": 3}, "data": {"src": "scan"}}
 
@@ -370,7 +370,7 @@ def test_numbered_sidecar_per_index(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={
+        rows={
             "0001": {
                 "input": "q",
                 "files": {
@@ -382,7 +382,7 @@ def test_numbered_sidecar_per_index(tmp_path: Path) -> None:
         },
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert _sidecar(ex, "output-1.json") == {}
     assert _sidecar(ex, "output-2.json").get("metadata") == {"rater": "B"}
 
@@ -392,51 +392,27 @@ def test_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={"0001": {"input": "q", "files": {"output.json": _doc(metadata={"note": "n"})}}},
+        rows={"0001": {"input": "q", "files": {"output.json": _doc(metadata={"note": "n"})}}},
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert not _keys(ex, "output")  # a lone sidecar is not data
     assert _sidecar(ex, "output.json").get("metadata") == {"note": "n"}
 
 
-def test_example_json_two_section_and_meta_override(tmp_path: Path) -> None:
-    # meta.json (alias) + example.json (canonical) merge per section.
-    ds = _seed_io_dataset(
-        tmp_path,
-        "io",
-        examples={
-            "0001": {
-                "input": "q",
-                "meta": {"kind": "test", "from_alias": 1},
-                "files": {
-                    "example.json": _doc(
-                        metadata={"kind": "eval", "layout": "pages"}, data={"note": "x"}
-                    )
-                },
-            }
-        },
-    )
-    loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
-    assert ex.kind == ExampleKind.EVAL  # example.json wins
-    assert ex.layout == "pages"
-    assert ex.metadata.get("from_alias") == 1  # alias key survives the merge
-    assert ex.data == {"note": "x"}
-
 
 def test_flat_json_ignored(tmp_path: Path) -> None:
-    # A FLAT example.json (no metadata/data sections) is malformed → ignored.
+    # A FLAT row.json (no metadata/data sections) is malformed → ignored.
     ds = tmp_path / "assets" / "datasets" / "io"
-    (ds / "examples" / "0001").mkdir(parents=True)
+    (ds / "rows" / "0001").mkdir(parents=True)
     (ds / "dataset.json").write_text(_doc(metadata={"data_layout": "io_folder"}), encoding="utf-8")
-    (ds / "examples" / "0001" / "input.txt").write_text("q", encoding="utf-8")
-    (ds / "examples" / "0001" / "example.json").write_text(
+    (ds / "rows" / "0001" / "input.txt").write_text("q", encoding="utf-8")
+    (ds / "rows" / "0001" / "row.json").write_text(
         json.dumps({"kind": "eval"}), encoding="utf-8"  # flat — no metadata/data
     )
     loaded = _assert_indexer_compatible(ds)
-    ex = loaded.examples[0]
-    assert ex.kind == ExampleKind.TRAIN  # flat 'kind' not read → default
+    ex = loaded.rows[0]
+    assert ex.kind == RowKind.TRAIN  # flat 'kind' not read → default
     assert ex.metadata == {}
 
 
@@ -454,7 +430,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
             "delimiter": ",",
         },
         manifest_data={"owner": "dan@example.com"},
-        examples={
+        rows={
             "0001": {
                 "input": "the input",
                 "files": {
@@ -462,7 +438,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
                     "output-1.txt": "cand1",
                     "output-2.txt": "cand2",
                     "ground_truth.txt": "gold",
-                    "example.json": _doc(
+                    "row.json": _doc(
                         metadata={"kind": "eval", "layout": "pages"}, data={"note": "x"}
                     ),
                 },
@@ -478,16 +454,16 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
     assert loaded.data_layout == "io_folder"
     assert loaded.field_spec == {}
     assert loaded.delimiter == ","
-    assert loaded.num_examples == 1
+    assert loaded.num_rows == 1
     assert loaded.kind_counts == {"eval": 1}
     assert loaded.data == {"owner": "dan@example.com"}
     assert loaded.created_at is None
     assert loaded.asset_ref == str(Path(ds).resolve())
 
     # every Example field
-    ex = loaded.examples[0]
+    ex = loaded.rows[0]
     assert ex.id == str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{loaded.id}:0001"))
-    assert ex.kind == ExampleKind.EVAL
+    assert ex.kind == RowKind.EVAL
     assert _node(ex, "input") == "input.txt"
     assert {"kind": "eval", "layout": "pages"}.items() <= ex.metadata.items()   # + the input.json sidecar
     assert ex.data == {"note": "x"}
@@ -499,7 +475,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
 
     # all five denormalized counts vs the cold-path record
     meta = _extract(FSRef(ds))[0].meta_dict()
-    assert meta["num_examples"] == 1
+    assert meta["num_rows"] == 1
     assert meta["kind_counts"] == {"eval": 1}
     assert meta["num_annotated"] == 1
     assert meta["num_multi_output"] == 1
@@ -510,17 +486,17 @@ def test_determinism_stable_ids(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path,
         "io",
-        examples={"0001": {"input": "q", "files": {"output-1.txt": "a"}}},
+        rows={"0001": {"input": "q", "files": {"output-1.txt": "a"}}},
     )
     a = Dataset.from_fs_ref(FSRef(ds))
     b = Dataset.from_fs_ref(FSRef(ds))
     assert a.id == b.id
-    ax, bx = a.examples[0], b.examples[0]
+    ax, bx = a.rows[0], b.rows[0]
     assert ax.id == bx.id
     assert ax == bx  # the row is the row; stable across reloads
 
 
-def test_examples_kind_filter(tmp_path: Path) -> None:
+def test_rows_kind_filter(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(
         tmp_path,
         "qa",
@@ -528,13 +504,13 @@ def test_examples_kind_filter(tmp_path: Path) -> None:
         csv_text="kind,input,expected\ntrain,a,1\neval,b,2\neval,c,3\n",
     )
     loaded = Dataset.from_fs_ref(FSRef(ds))
-    evals = loaded.of_kind(ExampleKind.EVAL)
+    evals = loaded.of_kind(RowKind.EVAL)
     assert len(evals) == 2
-    assert all(e.kind == ExampleKind.EVAL for e in evals)
+    assert all(e.kind == RowKind.EVAL for e in evals)
     # matches the indexer parser filtered the same way
     ref_rows = [
         e
-        for e in iter_examples(str(ds), DataLayoutEnum.CSV, {}, ",", dataset_id=loaded.id)
-        if e.kind == ExampleKind.EVAL
+        for e in iter_rows(str(ds), DataLayoutEnum.CSV, {}, ",", dataset_id=loaded.id)
+        if e.kind == RowKind.EVAL
     ]
     assert evals == ref_rows

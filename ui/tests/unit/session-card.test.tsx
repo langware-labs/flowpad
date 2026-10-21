@@ -29,7 +29,6 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       replyCount={props.replyCount ?? 1}
       onOpen={props.onOpen ?? onOpen}
       onApprove={props.onApprove}
-      onApproveOnce={props.onApproveOnce}
       onDecline={props.onDecline}
       onDisconnect={props.onDisconnect}
       lastPromptFailed={props.lastPromptFailed}
@@ -78,25 +77,21 @@ describe("SessionCard — the session's one line in the conversation", () => {
     expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
   });
 
-  it('host + pending: Approve (remembers), Approve once, Decline — each its own action', async () => {
+  it('host + pending: Approve (this session only) and Decline', async () => {
     const onApprove = vi.fn().mockResolvedValue(undefined);
-    const onApproveOnce = vi.fn().mockResolvedValue(undefined);
     const onDecline = vi.fn().mockResolvedValue(undefined);
     renderCard({
       session: session(RemoteWorkerSessionStatus.PENDING),
       role: 'host',
       onApprove,
-      onApproveOnce,
       onDecline,
     });
     expect(screen.getByTestId('session-card-approve').textContent).toBe('Approve');
     expect(screen.getByTestId('session-card-approve').className).toContain('bg-blue-600');
-    expect(screen.getByTestId('session-card-approve-once').textContent).toBe('Approve once');
-    fireEvent.click(screen.getByTestId('session-card-approve-once'));
+    fireEvent.click(screen.getByTestId('session-card-approve'));
     await Promise.resolve();
     await Promise.resolve();
-    expect(onApproveOnce).toHaveBeenCalledTimes(1);
-    expect(onApprove).not.toHaveBeenCalled();
+    expect(onApprove).toHaveBeenCalledTimes(1);
     expect(onDecline).not.toHaveBeenCalled();
   });
 
@@ -105,10 +100,8 @@ describe("SessionCard — the session's one line in the conversation", () => {
       session: session(RemoteWorkerSessionStatus.PENDING),
       role: 'guest',
       onApprove: vi.fn(),
-      onApproveOnce: vi.fn(),
     });
     expect(screen.queryByTestId('session-card-approve')).toBeNull();
-    expect(screen.queryByTestId('session-card-approve-once')).toBeNull();
   });
 
   it.each(['host', 'guest'] as const)('%s + live: message count, time since approval, red Disconnect', async (role) => {
@@ -206,7 +199,7 @@ describe("SessionCard — the session's one line in the conversation", () => {
   });
 });
 
-describe('SessionCard — the 2-hour length cap', () => {
+describe('SessionCard — the 4-hour length cap', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
@@ -216,7 +209,7 @@ describe('SessionCard — the 2-hour length cap', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-07T11:59:00Z'));
     renderCard({
-      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T10:00:00Z' }),
+      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T08:00:00Z' }),
       onDisconnect: async () => {},
     });
     expect(screen.getByTestId('session-card').dataset.status).toBe('active');

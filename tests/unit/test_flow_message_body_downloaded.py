@@ -248,3 +248,23 @@ def test_session_carrier_attachment_never_gates_download(records_root):
         attachment=[carrier, _skill_attachment(eid)],
     )
     assert fm2.model_dump()["body_downloaded"] is True
+
+
+def test_a_received_git_share_row_does_not_stand_in_for_a_newer_share(records_root):
+    """The asset's row came from an EARLIER git share (its origin pins a commit):
+    a newer share of the same asset is not downloaded until ITS pointer is staged
+    — else the receiver opens the old version and never sees the new one."""
+    import json
+
+    eid = mint_uuid()
+    folder = records_root / "skill" / eid
+    folder.mkdir(parents=True)
+    (folder / "metadata.json").write_text(json.dumps({"origin": {"kind": "git", "head_commit": "abc123"}}))
+    fm_id = mint_uuid()
+    fm = FlowMessage(id=fm_id, text="newer", attachment=[_skill_attachment(eid)])
+    assert fm.model_dump()["body_downloaded"] is False
+
+    pointer = fm_data_ops.staged_git_entry_dir(fm_id, f"skill-{eid}")
+    pointer.mkdir(parents=True)
+    (pointer / "metadata.json").write_text("{}")
+    assert fm.model_dump()["body_downloaded"] is True

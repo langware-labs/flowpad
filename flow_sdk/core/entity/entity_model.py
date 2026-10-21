@@ -57,6 +57,7 @@ import flow_sdk.service_log as service_log
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.api.api_types.identifier import adopt_entity_id, is_valid_entity_id, mint_uuid
 from flow_sdk.config import StorageProvider
+from flow_sdk.core.entity.projected_fields import derived_field_names
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
@@ -1208,10 +1209,14 @@ class Entity(DBEntity):
             # can overwrite them with stale disk-mirrored values from meta_dict().
             hub_owned = {f: getattr(entity, f, None) for f in type(entity).fields_owned_by_hub()}
             all_updates = {**data, **record_domain, **stamp}
+            # A projection is DB-owned: the disk never writes it. A derived field's disk value IS the
+            # deriver's output (the indexer ran it), so it lands through the one sanctioned writer.
+            guarded = derived_field_names(type(entity))
+            derived = {k: v for k, v in all_updates.items() if k in getattr(entity, "derived_fields", ())}
             for k, v in all_updates.items():
                 # Restrict to declared model fields so read-only computed
                 # properties leaked in by stale metadata don't crash setattr.
-                if k in ("id",) or k not in entity.__class__.model_fields:
+                if k in ("id",) or k in guarded or k not in entity.__class__.model_fields:
                     continue
                 # Context buckets are a LOCAL, DB-owned link projection written
                 # by cross_link_entities — never authored on the carrier. A
@@ -1230,6 +1235,8 @@ class Entity(DBEntity):
                 if field is not None:
                     v = TypeAdapter(field.annotation).validate_python(v)
                 setattr(entity, k, v)
+            if derived:
+                entity._write_derived(**derived)
             if getattr(entity, "remote", False):
                 # Hub-authoritative rows: restore the fields declared HUB_READ —
                 # a disk→DB re-index must not move the hub's clock. Index freshness is carried by the on-disk .hash
@@ -1281,14 +1288,13 @@ class Entity(DBEntity):
 
         A DB-free on-disk load: it resolves identity through ``TypeInfo`` and
         dispatches to the registered ``from_disk_fn`` — the SAME cold-path parser the indexer runs
-        (e.g. ``extract_dataset``) — and builds the entity generically from the
-        returned ``FSRecord``. Only that parser (and, for datasets, the
-        ``iter_examples`` it reaches via ``Dataset.examples``) is type-specific;
+        — and builds the entity generically from the returned ``FSRecord``.
+        Only that parser (and a type's ``derive_fields_fn``) is type-specific;
         everything here is generic and registry-driven.
 
         Distinct from the async ``from_record``: no ``await``, no ``save()``, no
         DB row. A missing asset id may be minted and persisted. Use it to load a folder-backed entity and call its on-disk
-        accessors (``Dataset.examples`` etc.). Returns ``None`` when ``ref`` is
+        accessors (``Dataset.rows`` etc.). Returns ``None`` when ``ref`` is
         not a record of the resolved type (the parser yields nothing).
         """
         from flow_sdk.schema.type_info import register_all  # noqa: PLC0415
@@ -2755,7 +2761,7 @@ class Entity(DBEntity):
                 # feeds FTS straight from the row.
                 async with _one_write():
                     await DBEntity.save(self, user_id, notify=notify)
-                    if type_info.fts_content:
+                    if type_info.fts_content or type_info.fts:
                         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
 
                         await self._fts_write(FtsEntry.from_entity(self, info=type_info))

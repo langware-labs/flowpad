@@ -669,7 +669,8 @@ def tell_hub(deployment) -> None:
     pushed rows: it asks the box for the placement's endpoints and adopts them at
     the box's ids (``deployment/<id>/refresh-endpoints``) — which reads this box's
     database, so the caller must not hold its write lock while waiting (an index
-    pass does). Only a box has a hub placement to refresh; a desktop's are its own.
+    pass does). Only a box the hub placed (it was assigned a compute node) has a hub
+    placement to refresh; a desktop's are its own.
     """
     task = asyncio.get_running_loop().create_task(_tell_hub(deployment))
     _TELLING.add(task)
@@ -677,9 +678,9 @@ def tell_hub(deployment) -> None:
 
 
 async def _tell_hub(deployment) -> None:
-    from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
+    from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
 
-    if not await asyncio.to_thread(own_sandbox_id):
+    if not get_assigned_compute_node():
         return
     from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
@@ -884,11 +885,24 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     return await ServiceEndpoint.of_deployment(deployment_typeid)
 
 
+def service_endpoint_name(app, service) -> str:
+    """The endpoint a service the app brings along is placed as: ``<app>-<service>``."""
+    return f"{app.name}-{service.name}"
+
+
+async def service_endpoint_ports(app) -> dict[str, Any]:
+    """Each of the app's service endpoints here, by name: the port its backend names now (None for none)."""
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    rows = await ServiceEndpoint.get_all({"match": {"webapp_id": str(app.id)}})
+    return {row.name: getattr(row.backend, "port", None) for row in rows}
+
+
 async def set_service_endpoint(deployment, app, service, backend: dict) -> None:
     """A service the app brings along is an endpoint of its own on ``deployment``, named ``<app>-<name>``."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
-    name = f"{app.name}-{service.name}"
+    name = service_endpoint_name(app, service)
     existing = next((row for row in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if row.name == name), None)
     await upsert_endpoint(
         deployment,

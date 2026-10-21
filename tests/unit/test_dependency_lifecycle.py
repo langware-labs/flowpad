@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin import project_dependencies
 from flow_sdk.core.setup.load import load_state
 from flow_sdk.schema.data_spec.asset_setup_spec import LoadState
 from tests.unit.agent._seed import seed_agent, seed_project
@@ -17,7 +18,9 @@ async def test_add_exposes_provider_home_and_calls_the_shared_lifecycle(tmp_path
     await provider.set_home_page_action(typeid=str(agent.typeid))
 
     response = await consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service")
-    row = response.data["dependency"]
+    assert response.data["dependency"]["name"] == "service"
+    await project_dependencies.settled(str(consumer.id))
+    row = (await consumer.dependencies_action()).data["dependencies"][0]
     assert row["state"] == "ready" and row["project_id"] == provider.id
     assert row["home_page"] == str(agent.typeid)
     assert row["lifecycle"]["state"] == "ready"
@@ -40,6 +43,7 @@ async def test_add_indexes_the_provider_before_its_home_page_is_opened(tmp_path,
     consumer = await seed_project(tmp_path / "consumer")
     provider = await seed_project(tmp_path / "provider")
     await consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service")
+    await project_dependencies.settled(str(consumer.id))
     assert indexed == [str(provider.id)]
 
 
@@ -72,10 +76,34 @@ async def test_relative_provider_home_is_resolved_in_add_and_list_payloads(tmp_p
     app = await Entity.get_by_asset_ref(str(folder), resolve_containing=True, strict=True)
     set_home_page(root, "./agentic-assets/webapp/admin")
 
-    response = await consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service")
-    added = response.data["dependency"]
+    await consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service")
+    await project_dependencies.settled(str(consumer.id))
     listed = (await consumer.dependencies_action()).data["dependencies"][0]
-    for row in (added, listed):
+    for row in (listed,):
         assert row["home_page"] == str(app.typeid)
         assert TypeId(row["home_page"]).type == "micro_app"
         assert row["project_id"] == provider.id
+
+
+async def test_the_add_action_answers_before_the_slow_index_and_load(tmp_path, monkeypatch):
+    """Indexing a big folder takes minutes: the request returns once flow.json is written."""
+    import asyncio
+
+    import flow_sdk.fs_store.indexer.auto_index as auto_index
+
+    gate = asyncio.Event()
+
+    async def slow(project_id):
+        await gate.wait()
+
+    monkeypatch.setattr(auto_index, "index_dependency_provider", slow)
+    consumer = await seed_project(tmp_path / "consumer")
+    provider = await seed_project(tmp_path / "provider")
+    response = await asyncio.wait_for(
+        consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service"), 1
+    )
+    assert response.status == "SUCCESS" and response.data["dependency"]["name"] == "service"
+    assert project_dependencies.is_resolving(str(consumer.id))
+    gate.set()
+    await project_dependencies.settled(str(consumer.id))
+    assert not project_dependencies.is_resolving(str(consumer.id))

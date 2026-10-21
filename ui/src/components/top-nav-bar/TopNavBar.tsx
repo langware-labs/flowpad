@@ -1,13 +1,9 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw, Zap } from 'lucide-react';
-import { isHomeSurface } from '@src/navigation/dock-layout';
-import { tabDock } from '@src/tabs/project-entry';
-import { useLastKnownTab } from '@src/tabs/use-tab-manager';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw } from 'lucide-react';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
@@ -17,7 +13,6 @@ import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { AppButton } from './AppButton';
 import { NavIconButton } from './NavIconButton';
-import { NewChatButton } from './NewChatButton';
 import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
@@ -51,12 +46,6 @@ export function TopNavBar() {
   const { contains } = useActiveWorkspace();
   const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
-  // Home and Tabs are one button that flips: on the (tabless) home it goes BACK to
-  // the last active tab; on any tab it goes home. With no tab open, home is all
-  // there is, so it stays Home (disabled on the home itself).
-  const atHome = isHomeSurface(currentDock ?? null);
-  const lastTabDock = tabDock(useLastKnownTab(atHome));
-
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
   // every click.
@@ -91,23 +80,12 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      {lastTabDock ? (
-        <NavIconButton
-          icon={PanelsTopLeft}
-          label={t`Back to tabs`}
-          onClick={() => navigation.openDock(lastTabDock, undefined, { topLevel: true })}
-          testId="top-nav-tabs"
-          tag="TopNavTabs"
-        />
-      ) : (
-        <NavIconButton
-          icon={Home}
-          label={t`Home`}
-          onClick={() => navigation.goHome({ homePage: true })}
-          disabled={atHome}
-          testId="top-nav-home"
-        />
-      )}
+      <NavIconButton
+        icon={Home}
+        label={t`Home`}
+        onClick={() => navigation.goHome({ homePage: true })}
+        testId="top-nav-home"
+      />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton
@@ -117,13 +95,6 @@ export function TopNavBar() {
         testId="top-nav-files"
       />
       <AppButton project={project} />
-      {/* Automations — the list of rules, every kind. */}
-      <NavIconButton
-        icon={Zap}
-        label={t`Automations`}
-        onClick={() => navigation.openDock(DockPointer.forAutomations())}
-        testId="top-nav-automations"
-      />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
       <NewWorkspaceDialogHost />
@@ -158,11 +129,6 @@ export function TopNavBar() {
         />
       )}
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
-      {/* Quick launch, last in the row: unlike the actions beside it, it acts
-          on nothing the bar is addressing — it starts somewhere new. One click,
-          no picker; the harness is the last one used and the mode is the
-          current one. */}
-      <NewChatButton />
     </div>
   );
 }

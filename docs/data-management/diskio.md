@@ -1,3 +1,6 @@
+---
+id: 0ba6ce82-57e4-5bc5-bd93-a8060d2ea115
+---
 # Interface proposal — v6 — FINAL (iteration 6)
 
 **How to read this document.** It specifies the disk-I/O kernel of the Python SDK: eight
@@ -687,7 +690,7 @@ The fingerprint is `TypeInfo.asset_hash_fn(ref)` stringified, else `FSRef.finger
 |---|---|---|
 | `stat` → `f"{mtime_ns}:{size}"` of the asset path; `""` when it cannot be stat'ed | every type without `asset_hash_fn` | `FSRef.fingerprint` (`fs_ref/base.py:199-205`) |
 | `stat_sum` → `repr(float(Σ (mtime_ns+size)))` over `parts` | entity documents (`[main, body]`), manifest folders (`[".", main]`) | `assets/identity.py:76-106` |
-| `max_mtime` → `repr(max st_mtime)` over `parts` ∪ `globs` ∪ `trees`, start `0.0` | trigger, wizard, helpdesk (`[main]`); skill (`SKILL_INNER_FILES`); task (`[task.json, spec.md]`); whiteboard (`[WHITE_BOARD.md, board.json]`); spreadsheet (`["."]`); deck (`[deck.json]` + `*.html`); journey (`[graph.json]` + `*.html`); graph_workflow (`[graph.json]` + `scripts/*`); dataset (`[manifest, data.csv]` + tree `examples`); deck_template (`[manifest, media]` + globs `media/*` + trees `layouts`, `common`; `deck_template.py:124-135` stats every direct child of `media/`) | `assets/types/{skill,task,dataset,deck,deck_template,journey,graph_workflow,whiteboard,spreadsheet,trigger,wizard,helpdesk}.py` |
+| `max_mtime` → `repr(max st_mtime)` over `parts` ∪ `globs` ∪ `trees`, start `0.0` | trigger, wizard, helpdesk (`[main]`); skill (`SKILL_INNER_FILES`); task (`[task.json, spec.md]`); chart (every direct file: `CHART.md`, `board.json` / `chart.json`, `thumbnail.svg`); spreadsheet (`["."]`); deck (`[deck.json]` + `*.html`); journey (`[graph.json]` + `*.html`); graph_workflow (`[graph.json]` + `scripts/*`); dataset (`[manifest, data.csv]` + tree `examples`); deck_template (`[manifest, media]` + globs `media/*` + trees `layouts`, `common`; `deck_template.py:124-135` stats every direct child of `media/`) | `assets/types/{skill,task,dataset,deck,deck_template,journey,graph_workflow,chart,spreadsheet,trigger,wizard,helpdesk}.py` |
 
 `base` is the asset path when it is a directory, else its parent; `"."` names the asset path
 itself; `globs` are one-level patterns under `base`; `trees` are recursive and stat EVERY entry
@@ -1377,7 +1380,7 @@ piece; the walk half is already §1.
 `layout.FolderLayout._scan`, `declared.data_schema_folders.walk`, `datasets/links`: per-row
 folder I/O that scales with dataset size, and today's datasets are hundreds of rows.
 **Re-enters** when a dataset reaches ~10⁴ rows: `FolderLayout._scan` is then a §1 walk over
-`examples/`, and `_gather` a Python one-read pass — no new piece.
+`rows/`, and `_gather` a Python one-read pass — no new piece.
 
 **T11 — RAG and LLM-index stores (15 functions). Excluded.** The heavy write is usearch's own
 whole-file save (`rag/store.py::RagStore.flush`, `os.replace`); `rag/indexing.index_documents`

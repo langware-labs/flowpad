@@ -41,6 +41,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
+from flow_sdk.schema.data_spec.setup_stage_spec import NEED_CONNECTION, NEED_SETUP, SetupNeedSpec
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 from flow_sdk.schema.types import EntityType
@@ -53,6 +54,9 @@ if TYPE_CHECKING:
     from flow_sdk.secrets.requirements import SecretRequirements
 
 logger = logging.getLogger(__name__)
+
+#: How much of an item body `recent_items` shows; the rest is at `full_record_path`.
+PREVIEW_CHARS = 500
 
 #: The heartbeat ticks once a minute, and every provider floor we care about is
 #: at least that. A source may ask for less frequent polling, never more.
@@ -156,12 +160,13 @@ class DataSource(SetupSkippable, Entity):
     kind: str = APIField(default="", description="Ontology kind, e.g. datasource.feed.rss", persist=Persist.FALSE)
     provider: str = APIField(default="", description="Driver registry key: rss | hackernews")
     account_key: str = APIField(default="", description="The remote account/feed-set identity", persist=Persist.FALSE)
-    # The user-facing CHANNEL — gmail | slack | jira. Deliberately NOT
+    # The user-facing CHANNEL — a kind the driver declares (e.g. voice,
+    # whatsapp), which several drivers may share. Deliberately NOT
     # `provider`, which is the driver/transport key and is literally "agent"
     # for the harness-backed sources. One channel may have several transports
     # (a harness Gmail source and an API one), and threading + the message
     # badge must key on the channel so both resolve to the same thread.
-    channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira", persist=Persist.FALSE)
+    channel: str = APIField(default="", description="User-facing channel: a kind the driver declares; several drivers may share one", persist=Persist.FALSE)
     # The addresses/handles that are ME on this source. A record authored by
     # one of them is mine, and the stream inbox projection must attribute it to the
     # local user — otherwise my own Sent mail counts as unread mail from a
@@ -245,16 +250,14 @@ class DataSource(SetupSkippable, Entity):
     gitignored: bool = APIField(default=True, description="Keep the local copy out of git")
     #: Pull only. The source never writes to its remote, and asks for no permission that writes.
     read_only: bool = APIField(default=False, description="Never write back to the remote")
-    #: The dataset this source's records are mirrored into after every sync -- ``{dataset, map, by?}``,
-    #: a dataset folder of the source's project and a ``Dataset.mirror`` map. Its rows' outside-owned
-    #: fields then write back through this source (``flow_sdk.datasets.projection``).
-    mirror: Optional[dict] = APIField(default=None, description="Mirror records into a dataset: {dataset, map, by?}")
 
     # ── lifecycle ──
     status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
     #: What SETUP is waiting for, in the user's words. Empty in every other
     #: state. The card renders this verbatim, so it is a sentence, not a code.
     setup_detail: str = APIField(default="", persist=Persist.FALSE)
+    #: The same as data: what SETUP waits on (``SetupNeedSpec``), set by ``verify``. Empty in every other state.
+    setup_needs: list[SetupNeedSpec] = APIField(default_factory=list, persist=Persist.FALSE)
     #: When the last verify ran, whatever its verdict.
     verified_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
@@ -317,13 +320,6 @@ class DataSource(SetupSkippable, Entity):
         if isinstance(data.get("allowed_senders"), (list, tuple)):
             data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
         return data
-
-    @field_validator("mirror", mode="before")
-    @classmethod
-    def _mirror(cls, value: Any) -> Any:
-        from flow_sdk.datasets.projection import check_mirror  # noqa: PLC0415
-
-        return check_mirror(value)
 
     @field_validator("owner", mode="before")
     @classmethod
@@ -631,7 +627,7 @@ class DataSource(SetupSkippable, Entity):
 
         The one constructor a caller should reach for, because picking the class
         by hand is picking the addressing rule by hand: ``EmailMessageSpec``
-        addresses the author, ``SlackMessageSpec`` addresses the channel, and a
+        addresses the author, a ``ChannelMessageSpec`` addresses the channel, and a
         caller that guesses wrong on a Slack source sends the reply as a DM to
         the person instead of posting it where everyone is reading. The driver
         already knows which rule is its own (``outbound_spec``); ask it.
@@ -1174,6 +1170,12 @@ class DataSource(SetupSkippable, Entity):
         stype = self._driver()
         if stype is not None and stype.has_setup:
             self.status = SourceStatus.SETUP.value
+            need = _declared_sign_in(stype)
+            if need is not None and not self.setup_needs:
+                # What it reads through is known before anything is verified: say it now, so the strip names
+                # the sign-in from the first moment, not "Setup required" until someone presses Verify.
+                self.setup_needs = [need]
+                self.setup_detail = self.setup_detail or need.detail
             if not self.setup_detail:
                 self.setup_detail = "Finish setup, then press Verify."
         else:
@@ -1467,8 +1469,8 @@ class DataSource(SetupSkippable, Entity):
         record here is current without waiting for the next sync, whose echo lands on the same row
         (same origin). Answers ``{item_id, origin, status}``, plus ``warnings`` (``[str]``) when the
         driver made the record but not all of it (``SourceItemSpec.warnings``)."""
+        from flow_sdk.ingest.envelope_lift import envelope_of  # noqa: PLC0415
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
-        from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
 
         report = await ingest_items([envelope_of(written, data_source_id=str(self.id), provider=self.provider)])
         answer = {"item_id": report.outcomes[0].entity_id, "origin": written.origin.model_dump(mode="json"), "status": status}
@@ -1568,7 +1570,12 @@ class DataSource(SetupSkippable, Entity):
     async def items_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
 
-        Body: ``{"limit"?}`` (default 20)."""
+        Body: ``{"limit"?}`` (default 20). Item bodies are ``PREVIEW_CHARS``-character previews;
+        ``body_truncated`` and ``full_body_length`` describe that preview, not storage.
+        ``name`` is complete, including original ellipses and newlines. GET each item's
+        ``full_record_path`` on this worker's local instance for its complete stored body;
+        use instance discovery and the cookie-gated transport (see ``flow source items --help``),
+        not the hub or a host from legacy CLI configuration."""
         body = await self._body()
         return ApiSuccessResponse(data={"items": await self.recent_items(int(body.get("limit") or 20))})
 
@@ -1582,22 +1589,40 @@ class DataSource(SetupSkippable, Entity):
             limit=max(limit, 0),
         )) or []
         fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
-        return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows]
+        items = []
+        for row in rows:
+            body = str(getattr(row, "body", "") or "")
+            items.append({
+                **{field: getattr(row, field, None) for field in fields},
+                "body": body[:PREVIEW_CHARS], "body_truncated": len(body) > PREVIEW_CHARS, "full_body_length": len(body),
+                "full_record_path": f"/api/v1/graph/source_item/{row.id}",
+            })
+        return items
 
     @core_action.post(action_name="sync")
     async def sync_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
         this waits for the cycle: it is what a person or an agent runs to see a source work. Like
         ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
-        credential means to try again."""
+        credential means to try again.
+
+        A source that is not runnable — waiting on a setup step, or paused by a person — is not fetched: the
+        answer says why (``poll_refusal``, the one author of that sentence) with ``ran: false``. Whatever the
+        family (messages, files, records), a person's Pull answers the same way."""
         await self._make_due()
         await self.save_runtime()
+        if self.status in (SourceStatus.SETUP.value, SourceStatus.DISABLED.value):
+            return ApiSuccessResponse(data={
+                "ran": False, "created": 0, "updated": 0, "unchanged": 0, "removed": 0,
+                "health": self.health, "status": self.status, "error_detail": None, "detail": self.poll_refusal(),
+            })
         report = await self.sync()
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
             "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
             "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
+            "ran": True, "detail": "",
         })
 
     @core_action.post(action_name="set_enabled")
@@ -1639,7 +1664,9 @@ class DataSource(SetupSkippable, Entity):
         project = await self.setup_project()
         if project is None:
             return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
-        return ApiSuccessResponse(data={"run": await start_setup(project, root=str(self.typeid))})
+        # The app's Connect button signs the person in; the run only checks a connection (``connect_here``).
+        run = await start_setup(project, root=str(self.typeid), connect_here=False)
+        return ApiSuccessResponse(data={"run": run})
 
     @core_action.get(action_name="setup-run")
     async def setup_run_action(self) -> ApiResponse:
@@ -2171,15 +2198,16 @@ class DataSource(SetupSkippable, Entity):
         if driver is None:
             return None
 
-        connection = await self._verify_connection(driver)
-        if connection is not None:
+        need = await self._verify_connection(driver)
+        if need is not None:
             self.status = SourceStatus.SETUP.value
-            self.setup_detail = connection
+            self.setup_detail = need.detail
+            self.setup_needs = [need]
             self.verified_at = datetime.now(timezone.utc)
             await self.save_runtime()
             return {
-                "ready": False, "layer": "connection", "detail": connection,
-                "status": self.status,
+                "ready": False, "layer": "connection", "detail": need.detail,
+                "status": self.status, "needs": [need.model_dump()],
             }
 
         verdict = await self._verify_setup(driver)
@@ -2191,12 +2219,14 @@ class DataSource(SetupSkippable, Entity):
         if verdict.ready:
             self.status = SourceStatus.ACTIVE.value
             self.setup_detail = ""
+            self.setup_needs = []
             # Due on the next tick rather than after a full interval (the user just finished setting it up
             # and is watching), and no longer parked on what this verdict just disproved.
             await self._make_due()
         else:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
+            self.setup_needs = [SetupNeedSpec(kind=NEED_SETUP, detail=verdict.detail)]
         await self.save_runtime()
         return {
             "ready": verdict.ready,
@@ -2222,31 +2252,26 @@ class DataSource(SetupSkippable, Entity):
 
         return DataDriver.loaded(self.provider)
 
-    async def _verify_connection(self, driver) -> Optional[str]:
-        """None when the token works; otherwise why it does not.
+    async def _verify_connection(self, driver) -> Optional[SetupNeedSpec]:
+        """None when the connection this source reads through works; otherwise what it needs.
 
         Uses the same probe the Connections "Test" button runs, so the two can
-        never disagree about whether a provider is reachable. Only a driver that
-        reads through an OAuth connection (``auth.connector``) has a token to
-        probe: a Flow channel on ``slack`` reaches the person through the hub's
-        own app, and their personal Slack connection says nothing about it.
+        never disagree about whether a provider is reachable. The provider probed is
+        the account this source acts as (``connection``), else its driver's
+        ``auth.connector`` — never ``channel``, which names where messages go, not
+        whose token reads them. A Flow channel on ``slack`` reaches the person through
+        the hub's own app and declares no connector, so it has nothing to probe.
         """
         manifest = getattr(driver, "manifest", None)
-        if not (manifest is not None and manifest.auth is not None and manifest.auth.connector):
+        connector = manifest.auth.connector if manifest is not None and manifest.auth is not None else ""
+        provider = str(self.connection or connector or "")
+        if not connector or not provider:
             return None
-        if not self.channel:
-            return None  # nothing to probe against yet
         from flow_sdk.core.oauth.provider_probe import get_probe  # noqa: PLC0415
 
-        if get_probe(self.channel) is None:
+        if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        from flow_sdk.app.actions.oauth_action import _handle_test  # noqa: PLC0415
-
-        result = await _handle_test(self.channel)
-        data = getattr(result, "data", None) or {}
-        if data.get("ok") is False:
-            return str(data.get("detail") or "the stored credential was refused")
-        return None
+        return await connection_need(provider)
 
     async def _verify_setup(self, stype):
         """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself
@@ -2334,6 +2359,39 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
 #: an adopted row.
 _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
+
+
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+    """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
+    return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
+                         detail=detail or f"Needs {title} sign-in")
+
+
+def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
+    """The sign-in a driver reads through (its ``auth.connector``), as the need a new source starts with."""
+    manifest = getattr(driver, "manifest", None)
+    connector = manifest.auth.connector if manifest is not None and manifest.auth is not None else ""
+    if not connector:
+        return None
+    from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+
+
+async def connection_need(provider: str) -> Optional[SetupNeedSpec]:
+    """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
+    otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
+    from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_probe import connection_answer  # noqa: PLC0415
+
+    data = await connection_answer(provider)
+    if data.get("ok") is not False:
+        return None
+    code = str(data.get("code") or "")
+    state = "missing" if code == "missing_token" else (code or "refused")
+    title = await _provider_title(provider)
+    detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
+    return _sign_in_need(provider, title, state, detail)
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:

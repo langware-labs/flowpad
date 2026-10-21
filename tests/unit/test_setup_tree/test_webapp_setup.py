@@ -33,7 +33,7 @@ def app(tmp_path, monkeypatch):
     folder = tmp_path / "site"
     folder.mkdir()
     (folder / "index.html").write_text("ok")
-    state = SimpleNamespace(endpoint=None, started=[], rows={}, services={}, by_hand=[])
+    state = SimpleNamespace(endpoint=None, started=[], procs=[], rows={}, services={}, by_hand=[])
 
     def make(*, install_cmd="", port=None, ports=None, package=False, start_cmd=SERVER, services=(), id="a1",
              install_check="", at=None):
@@ -75,6 +75,7 @@ def app(tmp_path, monkeypatch):
     def start(command, **kw):
         proc, log = real_start(command, **kw)
         state.started.append(proc.pid)
+        state.procs.append(proc)
         return proc, log
 
     def by_hand(port, *, command=None):
@@ -96,16 +97,20 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(dev_server, "log_dir", lambda: tmp_path / "logs")
     state.make, state.folder, state.by_hand_start = make, folder, by_hand
     yield state
-    # Whatever a test left serving from its folders goes, however it was started. By what listens
-    # there now, not by the pids recorded at start: a pid outlives its process and is handed out again.
-    for proc in state.by_hand:
+    # Every process this test started goes, through the handle it holds: a live handle keeps its pid from
+    # being handed to another process, so this never ends a stranger.
+    for proc in [*state.procs, *state.by_hand]:
         if proc.poll() is None:
             dev_server.stop_group(proc.pid)
         proc.wait()
-    home = os.path.realpath(tmp_path)
-    webapp_setup.app_ports.stop(
-        [one for one in webapp_setup.app_ports.listeners() if webapp_setup.app_ports._inside(one.cwd, home)]
-    )
+    # A server a start handed off to (it outlives its start command) is found by where it serves. Not on
+    # Windows: reading the whole process table there right after killing hung the cleanup for minutes on
+    # the test VM, and such a test stops what it started itself.
+    if sys.platform != "win32":
+        home = os.path.realpath(tmp_path)
+        webapp_setup.app_ports.stop(
+            [one for one in webapp_setup.app_ports.listeners() if webapp_setup.app_ports._inside(one.cwd, home)]
+        )
 
 
 def _free() -> int:
@@ -634,6 +639,21 @@ async def test_the_ports_of_an_app_are_listed_declared_and_live(app):
     api, page = await webapp_setup.ports("a1")
     assert (page["state"], page["port"], page["required"]) == ("running", port, True) and page["pid"]
     assert (api["state"], api["port"]) == ("running", app.services["api"])
+
+
+@pytest.mark.asyncio
+async def test_a_page_and_a_service_started_by_one_command_each_keep_their_port(app):
+    """Both ``python -m http.server {port}`` in one folder: the command cannot tell them apart, the ports
+    they declare do. Found on a real cloud box: the page's server was taken for the API on a wrong port,
+    so a restart never brought the API back."""
+    page, api = _free(), _free()
+    app.make(ports={"port": page}, services=[_service(api, command=SERVER)])
+    for _ in range(2):
+        assert (await webapp_setup.step("a1", "start", check=False)).ok
+        rows = {row["process"]: (row["state"], row["port"]) for row in await webapp_setup.ports("a1")}
+        assert rows == {"page": ("running", page), "api": ("running", api)}
+        assert (await webapp_setup.stop("a1")).ok
+        assert not dev_server.port_open(page) and not dev_server.port_open(api)
 
 
 @pytest.mark.asyncio

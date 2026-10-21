@@ -6,9 +6,9 @@ description: >-
   process, workspace) so other actions compose without needing an id; creates and
   indexes records (tasks, skills, agents, workflows); searches local assets via FTS;
   restarts the calling agentic-process; reads messages the user received ("X sent me
-  a message") and sends messages with attachments into a conversation. Use for "the current X" / "this X", "create a task / skill / agent",
+  a message") and sends messages with attachments into a conversation, or starts one with a contact. Use for "the current X" / "this X", "create a task / skill / agent",
   "find or look up X", "restart this session", "what did X send me", or "send X to my
-  conversation with Y", and finding Flow SDK guidance for channel webhooks and deployment routing.
+  conversation with Y", and finding Flow SDK guidance for FlowCall (calls, outcomes, returned values, and composition), channel webhooks and deployment routing.
   NOT for showing or opening something in the UI (flowpad-navigation), building a
   web app (web-app-builder), a slide deck (decker), building an agent
   (agent-builder), or data schemas, datasets and their rows (data-management).
@@ -111,6 +111,14 @@ Each value is a TypeId string (`<type>-<id>`) or `null` if not set. The exit cod
 
 If the matched key is `null`, tell the user that nothing is set for that scope — do not guess or fall back to a different entity.
 
+## FlowCall guidance
+
+For **FlowCall**, **ReturnedValue**, or how work calls return values and compose,
+read the [shipped FlowCall guide](../../../docs/Getting%20Started/FlowCall.md).
+It explains the mechanism without a development checkout and points to the
+canonical source docs when a checkout is available. This is documentation
+lookup, not permission to execute an operation.
+
 ## Flow SDK channel and webhook guidance
 
 For SDK questions about connecting a messaging channel to an agent, hub webhook claims,
@@ -122,8 +130,8 @@ creating the agent remains `agent-builder`, and connecting its source remains
 ## Keeping data in step with a system outside Flowpad
 
 "Keep my CRM deals / tickets / tasks here", "sync X with Y", "mirror ..." is two skills, in this
-order: `connect-data-source` connects (or writes) the source, then `data-management` declares the
-dataset it mirrors into and which fields are the outside system's. Nothing here is a script of
+order: `connect-data-source` connects (or writes) the driver, then `data-management` gives the
+dataset a `location` in that system and marks which fields are the outside system's. Nothing here is a script of
 your own — do not write a sync loop, an API client or a state file.
 
 ## Other actions

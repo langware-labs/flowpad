@@ -1,18 +1,48 @@
-import { createViewerContext } from '@sdk';
+import { createViewerContext, isTypeId, TypeId } from '@sdk';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useEffect, useMemo, useRef } from 'react';
 
-/** One value of a kind, drawn in place by that kind's data viewer (the generic one else).
+/** One value of a kind, drawn in place by that kind's value viewer (the generic one else).
  *  Redrawn only when the value's CONTENT changes — a refetch that hands an equal object keeps the
- *  viewer (and whatever the person opened in it) as it is. */
-export function KindValue({ kind, value, testId }: { kind: string; value: unknown; testId?: string }) {
+ *  viewer (and whatever the person opened in it) as it is. `within` is the asset that keeps the
+ *  value (a typeid): references inside it (`<kind>.id.<uuid>`) are read from there. An entity a
+ *  viewer links to opens through the app's navigation. */
+export function KindValue({ kind, value, within, testId }: { kind: string; value: unknown; within?: string; testId?: string }) {
   const host = useRef<HTMLDivElement>(null);
-  const ctx = useMemo(() => createViewerContext(), []);
+  const { navigation } = useDockNavigation();
+  const nav = useRef(navigation);
+  nav.current = navigation;   // the latest, without redrawing the viewer on every navigation
+  const ctx = useMemo(
+    () =>
+      createViewerContext({
+        within,
+        navigate: (typeid) => {
+          if (!isTypeId(typeid)) return;
+          const tid = new TypeId(typeid);
+          const pointer = buildDockPointer({ type: tid.type, id: tid.id }, undefined);
+          if (pointer) nav.current.openDock(pointer);
+        },
+      }),
+    [within],
+  );
   const content = useMemo(() => JSON.stringify(value), [value]);
   useEffect(() => {
-    if (!host.current) return;
+    const el = host.current;
+    if (!el) return;
+    // The render is async: draw into a fresh slot and show it only if this run is still the current
+    // one — a second run (a re-render, StrictMode's double effect) must replace the view, not add to it.
+    let current = true;
+    const slot = document.createElement('div');
     void ctx
-      .render(host.current, { kind, value: JSON.parse(content) })
+      .render(slot, { kind, value: JSON.parse(content) })
+      .then(() => {
+        if (current) el.replaceChildren(slot);
+      })
       .catch((err: unknown) => console.error('[kind-value] cannot show', kind, err));
+    return () => {
+      current = false;
+    };
   }, [ctx, kind, content]);
   return <div ref={host} data-testid={testId} />;
 }

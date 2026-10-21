@@ -1,5 +1,5 @@
 import React from 'react';
-import { FolderOpen, GitBranch, PackageCheck, PackagePlus } from 'lucide-react';
+import { FolderOpen, GitBranch, HardDrive, PackageCheck, PackagePlus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiButton } from '@src/components/wiki-tip';
@@ -35,9 +35,19 @@ export interface DependencySourceInfo {
  * "Folder on this computer" deliberately avoids "PC": on macOS and Linux that
  * word reads as Windows-only. "Computer" covers all three and needs no gloss.
  */
-export function useDependencySources(): DependencySourceInfo[] {
+/** Which sources make sense for a kind: a local package lives only on this
+ *  device, so a git repo (meant to be fetched wherever the project opens) has
+ *  no place there; a required/optional one travels with the project, so a
+ *  folder that exists only on this computer can't be one. */
+const SOURCES_BY_KIND: Record<DependencyKind, readonly DependencySource[]> = {
+  local: ['project', 'browse'],
+  required: ['project', 'git'],
+  optional: ['project', 'git'],
+};
+
+export function useDependencySources(kind: DependencyKind): DependencySourceInfo[] {
   const { t } = useLingui();
-  return [
+  const all: DependencySourceInfo[] = [
     {
       key: 'project',
       Icon: iconForType('project'),
@@ -63,6 +73,7 @@ export function useDependencySources(): DependencySourceInfo[] {
       testId: 'add-dependency-git',
     },
   ];
+  return all.filter((source) => SOURCES_BY_KIND[kind].includes(source.key));
 }
 
 /**
@@ -92,18 +103,25 @@ export function DependencyKindChips({
     buttonLabel: string;
   }[] = [
     {
+      value: 'local',
+      icon: <HardDrive className="h-3 w-3" />,
+      label: <Trans>Local</Trans>,
+      tip: t`Only on this device. It is never saved in the project or committed, and the project doesn't say it exists.`,
+      buttonLabel: t`What is a local package?`,
+    },
+    {
       value: 'required',
       icon: <PackageCheck className="h-3 w-3" />,
       label: <Trans>Required</Trans>,
       tip: t`Fetched automatically wherever this project opens — Flowpad warns when it can't be.`,
-      buttonLabel: t`What is a required dependency?`,
+      buttonLabel: t`What is a required package?`,
     },
     {
       value: 'optional',
       icon: <PackagePlus className="h-3 w-3" />,
       label: <Trans>Optional</Trans>,
       tip: t`Listed with the project, but fetched only when someone clicks Install.`,
-      buttonLabel: t`What is an optional dependency?`,
+      buttonLabel: t`What is an optional package?`,
     },
   ];
 

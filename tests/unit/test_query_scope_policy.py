@@ -41,6 +41,7 @@ ALLOWLIST: dict[str, int] = {
     "builtin/project.py": 7,
     "builtin/prompt_helpers.py": 1,
     "builtin/shell.py": 2,
+    "builtin/share_target.py": 1,  # projects_checking_out: which of this instance's projects is a checkout of a shared repo
     "builtin/trigger.py": 1,  # Trigger.every(): the automations screen and the boot sweep of stale rows
     "builtin/worker_history.py": 2,
     "core/capabilities/summary.py": 1,
@@ -48,6 +49,7 @@ ALLOWLIST: dict[str, int] = {
     "fs_store/indexer/roots.py": 1,
     "fs_store/operations/all_projects.py": 2,
     "graph_workflow_manager/manager.py": 2,
+    "icons/registry.py": 1,  # IconRegistry.sync_indexed: an icon pack of ANY scope serves everywhere
     "system_projects/flowpad_assistant/agentic-assets/data_driver/helpdesk/source.py": 1,
     "migrations/migration_2026_09_process_persona_backfill.py": 1,
     "server/routes/assets.py": 1,

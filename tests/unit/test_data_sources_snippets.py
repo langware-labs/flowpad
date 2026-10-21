@@ -257,9 +257,18 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     """
     from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+    from flow_sdk.core.oauth import provider_probe
     from flow_sdk.sources.credentials import ResolvedSecrets
 
     drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
+    # Verify asks the machine's sign-in for the source's connector; the two runs answer it as the
+    # credentials they double do.
+    signed_in = {"ok": False, "code": "missing_token"}
+
+    async def connection_answer(_provider):
+        return dict(signed_in)
+
+    monkeypatch.setattr(provider_probe, "connection_answer", connection_answer)
     cache, dest = tmp_path / "cache", tmp_path / "dest"
 
     def names(root):
@@ -278,6 +287,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
         await ns["src"].delete()
 
         monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
+        signed_in.update(ok=True, code="")
         ns = await _section("10.", dict(env))
         assert ns["verdict"]["ready"] is True
         assert ns["src"].status == "active"

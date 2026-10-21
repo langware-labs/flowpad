@@ -109,7 +109,7 @@ async def test_the_read_actions_fetch_the_records_a_question_leads_to(tmp_path, 
 
     root, ns, _, _ = _touches(tmp_path)
     ds = Dataset(id=str(uuid.uuid4()), name="touches-http", asset_ref=str(root / "agentic-assets/dataset/touches-http"),
-                 data_layout="io_folder", spec={"examples": [{"input": f"--{ns}--.crm.touch"}]})
+                 data_layout="io_folder", spec={"rows": [{"input": f"--{ns}--.crm.touch"}]})
     await ds.save()
     item = "0b7c8a2e-1f0d-4e5a-9c3b-2d4e6f8a1b3c"
     await ds.put_many([{"key": "r1", "input": {"metric": "reply", "mail": f"ingest.source_item.id.{item}"}}, {"key": "s1", "input": {"metric": "sent"}}])
@@ -153,7 +153,7 @@ async def test_check_of_a_keyed_row_is_what_put_would_do(crm):
     assert leads.check({"key": "dana", "input": {"name": "Dana L", "past": [], "notes": []}}) == []
     assert leads.check({"key": "new-one", "input": {"name": "New", "past": [], "notes": []}}) == []    # a key that is free
     assert "cannot be a row key" in leads.check({"key": "Bad Key", "input": {"name": "x", "past": [], "notes": []}})[0]
-    assert leads.example("dana")["input"]["name"] == "Dana"                     # nothing was written
+    assert leads.row("dana")["input"]["name"] == "Dana"                     # nothing was written
 
 
 async def test_check_sees_the_rules_of_the_rows_that_reach_this_one(tmp_path):

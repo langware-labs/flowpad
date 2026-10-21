@@ -213,6 +213,35 @@ async def test_the_supervisor_makes_the_chat_of_a_running_deployment(worker, use
         await agent.delete()
 
 
+async def test_a_deployment_starts_when_another_placement_of_its_agent_holds_a_chat_channel(worker, user):
+    """FLOWPAD-2258: the agent's other placement on this machine already holds ``<agent> chat``. That channel
+    is not this deployment's to adopt, so it gets a chat channel of its own — and so starts."""
+    from flow_sdk.builtin.agent_serve import deployment_chat_driver
+    from flow_sdk.builtin.deployment import Deployment
+
+    agent = Agent(name=f"two-places-{time.monotonic_ns()}", worker_type="claude")
+    await agent.save()
+    try:
+        other = Deployment(name="other-place", parent_type_id=str(agent.typeid),
+                           target={"provider": "e2b", "scope": "machine", "location": "other"})
+        await other.save()
+        driver = deployment_chat_driver()
+        held = driver.create_source(driver.create_config(deployment_id=other.id), name=f"{agent.name} chat",
+                                    owner=agent.typeid, answer_place=other.id)
+        await held.save()
+
+        deployment = await agent.deploy("local")
+        deployment.serving = True
+        await deployment.save()
+        await AgentServer(run_processes=False).reconcile()
+
+        chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
+        assert chat is not None and chat.backend.data_source_id != str(held.id)
+        assert (await DataSource.get_by_id(held.id)).answer_place == str(other.id)
+    finally:
+        await agent.delete()
+
+
 async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_client, tmp_path):
     """The hub names the agent's placement; the box answers with its chat — the project's web placement is untouched."""
     from flow_sdk.builtin.project import Project

@@ -32,10 +32,42 @@ in the same viewer components:
    `agentic_process.py:2084-2146`; frontend routing
    `vibe-workspace.tsx:369-524`.
 
-Viewer **dispatch is purely frontend**. The backend `TypeInfo` registry
+Entity and file viewer **dispatch is frontend**: the backend `TypeInfo` registry
 carries icon (`TypeInfo.icon`, consumed by `iconForType`), `browseable_by`
 view-mode, and filesystem-shape hints (`main_layout`/`main_file`/`main_ext`)
-— but **no viewer/editor hint**.
+— but no viewer hint. Two exceptions are ranked by the backend: a dataset's
+editor (`GET /api/v1/editors/<typeid>`, [datasets](data-management/datasets.md#editors))
+and a value viewer (below).
+
+### Viewers for a kind
+
+A **value viewer** shows one value (`single`) or a list (`collection`) of a kind. It is a webapp
+asset with `kind: application.web.viewer` whose `views` list `{kind, shows: ["single"|"collection", …]}`
+(`shows` defaults to `["single"]`; kind `*` = any kind). Its ES module exports
+`viewers: {[kind]: {single?, collection?}}` and optionally `contract` (the shipped generic one is the
+`data-viewer` asset).
+
+**Ranking — backend.** `GET /api/v1/viewers/<kind>?shape=single|collection&within=<typeid>`
+(`flow_sdk/server/routes/kinds.py` → `viewers_for` in `flow_sdk/builtin/faas/editors.py`). A viewer
+qualifies only when a `views` entry for that shape names the kind, an ontology ancestor of it, or
+`*`; the most specific (longest) matching declared kind is the one it answers under. Tier 0: it is
+nested in the `within` asset (still only if it qualifies); tier 1: a declared kind covers it; tier 2:
+only `*`. Sorted by tier, then name. Skipped: a viewer whose folder is gone or that no static proxy
+route serves. (Editors differ: nesting alone makes an editor tier 0, and `edits` matches the subject's
+declared kind, then its type.)
+
+**Loading — frontend.** `createViewerContext` (`ts_sdk/src/viewers/registry.ts`) walks the choices in
+order, imports each module, and skips one whose `contract` is set and is not `VIEWER_CONTRACT`
+(warning in the console); the first with a viewer for the shape draws. None → the generic viewer.
+A failed lookup or import, or a viewer that throws on mount, falls back to the generic viewer with a
+visible warning. A viewer draws a nested field of another kind with `ctx.render` / `ctx.renderCollection`.
+
+**Events** (`on(event, detail)`, `ts_sdk/src/viewers/contract.ts`): single — `slice`, `cause` (strings),
+`verdict`; collection — `select` (the item's index into `items`), `cause`.
+
+**Values by reference.** A value that is `<kind>.id.<uuid>` is read from the `within` asset
+(`GET /api/v1/values/<ref>?within=<typeid>`) and drawn as the value it names; one nothing keeps shows
+`not found: <ref>`. A `.value.json` file opens in `ValueViewer`, which uses the same registry (§2).
 
 ### Terminal links
 
@@ -73,6 +105,7 @@ same way on every surface.
 | Extension | AssetEditor | Component |
 |---|---|---|
 | `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
+| `.value.json`, `value/<name>/value.json` (`VALUE_PATH_RE`, checked after `.mcp.html`) | VALUE | `ValueViewer` (the kind's value viewer, generic else) |
 | `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
 | `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url, `allow-same-origin`) |
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
@@ -96,7 +129,7 @@ overlay rather than navigation and no caller mounts its own.
 
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).
-Whiteboards have **no** `.excalidraw` extension handling — they are
+Charts have **no** `.excalidraw` extension handling — they are
 folder-backed entities opened by TypeId. Folders are browsed
 (`ViewType.ASSETS` folder/fs pointers), never "opened". Entities always win
 over extensions: a path that resolves to an entity opens its type's editor.
@@ -110,7 +143,7 @@ of (1), pinned to it by a shared fixture rather than by hand (see [§9](#9-deep-
 1. **`EDITOR_TYPES` / `TYPE_TO_EDITOR`** (`ts_sdk/src/models/asset-editor.ts:24-47`)
    — record type → AssetEditor. Editors: code, markdown (markdown, claude_md,
    claude_memory, claude_rules, command, plan, prompt), agent, skill, task,
-   workflow, whiteboard, agent_trace, dynamic_workflow, usage_report,
+   workflow, chart, agent_trace, dynamic_workflow, usage_report,
    asset_cleanup_report, mcp. Rendered by `AssetEditorRouter`.
 2. **Per-entity `dockPointer` getters** (SDK) — `APIEntity.dockPointer`
    default is `ViewType.HOME` (`APIEntity.ts:481`); asset types override via
@@ -150,7 +183,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
   by a served app's `initSdk`) folds that into the guest's own `document.hidden`
   / `visibilityState` and fires `visibilitychange`, so a parked app's timers and
   polls rest like a hidden page's.
-- `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
+- `flow app open` → a project app (`webapp.json`) comes up through `bring_up` (validate → load → setup → fix, `flow_sdk/core/setup/load.py`); a folder with no `webapp.json` is discovered/started ad hoc → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
 - `flow artifact file|entity|webapp` registers a deliverable as an `Artifact`

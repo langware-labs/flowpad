@@ -2,7 +2,7 @@
  * Record search — the full-text index over Flowpad's records (tasks, skills, agents, docs,
  * sessions, source items…): `GET /api/v1/search`, the call `flow record search` makes and
  * `Entity.search` answers in Python. Dataset ROWS are not in this index (a dataset is one record);
- * a row's text is found with `dataset.rows({q})`.
+ * a row's text is found with `dataset.query({q})`.
  */
 import apiClient from '../client';
 

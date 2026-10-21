@@ -20,6 +20,7 @@ from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.sources.http import next_link
 
 logger = logging.getLogger(__name__)
 
@@ -125,24 +126,10 @@ def _safe_slug(value: str | None) -> str | None:
 
 
 def _parse_next_page_from_link(link_header: str | None) -> int | None:
-    """Parse GitHub's RFC 5988 Link header to extract the next page number.
-
-    Example: ``<https://api.github.com/user/repos?page=2>; rel="next", <…?page=5>; rel="last"``
-    → returns 2 for "next" presence; returns None if no "next" link.
-    """
-    if not link_header:
-        return None
-    for chunk in link_header.split(","):
-        if 'rel="next"' not in chunk:
-            continue
-        # Extract the page number from the URL inside <…>
-        m = re.search(r"[?&]page=(\d+)", chunk)
-        if m:
-            try:
-                return int(m.group(1))
-            except ValueError:
-                return None
-    return None
+    """The page number of GitHub's ``rel="next"`` link, or ``None`` when there is no next page."""
+    url = next_link({"link": link_header or ""})
+    m = re.search(r"[?&]page=(\d+)", url) if url else None
+    return int(m.group(1)) if m else None
 
 
 def _classify_github_error(response) -> ApiResponse | None:

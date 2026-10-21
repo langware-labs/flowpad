@@ -85,6 +85,9 @@ export interface TabStripItem {
   isDisabled?: boolean;
   hasError?: boolean;
   statusReason?: string;
+  /** Set on a GUEST tab — its content belongs to another project than the tab.
+   *  The chip gets a green underline and this line in its tip. */
+  guestNote?: string;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
   /** What this chip DISPLAYS while standing in for something else — the ancestor
@@ -171,6 +174,10 @@ const CHIP_MAX_PX = 200;
 const CHIP_MIN_PX = 40;
 const COMPACT_BELOW_PX = 110;
 const ICON_ONLY_BELOW_PX = 64;
+/** Hover time before a tab's icon turns into its favorite star, so a plain tab click never lands on the star. 0 = immediate. */
+const TAB_STAR_HOVER_DELAY_MS = 1500;
+/** Visibility flips after the hover delay; leaving the tab flips it back at once. */
+const TAB_STAR_SWAP = 'transition-[visibility] duration-0 group-hover:[transition-delay:var(--tab-star-delay)]';
 
 export const TabStrip: React.FC<TabStripProps> = ({
   items,
@@ -521,10 +528,17 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {...(item.dataAttributes ?? {})}
         data-active={isActive ? 'true' : undefined}
       >
-        <span className="relative inline-flex shrink-0 items-center justify-center">
-          <span className={`inline-flex ${showStar ? 'group-hover:invisible' : ''}`}>{item.standsFor?.icon ?? item.icon}</span>
+        <span
+          className="relative inline-flex shrink-0 items-center justify-center"
+          style={{ '--tab-star-delay': `${TAB_STAR_HOVER_DELAY_MS}ms` } as React.CSSProperties}
+        >
+          <span className={`inline-flex ${showStar ? `${TAB_STAR_SWAP} group-hover:invisible` : ''}`}>
+            {item.standsFor?.icon ?? item.icon}
+          </span>
           {item.favorite && showStar && (
-            <span className="invisible absolute inset-0 flex items-center justify-center group-hover:visible">
+            <span
+              className={`invisible absolute inset-0 flex items-center justify-center ${TAB_STAR_SWAP} group-hover:visible`}
+            >
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
@@ -565,6 +579,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
         )}
 
         {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, showPopout)}
+        {item.guestNote && (
+          <span
+            aria-hidden
+            data-testid="tab-guest-underline"
+            className="pointer-events-none absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-emerald-500"
+          />
+        )}
       </div>
     );
 
@@ -603,6 +624,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 {displayTitle && (
                   <div className="px-3 py-1.5">
                     <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'font-normal'} />
+                    {item.guestNote && (
+                      <p className="text-[11px] text-emerald-500" data-testid="tab-guest-note">
+                        {item.guestNote}
+                      </p>
+                    )}
                   </div>
                 )}
                 {/* A body may turn out empty once it has loaded: no divider then. */}

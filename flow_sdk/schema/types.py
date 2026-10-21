@@ -114,6 +114,8 @@ class EntityType(StrEnum):
     # codex_project=True provenance flag. Kept for backward compatibility.
     CODEX_PROJECT = "codex_project"
     COPILOT_SESSION = "copilot_session"
+    OPENCODE_SESSION = "opencode_session"
+    DEEPAGENTS_SESSION = "deepagents_session"
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"
     TRIGGER_LOG = "trigger_log"
@@ -128,7 +130,8 @@ class EntityType(StrEnum):
     PROMPT = "prompt"
     PROMPT_COMPLETION = "prompt_completion"
     CONVERSATION = "conversation"
-    WHITEBOARD = "whiteboard"
+    CHART = "chart"
+    ICON_PACK = "icon_pack"
     AGENT_TRACE = "agent_trace"
     DYNAMIC_WORKFLOW = "dynamic_workflow"
     # A Claude Code workflow *run* — the provider's wf_<runId>.json journal,
@@ -146,6 +149,9 @@ class EntityType(StrEnum):
     # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)
     # discovered anywhere in a project, rendered in a grid editor.
     SPREADSHEET = "spreadsheet"
+    # A read-only document file (.docx / .txt) inside a docs folder — listed with
+    # the markdown Documents and opened in a read-only preview.
+    DOCUMENT_FILE = "document_file"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     # A diagnosis someone ELSE runs and writes into on the hub, by id, with no login
     # (``flow diagnose <id>``). Subclass of FLOWPAD_DIAGNOSIS — see builtin/diagnosis_request.py.

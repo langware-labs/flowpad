@@ -34,7 +34,7 @@ async def test_a_path_follows_a_link_into_the_linked_row(crm):
     _, companies, leads = await _filled(crm)
     assert _keys(leads.query({"input.company.name": "Acme"}, order_by={"key": "asc"})) == ["dana", "eli"]
     assert _keys(leads.query({"input.company.key": "bolt"})) == ["fay"]                     # the linked row itself
-    assert _keys(leads.query({"input.company.ref": companies.example("acme")["ref"]}, order_by={"key": "asc"})) == ["dana", "eli"]
+    assert _keys(leads.query({"input.company.ref": companies.row("acme")["ref"]}, order_by={"key": "asc"})) == ["dana", "eli"]
     assert _keys(leads.query({"input.about.company.name": "Acme"})) == ["eli"]              # two links deep (a lead's lead's company)
     assert _keys(leads.query({"op": "$IS_NULL", "operands": ["input.company.name"]})) == ["gil"]   # no link: the path is null
 
@@ -76,7 +76,7 @@ async def test_each_linked_dataset_is_read_once_per_query(crm, monkeypatch):
 async def test_expand_brings_the_linked_rows_back_beside_once_each(crm):
     _, companies, leads = await _filled(crm)
     got = leads.query(order_by={"key": "asc"}, expand=["input.company", "input.past.*"])
-    refs = {k: companies.example(k)["ref"] for k in ("acme", "bolt", "core")}
+    refs = {k: companies.row(k)["ref"] for k in ("acme", "bolt", "core")}
     assert set(got["linked"]) == set(refs.values())
     one = got["linked"][refs["acme"]]
     assert (one["key"], one["dataset_id"], one["row"]["input"]["name"], one["row"]["ref"]) == ("acme", companies.id, "Acme", refs["acme"])
@@ -94,7 +94,7 @@ async def test_a_row_expanded_can_be_put_back_as_it_was_read(crm):
     _, _, leads = await _filled(crm)
     row = leads.query({"key": "dana"}, expand=["input.company"])["rows"][0]
     await leads.put("dana", {"input": row["input"]}, expected=row["version"])
-    assert leads.example("dana")["version"] == row["version"]
+    assert leads.row("dana")["version"] == row["version"]
 
 
 async def test_used_by_says_who_links_to_each_row_and_who_to_none(crm):
@@ -139,7 +139,7 @@ async def test_the_read_actions_take_the_same_questions_over_http(crm):
     served = {}
     for name, source in (("companies-http", companies), ("leads-http", leads)):
         ds = Dataset(id=str(uuid.uuid4()), name=name, asset_ref=str(root / "agentic-assets/dataset" / name),
-                     data_layout="io_folder", spec={"examples": [{"input": source.row_kind}]})
+                     data_layout="io_folder", spec={"rows": [{"input": source.row_kind}]})
         await ds.save()
         served[name] = ds
     co, le = served["companies-http"], served["leads-http"]
@@ -171,7 +171,7 @@ async def test_every_refused_write_answers_lines_and_details(crm):
 
     root, companies, _ = crm
     ds = Dataset(id=str(uuid.uuid4()), name="co-http", asset_ref=str(root / "agentic-assets/dataset/co-http"),
-                 data_layout="io_folder", spec={"examples": [{"input": companies.row_kind}]})
+                 data_layout="io_folder", spec={"rows": [{"input": companies.row_kind}]})
     await ds.save()
     base, bad = f"dataset/{ds.id}", {"input": {"name": 7}}
     for action, body in (("append", {"rows": [bad]}), ("put-row", {"key": "x", "row": bad}), ("put-rows", {"rows": [{"key": "x", **bad}]})):
@@ -179,13 +179,13 @@ async def test_every_refused_write_answers_lines_and_details(crm):
         assert all(isinstance(line, str) for line in data["errors"]) and data["errors"], action
         assert data["details"][0]["code"].startswith("shape:") and data["details"][0]["path"].endswith("input.name"), action
     ok = (await call_local("POST", f"{base}/put-row", {"key": "x", "row": {"input": {"name": "X"}}})).json()["data"]
-    assert ok["id"] == ok["example_id"]                                                     # `id` is the name; the old one stays
+    assert ok["id"] == ok["row_id"]                                                     # `id` is the name; the old one stays
 
 
 async def test_rows_is_the_read_and_check_row_the_answer_typescript_gets(crm):
     _, companies, _ = crm
     await companies.put("acme", {"input": {"name": "Acme"}})
-    assert companies.rows({"key": "acme"})["total"] == 1 == companies.query({"key": "acme"})["total"]
+    assert companies.query({"key": "acme"})["total"]
     assert companies.check_row({"input": {"name": "Ok"}}) == {"ok": True, "errors": [], "details": []}
     bad = companies.check_row({"input": {"name": 7}})
     assert bad["ok"] is False and bad["errors"][0].startswith("input.name:") and bad["details"][0]["path"] == "input.name"

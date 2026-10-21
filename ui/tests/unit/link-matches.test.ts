@@ -24,6 +24,16 @@ describe('link matches', () => {
     ]);
   });
 
+  it("drops the label Claude Code glues to an attachment's path, but not a folder named in brackets", () => {
+    expectFileLinks('› [image]/private/tmp/a.png [file]/tmp/b.md', ['/private/tmp/a.png', '/tmp/b.md']);
+    expectFileLinks('app/[slug]/page.tsx [slug]/page.tsx', ['app/[slug]/page.tsx']);
+  });
+
+  it('keeps a bracketed absolute path whole across a space in a folder name', () => {
+    const line = 'Completed the SDK gap list (/Users/alice/Flowpad workspace/marketing/docs/gtm-sdk-gaps.md).';
+    expectFileLinks(line, ['/Users/alice/Flowpad workspace/marketing/docs/gtm-sdk-gaps.md']);
+  });
+
   it('reads quote marks inside a word as part of it, not as quotes that swallow the paths between them', () => {
     const line = "I've written docs/navigation/navigation_medium.md, it isn't committed; the users' 'notes/my a.md' and don't 'x.ts:3'";
     expectFileLinks(line, [

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { chromeEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
@@ -18,9 +19,13 @@ export function NavIconButton({
   testId,
   tag,
   badge,
+  tooltipContent,
+  tooltipDelay,
 }: {
   icon: LucideIcon;
   label: string;
+  tooltipContent?: ReactNode;
+  tooltipDelay?: number;
   onClick: () => void;
   disabled?: boolean;
   /** A small count on the glyph's corner; 0 shows nothing. */
@@ -35,7 +40,7 @@ export function NavIconButton({
   tag?: string;
 }) {
   return (
-    <Tooltip>
+    <Tooltip delayDuration={tooltipDelay}>
       <TooltipTrigger asChild>
         {/* The span keeps the tooltip reachable while the button is disabled —
             a disabled button fires no pointer events of its own. */}
@@ -62,7 +67,7 @@ export function NavIconButton({
         </span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
-        {label}
+        {tooltipContent ?? label}
       </TooltipContent>
     </Tooltip>
   );

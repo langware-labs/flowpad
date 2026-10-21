@@ -133,19 +133,20 @@ def _scanned_only(typeid: str) -> Any:
     return SimpleNamespace(asset_ref=str(asset.path), typeid=typeid)
 
 
-async def hub_project_for(typeid: str) -> Optional[str]:
-    """The id of the hub project that holds ``typeid`` and that this user may read, or None.
+async def hub_asset_location(typeid: str) -> Optional[tuple[str, str]]:
+    """The publisher and relative asset path the current hub makes visible to this user.
     Raises ``HubError`` (its status kept) when the hub cannot answer."""
     from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
-    data = await hub_get_or_raise(BuiltinEntityType.PROJECT, None, action="resolve_typeid", params={"typeid": typeid})
+    data = await hub_get_or_raise(BuiltinEntityType.PROJECT, None, action="published_asset", params={"typeid": typeid})
     data = data.get("data", data) if isinstance(data, dict) else {}
-    return str(data.get("project_id") or "") or None
+    project_id, path = str(data.get("source_project_id") or ""), str(data.get("rel_path") or "")
+    return (project_id, path) if project_id and path else None
 
 
 #: Who asks the hub. A test replaces it; nothing else should.
-hub_lookup: Callable[[str], Awaitable[Optional[str]]] = hub_project_for
+hub_lookup: Callable[[str], Awaitable[Optional[tuple[str, str]]]] = hub_asset_location
 
 #: Why the hub could not give a dependency, by its status — the one table (a hub project named by
 #: location reads it too). 404 is the only definitive "it is not there".
@@ -167,7 +168,7 @@ async def resolve_ref(
     near: Optional[Path] = None,
     rows: Optional[dict] = None,
     fetch: bool = True,
-    fetch_project: Optional[Callable[[str], Awaitable[None]]] = None,
+    fetch_project: Optional[Callable[[str, str], Awaitable[None]]] = None,
 ) -> Resolved:
     """``source`` (an id) resolved: this machine, then — when fetching — the hub, whose project
     holding it ``fetch_project`` brings here; else :class:`NotResolved`."""
@@ -183,13 +184,14 @@ async def resolve_ref(
     typeid = typeid_of(source)
     try:
         # A project IS the thing the hub holds; any other id is looked up for the project holding it.
-        project_id = source.ref_id if asset_type_of(source) == EntityType.PROJECT.value else await hub_lookup(typeid)
+        location = (source.ref_id, ".") if asset_type_of(source) == EntityType.PROJECT.value else await hub_lookup(typeid)
     except HubError as exc:
         status = getattr(exc, "status_code", 0)
         raise NotResolved("not_found" if status == 404 else "unreachable", hub_reason(status)) from exc
-    if not project_id:
+    if not location:
         raise NotResolved("not_found", hub_reason(404))
-    await fetch_project(project_id)
+    project_id, path = location
+    await fetch_project(project_id, path)
     fetched = await resolve_local(source, near=near, rows=rows)
     if fetched is None:
         raise NotResolved("not_found", f"the hub project {project_id} holds no {typeid} on this machine after fetching it")

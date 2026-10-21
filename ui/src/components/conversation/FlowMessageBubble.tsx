@@ -1,4 +1,6 @@
-import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
+import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { openableValue } from './ConversationAutomationChip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
 import type { TaskPeople } from './task-it';
@@ -45,6 +47,7 @@ import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
+import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -68,7 +71,11 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
+import { useOpenGitShare, type OpenShareOutcome } from './asset-review/use-open-git-share';
+import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
+import { PromptCallCard } from './PromptCallCard';
+import type { ProcessCall, ReturnedValue } from '@sdk';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -219,6 +226,8 @@ interface FlowMessageBubbleProps {
   onAutomate?: (fm: FlowMessage) => void;
   /** The session an automation started on this message (`useMessageAutomationSessions`). */
   automationSession?: AgenticProcess | null;
+  /** The session started by hand from this message's ⋮ menu (`useMessageSessions`). */
+  session?: AgenticProcess | null;
   /** Where this message, come in on a channel, is on its way to an answer (`message-lifecycle`). */
   lifecycle?: Lifecycle | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
@@ -233,6 +242,13 @@ interface FlowMessageBubbleProps {
   taskPeople?: TaskPeople;
   /** Start a worker pinned to a message (its ⋮ menu). Omitted → no worker bar (drafts). */
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
+  /** A prompt call riding this message (parsed once by the parent): its answer once the receiver
+   *  replied, and whether it is running on this machine right now. */
+  promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
+  /** The conversation's other participant — the machine a prompt call I send runs on. */
+  callPeerName?: string | null;
+  /** Same sender as the bubble above, moments later — drawn without avatar and name. */
+  continuation?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -262,11 +278,15 @@ export function FlowMessageBubble({
   onTaskIt,
   taskPeople,
   onLaunchWorker,
+  promptCall = null,
+  callPeerName = null,
+  continuation = false,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
   onAutomate,
   automationSession = null,
+  session = null,
   quoted = null,
   onReply,
 }: FlowMessageBubbleProps) {
@@ -720,6 +740,15 @@ export function FlowMessageBubble({
     : [];
   const footer = (
     <>
+      {promptCall && (
+        <PromptCallCard
+          {...promptCall}
+          messageId={messageId}
+          conversationId={fm.conversation_id ?? ''}
+          role={isCurrentUser ? 'sender' : 'recipient'}
+          otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+        />
+      )}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p
@@ -732,6 +761,9 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
+      {session && fm.conversation_id && (
+        <MessageSessionChip session={session} messageId={messageId} conversationId={fm.conversation_id} />
+      )}
     </>
   );
 
@@ -786,6 +818,9 @@ export function FlowMessageBubble({
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
+        messageSession={
+          session ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) } : null
+        }
         taskIt={
           messageTask
             ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask, people: taskPeople }
@@ -798,8 +833,9 @@ export function FlowMessageBubble({
           automationSession
             ? {
                 name: automationSession.name || automationLineage(automationSession)?.name || t`Automation`,
-                status: String(automationSession.status ?? ''),
+                state: automationState(automationSession),
                 onOpen: () => navigation.openDock(DockPointer.forProcessRuns({ run: automationSession.id })),
+                value: openableValue(automationSession, navigation),
               }
             : undefined
         }
@@ -814,7 +850,9 @@ export function FlowMessageBubble({
         onReact={channelTraits?.reacts && fm?.origin ? handleReact : undefined}
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
+        continuation={continuation}
       />
+      <ShareReplyCard fm={fm} isMine={isCurrentUser} onForward={canForward ? () => setForwardOpen(true) : undefined} />
       {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
         <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
@@ -1021,6 +1059,8 @@ export function MessageEntityChip({
   const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const { run: openGitShare } = useOpenGitShare(attachment, projectId);
+  const [openOutcome, setOpenOutcome] = useState<OpenShareOutcome | null>(null);
    
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
   // A project the message staged (its bundle carried it) is an ordinary
@@ -1100,12 +1140,34 @@ export function MessageEntityChip({
   const dialog = attachment && reviewOpen && (
     <AssetReviewDialog
       open={reviewOpen}
-      onClose={() => setReviewOpen(false)}
+      onClose={() => {
+        setReviewOpen(false);
+        setOpenOutcome(null);
+      }}
       attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
       initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
+      initialOutcome={openOutcome}
     />
   );
+  // A git share (or Git + copy) opens in one click, in the right project; a failure
+  // or a question (which project? clone or copy?) opens the review.
+  // A whole project is not a pointer: its review asks where it lands (Clone & Open, a taken name).
+  const gitShare =
+    (attachment?.transfer_mode === 'git' || attachment?.transfer_mode === 'both') &&
+    attachment.asset_type !== 'project' &&
+    !handleFolderPull;
+  const onStagedClick =
+    handleFolderPull ??
+    (gitShare
+      ? async () => {
+          const out = await openGitShare();
+          if (out.error || out.needs) {
+            setOpenOutcome(out);
+            setReviewOpen(true);
+          }
+        }
+      : () => setReviewOpen(true));
   if (state === 'staged') {
     return (
       <>
@@ -1113,7 +1175,8 @@ export function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
+            title={gitShare ? t`Shared by Git — click to open the version that was shared` : undefined}
+            onClick={() => void onStagedClick()}
           />
           {runButton}
         </span>

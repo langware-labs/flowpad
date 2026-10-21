@@ -148,7 +148,7 @@ const STYLES = `
   .items { list-style: none; margin: 0; padding: 0; }
 
   /* The signature: a rail that tracks each item through the pipeline —
-     untouched, promoted to an example, then labelled. The state string is
+     untouched, promoted to a row, then labelled. The state string is
      already on the node for rendering, so the progression costs no extra JS and
      the list is readable at a glance instead of one row at a time. */
   .items li {
@@ -337,22 +337,22 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
   let dataset: any = null;
   let items: any[] = [];
   const inputs = new Map<string, [any, any]>();
-  /** item id → example id, from the dataset's `examples` listing and `promote` replies. */
+  /** item id → row id, from the dataset's `rows` listing and `promote` replies. */
   const promoted = new Map<string, string>();
   const labelled = new Set<string>();
 
-  async function loadExamples() {
+  async function loadRows() {
     promoted.clear();
     labelled.clear();
     if (!dataset) return;
     try {
-      const out = await dataset.listExamples();
-      for (const ex of out.examples ?? []) {
-        if (ex.item_id) promoted.set(ex.item_id, ex.example_id);
-        if (ex.annotated) labelled.add(ex.example_id);
+      const out = await dataset.rowIndex();
+      for (const ex of out.rows ?? []) {
+        if (ex.item_id) promoted.set(ex.item_id, ex.row_id);
+        if (ex.annotated) labelled.add(ex.row_id);
       }
     } catch (error) {
-      console.warn('[source editor] examples listing failed', error);
+      console.warn('[source editor] rows listing failed', error);
     }
   }
 
@@ -462,9 +462,9 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
     if (has) {
       $('dataset-title').textContent = dataset.title || dataset.name;
       $('dataset-shape').textContent = JSON.stringify(dataset.outputShape ?? {});
-      const examples = dataset.num_examples ?? 0;
+      const rows = dataset.num_rows ?? 0;
       $('dataset-counts').textContent =
-        `(${examples} ${examples === 1 ? 'example' : 'examples'} · ${dataset.num_annotated ?? 0} labelled)`;
+        `(${rows} ${rows === 1 ? 'row' : 'rows'} · ${dataset.num_annotated ?? 0} labelled)`;
     } else {
       $('dataset-counts').textContent = '';
       if (!shapeRows.length) addShapeRow('sentiment');
@@ -494,7 +494,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
           // A different dataset means new rows to learn; the same one arriving
           // with fresh counts needs the header, not a full item pass (the item
           // states are unchanged, and `renderItems` no-ops on them anyway).
-          if (changed) await loadExamples();
+          if (changed) await loadRows();
           renderDataset();
         },
       } as any),
@@ -502,7 +502,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
   }
 
   // ── items ──────────────────────────────────────────────────────────────
-  function labelForm(item: any, exampleId: string, li: HTMLElement) {
+  function labelForm(item: any, rowId: string, li: HTMLElement) {
     const box = document.createElement('div');
     box.className = 'label';
     const shape = dataset?.outputShape ?? {};
@@ -527,8 +527,8 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
       const gold: Record<string, unknown> = {};
       for (const [name, [kind, el]] of fields) gold[name] = coerceToKind(kind, el.value.trim());
       try {
-        const out = await dataset.annotate(exampleId, gold);
-        labelled.add(exampleId);
+        const out = await dataset.annotate(rowId, gold);
+        labelled.add(rowId);
         dataset.num_annotated = out.num_annotated; // the action already returns the derived count
         msg.textContent = `labelled (${out.num_annotated} total)`;
         msg.dataset.testid = 'spec-editor-annotated';
@@ -563,9 +563,9 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
    *  comparable string, so a re-render rebuilds a row only when it really changed
    *  (and never under a click or a half-typed label). */
   function itemState(item: any): string {
-    const exampleId = dataset ? promoted.get(item.id) : null;
-    if (!exampleId) return dataset ? 'promote' : 'bare';
-    return `label:${exampleId}:${labelled.has(exampleId)}`;
+    const rowId = dataset ? promoted.get(item.id) : null;
+    if (!rowId) return dataset ? 'promote' : 'bare';
+    return `label:${rowId}:${labelled.has(rowId)}`;
   }
 
   /** Idempotent: nodes are keyed by item id and only the missing parts are
@@ -589,12 +589,12 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
       li.querySelector('.label')?.remove();
       li.querySelector('.tag')?.remove();
       if (state.startsWith('label:')) {
-        const exampleId = promoted.get(item.id)!;
+        const rowId = promoted.get(item.id)!;
         const tag = document.createElement('span');
         tag.className = 'tag';
-        tag.textContent = labelled.has(exampleId) ? 'labelled' : 'example';
+        tag.textContent = labelled.has(rowId) ? 'labelled' : 'row';
         li.querySelector('.item-title')!.append(' ', tag);
-        li.append(labelForm(item, exampleId, li));
+        li.append(labelForm(item, rowId, li));
       } else if (state === 'promote') {
         const actions = document.createElement('div');
         actions.className = 'item-actions';
@@ -602,8 +602,8 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
           btn.disabled = true;
           try {
             const out = await dataset.promote([item.id]);
-            promoted.set(item.id, out.example_ids[0]);
-            dataset.num_examples = out.num_examples; // the action returns the derived count
+            promoted.set(item.id, out.ids[0]);
+            dataset.num_rows = out.num_rows; // the action returns the derived count
             renderDataset();
           } catch (error: any) {
             btn.disabled = false;

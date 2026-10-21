@@ -2,35 +2,53 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
-from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum, ExampleSpec
-from flow_sdk.schema.data_spec.layout import CSV_FILE, EXAMPLES_DIR, dataset_layout_for, is_binary
+from flow_sdk.schema.data_spec.layout import CSV_FILE, ROWS_DIR, is_binary
 
 MANIFEST = DatasetManifestSpec.main_file
 
 
 def dataset_counts(kinds: Iterable[str]) -> dict:
-    """Counts shared by filesystem reads and row refresh adapters."""
+    """``num_rows`` + ``kind_counts`` over row kinds."""
     counts = dict(Counter(kinds))
-    return {"num_examples": sum(counts.values()), "kind_counts": counts}
+    return {"num_rows": sum(counts.values()), "kind_counts": counts}
+
+
+def row_facts(row: Any) -> dict:
+    """A PARSED row as the per-row facts ``derive_counts`` reads — the shape
+    ``FolderLayout.index`` emits for a row without parsing it."""
+    first = row.input[0] if isinstance(row.input, list) and row.input else row.input
+    return {
+        "kind": str(getattr(row.kind, "value", row.kind)),
+        "annotated": getattr(row, "ground_truth", None) is not None,  # THE definition of num_annotated
+        "multi_output": isinstance(row.output, list) and len(row.output) > 1,
+        "binary_input": is_binary(first),
+    }
+
+
+def derive_counts(facts: Iterable[Mapping[str, Any]]) -> dict:
+    """THE deriver of a dataset's five counters, from per-row facts (``row_facts``
+    over parsed rows, or ``FolderLayout.index`` entries). The indexer, the entity's
+    validator and ``Dataset.refresh_counts`` all go through here, so a row write
+    and a reindex can never disagree on any of them."""
+    facts = list(facts)
+    return {
+        **dataset_counts(f["kind"] for f in facts),
+        "num_annotated": sum(1 for f in facts if f["annotated"]),
+        "num_multi_output": sum(1 for f in facts if f["multi_output"]),
+        "num_binary_inputs": sum(1 for f in facts if f["binary_input"]),
+    }
 
 
 def derive_dataset(data: dict, root: Path, header_raw: dict) -> None:
-    """The counts the disk implies — facts about the rows, never authored.
-    The same row counts feed application hydration; binary and annotation
-    counts also depend on the filesystem layout."""
+    """The counts the disk implies — facts about the rows, never authored."""
     data["name"] = data.get("title") or root.name
-    examples = data.get("examples") or []
-    data.update(dataset_counts(str(example.kind) for example in examples))
-    data["num_annotated"] = dataset_layout_for(data.get("data_layout")).count_annotated(root, examples)
-    data["num_multi_output"] = sum(1 for ex in examples if isinstance(ex.output, list) and len(ex.output) > 1)
-    data["num_binary_inputs"] = sum(
-        1 for ex in examples if is_binary(ex.input[0] if isinstance(ex.input, list) else ex.input)
-    )
+    data.update(derive_counts(row_facts(row) for row in data.get("rows") or []))
 
 
 def dataset_asset_hash(ref: FSRef) -> int:
@@ -39,8 +57,8 @@ def dataset_asset_hash(ref: FSRef) -> int:
     The base implementation hashes the folder's own mtime, which does NOT update
     when a child file's *content* is edited. Datasets are folder-based, so this
     stats the manifest + the layout-specific data (``data.csv`` and the
-    ``examples/`` tree) instead — otherwise edits to ``data.csv`` would never
-    re-index. Mirrors ``whiteboard_asset_hash``.
+    ``rows/`` tree) instead — otherwise edits to ``data.csv`` would never
+    re-index. Mirrors ``chart_asset_hash``.
     """
     base = ref._path
     ts = 0
@@ -51,30 +69,14 @@ def dataset_asset_hash(ref: FSRef) -> int:
         except OSError:
             pass
     # IO_FOLDER content lives in nested files; a folder's own mtime doesn't move
-    # when a child's content is edited, so walk the example files for freshness.
-    examples_dir = base / EXAMPLES_DIR
-    if examples_dir.is_dir():
-        for inner in examples_dir.rglob("*"):
+    # when a child's content is edited, so walk the row files for freshness.
+    from flow_sdk.datasets.locations import rows_root_of  # noqa: PLC0415
+
+    rows_dir = rows_root_of(base) / ROWS_DIR
+    if rows_dir.is_dir():
+        for inner in rows_dir.rglob("*"):
             try:
                 ts = max(ts, inner.stat().st_mtime_ns)
             except OSError:
                 pass
     return ts
-
-
-
-
-def iter_examples(
-    base: str | Path,
-    layout: DataLayoutEnum,
-    field_spec: dict[str, str],
-    delimiter: str,
-    *,
-    dataset_id: str,
-) -> list[ExampleSpec]:
-    """The UNTYPED read: every row as ``DEFAULT_DATASET_SPEC``'s example type.
-    The on-disk grammar lives in ``flow_sdk/schema/data_spec/layout.py``."""
-    return dataset_layout_for(layout).read(
-        Path(base), DEFAULT_DATASET_SPEC.example_type(),
-        dataset_id=dataset_id, field_spec=field_spec, delimiter=delimiter,
-    )

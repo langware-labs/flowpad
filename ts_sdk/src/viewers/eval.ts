@@ -1,30 +1,30 @@
 /**
- * Viewers for the eval contract (`eval.run`, `eval.example` — `flow_sdk/schema/data_spec/eval_spec.py`),
- * shipped by the `eval-viewers` asset. Generic over datasets: what an example ASKED and ANSWERED is
+ * Viewers for the eval contract (`eval.run`, `eval.row` — `flow_sdk/schema/data_spec/eval_spec.py`),
+ * shipped by the `eval-viewers` asset. Generic over datasets: what a row ASKED and ANSWERED is
  * drawn by the dataset's own kinds (`meta.dataset_spec` → its slots), through `ctx.render` — so a
- * dataset with its own viewers shows its examples its own way inside every eval.
+ * dataset with its own viewers shows its rows its own way inside every eval.
  */
-import type { EvalExampleRow, EvalRun, Verdict } from '../evals/types';
+import type { EvalRow, EvalRun, Verdict } from '../evals/types';
 import { VERDICTS } from '../evals/types';
 import type { CollectionViewer, Shape, SingleViewer, ViewerContext } from './contract';
 import { datasetSlots } from './generic';
 
 // ── pure helpers (unit-tested) ────────────────────────────────────────────────
 
-export const isIssue = (e: EvalExampleRow) => e.verdict !== 'correct';
+export const isIssue = (e: EvalRow) => e.verdict !== 'correct';
 
 /** The issues grouped by cause — each `label=value` an issue carries is a group — biggest first. */
-export function issueGroups(examples: EvalExampleRow[]): { cause: string; examples: EvalExampleRow[] }[] {
-  const groups = new Map<string, EvalExampleRow[]>();
-  for (const e of examples.filter(isIssue)) {
+export function issueGroups(rows: EvalRow[]): { cause: string; rows: EvalRow[] }[] {
+  const groups = new Map<string, EvalRow[]>();
+  for (const e of rows.filter(isIssue)) {
     for (const [key, value] of Object.entries(e.labels ?? {})) {
       const cause = `${key}=${value}`;
       groups.set(cause, [...(groups.get(cause) ?? []), e]);
     }
   }
   return [...groups.entries()]
-    .map(([cause, list]) => ({ cause, examples: list }))
-    .sort((a, b) => b.examples.length - a.examples.length || a.cause.localeCompare(b.cause));
+    .map(([cause, list]) => ({ cause, rows: list }))
+    .sort((a, b) => b.rows.length - a.rows.length || a.cause.localeCompare(b.cause));
 }
 
 /** `path=value` (a slice, a cause) as its two halves. */
@@ -33,9 +33,9 @@ export function splitPair(pair: string): [string, string] {
   return at < 0 ? [pair, ''] : [pair.slice(0, at), pair.slice(at + 1)];
 }
 
-/** The examples a cause selects (all issues when there is no cause). */
-export function byCause(examples: EvalExampleRow[], cause?: string): EvalExampleRow[] {
-  const issues = examples.filter(isIssue);
+/** The rows a cause selects (all issues when there is no cause). */
+export function byCause(rows: EvalRow[], cause?: string): EvalRow[] {
+  const issues = rows.filter(isIssue);
   if (!cause) return issues;
   const [key, value] = splitPair(cause);
   return issues.filter((e) => e.labels?.[key] === value);
@@ -53,16 +53,16 @@ export function formatMetric(value: number | null | undefined, isCount = false):
  *  by that eval (`EvalSpec.explain`, arriving as `meta.explain`), never here. */
 export const COLUMN_HELP: Record<string, string> = {
   run: 'One time the test was run. Its name is the date and time it started (UTC), then the name of the test. Click a row to open that run.',
-  eval: 'Which test was run. A dataset can have several tests; each one checks the same examples its own way.',
+  eval: 'Which test was run. A dataset can have several tests; each one checks the same rows its own way.',
   started: 'When the run began, in UTC time.',
-  examples: 'How many examples (questions with a known right answer) were put to the system in this run.',
-  n: 'How many examples fall in this row.',
+  rows: 'How many rows (questions with a known right answer) were put to the system in this run.',
+  n: 'How many rows fall in this row.',
   verdicts:
-    'How the answers split. Green: right. Amber: it did not answer and passed the question on. Red: it answered, and the answer was wrong. Purple: the test itself broke on that example. Hover a colour for its count.',
-  accuracy: 'Out of all the examples, the share answered right. Examples where the test broke are left out. Passing a question on counts as not right.',
+    'How the answers split. Green: right. Amber: it did not answer and passed the question on. Red: it answered, and the answer was wrong. Purple: the test itself broke on that row. Hover a colour for its count.',
+  accuracy: 'Out of all the rows, the share answered right. Rows where the test broke are left out. Passing a question on counts as not right.',
   cause:
-    'A tag the eval put on the examples that went wrong — what it answered, what kind of answer was right, and so on. One example can carry several tags, so it can appear in several rows. The biggest groups come first.',
-  verdict: 'How this one example came out: correct, wrong, abstained (passed the question on) or error (the test broke).',
+    'A tag the eval put on the rows that went wrong — what it answered, what kind of answer was right, and so on. One row can carry several tags, so it can appear in several rows. The biggest groups come first.',
+  verdict: 'How this one row came out: correct, wrong, abstained (passed the question on) or error (the test broke).',
   asked: 'What was asked — the request exactly as it came in.',
   gold: 'The right answer, as recorded in the dataset. When several answers are acceptable they are separated by |.',
   'right answer': 'The right answer, as recorded in the dataset.',
@@ -75,14 +75,14 @@ export const VERDICT_HELP: Record<Verdict, string> = {
   correct: 'Answered, and the answer matched the right one.',
   abstained: 'Did not answer itself; passed the question on.',
   wrong: 'Answered, and the answer did not match any right answer.',
-  error: 'The test itself broke on this example, so it could not be judged.',
+  error: 'The test itself broke on this row, so it could not be judged.',
 };
 
 /** A column's tooltip: the eval's own words for its metric, else the contract's for its own column. */
 export function columnHelp(key: string, explain: Record<string, string> = {}): string | undefined {
   if (explain[key]) return explain[key];
   if (COLUMN_HELP[key]) return COLUMN_HELP[key];
-  if (key.includes('.')) return `The examples split by "${key}": each row is one value of it, with how that group did.`;
+  if (key.includes('.')) return `The rows split by "${key}": each row is one value of it, with how that group did.`;
   return undefined;
 }
 
@@ -115,7 +115,7 @@ function verdictBar(ctx: ViewerContext, counts: Partial<Record<string, number | 
 
 const pill = (ctx: ViewerContext, v: Verdict, text: string = v) => ctx.h('span', { class: `ev-pill ev-${v}`, title: VERDICT_HELP[v] }, text);
 
-/** The dataset's slot kinds — what an example asked (`input`) and answers (`output`). */
+/** The dataset's slot kinds — what a row asked (`input`) and answers (`output`). */
 async function slotKinds(ctx: ViewerContext, datasetSpec?: string): Promise<{ input?: Shape; output?: Shape }> {
   const form = datasetSpec ? await ctx.kindForm(datasetSpec) : null;
   if (form?.subkind !== 'dataset') return {};
@@ -131,10 +131,10 @@ async function lineCell(ctx: ViewerContext, kind: Shape | undefined, value: unkn
   return td;
 }
 
-/** An example as its dataset's row: the slots `ctx.render` draws by the dataset's kind. */
-export function rowOf(e: EvalExampleRow): Record<string, unknown> {
+/** A row as its dataset hands it out: the slots `ctx.render` draws by the dataset's kind. */
+export function rowOf(e: EvalRow): Record<string, unknown> {
   return {
-    id: e.example_id,
+    id: e.row_id,
     kind: e.row_kind,
     input: e.row_input,
     context: e.row_context,
@@ -153,19 +153,19 @@ const runCollection: CollectionViewer = {
     const runs = req.items as EvalRun[];
     el.replaceChildren();
     const keys = [...new Set(runs.flatMap((r) => Object.keys(r.metrics)))];
-    const columns = ['run', 'eval', 'set', 'code', 'started', 'examples', 'verdicts', ...keys];
+    const columns = ['run', 'eval', 'set', 'code', 'started', 'rows', 'verdicts', ...keys];
     const table = h('table', { class: 'dv-table' }, h('tr', {}, ...columns.map((k) => th(ctx, k, meta))));
     for (const [i, r] of runs.entries())
       table.append(
         h('tr', { class: `dv-pick${req.selected === i ? ' dv-on' : ''}`, onclick: () => req.on?.('select', i) },
           h('td', { class: 'dv-mono' }, r.run_id), h('td', {}, r.eval_name),
-          // Which examples (dev `eval` / held-out `test`) and which code: runs compare only within one.
+          // Which rows (dev `eval` / held-out `test`) and which code: runs compare only within one.
           h('td', { class: 'ev-small' }, (r.kinds ?? []).join(', ') || '—'),
           h('td', { class: 'dv-mono ev-small', title: Object.entries(r.versions ?? {}).map(([k, v]) => `${k} ${v}`).join('\n') },
             // A word (a code hash, a mode) inline; a value ref or a name with spaces in the tooltip.
             Object.values(r.versions ?? {}).filter((v) => !/\s|\.id\./.test(v)).join(' · ') || '—'),
           h('td', { class: 'ev-small' }, r.started_at.replace('T', ' ').slice(0, 19)),
-          h('td', { class: 'ev-n' }, String(r.examples)), h('td', {}, verdictBar(ctx, r.counts, r.examples)),
+          h('td', { class: 'ev-n' }, String(r.rows)), h('td', {}, verdictBar(ctx, r.counts, r.rows)),
           ...keys.map((k) => h('td', { class: 'ev-n' }, formatMetric(r.metrics[k], counts.has(k))))),
       );
     if (!runs.length) table.append(h('tr', {}, h('td', { colspan: columns.length, class: 'dv-muted' }, 'No eval has run on this dataset yet.')));
@@ -187,8 +187,8 @@ const runSingle: SingleViewer = {
     el.replaceChildren(
       h('div', { class: 'ev-small dv-muted' },
         `${r.dataset_spec} · eval ${r.eval_name} ${r.eval_digest} · ${Object.entries(r.versions).map(([k, v]) => `${k} ${v}`).join(' · ')}`),
-      h('div', { class: 'ev-cards' }, card('examples', String(r.examples)), ...Object.entries(r.metrics).map(([k, v]) => card(k, formatMetric(v, counts.has(k))))),
-      verdictBar(ctx, r.counts, r.examples, (v) => req.on?.('verdict', v)),
+      h('div', { class: 'ev-cards' }, card('rows', String(r.rows)), ...Object.entries(r.metrics).map(([k, v]) => card(k, formatMetric(v, counts.has(k))))),
+      verdictBar(ctx, r.counts, r.rows, (v) => req.on?.('verdict', v)),
       h('div', { class: 'ev-legend' }, ...VERDICTS.map((v) =>
         h('span', { title: VERDICT_HELP[v], 'data-help': true, class: meta.verdict === v ? 'ev-picked' : '', onclick: () => req.on?.('verdict', v) },
           pill(ctx, v, String(r.counts[v] ?? 0)), ` ${v}`))),
@@ -196,14 +196,14 @@ const runSingle: SingleViewer = {
     const slices = Object.entries(r.slices ?? {});
     if (slices.length) el.append(h('h3', { class: 'ev-h' }, 'Slices — pick one to narrow everything below'));
     for (const [path, values] of slices) {
-      const rows = Object.entries(values as Record<string, Record<string, number | null> & { examples: number }>);
-      const keys = [...new Set(rows.flatMap(([, m]) => Object.keys(m)))].filter((k) => k !== 'examples' && k !== 'unlabelled' && !(VERDICTS as readonly string[]).includes(k));
+      const rows = Object.entries(values as Record<string, Record<string, number | null> & { rows: number }>);
+      const keys = [...new Set(rows.flatMap(([, m]) => Object.keys(m)))].filter((k) => k !== 'rows' && k !== 'unlabelled' && !(VERDICTS as readonly string[]).includes(k));
       const table = h('table', { class: 'dv-table' }, h('tr', {}, th(ctx, path, meta), th(ctx, 'n', meta), th(ctx, 'verdicts', meta), ...keys.map((k) => th(ctx, k, meta))));
-      for (const [value, m] of rows.sort((a, b) => b[1].examples - a[1].examples)) {
+      for (const [value, m] of rows.sort((a, b) => b[1].rows - a[1].rows)) {
         const pair = `${path}=${value}`;
         table.append(
           h('tr', { class: `dv-pick${meta.slice === pair ? ' dv-on' : ''}`, onclick: () => req.on?.('slice', pair) },
-            h('td', {}, value), h('td', { class: 'ev-n' }, String(m.examples)), h('td', {}, verdictBar(ctx, m, m.examples)),
+            h('td', {}, value), h('td', { class: 'ev-n' }, String(m.rows)), h('td', {}, verdictBar(ctx, m, m.rows)),
             ...keys.map((k) => h('td', { class: 'ev-n' }, formatMetric(m[k], counts.has(k))))),
         );
       }
@@ -213,36 +213,37 @@ const runSingle: SingleViewer = {
   },
 };
 
-// ── eval.example ──────────────────────────────────────────────────────────────
+// ── eval.row ──────────────────────────────────────────────────────────────
 
-const exampleCollection: CollectionViewer = {
+const rowCollection: CollectionViewer = {
   async mount(el, req, ctx) {
     const { h } = ctx;
     const meta = metaOf(req.meta);
-    const examples = req.items as EvalExampleRow[];
+    const rows = req.items as EvalRow[];
     const { input, output } = await slotKinds(ctx, meta.dataset_spec);
     el.replaceChildren();
 
-    const issues = examples.filter(isIssue);
-    el.append(h('h3', { class: 'ev-h' }, `Issues — ${issues.length} of ${examples.length} in scope, grouped by cause`));
-    const groups = h('table', { class: 'dv-table' }, h('tr', {}, th(ctx, 'cause', meta), th(ctx, 'examples', meta, 'examples'), th(ctx, 'verdicts', meta)));
-    for (const g of issueGroups(examples)) {
+    const issues = rows.filter(isIssue);
+    el.append(h('h3', { class: 'ev-h' }, `Issues — ${issues.length} of ${rows.length} in scope, grouped by cause`));
+    const groups = h('table', { class: 'dv-table' }, h('tr', {}, th(ctx, 'cause', meta), th(ctx, 'rows', meta, 'rows'), th(ctx, 'verdicts', meta)));
+    for (const g of issueGroups(rows)) {
       const counts: Record<string, number> = {};
-      for (const e of g.examples) counts[e.verdict] = (counts[e.verdict] ?? 0) + 1;
+      for (const e of g.rows) counts[e.verdict] = (counts[e.verdict] ?? 0) + 1;
       groups.append(
         h('tr', { class: `dv-pick${meta.cause === g.cause ? ' dv-on' : ''}`, onclick: () => req.on?.('cause', g.cause) },
-          h('td', {}, h('span', { class: 'ev-chip' }, g.cause)), h('td', { class: 'ev-n' }, String(g.examples.length)), h('td', {}, verdictBar(ctx, counts, g.examples.length))),
+          h('td', {}, h('span', { class: 'ev-chip' }, g.cause)), h('td', { class: 'ev-n' }, String(g.rows.length)), h('td', {}, verdictBar(ctx, counts, g.rows.length))),
       );
     }
     el.append(h('div', { class: 'dv-scroll ev-gap' }, groups));
 
-    const list = byCause(examples, meta.cause);
-    el.append(h('h3', { class: 'ev-h' }, meta.cause ? `Examples with ${meta.cause} — ${list.length}` : `All issues in scope — ${list.length}`));
+    const list = byCause(rows, meta.cause);
+    el.append(h('h3', { class: 'ev-h' }, meta.cause ? `Rows with ${meta.cause} — ${list.length}` : `All issues in scope — ${list.length}`));
     const table = h('table', { class: 'dv-table' }, h('tr', {}, ...['verdict', 'asked', 'right answer', 'answered', 'score'].map((k) => th(ctx, k, meta))));
     // Every row on screen at once; its cells — each drawn by the dataset's own viewers — side by side.
     el.append(h('div', { class: 'dv-scroll' }, table));
+    const at = new Map(rows.map((row, i) => [row, i]));   // `select` names a row by its place in `items`
     await Promise.all(list.map(async (e) => {
-      const tr = h('tr', { class: 'dv-pick', onclick: () => req.on?.('select', e.example_id) }, h('td', {}, pill(ctx, e.verdict)));
+      const tr = h('tr', { class: 'dv-pick', onclick: () => req.on?.('select', at.get(e)) }, h('td', {}, pill(ctx, e.verdict)));
       table.append(tr);
       tr.append(...(await Promise.all([
         lineCell(ctx, input, e.row_input),
@@ -254,16 +255,16 @@ const exampleCollection: CollectionViewer = {
   },
 };
 
-const exampleSingle: SingleViewer = {
+const rowSingle: SingleViewer = {
   async mount(el, req, ctx) {
     const { h } = ctx;
-    const e = req.value as EvalExampleRow;
+    const e = req.value as EvalRow;
     const meta = metaOf(req.meta);
     const chips = [
       ...Object.entries(e.labels ?? {}).map(([k, v]) => h('span', { class: 'ev-chip', title: COLUMN_HELP.cause }, `${k}=${v}`)),
       ...Object.entries(e.slice ?? {}).filter(([k]) => !k.startsWith('labels.')).map(([k, v]) => h('span', { class: 'ev-chip ev-quiet' }, `${k.split('.').pop()}: ${v}`)),
     ];
-    const body = h('div', { class: 'ev-example-body' });
+    const body = h('div', { class: 'ev-row-body' });
     el.replaceChildren(
       h('div', { class: 'ev-verdict-line' }, pill(ctx, e.verdict),
         h('span', { class: 'ev-small dv-muted', title: COLUMN_HELP.score, 'data-help': true }, `score ${e.score == null ? '—' : e.score.toFixed(2)}`),
@@ -274,7 +275,7 @@ const exampleSingle: SingleViewer = {
       ...(e.note ? [h('div', { class: 'ev-note' }, e.note)] : []),
       body,
     );
-    // The NESTING: the example itself is the dataset kind's — its own viewer draws it, the right
+    // The NESTING: the row itself is the dataset kind's — its own viewer draws it, the right
     // answer set against what this run answered.
     // How the inference reached its answer rides along (`trace`, as the run's `trace_kind`), so the
     // dataset's viewer can show the model's full output inside the story.
@@ -294,7 +295,7 @@ const exampleSingle: SingleViewer = {
 
 export const evalViewers = {
   'eval.run': { single: runSingle, collection: runCollection },
-  'eval.example': { single: exampleSingle, collection: exampleCollection },
+  'eval.row': { single: rowSingle, collection: rowCollection },
 };
 
 export const EVAL_VIEWER_STYLES = `

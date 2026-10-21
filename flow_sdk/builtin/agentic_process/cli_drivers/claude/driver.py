@@ -11,12 +11,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.assets.directory import AssetDir
+from flow_sdk.assets.frontmatter_check import WRITE_TOOLS as FRONTMATTER_WRITE_TOOLS
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
@@ -61,6 +63,7 @@ from flow_sdk.builtin.hooks.types import (
 )
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
+from flow_sdk.instance_settings.runtime import get_assigned_compute_node
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -112,6 +115,25 @@ _RESPONSE_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SE
 #: question is waiting (``AgenticProcess.on_hook``).
 _PROCESS_EVENTS = PROCESS_EVENTS | {HookEventType.PRE_TOOL_USE}
 _PRE_TOOL_USE_MATCHER = "|".join(sorted(USER_INPUT_TOOLS))
+
+#: Hooks added to every process-hook plugin, beside its configured events. Local
+#: commands — no backend round trip. The frontmatter check hands a YAML error
+#: in a skill/agent/command header the agent just wrote back to the model.
+_BUILTIN_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
+    (
+        HookEventType.POST_TOOL_USE,
+        {
+            "matcher": "|".join(FRONTMATTER_WRITE_TOOLS),
+            "hooks": [
+                {
+                    "args": ["-m", "flow_sdk.assets.frontmatter_check"],
+                    "command": sys.executable,
+                    "type": "command",
+                }
+            ],
+        },
+    ),
+)
 
 _HOOK_CAPABILITIES: "HookCapabilities" = {
     **settings_file_scopes(),
@@ -282,6 +304,8 @@ class ClaudeDriver:
                 for event in normalized
             },
         }
+        for event, entry in _BUILTIN_HOOKS:
+            hooks["hooks"].setdefault(event.value, []).append(entry)
         manifest = {
             "author": {"name": "Flowpad"},
             "description": "Flowpad process-scoped hooks",
@@ -432,11 +456,12 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        if getattr(process, "deployment_id", None):
-            # A deployment's agent works unattended: it starts a long job, arms a Monitor on it
-            # and ends its turn. ``-p`` kills background tasks 10 minutes after the answer, so the
-            # agent would never hear the job finish. Its turns wait for them instead (the keep-alive
-            # counts the wait); a deployment that set its own ceiling keeps it.
+        if getattr(process, "deployment_id", None) or get_assigned_compute_node() is not None:
+            # A deployment's agent, and any chat on a hub sandbox, works unattended: it hands a
+            # long job to a background subagent or Monitor and ends its turn. ``-p`` kills
+            # background tasks 10 minutes after the answer, so the job died mid-run (a QA cycle on
+            # a hub box, 2026-10-15). These turns wait for them instead (the keep-alive counts the
+            # wait); a process that set its own ceiling keeps it. A desktop chat keeps the default.
             env_vars.setdefault(BACKGROUND_WAIT_ENV, "0")
         try:
             await apply_worker_secret_env(env_vars, process)
@@ -618,6 +643,11 @@ class ClaudeDriver:
             for directory in process.resolved_add_dirs
         )
         return roots
+
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+        from flow_sdk.assets.process_projection import link_mounted_skills
+
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills")
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Claude discovers skills from ``.claude/skills`` under the mounted

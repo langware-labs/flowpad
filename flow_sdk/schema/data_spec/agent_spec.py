@@ -1,7 +1,6 @@
 """Filesystem contracts independent of application entities."""
-from typing import ClassVar, Optional
 
-from pydantic import ConfigDict
+from typing import ClassVar, Optional
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
@@ -25,7 +24,6 @@ class AgentPlaceSpec(DataSpec):
     """
 
     spec_kind: ClassVar[str] = "agent.place"
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     deployment_id: str
     #: Whether the agent runs on this place at all. ``None`` = the definition's ``enabled``.
@@ -78,8 +76,12 @@ class AgentSpec(AssetDocumentSpec):
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
     intro: Optional[str] = None
+    #: ``intro`` in other languages, keyed by locale code (``he``, ``ar``, ``en-US``).
+    intro_translations: Optional[dict[str, str]] = None
     auto_launch: Optional[bool] = None
     auto_launch_prompt: Optional[str] = None
+    #: Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal.
+    vibe_only: Optional[bool] = None
     #: What every new session as this agent opens with: a place, a ``navigate`` op that can repair
     #: it (``{"op": name}``) or a wizard (``{"wizard": name}``); the first place is the active one.
     auto_open: Optional[list[AutoOpenEntry]] = None

@@ -36,8 +36,10 @@ def get_probe(provider: str) -> Optional[OAuthProbeSpec]:
     return descriptor.probe if descriptor is not None else None
 
 
-def account_key_from(provider: str, body: dict[str, Any]) -> Optional[str]:
-    probe = get_probe(provider)
+def account_key_from(provider: str, body: dict[str, Any], probe: Any = None) -> Optional[str]:
+    """The account key ``body`` carries, read by ``probe`` (default: the provider's own; a fallback probe
+    that answered reads its own fields)."""
+    probe = probe or get_probe(provider)
     if probe is None:
         return None
     if probe.account_key_parts:
@@ -112,12 +114,17 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
     }
     try:
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS) as client:
-            response = await client.request(
-                probe.method,
-                probe.url,
-                params=dict(probe.query),
-                headers=headers,
-            )
+            while True:
+                response = await client.request(
+                    probe.method,
+                    probe.url,
+                    params=dict(probe.query),
+                    headers={**headers, **dict(probe.headers)},
+                )
+                # Refused, not rejected: the grant may not cover this endpoint — its fallback may be covered.
+                if response.status_code != 403 or probe.fallback is None:
+                    break
+                probe = probe.fallback
     except Exception as exc:  # noqa: BLE001
         reason = str(exc) or type(exc).__name__
         return ProbeResult(
@@ -164,5 +171,18 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
     return ProbeResult(
         ok=True,
         identity=_first_text(body, probe.identity_fields),
-        account_key=account_key_from(provider, body),
+        account_key=account_key_from(provider, body, probe),
     )
+
+
+async def connection_answer(provider: str) -> dict[str, Any]:
+    """Whether ``provider``'s sign-in works for what runs HERE: the token the poller will use (``token_for`` —
+    the request's user, else this machine's local user, else the hub), probed for real. ``{"ok": False, "code":
+    "missing_token"}`` when there is none. One answer for a source's Verify and its setup step, so the two can
+    never disagree; a background run with no request user asks the same chain the poll does."""
+    from flow_sdk.core.oauth.provider_registry import token_for  # noqa: PLC0415
+
+    token = await token_for(provider)
+    if not token:
+        return ProbeResult(ok=False, detail="No token stored for this provider", code="missing_token").as_data()
+    return (await run_probe(provider, token)).as_data()

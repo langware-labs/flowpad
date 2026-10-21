@@ -12,6 +12,7 @@ import { linkEventProps, type LinkHandlers } from '@src/components/links/link-ev
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { isWebUrl } from '@src/lib/link-kind';
 import remarkLinkRefs from '@src/lib/remark-link-refs';
+import remarkListNumbers from '@src/lib/remark-list-numbers';
 import { resolveTextDirection, type TextDirection } from '@src/lib/text-direction';
 
 /** Parse the `language-xxx` class rehype-highlight puts on the inner <code>. */
@@ -172,7 +173,12 @@ export function markdownComponents({
     // No dir here on purpose: the marker sits on the item's start side, so a
     // per-item direction would scatter the markers across both sides of one
     // list. <li> inherits the direction its <ul>/<ol> resolved for the whole.
-    li: ({ children }) => <li className={dense ? undefined : 'mt-2'}>{children}</li>,
+    // `value` is the number the author typed (remarkListNumbers).
+    li: ({ children, value }) => (
+      <li value={value} className={dense ? undefined : 'mt-2'}>
+        {children}
+      </li>
+    ),
     a: ({ href, children }) => (
       <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
         {children}
@@ -243,9 +249,11 @@ function linkedAnchors(links: LinkHandlers): Partial<Components> {
   return {
     a: ({ node, href, children }) => {
       const ref = node?.properties?.dataLinkRef;
+      // A bare address reads left to right even inside Hebrew or Arabic prose; a labelled link follows its label.
+      const dir = typeof children === 'string' && (children === href || children === ref) ? 'ltr' : undefined;
       if (typeof ref !== 'string') {
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
+          <a href={href} dir={dir} target="_blank" rel="noopener noreferrer" className={MARKDOWN_LINK_CLASS}>
             {children}
           </a>
         );
@@ -253,6 +261,7 @@ function linkedAnchors(links: LinkHandlers): Partial<Components> {
       return (
         <a
           href={isWebUrl(ref) ? ref : undefined}
+          dir={dir}
           role="link"
           // A linked `code.py:3` keeps its code chip but reads as a link.
           className={`cursor-pointer ${MARKDOWN_LINK_CLASS} [&>code]:text-primary [&>code]:underline`}
@@ -273,6 +282,7 @@ export const MarkdownView = ({
   components,
   dataImages = false,
   links = null,
+  typedListNumbers = false,
 }: {
   value: string;
   compact?: boolean;
@@ -284,6 +294,8 @@ export const MarkdownView = ({
    *  for `img`/`a`, which are document-relative and need a project to resolve
    *  against (see `useMarkdownAssetComponents`). */
   components?: Partial<Components>;
+  /** Number each ordered-list item as typed (`3.`, `5.`), not counted from the first. For chat. */
+  typedListNumbers?: boolean;
   /** Draw inline `data:image/` images (a QR code in a setup question). Off by default. */
   dataImages?: boolean;
   /**
@@ -302,7 +314,7 @@ export const MarkdownView = ({
   const anchors = useMemo(() => (links ? linkedAnchors(links) : undefined), [links]);
   return (
     <ReactMarkdown
-      remarkPlugins={links ? [remarkGfm, remarkLinkRefs] : [remarkGfm]}
+      remarkPlugins={[remarkGfm, ...(typedListNumbers ? [remarkListNumbers] : []), ...(links ? [remarkLinkRefs] : [])]}
       // `dataImages` and `links` never meet: a setup question has no link source.
       rehypePlugins={[
         rehypeRaw,

@@ -7,9 +7,10 @@ import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { AskAssist, type AssistState } from './AskAssist';
 import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskSkipButton, SKIPPED } from './AskSkipButton';
 import { AskItems, type AskItem } from './AskItems';
 import { AskValueInput } from './AskValueInput';
-import { hasChoicesOf, type AskChoice } from './use-ask-question';
+import { hasChoicesOf, useKeepQuestionOpen, type AskChoice } from './use-ask-question';
 import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import { MarkdownView } from '@src/components/markdown-view';
 
@@ -51,6 +52,8 @@ interface Question {
   detail?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
+  /** A setup asked it: the step may be skipped instead (`AskSkipButton`). */
+  skippable?: boolean;
   /** The op names an agent that can answer instead (AI Assist). */
   assist_available?: boolean;
   assist?: AssistState | null;
@@ -81,6 +84,7 @@ export function AskForm({
   const [error, setError] = useState('');
   const [settled, setSettled] = useState('');
   const [busy, setBusy] = useState(false);
+  useKeepQuestionOpen(settled ? null : questionId);
 
   useEffect(() => {
     let alive = true;
@@ -102,12 +106,18 @@ export function AskForm({
   }, [questionId, _]);
 
   const send = useCallback(
-    async (path: '/answer' | '/cancel', body?: unknown) => {
+    async (path: '/answer' | '/cancel' | '/skip', body?: unknown) => {
       setBusy(true);
       setError('');
       try {
         await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
+        setSettled(
+          path === '/cancel'
+            ? _(msg`Cancelled.`)
+            : path === '/skip'
+              ? _(SKIPPED)
+              : _(msg`Thank you — sent.`),
+        );
         onSettled?.(path === '/cancel' ? 'cancelled' : 'answered');
       } catch (reason) {
         // A 422 means the value did not match the shape the op declared. The
@@ -153,30 +163,17 @@ export function AskForm({
   return (
     <div className="flex flex-col gap-4" data-testid="ask-view">
       <div>
-        <h1 className="text-base font-medium" data-testid="ask-prompt">
+        <h1 className="whitespace-pre-line text-base font-medium" data-testid="ask-prompt">
           {question.prompt}
         </h1>
         {showOp ? <p className="text-xs text-muted-foreground">{question.op}</p> : null}
       </div>
 
       {question.detail ? (
-        <div className="text-sm" data-testid="ask-detail">
+        <div className="text-sm text-muted-foreground" data-testid="ask-detail">
           <MarkdownView value={question.detail} compact dataImages />
         </div>
       ) : null}
-
-      {question.guide ? (
-        <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-guide">
-          <MarkdownView value={question.guide} compact />
-        </div>
-      ) : null}
-
-      <AskAssist
-        questionId={questionId}
-        available={question.assist_available}
-        initial={question.assist}
-        onAnswered={agentAnswered}
-      />
 
       <AskChoiceBlock
         choices={question.choices}
@@ -239,6 +236,27 @@ export function AskForm({
           </Button>
         </div>
       )}
+
+      <AskSkipButton skippable={question.skippable} busy={busy} onSkip={() => void send('/skip')} />
+
+      {/* Help comes after the inputs: the answer is the point of the screen, the how-to is for whoever needs it. */}
+      <AskAssist
+        questionId={questionId}
+        available={question.assist_available}
+        initial={question.assist}
+        onAnswered={agentAnswered}
+      />
+
+      {question.guide ? (
+        <details className="text-sm" data-testid="ask-guide">
+          <summary className="cursor-pointer text-muted-foreground">
+            <Trans>How do I get it?</Trans>
+          </summary>
+          <div className="mt-2 rounded border bg-muted/30 p-3">
+            <MarkdownView value={question.guide} compact />
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

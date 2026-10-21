@@ -106,14 +106,20 @@ async def _index_single_claude_md(md_path: Path) -> None:
     )
 
 
-async def _index_single_claude_session(jsonl_path: Path) -> None:
-    """``~/.claude/projects/<encoded>/<sessionId>.jsonl`` → root = the encoded
-    project dir (the PROJECT node ``claude_sessions_fn`` expands)."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
-    await _index_single_file(
-        jsonl_path.parent, claude_sessions_fn, RecordType.CLAUDE_SESSION,
-        root_record_type=RecordType.PROJECT,
-    )
+async def index_session_file(session_type: str, path: Path) -> str | None:
+    """Index ONE worker session transcript (claude/codex/copilot) and return its
+    entity id, or None when the file is not that type's asset. The type is named
+    because session files share an extension and classify to nothing from a bare
+    path; only this file is read, never its siblings."""
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    try:
+        resolved = await resolve_asset(path, write=False, type_name=session_type)
+    except NotAnAsset:
+        return None
+    if resolved.owner is None:  # resolve_asset already looked the row up by path
+        await index_one(resolved)
+    return resolved.id
 
 
 async def _index_single_claude_memory(memory_path: Path) -> None:

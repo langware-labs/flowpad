@@ -24,6 +24,7 @@ import { useLingui } from '@lingui/react/macro';
 import { useSessionSurface } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DebugMenu } from './DebugMenu';
+import { ProcessSourceChips } from './ProcessSourceChips';
 import { RestartButton } from './RestartButton';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { SessionSurfaceSwitch } from './SessionSurfaceSwitch';
@@ -137,6 +138,7 @@ export function ProcessToolbar({
 
   const rightSlot = (
     <>
+      {!embedded && <ProcessSourceChips process={process} />}
       {/* Fork — a chat session forks too; hidden in embedded mode. */}
       {!embedded && (
         <CompactIconAction

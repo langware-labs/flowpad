@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
+import { AppStatusLine } from '@src/components/webapp-display/AppStatusLine';
 import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -12,12 +13,14 @@ import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
-import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
+import { isHubRelayed } from '@src/lib/hub-relayed';
+import { Button } from '@src/components/ui/button';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -152,6 +155,9 @@ export function AppDisplayViewer({
     void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
   }, [appDisplay.src]);
 
+  // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
+  const relayed = isHubRelayed(appDisplay.src);
+
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
   // the frame's identity, and reload the whole app to recolour it.
@@ -239,6 +245,22 @@ export function AppDisplayViewer({
         onRuntimeChange={setRuntime}
         onRefresh={() => frameRef.current?.refresh()}
       />
+      {definition?.project_id && definition.name ? (
+        <AppStatusLine projectId={definition.project_id} app={definition.name} />
+      ) : null}
+      {relayed ? (
+        <div
+          data-testid="app-opens-in-tab"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
+        >
+          <p className="text-lg font-medium">
+            <Trans>This app is served externally via Flowpad. Open it in a new tab.</Trans>
+          </p>
+          <Button onClick={() => openExternal(appDisplay.src)}>
+            <Trans>Open in new tab</Trans>
+          </Button>
+        </div>
+      ) : (
       <div className="min-h-0 flex-1">
         <WebappDisplay
           // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
@@ -254,16 +276,21 @@ export function AppDisplayViewer({
           targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
         />
       </div>
+      )}
     </div>
   );
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
   const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
-  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+  // Files served as they are need nothing set up, wherever they live (a mock in $TMPDIR):
+  // the tab belongs to the project, the page does not wait on it.
+  const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
+  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.hostProcessId
     ? (
       <ProjectLoadGate
         key={provider}
         projectId={provider}
-        asset={webappAsset(microAppId)}
+        // An artifact-addressed app is judged on the webapp serving it, not the whole project.
+        asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
       >
         {display}
       </ProjectLoadGate>

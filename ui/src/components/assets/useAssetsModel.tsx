@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
@@ -32,6 +33,7 @@ import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { chartsRoot } from '@src/components/browseable-tree/adapters/chartsRoot';
 import { useMyEndpoints } from '@src/components/llm-endpoints/my-endpoints';
 import { requestsInScope, useMyDiagnosisRequests } from '@src/components/browseable-tree/adapters/diagnosisRequestRoot';
 import {
@@ -239,6 +241,11 @@ export function useAssetsModel() {
     for (const group of assetMenu?.root?.groups ?? []) {
       counts.set(group.type_name, Math.max(counts.get(group.type_name) ?? 0, group.count));
     }
+    // A section counts what it lists: Documents = markdown + its .docx / .txt files.
+    for (const [type, n] of Array.from(counts)) {
+      const extra = sectionRecordTypes(type).slice(1).reduce((sum, other) => sum + (counts.get(other) ?? 0), 0);
+      if (extra) counts.set(type, n + extra);
+    }
     // LLM endpoints are neither indexed nor path-attributed, so neither source above can
     // see them and the row would be hidden for everyone outside dev mode. Their count is
     // simply how many the box lists.
@@ -346,7 +353,7 @@ export function useAssetsModel() {
         await removeDependency(name);
       } catch (err) {
         notify.error({
-          title: t`Failed to remove dependency`,
+          title: t`Failed to remove package`,
           message: err instanceof Error ? err.message : undefined,
         });
         return;
@@ -374,7 +381,7 @@ export function useAssetsModel() {
         await installDependency(name);
       } catch (err) {
         notify.error({
-          title: t`Failed to install dependency`,
+          title: t`Failed to install package`,
           message: err instanceof Error ? err.message : undefined,
         });
         return;
@@ -437,7 +444,7 @@ export function useAssetsModel() {
         });
       }
       if (failed.length) {
-        notify.error({ title: t`Not copied into dependency folder`, message: failed.join(', ') });
+        notify.error({ title: t`Not copied into package folder`, message: failed.join(', ') });
       }
     },
     [fsTypeId, contextTreeNodeId],
@@ -472,7 +479,7 @@ export function useAssetsModel() {
         });
       } catch (err) {
         console.error('[AssetsNavigator] Failed to add dropped files to dependency folder:', err);
-        notify.error({ title: t`Failed to add files to dependency folder` });
+        notify.error({ title: t`Failed to add files to package folder` });
       }
     },
     [fsTypeId, contextTreeNodeId],
@@ -736,12 +743,16 @@ export function useAssetsModel() {
           onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
       }
-      return assetTypeRoot(t, {
-        indexType,
-        onNew: handleNew,
-        creatableTypes,
-        filter: effectiveFilter,
-      });
+      const typeDeps = { indexType, onNew: handleNew, creatableTypes, filter: effectiveFilter };
+      // A project's charts read as a tree: their folders, the assets that declare them, sub-flows.
+      if (t.type_name === 'chart' && scopeProject) {
+        return chartsRoot(t, {
+          ...typeDeps,
+          projectRoot: scopeProject.fs_storage_mount_path ?? '',
+          loadDeclarers: async () => (await scopeProject.dependencies({ declarers: true })).declarers ?? [],
+        });
+      }
+      return assetTypeRoot(t, typeDeps);
     });
     // Files — the scoped project's real on-disk tree, right below the Task
     // section. Rows address the Assets body's fs/ file manager (the same body
@@ -797,6 +808,7 @@ export function useAssetsModel() {
     isProjectView,
     scopeProjectId,
     hasScopeProject,
+    scopeProject,
     fsTypeId,
     fsLocatorTypeId,
     filesAnchor,

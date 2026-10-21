@@ -117,11 +117,10 @@ async def test_a_file_target_is_navigated_by_the_ui_not_asked(hub):
 
 
 async def _decide_and_log(utterance: str) -> None:
-    from flow_sdk.core.navigation_decision import decide_run
+    """One decision through the smart-navigator block, whose FlowCall log writes the row."""
+    from flow_sdk.core.navigation_decision import call
 
-    request = {"utterance": utterance, "here": HERE}
-    outcome, answer = await decide_run(request)
-    navigation_log.log_soon(request, outcome, answer)
+    await call({"utterance": utterance, "here": HERE})
     await navigation_log.drain()
 
 
@@ -144,7 +143,7 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
         await _decide_and_log("open data sources")
         await asyncio.gather(*(_decide_and_log(u) for u in ("summarize the README", "the builder skill", "find x")))
         ds = Dataset.at(navigation_log.folder())
-        assert (ds.spec, ds.title, ds.num_examples, ds.kind_counts) == (
+        assert (ds.spec, ds.title, ds.num_rows, ds.kind_counts) == (
             "navigator.dataset",
             "SmartNavigationLog",
             4,
@@ -174,20 +173,28 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
         await ds.annotate(opened.id, opened.output.model_dump(mode="json", exclude_none=True))
         log_temp_runs = navigation_log.folder().parent / "runs"
         run, _ = await evals.run(Dataset.at(navigation_log.folder()), kinds=["train"], out_dir=log_temp_runs)
-        assert (run.examples, run.counts["unlabelled"], run.metrics["precision"]) == (1, 3, 1.0)
+        assert (run.rows, run.counts["unlabelled"], run.metrics["precision"]) == (1, 3, 1.0)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 
 
-async def test_the_log_belongs_to_the_user_not_to_every_project(hub, log_temp, index_storage):
-    """It lives in Flowpad's temp folder — inside no project and no known root — so its row was
-    born with no scope, and the project filter lists a scope-less dataset under every project."""
+async def test_the_log_is_system_not_listed_in_user_projects(hub, log_temp, index_storage):
+    """It lives in Flowpad's temp folder — inside no project and no known root. A user-scoped row is
+    listed under every project, so the log is Flowpad's own: system scope, under the system project
+    (none here), and a row indexed before that is re-labelled on the next append."""
     write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
     try:
         await _decide_and_log("open data sources")
         row = await navigation_log._indexed()
         assert row is not None, "the log was not indexed"
-        assert (row.scope, row.project_id) == ("user", None)
+        assert (row.scope, row.project_id) == ("system", None)
+
+        # An older log, indexed as the user's, moves to system on its next row.
+        row.scope = "user"
+        await row.save()
+        await _decide_and_log("take me to preferences")
+        navigation_log._LOG._row = None
+        assert (await navigation_log._indexed()).scope == "system"
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 

@@ -99,5 +99,17 @@ function harness({ response = 0, moveResult = true, moveThrows = null, state = n
     eq(h.moves.length, 1, 'and the move was requested');
   }
 
+  {
+    // Test hook: a scripted answer replaces the native dialog; null keeps the real one.
+    const h = harness({});
+    const run = (scriptedAnswer) => offerMoveToApplications({ platform: 'darwin', app: h.app, dialog: h.dialog, execPath: TRANSLOCATED, readState: () => null, writeState: () => {}, scriptedAnswer, log: silent });
+    await run(() => 1);
+    eq([h.dialogs.length, h.moves.length], [0, 0], 'scripted "Not now": no dialog, no move');
+    await run(() => 0);
+    eq([h.dialogs.length, h.moves.length], [0, 1], 'scripted "Move": no dialog, the move is requested');
+    await run(() => null);
+    eq(h.dialogs.length, 1, 'no scripted answer: the real dialog is shown');
+  }
+
   console.log(`app-location.test.js: ${passed} assertions passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

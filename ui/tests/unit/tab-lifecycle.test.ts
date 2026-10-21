@@ -478,11 +478,9 @@ describe('workspace child adoption guard', () => {
     expect((mint.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBeNull();
   });
 
-  it('keeps a shell child its parent edge when no workspace is mounted', async () => {
-    // The inverse of the stale-edge stripper: a terminal adopted by a workspace
-    // must stay a child when it is re-navigated to from outside one, or the
-    // edge would be shed the first time the user clicks its chip. Verbatim
-    // reuse — no re-mint — proves `staleParentEdge` stayed false.
+  it('a row grouped under a workspace leaves it when opened with no workspace in the URL', async () => {
+    // A workspace's tabs are keyed `|@<host>`, so a plain dock finding a grouped row means an
+    // old row: it is opened as its own tab now (`""` = detach).
     const d = shellDock();
     const existing = new Tab({
       id: nextTabId(),
@@ -494,9 +492,9 @@ describe('workspace child adoption guard', () => {
       parent_tab_id: PARENT,
     });
     vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
-    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [existing], created: false });
     await setupTab(d);
-    expect(mint).not.toHaveBeenCalled();
+    expect((mint.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBe('');
   });
 
   it('reuses a PROJECT-LESS global terminal verbatim', async () => {

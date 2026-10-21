@@ -15,6 +15,8 @@ export interface DependencyFolderTarget {
   dependency: string | null;
   /** False for an optional dependency; true otherwise (and for a non-dependency). */
   required: boolean;
+  /** A local package: used on this device only, recorded in no project file. */
+  local: boolean;
   /** Origin kind stamped at link time ("git" | "local"), or null when the
    *  directory isn't a resolved dependency and nothing has resolved it.
    *  null means UNKNOWN, not "not a repo" — only the preflight is authoritative
@@ -64,6 +66,7 @@ export function useDependencyForRel(
       typeid: match?.typeid || null,
       dependency: match?.dependency || null,
       required: match?.required !== false,
+      local: match?.local === true,
       originKind: match?.origin_kind ?? null,
       workdir: `/${dirRel}`,
       name: basename(dirRel) || dirRel,

@@ -26,7 +26,7 @@ def data_driver_identity_key(ref: "FSRef | Path") -> str:
     install location, which the provider picker rendered as one button each.
 
     ``name`` is already the type's unique key everywhere else — the source
-    registry is a flat dict keyed by it (`ingest/sources.py`),
+    registry is keyed by it (`ingest/driver_registry.py`),
     `DataSource` resolves its spec with ``get_one({"name": provider})``, and the
     dialog keys its lookup map by it. Identity just agrees with that now.
 

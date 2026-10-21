@@ -17,7 +17,7 @@ import { setUiActionHost, useUiActionRequest } from '@src/navigation/ui-actions'
 
 /** The asset types a `quick-create-<type>` action opens the create dialog for (`dynamic-workflow`
  *  in the id is `dynamic_workflow` here). */
-const QUICK_CREATE_TYPES = ['agent', 'skill', 'subagent', 'dynamic_workflow', 'task', 'markdown', 'whiteboard', 'mcp', 'credential'];
+const QUICK_CREATE_TYPES = ['agent', 'skill', 'subagent', 'dynamic_workflow', 'task', 'markdown', 'chart', 'mcp', 'credential'];
 const quickCreateId = (type: string) => `quick-create-${type.replace(/_/g, '-')}`;
 
 const HOSTED = [

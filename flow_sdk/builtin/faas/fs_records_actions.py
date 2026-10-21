@@ -8,6 +8,7 @@ Python attribute lookup — no dependency injection needed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -1405,9 +1406,9 @@ class FsRecordsActionsMixin:
         * **Never a 409.** A user-initiated index holding the activity means we
           skip silently (same as the startup system-assets pass). The user never
           caused this run and must never see it fail.
-        * **Never sweeps.** ``orphan_action`` stays INDEX (count-only). An
-          automatic run must not delete records — that caps the blast radius if
-          the walk ever returns a short candidate list.
+        * **Removes rows whose file is deleted** (``OrphanAction.DELETE``). Orphan-ness
+          is a stat of each row's own file (``source_gone``), never "the walk did not
+          see it", so a short walk cannot delete a live record.
         * **Never foreground.** Protected-folder projects are gated, so a plain
           project switch cannot trip a macOS consent dialog.
 
@@ -1444,8 +1445,7 @@ class FsRecordsActionsMixin:
                 project_id=str(project_id),
                 force=force,
                 trigger=trigger,
-                # Count-only: an automatic run must never delete records.
-                orphan_action=OrphanAction.INDEX,
+                orphan_action=OrphanAction.DELETE,
                 indexer=get_auto_scan_indexer() if scan_mode is not None else None,
                 project_record=project_record,
                 on_started=on_started,
@@ -1540,7 +1540,7 @@ class FsRecordsActionsMixin:
             )
         orphan_action_raw = qp.get("orphan_action", "").strip().lower()
         try:
-            orphan_action = OrphanAction(orphan_action_raw) if orphan_action_raw else OrphanAction.INDEX
+            orphan_action = OrphanAction(orphan_action_raw) if orphan_action_raw else OrphanAction.DELETE
         except ValueError:
             return ApiFailResponse(
                 message=(f"Invalid orphan_action '{orphan_action_raw}'. Valid: {[a.value for a in OrphanAction]}"),
@@ -1559,18 +1559,18 @@ class FsRecordsActionsMixin:
         # that does not claim the file, and refuses a FRAGMENT type outright
         # (``?type=mcp_server`` on a settings.json), which is the case a
         # caller-named type could otherwise mint a bogus row for.
-        # A FOLDER asset (an agent, a skill) named by its own folder takes the same
-        # direct branch: the subtree walk below looks inside the folder and never
+        # A FOLDER asset (an agent, a skill, a webapp) named by its own folder takes the
+        # same direct branch, with or without ``?type=`` — the registry names it from its
+        # folder and main file: the subtree walk below looks inside the folder and never
         # at the folder itself, so it answered `indexed: 0` for every such asset.
-        # A folder that is not an asset of this type still falls through to the walk.
+        # A folder that is not an asset (of this type) still falls through to the walk.
         direct_folder = None
-        if _p is not None and filter_type and _p.is_dir() and not rebuild and not force:
+        if _p is not None and _p.is_dir() and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, resolve_asset  # noqa: PLC0415
 
-            try:
-                direct_folder = await resolve_asset(_p, write=True, type_name=filter_type)
-            except NotAnAsset:
-                direct_folder = None
+            with contextlib.suppress(NotAnAsset):
+                direct_folder = await resolve_asset(_p, write=True, type_name=filter_type or None)
+                filter_type = filter_type or direct_folder.type_name
         if _p is not None and filter_type and (_p.is_file() or direct_folder) and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
@@ -1682,25 +1682,12 @@ class FsRecordsActionsMixin:
                 ),
             )
         else:
-            # Orphan-aware runs (orphan_action != INDEX) must walk EVERY source
-            # so ``seen_ids`` is global — a record is orphan iff its source is
-            # missing *anywhere*. ``default_roots()`` (the old
-            # ``custom_roots = None``) only covers USER_HOME's targeted
-            # expanders + the backend CWD + system; it does NOT descend the
-            # registered project file trees, so every project record went
-            # unseen and was mass-deleted as a false orphan. Resolve the FULL
-            # all-projects root set for orphan runs; INDEX runs use the
-            # requested scope. Either way ``scope_filter`` is still passed to
-            # the indexer (opts.scope_filter) to narrow which orphans are acted on.
-            roots_scope = (
-                await get_all_scope_filter(create_missing=False)
-                if orphan_action != OrphanAction.INDEX
-                else scope_filter
-            )
+            # Walk the requested scope only: an orphan is a row whose own file is
+            # deleted (``source_gone``), so removing it needs no global walk.
             # Explicit manual project refresh has the same foreground intent as
-            # browsing it. Background indexing and global orphan sweeps stay gated.
-            foreground = trigger == "manual" and bool(qp.get("projects")) and orphan_action == OrphanAction.INDEX
-            custom_roots = await self._resolve_scoped_roots(roots_scope, foreground=foreground)
+            # browsing it. Background indexing stays gated.
+            foreground = trigger == "manual" and bool(qp.get("projects"))
+            custom_roots = await self._resolve_scoped_roots(scope_filter, foreground=foreground)
             if isinstance(custom_roots, ApiFailResponse):
                 return custom_roots
 
@@ -1755,6 +1742,13 @@ class FsRecordsActionsMixin:
             # still lost. The auto path silently skips instead
             # (see _auto_index_project).
             return ApiFailResponse(message=str(e), status_code=409)
+
+        # A path-scoped walk only sees what is still there; an asset deleted under the
+        # path is reconciled here, or its row (and every list showing it) lives on.
+        if _p is not None and _p.is_dir():
+            from flow_sdk.fs_store.reindex import reindex_paths, sources_gone_under  # noqa: PLC0415
+
+            await reindex_paths([], await sources_gone_under(_p))
 
         # For a path-scoped run, resolve the TypeId(s) for the named file so the
         # caller (CLI / agent) can navigate straight to it — the whole point of
@@ -1959,7 +1953,7 @@ class FsRecordsActionsMixin:
 
     async def _index_system_assets(self) -> None:
         """Startup pass: index the SDK-shipped Flowpad Assistant system project
-        (docs/markdown, skills, agents, whiteboards) at the **live install
+        (docs/markdown, skills, agents, charts) at the **live install
         location**, emitting progress to the footer like any index.
 
         Hash-gated, so it's near-instant after the first run; combined with

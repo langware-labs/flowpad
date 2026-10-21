@@ -1,5 +1,7 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { FSEntry, fsManager, fsStore, TypeId } from '@sdk';
+import { FSEntry, FSRef, fsManager, fsStore, TypeId } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
 import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -28,6 +30,7 @@ import {
   FilePlus,
   FileText,
   Folder,
+  FolderOpen,
   FolderPlus,
   RefreshCw,
   Scissors,
@@ -38,7 +41,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
-import { fileShareSource } from '@src/hooks/share-sources';
+import { useFileShareSource } from '@src/hooks/use-file-share-source';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
 import { FilterName } from './filters';
 import { formatBytes } from '@src/utils/format-bytes';
@@ -257,6 +260,7 @@ export function SimpleFileManager({
   className = '',
   onFsMutated,
   isPathHighlighted,
+  initialSelectedName,
 }: SimpleFileManagerProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -282,10 +286,7 @@ export function SimpleFileManager({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typeidObj = useMemo(() => new TypeId(typeId.type, typeId.id), [typeId.type, typeId.id]);
-  const shareSource = useMemo(
-    () => (sharePath ? fileShareSource({ computeNodeTypeId: typeidObj, absPath: sharePath }) : null),
-    [sharePath, typeidObj],
-  );
+  const shareSource = useFileShareSource(typeidObj, sharePath);
 
   // Use shared browse cache from fsStore
   const fs = useFS(typeidObj);
@@ -308,10 +309,23 @@ export function SimpleFileManager({
   }, [browseResult, currentPath, filterDefinitions, enabledFilters]);
 
   // Sync currentPath with initialPath when it changes (e.g., browser back/forward navigation)
+  // The entry the URL names, selected once when its row lists; reset per folder.
+  const appliedSelectRef = useRef<string | undefined>(undefined);
+  const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
     setCurrentPath(normalizeFsPath(initialPath));
     setSelectedItems(new Set());
+    appliedSelectRef.current = undefined;
   }, [initialPath]);
+
+  useEffect(() => {
+    if (!initialSelectedName || appliedSelectRef.current === initialSelectedName) return;
+    const item = files.find((f) => f.name === initialSelectedName);
+    if (!item) return;
+    appliedSelectRef.current = initialSelectedName;
+    setSelectedItems(new Set([item.id]));
+    setScrollToId(item.id);
+  }, [files, initialSelectedName]);
 
   // Dialogs
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
@@ -647,6 +661,17 @@ export function SimpleFileManager({
     [navigation, buildVfsPath],
   );
 
+  // Reveal in Finder / Explorer — only a compute node's paths are real OS paths.
+  const canReveal = typeidObj.type === 'compute_node';
+  const handleRevealInFinder = useCallback(
+    (item: FileItem) => {
+      void new FSRef(item.path, typeidObj).open({ select: item.type === 'file' }).catch((error) =>
+        notify.error({ title: t`Could not open in Finder`, message: errorMessage(error, item.path) }),
+      );
+    },
+    [typeidObj, t],
+  );
+
   // Breadcrumb
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -978,6 +1003,7 @@ export function SimpleFileManager({
                     <ContextMenu key={item.id}>
                       <ContextMenuTrigger asChild>
                         <TableRow
+                          ref={item.id === scrollToId ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                           className={`cursor-pointer select-none ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
                           onClick={(e) => handleItemClick(item, e)}
                           onDoubleClick={() => handleItemDoubleClick(item)}
@@ -1042,6 +1068,27 @@ export function SimpleFileManager({
                                     </TooltipTrigger>
                                     <TooltipContent>
                                       <Trans>Open in Editor</Trans>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {canReveal && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        data-testid="file-row-reveal"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRevealInFinder(item);
+                                        }}
+                                      >
+                                        <FolderOpen className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <Trans>Open in Finder</Trans>
                                     </TooltipContent>
                                   </Tooltip>
                                 )}

@@ -96,12 +96,13 @@ async def test_invite_grants_a_different_role_per_recipient(hub):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_invite_grants_editor(hub):
+@pytest.mark.parametrize("role", ["editor", "guest"])
+async def test_invite_grants_editor_or_guest(hub, role):
     proj = Project(name="invite-role-editor")
 
-    await proj.share(invitees=[ShareInvitee(email="grace@example.com", role="editor")])
+    await proj.share(invitees=[ShareInvitee(email="grace@example.com", role=role)])
 
-    assert _invited_roles(hub, proj) == {"grace@example.com": "editor"}
+    assert _invited_roles(hub, proj) == {"grace@example.com": role}
 
 
 # do not increase timeout without approval

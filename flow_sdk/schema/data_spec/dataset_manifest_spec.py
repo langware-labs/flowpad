@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional, Union
 
 from pydantic import ValidationError, model_validator
 
@@ -23,7 +23,7 @@ class DatasetManifestSpec(FrontMatter):
     rows, and writing them back would make the manifest lie after an append.
 
     A malformed ``spec`` ON DISK degrades the SLOT, never the dataset: raising
-    would cost every example row, and an ``orphan_action=DELETE`` sweep would
+    would cost every row, and an ``orphan_action=DELETE`` sweep would
     then reap rows that parsed fine. That is a disk-read policy — the entity
     field itself is strict — so it lives here, at the header read.
     """
@@ -39,7 +39,7 @@ class DatasetManifestSpec(FrontMatter):
         try:
             if isinstance(raw, str):
                 # A kind NAME is checked for its grammar only. Whether it resolves is a question for
-                # whoever reads the rows typed (``Dataset._example_type``): the walk reads a dataset
+                # whoever reads the rows typed (``Dataset._dataset_type``): the walk reads a dataset
                 # before the data schemas nested in it, so a name may not resolve YET -- and a name
                 # that does not resolve yet is not malformed.
                 normalize_tag(raw)
@@ -62,5 +62,8 @@ class DatasetManifestSpec(FrontMatter):
     field_spec: Optional[Dict[str, str]] = None
     delimiter: Optional[str] = None
     spec: Optional[ShapeForm] = None
+    #: Where the rows live: ``local`` (default), ``file:<folder>``, ``<driver>:<target>``, or a
+    #: record system ``{"driver", "config", "map", "by"}`` -- ``flow_sdk/datasets/locations.py``.
+    location: Optional[Union[str, Dict[str, Any]]] = None
     #: The free ``data`` section of ``dataset.json`` — the document's second half.
     data: Optional[FreeForm] = None

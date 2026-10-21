@@ -1,4 +1,5 @@
 import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 /**
  * One ordering, one chip shape. `tabItem` maps a backend `Tab` (the single
  * render source) → a `TabStripItem` for EVERY tab kind — terminal (shell /
@@ -35,7 +36,7 @@ import { useTabLifecycles } from '@src/tabs/use-tab-manager';
 import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
 import { DocTabCard } from '@src/tabs/doc-tab-card';
 import { EntityCard, UrlTabCard } from '@src/components/entity-card/EntityCard';
-import { isReviewableDocDock } from '@src/navigation/content-asset-dock';
+import { offersDocChat } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
@@ -102,7 +103,7 @@ function tabFavorite(tab: Tab, title: string): FavoriteRef | null {
  *  decides which hover card to show by whether this is set. */
 function docCard(props: Omit<React.ComponentProps<typeof DocTabCard>, 'dock'> & { dock?: DockPointer | null }) {
   const { dock } = props;
-  if (!dock || !isReviewableDocDock(dock)) return undefined;
+  if (!dock || !offersDocChat(dock)) return undefined;
   return <DocTabCard {...props} dock={dock} />;
 }
 
@@ -197,6 +198,7 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
+      guestNote: isGuestTab(tab) ? i18n._(msg`This asset is not part of this project`) : undefined,
       card:
         docCard({ tab, dock: docDock, typeLabel, statusReason: statusReason || undefined, location: tab.target_remote }) ??
         tabEntityCard(tab, label || typeLabel, statusReason),
@@ -229,6 +231,12 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
     tooltip: <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason || undefined} />,
     testId: `tab-content-${key}`,
   };
+}
+
+/** A guest tab shows content owned by another project than the tab's own. Both
+ *  ids must be known — a projectless tab or target is never a guest. */
+export function isGuestTab(tab: Pick<Tab, 'project_id' | 'target_project_id'>): boolean {
+  return !!tab.project_id && !!tab.target_project_id && tab.project_id !== tab.target_project_id;
 }
 
 /** Map the ordered tabs → chips. */

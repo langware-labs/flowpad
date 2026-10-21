@@ -1399,7 +1399,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
         });
         eq(resU, false, 'unrecovered upgrade reports failure');
         const failure = shown.find((o) => o.title === 'Update failed');
-        ok(failure && failure.buttons.includes('Share with us'), 'the Update failed dialog offers Share with us');
+        ok(failure && failure.buttons.includes('Send Report'), 'the Update failed dialog offers Send Report');
         ok(/uv failed: locked/.test(failure.detail), 'and names the cause');
         eq(unrecovered, ['uv failed: locked'], 'onUnrecovered is called so the splash is replaced');
       }
@@ -1745,6 +1745,30 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(seen.length, before, 'no install ran after a failed set-aside');
     await m._rollbackEngine();
     eq(seen.length, before, 'the rollback after a failed set-aside runs no uv command: the engine in place is still the previous one');
+    // A repair after a BLOCKED FIRST install: there was no engine, so there is nothing to put back. The rollback must
+    // not try to reinstall one on the blocked interpreter (it would fail the same way and hide the real cause).
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    fs.rmSync(venv, { recursive: true, force: true });
+    m._setAsidePreRepairVenv = UvManager.prototype._setAsidePreRepairVenv;
+    m.getInstalledVersionSync = () => null;
+    const beforeFirst = seen.length;
+    await m._installEngineOn('C:\\p\\python.exe'); // the install itself works on the signed runtime, then something later fails
+    fs.rmSync(venv, { recursive: true, force: true });  // (the half-built environment)
+    await m._rollbackEngine();
+    eq(seen.length, beforeFirst + 1, 'first install: the repair\'s install ran once, and the rollback ran NO uv command (no engine to restore)');
+    // A block during --compile-bytecode comes AFTER the venv was populated: `_version.py` is readable, so the venv looks like an
+    // engine. The app knows it was the first install (markFirstInstallBlocked): nothing to restore, nothing reinstalled.
+    fs.rmSync(venv, { recursive: true, force: true });
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    fs.mkdirSync(venv, { recursive: true });
+    fs.writeFileSync(path.join(venv, 'HALF'), '');
+    m.getInstalledVersionSync = () => '0.2.209'; // readable, although it is a half-built first install
+    m.markFirstInstallBlocked();
+    const beforeHalf = seen.length;
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    eq(seen.length, beforeHalf + 1, 'first install blocked during bytecode compilation: no rollback command, even though the venv looked like an engine');
+    ok(!fs.existsSync(path.join(venv, 'HALF')), 'and the half-built environment was not put back');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {
@@ -1764,6 +1788,502 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._removePath(f);
     ok(!fs.existsSync(f), '_removePath removes a file');
     m._removePath(f); // absent: no error
+  }
+
+  {
+    // ── probeManagedInterpreter: does the interpreter uv will use even RUN? (first install, Windows) ──
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const { policyBlockFromInstallError } = require('./runtime-repair');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'));
+    const py = path.join(tmp, 'python.exe'); fs.writeFileSync(py, '');
+    const mk = (over = {}) => {
+      const m = new UvManager(silentLog);
+      m._isWin = true;
+      m._pythonPinForUpgrade = async () => '3.11';
+      m.calls = [];
+      m._uv = async (args) => { m.calls.push(args.join(' ')); if (args[1] === 'find') return { stdout: py, stderr: '' }; return { stdout: '', stderr: '' }; };
+      m._execFile = async () => ({ stdout: '', stderr: '' });
+      return Object.assign(m, over);
+    };
+    {
+      const m = mk({ _isWin: false });
+      eq(await m.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: off Windows there is nothing to probe');
+      eq(m.calls.length, 0, 'and no uv command ran');
+    }
+    {
+      const m = mk({ _pythonPinForUpgrade: async () => 'C:\\Flowpad\\runtime\\python-3.11.9\\python.exe' });
+      const r = await m.probeManagedInterpreter();
+      ok(r.skipped && /repaired runtime/.test(r.why) && m.calls.length === 0, 'preflight: a repaired runtime as the pin is not the managed interpreter: skipped');
+    }
+    {
+      const m = mk();
+      const r = await m.probeManagedInterpreter();
+      eq([r.ok, r.python], [true, py], 'preflight: an interpreter that runs passes, and its path is reported');
+      eq(m.calls, ['python install 3.11 --no-bin', 'python find 3.11 --managed-python'], 'it installs the managed Python without bin shims (they collide with the user\'s own) and locates it');
+    }
+    {
+      let ran = null;
+      const m = mk({ _execFile: async (exe, args) => { ran = [exe, args]; return { stdout: '', stderr: '' }; } });
+      await m.probeManagedInterpreter();
+      eq(ran, [py, ['-I', '-c', 'pass']], 'the interpreter is run once, isolated, doing nothing');
+    }
+    {
+      // Blocked, as Node reports a refused executable: the error the install would have raised, for the one detector.
+      for (const refusal of [{ code: 'UNKNOWN', message: 'spawn UNKNOWN' }, { code: 4551, message: 'x', stderr: 'An Application Control policy has blocked this file.' }]) {
+        const m = mk({ _execFile: async () => { throw Object.assign(new Error(refusal.message), refusal); } });
+        let err = null;
+        try { await m.probeManagedInterpreter(); } catch (e) { err = e; }
+        ok(err && err.preflight && err.code === 2, `preflight: a blocked interpreter (${refusal.code}) throws`);
+        const found = policyBlockFromInstallError(err);
+        ok(found && /os error 4551/.test(found.line) && /uv tool install/.test(found.path), 'and the one detector reads it as a policy block of the install');
+      }
+    }
+    {
+      // `uv python find` is the step that queries the interpreter: under a policy that refuses the whole interpreter it is the one that fails.
+      const m = mk({ _uv: async (args) => { if (args[1] === 'find') throw Object.assign(new Error('Command failed: uv python find 3.11 --managed-python\nerror: Failed to query Python interpreter\n  cause: An Application Control policy has blocked this file. (os error 4551)'), { stderr: 'error: Failed to query Python interpreter at `C:\\u\\python.exe`\n  cause: An Application Control policy has blocked this file. (os error 4551)' }); return { stdout: '', stderr: '' }; } });
+      let err = null;
+      try { await m.probeManagedInterpreter(); } catch (e) { err = e; }
+      ok(err && err.preflight && policyBlockFromInstallError(err), 'preflight: a policy block reported by `uv python find` is the verdict, not a skip');
+    }
+    {
+      // Not a verdict: the real install decides.
+      const timeout = mk({ _execFile: async () => { throw Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' }); } });
+      eq(await timeout.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: a timeout is inconclusive, not a block');
+      const offline = mk({ _uv: async (args) => { throw Object.assign(new Error('Command failed: uv python install\nerror: network unreachable'), { stderr: 'network unreachable' }); } });
+      eq(await offline.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: uv cannot fetch Python (offline): skipped, the install reports it');
+    }
+    {
+      // An old uv without --no-bin: the same install without the flag.
+      const m = mk({ _uv: async function (args) { this.calls.push(args.join(' ')); if (args.includes('--no-bin')) throw Object.assign(new Error('x'), { stderr: "error: unexpected argument '--no-bin' found" }); return { stdout: args[1] === 'find' ? py : '', stderr: '' }; } });
+      m.calls = [];
+      const r = await m.probeManagedInterpreter();
+      ok(r.ok && !r.skipped && m.calls.includes('python install 3.11'), 'preflight: an old uv without --no-bin falls back to the plain install');
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // ── Desktop <-> engine compatibility (engine-compat.js wiring) ──────────────
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    // A fake installed venv: bin/flow + site-packages with _version.py and compat.json.
+    const makeVenv = ({ engineVersion, compatJson }) => {
+      const venv = fs.mkdtempSync(path.join(os.tmpdir(), 'uvtest-compat-'));
+      const bin = path.join(venv, IS_WIN ? 'Scripts' : 'bin');
+      fs.mkdirSync(bin, { recursive: true });
+      const flowBin = path.join(bin, IS_WIN ? 'flow.exe' : 'flow');
+      fs.writeFileSync(flowBin, '');
+      const site = path.join(venv, ...(IS_WIN ? ['Lib', 'site-packages'] : ['lib', 'python3.11', 'site-packages']), 'flow_sdk');
+      fs.mkdirSync(site, { recursive: true });
+      fs.writeFileSync(path.join(site, '_version.py'), `__version__ = "${engineVersion}"\n`);
+      if (compatJson !== undefined) fs.writeFileSync(path.join(site, 'compat.json'), compatJson);
+      return { venv, flowBin };
+    };
+    // Never let the discovery's strategy-2 fallback read the developer's REAL tool venv.
+    const compatMgr = (appVersion) => {
+      const m = new UvManager(silentLog, appVersion ? { appVersion } : {});
+      m._toolVenvDir = () => path.join(os.tmpdir(), 'uvtest-compat-no-such-tool');
+      return m;
+    };
+
+    {
+      // getInstalledMinDesktopSync reads the engine's own floor as plain data.
+      const { venv, flowBin } = makeVenv({ engineVersion: '0.2.70', compatJson: '{"min_desktop_version": "0.2.60"}' });
+      const m = compatMgr('0.2.45');
+      eq(m.getInstalledMinDesktopSync(flowBin), { minDesktopVersion: '0.2.60' }, 'reads the installed engine floor');
+      eq(m.getInstalledVersionSync(flowBin), '0.2.70', 'the shared site-packages discovery still reads the version');
+
+      // installedPairIssue: the engine demands a newer desktop than this one.
+      const issue = m.installedPairIssue(flowBin);
+      ok(issue && issue.engineVersion === '0.2.70', 'an incompatible installed pair is detected');
+      ok(issue.message.includes('requires Desktop 0.2.60'), 'the issue carries the user-facing message');
+
+      // A desktop above the floor is fine.
+      eq(compatMgr('0.2.60').installedPairIssue(flowBin), null, 'a pair meeting the floor has no issue');
+
+      // No app version (tests/tools) → the contract is not evaluated.
+      eq(compatMgr(null).installedPairIssue(flowBin), null, 'no app version → no verdict');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+    {
+      // Legacy engine (no compat.json) and invalid metadata both leave startup alone.
+      const legacy = makeVenv({ engineVersion: '0.2.10' });
+      const m = compatMgr('0.2.45');
+      eq(m.getInstalledMinDesktopSync(legacy.flowBin), { minDesktopVersion: null }, 'a pre-contract engine has no floor');
+      eq(m.installedPairIssue(legacy.flowBin), null, 'legacy engine → compatible (documented policy)');
+      fs.rmSync(legacy.venv, { recursive: true, force: true });
+
+      const broken = makeVenv({ engineVersion: '0.2.10', compatJson: 'not json' });
+      eq(m.getInstalledMinDesktopSync(broken.flowBin), 'invalid', 'unparseable metadata reads as invalid');
+      eq(m.installedPairIssue(broken.flowBin), null, 'invalid metadata on an INSTALLED engine must not brick startup');
+      fs.rmSync(broken.venv, { recursive: true, force: true });
+    }
+    {
+      // resolveCompatibleEngineVersion: newest release passing BOTH directions, from stubbed metadata.
+      const m = new UvManager(silentLog, { appVersion: '0.2.45' });
+      m._getPypiData = async () => ({
+        info: { version: '0.2.70' },
+        releases: {
+          '0.2.70': [{ yanked: false }],
+          '0.2.65': [{ yanked: false }],
+          '0.2.60': [{ yanked: true }],
+        },
+      });
+      const floors = { '0.2.70': '0.2.60', '0.2.65': '0.2.40' };
+      m._readCandidateMinDesktop = async (v) => ({ minDesktopVersion: floors[v] || null });
+      eq(await m.resolveCompatibleEngineVersion(), { version: '0.2.65', minDesktopVersion: '0.2.40' },
+        'latest needs a newer desktop → the newest compatible release is picked (yanked skipped)');
+      eq(await m._compatibleEngineSpec('flowpad'), 'flowpad==0.2.65', 'the spec pins the resolved release');
+
+      // PyPI unreachable → fall back to the caller's spec (offline keeps the old behaviour).
+      m._getPypiData = async () => null;
+      eq(await m.resolveCompatibleEngineVersion(), null, 'no PyPI answer → no verdict');
+      eq(await m._compatibleEngineSpec('flowpad@latest'), 'flowpad@latest', 'no verdict → the fallback spec');
+
+      // PyPI answered and NOTHING is compatible → a user-readable failure, nothing installed.
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: { '0.2.70': [{}] } });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '9.9.9' });
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /No compatible FlowPad engine release/); passed++;
+    }
+    {
+      // _assertCandidateCompatible: an explicit target below/above the contract.
+      const m = new UvManager(silentLog, { appVersion: '0.2.45' });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.60' });
+      await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /existing installation has been preserved/); passed++;
+      m._readCandidateMinDesktop = async () => 'invalid';
+      await assert.rejects(() => m._assertCandidateCompatible('0.2.70'), /invalid compatibility metadata/); passed++;
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.40' });
+      await m._assertCandidateCompatible('0.2.70'); passed++; // resolves: compatible
+      m._readCandidateMinDesktop = async () => null; // indeterminate → the post-install check decides
+      await m._assertCandidateCompatible('0.2.70'); passed++;
+    }
+    {
+      // _verifyInstalledPairOrRollback: a bad pair after an install puts the previous pin back and throws.
+      const incompatible = makeVenv({ engineVersion: '0.2.70', compatJson: '{"min_desktop_version": "0.2.60"}' });
+      const m = compatMgr('0.2.45');
+      m._flowBin = incompatible.flowBin;
+      const installs = [];
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._uvToolInstallForce = async (args) => { installs.push(args.join(' ')); };
+      m._resolveFlowBin = async () => incompatible.flowBin;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /not compatible/); passed++;
+      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force --offline'], 'the previous release is pinned back (from uv\'s cache first: --offline)');
+
+      // No previous version (first install): throw without any rollback install.
+      installs.length = 0;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback(null), /not compatible/); passed++;
+      eq(installs, [], 'nothing to roll back to on a first install');
+
+      // A compatible pair verifies silently.
+      const fine = makeVenv({ engineVersion: '0.2.70', compatJson: '{"min_desktop_version": "0.2.40"}' });
+      m._flowBin = fine.flowBin;
+      await m._verifyInstalledPairOrRollback('0.2.50'); passed++;
+      fs.rmSync(incompatible.venv, { recursive: true, force: true });
+      fs.rmSync(fine.venv, { recursive: true, force: true });
+    }
+  }
+
+  // ── Desktop <-> engine compatibility: review follow-ups ──────────────────────
+  {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const http = require('http');
+    const crypto = require('crypto');
+    const { createZip } = require('./zip-writer');
+    const engineCompatMod = require('./engine-compat');
+    const mk = (appVersion) => {
+      const m = new UvManager(silentLog, appVersion ? { appVersion } : {});
+      m._toolVenvDir = () => path.join(os.tmpdir(), 'uvtest-compat-no-such-tool');
+      return m;
+    };
+    const withDesktopFloor = async (floor, fn) => {
+      const real = engineCompatMod.desktopMinBackendVersion;
+      engineCompatMod.desktopMinBackendVersion = () => floor;
+      try { await fn(); } finally { engineCompatMod.desktopMinBackendVersion = real; }
+    };
+    const makeVenv = (engineVersion, compatJson) => {
+      const venv = fs.mkdtempSync(path.join(os.tmpdir(), 'uvtest-compat2-'));
+      const bin = path.join(venv, IS_WIN ? 'Scripts' : 'bin');
+      fs.mkdirSync(bin, { recursive: true });
+      const flowBin = path.join(bin, IS_WIN ? 'flow.exe' : 'flow');
+      fs.writeFileSync(flowBin, '');
+      const site = path.join(venv, ...(IS_WIN ? ['Lib', 'site-packages'] : ['lib', 'python3.11', 'site-packages']), 'flow_sdk');
+      fs.mkdirSync(site, { recursive: true });
+      fs.writeFileSync(path.join(site, '_version.py'), `__version__ = "${engineVersion}"\n`);
+      if (compatJson !== undefined) fs.writeFileSync(path.join(site, 'compat.json'), compatJson);
+      return { venv, flowBin };
+    };
+
+    // #2: an engine that is too OLD (no desktop floor of its own) is reported without inventing a "null" floor.
+    await withDesktopFloor('0.2.50', async () => {
+      const { venv, flowBin } = makeVenv('0.2.40');
+      const issue = mk('0.2.60').installedPairIssue(flowBin);
+      ok(issue && !/null|undefined/.test(issue.message), `no "null" in the panel text: ${issue && JSON.stringify(issue.message)}`);
+      ok(issue.message.includes('requires Backend 0.2.50 or newer'), 'it names the floor that failed');
+      eq(issue.desktopTooOld, false, 'the ENGINE is the old side -> upgrading it is safe');
+      fs.rmSync(venv, { recursive: true, force: true });
+    });
+    {
+      const { venv, flowBin } = makeVenv('0.2.70', '{"min_desktop_version": "0.2.60"}');
+      const issue = mk('0.2.45').installedPairIssue(flowBin);
+      eq(issue.desktopTooOld, true, 'the engine demands a newer desktop -> the DESKTOP is the old side');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+
+    // #3: a release with no files left is withdrawn, exactly as the backend lists it.
+    {
+      const m = mk('0.2.45');
+      m._getPypiData = async () => ({
+        info: { version: '0.2.70' },
+        releases: { '0.2.70': [], '0.2.69': [{ yanked: true }, { yanked: true }], '0.2.68': [{ yanked: false }] },
+      });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: null });
+      eq((await m.resolveCompatibleEngineVersion()).version, '0.2.68', 'empty and fully-yanked releases are never picked');
+    }
+
+    // #5: the floor is read with Range requests first; uv is only the fallback.
+    {
+      const wheel = (withCompat) => {
+        const entries = [];
+        for (let i = 0; i < 300; i++) entries.push({ name: `flow_sdk/m${i}.py`, data: crypto.randomBytes(1024) });
+        if (withCompat) entries.push({ name: 'flow_sdk/compat.json', data: '{"min_desktop_version": "0.2.60"}' });
+        return createZip(entries);
+      };
+      const inMemory = (zip, { honourRange = true } = {}) => async (_u, header) => {
+        if (!honourRange) return { status: 200 };
+        const r = /^bytes=(\d*)-(\d*)$/.exec(header);
+        const from = r[1] === '' ? Math.max(0, zip.length - Number(r[2])) : Number(r[1]);
+        const to = r[1] === '' ? zip.length - 1 : Math.min(Number(r[2]), zip.length - 1);
+        return { status: 206, contentRange: `bytes ${from}-${to}/${zip.length}`, body: zip.subarray(from, to + 1) };
+      };
+      const uvCalls = [];
+      const make = (fetchRange) => {
+        const m = mk('0.2.45');
+        m._wheelUrl = async () => 'https://files.pythonhosted.org/flowpad.whl';
+        m._fetchRange = fetchRange;
+        m._readCandidateViaUv = async (v) => { uvCalls.push(v); return { minDesktopVersion: 'from-uv' }; };
+        return m;
+      };
+
+      let m = make(inMemory(wheel(true)));
+      eq(await m._readCandidateMinDesktop('0.2.70'), { minDesktopVersion: '0.2.60' }, 'the floor comes out of the wheel by ranges');
+      eq(uvCalls, [], 'uv was not needed');
+      m._fetchRange = async () => { throw new Error('cached: must not fetch again'); };
+      eq(await m._readCandidateMinDesktop('0.2.70'), { minDesktopVersion: '0.2.60' }, 'and it is cached for the session');
+
+      m = make(inMemory(wheel(false)));
+      eq(await m._readCandidateMinDesktop('0.2.10'), { minDesktopVersion: null }, 'a wheel without compat.json is a pre-contract release (legacy)');
+      eq(uvCalls, [], 'still no uv');
+
+      m = make(inMemory(wheel(true), { honourRange: false }));
+      eq(await m._readCandidateMinDesktop('0.2.71'), { minDesktopVersion: 'from-uv' }, 'no Range support -> falls back to unpacking with uv');
+      eq(uvCalls, ['0.2.71'], 'uv ran once, for that version');
+
+      m = make(inMemory(wheel(true)));
+      m._wheelUrl = async () => null;
+      eq(await m._readCandidateMinDesktop('0.2.72'), { minDesktopVersion: 'from-uv' }, 'no usable wheel URL -> falls back too');
+
+      m = make(inMemory(wheel(true)));
+      eq(await m._readCandidateMinDesktop('1.2.3 --index-url http://evil'), 'invalid', 'a non-release string is rejected before anything runs');
+      eq(uvCalls, ['0.2.71', '0.2.72'], 'and uv never saw it');
+    }
+
+    // #5: the real ranged GET, against a local server that honours Range and one that does not.
+    {
+      const body = crypto.randomBytes(5000);
+      const serve = (honour) => new Promise((resolve) => {
+        const srv = http.createServer((req, res) => {
+          const r = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
+          if (honour && r) {
+            const from = Number(r[1]); const to = Math.min(Number(r[2]), body.length - 1);
+            res.writeHead(206, { 'Content-Range': `bytes ${from}-${to}/${body.length}`, 'Content-Length': to - from + 1 });
+            res.end(body.subarray(from, to + 1));
+          } else { res.writeHead(200, { 'Content-Length': body.length }); res.end(body); }
+        }).listen(0, '127.0.0.1', () => resolve(srv));
+      });
+      const m = mk('0.2.45');
+      let srv = await serve(true);
+      let got = await m._fetchRange(`http://127.0.0.1:${srv.address().port}/x`, 'bytes=10-19');
+      eq([got.status, got.contentRange, got.body.length], [206, 'bytes 10-19/5000', 10], 'a 206 carries Content-Range and exactly the bytes asked for');
+      eq(got.body.equals(body.subarray(10, 20)), true, 'and they are the right bytes');
+      srv.close();
+      srv = await serve(false);
+      got = await m._fetchRange(`http://127.0.0.1:${srv.address().port}/x`, 'bytes=10-19');
+      eq(got, { status: 200 }, 'a server that ignores Range -> status only, the body is dropped unread');
+      srv.close();
+    }
+
+    // #6: where the wheel may come from.
+    {
+      const m = mk('0.2.45');
+      m._pypiDoc = { releases: {
+        '0.2.80': [{ packagetype: 'bdist_wheel', url: 'https://files.pythonhosted.org/packages/a/flowpad-0.2.80-py3-none-any.whl' }],
+        '0.2.81': [{ packagetype: 'bdist_wheel', url: 'https://evil.example.com/flowpad-0.2.81-py3-none-any.whl' }],
+        '0.2.82': [{ packagetype: 'bdist_wheel', yanked: true, url: 'https://files.pythonhosted.org/packages/b/flowpad-0.2.82-py3-none-any.whl' }],
+        '0.2.83': [{ packagetype: 'sdist', url: 'https://files.pythonhosted.org/packages/c/flowpad-0.2.83.tar.gz' }],
+      } };
+      eq(await m._wheelUrl('0.2.80'), 'https://files.pythonhosted.org/packages/a/flowpad-0.2.80-py3-none-any.whl', 'a PyPI-hosted wheel is used');
+      eq(await m._wheelUrl('0.2.81'), null, 'a wheel on another host is not read');
+      eq(await m._wheelUrl('0.2.82'), null, 'a yanked wheel is not read');
+      eq(await m._wheelUrl('0.2.83'), null, 'an sdist is not a wheel');
+    }
+
+    // #2: invalid metadata is refused after an install exactly as it is before one -- but never bricks a startup.
+    {
+      const { venv, flowBin } = makeVenv('0.2.70', 'not json');
+      const m = mk('0.2.45');
+      eq(m.installedPairIssue(flowBin), null, 'startup, an engine already on disk: lenient (legacy)');
+      const issue = m.installedPairIssue(flowBin, { strict: true });
+      ok(issue && /invalid compatibility metadata/.test(issue.message), 'right after an install: refused, with a sentence a user can read');
+      ok(!/null|undefined/.test(issue.message), 'and no "null" in it');
+
+      const installs = [];
+      m._flowBin = flowBin;
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._uvToolInstallForce = async (args) => { installs.push(args.join(' ')); };
+      m._resolveFlowBin = async () => flowBin;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /invalid compatibility metadata/); passed++;
+      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force --offline'], 'and the previous release is put back');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+
+    // #4: the "nothing compatible" error says what was really looked at.
+    {
+      const m = mk('0.2.45');
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: Object.fromEntries(Array.from({ length: 14 }, (_, i) => [`0.2.${70 - i}`, [{}]])) });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '9.9.9' });
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /checked the newest 10, older ones were not looked at/); passed++;
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: { '0.2.70': [{}], '0.2.69': [{}] } });
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /checked the newest 2\)/); passed++;
+    }
+
+    // A published release candidate must not be installed for everyone, nor offered on every launch.
+    {
+      const m = mk('0.2.45');
+      m._getPypiData = async () => ({ info: { version: '0.2.223' }, releases: { '0.2.222': [{}], '0.2.223': [{}], '0.2.223rc1': [{}], '0.2.205rc2': [{}] } });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: null });
+      eq((await m.resolveCompatibleEngineVersion()).version, '0.2.223', 'resolve picks the final release, not its rc');
+      eq(await m._compatibleEngineSpec('flowpad'), 'flowpad==0.2.223', 'and so does the spec every install/upgrade/repair uses');
+    }
+
+    // ── review follow-ups (PR #663): restore, update dialog, withdrawn version, bounded candidate reads ──────
+    {
+      // (c) the restore asks the cache first, then the network, and is honest when neither works.
+      const { venv, flowBin } = makeVenv('0.2.70', '{"min_desktop_version": "0.2.60"}');
+      const m = mk('0.2.45');
+      m._flowBin = flowBin; m._pythonPinForUpgrade = async () => '3.11'; m._resolveFlowBin = async () => flowBin;
+      const attempts = [];
+      m._uvToolInstallForce = async (args) => { attempts.push(args.includes('--offline') ? 'offline' : 'online'); if (attempts.length === 1) throw new Error('cache miss'); };
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /existing installation has been preserved/); passed++;
+      eq(attempts, ['offline', 'online'], 'the cache first; the network when the cache cannot serve it');
+
+      m._uvToolInstallForce = async () => { throw new Error('network is down'); };
+      let msg = '';
+      try { await m._verifyInstalledPairOrRollback('0.2.50'); } catch (e) { msg = e.message; }
+      ok(!/has been preserved/.test(msg), 'a restore that failed must NOT claim the installation was preserved');
+      ok(/Restoring FlowPad engine 0\.2\.50 failed \(network is down\)/.test(msg) && /uv tool install flowpad==0\.2\.50 --force/.test(msg), 'it says what failed and how to do it by hand');
+      ok(/next time it starts/.test(msg), 'and what repairs it otherwise');
+
+      msg = '';
+      try { await m._verifyInstalledPairOrRollback(null); } catch (e) { msg = e.message; }
+      ok(!/has been preserved/.test(msg) && /no earlier engine to restore/.test(msg), 'a first install has nothing to preserve, and says so');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+    {
+      // (a) the update dialog names what the install will actually put on disk.
+      const mkStatus = (over = {}) => ({ currentVersion: '0.2.220', latestVersion: '0.2.230', required: true, ...over });
+      const m = mk('0.2.45');
+      m.resolveCompatibleEngineVersion = async () => ({ version: '0.2.222', minDesktopVersion: null });
+      eq((await m._applyCompatToStatus(mkStatus())).latestVersion, '0.2.222', "the cloud's latest needs a newer desktop -> the dialog names the compatible release");
+      eq(await m._applyCompatToStatus(mkStatus({ currentVersion: '0.2.222' })), null, 'the best compatible release is what is installed -> nothing is offered (no prompt on every launch)');
+      eq(await m._applyCompatToStatus(mkStatus({ currentVersion: '0.2.250' })), null, '...or older than what is installed -> nothing is offered');
+      eq((await m._applyCompatToStatus(mkStatus({ required: false }))).latestVersion, '0.2.230', 'a verdict that requires nothing is passed through');
+      m.resolveCompatibleEngineVersion = async () => { throw new Error('No compatible FlowPad engine release found'); };
+      eq(await m._applyCompatToStatus(mkStatus()), null, 'PyPI answered and nothing is compatible -> nothing is offered');
+      m.resolveCompatibleEngineVersion = async () => null;
+      eq((await m._applyCompatToStatus(mkStatus())).latestVersion, '0.2.230', 'cannot evaluate (offline) -> the cloud verdict stands; the post-install check decides');
+      eq(await mk(null)._applyCompatToStatus(mkStatus()), mkStatus(), 'no app version (dev run) -> untouched');
+
+      // ...and through the real getUpdateStatus, with the cloud stubbed.
+      const realFetch = global.fetch;
+      global.fetch = async () => ({ ok: true, json: async () => ({ status: 'required', latest_version: '0.2.230' }) });
+      try {
+        const g = mk('0.2.45');
+        g._getUpgradeInfo = async () => ({ version: '0.2.220' });
+        g.resolveCompatibleEngineVersion = async () => ({ version: '0.2.222', minDesktopVersion: null });
+        eq(await g.getUpdateStatus('http://cloud'), { currentVersion: '0.2.220', latestVersion: '0.2.222', required: true }, 'getUpdateStatus returns the compatible release, not the cloud\'s');
+      } finally { global.fetch = realFetch; }
+    }
+    {
+      // (b) an agreed version that was withdrawn is replaced by the newest COMPATIBLE release, not by "latest".
+      const m = mk('0.2.45');
+      m._getPypiVersionInfo = async (v) => (v === '0.2.225' ? { yanked: true, yanked_reason: 'broken' } : { version: v, requires_python: '>=3.11' });
+      m._getLatestPypiInfo = async () => ({ version: '0.2.230' });
+      m.resolveCompatibleEngineVersion = async () => ({ version: '0.2.222', minDesktopVersion: null });
+      eq((await m._resolveEngineTarget('0.2.225')).version, '0.2.222', 'the replacement is compatible with this desktop');
+      m.resolveCompatibleEngineVersion = async () => null;
+      eq((await m._resolveEngineTarget('0.2.225')).version, '0.2.230', 'only when the contract cannot be evaluated does it fall back to latest');
+      m.resolveCompatibleEngineVersion = async () => { throw new Error('No compatible FlowPad engine release found'); };
+      await assert.rejects(() => m._resolveEngineTarget('0.2.225'), /No compatible/); passed++;
+      eq((await m._resolveEngineTarget('0.2.221')).version, '0.2.221', 'a version that was not withdrawn is left alone');
+    }
+    {
+      // (d) bounded candidate reads: a request timeout, a cap on whole-wheel fallbacks, no build code.
+      const realFetch = global.fetch;
+      let opts;
+      global.fetch = async (url, o) => { opts = o; return { status: 206, headers: { get: () => 'bytes 0-0/1' }, arrayBuffer: async () => new ArrayBuffer(1) }; };
+      try {
+        const m = mk('0.2.45');
+        await m._fetchRange('https://files.pythonhosted.org/x.whl', 'bytes=0-0');
+        ok(opts.signal && typeof opts.signal.aborted === 'boolean', 'every ranged GET carries an abort signal (a timeout)');
+      } finally { global.fetch = realFetch; }
+
+      const m = mk('0.2.45');
+      m._rangeIgnored = true;
+      m._wheelUrl = async () => { throw new Error('must not even look the URL up'); };
+      eq(await m._readCandidateViaRange('0.2.70'), null, 'once a server ignored Range, it is not asked again');
+
+      const uv = [];
+      const c = mk('0.2.45');
+      c._readCandidateViaRange = async () => null;
+      c._readCandidateViaUv = async (v) => { uv.push(v); return { minDesktopVersion: null }; };
+      c._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: Object.fromEntries(['0.2.70', '0.2.69', '0.2.68', '0.2.67'].map((v) => [v, [{}]])) });
+      c._pypiDoc = null;
+      c._minDesktopCache.clear();
+      eq((await c.resolveCompatibleEngineVersion()).version, '0.2.70', 'resolution still picks the newest');
+      c._minDesktopCache.clear();
+      for (const v of ['0.2.70', '0.2.69', '0.2.68', '0.2.67']) await c._readCandidateMinDesktop(v);
+      eq(uv.length, 2, 'at most 2 whole-wheel fallbacks per resolution, however many candidates (a proxy that strips Range)');
+      eq(await c._readCandidateMinDesktop('0.2.66'), null, 'the rest are unknown, not guessed');
+
+      let args;
+      const w = mk('0.2.45');
+      w._runStreaming = async (cmd, a) => { args = a; throw new Error('stop'); };
+      await w._readCandidateViaUv('0.2.70');
+      ok(args.includes('--only-binary') && args[args.indexOf('--only-binary') + 1] === ':all:', 'an sdist-only release cannot run build code to have its floor read');
+    }
+
+    // #6: a version that is not release-shaped never reaches an install command.
+    {
+      const m = mk('0.2.45');
+      const spawned = [];
+      m._uvToolInstallForce = async (args) => { spawned.push(args.join(' ')); };
+      await assert.rejects(() => m.upgrade({ version: '1.2.3 --index-url http://evil' }), /not a release version/); passed++;
+      await assert.rejects(() => m.upgrade({ version: '1.2.3&calc' }), /not a release version/); passed++;
+      eq(spawned, [], 'nothing was spawned for either');
+
+      const { venv, flowBin } = makeVenv('0.2.70', '{"min_desktop_version": "0.2.60"}');
+      m._flowBin = flowBin;
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._resolveFlowBin = async () => flowBin;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('1.2.3 --x'), /not compatible/); passed++;
+      eq(spawned, [], 'a malformed "previous version" is not pinned back either');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

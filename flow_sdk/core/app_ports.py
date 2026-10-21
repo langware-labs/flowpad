@@ -39,8 +39,7 @@ _FORWARDERS = frozenset({
 
 
 def _forwards(name: str) -> bool:
-    stem = name.lower()
-    return (stem[:-4] if stem.endswith(".exe") else stem) in _FORWARDERS
+    return name.lower().removesuffix(".exe") in _FORWARDERS
 
 
 #: How far up a listener's ancestry its launch command is looked for (server ← runtime ← npx ← shell).
@@ -131,21 +130,28 @@ def _listening_by_pid() -> Optional[dict[int, list[int]]]:
     return {pid: sorted(ports) for pid, ports in found.items()}
 
 
-def listeners() -> list[Listener]:
-    """Every listening TCP port of a process this user can read. A port held by another user's process
-    is absent — ``port_open`` still sees it, which is how ``decide`` knows a holder it cannot name."""
+def listeners(port: Optional[int] = None) -> list[Listener]:
+    """Every listening TCP port of a process this user can read — or, given ``port``, only the processes
+    on it (who they are is then read for those alone). A port held by another user's process is absent:
+    ``port_open`` still sees it, which is how ``decide`` knows a holder it cannot name."""
     import psutil  # noqa: PLC0415
 
     by_pid = _listening_by_pid()
-    parents = _parents()
+    if by_pid is None:  # one read not allowed here (macOS): ask each process
+        by_pid = {}
+        for process in psutil.process_iter():
+            try:
+                if ports := _listening(process):
+                    by_pid[process.pid] = ports
+            except (psutil.Error, OSError):
+                continue
+    if port is not None:
+        by_pid = {pid: [port] for pid, ports in by_pid.items() if port in ports}
+    parents = _parents() if by_pid else {}
     found: list[Listener] = []
-    for process in psutil.process_iter() if by_pid is None else map(_process, by_pid):
+    for pid, ports in by_pid.items():
         try:
-            if process is None:
-                continue
-            ports = _listening(process) if by_pid is None else by_pid[process.pid]
-            if not ports:
-                continue
+            process = psutil.Process(pid)
             name = process.name()
             if _forwards(name):
                 continue
@@ -153,7 +159,7 @@ def listeners() -> list[Listener]:
             commands = [" ".join(process.cmdline()), *_ancestor_commands(process, parents)]
         except (psutil.Error, OSError):
             continue
-        found.extend(Listener(process.pid, port, name, cwd, tuple(commands)) for port in ports)
+        found.extend(Listener(pid, one, name, cwd, tuple(commands)) for one in ports)
     return found
 
 
@@ -183,22 +189,14 @@ def _ancestor_commands(process, parents: dict[int, int]) -> list[str]:
         while pid is not None and pid not in seen and len(commands) < _ANCESTORS:
             seen.add(pid)
             parent = psutil.Process(pid)
-            if parent.create_time() > born:
+            parent_born = parent.create_time()
+            if parent_born > born:
                 break
             commands.append(" ".join(parent.cmdline()))
-            born, pid = parent.create_time(), parents.get(pid)
+            born, pid = parent_born, parents.get(pid)
     except (psutil.Error, OSError):
         pass
     return commands
-
-
-def _process(pid: int):
-    import psutil  # noqa: PLC0415
-
-    try:
-        return psutil.Process(pid)
-    except psutil.Error:
-        return None
 
 
 def _inside(cwd: str, folder: str) -> bool:
@@ -232,14 +230,22 @@ def launched_by(listener: Listener, start_cmd: str) -> bool:
     return any(_launch_pattern(start_cmd).search(_unquoted(line)) for line in listener.commands)
 
 
-def of_app(snapshot: Iterable[Listener], folder: Path, start_cmd: str, siblings: Iterable[str] = ()) -> list[Listener]:
+def of_app(
+    snapshot: Iterable[Listener], folder: Path, start_cmd: str, siblings: Iterable[str] = (), theirs: Iterable[int] = ()
+) -> list[Listener]:
     """The listeners that are THIS process of the app: inside its folder, and not a sibling process of
-    the same app (its API beside its page) — a sibling is told apart by its own start command."""
+    the same app (its API beside its page) — a sibling is told apart by its own start command, and a
+    port a sibling declares (``theirs``) is the sibling's: two processes may share one command."""
     home = os.path.realpath(folder)
-    inside = [one for one in snapshot if _inside(one.cwd, home)]
+    taken = set(theirs)
+    inside = [one for one in snapshot if _inside(one.cwd, home) and one.port not in taken]
     launched = [one for one in inside if launched_by(one, start_cmd)]
     if launched:
         return launched
+    # A listener no command of the app launched (an old page, one started by hand) is the app's FIRST
+    # process — its page — never a service beside it.
+    if next((command for command in siblings if command), start_cmd) != start_cmd:
+        return []
     others = [command for command in siblings if command and command != start_cmd]
     return [one for one in inside if not any(launched_by(one, command) for command in others)]
 
@@ -249,7 +255,7 @@ def stranger_on(port: int, folder: Path, snapshot: Optional[Iterable[Listener]] 
     folder's own listens there. None: the port is free, the folder's own, or its holder cannot be named.
     For a caller handed a port and a folder and asked to believe the two belong together."""
     home = os.path.realpath(folder)
-    holders = [one for one in (listeners() if snapshot is None else snapshot) if one.port == port]
+    holders = [one for one in (listeners(port) if snapshot is None else snapshot) if one.port == port]
     if any(_inside(one.cwd, home) for one in holders):
         return None
     return holders[0] if holders else None
@@ -317,19 +323,23 @@ def decide(
     return PortAnswer("conflict", port, holder, f"port {port} is held by another program{who}")
 
 
-def stop(found: Iterable[Listener]) -> None:
-    """End each listener and everything started with it, and return once they are gone — so the port is
-    free. The whole process group goes (the shell AND the server under it); never this process's own."""
+def kill_trees(pids: Iterable[int]) -> None:
+    """End each process and everything started under it — its whole process group on POSIX, never this
+    process's own — and return once they are gone, so their ports are free. The group is signalled too
+    because a member whose leader already died is no longer anyone's child. Each process is also ended
+    directly: on Windows there is no group, and ``taskkill /T`` (which asks WMI for the tree) was seen to
+    stall for over 30 s. Only what was signalled is waited for — one that could not be ended (another
+    user's) would be waited on forever."""
     import psutil  # noqa: PLC0415
 
     doomed: dict[int, "psutil.Process"] = {}
     groups: set[int] = set()
-    for one in found:
-        doomed.update((member.pid, member) for member in _tree(one.pid))
+    for pid in pids:
+        doomed.update((member.pid, member) for member in _tree(pid))
         if sys.platform == "win32":
             continue
         try:
-            group = os.getpgid(one.pid)
+            group = os.getpgid(pid)
         except OSError:
             continue
         if group != os.getpgrp():
@@ -340,9 +350,6 @@ def stop(found: Iterable[Listener]) -> None:
             os.killpg(group, signal.SIGKILL)
         except OSError:
             pass
-    # Each process of the tree, ended directly: on Windows there is no group to signal, and
-    # ``taskkill /T`` (which asks WMI for the tree) was seen to stall for over 30 s. Only what was
-    # actually signalled is waited for — one that could not be ended would be waited on forever.
     ended = []
     for process in doomed.values():
         try:
@@ -353,4 +360,9 @@ def stop(found: Iterable[Listener]) -> None:
     psutil.wait_procs(ended)
 
 
-__all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]
+def stop(found: Iterable[Listener]) -> None:
+    """End each listener and everything started with it (``kill_trees``)."""
+    kill_trees(one.pid for one in found)
+
+
+__all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "kill_trees", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]

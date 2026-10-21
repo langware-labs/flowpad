@@ -39,15 +39,15 @@ def test_the_data_column_is_a_pydantic_dump_not_a_lossy_walk() -> None:
     data = DbSerializer().data(a)
     assert data["input"] == {"text": "string"}            # a shape class → its authoring form
     assert data["cli_options"] == {"chrome": True, "nested": {"a": 1}}
-    assert "examples" not in DbSerializer().data(Dataset(name="d"))   # NoDBAPIField ⇒ excluded
+    assert "rows" not in DbSerializer().data(Dataset(name="d"))   # NoDBAPIField ⇒ excluded
 
 
 def test_a_dataset_with_rows_never_reaches_the_row_check() -> None:
     """``examples`` is DB-excluded, so a dataset with FileRef rows stores fine —
     the rows live on disk only. The refusal is for a field that DECLARES bytes
     and is NOT excluded."""
-    ds = Dataset(name="d", examples=[ARTIFACT_ROW(input=FileRef(path="in.txt"))])
-    assert "examples" not in DbSerializer().data(ds)
+    ds = Dataset(name="d", rows=[ARTIFACT_ROW(input=FileRef(path="in.txt"))])
+    assert "rows" not in DbSerializer().data(ds)
 
 
 def test_a_disk_only_field_that_is_not_excluded_raises() -> None:

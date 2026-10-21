@@ -3,7 +3,7 @@
 /*
  * Keep secrets out of the desktop log.
  *
- * The log is a file on disk that users email to us (and that "Share with us" bundles), so anything written
+ * The log is a file on disk that users email to us (and that "Send Report" bundles), so anything written
  * to it is effectively published. Found in real user logs (2026-09-30): every flowpad:// deep link was logged
  * whole, and the login callback carries a live API key — `flowpad://auth/login_callback?flowpad-api-key=fp_live_…`.
  *

@@ -107,16 +107,16 @@ def test_the_manifest_reflect_modes_are_the_familys(tmp_path):
 
 
 def test_every_shipped_driver_has_the_family_its_items_are():
-    """The shipped split, pinned: four file sources, three record sources, and every channel a message source."""
+    """The shipped split, pinned: five file sources, three record sources, and every channel a message source."""
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
 
     families: dict[str, list[str]] = {}
     for folder in sorted(SHIPPED_ROOT.iterdir()):
         if (folder / "data_driver.json").is_file():
             families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
-    assert families["object"] == ["folder", "gcs", "gdrive", "git"]
+    assert families["object"] == ["folder", "gcs", "gdrive", "git", "s3"]
     assert families["record"] == ["hackernews", "jira", "rss"]
-    assert len(families["message"]) == 17 and {"slack", "flow_whatsapp", "flow_telegram", "flow_slack"} <= set(families["message"])
+    assert len(families["message"]) == 18 and {"slack", "flow_whatsapp", "flow_telegram", "flow_slack"} <= set(families["message"])
 
 
 def test_an_import_error_is_a_load_error_naming_the_file(tmp_path):

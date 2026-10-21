@@ -398,7 +398,8 @@ class DBDriver(Generic[RecordType]):
         ``source_entity`` is *structural scope*, not authorization (authorization is
         the hub's concern, not the local store's): ``None`` or a ``user`` source means
         "no scope" (return all matching rows), while a non-user source restricts the
-        result to that entity's descendants via the ``is_child`` role edges.
+        result to that entity's descendants via the ``is_child`` role edges (a
+        ``project`` source also matches rows whose ``project_id`` is the project).
         """
         raise NotImplementedError("get_all is not implemented")
 

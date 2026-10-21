@@ -39,7 +39,7 @@ from flow_sdk.stream_inbox.agent_scope import resolve_agent_stream_inbox_scope
 from flow_sdk.stream_inbox.projection import reconcile_source
 
 #: The channels of the matrix.
-CHANNELS = ("gmail", "slack", "whatsapp", "telegram", "cloud_email")
+CHANNELS = ("gmail", "slack", "whatsapp", "telegram", "cloud_email", "github_pr")
 OWNERS = ("user", "agent")
 
 

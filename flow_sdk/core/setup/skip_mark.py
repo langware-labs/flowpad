@@ -30,9 +30,15 @@ async def write_setup_skip(record: Any, value: Any) -> Any:
 
     The ROW only: the mark is never the asset's, so its files are not rewritten (a credential.json re-serialised
     by a skip would be a change to the project)."""
+    return await write_projection(record, FIELD, value)
+
+
+async def write_projection(record: Any, field: str, value: Any) -> Any:
+    """Set one of ``record``'s guarded person-here fields (``projected_fields``) and save the ROW alone — its files
+    are not rewritten. The one save a setup mark (a skip, a credential's chosen way) goes through."""
     from flow_sdk.core.entity.entity_model import suppress_store  # noqa: PLC0415
 
-    record._set_projection(FIELD, value, PROJECTION_SENTINEL)
+    record._set_projection(field, value, PROJECTION_SENTINEL)
     with suppress_store():
         await record.save()
     return record

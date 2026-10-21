@@ -320,6 +320,12 @@ export interface IAgenticProcess extends IEntity {
   readonly status?: ProcessStatus;
   /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
   readonly busy?: boolean;
+  /**
+   * A print-mode worker is alive and idle, kept running by background work the agent left behind
+   * (a dev server, a watcher). Not a turn — ``busy`` is false and the chat accepts messages — but it
+   * holds a process; ``stopBackground()`` ends it.
+   */
+  readonly background_work?: boolean;
   /** Null on the wire when the backend has no transcript to derive one from. */
   readonly worker_status?: WorkerStatus | null;
   session_id?: string | null;
@@ -400,6 +406,8 @@ export interface IAgenticProcess extends IEntity {
    * Cleared only by start() on its success path.
    */
   restart_required?: boolean;
+  /** Launch-config fields behind `restart_required`; empty when none. */
+  restart_changed_fields?: string[];
   /**
    * Reason the last worker launch failed to start (the worker exited within
    * the backend's instant-exit window). Non-null LATCHES the process out of
@@ -532,6 +540,11 @@ function isTeardownError(err: unknown): boolean {
   return err instanceof TypeError && isNetworkErrorMessage(err.message);
 }
 
+/** Headless sessions stream the transcript as JSON; a PTY has no such stream. */
+function headlessOutput(ptyMode: boolean): { outputFormat?: 'stream-json' } {
+  return ptyMode ? {} : { outputFormat: 'stream-json' };
+}
+
 // Deliberately no `implements IAgenticProcess`: that interface is the WIRE
 // shape, and this class stores the four `*_folder` fields hydrated (`FSRef`,
 // parsed from the wire's `FSRefJson`). Every other member is still checked
@@ -540,6 +553,14 @@ function isTeardownError(err: unknown): boolean {
 export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
+
+  /**
+   * Transport for a launch that names none. The app sets it to the transport of
+   * the mode the new session opens in, so its surface never switches it: a PTY
+   * opened into a chat or vibe view is switched to headless at once, and that
+   * kill drops the launch prompt. Without an app (tests, scripts) it is a PTY.
+   */
+  static defaultPtyMode: () => boolean = () => true;
 
   /**
    * Spawn a visible AgenticProcess tab and (optionally) send an initial
@@ -569,10 +590,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
     const proj = project ?? dataContext.project;
-    // Transport intent: default PTY (today's behaviour). `ptyMode:false` →
+    // Transport intent: `defaultPtyMode` unless stated. `ptyMode:false` →
     // headless launch: `visible:false` so the backend skips the PTY auto-start;
     // the seeded first prompt drains headlessly server-side.
-    const ptyMode = opts?.ptyMode !== false;
+    const ptyMode = opts?.ptyMode ?? AgenticProcess.defaultPtyMode();
     // Seed the prompt onto the queue via createProcess (`launchPrompt`), which
     // enqueues it server-side BEFORE the visible auto-start. The worker then
     // boots with the queued head as its launch instruction — deterministic,
@@ -584,6 +605,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         workdir: proj?.fs_storage_mount_path ?? undefined,
         ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
+        ...headlessOutput(ptyMode),
       },
       { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
     );
@@ -631,13 +653,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
      *  `useProcessesForTarget` find this process later (e.g. the analyzer for a
      *  received transcript, keyed `claude_session/<sessionId>`). */
     target?: string;
-    /** Transport intent: true → interactive PTY (default), false → headless
-     *  JSON-stream (no PTY/xterm). */
+    /** Transport intent: true → interactive PTY, false → headless JSON-stream
+     *  (no PTY/xterm). Omitted → {@link AgenticProcess.defaultPtyMode}. */
     ptyMode?: boolean;
   }): Promise<AgenticProcess> {
     const computeNode = opts.computeNode ?? dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
-    const ptyMode = opts.ptyMode !== false;
+    const ptyMode = opts.ptyMode ?? AgenticProcess.defaultPtyMode();
     const process = await computeNode.createProcess(
       {
         workdir: opts.workdir,
@@ -647,6 +669,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
         ...(opts.processType ? { processType: opts.processType } : {}),
         ...(opts.target ? { targetVfsPath: opts.target } : {}),
+        ...headlessOutput(ptyMode),
       },
       {
         visible: ptyMode,
@@ -1160,6 +1183,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * this as the "Restart" affordance on the process toolbar.
    */
   restart_required: boolean = false;
+
+  /** Launch-config fields behind `restart_required` (backend save-hook). */
+  restart_changed_fields: string[] = [];
 
   /**
    * Reason the last worker launch failed to start (instant-exit latch).
@@ -2826,6 +2852,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /**
+   * End the background work a parked worker is waiting on, and the process that holds it.
+   * ``cancelPrompt`` stops a turn; this is for when no turn is running. Rejects (409) when there
+   * is nothing to stop — the work may have ended on its own a moment earlier.
+   */
+  async stopBackground(): Promise<void> {
+    await this.post('stop-background');
+  }
+
+  /**
    * Interrupt the in-flight turn from a single call site. For a visible PTY
    * process this sends Ctrl-C (``\x03``, no trailing newline) to the same PTY
    * the xterm types into; for a print-mode process it cancels the streaming
@@ -2845,6 +2880,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       }
     }
     await this.cancelPrompt();
+  }
+
+  private turnAction(instruction: string, workerSessionId?: string): ActionInfo {
+    const action = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
+    action.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
+    return action;
+  }
+
+  /** Ask the backend to accept a turn. OK means accepted, not completed.
+   * Busy and other expected outcomes remain PromptResults. This method neither
+   * echoes output nor waits for completion; executeInstruction retains that UI contract.
+   */
+  async sendTurn(instruction: string, options: { workerSessionId?: string } = {}): Promise<PromptResult> {
+    return dataManager.callFlowAction<PromptResult>(this.turnAction(instruction, options.workerSessionId));
   }
 
   async executeInstruction(
@@ -2883,8 +2932,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.appendUserMessage(instruction);
 
     // Call backend execute action
-    const actionInfo = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
+    const actionInfo = this.turnAction(instruction, workerSessionId);
 
     try {
       // The turn's PromptResult. A turn the backend could not take is a 200

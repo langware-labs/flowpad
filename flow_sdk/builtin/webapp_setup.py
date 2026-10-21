@@ -52,20 +52,21 @@ def health_answers(port: int, path: str = "/") -> bool:
 
     Asked on each loopback (``dev_server.LOOPBACKS``): a Vite or Next server on ``localhost`` listens on
     ``::1`` alone, a uvicorn on ``127.0.0.1`` alone."""
-    from flow_sdk.core.dev_server import loopback_status, loopback_urls  # noqa: PLC0415
+    from flow_sdk.core.dev_server import loopback_answers  # noqa: PLC0415
 
-    for url in loopback_urls(port, path):
-        status = loopback_status(url, PROBE_SECONDS)
-        if status is not None:
-            return status < 500
-    return False
+    return loopback_answers(port, path, timeout=PROBE_SECONDS, healthy=lambda status: status < 500)
 
 
 async def _app(webapp_id: str):
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
     bare = webapp_id.split("-", 1)[1] if webapp_id.startswith("micro_app-") else webapp_id
-    return await WebApp.get_by_id(bare)
+    app = await WebApp.get_by_id(bare)
+    # As ``webapp.json`` declares it NOW (the setup-fixer may just have changed it): re-parsed only when
+    # the file changed (``webapp_asset_hash``).
+    if app is not None and await app.check_and_refresh_record():
+        app = await WebApp.get_by_id(bare) or app
+    return app
 
 
 def _proxy(app) -> Optional[Any]:
@@ -248,8 +249,11 @@ def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = No
     process's listeners, it answers its health path)``."""
     serving = process.serving
     snapshot = app_ports.listeners() if snapshot is None else snapshot
-    siblings = [one.serving.start_cmd for one in _processes(app)]
-    mine = app_ports.of_app(snapshot, Path(app.asset_ref), serving.start_cmd, siblings)
+    others = [one.serving for one in _processes(app) if one.serving is not serving]
+    theirs = [declared.port for declared in map(_declared, others) if declared is not None]
+    mine = app_ports.of_app(
+        snapshot, Path(app.asset_ref), serving.start_cmd, [one.start_cmd for one in others], theirs
+    )
     answer = app_ports.decide(
         _declared(serving), mine, snapshot,
         reserved=taken | _STARTING, answers=lambda port: health_answers(port, serving.health),
@@ -257,6 +261,29 @@ def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = No
     # A holder that could not be named was already asked its health by the rule.
     up = answer.state == "running" and (answer.holder is None or health_answers(answer.port, serving.health))
     return answer, mine, up
+
+
+async def answers_now(webapp_id: str) -> bool:
+    """Every process of the app answers its health path where its route says it runs now — one probe each,
+    side by side: no process table, no start, no write. The check an open of an app it already loaded asks."""
+    from flow_sdk.builtin.webapp_placement import service_endpoint_name, service_endpoint_ports  # noqa: PLC0415
+
+    app = await _app(webapp_id)
+    if app is None or not app.asset_ref:
+        return False
+    processes = _processes(app)
+    placed = await _placed(app)
+    services = await service_endpoint_ports(app) if any(p.service is not None for p in processes) else {}
+    ports = [
+        (placed.backend.port if placed is not None else None) if process.service is None
+        else services.get(service_endpoint_name(app, process.service))
+        for process in processes
+    ]
+    if not ports or not all(ports):
+        return False
+    probes = (asyncio.to_thread(health_answers, int(port), process.serving.health)
+              for port, process in zip(ports, processes))
+    return all(await asyncio.gather(*probes))
 
 
 async def where(app, serving) -> app_ports.PortAnswer:
@@ -414,16 +441,15 @@ async def stop(webapp_id: str) -> ReturnedValue:
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
 
-    def running() -> tuple[list, list[int]]:
-        """``(this app's listeners, the ports it is served on by something that cannot be named)``."""
+    def looks() -> list:
         snapshot = app_ports.listeners()
-        looks = [_look(app, process, set(), snapshot) for process in _processes(app)]
-        unnamed = [answer.port for answer, _mine, up in looks if up and answer.holder is None]
-        return [one for _answer_, mine, _up in looks for one in mine], unnamed
+        return [_look(app, process, set(), snapshot) for process in _processes(app)]
 
-    found, unnamed = await asyncio.to_thread(running)
+    seen = await asyncio.to_thread(looks)
+    found = [one for _found, mine, _up in seen for one in mine]
+    # A container's published port, another user's process: there is no process of ours to end.
+    unnamed = [answer.port for answer, _mine, up in seen if up and answer.holder is None]
     if unnamed:
-        # A container's published port, another user's process: there is no process of ours to end.
         ports = ", ".join(str(port) for port in unnamed)
         return _answer(
             ExitCode.NOT_YET,
@@ -460,8 +486,18 @@ async def ports(webapp_id: str) -> list[dict]:
             "port": found.port if live else None,
             "pid": found.holder.pid if live and found.holder is not None else None,
             "note": f"also declared by {clash}" if clash else found.note,
+            "log": _log_of(app, process, found.port) if live else None,
         })
     return rows
+
+
+def _log_of(app, process, port) -> Optional[str]:
+    """The log the process writes, where Flowpad started it (``dev_server.start_process``); None otherwise."""
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    name = dev_server._slug(f"{app.name}-{process.name}".strip("-"))
+    log = dev_server.log_dir() / f"{name}-{port}.log"
+    return str(log) if port and log.is_file() else None
 
 
 async def _keep_route(app, mount, port: int, command: str) -> bool:

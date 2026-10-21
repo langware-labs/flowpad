@@ -1,16 +1,11 @@
-import {
-  AgenticProcess,
-  isBusy,
-  TypeId,
-  WorkerStatus,
-  type StatusBearingProcess,
-} from '@sdk';
+import { AgenticProcess, isBusy, TypeId, WorkerStatus, type StatusBearingProcess } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import {
   CompactExecutionInput,
   type CompactExecutionInputHandle,
 } from '@src/components/entity-execution-panel/CompactExecutionInput';
+import { BackgroundWorkChip } from '@src/components/entity-execution-panel/BackgroundWorkChip';
 import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import { isTerminalStatus } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
@@ -121,6 +116,7 @@ export function ChatComposerBar({ process, onPasteImages, composerRef }: ChatCom
         <div className="flex items-center gap-2">
           <ChatToolsMenu />
           <QueueChip process={reflected} />
+          <BackgroundWorkChip process={reflected} />
           {plan.planToggleEnabled ? (
             <button
               type="button"
@@ -147,7 +143,12 @@ export function ChatComposerBar({ process, onPasteImages, composerRef }: ChatCom
           className="flex items-center"
           data-testid="simple-chat-status"
         >
-          <ProcessStatusIndicator process={displayStatusSource} showLabel size="sm" className="px-1 text-muted-foreground" />
+          <ProcessStatusIndicator
+            process={displayStatusSource}
+            showLabel
+            size="sm"
+            className="px-1 text-muted-foreground"
+          />
         </span>
       }
     />

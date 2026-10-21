@@ -45,7 +45,7 @@ def resolve_kind(kind: str) -> Any:
     # An unregistered name stays anonymous (``Any``) — forward references during
     # eager compilation depend on it.
     if SchemaRegistry.get(kind) is not None:
-        raise ValueError(f"{kind!r} is an entity type with no document shape (no asset_spec); a kind names a DataSpec")
+        raise ValueError(f"{kind!r} is an entity type with no document shape (no asset_spec); a kind names a schema")
     return Any
 
 
@@ -68,9 +68,11 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.automation_spec  # noqa: F401  — registers ``automation.*``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
+    import flow_sdk.schema.data_spec.compute_call_spec  # noqa: F401  — registers ``compute.call_record``
     import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.decision`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask`` / ``compute_op.ask.item``
     import flow_sdk.schema.data_spec.confirm_spec  # noqa: F401  — registers ``confirm``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
+    import flow_sdk.schema.data_spec.data_schema_spec  # noqa: F401  — registers ``data_schema.field`` / ``data_schema.rule``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
     import flow_sdk.schema.data_spec.decision_spec  # noqa: F401  — registers ``decision.spec`` / ``decision.result`` and their questions / answers
     import flow_sdk.schema.data_spec.deployment_secrets_spec  # noqa: F401  — registers ``deployment.secrets``
@@ -79,7 +81,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.diagnosis_request_spec  # noqa: F401  — registers ``diagnosis.funding`` / ``diagnosis.attachment`` / ``diagnosis.request.open`` / ``diagnosis.request.edit`` / ``diagnosis.run``
     import flow_sdk.schema.data_spec.diskio_spec  # noqa: F401  — registers ``diskio.*``, the disk-I/O kernel's values
     import flow_sdk.schema.data_spec.dock_pointer_spec  # noqa: F401  — registers ``dock.pointer``
-    import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.example`` / ``eval.run``
+    import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.row`` / ``eval.run``
     import flow_sdk.schema.data_spec.flow_json_spec  # noqa: F401  — registers ``flow.json`` / ``flow.dependency*``
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
@@ -95,6 +97,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
+    import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``
@@ -111,6 +114,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.status_spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
+    import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.plan`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``

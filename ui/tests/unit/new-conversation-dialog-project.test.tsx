@@ -23,6 +23,10 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => ({
 vi.mock('@src/hooks/use-send-to-conversation', () => ({
   useSendToConversation: () => stable.sender,
 }));
+// The annotator is a popup; confirming it as-is hands the pasted image back.
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: (files: File[]) => Promise.resolve({ files, caption: '' }),
+}));
 vi.mock('@src/components/conversation/SendProgressNotice', () => ({ SendProgressNotice: () => null }));
 vi.mock('@src/components/contact-picker/ContactPicker', () => ({
   ContactPicker: ({ onChange }: { onChange: (ps: ConversationParticipant[]) => void }) => (
@@ -50,6 +54,27 @@ describe('NewConversationDialog — the selected project', () => {
     const [target] = stable.sender.send.mock.calls[0];
     expect(target.params.project_id).toBe('p-oss');
     expect(target.params.title).toMatch(/^\[flowpad-oss\] Me, Bob - /);
+  });
+});
+
+describe('NewConversationDialog — pasting an image', () => {
+  it('attaches a pasted clipboard image to the first message', async () => {
+    stable.sender.send.mockResolvedValue('conversation-1');
+    render(<NewConversationDialog open onClose={() => undefined} />);
+    const image = new File(['png'], 'shot.png', { type: 'image/png' });
+
+    fireEvent.click(screen.getByText('add-participant'));
+    const input = screen.getByTestId('initial-message-input');
+    fireEvent.change(input, { target: { value: 'see this' } });
+    fireEvent.paste(input, {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }], getData: () => '' },
+    });
+    await waitFor(() => expect(screen.getByText(/screenshot-.*\.png|shot\.png/)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(stable.sender.send).toHaveBeenCalledTimes(1));
+    const [, payload] = stable.sender.send.mock.calls[0];
+    expect(payload.files).toHaveLength(1);
   });
 });
 

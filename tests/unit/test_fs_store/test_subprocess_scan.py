@@ -257,6 +257,8 @@ async def test_child_resolves_this_instance_not_prod(
     """
     from flow_sdk.instance_settings import get_instance_settings
 
+    # Pinned, never inherited from whatever the session's environment holds.
+    monkeypatch.setenv("FLOW_INSTANCE", "test")
     expected_instance = get_instance_settings().instance_name
     assert expected_instance != "prod", "test must not run against the prod instance"
 

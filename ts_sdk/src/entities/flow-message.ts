@@ -90,6 +90,28 @@ export function attachmentDataString(a: Pick<Attachment, 'data'>): string {
   return '';
 }
 
+/** `{id, value}` from the first `<kind>-<id>` TYPE_ID attachment — a JSON object riding its
+ *  `prompt_preview` (a value, not an entity), the mirror of `carried_value` in `flow_message.py`.
+ *  A carrier whose preview is missing or not a JSON object reads as none. */
+export function carriedValue<T extends object>(
+  attachments: readonly Attachment[] | null | undefined,
+  kind: string,
+): { id: string; value: T } | null {
+  const prefix = `${kind}-`;
+  for (const a of attachments ?? []) {
+    if (a?.attachment_type !== AttachmentType.TYPE_ID) continue;
+    const data = attachmentDataString(a);
+    if (!data.startsWith(prefix)) continue;
+    try {
+      const value: unknown = JSON.parse(a.prompt_preview ?? '');
+      return value && typeof value === 'object' ? { id: data.slice(prefix.length), value: value as T } : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export interface Attachment {
   attachment_type: AttachmentType;
   /** TypeId string ("type-id"), relative file path, repo path, URL, or — for PROMPT — inline text or "prompt/<filename>" VFS subpath. */
@@ -231,6 +253,16 @@ export interface IFlowMessage extends IEntity {
   source_item_id?: string | null;
   /** Who reacted with what on a channel message — projection-owned. */
   reactions?: IMessageReaction[];
+  /** What the channel message did (approved, merged) — projection-owned; null when it only says something. */
+  mark?: IMessageMark | null;
+}
+
+/** What a channel message did, drawn as a chip before its text — mirrors `MessageMarkSpec`
+ *  (flow_sdk/sources/values/items.py). `key` is what an action's `done_mark` matches. */
+export interface IMessageMark {
+  key: string;
+  label: string;
+  tone?: 'positive' | 'negative' | 'neutral';
 }
 
 /** One person's emoji on a channel message — mirrors `MessageReaction`
@@ -287,7 +319,16 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   thread_root_id?: string | null;
   source_item_id?: string | null;
   reactions?: IMessageReaction[];
+  mark?: IMessageMark | null;
   static type: string = 'flow_message';
+
+  /** An unnamed message reads as a short quote of its text (chips, tabs); a given name wins. */
+  getDisplayName(): string | null {
+    if (this.name?.trim()) return null;
+    const text = this.text?.trim().replace(/\s+/g, ' ');
+    if (!text) return null;
+    return `“${text.length > 32 ? `${text.slice(0, 32)}…` : text}”`;
+  }
 
   constructor(entity: Partial<IFlowMessage> = {}) {
     super(entity);
@@ -326,6 +367,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.thread_root_id = entity.thread_root_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
     this.reactions = entity.reactions ?? [];
+    this.mark = entity.mark ?? null;
   }
 
   /**
@@ -407,7 +449,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Pack + upload this message's body via the local backend, which handles
    *  the hub fs/upload and the body_status state transitions.
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
-  async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' } = {}): Promise<this> {
+  async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' | 'both' } = {}): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
     await this.post<unknown>('upload_body', { transfer_mode: _opts.transferMode ?? 'copy' });
     this.body_status = BodyStatus.READY;

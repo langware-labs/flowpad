@@ -3,7 +3,7 @@ id: d6e8f077-4190-4650-8378-a5d491cc4b97
 ---
 # Datasets — snippets
 
-A dataset is a folder of examples: `input` + `context` → the right `ground_truth`, and what a run
+A dataset is a folder of rows: `input` + `context` → the right `ground_truth`, and what a run
 produced as `output`. When its `spec` NAMES a kind, every slot is a typed value — and the schemas
 those kinds name can be defined as `data_schema` folders — nested in the dataset itself, or
 shipped. The example is the SmartNavigator eval set: its schemas ship
@@ -22,14 +22,14 @@ pinned by `tests/unit/test_data_spec/test_declared_kinds.py`,
 flowpad_assistant/agentic-assets/data_schema/  # shipped, flat: the folder name is the kind
   navigation.map/ .place/ .subplace/           # the map (screens)
   navigation.here/ .ref/ .shown/ .outcome/     # you are here
-  navigator.dataset/                           # {"examples": {"input": "navigator.request", ...}}
+  navigator.dataset/                           # {"rows": {"input": "navigator.request", ...}}
   navigator.request/ .context/ .candidate/ .decision/
 
 dev/dataset/smart-navigator/                   # the rows -- not shipped
   dataset.json                          # metadata.spec: "navigator.dataset"
   map.json                              # reference: the navigation map, for browsing
-  examples/0001/
-    input/request.json  context/candidates/  ground_truth/decision.json  example.json
+  rows/0001/
+    input/request.json  context/candidates/  ground_truth/decision.json  row.json
 ```
 
 ```json
@@ -49,7 +49,7 @@ from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.core.navigation import DATASET
 
 nav = Dataset.at(DATASET)                 # the entity from disk alone -- no index needed
-summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
+summary = (nav.spec, nav.num_rows, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
 where = rows[0].input.here.view           # 'home' -- the navigation.here it was typed on
@@ -70,20 +70,20 @@ await mine.annotate(ids[0], [
     {"route": "quick", "target": {"kind": "view", "value": "data-sources"}},
     {"route": "quick", "target": {"kind": "view", "value": "connectors"}},
 ])
-gold = mine.example(ids[0])["ground_truth"]   # both answers -- any one is right
+gold = mine.row(ids[0])["ground_truth"]   # both answers -- any one is right
 ```
 
 `append` checks every row before writing anything; `annotate` replaces the gold. Over HTTP the
-same verbs are `POST dataset/<id>/append`, `GET dataset/<id>/example/<eid>`,
+same verbs are `POST dataset/<id>/append`, `GET dataset/<id>/row/<id>`,
 `POST annotate`, `POST validate`, `POST score`.
 
 ## 4. Evaluate the navigator on it
 
 A dataset is evaluated by an **eval** -- `eval.json` (`EvalSpec`) + `eval.py` -- nested in it, or
 shipped for its kind. The navigator's ships at `flowpad_assistant/agentic-assets/eval/navigator/`:
-it runs each example through the public `flow_sdk.navigation.decide` on the example's OWN recorded
-`here` and candidates, and answers a standard `ExampleEval` per row. The runner writes
-`evals/<run>/run.json`, `examples.jsonl` and a navigable `report.html`.
+it runs each row through the public `flow_sdk.navigation.decide` on the row's OWN recorded
+`here` and candidates, and answers a standard `RowEval` per row. The runner writes
+`evals/<run>/run.json`, `rows.jsonl` and a navigable `report.html`.
 
 ```python
 from flow_sdk import evals
@@ -118,13 +118,13 @@ until someone reviews it.
 ```python
 from flow_sdk import evals
 from flow_sdk.core import navigation_log
-from flow_sdk.core.navigation_decision import decide_run
+from flow_sdk.navigation import call
 from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
 
 write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
 request = {"utterance": "summarize the README", "here": {"view": "home"}}
-outcome, answer = await decide_run(request)      # what the navigation-decision action runs
-await navigation_log.log(request, outcome, answer)  # ...and then, after answering, this
+answer = await call(request)       # the smart-navigator block -- what the navigation-decision action runs
+await navigation_log.drain()       # its FlowCall log writes the row after answering
 
 log = await navigation_log.dataset()               # SmartNavigationLog
 row = log.read_rows()[-1]
@@ -139,7 +139,7 @@ did, and the **needs label** filter lists what is left.
 
 ## 7. Keep records by key
 
-A row's **key** is its example folder's name. Give one on `append`, then address the row by it —
+A row's **key** is its row folder's name. Give one on `append`, then address the row by it —
 never compute an id: a row's id is stored in the row (a rename keeps it), and every read hands back
 both `key` and `id`.
 
@@ -156,10 +156,9 @@ mine.delete_row("sources")
 ```
 
 `put` creates or replaces one row and checks it first; slots it leaves out (gold, output, context)
-and the row's metadata are kept. Over HTTP: `POST dataset/<id>/put-row {key, row}`,
-`POST delete-row {key}`, `POST rename-row {key, new_key}`, `POST check-row {row}`; one value
+and the row's metadata are kept. HTTP and TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind); one value
 against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` (an unknown kind is a
-404, never "fits"). TypeScript: `dataset.put / deleteRow / rename / check` and `checkKind(kind, value)`.
+404, never "fits"), TypeScript `checkKind(kind, value)`.
 
 ## 8. Links between rows
 
@@ -185,16 +184,15 @@ refuses while one points at the row. Rows carry `ref` and `version` over HTTP to
 back as `put-row {key, row, expected}` and a row changed since answers 409. The datasets holding a
 kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forKind(kind, projectId)`).
 
-## 9. Mirror an outside system, and read only what you show
+## 9. Hold an outside system's rows, and read only what you show
 
-A system of record reached through a data source is mirrored by DECLARING it on the source
-(`"mirror": {dataset, map, by?}` in its `data_source.json`): every sync keeps the dataset so, and a
-row's outside-owned fields write back through the source. The map turns ids into links
-(`{"link": <kind>, "by": <unique field>, "path": "data.deal_ids.*"}`). See
-[mirroring a system of record](../data-management/mirroring-a-system-of-record.md). What follows is
-the same mirror done by hand, from rows your own code builds.
+A dataset's rows can live in a system of record: its `dataset.json` `location` names the driver
+and a `map` (`{"driver": "twenty", "config": {...}, "map": {"key": "external_id", "input": {...}}, "by": "crm"}`).
+Every read pulls the records into rows, and a row's outside-owned fields write back through the
+driver. See [dataset locations](../data-management/dataset-locations.md). What follows is the same
+idea done by hand, from rows your own code builds.
 
-An app that keeps real records — a mirror of a CRM, a log of outreach — writes many rows per run and
+An app that keeps real records — a copy of a CRM, a log of outreach — writes many rows per run and
 shows a few of them. `sync` makes the dataset hold exactly the rows given, in one step; `query` and
 `count` answer the rows that match, so a number on a dashboard and the list behind it are one question.
 
@@ -222,10 +220,7 @@ expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $
 `$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row as it travels —
 `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its ISO string.
 
-Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems, version}`,
-`GET rows-version` → `{version}`, `GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
-`POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
-`dataset.rows(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
+HTTP and TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind). In TypeScript, `dataset.onRowsChanged(handler)`:
 every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
 re-reads when told instead of on a timer — or on focus: a write made while the socket was down is told
 on reconnect as one `{op: "sync", keys: []}` (`docs/flow-events.md`). A script outside the server is
@@ -247,45 +242,44 @@ await leads.put_many([
     {"key": "eli", "input": {"name": "Eli Stone", "company": companies.ref_of(acme)}},
     {"key": "fay", "input": {"name": "Fay Levi", "company": companies.ref_of(bolt)}},
 ])
-at_acme = [r["key"] for r in leads.rows({"input.company.name": "Acme"}, order_by={"key": "asc"})["rows"]]   # follows the link
+at_acme = [r["key"] for r in leads.query({"input.company.name": "Acme"}, order_by={"key": "asc"})["rows"]]   # follows the link
 per_company = leads.count(group_by=["input.company.key"], metrics={"people": "distinct:input.name"}, order_by={"count": "desc"})
-found = leads.rows(q="levi", expand=["input.company"])                    # text anywhere in the row; linked rows beside
+found = leads.query(q="levi", expand=["input.company"])                    # text anywhere in the row; linked rows beside
 names = sorted(v["row"]["input"]["name"] for v in found["linked"].values())
 unused = [key for key, by in leads.used_by().items() if not by]           # rows nothing links to
 levis = {"op": "$PROP", "operands": ["input.company", {"op": "$LIKE", "operands": ["input.name", "levi"]}]}
-colleagues = leads.rows({"op": "$IN", "operands": ["input.company", levis]}, order_by={"key": "asc"})   # a join: one question
+colleagues = leads.query({"op": "$IN", "operands": ["input.company", levis]}, order_by={"key": "asc"})   # a join: one question
 ```
 
 A date bucket is written `week:input.day` (also `day:` / `month:` / `quarter:`; `week_start="sunday"`
-when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path. Over HTTP:
-`GET rows?filter={match, expand}&q=…`, `GET count?group_by=week:input.day&metrics={…}&order_by={…}`,
-`GET used-by`. A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
-values `path` takes in the rows that match". TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
-week_start})`, `usedBy(keys)`, and `bucketOf(day, 'week', 'sunday')` for the key of a period.
+when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` and a path (HTTP and
+TypeScript names: [the verb table](../data-management/datasets.md#typed-rows--a-spec-that-names-a-kind)). A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
+values `path` takes in the rows that match". TypeScript `bucketOf(day, 'week', 'sunday')` gives the key of a period.
 
 ## 11. Change a field the outside system owns
 
-In a dataset a data source mirrors (§9, the declared `mirror`), every field the map names is the
-outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
-change is sent to that system first, through the source's driver, and the row is then written as
-the system answered. The app's own fields (`notes`) are written as given. There is no merge to write
-and no client of your own to keep.
+In a dataset whose rows live in a record system (§9, a `location` with a `map`), every field the map
+names is the outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
+change is sent to that system first, through the location's driver, and the row is then written as
+the system answered. Every field of such a row lives in the system: one the map does not hold is
+refused (`not_stored`) -- kept, it would live only in this machine's working copy. There is no merge
+to write and no client of your own to keep.
 
 ```python
 from flow_sdk.datasets import LinkError
 
-row = tasks.rows({"key": "t-1"})["rows"][0]                   # status is the CRM's; notes is ours
-await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "notes": "called twice"}}, expected=row["version"])
-now = tasks.rows({"key": "t-1"})["rows"][0]["input"]         # status 'DONE' as the CRM answered, notes kept
+row = tasks.query({"key": "t-1"})["rows"][0]                   # status and label are the CRM's
+await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "label": "hot"}}, expected=row["version"])
+now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE', label 'hot', as the CRM answered
 try:
-    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mirrored from a path nothing can write
+    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mapped from a path nothing can write
 except LinkError as refused:
     code = refused.details[0]["code"]                        # 'not_writable' -- nothing was sent
 ```
 
 The refusals, by `details[].code`: `not_writable` (the map reads the field from a path it cannot
-write), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
-ids no row here resolves yet), `owned` (the source is read-only, or this process holds no driver). A
+write), `not_stored` (the map holds no such field), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
+ids no row here resolves yet), `owned` (the location is read-only, or this process holds no driver). A
 record the system made but could not finish is written, with `warnings: [{error_code:
 "source_partial", message, key}]` in the answer — show them.
 
@@ -293,6 +287,6 @@ Only the server holds a driver. Over HTTP — what an app and a script use — i
 `POST dataset/<id>/put-row {key, row, expected?}`, `put-rows`, `append`, and `delete-row` /
 `delete-rows` to delete the record outside too. TypeScript: `dataset.put(key, {input}, {expected})`.
 A script calls the action (`flow_sdk.local_client.graph_post(f"dataset/{ds.id}/put-row", {...})`);
-`Dataset.put` in a script is refused `owned`. A mirror whose map names a field the schema does not
-mark `owned_by` its `by` is refused as a whole (`mirror_failed`, `not_owned`): such a field would
-take an edit and lose it at the next sweep.
+`Dataset.put` in a script is refused `owned`. A map that names a field the schema does not mark
+`owned_by` its `by` is refused at the pull (`not_owned`): such a field would take an edit and lose it
+at the next pull.

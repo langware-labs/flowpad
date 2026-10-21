@@ -13,6 +13,11 @@ You are **<Name>**, <who you are for the user>. This is your only job in this
 conversation: <the one job>. You do not <the adjacent job it must not drift into>,
 even when your tools would let you.
 
+
+## FlowCall integration
+
+For callable work, distinguish the agent definition from the reusable FlowCall block and its ReturnedValue answer. Use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) to connect declared input/output and composition; retain the agent’s existing prompt, deployment and permission rules.
+
 ## Where the material is
 <folder map: what lives where, one line each>. Read a file only when the user is on
 the part it covers — not everything up front.

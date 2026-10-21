@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "typeid": "markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366",
-  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "typeid": "markdown_index-8f46f52a-f7a0-5f6d-971a-71d496c084a0",
+  "parent_ref": "markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb",
+  "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "primitives",
   "folder_name": "primitives",
-  "inputs_hash": "ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751",
+  "inputs_hash": "09512cedd1a484884c43ea4e89d9d34509feb9cae09b6f4847b99a88e8fe0bbe",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
@@ -14,7 +14,7 @@
       "name": "fs-ref.md",
       "rel_path": "fs-ref.md",
       "title": "FSRef Rules",
-      "summary": "FSRef doctrine: path-only declarative refs, VFSPath translation, computeNode.fsAction dispatch, JSON serialization, and the record-refs endpoint.",
+      "summary": "Rules for FSRef path manifests and VFSPath format, their dispatch through compute-node fs actions in Python and TypeScript, JSON serialization, and the record refs endpoint.",
       "content_hash": "b84791dacb8917e52c8f56e06449c4e861582df3c808dd291069c9a549ae39c0",
       "size_bytes": 6033
     },
@@ -22,12 +22,12 @@
       "name": "typeid.md",
       "rel_path": "typeid.md",
       "title": "TypeId Specification",
-      "summary": "TypeId specification: the {type}-{id} format with its first-dash split, the UUID, @uname, namespace-key and property-id forms, and parsing rules.",
-      "content_hash": "ecc3696e75ac846cd68500e828ab8164fb891fcec3500ad9f29714aa40067677",
-      "size_bytes": 15783
+      "summary": "TypeId specification: type-id format split on first dash, four identifier formats, resolution priority, Python and TypeScript classes, type registries, entity types, VFS relationship",
+      "content_hash": "7618506f4ff410543d64ca1627c46edef274a05727c0878b8771cd069a289e9e",
+      "size_bytes": 15786
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T10:22:31.277705+00:00",
+  "generated_at": "2026-10-20T12:52:40.795640+00:00",
   "latest_process_ref": ""
 }

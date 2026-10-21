@@ -30,8 +30,8 @@ afterEach(() => bindAssetEditorRegistry(null));
 describe('editorForType', () => {
   it('reads the registry editor when bound', () => {
     // A deliberately non-static answer proves the registry, not the table, spoke.
-    bind([{ type_name: 'skill', editor: 'whiteboard', shape: { kind: 'folder', main: 'SKILL.md' } }]);
-    expect(editorForType('skill')).toBe(AssetEditor.WHITEBOARD);
+    bind([{ type_name: 'skill', editor: 'chart', shape: { kind: 'folder', main: 'SKILL.md' } }]);
+    expect(editorForType('skill')).toBe(AssetEditor.CHART);
     // A type the static table never knew becomes openable once declared.
     bind([{ type_name: 'runbook', editor: 'markdown', shape: { kind: 'file', ext: '.md' } }]);
     expect(editorForType('runbook')).toBe(AssetEditor.MARKDOWN);

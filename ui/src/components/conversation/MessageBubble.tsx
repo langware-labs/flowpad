@@ -1,17 +1,19 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock, Zap } from 'lucide-react';
-import { isProcessFailed, resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
+import { Check, CheckCheck, Clock, FileText, Loader2, Zap } from 'lucide-react';
+import type { AutomationState } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
+import { OpenSessionButton } from '@src/components/workers/WorkerToolbar';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
-import { LinkifiedText } from '@src/components/links/LinkifiedText';
+import { withHardBreaks } from './message-markdown';
 import type { LinkHandlers } from '@src/components/links/link-events';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
@@ -19,7 +21,7 @@ import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
-import { QuotedMessage, ReactionChips } from './ChannelMessageExtras';
+import { MessageMarkChip, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import type { WorkerType } from './conversation-session-constants';
 
@@ -45,13 +47,21 @@ interface MessageBubbleProps {
   onForwardMessage?: () => void;
   /** Start a worker pinned to this message (⋮ menu, the header's launch bar). */
   onLaunchWorker?: (worker: WorkerType) => void;
+  /** The session started from this message, if any: an Open button with its name on the header row. */
+  messageSession?: { name: string; onOpen: () => void } | null;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
   /** The quick door to a rule on messages like this one: a ⚡ beside the star, and a ⋮ item. */
   onAutomate?: () => void;
   /** The session an automation started on this message: ⚡ + who, a link to it. */
-  automation?: { name: string; status?: string | null; onOpen: () => void };
+  automation?: {
+    name: string;
+    state: AutomationState;
+    onOpen: () => void;
+    /** The value the session handed back (its declared output): a chip that opens it in its kind's viewer. */
+    value?: { label: string; onOpen: () => void } | null;
+  };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -86,6 +96,8 @@ interface MessageBubbleProps {
   onReply?: () => void;
   /** The channel's replies only thread (`ChannelSpec.quotes` false): Reply says "Reply in thread". */
   replyInThread?: boolean;
+  /** Same sender as the message just above, moments later: no avatar or name; time and actions on hover. */
+  continuation?: boolean;
 }
 
 /**
@@ -228,7 +240,12 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
     );
   }
   // Without a message to resolve against, a link could only fail — keep it text.
-  return <div className={bodyClass}>{links ? <LinkifiedText text={content} handlers={links} /> : content}</div>;
+  if (!links) return <div className={bodyClass}>{content}</div>;
+  return (
+    <div className={`break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+      <MarkdownView value={withHardBreaks(content)} compact dense links={links} />
+    </div>
+  );
 }
 
 export function MessageBubble({
@@ -242,6 +259,7 @@ export function MessageBubble({
   onDeleteMessage,
   onForwardMessage,
   onLaunchWorker,
+  messageSession,
   taskIt,
   onAutomate,
   automation,
@@ -256,6 +274,7 @@ export function MessageBubble({
   onReact,
   onReply,
   replyInThread,
+  continuation = false,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -331,7 +350,7 @@ export function MessageBubble({
 
   return (
     <div
-      className={`group flex gap-2 rounded p-1 transition-colors ${
+      className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
         onSelect ? 'cursor-pointer' : ''
       } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
       onClick={handleBubbleClick}
@@ -339,13 +358,21 @@ export function MessageBubble({
     >
       <SenderTag
         {...senderProps}
-        aria-label={onSenderClick ? t`Open ${displayName}` : undefined}
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
+        aria-hidden={continuation || undefined}
+        tabIndex={continuation ? -1 : undefined}
+        aria-label={onSenderClick && !continuation ? t`Open ${displayName}` : undefined}
+        className={`${continuation ? 'invisible h-0' : 'h-8'} flex w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
       >
         {initial}
       </SenderTag>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-baseline gap-2">
+        <div
+          className={
+            continuation
+              ? 'absolute end-1 top-0 z-10 flex items-baseline gap-2 rounded bg-background px-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100'
+              : 'flex items-baseline gap-2'
+          }
+        >
           {!isBot && editing ? (
             <input
               className="border-b border-input bg-transparent text-sm font-semibold text-foreground focus:outline-none"
@@ -358,7 +385,7 @@ export function MessageBubble({
               }}
               autoFocus
             />
-          ) : (
+          ) : continuation ? null : (
             <SenderTag
               {...senderProps}
               className={`text-sm font-semibold text-foreground ${onSenderClick ? 'hover:underline' : ''}`}
@@ -411,8 +438,19 @@ export function MessageBubble({
               />
             </span>
           )}
+          {!editing && messageSession && (
+            <span className="self-center">
+              <OpenSessionButton
+                onOpen={messageSession.onOpen}
+                name={messageSession.name}
+                title={t`Open the session started from this message`}
+                testIdPrefix={`message-${flowMessageId}`}
+              />
+            </span>
+          )}
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
+        {flowMessage?.mark && <MessageMarkChip mark={flowMessage.mark} />}
         {message.content && (
           <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />
         )}
@@ -438,17 +476,33 @@ export function MessageBubble({
               type="button"
               onClick={automation.onOpen}
               className={`${CHIP_LAYOUT} border ${
-                isProcessFailed(automation.status)
+                automation.state === 'failed'
                   ? 'border-dashed border-border text-muted-foreground'
                   : 'border-foreground/25 bg-background text-foreground'
               }`}
               title={t`Open the session`}
               data-testid="message-automation-chip"
-              data-status={automation.status ?? ''}
+              data-status={automation.state}
             >
-              <Zap className="h-3 w-3 shrink-0" />
+              {automation.state === 'working' ? (
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+              ) : (
+                <Zap className="h-3 w-3 shrink-0" />
+              )}
               <span className="max-w-[24rem] truncate">{automation.name}</span>
             </button>
+            {automation.value && (
+              <button
+                type="button"
+                onClick={automation.value.onOpen}
+                className={`${CHIP_LAYOUT} border border-foreground/25 bg-background text-foreground hover:bg-accent`}
+                title={t`Open what it returned`}
+                data-testid="message-automation-value"
+              >
+                <FileText className="h-3 w-3 shrink-0" />
+                <span className="max-w-[24rem] truncate">{automation.value.label}</span>
+              </button>
+            )}
           </div>
         )}
         {/* An opened task stays in view: its chip (opens it), its status and its owner — both act here. */}

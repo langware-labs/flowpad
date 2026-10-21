@@ -1,5 +1,8 @@
 import { t } from '@lingui/core/macro';
+import { useEffect, useState } from 'react';
+import { ActionInfo, dataManager, TypeId, type AnyEntity } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { GitShareFrame } from '@src/components/assets/editor/GitShareBar';
 import { useFS } from '@src/hooks/useFS';
 
 /**
@@ -65,6 +68,26 @@ export function HtmlPreview({ path }: { path: string }) {
   // the URL from the first render, so the frame loads once, already bound.
   const processParam = flowId ? `&process=${encodeURIComponent(flowId)}` : '';
   const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}?r=${revision}${processParam}` : null;
+  // A page received by git is an artifact naming this file: its share bar
+  // (version, newer versions, send edits back) sits above the page.
+  const [sharedAs, setSharedAs] = useState<AnyEntity | null>(null);
+  useEffect(() => {
+    let live = true;
+    // The backend resolves the path as this machine spells it (a Windows viewer
+    // path has no drive letter; the row's has one).
+    const action = new ActionInfo('shared-file-artifact-at', null, null, 'POST');
+    action.bodyParameters = { path };
+    void dataManager
+      .callAction<{ path: string }, { type_id: string | null }>(action)
+      .then(async (res) =>
+        res?.type_id ? ((await dataManager.getByTypeId(new TypeId(res.type_id))) as AnyEntity | null) : null,
+      )
+      .then((row) => live && setSharedAs(row ?? null))
+      .catch(() => live && setSharedAs(null));
+    return () => {
+      live = false;
+    };
+  }, [path]);
 
   if (!src) {
     return (
@@ -73,13 +96,15 @@ export function HtmlPreview({ path }: { path: string }) {
   }
 
   return (
-    <iframe
-      title={t`HTML preview`}
-      sandbox={PREVIEW_SANDBOX}
-      src={src}
-      className="h-full w-full border-0 bg-white"
-      data-testid="html-preview"
-    />
+    <GitShareFrame entity={sharedAs}>
+      <iframe
+        title={t`HTML preview`}
+        sandbox={PREVIEW_SANDBOX}
+        src={src}
+        className="h-full w-full border-0 bg-white"
+        data-testid="html-preview"
+      />
+    </GitShareFrame>
   );
 }
 

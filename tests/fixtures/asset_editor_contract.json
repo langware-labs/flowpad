@@ -7,10 +7,11 @@
     "agent",
     "skill",
     "task",
-    "whiteboard",
+    "chart",
     "deck_template",
     "deck",
     "spreadsheet",
+    "document_file",
     "agent_trace",
     "dynamic_workflow",
     "usage_report",
@@ -55,8 +56,8 @@
     "task": [
       "task"
     ],
-    "whiteboard": [
-      "whiteboard"
+    "chart": [
+      "chart"
     ],
     "deck_template": [
       "deck_template"
@@ -66,6 +67,9 @@
     ],
     "spreadsheet": [
       "spreadsheet"
+    ],
+    "document_file": [
+      "document_file"
     ],
     "agent_trace": [
       "agent_trace"
@@ -124,10 +128,11 @@
     "agent": "agent",
     "skill": "skill",
     "task": "task",
-    "whiteboard": "whiteboard",
+    "chart": "chart",
     "deck_template": "deck_template",
     "deck": "deck",
     "spreadsheet": "spreadsheet",
+    "document_file": "document_file",
     "agent_trace": "agent_trace",
     "dynamic_workflow": "dynamic_workflow",
     "usage_report": "usage_report",

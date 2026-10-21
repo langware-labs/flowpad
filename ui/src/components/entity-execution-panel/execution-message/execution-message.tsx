@@ -104,7 +104,14 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
           </>
         )}
       </div>
-      <div className={cn('min-w-0 break-words ps-7 text-[15px] leading-7', accent.body)}>
+      <div
+        className={cn(
+          'min-w-0 break-words ps-7 text-[15px] leading-7',
+          // A user's Enter is a line break, not markdown's soft wrap that joins lines.
+          isUser && '[&_p]:whitespace-pre-line',
+          accent.body,
+        )}
+      >
         {/*
           Worker messages pass through the CLI-sentence whitelist: a signed-out
           Claude Code answers "Not logged in · Please run /login", which is the
@@ -112,7 +119,12 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
           language. Anything not on the whitelist renders exactly as written, and
           a user's own message is never rewritten.
         */}
-        <MarkdownView value={isUser ? currentContent : translateCliMessage(currentContent)} compact links={links} />
+        <MarkdownView
+          value={isUser ? currentContent : translateCliMessage(currentContent)}
+          compact
+          links={links}
+          typedListNumbers
+        />
         {isStreaming && (
           <span className="mt-1 inline-flex" aria-label={t`Assistant is responding`}>
             <DotPulse />

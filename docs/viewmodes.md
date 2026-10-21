@@ -128,6 +128,11 @@ on screen under the notice instead of a chat over the live PTY. The session's
 surface switch is greyed mid-turn (`busy`), as before; background work is not
 `busy`, so that pick lands and the notice says why the switch is still waiting.
 
+The other direction waits too: a chat worker the agent left background work in
+(`background_work`) cannot take a switch to the terminal (the work belongs to its
+process and would die with it). The notice then offers **Switch anyway**, behind a
+confirmation that the switch ends the work — see `agent-management/mode-switching.md`.
+
 Code still must not infer "this is the chat surface, therefore the worker is
 headless" — during that wait it is not; read `pty_mode` /
 `AgenticProcess.isHeadless` when that is what you mean.

@@ -17,25 +17,25 @@ const DB = path.join(os.homedir(), '.flow/instances', FLOW_INSTANCE, 'flowpad.db
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
   // Re-wait for the live hooks right before use: the editor can remount (a
-  // data-load re-render) and clear window.__whiteboardApi. Concrete-signal wait.
+  // data-load re-render) and clear window.__chartApi. Concrete-signal wait.
   await page.waitForFunction(
-    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+    () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
     null, { timeout: 15_000 },
   );
   await page.evaluate(() => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     api.updateScene({ elements: lib.convertToExcalidrawElements([{ type: 'rectangle', x: 10, y: 10, width: 80, height: 40, label: { text: 'X' } }]) });
   });
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
-    (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+    const api = (window as any).__chartApi;
+    (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
   });
   for (let i = 0; i < 10; i++) {
     await page.waitForTimeout(1_000);

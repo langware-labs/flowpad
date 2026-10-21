@@ -321,7 +321,9 @@ def send_entity_sync(
         True if notification was queued, False if Flowpad not running.
     """
     entity_type = data.get("type", "unknown")
-    entity_id = data.get("id", str(uuid.uuid4()))
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+    entity_id = data.get("id") or mint_uuid()
     return send_resource_sync(
         type=entity_type,
         id=entity_id,

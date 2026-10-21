@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "name": "github_pr",
+  "title": "GitHub PRs",
+  "icon_name": "GitHub",
+  "description": "Each pull request assigned to you is a conversation; its comments, reviews, pushes and checks are the messages.",
+  "kind": "datasource.api.github_pr",
+  "auth": {
+    "connector": "github",
+    "scopes": ["repo", "read:org"]
+  },
+  "permissions": {
+    "permission.github.pull_requests.read": {
+      "mechanism": "oauth",
+      "oauth_scopes": ["repo", "read:org"],
+      "why": "Reads the pull requests assigned to you, with their comments, reviews, pushes and checks."
+    },
+    "permission.github.pull_requests.comment": {
+      "mechanism": "oauth",
+      "oauth_scopes": ["repo"],
+      "why": "Posts your replies as comments on those pull requests.",
+      "writes": true
+    }
+  },
+  "config": {
+    "filter": {
+      "type": "text",
+      "choices": true,
+      "label": "Start a conversation when a PR is",
+      "hint": "assigned (assigned to you) or review_requested (your review is requested)."
+    },
+    "repos": {
+      "type": "lines",
+      "label": "Repositories",
+      "placeholder": "octo-org/octo-repo",
+      "hint": "owner/repo per line; empty = every repository you can reach"
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL",
+      "placeholder": "https://api.github.com"
+    }
+  }
+}

@@ -41,6 +41,11 @@ Typed data in Flowpad is three words, never mixed up:
 > **5. Schemas apply live:** `flow schema apply <folder>`. Never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract.
+
 ## Modes (from the skill arg)
 
 The FIRST token, if it is exactly `schema`, `dataset`, `app`, `migrate` or `review`, selects
@@ -73,12 +78,19 @@ Then do it in the user's project and read it back the same way.
 
 ## Reference
 
+Before adding a driver for another external resource, check whether an existing driver can
+express it through configuration. For example, Twenty people, companies, members, tasks and
+opportunities are five configured sources of one `twenty` driver, sharing transport code.
+Different SDK families or fundamentally different transports can justify separate drivers;
+different endpoints or record fields alone do not. Implementation and migration guidance live
+in [connect-data-source's configurable-driver recipe](../connect-data-source/references/configurable-drivers.md).
+
 | When you need to… | Load |
 | --- | --- |
 | the shape grammar — primitives, `?`, `enum:`, lists, maps, kinds by name | `references/shape-forms.md` |
 | a complete schema folder, a grouping folder, a dataset, a row on disk | `references/examples.md` |
 | the probe, step by step, and what each failure means | `references/probe.md` |
-| mirroring an outside system: the four laws, what a write and a sweep answer, several machines | `references/mirroring.md` |
+| where a dataset's rows live (`location`: local, a folder, Drive, S3, a record system), the laws, what a write and a pull answer | `references/locations.md` |
 | run any mechanic — probes, kinds, values, dataset rows | `scripts/dm_ctl.py` |
 | how the SDK models schemas (repo checkout only) | `docs/data-management/data-spec.md`, `docs/snippets/data-spec.md` |
 | the dataset layout and row verbs (repo checkout only) | `docs/data-management/datasets.md`, `docs/snippets/datasets.md` |
@@ -109,7 +121,7 @@ reasons (a 400 carries the validation `errors`).
 | a row's past values (history) | a date you will ask about is a FIELD (`stage_dates`); a dataset in git has its commits |
 
 Rows ARE queried across links, counted, searched, written in bulk and announced (`modes/app.md`):
-`ds.rows({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
+`ds.query({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
 the linked rows back beside; `ds.count({group_by: ["week:input.day"], metrics: {people:
 "distinct:input.email"}})`; `ds.usedBy()`; `putMany` / `deleteRows` / `sync` as one step;
 `ds.onRowsChanged(handler)` instead of polling. One import home in Python: `from flow_sdk.datasets
@@ -125,7 +137,7 @@ SDK refuses a reference to a missing row and a delete that would leave one dangl
 dataset in git to rows kept out of git (their ids differ per machine).
 
 A field an outside system owns IS marked in the schema (`"owned_by": "crm"`: only a writer with
-`by="crm"` sets it; an edit by anyone else is sent to that system first — `references/mirroring.md`), a natural key IS a rule (`{"unique": ["crm_id"]}`), and shared fields ARE
+`by="crm"` sets it; an edit by anyone else is sent to that system first — `references/locations.md`), a natural key IS a rule (`{"unique": ["crm_id"]}`), and shared fields ARE
 defined once (`"include": ["crm.synced"]`) — `references/shape-forms.md`.
 
 Rules across rows ARE supported when they say "these two link paths name the same row" (a tag

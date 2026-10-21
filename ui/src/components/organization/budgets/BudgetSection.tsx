@@ -429,7 +429,6 @@ function MemberRow({
   teamName,
   capPending,
   canInvite,
-  canManage,
   inviting,
   onInvite,
   onSetCap,
@@ -441,8 +440,6 @@ function MemberRow({
   capPending: boolean;
   /** Same gate as "Add people" — whoever runs this team is who brings people into it. */
   canInvite: boolean;
-  /** May the caller run this team's roster (`members` on the team)? Gates "Remove from team". */
-  canManage: boolean;
   inviting: boolean;
   onInvite: () => void;
   onSetCap: (usd: number | null) => void;
@@ -530,8 +527,11 @@ function MemberRow({
           >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
+          {/* Gated per row on `can_remove` (the role ladder plus the last-owner rule), not the
+              team-wide `can_manage` — that one answers "may I rename the team" and offered a Remove
+              beside a peer admin that earned a 403 on press. */}
           {member.user_id ? (
-            canManage && (
+            member.can_remove && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -877,7 +877,6 @@ function TeamUnit({
                           teamName={team.name}
                           capPending={savingCap(setCap, member.endpoint_id)}
                           canInvite={team.can_allocate}
-                          canManage={team.can_manage}
                           inviting={!!member.email && invitingEmails.includes(member.email)}
                           onInvite={() => void sendInvites(member.email ? [member.email] : [])}
                           onSetCap={(usd) => setCap.mutate({ endpointId: member.endpoint_id, usd })}

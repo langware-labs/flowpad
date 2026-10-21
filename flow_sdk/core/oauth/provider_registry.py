@@ -21,10 +21,13 @@ write, or a connected provider reads as MISSING: ``github_credentials``
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
+
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,9 @@ class OAuthProbeSpec:
     #: weaker one — and, because ``error_field`` comes along with it, the failure
     #: reports what the provider actually said.
     success_value: Any = True
+    #: Asked instead when the provider refuses this request (403): a grant that does not cover this
+    #: endpoint's scope can still prove itself — and say who it is — through one it does cover.
+    fallback: Optional["OAuthProbeSpec"] = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +157,9 @@ class LocalOAuthProvider:
     #: Env var that overrides the client id, and the fallback baked in here.
     client_id_env: Optional[str] = None
     client_id_default: Optional[str] = None
+    #: Env var holding the client secret, for a provider whose token endpoint wants one even with PKCE
+    #: (Google's "Desktop app" clients). Unset or empty: the exchange sends no secret.
+    client_secret_env: Optional[str] = None
     #: Whether the authorize step sends a PKCE challenge.
     pkce: bool = False
     #: Optional first-party client supporting the registered sandbox callback.
@@ -274,7 +283,14 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         ),
         # Full Drive, asked for only while a Drive source on this machine writes back (not read-only).
         # A restricted scope: a person connecting only to read never consents to it.
-        optional_scopes=("https://www.googleapis.com/auth/drive",),
+        # Full mail access, asked for only while a declared credential offers a sign-in with this provider
+        # covering it as one of its ways (``wanted_scopes``).
+        # Read-write Storage, asked for only while a dataset keeps its rows in a GCS bucket.
+        optional_scopes=(
+            "https://www.googleapis.com/auth/drive",
+            "https://mail.google.com/",
+            "https://www.googleapis.com/auth/devstorage.read_write",
+        ),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
@@ -287,6 +303,8 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # refreshed through the hub mirror.
         client_id_env="GOOGLE_CLIENT_ID",
         client_id_default=None,
+        # Google's token endpoint wants a Desktop client's secret alongside PKCE.
+        client_secret_env="GOOGLE_CLIENT_SECRET",
         # The hub's plugin keeps this name: the Google web client registers its
         # callback URL by it on every hub host.
         hub_name="googledrive",
@@ -300,6 +318,13 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             query=(("fields", "user(permissionId,displayName,emailAddress)"),),
             identity_fields=("user.emailAddress", "user.displayName"),
             account_key_fields=("user.permissionId",),
+            # A mail-only grant (no Drive scope): the Gmail profile proves it and names the account.
+            fallback=OAuthProbeSpec(
+                method="GET",
+                url="https://gmail.googleapis.com/gmail/v1/users/me/profile",
+                identity_fields=("emailAddress",),
+                account_key_fields=("emailAddress",),
+            ),
         ),
     ),
     MICROSOFT: LocalOAuthProvider(
@@ -563,6 +588,15 @@ def _client_id(provider: LocalOAuthProvider) -> Optional[str]:
     return override or provider.client_id_default
 
 
+def client_secret_for(name: str) -> Optional[str]:
+    """A provider's OAuth client secret from its env var, or None when it declares none or it is unset."""
+    import os  # noqa: PLC0415
+
+    provider = get_local_provider(name)
+    env = provider.client_secret_env if provider is not None else None
+    return (os.getenv(env) or None) if env else None
+
+
 def client_id_for(name: str) -> Optional[str]:
     """A provider's OAuth client id: env override, else the registry default.
 
@@ -782,7 +816,139 @@ def prefers_hub_flow(name: str) -> bool:
     return local.kind == OAuthFlowKind.DEVICE or not local_flow_executable(local)
 
 
-async def credential_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Any:
+def normalize_credential_dict(provider: LocalOAuthProvider, token_response: dict) -> dict:
+    """The stored shape for a CREDENTIAL_DICT provider.
+
+    Persists only Flowpad-owned OAuth fields — never the harness's own
+    credentials. Selected by ``TokenShape``, not by provider name, so this is
+    the one place a provider's token shape is allowed to matter.
+    """
+    import time  # noqa: PLC0415
+
+    now = int(time.time() * 1000)
+    expires_at = token_response.get("expires_at")
+    expires_in = token_response.get("expires_in")
+    if expires_at is None and expires_in is not None:
+        try:
+            expires_at = now + int(expires_in) * 1000
+        except (TypeError, ValueError):
+            expires_at = None
+
+    scope = token_response.get("scope")
+    scopes = token_response.get("scopes")
+    if scopes is None and isinstance(scope, str):
+        scopes = scope.split()
+
+    credentials = {
+        "provider": provider.name,
+        "access_token": token_response.get("access_token"),
+        "refresh_token": token_response.get("refresh_token"),
+        "token_type": token_response.get("token_type"),
+        "scope": scope,
+        "scopes": scopes or [],
+        "expires_at": expires_at,
+        "created_at": now,
+    }
+    for key in (
+        "account",
+        "account_uuid",
+        "email",
+        "organization",
+        "organization_name",
+        "organization_uuid",
+        "subscription_type",
+        "rate_limit_tier",
+    ):
+        if key in token_response:
+            credentials[key] = token_response[key]
+    return credentials
+
+
+def token_request(provider: LocalOAuthProvider, data: dict) -> dict:
+    """``httpx`` keyword arguments for a POST to ``provider``'s token endpoint carrying ``data``.
+
+    FORM-encoded unless the provider is the exception: RFC 6749 §4.1.3 says the
+    token request is ``application/x-www-form-urlencoded``, and a spec-following
+    endpoint rejects a JSON body outright rather than ignoring it (Entra answers
+    ``AADSTS900144: the request body must contain 'grant_type'``). One builder for
+    the code exchange and the refresh, so neither drifts from the other.
+    """
+    if provider.token_request_json:
+        body, content_type = {"json": data}, "application/json"
+    else:
+        body, content_type = {"data": data}, "application/x-www-form-urlencoded"
+    return {**body, "headers": {"Content-Type": content_type, "Accept": "application/json"}}
+
+
+#: Refresh a local grant this close to its expiry (ms), so a token handed out does not die mid-call.
+REFRESH_MARGIN_MS = 60_000
+
+
+def _is_local_grant(value: Any) -> bool:
+    """A grant this machine got itself (loopback): a dict holding a ``refresh_token``. A hub-mirrored
+    grant is the hub's to refresh."""
+    from flow_sdk.core.oauth.hub_mirror import is_hub_mirror  # noqa: PLC0415
+
+    return isinstance(value, dict) and bool(value.get("refresh_token")) and not is_hub_mirror(value)
+
+
+async def refresh_local_grant(provider: str, value: Any) -> Any:
+    """``value`` with a fresh access token when it is a local grant (a dict holding a ``refresh_token``)
+    that has expired or is about to; else ``value`` itself. Asks the provider's ``token_url`` with its client
+    id (and its client secret, only when one is set). A refresh the provider refuses leaves ``value`` as it was
+    — the caller's own check then says the sign-in is stale. A hub-mirrored grant is the hub's to refresh."""
+    import time  # noqa: PLC0415
+
+    if not _is_local_grant(value):
+        return value
+    expires_at = value.get("expires_at")
+    if not isinstance(expires_at, (int, float)):
+        return value
+    now = int(time.time() * 1000)
+    if expires_at < 10**12:  # seconds, not ms
+        expires_at *= 1000
+    if expires_at > now + REFRESH_MARGIN_MS:
+        return value
+    spec = get_local_provider(provider)
+    client_id = client_id_for(provider)
+    if spec is None or not spec.endpoints.token_url or not client_id:
+        return value
+    form = {"grant_type": "refresh_token", "refresh_token": value["refresh_token"], "client_id": client_id}
+    if secret := client_secret_for(provider):
+        form["client_secret"] = secret
+    try:
+        import httpx  # noqa: PLC0415
+
+        from flow_sdk.core.oauth.provider_probe import PROBE_TIMEOUT_SECONDS  # noqa: PLC0415
+
+        # The same bound the connection's own probe has: one request to the same provider.
+        async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS) as client:
+            response = await client.post(spec.endpoints.token_url, **token_request(spec, form))
+        body = response.json() if response.status_code == 200 else None
+    except Exception:  # noqa: BLE001 — unreachable: the stale grant stands, and its check says so
+        logger.warning("%s: could not refresh the local grant", provider, exc_info=True)
+        return value
+    if not isinstance(body, dict) or not body.get("access_token"):
+        logger.warning("%s: the provider refused to refresh the local grant (%s)", provider, response.status_code)
+        return value
+    # The stored shape the code exchange writes; what the refresh response leaves out (the refresh token,
+    # the scope, the account fields) stays as the grant had it.
+    normalized = normalize_credential_dict(spec, {"expires_in": 3600, **body})
+    return {**value, **{k: v for k, v in normalized.items() if v not in (None, [])}}
+
+
+#: One refresh at a time per (provider, user): two readers of an expiring grant must not both spend its
+#: refresh token (a provider that rotates it voids the loser's).
+_REFRESH_LOCKS = new_registry()
+
+
+def _refresh_lock(provider: str, user_id: str) -> asyncio.Lock:
+    return keyed_loop_lock(_REFRESH_LOCKS, f"{provider}\0{user_id}")
+
+
+async def credential_for(
+    provider: str, *, user: Any = None, hub: bool = True, name: str | None = None, fresh: bool = False
+) -> Any:
     """The stored credential for ``provider`` in whatever shape it was saved
     (GitHub: the token string; Anthropic: the normalized OAuth dict), or ``None``.
 
@@ -797,6 +963,10 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
 
     ``user`` names ONE principal (a ``User`` or its typeid) and disables the
     chain — the publish path acts for an explicit actor, never a fallback.
+
+    ``fresh=True`` is for a caller that HANDS THE TOKEN OUT (``token_for``): a local
+    grant that has expired or is about to is refreshed first and written back. A
+    plain read (a status row, an identity) leaves the grant as it is stored.
 
     One copy, because the precedence IS the policy: it lived in six places
     (two ingest drivers, two "current user" action helpers, a publish-side
@@ -815,6 +985,7 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
     from flow_sdk.request_context.methods import (  # noqa: PLC0415
         get_current_request_user_fresh,
         get_user_credentials,
+        set_user_credentials,
     )
 
     async def _read(target: Any) -> Any:
@@ -822,9 +993,20 @@ async def credential_for(provider: str, *, user: Any = None, hub: bool = True, n
         if u is None:
             return None
         try:
-            return await get_user_credentials(u, entry, u.id)
+            value = await get_user_credentials(u, entry, u.id)
         except KeyError:  # no SOD entry — the ordinary "not connected"
             return None
+        if not fresh or not _is_local_grant(value):
+            return value
+        # A grant this machine got itself (loopback) is refreshed where a token is handed out: an access token
+        # lasts an hour, and nothing else spends the refresh token. Re-read under the lock — the reader that
+        # waited finds the grant the first one already refreshed.
+        async with _refresh_lock(provider, str(u.id)):
+            value = await get_user_credentials(u, entry, u.id)
+            refreshed = await refresh_local_grant(provider, value)
+            if refreshed is not value:
+                await set_user_credentials(u, entry, refreshed, u.id)
+            return refreshed
 
     try:
         if user is not None:
@@ -867,4 +1049,4 @@ async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: 
     has to unwrap by hand."""
     from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
 
-    return token_from_credential(await credential_for(provider, user=user, hub=hub, name=name))
+    return token_from_credential(await credential_for(provider, user=user, hub=hub, name=name, fresh=True))

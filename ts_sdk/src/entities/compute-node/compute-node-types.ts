@@ -210,6 +210,11 @@ export interface IComputeNode extends Omit<IEntity, 'status'> {
    *  through the hub's `auto-login` action — it is in the hub's
    *  `_immutable_update`, so a PUT carrying it is silently dropped. */
   auto_login?: boolean;
+  /** Whether anyone may sign the box in from a browser, and which of its roles
+   *  may. Owner-only to change, through the hub's `login-access` action — both
+   *  are in the hub's `_immutable_update`. Hub default: on, owner + admin. */
+  allow_login?: boolean;
+  login_roles?: string[];
   /** Who the box last reported itself signed in as, cached hub-side. `null` (or
    *  absent) means "not signed in as far as the hub knows", which includes
    *  "never looked". Read-only: server-owned, never sent. */

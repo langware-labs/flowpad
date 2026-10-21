@@ -4,6 +4,7 @@ version: 2
 ---
 # Claude Guidelines for flow-cli
 
+
 ## Quick Start
 
 ### Prerequisites (Windows)
@@ -201,9 +202,9 @@ Why the exception and nothing else: a read-only asset has no row of its own to l
 
 **Never invent a new deterministic id.** If you catch yourself writing `uuid5(...)` to make a re-run "converge on the same row", stop: query for the row instead. `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) and `DataSource.find_for_account` are the shape — the lookup gives the same idempotency, works on rows minted before the key existed, and does not silently break when a key component changes.
 
-* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py`: `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id` for a row-only entity, or `TypeInfo.mint_entity_id` for a filesystem asset — both use it). New code passes no key.
+* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py`: `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id` for a row-only entity, or `TypeInfo.mint` for a filesystem asset — both use it). New code passes no key.
 
-* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. `TypeInfo.mint_entity_id` is the filesystem adoption gate around the pure per-type carrier readers; `Entity.allocate_id` enforces the row-only entity-side gate. New id-adopting paths must use one of those seams.
+* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), it never becomes an entity id: `TypeInfo.mint` (`fs_store/schema_registry.py`) raises `ForeignId` on a foreign carrier id (`read_id` / `read_identity` are the pure reads, never write); `Entity.allocate_id` re-hashes it into `uuid5(DNS, "<type>:<id>")`. Those two are the adoption gates — filesystem and row-only. New id-adopting paths must use one of those seams.
 
 * **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** — use it wherever an id is born or adopted. It keeps accepting **v4 and v5**: read-only assets are v5 by design, and so are rows minted before this rule. Tightening it to v4-only would orphan both.
 
@@ -244,23 +245,41 @@ Three tiers, one base:
 
 * **`extra="forbid"`** **on a plain** **`DataSpec`** **is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never** **`**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
 
-* **Register a** **`spec_kind`** **when the schema should be nameable** (`"ingest.source_item"`, `"folder"`) — its kind, resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool` / `binary`; anything else is a registered kind or anonymous.
+* **Register a** **`spec_kind`** **when the schema should be nameable** (`"ingest.source_item"`, `"folder"`) — its kind, resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool` / `date` (`PRIMITIVES` in `_kinds.py`) plus `binary` (`io/native.py`); anything else is a registered kind or anonymous.
 
 * **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
 
-* **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional), `enum:a|b` (closed set) and `{"*": shape}` (map). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+* **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional), `enum:a|b` (closed set), `{"*": shape}` (map), and a kind name as a field (`"crm.company"` — a value or a `<kind>.id.<uuid>` reference; `"a|b"` for several kinds, reference only). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
 
 ## Data sources are self-contained assets (non-negotiable)
 
-**A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp and its `README.md`. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
+**A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp, and a `README.md` when the driver needs explaining. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
 
-* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: `data_driver_name`, `data_driver_config`, owner, cadence — never a secret). The standard for every asset: the `XSpec` schema is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
+* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: file keys `data_driver_name` / `data_driver_config` are aliases of the fields `provider` / `config`; owner, `poll_interval_seconds`, `window_days` — never a secret). The standard for every asset: the `XSpec` schema is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
 
-* **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks.
+* **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks. The gate also fails on provider-named modules, `PROVIDER`/`SOURCE`/`DRIVER` constants naming a driver, and `<Driver>MessageSpec` classes outside asset folders.
 
 * **Asset code may import the public SDK** (`flow_sdk.sources`, `flow_sdk.connections`, `token_for`, the hub client, `instance_settings`). It never imports another asset.
 
 * **Exceptions need the user's explicit approval, every time.** An approved exception is recorded with its date and reason in `EXCEPTIONS` in `tests/unit/test_data_sources_are_self_contained.py` — that test is the gate, and it fails on any trace not listed. Don't add an entry yourself; ask.
+
+## FlowCall — recognize the call-and-result contract
+
+**FlowCall** names Flowpad's mechanism for invoking work, receiving a structured
+outcome and value, and composing results. `ReturnedValue` is its answer contract;
+`ComputeOp`, `Wizard`, and `ProcessCall` are participating parts, not synonyms.
+For questions about FlowCall, ReturnedValue, or how work calls return and compose
+values, start with [the FlowCall contract](docs/snippets/call-returns.md) and
+`flow_sdk/schema/data_spec/returned_value_spec.py`. Follow the actual symbols
+before investigating `ActionInfo` or `ApiResponse` transport plumbing.
+Keep the architectural name distinct from existing code identifiers.
+
+A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](docs/snippets/call-returns.md) before adding a local loader or result protocol.
+
+Durable work uses `ComputeOp.start` and `get_call` with exact block/call IDs.
+Admission has no completed output; interrupted work is not replayed automatically.
+Check installed capabilities before migrating callers, and use `CallContext.attach_executor`
+to record a child executor rather than searching by process name or start time.
 
 ## Naming — check the glossary before inventing a noun
 

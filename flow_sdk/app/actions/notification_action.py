@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -304,7 +305,7 @@ def _parse_share_transfer_mode(body: dict) -> str:
         or "copy"
     )
     mode = str(mode).strip().lower()
-    return mode if mode in {"copy", "git"} else "copy"
+    return mode if mode in {"copy", "git", "both"} else "copy"
 
 
 def _parse_share_create_bookmark(body: dict) -> bool:
@@ -421,33 +422,35 @@ async def _merge_shared_context_into_conversation(
         logger.warning("[append_conversation] merge shared context failed (non-fatal): %s", e, exc_info=True)
 
 
-async def _ensure_claude_session_rows(typeids: list[TypeId]) -> None:
-    """Sender-side ensure for shared ClaudeTranscript refs.
-
-    A ``claude_session`` row only exists after an indexer walk (walks are
-    explicit-click only), so the session being shared often has no row yet —
-    which would leave the chip unresolvable and the context links dangling.
-    The share IS an explicit user action on exactly this session, so locate
-    its JSONL and run the scoped single-file index. Best-effort."""
-    from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session  # noqa: PLC0415
+async def _ensure_session_rows(typeids: list[TypeId]) -> None:
+    """Sender-side ensure for shared worker-session refs: a session row only exists
+    after an indexer walk, so index the shared transcript's one file. Covers refs
+    whose id is the session id (claude, copilot); the ``session-transcript``
+    action already indexed the rest. Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
-        _index_single_claude_session,
+        index_session_file,
+    )
+    from flow_sdk.transcript_analyzer.resolver import (  # noqa: PLC0415
+        SESSION_TYPE_BY_WORKER,
+        TranscriptNotFoundError,
+        resolve_session_jsonl,
     )
 
+    worker_by_session_type = {t: w for w, t in SESSION_TYPE_BY_WORKER.items()}
     for tid in typeids:
-        if tid.type != BuiltinEntityType.CLAUDE_SESSION.value:
+        worker = worker_by_session_type.get(tid.type)
+        if worker is None:
             continue
         try:
-            if await ClaudeSession.get_one({"id": tid.id}) is not None:
+            if await SchemaRegistry.get_entity_cls(tid.type).get_one({"id": tid.id}) is not None:
                 continue
-            rec = get_claude_session(tid.id)
-            if rec is None or rec.asset_ref is None:
-                continue
-            await _index_single_claude_session(Path(rec.asset_ref.path))
+            await index_session_file(tid.type, resolve_session_jsonl(worker, tid.id))
+        except (TranscriptNotFoundError, ValueError):
+            continue  # no local transcript: the packer's own check reports it
         except Exception as e:  # noqa: BLE001
             logger.warning(
-                "[append_conversation] ensure claude_session %s failed (non-fatal): %s",
+                "[append_conversation] ensure session %s failed (non-fatal): %s",
                 tid,
                 e,
                 exc_info=True,
@@ -811,8 +814,36 @@ async def find_unshippable_references(asset_references: list) -> list[tuple[Type
     from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
 
     typeids = _typeids_of(asset_references)
-    await _ensure_claude_session_rows(typeids)
+    await _ensure_session_rows(typeids)
     return await attachments_that_would_ship_nothing(typeids)
+
+
+#: A library prompt younger than this, never used, attached to a message was made only to send it.
+FRESH_PROMPT_WINDOW = timedelta(minutes=10)
+
+
+async def prompts_minted_just_to_send(asset_references: list) -> list[str]:
+    """``prompt-<id>`` references created within ``FRESH_PROMPT_WINDOW`` and never used.
+
+    Such a prompt exists only to ride this message, yet it is a file under the project's
+    ``agentic-assets/prompt/`` — private chat text one ``git add`` from a push. The send
+    must carry it inline (``prompt_text``); sharing a prompt the user keeps is unaffected."""
+    from flow_sdk.builtin.prompt import Prompt  # noqa: PLC0415
+
+    now = datetime.now(timezone.utc)
+    minted: list[str] = []
+    for tid in _typeids_of(asset_references):
+        if tid.type != "prompt":
+            continue
+        prompt = await Prompt.get_one({"id": tid.id})
+        created = getattr(prompt, "created_date", None) if prompt else None
+        if not isinstance(created, datetime) or (prompt.use_count or 0) > 0:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if now - created < FRESH_PROMPT_WINDOW:
+            minted.append(str(tid))
+    return minted
 
 
 @action.post(action_name="check-attachments", types=None)
@@ -829,7 +860,7 @@ async def check_attachments() -> ApiResponse:
     refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
     gaps = await find_unshippable_references(refs)
     gitignored = []
-    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
+    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) in ("copy", "both"):
         from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
             attachments_holding_gitignored,
             gitignored_payload,
@@ -935,6 +966,9 @@ async def handle_add_message(
         and not prompt_files_preview
         and not uploaded_files_preview
         and not asset_references
+        # A message that is only a value — a prompt call, or its answer — is a message too.
+        and not (body.get("call_prompt") or "").strip()
+        and not body.get("attachment")
     ):
         return ApiFailResponse(message="message, prompt, files, or asset_references required")
     # An attachment-only send keeps an empty text: each surface names what it carries.
@@ -973,11 +1007,21 @@ async def handle_add_message(
         ]
     # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
     # first so the merge/backlink below (and the chip's name lookup) resolve.
-    await _ensure_claude_session_rows(context_typeids)
+    await _ensure_session_rows(context_typeids)
     # Refuse BEFORE anything is written: an attachment the packer would ship nothing for
     # leaves the sender told "sent" and the recipient holding a bundle that cannot be complete.
     from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
 
+    if minted := await prompts_minted_just_to_send(asset_references):
+        return ApiFailResponse(
+            message=(
+                f"Cannot send: {', '.join(minted)} was created moments ago and never used — a library "
+                "prompt is a file in the project, so a prompt made just to send would be saved there. "
+                "Send it inline instead: `flow conversation send <conv> \"<text>\" --prompt \"<prompt>\"` "
+                "(or `prompt_text`). Nothing was sent."
+            ),
+            status_code=400,
+        )
     gaps = await attachments_that_would_ship_nothing(_parse_context_typeids(conv, asset_references, []))
     if gaps:
         names = "; ".join(f"{tid} — {why}" for tid, why in gaps)
@@ -992,7 +1036,7 @@ async def handle_add_message(
         )
     # A copy carries the asset folder whole — files git excludes (often private) included. The sender is
     # told which and decides: refused ONCE, before anything is written; ``include_gitignored`` sends them.
-    if transfer_mode == "copy" and not _parse_share_include_gitignored(body):
+    if transfer_mode in ("copy", "both") and not _parse_share_include_gitignored(body):
         from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
 
         if refused := await refuse_gitignored(_parse_context_typeids(conv, asset_references, [])):
@@ -1060,6 +1104,14 @@ async def handle_add_message(
     raw_attachments = body.get("attachment") or []
     if not isinstance(raw_attachments, list):
         raw_attachments = [raw_attachments]
+    # ``call_prompt``: a one-shot prompt for the receiver to approve and run (``process_call_spec``).
+    # It rides as an attachment value, never as a Prompt entity — the text is the sender's.
+    call_prompt = (body.get("call_prompt") or "").strip()
+    if call_prompt:
+        from flow_sdk.core.compute.process_call import prompt_call  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.process_call_spec import call_attachment  # noqa: PLC0415
+
+        raw_attachments = [*raw_attachments, call_attachment(prompt_call(call_prompt))]
 
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
     # we materialize the hub-confirmed FM locally for the sender's UI. Skipped
@@ -1376,7 +1428,7 @@ async def handle_forward_message(body: dict, someone_typeid: str) -> ApiResponse
     if parent_typeids:
         context_typeids = [*context_typeids, *parent_typeids]
         clone_fm.add_shared_context_entities(*parent_typeids)
-    await _ensure_claude_session_rows(context_typeids)
+    await _ensure_session_rows(context_typeids)
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     is_remote_send = is_logged_in() and bool(getattr(conv, "remote", False))

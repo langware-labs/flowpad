@@ -222,9 +222,9 @@ async def test_inject_routes_chain_and_run_completes(tmp_path):
 
 
 @async_context
-async def test_run_and_execution_records_are_example_shaped(tmp_path):
+async def test_run_and_execution_records_are_row_shaped(tmp_path):
     """The standardized I/O records: run input/output + inline execution dirs
-    + born-compatible example.json stamps."""
+    + born-compatible row.json stamps."""
 
     @graph_workflow_functions.register("v2_records")
     def _rec(event_name, data, ctx):
@@ -251,7 +251,7 @@ async def test_run_and_execution_records_are_example_shaped(tmp_path):
     assert json.loads((exec_dir / "output" / "result.json").read_text()) == {"answer": 42}
     assert "hello record" in (exec_dir / "output" / "log.txt").read_text()
     # Born-compatible examples: deterministic id + provenance source block.
-    ex = json.loads((exec_dir / "example.json").read_text())["metadata"]
+    ex = json.loads((exec_dir / "row.json").read_text())["metadata"]
     assert ex["kind"] == "train"
     src = ex["source"]
     assert src["event_id"] == fe.id  # phase 7: envelope identity in provenance
@@ -259,7 +259,7 @@ async def test_run_and_execution_records_are_example_shaped(tmp_path):
                                 "source_node", "hop")} == {
         "flow_id": flow.id, "run_id": fe.execution_id, "node_id": "a",
         "seq": 1, "event": "ask", "source_node": EXTERNAL_SOURCE, "hop": 0}
-    run_ex = json.loads((run_dir / "execution" / "example.json").read_text())["metadata"]
+    run_ex = json.loads((run_dir / "execution" / "row.json").read_text())["metadata"]
     assert run_ex["source"]["node_id"] == "$run"
 
 
@@ -440,7 +440,7 @@ async def test_subprocess_function_records_and_auto_done(tmp_path):
     assert json.loads((exec_base / "input" / "event.json").read_text())["data"] == {"n": 7}
     assert "got go n=7" in (exec_base / "output" / "stdout.log").read_text()
     assert (exec_base / "output" / "artifact.txt").read_text() == "made this"
-    ex = json.loads((exec_base / "example.json").read_text())["metadata"]
+    ex = json.loads((exec_base / "row.json").read_text())["metadata"]
     assert ex["source"]["process_id"] == proc_id
 
 
@@ -1075,6 +1075,44 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
     assert entry_row["actor"] == "user:u-42"
 
     exec_ex = _json.loads((run_record_dir(run_id) / "executions" / "1-a"
-                           / "example.json").read_text())["metadata"]["source"]
+                           / "row.json").read_text())["metadata"]["source"]
     assert exec_ex["event_id"] == env.id
     assert exec_ex["actor"] == "user:u-42"
+
+
+@async_context
+async def test_function_calls_typed_block_without_changing_done_or_none(tmp_path):
+    from flow_sdk.builtin.compute_op import ComputeOp
+    from flow_sdk.schema.data_spec.compute_op_spec import PythonOp
+
+    manifest = tmp_path / 'agentic-assets/project_manifest'
+    manifest.mkdir(parents=True)
+    (manifest / 'project_manifest.json').write_text(json.dumps({'ns': 'graph_call_fixture'}))
+    folder = tmp_path / 'agentic-assets/compute_op/graph-call'
+    op = ComputeOp(name='graph-call', asset_ref=str(folder), subkind='python',
+                   exe_data=PythonOp(), input=['int'], output=['int'])
+    await op.save()
+    (folder / 'call.py').write_text('from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue\ndef call(input, *, context):\n return ReturnedValue.satisfied(value=input[::-1])\n')
+    seen = []
+
+    @graph_workflow_functions.register('flowcall_graph_adapter')
+    async def caller(event_name, data, ctx):
+        answer = await ctx.call(str(op.typeid), input=data['items'], approved=True)
+        seen.append(answer.value)
+        if data['emit']:
+            return {'items': answer.value}
+        return None
+
+    @graph_workflow_functions.register('flowcall_graph_sink')
+    def sink(event_name, data, ctx):
+        seen.append(('done', data['items']))
+
+    flow = await _make_flow(tmp_path, 'flowcall_graph',
+        [_fn('caller', 'flowcall_graph_adapter'), _fn('sink', 'flowcall_graph_sink')],
+        [_edge('start', EXTERNAL_SOURCE, 'go', 'caller'), _edge('done', 'caller', 'done', 'sink')])
+    manager = GraphWorkflowManager()
+    await manager.inject(flow.id, 'go', {'items': [1, 2], 'emit': True})
+    await _until(lambda: not manager.live_run_ids())
+    await manager.inject(flow.id, 'go', {'items': [], 'emit': False})
+    await _until(lambda: not manager.live_run_ids())
+    assert seen == [[2, 1], ('done', [2, 1]), []]

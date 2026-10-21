@@ -1,4 +1,4 @@
-"""GraphWorkflow — a folder-backed flow document (the whiteboard model).
+"""GraphWorkflow — a folder-backed flow document (the chart model).
 
 Folder layout::
 

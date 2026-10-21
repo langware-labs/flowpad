@@ -1,12 +1,12 @@
 ---
 type: markdown_index
-id: markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267
-inputs_hash: 84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36
+id: markdown_index-a4868323-3c5c-52d4-a40a-01f1164029e1
+inputs_hash: 593796f8c8b90981328ca5ec50803309122435f718abcaa374969039bcbc84e8
 template_version: 1
 prompt_version: 1
-parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-vault_root: docs
-generated_at: '2026-10-13T10:49:35Z'
+parent_ref: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
+vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
+generated_at: '2026-10-19T19:19:35.506367+00:00'
 latest_process_ref: ''
 file_count: 21
 subfolder_count: 0
@@ -15,27 +15,27 @@ subfolder_count: 0
 # breadcrumbs
 
 ## Self-Summary
-> Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.
+> Proven ground-truth rules ("breadcrumbs") captured after root-cause analyses of Flowpad bugs: agent personas and activity readouts, PTY queue and turn liveness, terminal rendering and theme, hub sign-in, bootstrap project resolution, encoding, sorting and release migrations, each with invariants and failure modes.
 
 ## Files
-- [Agent activity readout rules](agent_activity_readout.md) — Rules for the chat activity line naming what an agent is doing now: frames come only from the process, with a 500ms floor.
-- [An agent session keeps the agent as its identity](agent_session_persona.md) — Why an agent-launched session must answer as that agent, not vibe: prepareAgentSession embeds vibe as a layer with asPersona false.
-- [Bootstrap's default_project — which project a machine opens](bootstrap_default_project.md) — Bootstrap default_project rules: browser memory outranks all, then hub one-shot instruction, last active non-system project, @local; resolved per caller, never cached.
-- [Composer readiness is a generation property, not a recent-bytes property](composer_readiness.md) — Why the PTY composer-ready gate blocked forever: the vendor paints its marker only on a full redraw, so a 64KB scan window goes blind.
-- [A process declares its persona; the renderer never infers one](declared_persona.md) — Why a session's persona must be declared by the caller via set_ap_persona rather than inferred from how many sub-agents are embedded.
-- [Dev port picking for agent-started servers](dev_port_picking.md) — Agent-started dev servers must ask for a port via flow app free-dev-port rather than typing one; the probe, the band, and why no lease exists.
-- [What evidence may write a harness login state](harness_login_state.md) — What evidence may write a harness login state: why an undetermined probe must not read as signed out, and presence-only must not overturn a refusal.
-- [Hub sign-in survives a hub socket reconnect](hub_signin_reconnect.md) — Ground-truth rules for keeping a box signed in to the hub across websocket reconnects, with the test and internals that pin them
-- [Live frames must name their transcript entry](live_frame_identity.md) — Why live frames must carry transcript-entry-id: to_xml drops process_entry, so an observing client's resume position freezes and observe-turn replays every turn.
-- [Live plan detection — the plan path lives on the attachment](live_plan_detection.md) — Where a live plan's file path actually lives: on the earlier plan_mode attachment, not on ExitPlanMode, resolved through plan_path_from_attachments.
-- [Migration open-slot must be advanced by the release](migration_slot.md) — Migration recipe directories must always leave one unreleased open slot; a release bump that consumes it strands new migrations unreachably.
-- [NULL sort order in the SQLite driver](null_sort_order.md) — NULL sort order in the SQLite driver: missing sort values bucket first, never compared against real ones, and never coerced to empty string.
-- [Prompt queue didn't drain in PTY mode](pty_queue_drain.md) — Why a queued prompt never drained in PTY mode: the turn-end edge read _last_broadcast_key off an AgenticProcess re-hydrated fresh per event.
-- [PTY turn cut off mid-generation](pty_turn_liveness.md) — Why a long PTY turn was truncated mid-generation: transcript silence is a working agent, so the inactivity fallback misread a busy worker as idle.
-- [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — Sandbox preview URLs in a cloud box: loopback for server-side callers, the audience door for the browser, and why E2B_SANDBOX_ID is never the sandbox-id source.
-- [Served app HTML must be read as UTF-8](served_html_encoding.md) — Served app HTML must be read as UTF-8: without an encoding it decodes as cp1252 on Windows, giving mojibake and 500s.
-- [Surface change must reconcile the transcript](surface_transcript_reconcile.md) — A surface change owes both transport and transcript: leaving the terminal must unlatch pty_mode, and history must be force-reloaded, gate mirroring the server per route.
-- [Terminal RTL/bidi rendering contract](terminal_bidi.md) — Terminal RTL/bidi rendering contract: one bidi paragraph per row, buffer order chosen per CLI rather than platform, stamped on container mount and vendor resolution.
-- [Worker interpreter resolution](worker_interpreter.md) — Workers are handed an absolute interpreter path as FLOWPAD_PYTHON, because uv run and bare python resolve from CWD or PATH and cannot import flow_sdk.
-- [Worker terminal theme is pinned at launch](worker_terminal_theme.md) — Worker terminal theme is pinned at launch: the CLI theme must ride createProcess, not a later open, because truecolor output ignores the host xterm palette.
-- [XML entity decode belongs to the XML transport, not to FlowData](xml_entity_decode.md) — Entity decoding belongs to the XML transport alone: the client must decode exactly amp, lt, gt, or get-history replays get rewritten and dropped.
+- [Agent activity readout rules](agent_activity_readout.md) — Proven rules for the chat activity line that reads the agent's current action from its own process event stream, with invariants and failure modes.
+- [An agent session keeps the agent as its identity](agent_session_persona.md) — Breadcrumb rule that an agent session keeps the agent as its identity: agent launch embeds vibe as a layer, not a persona, after an RCA.
+- [Bootstrap's default_project — which project a machine opens](bootstrap_default_project.md) — Breadcrumb on bootstrap default_project source order (browser memory, hub one-shot, last active project, @local), per-caller resolution, invariants, failure modes and client fix.
+- [Composer readiness is a generation property, not a recent-bytes property](composer_readiness.md) — Breadcrumb on PTY composer readiness: the gate scanned only recent output, missing the vendor ready-marker after chatty turns, so readiness must be generation-scoped.
+- [A process declares its persona; the renderer never infers one](declared_persona.md) — Breadcrumb ruling that a process declares its persona via set_ap_persona rather than the renderer inferring it from embedded agents, with invariants and failure modes.
+- [Dev port picking for agent-started servers](dev_port_picking.md) — Breadcrumb rules for agent-started dev servers asking for a port via flow app free-dev-port, covering collisions with sibling builds and the picker taking no lease.
+- [What evidence may write a harness login state](harness_login_state.md) — Breadcrumb rules for what evidence may write a harness login state, covering undetermined probes wrongly recorded as signed out and presence-only probes wrongly overturning refusals.
+- [Hub sign-in survives a hub socket reconnect](hub_signin_reconnect.md) — Breadcrumb rule that hub sign-in must survive a hub websocket reconnect and be re-asked after a post-boot login, so hub-funded LLM endpoints stay available.
+- [Live frames must name their transcript entry](live_frame_identity.md) — Breadcrumb rule that live wire frames must carry a transcript-entry id so observing clients keep their resume position, with invariants and failure modes
+- [Live plan detection — the plan path lives on the attachment](live_plan_detection.md) — Breadcrumb rule that live plan detection must resolve the plan path from the plan_mode attachment, not ExitPlanMode, so plans surface on the same turn.
+- [Migration open-slot must be advanced by the release](migration_slot.md) — Breadcrumb rule that a release must advance the open migration recipe slot to the next unreleased version, with invariants and failure modes
+- [NULL sort order in the SQLite driver](null_sort_order.md) — Breadcrumb on NULL sort order in the SQLite driver: missing values sort first via a bucketed sort key and are never coerced to empty strings.
+- [Prompt queue didn't drain in PTY mode](pty_queue_drain.md) — Breadcrumb on the PTY prompt queue never draining: a dead turn-end edge because prev_busy came from a per-instance attribute; behavior, internals, fix and invariants.
+- [PTY turn cut off mid-generation](pty_turn_liveness.md) — Breadcrumb on PTY turns cut off mid-generation when the inactivity fallback misread transcript silence as idle; the proven fix, invariants and failure modes.
+- [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — Breadcrumb on sandbox preview URLs: a dev-server port needs a loopback URL for the server and a public per-port host for the browser.
+- [Served app HTML must be read as UTF-8](served_html_encoding.md) — Breadcrumb rule that served app HTML must be read as UTF-8, never the host locale, to avoid Windows cp1252 mojibake and 500 errors
+- [Surface change must reconcile the transcript](surface_transcript_reconcile.md) — Breadcrumb on surface changes: leaving the terminal must reset the worker to cli transport and force a transcript history reload; invariants and failure modes.
+- [Terminal RTL/bidi rendering contract](terminal_bidi.md) — Breadcrumb on terminal RTL/bidi rendering: one bidi paragraph per row, buffer order chosen per CLI, container-mount and vendor-resolution triggers, invariants, failure modes, bound tests.
+- [Worker interpreter resolution](worker_interpreter.md) — Breadcrumb on handing a worker its Python interpreter as FLOWPAD_PYTHON, since uv run and bare python do not find flow_sdk; invariants and failure modes.
+- [Worker terminal theme is pinned at launch](worker_terminal_theme.md) — Breadcrumb on worker terminal theme: the CLI reads its theme at spawn, so it must ride the createProcess launch call, not the later open.
+- [XML entity decode belongs to the XML transport, not to FlowData](xml_entity_decode.md) — Breadcrumb: XML entity decoding belongs to the XML transport only, covering just ampersand, less-than and greater-than, since a wider decode corrupts transcript history replay.

@@ -3,7 +3,7 @@
  *
  * Semantic truth is the flow folder's graph.json (doc); layout truth is
  * display.json. Both load/persist through the folder FSRef injected by the
- * view (whiteboard pattern). Live run/node state is push-driven off the
+ * view (chart pattern). Live run/node state is push-driven off the
  * unified event bus (docs/flow-events.md phase 8 Tier B).
  */
 import { create } from 'zustand';

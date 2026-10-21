@@ -375,3 +375,24 @@ async def test_yes_on_a_terminal_approves_the_confirms_of_a_list(tmp_path):
     assert result.steps["git"].ok
     assert result.steps["token"].cancelled
     assert len(said) == 2, "one line per item of the one list"
+
+
+@pytest.mark.parametrize('shape', ['confirm', 'string'])
+async def test_new_output_shape_keeps_early_ask_kind_and_approval(tmp_path, shape):
+    plans = []
+    for spelling in ('output', 'output_spec_kind'):
+        op = ComputeOpSpec(name='ask-new-shape', subkind='ask', exe_data={'prompt': 'Give input'}, **{spelling: shape})
+        wizard = WizardSpec(name='new-shape', output_from='ask', steps=[{'id': 'ask', 'ref': op.name}])
+        box = _Box(ops=[op])
+        plans.append(await plan_wizard(wizard, **box.seams(tmp_path)))
+    assert plans[0].needs == plans[1].needs
+    assert len(plans[0].needs) == 1
+    assert plans[0].needs[0].kind == shape
+    assert plans[0].needs[0].is_approval is (shape == 'confirm')
+
+
+@pytest.mark.parametrize('shape', [['int'], {'number': 'int'}])
+async def test_inline_ask_shapes_stay_in_place(tmp_path, shape):
+    op = ComputeOpSpec(name='ask-record', subkind='ask', exe_data={'prompt': 'Give values'}, output=shape)
+    wizard = WizardSpec(name='record-shape', output_from='ask', steps=[{'id': 'ask', 'ref': op.name}])
+    assert not (await plan_wizard(wizard, **_Box(ops=[op]).seams(tmp_path))).needs

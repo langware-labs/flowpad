@@ -35,13 +35,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+from flow_sdk.sources.values.subject import normalize_subject
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry, single_flight
 from flow_sdk.utils.serialization import iso_to_utc
 
@@ -176,45 +176,27 @@ async def end_conversation(conversation_id: str, at: Optional[datetime] = None) 
     await conversation.save(notify=False)
 
 
+def _follow_ending(conversation, item) -> bool:
+    """A message that ends its conversation (``MessageData.ends_conversation``: a merged or closed
+    pull request) ends it at the message's time, once; a later message that does not reopens it. A
+    message older than the end (a backfill) leaves it as it is. Answers whether anything changed
+    (the caller saves)."""
+    data = getattr(item, "data", None)
+    at = getattr(data, "sent_at", None) or (iso_to_utc(item.occurred_at) if item.occurred_at else None)
+    if getattr(data, "ends_conversation", False):
+        if conversation.ended_at is None:
+            conversation.ended_at = at or datetime.now(timezone.utc)
+            return True
+    elif conversation.ended_at is not None and at is not None and at > iso_to_utc(conversation.ended_at):
+        conversation.ended_at = None
+        return True
+    return False
+
+
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
 RECONCILE_BATCH = 500
-
-#: Reply/forward prefixes stripped when a provider gives us no native thread
-#: handle and the subject is all we have. Deliberately multi-lingual: a
-#: two-entry English list silently forks every non-English thread. Applied
-#: repeatedly to a fixed point, so `Re: Fwd: RE:` collapses.
-_SUBJECT_PREFIX = re.compile(
-    r"^\s*(?:re|rif|aw|antw|sv|vs|vb|res|enc|tr|fwd?|wg|encaminhada|回复|答复|转发)\s*(?:\[\d+\])?\s*:\s*",
-    re.IGNORECASE,
-)
-#: Bracketed list/banner tags: `[team]`, `[EXTERNAL]`.
-_SUBJECT_TAG = re.compile(r"^\s*\[[^\]]{1,40}\]\s*")
-
-
-def normalize_subject(subject: str) -> str:
-    """A subject reduced to its threading key.
-
-    The FALLBACK thread key — used only when the provider offers nothing
-    better. Every channel worth supporting ships a native handle (Gmail
-    ``threadId``, Slack ``thread_ts``, a Jira issue key) and the driver should
-    put it in ``SourceItem.thread_key``; this is what happens when it can't.
-
-    Known and accepted failure modes, documented so nobody rediscovers them as
-    bugs: two unrelated ``Re: hello`` threads IN ONE MAILBOX collapse into one, and
-    editing a subject mid-thread forks it. Both are why the native handle wins when
-    it exists; the thread key is also scoped by channel, owner and the source that
-    read it, so the collapse never crosses accounts.
-    """
-    text = (subject or "").strip()
-    while True:
-        stripped = _SUBJECT_TAG.sub("", _SUBJECT_PREFIX.sub("", text))
-        if stripped == text:
-            break
-        text = stripped
-    return " ".join(text.split()).casefold()
-
 
 def thread_key_for(item, subject: str) -> str:
     """The item's grouping key: the driver's handle, else the subject."""
@@ -290,6 +272,7 @@ async def project_source_item(
     recount: bool = True,
     announce: bool = True,
     known_unplaced: bool = False,
+    item_changed: bool = False,
 ) -> Optional[tuple[str, str]]:
     """Project one SourceItem into its conversation.
 
@@ -302,6 +285,11 @@ async def project_source_item(
     ``recount=False`` defers the thread recount to the caller. A sweep sets it:
     recounting per item is quadratic in thread depth, because each recount
     reloads the whole thread.
+
+    ``item_changed=True`` says the item itself was edited since it was placed (an
+    ``.updated`` tag). The row's body is hydrated from the item at read time, so no
+    stored field changes — the projection pushes the re-read row itself, or an open
+    conversation keeps the old text until a reload.
 
     ``announce=False`` suppresses the projected tag. A sweep sets it when the
     batch itself would be a storm, for the reason `IngestMode` encodes one layer
@@ -372,6 +360,8 @@ async def project_source_item(
     ours = item.is_ours(source)
     if stamp_conversation(conversation, item, ours=ours):
         changed = True
+    if _follow_ending(conversation, item):
+        changed = True
     if changed:
         await conversation.save(notify=False)
 
@@ -393,13 +383,13 @@ async def project_source_item(
                 return await _place_message(
                     item, source, channel, subject, key, thread, thread_id,
                     conversation_id, sender, sender_name, None,
-                    notify=notify, recount=recount, announce=announce,
+                    notify=notify, recount=recount, announce=announce, item_changed=False,
                 )
     # Already placed: idempotent re-projection, no lock needed.
     return await _place_message(
         item, source, channel, subject, key, thread, thread_id,
         conversation_id, sender, sender_name, existing_fm,
-        notify=notify, recount=recount, announce=announce,
+        notify=notify, recount=recount, announce=announce, item_changed=item_changed,
     )
 
 
@@ -483,14 +473,14 @@ def _origins(item, source, channel: str, key: str):
 
 def _origin_of(item, source):
     """The row's origin — lifted on read for a row the cutover migration has not reached."""
-    from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import origin_of  # noqa: PLC0415
 
     return getattr(item, "origin", None) or origin_of(source, item)
 
 
 def _payload_of(item, source):
     """The row's typed payload — lifted on read for a row the cutover migration has not reached."""
-    from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
+    from flow_sdk.ingest.envelope_lift import data_of  # noqa: PLC0415
 
     return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
 
@@ -519,6 +509,11 @@ def _envelope_of(item, source):
     return MessageEnvelope(
         subject=getattr(data, "subject", None), sender=data.sender, recipients=data.recipients, sent_at=data.sent_at
     )
+
+
+def _mark_of(item, source):
+    """What a message-shaped payload says it did (``MessageData.mark``), or None."""
+    return getattr(_payload_of(item, source), "mark", None)
 
 
 async def _thread_of(message):
@@ -578,7 +573,7 @@ def _message_files(item, fm_id: str, *, have: Optional[list] = None) -> list:
 async def _place_message(
     item, source, channel, subject, key, thread, thread_id,
     conversation_id, sender, sender_name, existing_fm,
-    *, notify, recount, announce,
+    *, notify, recount, announce, item_changed,
 ):
     """Write the message row + pointers for one resolved message.
 
@@ -600,11 +595,11 @@ async def _place_message(
     # the announcement lands exactly once without either lane knowing who won.
     first_placement = existing_fm is None
     envelope = _envelope_of(item, source)
+    dirty = False
     if existing_fm is not None:
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
         have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
-        dirty = False
         if want is not None and have != want:
             existing_fm.sent_at = want
             dirty = True
@@ -629,6 +624,9 @@ async def _place_message(
             dirty = True
         if existing_fm.envelope != envelope:
             existing_fm.envelope = envelope
+            dirty = True
+        if existing_fm.mark != (mark := _mark_of(item, source)):
+            existing_fm.mark = mark
             dirty = True
         # Files and reactions are projection-owned: a row placed before either arrived heals here.
         have = [a.data for a in (existing_fm.attachment or []) if a.attachment_type == "file"]
@@ -676,6 +674,7 @@ async def _place_message(
         "origin": origin.model_dump(),
         "origin_local": origin_local.model_dump(),
         "envelope": envelope.model_dump(mode="json") if envelope else None,
+        "mark": m.model_dump(mode="json") if (m := _mark_of(item, source)) else None,
         "attachment": [a.model_dump(mode="json") for a in _message_files(item, fm_id)],
         "reactions": [r.model_dump(mode="json") for r in (getattr(item, "reactions", None) or [])],
     }
@@ -704,6 +703,12 @@ async def _place_message(
         bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
+    if notify and not first_placement and (dirty or item_changed):
+        # `materialize_flow_message` leaves an existing local row untouched and
+        # silent, and the heal above saved silently: push the re-read (hydrated) row.
+        fresh = await FlowMessage.get_one({"id": fm_id})
+        if fresh is not None:
+            await fresh.notify_updated()
     if first_placement and item.external_id:
         await _heal_replies_to(item, fm_id, notify=notify)
     if recount:
@@ -1166,7 +1171,7 @@ async def _on_item(event) -> None:
         # answered. The ingest lane draws the same line one level down, where
         # `emit_item_tag` returns early on `unchanged`.
         first_placement = event.tag.rsplit(".", 1)[-1] == "created"
-        await project_source_item(item, announce=first_placement)
+        await project_source_item(item, announce=first_placement, item_changed=not first_placement)
         _touch()
     except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
         logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)

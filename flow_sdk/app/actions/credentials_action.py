@@ -5,7 +5,7 @@ Addressed as ``/api/v1/graph/compute_node/@local/credentials/...``:
   GET    /credentials/status?project_id=   → CredentialsStatusSpec (names only)
   POST   /credentials/save                 → body {scope, project_id?, typeid?, manifest, values?} → summary
   POST   /credentials/values               → body {typeid, values} → summary
-  POST   /credentials/set                  → body {name, project_id?, values} → summary (declares from its template)
+  POST   /credentials/set                  → body {name, project_id?, values, choice?} → summary (declares from its template)
   POST   /credentials/delete               → body {typeid} → {deleted, kept}
 
 A refusal carries ``data.error_code`` when the condition is fixable (a
@@ -94,6 +94,7 @@ async def credentials_action() -> ApiResponse:
                 spec = await set_credential_by_name(
                     payload.get("name") or "", payload.get("values") or {},
                     project_id=payload.get("project_id"), deployment_id=payload.get("deployment_id"),
+                    choice=payload.get("choice") or "",
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "declare":

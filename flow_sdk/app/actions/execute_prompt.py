@@ -16,6 +16,7 @@ There is no per-message approval and no per-message auto-reply grant.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import weakref
 from pathlib import Path
@@ -191,7 +192,7 @@ _SESSION_EVENT_TEXTS = {
     "approved": "{actor} approved the live session",
     "declined": "{actor} declined the live session",
     "ended": "{actor} ended the live session",
-    "expired": "{actor} closed the live session — the 2-hour limit was reached",
+    "expired": "{actor} closed the live session — the 4-hour limit was reached",
     "settings_changed": "{actor} changed the session settings",
 }
 
@@ -419,8 +420,8 @@ def _last_turn_assistant_text(entries) -> str:
         kind = getattr(entry, "kind", None)
         if kind is EntryKind.USER_MESSAGE and not getattr(entry, "is_meta", False):
             break  # the prompt that opened this turn — everything older is a prior turn
-        if kind is not EntryKind.ASSISTANT_MESSAGE:
-            continue
+        if kind is not EntryKind.ASSISTANT_MESSAGE or getattr(entry, "is_api_error", False):
+            continue  # an API failure the vendor wrote as a line is not the reply
         text = (getattr(entry, "text", "") or "").strip()
         if not text:
             continue
@@ -444,19 +445,88 @@ def _last_turn_error_text(entries) -> str:
     at all. deepagents and opencode already emit their own failures as
     ``SystemEntry(subtype="error", payload={"message": ...})`` — a fifth vendor's parser
     needs only to do the same for this to pick it up with no vendor-specific branch here.
+    A provider limit (``WorkerUnavailableEntry``) and an API failure written as an
+    assistant line (``is_api_error``) carry their sentence too.
     """
     for entry in reversed(list(entries)):
         kind = getattr(entry, "kind", None)
         if kind is EntryKind.USER_MESSAGE and not getattr(entry, "is_meta", False):
             break  # the prompt that opened this turn — everything older is a prior turn
-        if kind is EntryKind.SYSTEM and getattr(entry, "subtype", None) == "error":
-            message = (getattr(entry, "payload", None) or {}).get("message")
-            if message:
-                return str(message).strip()
+        message = _entry_error_text(entry)
+        if message:
+            return message
     return ""
 
 
-async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
+def _entry_error_text(entry) -> str:
+    """The failure sentence one entry carries, or '' when it reports no failure."""
+    kind = getattr(entry, "kind", None)
+    if kind is EntryKind.SYSTEM and getattr(entry, "subtype", None) == "error":
+        message = (getattr(entry, "payload", None) or {}).get("message")
+    elif kind is EntryKind.WORKER_UNAVAILABLE:
+        message = getattr(entry, "message", None)
+    elif kind is EntryKind.ASSISTANT_MESSAGE and getattr(entry, "is_api_error", False):
+        message = getattr(entry, "text", None)
+    else:
+        return ""
+    return str(message or "").strip()
+
+
+def _last_turn_ended_in_error(entries) -> str:
+    """The failure the LAST turn ENDED on, or '' when it ended on an answer.
+
+    A turn the provider cuts off mid-way (a 429 after a few tool calls) still has
+    the narration it wrote before the refusal ("Let me check the logs…"). That
+    text is not an answer: the turn ended on the error, and the error is what the
+    person needs. An error the agent recovered from — answer text after it — is
+    not the ending, so it does not fail the turn.
+    """
+    for entry in reversed(list(entries)):
+        kind = getattr(entry, "kind", None)
+        if kind is EntryKind.USER_MESSAGE and not getattr(entry, "is_meta", False):
+            break  # the prompt that opened this turn — everything older is a prior turn
+        message = _entry_error_text(entry)
+        if message:
+            return message
+        if kind is EntryKind.ASSISTANT_MESSAGE and (getattr(entry, "text", "") or "").strip():
+            return ""  # the turn's last word is an answer
+    return ""
+
+
+def _utc_stamp() -> str:
+    """Now, in the transcript's own timestamp format (``2026-10-18T16:54:50.163Z``)."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _api_retry_notice(line: dict, *, since: str) -> str:
+    """The "API error, retrying" sentence a raw transcript line carries, or ''.
+
+    A worker refused by its provider (a 429, no credits) retries with backoff for
+    minutes before it writes the error that ends the turn — minutes in which
+    neither side of a session sees anything. Claude writes a ``system/api_error``
+    line for every retry it schedules, with the provider's own message on it.
+    ``since`` drops lines older than this turn: the stream replays the whole file.
+    """
+    if line.get("type") != "system" or line.get("subtype") != "api_error":
+        return ""
+    if str(line.get("timestamp") or "") < since:
+        return ""
+    error = line.get("error")
+    raw = str((error.get("message") if isinstance(error, dict) else error) or "").strip()
+    status, _, body = raw.partition(" ")
+    try:
+        detail = json.loads(body)["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        status, detail = "", raw
+    head = f"API Error {status} · " if status.isdigit() else "API Error · "
+    attempt, total = line.get("retryAttempt"), line.get("maxRetries")
+    progress = f" (attempt {attempt} of {total})" if attempt and total else ""
+    return f"{head}{detail or 'the request failed'} — retrying{progress}"
+
+
+async def _capture_assistant_reply(ap: "AgenticProcess", on_line=None) -> str:
     """Run the turn to completion and return ONLY the latest turn's assistant text.
 
     Two concerns, deliberately split. The WAIT is the transcript stream, which is
@@ -472,9 +542,13 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
     ``run_session_turn`` wrote NO completion -- a session on codex/copilot/
     opencode simply never replied, which read from the outside as "that model
     does not work with that harness". It was never the model.
+
+    ``on_line`` (async) sees every raw line as it is written, for a caller that
+    reports progress while the turn runs.
     """
-    async for _ in ap.stream_transcript():
-        pass  # drain: the stream ending IS "this turn finished"
+    async for line in ap.stream_transcript():  # drain: the stream ending IS "this turn finished"
+        if on_line is not None:
+            await on_line(line)
 
     transcript = ap._load_transcript()
     return _last_turn_assistant_text(transcript.entries if transcript is not None else [])
@@ -746,12 +820,35 @@ async def run_session_turn(
             await _set_turn_status(session, RemoteWorkerSessionStatus.RUNNING)
             await session.save()
 
+            turn_started = _utc_stamp()
             taken = await ap.send_turn(prompt_text)
             if not taken.ok:
                 # A turn that was not taken has no reply of its own: capturing
                 # now would hand back the PREVIOUS turn's text as this one's.
                 raise _TurnFailed(taken.detail)
-            reply = await _capture_assistant_reply(ap)
+
+            # Tell both sides on the FIRST retry, not after the last one: the
+            # provider's reason is known from the first refusal on.
+            retry_reported = False
+
+            async def _report_retry(line: dict) -> None:
+                nonlocal retry_reported
+                notice = "" if retry_reported else _api_retry_notice(line, since=turn_started)
+                if notice:
+                    retry_reported = True
+                    await session._emit_event(
+                        "retrying", text=f"The host is retrying: {notice}", someone_typeid=someone_typeid
+                    )
+
+            reply = await _capture_assistant_reply(ap, on_line=_report_retry)
+
+            # A turn the provider refused (429, out of credits) says why in the
+            # transcript — even after some narration — and that sentence is what
+            # both sides need to act on. It is a failure, never a reply.
+            transcript = ap._load_transcript()
+            failure = _last_turn_ended_in_error(transcript.entries if transcript is not None else [])
+            if failure:
+                raise _TurnFailed(failure)
 
             if not reply:
                 # A worker that RAN and produced no readable text is a defect, not a

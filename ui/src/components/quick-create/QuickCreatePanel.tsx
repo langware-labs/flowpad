@@ -389,7 +389,7 @@ export function QuickCreatePanel({
   const { project: activeProject } = useProject();
   const currentProject = explicitProject === undefined ? activeProject : explicitProject;
   const { navigation } = useDockNavigation();
-  const [dependencyKind, setDependencyKind] = useState<DependencyKind>('required');
+  const [dependencyKind, setDependencyKind] = useState<DependencyKind>('local');
 
   // Coding-agent sessions launch a live AgenticProcess immediately, then we
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
@@ -466,7 +466,7 @@ export function QuickCreatePanel({
   // Dependency tiles are the dependency sources, flattened out of the "+"
   // dialog they otherwise hide behind. The kind is read synchronously on click
   // and passed by value, so the host still has it after this panel unmounts.
-  const folderSources = useDependencySources();
+  const folderSources = useDependencySources(dependencyKind);
 
   // One registry group's tiles; a group the server leaves empty renders nothing.
   const assetGroup = (group: QuickCreateGroup, title: ReactNode, extra?: ReactNode) => {
@@ -576,12 +576,12 @@ export function QuickCreatePanel({
             {/* Sentence case, matching the sibling headings and the
                 AddDependencyDialog title — same string,
                 one catalog entry. */}
-            <Trans>Add dependency</Trans>
+            <Trans>Add package</Trans>
             <Tooltip delayDuration={150}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={t`What is a dependency?`}
+                  aria-label={t`What is a package?`}
                   className="text-muted-foreground/70 transition-colors hover:text-foreground"
                 >
                   <Info className="h-3.5 w-3.5" />
@@ -596,7 +596,7 @@ export function QuickCreatePanel({
                     ones are fetched automatically; optional ones on demand.
                   </Trans>
                 </span>
-                <WikiButton wikiword={DEPENDENCIES_WIKI} label={t`What is a dependency?`} />
+                <WikiButton wikiword={DEPENDENCIES_WIKI} label={t`What is a package?`} />
               </TooltipContent>
             </Tooltip>
           </span>

@@ -18,17 +18,21 @@ __all__ = ["cli_main", "utf8_stdio"]
 
 
 def utf8_stdio() -> None:
-    """Make a redirected stdout/stderr UTF-8, so no CLI output can crash on a character.
+    """Make redirected stdio UTF-8, so no CLI input or output can break on a character.
 
     Windows hands a stream that is not a console the ANSI code page (cp1252), and
     the first character outside it raised: ``flow connect`` died printing its own
     enrollment code (the QR's block glyphs) whenever its output was piped,
-    redirected, scripted or sent over ssh. A console already speaks Unicode and is
-    left alone; ``errors="replace"`` keeps a reader that is not UTF-8 from failing.
+    redirected, scripted or sent over ssh. Input was worse, because it did not
+    raise: Claude Code pipes its UTF-8 hook payload into ``flow hooks report``, and
+    cp1252 with Windows' ``surrogateescape`` turned Hebrew into mojibake with lone
+    surrogates (ם = D7 9D → ``\\udc9d``) that no response can encode. A console
+    already speaks Unicode and is left alone; ``errors="replace"`` keeps a peer
+    that is not UTF-8 from failing.
     """
     import sys
 
-    for stream in (sys.stdout, sys.stderr):
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
         if stream is None or stream.isatty():
             continue
         if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":

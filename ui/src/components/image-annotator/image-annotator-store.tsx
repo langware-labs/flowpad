@@ -83,7 +83,7 @@ export function annotateImage(file: File, options: AnnotateImageOptions = {}): P
   });
 }
 
-// DEV-only test hook (mirrors WhiteboardAssetEditor's window.__whiteboardApi):
+// DEV-only test hook (mirrors ExcalidrawChartView's window.__chartApi):
 // lets a browser-driven check open the annotator without staging a real capture.
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__annotateImage = annotateImage;

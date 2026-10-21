@@ -12,9 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { setDev } from '@src/contexts/view-mode-context';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
-const nav = vi.hoisted(() => ({ openTab: vi.fn(), openCredentials: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openCredentials: vi.fn() }));
 /** Mutable so a test can put the rail on a given dock URL (active-state input). */
 const dock = vi.hoisted(() => ({ current: null as { viewType: ViewType; pointer?: string } | null }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -56,19 +57,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  nav.openDock.mockClear();
   nav.openTab.mockClear();
   nav.openCredentials.mockClear();
 });
 
 describe('rail', () => {
-  it('shows the stream inbox and connections, in that order', () => {
+  it('shows the stream inbox, automations and connections, in that order', () => {
     // Every other screen is opened by asking for it in the top bar.
-    expect(renderRail().ids()).toEqual(['stream_inbox', 'credentials']);
+    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'automations', 'credentials']);
   });
 
   it('developer mode adds nothing to the rail', () => {
     setDev(true);
-    expect(renderRail().ids()).toEqual(['stream_inbox', 'credentials']);
+    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'automations', 'credentials']);
     setDev(false);
   });
 
@@ -76,6 +78,8 @@ describe('rail', () => {
     const rail = renderRail();
     fireEvent.click(rail.item('stream_inbox')!);
     expect(nav.openTab).toHaveBeenCalledWith(ViewType.STREAM_INBOX);
+    fireEvent.click(rail.item('automations')!);
+    expect(nav.openDock).toHaveBeenCalledWith(DockPointer.forAutomations());
     fireEvent.click(rail.item('credentials')!);
     expect(nav.openCredentials).toHaveBeenCalled();
   });

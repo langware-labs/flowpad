@@ -274,8 +274,8 @@ class HelpdeskConfig(BaseModel):
 
 # Roles a project invite may carry. The hub's ``can_assign`` is the authority
 # (strictly below the inviter's rank); this only rejects anything else up front.
-ProjectInviteRole = Literal["member", "admin", "editor"]
-PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin", "editor")
+ProjectInviteRole = Literal["guest", "member", "admin", "editor"]
+PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("guest", "member", "admin", "editor")
 PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
 
 
@@ -384,6 +384,22 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
     text = f'I invited you to project "{project_name}".'
     note = (note or "").strip()
     return f"{text}\n\n{note}" if note else text
+
+
+async def _hub_roster(project_id: str) -> list[dict]:
+    """A hub project's role roster in the client shape (``name``/``email``/``role``);
+    empty when the hub can't be asked."""
+    from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response  # noqa: PLC0415
+
+    payload = await hub_http.hub_get(BuiltinEntityType.PROJECT, project_id, "members")
+    return _normalize_hub_response("members", hub_http.rows_of(payload))
+
+
+def _sharer_name(members: list) -> Optional[str]:
+    """Who shared a project with this user: the hub stamps ``invited_by_name`` on
+    the caller's own roster row only."""
+    return next((m["invited_by_name"] for m in members if isinstance(m, dict) and m.get("invited_by_name")), None)
 
 
 class Project(SetupSkippable, Entity):
@@ -774,21 +790,19 @@ class Project(SetupSkippable, Entity):
     async def refresh_pulled_assets(self) -> None:
         """Refresh this checkout's asset projections before deciding what to open.
 
-        A Git pull changes the sources without going through an editor. Reuse
-        the registry walk and targeted reindex, read-only: imported identities
-        and bytes belong to the publisher, not to this checkout's index.
+        A Git pull changes the sources without going through an editor: ``reconcile_under``,
+        read-only -- imported identities and bytes belong to the publisher, not to this
+        checkout's index.
         """
-        from flow_sdk.assets.scanning import scan_repo_tree  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.special_folders import IndexDecision, gate_root  # noqa: PLC0415
-        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.reindex import reconcile_under  # noqa: PLC0415
 
         root = Path(self.fs_storage_mount_path).resolve()
         if gate_root(str(root), foreground=True) is not IndexDecision.WALK:
             raise RuntimeError("The pulled project's folder cannot be indexed")
-        scan = await asyncio.to_thread(scan_repo_tree, root, SchemaRegistry.repo_family_to_info())
-        result = await reindex_paths((str(c.path) for c in scan.candidates if c.included), write=False)
-        if scan.issues or result.skipped:
+        # What the pull added or changed is re-indexed; what it deleted takes its row with it.
+        result, issues = await reconcile_under(root, write=False)
+        if issues or result.skipped:
             raise RuntimeError("Some pulled project assets could not be indexed")
         _LOAD_READY.difference_update(key for key in tuple(_LOAD_READY) if key[0] == self.id)
 
@@ -864,11 +878,13 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     @action.get(action_name="load-state")
-    async def load_state_action(self, asset: str = "") -> "ApiResponse":
-        """Observe the current provider lifecycle, without starting or approving anything."""
-        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+    async def load_state_action(self, asset: str = "", validate: bool = False, display: str = "") -> "ApiResponse":
+        """Observe the current provider lifecycle, without starting or approving anything. ``validate``:
+        a READY verdict counts only while the app still answers where it runs (else none — load it)."""
+        from flow_sdk.core.setup import load as lifecycle  # noqa: PLC0415
 
-        result = load_state(str(self.id), asset=asset)
+        result = (await lifecycle.validate(str(self.id), asset, display) if validate
+                  else lifecycle.load_state(str(self.id), asset=asset))
         return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
     # ── the project's apps: which port each process declares, and where it runs now ────────
@@ -893,19 +909,42 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"ports": rows})
 
     @action.post(action_name="app-stop")
-    async def app_stop_action(self, app: str = "", restart: bool = False) -> "ApiResponse":
-        """Stop the app's processes on this machine, whoever started them; ``restart`` starts them again."""
+    async def app_stop_action(self, app: str = "", restart: bool = False, wait: bool = False) -> "ApiResponse":
+        """Stop the app's processes on this machine, whoever started them; ``restart`` brings them up again
+        (``app-start``)."""
+        return await self._run_apps(app, stop=True, start=restart, wait=wait)
+
+    @action.post(action_name="app-start")
+    async def app_start_action(self, app: str = "", wait: bool = False) -> "ApiResponse":
+        """Bring the app up the one way (``bring_up``): validate → load → setup → fix. Answers each app's
+        load verdict — a running one is followed through ``load-state``, or waited for (``wait``)."""
+        return await self._run_apps(app, stop=False, start=True, wait=wait)
+
+    async def _run_apps(self, app: str, *, stop: bool, start: bool, wait: bool = False) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up, forget  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
         found = await self._own_apps(app)
         if not found:
             return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
         results = []
         for one in found:
-            answer = await webapp_setup.stop(str(one.id))
-            if restart and answer.ok:
-                answer = await webapp_setup.step(str(one.id), "start", check=False)
-            results.append({"app": one.name, "ok": answer.ok, "detail": answer.detail, "port": answer.value})
+            row: dict = {"app": one.name, "asset": str(one.typeid)}
+            if stop:
+                answer = await webapp_setup.stop(str(one.id))
+                # What it was checked against is gone: the next open asks again.
+                forget(str(self.id), str(one.typeid))
+                row.update(ok=answer.ok, detail=answer.detail)
+                if not answer.ok:
+                    results.append(row)
+                    continue
+            if start:
+                loaded = await bring_up(self, asset=one, wait=wait)
+                page = next((p for p in await webapp_setup.ports(str(one.id)) if p["process"] == "page"), {})
+                row.update(ok=loaded.state is not LoadState.FAILED, detail=loaded.detail,
+                           port=str(page["port"]) if page.get("port") else None, load=loaded.model_dump(mode="json"))
+            results.append(row)
         return ApiSuccessResponse(data={"apps": results})
 
     @action.get(action_name="setup-requirements")
@@ -1094,6 +1133,7 @@ class Project(SetupSkippable, Entity):
                         "typeid": str(tid),
                         "dependency": str(entry.get("dependency") or ""),
                         "required": bool(entry.get("required", True)),
+                        "local": bool(entry.get("local", False)),
                         "via": str(entry.get("via") or ""),
                     }
                 )
@@ -1604,7 +1644,7 @@ class Project(SetupSkippable, Entity):
     async def publish_files_to_hub(self) -> HubRepoOrigin:
         """Put the project folder into this project's hub-hosted repository and make that
         the hub row's origin. The LOCAL row keeps its own git origin: only recipients read
-        the hub's. Needs a git checkout — what git tracks there is what travels."""
+        the hub's. Git ignore rules apply even when the folder is not a checkout."""
         from flow_sdk.assets.git_publish import GitAuthor  # noqa: PLC0415
         from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
         from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
@@ -1612,8 +1652,6 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
 
         mount = Path(self.fs_storage_mount_path or "")
-        if not (mount / ".git").exists():
-            raise RuntimeError("Sharing through the hub repository needs the project folder to be a git checkout")
         repo = await hub_post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")
@@ -2467,7 +2505,9 @@ class Project(SetupSkippable, Entity):
         return ReferencePack(metadata=metadata, origin=origin)
 
     @classmethod
-    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+    async def restore_reference(
+        cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None, project_root=None, project_id=None
+    ) -> bool:
         """Install a received project: its row through the hub membership mirror
         when this desktop has none (an existing row is the mirror's — the bundle
         is a snapshot from when the message was sent and must not roll it back),
@@ -2530,7 +2570,7 @@ class Project(SetupSkippable, Entity):
             return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
         if project.fs_storage_mount_path:
             return ProjectOpenLinkSpec(project_id=entity_id)
-        return project._setup_link() or ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+        return await project._setup_link() or ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
 
     @classmethod
     async def _name_taken_link(cls, row: dict, taken: DuplicateProjectNameError) -> "ProjectOpenLinkSpec | None":
@@ -2552,25 +2592,32 @@ class Project(SetupSkippable, Entity):
             setup_git="1",
             git_origin=json.dumps(origin.model_dump(mode="json")),
             title=name,
+            sender_name=_sharer_name(await _hub_roster(str(row["id"]))),
             existing_project_id=conflict["existing_project_id"],
             suggested_name=conflict["suggested_name"],
         )
 
-    def _setup_link(self) -> "ProjectOpenLinkSpec | None":
+    async def _setup_link(self) -> "ProjectOpenLinkSpec | None":
         """The "X shared a project with you" set-up for this file-less row, or
-        ``None`` when it has no origin to clone from."""
+        ``None`` when it has no origin to clone from. X is whoever invited this
+        user, read from the hub roster — which is cached on the row, so the "not set up
+        here" warning names the same person when it reopens the set-up."""
         import json  # noqa: PLC0415
 
         from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
+        from flow_sdk.server.routes._hub_reflect import mirror_hub_response_into_local  # noqa: PLC0415
 
         origin = as_project_origin(self.origin)
         if origin is None:
             return None
+        if roster := await _hub_roster(str(self.id)):
+            await mirror_hub_response_into_local(self, "members", roster)
         return ProjectOpenLinkSpec(
             project_id=str(self.id),
             setup_git="1",
             git_origin=json.dumps(origin.model_dump(mode="json")),
             title=self.name or None,
+            sender_name=_sharer_name(self.members),
         )
 
     @classmethod
@@ -2600,7 +2647,7 @@ class Project(SetupSkippable, Entity):
                 # not sink the sweep for every other project.
                 link = await cls._name_taken_link(row, e)
             else:
-                link = project._setup_link() if project is not None else None
+                link = await project._setup_link() if project is not None else None
             if link is not None:
                 links.append(link)
         return links
@@ -2811,9 +2858,11 @@ class Project(SetupSkippable, Entity):
         name: str | None = None,
         path: str | None = None,
         optional: bool = False,
+        local: bool = False,
         label: str | None = None,
         description: str | None = None,
         asset: str | None = None,
+        background: bool = False,
     ) -> "DependencyState":
         """Declare a dependency in ``flow.json`` and resolve it.
 
@@ -2824,6 +2873,11 @@ class Project(SetupSkippable, Entity):
 
         ``asset`` (a TypeId) declares it in THAT asset's own ``flow.json`` instead of the
         project's — ids only. ``label`` / ``description`` are the entry's human-friendly name.
+        ``background`` returns as soon as flow.json is written, with the entry as it reads
+        from the file; the fetch, index and Load then run detached (see ``schedule_add``).
+
+        ``local`` keeps it on this device only: it is never written to ``flow.json`` (or any
+        file of the project), so nothing committed or shared records that it exists.
         """
         from flow_sdk.assets import flow_json  # noqa: PLC0415
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
@@ -2851,7 +2905,11 @@ class Project(SetupSkippable, Entity):
             folder = canonical_posix_path(str(Path(raw).expanduser()))
             if is_path_under(folder, canonical_posix_path(self.fs_storage_mount_path)):
                 raise ValueError(f"{folder} is inside this project — a project cannot depend on its own folder")
-            default_name, raw, rel = await project_dependencies.declaration_for_path(folder)
+            if local:
+                # The user's own checkout, used as it stands — not re-cloned from its origin.
+                default_name, raw = Path(folder).name, f"file:{folder}"
+            else:
+                default_name, raw, rel = await project_dependencies.declaration_for_path(folder)
         elif parse_git_origin_url(raw):
             raw = f"git+{raw}"
         else:
@@ -2862,12 +2920,26 @@ class Project(SetupSkippable, Entity):
             name=name or project_dependencies.safe_name(default_name),
             source=raw,
             path=path or rel,
-            required=not optional,
+            required=not optional and not local,
+            local=local,
             label=label or None,
             description=description or None,
         )
+        if local:
+            if dep.parsed.kind == "ref":
+                raise ValueError("a local package is a folder or a repository, not an id")
+            project_dependencies.save_local_package(str(self.id), dep)
+            states = await project_dependencies.resolve(self, fetch=True)
+            return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
-        states = await project_dependencies.resolve(self, fetch=True, install=[dep.name] if optional else ())
+        install = [dep.name] if optional else []
+        if background:
+            # Answer from flow.json alone; the fetch, index and Load run detached. Indexing a
+            # large folder takes minutes, and a request must never be held that long.
+            states = await project_dependencies.inspect_dependencies(self)
+            project_dependencies.schedule_add(self, dep.name, install=install)
+            return next(s for s in states if s.name == dep.name and s.via is None)
+        states = await project_dependencies.resolve(self, fetch=True, install=install)
         return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
 
     async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
@@ -2880,7 +2952,8 @@ class Project(SetupSkippable, Entity):
             return await project_dependencies.remove_from_asset(self, asset, name)
         if not self.fs_storage_mount_path:
             return []
-        flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
+        if not project_dependencies.drop_local_package(str(self.id), name):
+            flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
         return await self.dependencies()
 
     async def install_dependency(self, name: str) -> "DependencyState":
@@ -2910,8 +2983,10 @@ class Project(SetupSkippable, Entity):
         return [s.model_dump(mode="json") for s in states]
 
     @action.get(action_name="dependencies")
-    async def dependencies_action(self, asset: str = "") -> "ApiResponse":
-        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
+    async def dependencies_action(self, asset: str = "", declarers: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings.
+        ``?declarers=1`` adds ``declarers``: every asset whose own flow.json declares
+        dependencies, with all its entries (the walk above lists each dependency once)."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
         try:
@@ -2926,6 +3001,11 @@ class Project(SetupSkippable, Entity):
                 # True while the resolve opening the project started is still fetching: a
                 # ``missing`` dependency may be on its way — the caller should not warn yet.
                 "resolving": project_dependencies.is_resolving(str(self.id)),
+                # The context the resolved dependencies give: a background add lands it, and a listing
+                # is how a caller learns it (the add itself answered before the fetch).
+                **self._context_payload(),
+                **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
+                   if declarers else {}),
             }
         )
 
@@ -2957,6 +3037,7 @@ class Project(SetupSkippable, Entity):
         name: str = "",
         path: str = "",
         optional: bool = False,
+        local: bool = False,
         label: str = "",
         description: str = "",
         asset: str = "",
@@ -2967,9 +3048,11 @@ class Project(SetupSkippable, Entity):
                 name=name or None,
                 path=path or None,
                 optional=optional,
+                local=local,
                 label=label or None,
                 description=description or None,
                 asset=asset or None,
+                background=True,
             )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)

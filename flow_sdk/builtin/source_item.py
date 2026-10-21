@@ -10,7 +10,7 @@ later projection over ingested records will need.
 one row is ``find_existing``, which resolves ``(data_source, origin)`` to the
 row that already holds it. ``origin`` is the contract's ``CloudOrigin`` — the
 resource's ``(kind, namespace, key)`` — and ``data`` its typed payload; both are
-lifted from the flat header (``flow_sdk/ingest/legacy_lift.py``). Same guarantee as the old v5-derived id
+lifted from the flat header (``flow_sdk/ingest/envelope_lift.py``). Same guarantee as the old v5-derived id
 (idempotency with no delivery ledger and no dedupe table), relocated from id
 arithmetic to a lookup — so rows written before the change still resolve, and
 nothing has to re-derive an id it does not hold.
@@ -33,6 +33,7 @@ from pydantic import ConfigDict, model_validator
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin import ingest_order
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-exported; the row and its snapshot read as one module
     NonBlank,
@@ -131,33 +132,6 @@ class EmailMessageSpec(MessageSpec):
         )
 
 
-class TelegramMessageSpec(MessageSpec):
-    """Outbound Telegram message: the generic shape, chat-targeted replies.
-
-    No extra fields — Telegram has no subject; parse modes and media are
-    explicit non-goals for now (the driver sends plain text).
-    """
-
-    @classmethod
-    def reply_to(cls, m, *, body: str, files=()) -> "TelegramMessageSpec":
-        """A reply to inbound message ``m`` — a pure constructor, no I/O.
-
-        Telegram replies target the CHAT, not the author: ``to`` carries the
-        chat id (the leading component of ``thread_key``), and the replied-to
-        message's ``external_id`` (``"<chat_id>/<message_id>"``) rides
-        ``reply_to_external_id`` for the driver's ``reply_to_message_id``.
-        """
-        thread_key = str(getattr(m, "thread_key", "") or "")
-        chat_id = thread_key.split("/", 1)[0]
-        return cls(
-            to=[chat_id],
-            body=body,
-            thread_key=thread_key,
-            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            files=list(files),
-        )
-
-
 class ChannelMessageSpec(MessageSpec):
     """Outbound message to a CHANNEL, threaded — the shape Slack and Teams share.
 
@@ -191,20 +165,6 @@ class ChannelMessageSpec(MessageSpec):
         )
 
 
-class SlackMessageSpec(ChannelMessageSpec):
-    """Outbound Slack message: ``thread_key`` is the thread's ``ts``."""
-
-
-class TeamsMessageSpec(ChannelMessageSpec):
-    """Outbound Microsoft Teams message: ``thread_key`` is the ROOT message id.
-
-    Teams' own model is two levels — a root and its replies — so a reply to a
-    reply is still a reply to the root, and ``thread_key`` already names it.
-    """
-
-    container_parts: ClassVar[int] = 2
-
-
 class HelpdeskMessageSpec(ChannelMessageSpec):
     """Outbound help-desk reply: ``to`` is the TICKET — the hub conversation id
     the inbound record's ``thread_key`` names — and ``thread_key`` rides
@@ -236,42 +196,39 @@ class VoiceMessageSpec(MessageSpec):
         return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
 
 
-class WhatsAppMessageSpec(MessageSpec):
-    """Outbound WhatsApp message: the generic shape, chat-targeted replies — the person, or the group.
-
-    No extra fields — WhatsApp has no subject, and templates, media and
-    interactive replies are explicit non-goals for now (the driver sends plain
-    text inside the 24-hour window).
-    """
-
-    @classmethod
-    def reply_to(cls, m, *, body: str, files=()) -> "WhatsAppMessageSpec":
-        """A reply to inbound message ``m`` — a pure constructor, no I/O.
-
-        WhatsApp replies target the CHAT, and the chat IS the thread: a 1:1
-        conversation is the pair (business number, wa_id), a group's is the
-        group — so ``to`` and ``thread_key`` carry the same id (a wa_id, or the
-        group id: a reply in a group goes to the group, never privately to
-        whoever wrote) and there is nothing to derive. The
-        replied-to id rides ``reply_to_external_id`` and becomes Meta's
-        ``context`` — which renders as a quote and does not start a thread,
-        because WhatsApp has none.
-        """
-        thread_key = str(getattr(m, "thread_key", "") or "")
-        return cls(
-            to=[thread_key],
-            body=body,
-            thread_key=thread_key,
-            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            files=list(files),
-        )
-
-
-class SourceItem(Entity):
+class SourceItem(ProjectedFields, Entity):
     """The ROW; the snapshot the medium persists is ``SourceItemSpec``
-    (``TypeInfo.asset_spec``)."""
+    (``TypeInfo.asset_spec``).
+
+    What it authors is the payload (``data``, read as ``payload``) under its identity ``(data_source_id,
+    item_scope, item_key)``, plus local state (``read``, ``starred``, ``sent_by_us``,
+    ``reactions``). The flat header (``kind``, ``name``, ``body``, ``thread_key`` …) and the
+    ``origin_*`` triple are COPIES of the payload/origin, still written for the readers that have
+    not moved to the payload accessors: declared ``derived_fields``, so any writer other than
+    the ingest upsert is reported (warn mode)."""
 
     type: str = APIField(default=EntityType.SOURCE_ITEM.value)
+
+    # ── identity + the authored value ──────────────────────────────────────
+    # ``item_`` because ``scope`` and ``key`` are taken on every entity (the discovery scope, the
+    # namespace key column).
+    item_scope: str = APIField(default="", description="Account-free container scope (escaped join of the source's parts)")
+    item_key: str = APIField(default="", description="The remote id, unique within (data_source_id, item_scope)")
+    # The payload keeps its stored name ``data``: user-authored paths (``data.stage`` in a mirror
+    # map) and dataset files address it so; the rename travels with the data migration.
+    data: Optional[Tagged[Payload]] = APIField(default=None, description="The typed payload, tagged with its spec_kind")
+
+    derived_fields: ClassVar[frozenset[str]] = frozenset({
+        "kind", "provider", "external_id", "name", "body", "occurred_at", "author_external_id",
+        "author_display", "permalink", "thread_key", "reply_to_external_id", "recipients",
+        "conversation_id", "message_id", "origin_kind", "origin_namespace", "origin_key",
+    })
+    derived_writer: ClassVar[str] = "flow_sdk.ingest.envelope_lift.envelope_of (via the ingest upsert)"
+
+    @property
+    def payload(self) -> Optional[Payload]:
+        """The authoritative typed value (stored as ``data``)."""
+        return self.data
 
     # ── envelope (the routing header) ──────────────────────────────────────
     kind: str = APIField(default="", description="Ontology kind, e.g. content.feed.item")
@@ -301,7 +258,6 @@ class SourceItem(Entity):
     origin_kind: str = APIField(default="")
     origin_namespace: str = APIField(default="")
     origin_key: str = APIField(default="")
-    data: Optional[Tagged[Payload]] = APIField(default=None, description="The typed payload, tagged with its spec_kind")
 
     # ── who ────────────────────────────────────────────────────────────────
     author_external_id: Optional[str] = APIField(default=None)
@@ -346,15 +302,18 @@ class SourceItem(Entity):
         origin = origin if isinstance(origin, CloudOrigin) else CloudOrigin.model_validate(origin)
         return {**data, "origin_kind": origin.kind, "origin_namespace": origin.namespace, "origin_key": origin.key}
 
-    def as_example_input(self) -> "tuple[dict, dict]":
+    def as_row_input(self) -> "tuple[dict, dict]":
         """``(contents, provenance)`` for one dataset example row: this item's
         own envelope as ``input/item.json``, and where it came from. The
         ingest→dataset composition lives with the item, not with ``Dataset``."""
         from flow_sdk.schema.data_spec.layout import INPUT  # noqa: PLC0415
 
         envelope = SourceItemSpec.model_validate({k: getattr(self, k) for k in SourceItemSpec.model_fields})
+        # The file keeps the shape existing dataset rows were labelled against (no scope) until
+        # its readers move to ``{scope, key, payload}`` together.
+        contents = envelope.model_dump(mode="json", exclude_none=True, exclude={"item_scope"})
         return (
-            {f"{INPUT}/item.json": envelope.model_dump(mode="json", exclude_none=True)},
+            {f"{INPUT}/item.json": contents},
             {
                 "data_source_id": self.data_source_id,
                 "external_id": self.external_id,
@@ -420,11 +379,20 @@ class SourceItem(Entity):
     async def find_existing(cls, data_source_id: str, origin: CloudOrigin) -> Optional["SourceItem"]:
         """THE identity lookup — the row this source holds for *origin*, or None.
 
-        The origin's namespace carries the segment, because provider ids are
-        frequently only unique *within* one (a Slack ``ts`` repeats across
-        channels); ``data_source_id`` partitions it, because the same remote feed
-        added twice must not collide. The key itself is declared once, on the type
-        (``TypeInfo.natural_key``); this is its named single-row entry point,
-        indexed by ``ix_entities_source_item_origin_v3``.
+        Identity is ``(data_source_id, item_scope, item_key)``: the scope carries the
+        container, because provider ids are frequently only unique *within* one (a
+        Slack ``ts`` repeats across channels); ``data_source_id`` partitions it, because
+        the same remote feed added twice must not collide. The key is declared once, on
+        the type (``TypeInfo.natural_key``), with the origin triple as its legacy key —
+        ``DbSerializer.resolve`` asks that one when the new key finds nothing, which
+        is how a row written before the key moved still resolves.
         """
-        return await cls.serializer().resolve_key(cls, (data_source_id, origin.kind, origin.namespace, origin.key))
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        from flow_sdk.sources.base import scope_in  # noqa: PLC0415
+
+        named = SimpleNamespace(
+            data_source_id=data_source_id, item_scope=scope_in(origin), item_key=origin.key,
+            origin_kind=origin.kind, origin_namespace=origin.namespace, origin_key=origin.key,
+        )
+        return await cls.serializer().resolve(cls, named)

@@ -349,3 +349,39 @@ def test_the_claim_sees_through_both_spellings():
 
     with pytest.raises(RuntimeError, match="already running"):
         Activity.try_claim("index")
+
+
+# ---------------------------------------------------------------------------
+# Grouping nodes: a parent only a deeper claim created ends with its last child
+
+
+def test_a_grouping_root_ends_with_its_only_claimed_child():
+    child = monitor.try_claim("group/x")
+    child.done()
+    assert monitor.node("group") is None
+    assert monitor.list() == []
+
+
+def test_a_grouping_root_waits_for_every_child_and_fails_if_one_did():
+    x = monitor.try_claim("group/x")
+    y = monitor.try_claim("group/y")
+    x.done()
+    root = monitor.node("group")
+    assert root is not None and root.state == ActivityState.RUNNING
+    y.fail("boom")
+    assert root.state == ActivityState.FAILED
+    assert monitor.node("group") is None
+
+
+def test_a_parent_only_read_before_the_claim_is_still_theirs():
+    Activity.get("read")
+    monitor.try_claim("read/x").done()
+    root = monitor.node("read")
+    assert root is not None and not root.is_terminal
+
+
+def test_a_parent_somebody_addressed_is_never_ended_for_them():
+    Activity.get("owned").label("Owned")
+    monitor.try_claim("owned/x").done()
+    root = monitor.node("owned")
+    assert root is not None and root.state == ActivityState.RUNNING

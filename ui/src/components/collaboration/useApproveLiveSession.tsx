@@ -1,4 +1,4 @@
-import type { RemoteWorkerSession, SessionRememberScope } from '@sdk';
+import type { RemoteWorkerSession } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { ProjectSelectorModal } from '@src/components/project-selector';
@@ -10,7 +10,7 @@ export interface ApproveLiveSession {
   /** Approve the session. When it has nowhere to run — a person-to-person chat
    *  has no project by design — the host first picks a project; resolves once
    *  approved, or untouched if the picker is dismissed. */
-  approve: (session: RemoteWorkerSession, options?: { remember?: SessionRememberScope }) => Promise<void>;
+  approve: (session: RemoteWorkerSession) => Promise<void>;
   /** The project picker; render it once wherever the hook is used. */
   picker: ReactNode;
 }
@@ -23,11 +23,9 @@ export interface ApproveLiveSession {
  */
 export function useApproveLiveSession(): ApproveLiveSession {
   const { t } = useLingui();
-  // The approval waiting on the picker: which session, whether to remember the guest
-  // ("Approve" does, "Approve once" does not), and the caller's promise to settle.
+  // The approval waiting on the picker: which session, and the caller's promise to settle.
   const [pending, setPending] = useState<{
     session: RemoteWorkerSession;
-    remember?: SessionRememberScope;
     resolve: () => void;
     reject: (e: unknown) => void;
   } | null>(null);
@@ -35,10 +33,10 @@ export function useApproveLiveSession(): ApproveLiveSession {
   const items = useMemo(() => projectEntitiesToSelectorItems(projects).filter((p) => !!p.path), [projects]);
 
   const approve = useCallback(
-    async (session: RemoteWorkerSession, options: { remember?: SessionRememberScope } = {}) => {
-      if (!(await session.needsProjectToApprove())) return session.approve(options.remember);
+    async (session: RemoteWorkerSession) => {
+      if (!(await session.needsProjectToApprove())) return session.approve();
       return new Promise<void>((resolve, reject) =>
-        setPending({ session, remember: options.remember, resolve, reject }),
+        setPending({ session, resolve, reject }),
       );
     },
     [],
@@ -54,7 +52,7 @@ export function useApproveLiveSession(): ApproveLiveSession {
       if (!pending) return;
       setPending(null);
       pending.session
-        .approve(pending.remember, where.projectId, { scratch: where.scratch })
+        .approve(undefined, where.projectId, { scratch: where.scratch })
         .then(pending.resolve, pending.reject);
     },
     [pending],

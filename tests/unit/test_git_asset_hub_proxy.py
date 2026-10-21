@@ -9,7 +9,7 @@ from starlette.responses import Response
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.server.routes._hub_reflect import (
     is_git_backed_remote_fs,
-    proxy_git_backed_remote_fs,
+    proxy_to_hub,
 )
 
 
@@ -105,7 +105,7 @@ async def test_proxy_preserves_standard_fs_method_path_query_body_and_response(m
         content_type=b"application/json",
     )
 
-    response = await proxy_git_backed_remote_fs(request)
+    response = await proxy_to_hub(request)
 
     assert captured == {
         "method": "POST",

@@ -452,7 +452,7 @@ def build_app_paths() -> AppPaths:
 
     home = _vfs_relative(str(get_instance_settings().user_home))
     # This instance's workspace, not prod's: ``~/Flowpad workspace`` belongs to prod, every other instance has
-    # ``~/Flowpad workspaces/<name>`` (``workspace_root``). The UI places new projects and session cwds here.
+    # ``<flow_home>/instances/<name>/workspace`` (``workspace_root``). The UI places new projects and session cwds here.
     workspace = _vfs_relative(str(agent_workspace_root()))
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
@@ -2388,6 +2388,7 @@ async def initialize_bootstrap() -> BootstrapInfo:
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode
 
         settings = get_instance_settings()
+        await icon_registry.sync_indexed()  # icon pack ASSETS of every scope, not just the shipped ones
         _bootstrap_cache = BootstrapInfo(
             info_available=True,
             types=build_all_type_payloads(),

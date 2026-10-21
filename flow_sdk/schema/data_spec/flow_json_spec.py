@@ -221,6 +221,8 @@ class FlowDependency(DataSpec):
     source: str
     path: str = "."
     required: bool = True
+    #: A local package: kept on this device only, never written to ``flow.json``.
+    local: bool = False
     #: The human-friendly name and description an entry may carry.
     label: Optional[str] = None
     description: Optional[str] = None
@@ -382,6 +384,8 @@ class DependencyState(DataSpec):
     name: str
     source: str
     required: bool = True
+    #: A local package: kept on this device only, never in the project's files.
+    local: bool = False
     path: str = "."
     state: DependencyStateName
     #: The resolved local folder (``ready`` only).
@@ -406,8 +410,43 @@ class DependencyState(DataSpec):
     dismissed: bool = False
 
 
+class DeclaredDependency(DataSpec):
+    """One entry of an asset's own ``flow.json``, as written (not resolved here)."""
+
+    spec_kind: ClassVar[str] = "flow.dependency.declared"
+
+    key: str
+    source: str
+    #: The id an id entry names (``<type>-<uuid>``); ``None`` for a location.
+    typeid: Optional[str] = None
+    name: str
+    #: How the dependency it names stands here (a ``DependencyState.state``), if the walk reached it.
+    state: Optional[str] = None
+
+
+class DependencyDeclarer(DataSpec):
+    """An asset whose own ``flow.json`` declares dependencies — every one of its entries,
+    even those the dependency walk already reached through another asset. ``name`` is the
+    asset's own folder name."""
+
+    spec_kind: ClassVar[str] = "flow.dependency.declarer"
+
+    asset: Optional[str] = None
+    name: str
+    type: Optional[str] = None
+    #: Its folder, relative to the project root when inside it (else absolute).
+    path: Optional[str] = None
+    #: The entry label that reached it, for one reached through another asset.
+    label: Optional[str] = None
+    #: How the walk reached it: ``[]`` for one of the project's own assets.
+    via_path: list[str] = Field(default_factory=list)
+    dependencies: list[DeclaredDependency] = Field(default_factory=list)
+
+
 __all__ = [
     "DEPENDENCY_NAME",
+    "DeclaredDependency",
+    "DependencyDeclarer",
     "FLOW_JSON",
     "AssetFlowJsonSpec",
     "parse_id",

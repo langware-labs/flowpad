@@ -46,3 +46,16 @@ def get_execution_scope() -> list:
         return json.loads(rawValue)
     except json.JSONDecodeError:
         return []
+
+
+#: The FlowCall run a worker was spawned for, and the call that spawned it (``apply_worker_env``).
+INVOCATION_ENV = "FLOWPAD_INVOCATION_ID"
+PARENT_CALL_ENV = "FLOWPAD_PARENT_CALL_ID"
+
+
+def inherited_trace() -> dict:
+    """The run this process's calls join: ``{"invocation_id", "parent_call_id"}``, or ``{}`` for none."""
+    invocation_id = os.getenv(INVOCATION_ENV)
+    if not invocation_id:
+        return {}
+    return {"invocation_id": invocation_id, "parent_call_id": os.getenv(PARENT_CALL_ENV) or None}

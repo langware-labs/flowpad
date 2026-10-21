@@ -49,6 +49,10 @@ class Rejected(SourceError):
     """The provider refused a write for its own reasons: an invariant, uniqueness, policy."""
 
 
+class Conflict(Rejected):
+    """A conditional write found the resource at another version than the one it was told to expect."""
+
+
 class OutcomeUnknown(SourceError):
     """A write or send may have been applied; its result is unknown."""
 

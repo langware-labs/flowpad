@@ -4,7 +4,13 @@
  * `ChannelSpec` traits (`quotes`, `reacts`) — never by a channel's name.
  */
 import { useLingui } from '@lingui/react/macro';
-import { attachmentDataString, type FlowMessage, type IMessageReaction } from '@sdk/entities/flow-message';
+import {
+  attachmentDataString,
+  type FlowMessage,
+  type IMessageMark,
+  type IMessageReaction,
+} from '@sdk/entities/flow-message';
+import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { attachmentSummary } from './useAttachments';
 
 /** A FILE attachment's name — its `data/<name>` subpath, last segment. */
@@ -15,7 +21,31 @@ export function attachmentFileName(a: Parameters<typeof attachmentDataString>[0]
 /** Who wrote a message and what it says, as a quote or a reply banner shows it: a message with no
  *  text is named by what it carries. `someone` is the caller's translated fallback. */
 export function messageSummary(fm: FlowMessage, someone: string): { sender: string; text: string } {
-  return { sender: fm.sender_name || fm.envelope?.sender?.name || someone, text: fm.text || attachmentSummary(fm) };
+  // An agent's reply carries the PERSON in `sender_name` (the wire pair); the typed sender says agent.
+  const byAgent = senderOf(fm)?.kind === SenderKind.Agent;
+  const name = byAgent ? fm.envelope?.sender?.name : fm.sender_name || fm.envelope?.sender?.name;
+  return { sender: name || someone, text: fm.text || attachmentSummary(fm) };
+}
+
+const MARK_TONE: Record<NonNullable<IMessageMark['tone']>, string> = {
+  positive: 'border-emerald-500/60 bg-emerald-500/10',
+  negative: 'border-red-500/60 bg-red-500/10',
+  neutral: 'border-border bg-muted/50',
+};
+
+/** What the message did (approved, merged), drawn before its text: tinted by tone, words in the
+ *  foreground colour. Drawn for any message that carries a mark — never by channel. */
+export function MessageMarkChip({ mark }: { mark: IMessageMark }) {
+  const tone = mark.tone ?? 'neutral';
+  return (
+    <span
+      data-testid="message-mark"
+      data-tone={tone}
+      className={`mb-1 inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium text-foreground ${MARK_TONE[tone]}`}
+    >
+      {mark.label}
+    </span>
+  );
 }
 
 /** The message a reply quotes, drawn above its body. Clicking it scrolls to the original. */

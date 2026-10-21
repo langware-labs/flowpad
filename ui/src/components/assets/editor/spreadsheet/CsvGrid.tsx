@@ -32,7 +32,7 @@ interface CsvGridProps {
  * Load/edit decoupling: the parse effect rebuilds the grid only when `content`
  * changes from a LOAD or external reload — never from our own edit echo
  * (guarded by `lastSerializedRef`), so a keystroke doesn't tear down the grid
- * and steal focus. Mirrors the whiteboard's `lastWrittenRef` guard.
+ * and steal focus. Mirrors the chart editor's `lastWrittenRef` guard.
  */
 export function CsvGrid({ fsRef, reloadKey, onDirtyChange, onUserEdit }: CsvGridProps) {
   const { resolvedTheme } = useTheme();

@@ -33,7 +33,7 @@ class Vendor:
     harness: str                      # ``fs_store.placement.HarnessType`` value
     capability_kind: str              # ``CapabilityKind.<X>_CLI`` value
     dot_dir: str | None               # the vendor's home dot-dir (``vendor_for_path``); None when it has none
-    session_entity_type: str | None   # entity type of a per-session file; None when sessions live in a store
+    session_entity_type: str | None   # entity type of a session transcript
     model_prefixes: tuple[str, ...]   # a model id with one of these prefixes is priced by this vendor
     # Declared FACTS generic machinery asks instead of branching on a key:
     hidden: bool = False                   # never offered by a picker; still spawnable by ``worker_type``
@@ -41,6 +41,9 @@ class Vendor:
     interactive: bool = True               # has a TUI a terminal tab can host; False = headless-only
     python_module: str | None = None       # the harness is ``python -m <module>``, not a binary on PATH
     python_requires: tuple[str, ...] = ()  # DISTRIBUTIONS whose presence makes a ``python_module`` harness "installed"
+    # The transcript is FlowPad's own file inside the run's records (the sessions live in a store),
+    # deleted with the run: sharing one snapshots it first (AgenticProcess ``session-transcript``).
+    transcript_owned_by_run: bool = False
     transcript_stems: tuple[str, ...] = ()  # FlowPad-written transcript filename stems, when there is no dot-dir to sniff
     # Where the vendor's own installer puts the binary (``~`` and ``%VAR%`` expanded). Searched
     # after PATH: an installer edits the shell rc, which no running process re-reads, so a CLI
@@ -101,7 +104,8 @@ VENDORS: tuple[Vendor, ...] = (
         harness="agents",
         capability_kind="harness.opencode.cli",
         dot_dir=None,  # sessions live in a SQLite store; the streamer watches a FlowPad-written file
-        session_entity_type=None,
+        session_entity_type="opencode_session",
+        transcript_owned_by_run=True,
         model_prefixes=("openrouter/",),
         transcript_stems=("opencode_transcript", "session_ses_"),
         install_bin_dirs=("~/.opencode/bin",),
@@ -118,7 +122,8 @@ VENDORS: tuple[Vendor, ...] = (
         harness="agents",
         capability_kind="harness.deepagents.cli",
         dot_dir=None,  # sessions are LangGraph checkpoints under the instance's deepagents_data_dir
-        session_entity_type=None,
+        session_entity_type="deepagents_session",
+        transcript_owned_by_run=True,
         model_prefixes=(),  # no price table of its own: priced by the claude table (the documented fallback)
         hidden=True,
         bootstrap=True,

@@ -25,7 +25,7 @@ from typing import Optional
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_runtime import Pass, position_of
-from flow_sdk.ingest.health import MIRROR_CODES, SourceHealth, classify, stamp_error
+from flow_sdk.ingest.health import SourceHealth, classify, stamp_error
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
@@ -122,8 +122,7 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     # Idle and clean: nothing arrived, the position did not move and the row already reads healthy,
     # so the steady state is one request and zero writes per tick (the poller stamped the next poll).
     idle = found.unchanged and found.cursor == source.cursor and (found.manifest or {}) == (source.manifest or {})
-    clean = (source.health == SourceHealth.OK.value and (not source.error_code or source.error_code in MIRROR_CODES)
-             and not source.consecutive_failures)
+    clean = source.health == SourceHealth.OK.value and not source.error_code and not source.consecutive_failures
     # Waiting on a person, not broken: the source keeps polling and its card says what to resolve.
     waiting = ("write_back_held", written.sentence()) if written is not None and written.needs_a_person else (None, None)
     if idle and clean and waiting[0] is None:
@@ -142,6 +141,23 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     emit_sync_tag(source.provider, source.id, "completed", report=report)
     logger.info("[ingest] %s/%s %s", source.provider, source.name or source.account_key, report.as_counts())
     return report
+
+
+async def read_older(source: DataSource, before: datetime, page_size: int) -> tuple[int, bool]:
+    """One page of ``source``'s messages older than ``before`` into the store — ``(how many arrived, exhausted)``.
+
+    The on-demand step back a paged list takes past its oldest held row; never a backfill. The row's cursor,
+    manifest and window are untouched (the forward sync owns them), and nothing is dropped. A source that
+    cannot read backwards answers ``(0, True)``: what is held is all there is."""
+    stype = await DataDriver.find(source.provider)
+    if stype is None or not stype.cls.pages_backward:
+        return 0, True
+    found = await stype.read_before(source, before, page_size)
+    # Only the placing shares the forward cycle's lock: the read touches no position, so a slow provider
+    # never holds up that source's sync.
+    async with keyed_loop_lock(_CYCLES, str(source.id)):
+        await _place(source, found)
+    return len(found.items), len(found.items) < page_size
 
 
 async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:

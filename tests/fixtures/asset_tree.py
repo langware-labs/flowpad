@@ -125,13 +125,13 @@ _BODIES: dict[str, str] = {
     "task": _TASK_MD,
     "plan": "---\ntitle: {name}\n---\n\n# {name}\n\nfixture plan\n",
     "claude_rules": "# {name}\n\nfixture rule\n",
-    "whiteboard": '---\nname: {name}\ndescription: ""\n---\n\n# {name}\n',
+    "chart": '---\nname: {name}\ndescription: ""\n---\n\n# {name}\n',
 }
 
-# Extra files a type needs beyond its main file. Only whiteboard has one: the
+# Extra files a type needs beyond its main file. Only chart has one: the
 # scene the editor loads, which no template can express as a body.
 _SIDECARS: dict[str, dict[str, str]] = {
-    "whiteboard": {
+    "chart": {
         "board.json": '{"kind":"excalidraw","version":1,"data":{"elements":[],"appState":{},"files":{}}}'
     },
 }

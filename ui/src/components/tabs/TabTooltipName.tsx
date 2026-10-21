@@ -24,7 +24,7 @@ export function TabTooltipName({ name, className }: { name: string; className?: 
   if (useInTabTip()) return null;
   return (
     <div className="flex items-center gap-1.5">
-      <p className={cn('min-w-0 text-xs font-semibold text-foreground', className)} data-testid="tab-tooltip-name">
+      <p className={cn('min-w-0 text-sm font-semibold text-foreground', className)} data-testid="tab-tooltip-name">
         {name}
       </p>
       <CopyButton

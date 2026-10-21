@@ -85,6 +85,16 @@ A **native xterm turn holds no lock and sets no `_turn_in_flight` flag**, so (3)
 is what keeps it busy. That is why the `switch-mode` 409 must key on this predicate
 and not on the lock alone.
 
+**A parked worker is not a turn.** A print-mode `claude -p` that the agent left
+background work running in stays alive after it answers (see the glossary's
+*Parked worker*). It is registered, but between turns — so the registry signals
+(worker registered, turn task still running) are ignored while the worker is
+`parked`, and `busy` is false. Without that the chat read "working" for as long as
+the background work ran, a message the user typed waited in the queue until it
+ended, and the report of the work finishing could not reach them. The serialized
+`background_work` field says *why* a not-busy process still holds a worker; the UI
+reads it for the "Background tasks" chip and its stop button (`stop-background`).
+
 `is_turn_busy` is the single source consumed by:
 - the serialized `busy` field (`busy` ⇔ `is_turn_busy`),
 - the `switch-mode` / `restart` 409 guard (`_reject_if_turn_in_flight`),

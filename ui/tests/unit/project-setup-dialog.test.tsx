@@ -120,7 +120,7 @@ describe('ProjectSetupDialog', () => {
 });
 
 describe('ProjectSetupDialog — skipping', () => {
-  it('Skip opens Locally | Always | Cancel; Locally marks it here and the dialog takes the readiness that follows', async () => {
+  it('Skip is one click: it skips on this machine and the dialog takes the readiness that follows', async () => {
     await open(NOT_READY);
     const after: ProjectReadiness = {
       ...NOT_READY,
@@ -131,42 +131,17 @@ describe('ProjectSetupDialog — skipping', () => {
     const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue(after);
 
     fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
-    expect(screen.getByTestId('project-setup-skip-choice-google-cloud')).toBeInTheDocument();
-    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-google-cloud')));
+    // The row's Skip opens the same bar as a selection: Locally | Always | Cancel.
+    expect(screen.getByTestId('project-setup-selection-bar')).toHaveTextContent('1 selected');
+    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-selected')));
 
     expect(skip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'local', { name: 'google-cloud' });
     const skipped = await screen.findByTestId('project-setup-skipped');
-    expect(skipped).toHaveTextContent('required — it will not work here until it is set up');
+    expect(skipped).toHaveTextContent('Required — skipped on this machine');
+    expect(screen.queryByTestId('project-setup-chip-google-cloud')).toBeNull();
     expect(screen.getByTestId('project-setup-undo-google-cloud')).toBeInTheDocument();
     expect(h.openDock).not.toHaveBeenCalled(); // a button in the row is not the row's link
-  });
-
-  it("Always is offered only for the project's own asset, and says why not", async () => {
-    await open({
-      ...NOT_READY,
-      to_do: [req({ can_skip_always: false, why_not_always: 'needed by drive — remove it first' })],
-    });
-    fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
-
-    expect(screen.getByTestId('project-setup-skip-always-google-cloud')).toBeDisabled();
-    expect(screen.getByTestId('project-setup-why-not-always-google-cloud')).toHaveTextContent('needed by drive');
-  });
-
-  it('Always removes it from the project', async () => {
-    await open(NOT_READY);
-    const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue({ ...NOT_READY, ready: true, to_do: [] });
-    fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
-    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-always-google-cloud')));
-    expect(skip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'always', { name: 'google-cloud' });
-  });
-
-  it('Cancel closes the choice and changes nothing', async () => {
-    await open(NOT_READY);
-    const skip = vi.spyOn(Project, 'skipSetup');
-    fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
-    fireEvent.click(screen.getByTestId('project-setup-skip-cancel-google-cloud'));
-    expect(screen.queryByTestId('project-setup-skip-choice-google-cloud')).toBeNull();
-    expect(skip).not.toHaveBeenCalled();
   });
 
   it("checking rows hides each row's Skip and shows one bar that skips them all, then selects none", async () => {
@@ -394,5 +369,51 @@ describe('ProjectSetupDialog — controlling a run', () => {
     render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
     await waitFor(() => expect(screen.getByTestId('project-setup-status')).toHaveTextContent('Stopped'));
     expect(screen.getByTestId('project-setup-start')).toHaveTextContent('Continue');
+  });
+});
+
+describe('ProjectSetupDialog — project requirements card', () => {
+  const GMAIL = req({
+    name: 'gmail',
+    title: 'Gmail',
+    required: false,
+    used_by: ['data source Gmail'],
+    needed_for: 'Reads your Gmail mail into conversations, every few minutes, from the address you sign in with.',
+  });
+
+  it('is titled for the project and says what it is for', async () => {
+    await open(NOT_READY);
+    expect(screen.getByText('Project requirements')).toBeInTheDocument();
+    expect(screen.getByText('Needed to run acme on this computer.')).toBeInTheDocument();
+  });
+
+  it('each row says Required or Optional, why — whole — and who uses it', async () => {
+    await open({ ...NOT_READY, optional: [GMAIL] });
+    expect(screen.getByTestId('project-setup-chip-google-cloud')).toHaveTextContent('Required');
+    expect(screen.getByTestId('project-setup-chip-gmail')).toHaveTextContent('Optional');
+    const why = screen.getByTestId('project-setup-detail-gmail');
+    expect(why).toHaveTextContent(GMAIL.needed_for!);
+    expect(why.className).not.toContain('truncate');
+    expect(screen.getByTestId('project-setup-used-by-gmail')).toHaveTextContent('Used by: data source Gmail');
+  });
+
+  it('a row has no Set up button of its own — Continue sets everything up, the row itself opens', async () => {
+    await open({ ...NOT_READY, optional: [GMAIL] });
+    expect(screen.queryByTestId('project-setup-open-gmail')).toBeNull();
+    expect(screen.queryByTestId('project-setup-skip-choice-gmail')).toBeNull();
+  });
+});
+
+describe('ProjectSetupDialog — one row id per requirement', () => {
+  it('a credential and the data source of the same name get distinct ids', async () => {
+    const source = req({
+      kind: 'source',
+      name: 'google-cloud',
+      typeid: 'data_source-11111111-1111-4111-8111-111111111111',
+      vars: [],
+    });
+    await open({ ...NOT_READY, to_do: [NOT_READY.to_do[0], source] });
+    expect(screen.getByTestId('project-setup-req-google-cloud')).toBeInTheDocument();
+    expect(screen.getByTestId('project-setup-req-source-google-cloud')).toBeInTheDocument();
   });
 });

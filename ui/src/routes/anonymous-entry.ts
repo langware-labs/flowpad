@@ -1,3 +1,5 @@
+import { UUID_SOURCE } from '@sdk';
+
 /**
  * The hub routes a signed-OUT visitor may render.
  *
@@ -21,10 +23,13 @@
  */
 const ANONYMOUS_ENTRY_PATHS: ReadonlySet<string> = new Set(['/launch']);
 
+/** A received message's email link (`/flow_message/<id>`): it says who sent it and offers Log in. */
+const MESSAGE_LANDING = new RegExp(`^/flow_message/${UUID_SOURCE}$`, 'i');
+
 /** Whether `pathname` is an entry route that renders without a session. */
 export function isAnonymousEntryPath(pathname: string): boolean {
   // Trailing slashes come from hand-typed and pasted links, which is precisely
   // how these routes are reached.
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  return ANONYMOUS_ENTRY_PATHS.has(normalized);
+  return ANONYMOUS_ENTRY_PATHS.has(normalized) || MESSAGE_LANDING.test(normalized);
 }

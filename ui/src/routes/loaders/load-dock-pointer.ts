@@ -43,7 +43,8 @@ export interface DockLoaderContext {
  * cover the unscoped restore. Without it, entering a project whose landing tab
  * is one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
  * project (the stuck-footer switch bug). Entity-backed docks keep their own
- * derivation: they run after this and their entity's project wins.
+ * derivation only when the URL names no project (`loadAssetRoute`'s
+ * `keepProject`): a project named here is final.
  * Best-effort — a missing project must not fail a browse landing.
  */
 export async function adoptScopeProject(dock: DockPointer): Promise<void> {
@@ -311,6 +312,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await loadAssetRoute(dock.pointer, {
           allowLocalWikiAlias: dock.page !== PageId.HUB,
           wikiAuthority: wikiAuthorityForPage(dock.page),
+          keepProject: !!dock.scopeProjectId,
         });
         break;
       case ViewType.TASKS:

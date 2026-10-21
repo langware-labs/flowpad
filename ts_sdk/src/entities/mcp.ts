@@ -44,7 +44,7 @@ export function isRemoteTransport(transport: string, url: string, command: strin
  *
  * `asset_ref` is the FOLDER (the type is folder-backed with `mcp.json` as its
  * main file), so a viewer names its own file off it — the same move as
- * Whiteboard and Deck.
+ * Chart and Deck.
  */
 @registerEntity
 export class Mcp extends APIEntity<Mcp> {
@@ -85,7 +85,7 @@ export class Mcp extends APIEntity<Mcp> {
   /**
    * Create an MCP asset in a project. The backend materializes
    * `<project>/agentic-assets/mcp/<name>/mcp.json` from the type's `asset_spec`
-   * on save — mirrors `Whiteboard.createInProject`.
+   * on save — mirrors `Chart.createInProject`.
    */
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,

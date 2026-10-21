@@ -4,7 +4,17 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { ANSWER_KIND, isCliResult, isDecisionVerdict, isWizardResult, type DecisionVerdict, type WizardResult } from '@sdk/models/ReturnedValue';
+import { ANSWER_KIND, isCliResult, isDecisionVerdict, isWizardResult, type DecisionVerdict, type WizardResult, isNavigateResult, type NavigateResult, type PromptResult } from '@sdk/models/ReturnedValue';
+
+it('keeps navigation delivery distinct from usability and carries prompt files', () => {
+  const answer: NavigateResult = { spec_kind: ANSWER_KIND.navigate, exit_code: 1, delivered: true, verdict: 'not_running' };
+  expect(isNavigateResult(answer)).toBe(true);
+  expect(answer.delivered).toBe(true);
+  expect(answer.verdict).toBe('not_running');
+  expect(isNavigateResult({ spec_kind: ANSWER_KIND.prompt })).toBe(false);
+  const reply: PromptResult = { exit_code: 0, files: ['report.pdf'] };
+  expect(reply.files).toEqual(['report.pdf']);
+});
 
 describe('DecisionVerdict mirror', () => {
   it('names the kind the Python answer carries', () => {
