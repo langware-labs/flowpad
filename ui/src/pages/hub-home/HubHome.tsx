@@ -20,25 +20,11 @@ import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
-import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
-import { HUB_HOME_CARD } from './card-style';
-import { openInbound } from '@src/components/inbound/inbound-pointer';
+import { HubSummaryLine } from './HubSummaryLine';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
-import {
-  ArrowUpCircle,
-  Building2,
-  KeyRound,
-  Laptop,
-  Loader2,
-  LogOut,
-  Monitor,
-  ShieldCheck,
-  Trash2,
-  UserPlus,
-  Webhook,
-} from 'lucide-react';
+import { ArrowUpCircle, KeyRound, Laptop, Loader2, LogOut, Monitor, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
@@ -339,9 +325,6 @@ export function HubHome() {
   // another one's interpolation, and the fallback needs translating too.
   const upgradeTargetName = upgrading?.name || t`this sandbox`;
 
-  // People & teams is a plain screen, not a projection of the graph.
-  const openOrganization = () => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION);
-
   return (
     <div className="flex h-full flex-col overflow-auto">
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
@@ -358,45 +341,11 @@ export function HubHome() {
           <p className="text-lg text-muted-foreground">
             <Trans>Explore your organization and everything you can reach.</Trans>
           </p>
+          <HubSummaryLine />
         </div>
 
         {/* Projects other people gave you — the way from here to FlowPad. */}
         <SharedProjectsBanner projects={sharedProjects} />
-
-        {/* Primary cards — WorldView projections + the token plan glance */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => openOrganization()}
-            data-testid="hub-home-organization"
-            className={HUB_HOME_CARD}
-          >
-            <Building2 className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-base font-semibold">
-              <Trans>Organization</Trans>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              <Trans>Teams and people across your org.</Trans>
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openInbound(navigation)}
-            data-testid="hub-home-inbound"
-            className={HUB_HOME_CARD}
-          >
-            <Webhook className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
-            <span className="text-base font-semibold">
-              <Trans>Inbound</Trans>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              <Trans>Numbers and bots that message you, and where each message goes.</Trans>
-            </span>
-          </button>
-
-          <TokenPlanCard />
-        </div>
 
         {/* Projects — real hub data (graph/project). Always rendered, zero
             projects included: the hub has projects and a current project like
