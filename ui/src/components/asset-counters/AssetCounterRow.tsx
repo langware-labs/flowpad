@@ -99,7 +99,14 @@ export function CounterChip({
  * group has an `active` counter — how many of those are active. A click opens
  * the `all` table, which shows each row's status.
  */
-export function AssetSummaryChip<T>({ group }: { group: AssetCounterGroup<T> }) {
+export function AssetSummaryChip<T>({
+  group,
+  onClick,
+}: {
+  group: AssetCounterGroup<T>;
+  /** Replaces the default (open the group's table) when the host has its own view. */
+  onClick?: () => void;
+}) {
   const { navigation } = useDockNavigation();
   const counters = group.useCounters();
   const all = counters.find((c) => c.key === 'all') ?? counters[0];
@@ -111,7 +118,7 @@ export function AssetSummaryChip<T>({ group }: { group: AssetCounterGroup<T> }) 
       label={all.label}
       active={active?.items.length}
       isLoading={all.isLoading || !!active?.isLoading}
-      onClick={() => navigation.openAssetList(group.id, all.key)}
+      onClick={onClick ?? (() => navigation.openAssetList(group.id, all.key))}
       testId={`summary-chip-${group.id}`}
     />
   );

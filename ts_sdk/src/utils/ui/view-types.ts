@@ -151,6 +151,8 @@ export enum ViewType {
   // Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each
   // one's messages go. Rendered on the hub page AND the desk (one component, the hub decides).
   INBOUND = 'inbound', // /dock/<hub|desk>/inbound
+  // The hub's machines: cloud sandboxes and connected computers, with + Add machine. No pointer.
+  MACHINES = 'machines', // /dock/hub/machines
 }
 
 /**

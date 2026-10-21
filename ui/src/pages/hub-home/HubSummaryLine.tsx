@@ -8,7 +8,7 @@ import {
 import { openInbound } from '@src/components/inbound/inbound-pointer';
 import { useInboundClaims } from '@src/components/inbound/use-inbound';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { InboundWebhooks } from '@sdk';
+import { InboundWebhooks, PageId, ViewType } from '@sdk';
 
 /** Inbound has its own screen, so its chip opens that rather than an asset table. Read once — no polling here. */
 function InboundChip() {
@@ -27,10 +27,17 @@ function InboundChip() {
 
 /** The hub home's one-line summary: what the caller has, each chip opening its list. */
 export function HubSummaryLine() {
+  const { navigation } = useDockNavigation();
   return (
-    <div className="flex flex-wrap items-center justify-center gap-1.5" data-testid="hub-summary-line">
+    <div
+      className="flex flex-wrap items-center justify-center gap-2.5 [&_button]:gap-2 [&_button]:px-4 [&_button]:py-1.5 [&_button]:text-sm"
+      data-testid="hub-summary-line"
+    >
       <AssetSummaryChip group={hubAgentCounterGroup} />
-      <AssetSummaryChip group={hubMachineCounterGroup} />
+      <AssetSummaryChip
+        group={hubMachineCounterGroup}
+        onClick={() => navigation.openPage(PageId.HUB, ViewType.MACHINES)}
+      />
       <AssetSummaryChip group={hubDeploymentCounterGroup} />
       <InboundChip />
     </div>
