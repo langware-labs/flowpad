@@ -425,6 +425,11 @@ msgstr "{0, plural, one {# person} other {# people}}"
 msgid "{0, plural, one {# result} other {# results}}"
 msgstr "{0, plural, one {# result} other {# results}}"
 
+#. placeholder {0}: d.num_rows ?? 0
+#: src/components/data-sources/HostedDatasets.tsx
+msgid "{0, plural, one {# row} other {# rows}}"
+msgstr "{0, plural, one {# row} other {# rows}}"
+
 #. placeholder {0}: sessions.length
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "{0, plural, one {# session used this skill} other {# sessions used this skill}}"
@@ -448,6 +453,11 @@ msgstr "{0, plural, one {# team} other {# teams}}"
 #: src/components/hooks-manager/index.tsx
 msgid "{0, plural, one {# trigger} other {# triggers}}"
 msgstr "{0, plural, one {# trigger} other {# triggers}}"
+
+#. placeholder {0}: datasets.length
+#: src/components/data-sources/HostedDatasets.tsx
+msgid "{0, plural, one {Hosts # dataset} other {Hosts # datasets}}"
+msgstr "{0, plural, one {Hosts # dataset} other {Hosts # datasets}}"
 
 #. placeholder {0}: action.runCount
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -605,10 +615,15 @@ msgstr "{0} could not be updated for this project."
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
 
-#. placeholder {0}: root.sources.length
+#. placeholder {0}: root.sources.length + 1
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{0} data sources"
 msgstr "{0} data sources"
+
+#. placeholder {0}: root.datasets.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} datasets"
+msgstr "{0} datasets"
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
@@ -789,6 +804,11 @@ msgstr "{0} key"
 msgid "{0} keys start with {1} — this one does not."
 msgstr "{0} keys start with {1} — this one does not."
 
+#. placeholder {0}: root.schemas.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} kinds"
+msgstr "{0} kinds"
+
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "{0} messages"
@@ -924,6 +944,10 @@ msgstr "{0} records on disk"
 msgid "{0} removed"
 msgstr "{0} removed"
 
+#: src/components/data-sources/HostedDatasets.tsx
+#~ msgid "{0} rows"
+#~ msgstr "{0} rows"
+
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/connections-manager.tsx
@@ -931,10 +955,9 @@ msgstr "{0} removed"
 msgid "{0} saved"
 msgstr "{0} saved"
 
-#. placeholder {0}: root.schemas.length
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "{0} schemas"
-msgstr "{0} schemas"
+#~ msgid "{0} schemas"
+#~ msgstr "{0} schemas"
 
 #. placeholder {0}: secrets.length
 #. placeholder {1}: secrets.length === 1 ? '' : 's'
@@ -1130,8 +1153,8 @@ msgid "{d}d ago"
 msgstr "{d}d ago"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "{datasets} datasets"
-msgstr "{datasets} datasets"
+#~ msgid "{datasets} datasets"
+#~ msgstr "{datasets} datasets"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "{day} at {time}"
@@ -1196,6 +1219,10 @@ msgstr "{files} files need merging — let the assistant merge them"
 #: src/components/git/RepoPicker.tsx
 msgid "{filteredCount} of {totalCount} repos"
 msgstr "{filteredCount} of {totalCount} repos"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "{firstName} is still uploading the bundle. Try again in a moment."
+msgstr "{firstName} is still uploading the bundle. Try again in a moment."
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
@@ -1402,6 +1429,10 @@ msgstr "{ms} ms"
 msgid "{n} files changed, first {path}"
 msgstr "{n} files changed, first {path}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{n} rows"
+msgstr "{n} rows"
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "{name} avatar"
@@ -1604,12 +1635,12 @@ msgid "{senderName} invited you"
 msgstr "{senderName} invited you"
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "{senderName} is still uploading — try again in a moment."
-msgstr "{senderName} is still uploading — try again in a moment."
+#~ msgid "{senderName} is still uploading — try again in a moment."
+#~ msgstr "{senderName} is still uploading — try again in a moment."
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "{senderName} sent you a message"
-msgstr "{senderName} sent you a message"
+#~ msgid "{senderName} sent you a message"
+#~ msgstr "{senderName} sent you a message"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
@@ -1991,8 +2022,8 @@ msgid "1 change not published"
 msgstr "1 change not published"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "1 data source"
-msgstr "1 data source"
+#~ msgid "1 data source"
+#~ msgstr "1 data source"
 
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
@@ -2015,6 +2046,7 @@ msgstr "1 new change in the cloud — pull it"
 msgid "1 problem"
 msgstr "1 problem"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "1 row"
 msgstr "1 row"
@@ -2452,12 +2484,17 @@ msgstr "Activate"
 msgid "Activations only"
 msgstr "Activations only"
 
+#: src/components/asset-counters/AssetCounterRow.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "active"
 msgstr "active"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -2767,8 +2804,13 @@ msgid "Add link"
 msgstr "Add link"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Add Machine"
-msgstr "Add Machine"
+#: src/pages/hub-home/HubHome.tsx
+msgid "Add machine"
+msgstr "Add machine"
+
+#: src/pages/hub-home/HubHome.tsx
+#~ msgid "Add Machine"
+#~ msgstr "Add Machine"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Add New Hook"
@@ -3004,6 +3046,7 @@ msgid "agent"
 msgstr "agent"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
@@ -3097,6 +3140,7 @@ msgstr "AgenticProcess ID this prompt annotation is linked to"
 msgid "agents"
 msgstr "agents"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/i18n/type-labels.ts
@@ -3106,6 +3150,10 @@ msgstr "Agents"
 #: src/components/asset-counters/agent-counters.tsx
 msgid "Agents in {projectName} with a deployment"
 msgstr "Agents in {projectName} with a deployment"
+
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Agents with a live deployment"
+msgstr "Agents with a live deployment"
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -5237,6 +5285,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitignoredNotice.tsx
@@ -5496,8 +5545,11 @@ msgstr "Channel id (data source id there)"
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/types/ViewType.ts
 msgid "Channels"
 msgstr "Channels"
 
@@ -5585,7 +5637,8 @@ msgstr "check again"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Check again"
 msgstr "Check again"
 
@@ -5634,8 +5687,12 @@ msgid "Checking access…"
 msgstr "Checking access…"
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "Checking FlowPad status…"
-msgstr "Checking FlowPad status…"
+#~ msgid "Checking FlowPad status…"
+#~ msgstr "Checking FlowPad status…"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Checking FlowPad…"
+msgstr "Checking FlowPad…"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Checking Git eligibility…"
@@ -5694,6 +5751,7 @@ msgstr "Checking whether {folderName} is ready to share."
 msgid "checking…"
 msgstr "checking…"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -5787,6 +5845,10 @@ msgstr "Choose folder…"
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Choose the endpoint this one draws from."
 msgstr "Choose the endpoint this one draws from."
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "Choose the kind of each row"
+msgstr "Choose the kind of each row"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -6132,7 +6194,6 @@ msgid "Click to edit which models this budget may call"
 msgstr "Click to edit which models this budget may call"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
-#: src/pages/hub-home/HubHome.tsx
 msgid "Click to rename"
 msgstr "Click to rename"
 
@@ -6797,6 +6858,7 @@ msgstr "Confirm: {0}"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "Connect"
@@ -6815,6 +6877,10 @@ msgstr "Connect {group}"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Connect {label}"
 msgstr "Connect {label}"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Connect {where}"
+msgstr "Connect {where}"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
@@ -6874,6 +6940,10 @@ msgstr "Connect GitHub to share a project whose files live in a GitHub repositor
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Connect new source"
 msgstr "Connect new source"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connect this machine"
+msgstr "Connect this machine"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -7118,6 +7188,10 @@ msgstr "Conversation title"
 #: src/routes/loaders/load-conversation.ts
 msgid "Conversation unavailable"
 msgstr "Conversation unavailable"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Conversation with {senderName}"
+msgstr "Conversation with {senderName}"
 
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "Conversations"
@@ -7587,6 +7661,10 @@ msgstr "Could not create the budget"
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "Could not create the chart"
 msgstr "Could not create the chart"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "Could not create the dataset"
+msgstr "Could not create the dataset"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
@@ -8356,6 +8434,10 @@ msgstr "Couldn’t ask"
 msgid "Couldn't change this member's role."
 msgstr "Couldn't change this member's role."
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Couldn't check FlowPad's connection"
+msgstr "Couldn't check FlowPad's connection"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
@@ -8586,6 +8668,7 @@ msgstr "CPU:"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -8922,6 +9005,15 @@ msgstr "Daily at {time}"
 msgid "Data (JSON)"
 msgstr "Data (JSON)"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "data model"
+msgstr "data model"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/types/ViewType.ts
+msgid "Data model"
+msgstr "Data model"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "Data privacy mode"
@@ -8934,7 +9026,9 @@ msgstr "Data Schema"
 msgid "data source"
 msgstr "data source"
 
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Data source"
 msgstr "Data source"
@@ -8949,6 +9043,7 @@ msgstr "Data source name"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -8981,14 +9076,29 @@ msgstr "Database Stats"
 msgid "Database switched"
 msgstr "Database switched"
 
+#: src/components/quick-create/registry.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Dataset"
 msgstr "Dataset"
 
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/quick-create/registry.ts
+msgid "Dataset created"
+msgstr "Dataset created"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "dataset schema"
-msgstr "dataset schema"
+msgid "dataset kind"
+msgstr "dataset kind"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#~ msgid "dataset schema"
+#~ msgstr "dataset schema"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Datasets"
+msgstr "Datasets"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
@@ -9659,6 +9769,10 @@ msgstr "Deployed agent"
 msgid "Deployed without its definition"
 msgstr "Deployed without its definition"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Deployment"
+msgstr "Deployment"
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployment deleted"
 msgstr "Deployment deleted"
@@ -9677,6 +9791,8 @@ msgstr "Deployment WorldView"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -10014,6 +10130,7 @@ msgstr "Disable telemetry and analytics"
 #: src/components/llm-endpoints/ChainTree.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "disabled"
 msgstr "disabled"
 
@@ -10083,8 +10200,10 @@ msgid "Disconnect"
 msgstr "Disconnect"
 
 #: src/components/account/user-info.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 #: src/components/terminal/TabbedTerminal.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -10312,13 +10431,16 @@ msgstr "Dot-separated; * matches one part, a trailing * matches the rest (task.*
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/pages/entry/MessageLanding.tsx
 msgid "Download"
 msgstr "Download"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "Download .flowmsg"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download {attachmentFilename}"
+msgstr "Download {attachmentFilename}"
 
 #. placeholder {0}: count === 1 ? 'attachment' : 'attachments'
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -10380,6 +10502,14 @@ msgstr "Download message"
 msgid "Download sample CSV"
 msgstr "Download sample CSV"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download the bundle with the conversation."
+msgstr "Download the bundle with the conversation."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download the bundle with the task details."
+msgstr "Download the bundle with the task details."
+
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "Downloaded"
@@ -10434,6 +10564,7 @@ msgstr "Drill by"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Driver"
 msgstr "Driver"
 
@@ -11222,6 +11353,10 @@ msgstr "Every agent {projectName} can launch"
 msgid "Every agent on this machine"
 msgstr "Every agent on this machine"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Every agent you can reach"
+msgstr "Every agent you can reach"
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr "Every allowance given, changed or removed here and in everything funded by it. Read-only."
@@ -11251,6 +11386,10 @@ msgstr "Every day"
 msgid "Every day at {time}"
 msgstr "Every day at {time}"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Every deployment you can reach"
+msgstr "Every deployment you can reach"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Every few minutes or hours"
 msgstr "Every few minutes or hours"
@@ -11266,6 +11405,10 @@ msgstr "Every indexed row has a source file on disk."
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "every machine"
 msgstr "every machine"
+
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Every machine you can reach"
+msgstr "Every machine you can reach"
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
@@ -11410,8 +11553,8 @@ msgid "Everything this run has shown"
 msgstr "Everything this run has shown"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Everything you can reach, as a live graph."
-msgstr "Everything you can reach, as a live graph."
+#~ msgid "Everything you can reach, as a live graph."
+#~ msgstr "Everything you can reach, as a live graph."
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Everything you can see"
@@ -12142,8 +12285,8 @@ msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feed
 msgstr "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Feeds"
-msgstr "Feeds"
+#~ msgid "Feeds"
+#~ msgstr "Feeds"
 
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -12232,6 +12375,12 @@ msgstr "File Suggestion"
 #: src/components/settings-view/settings-utils.ts
 msgid "File suggestion configuration"
 msgstr "File suggestion configuration"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "file system"
+msgstr "file system"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "File…"
@@ -12721,6 +12870,14 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered conversations. Install it once to open messages like this on your machine."
+msgstr "FlowPad is a free, open-source desktop app for collaborating on AI-powered conversations. Install it once to open messages like this on your machine."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered tasks. Install it once to open tasks like this on your machine."
+msgstr "FlowPad is a free, open-source desktop app for collaborating on AI-powered tasks. Install it once to open tasks like this on your machine."
+
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
 msgstr "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
@@ -12729,9 +12886,21 @@ msgstr "FlowPad is a free, open-source desktop app for working on projects with 
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad is connected"
+msgstr "FlowPad is connected"
+
 #: src/pages/entry/MessageLanding.tsx
-msgid "FlowPad is offline"
-msgstr "FlowPad is offline"
+#~ msgid "FlowPad is offline"
+#~ msgstr "FlowPad is offline"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad isn't connected — Open starts it if it's installed"
+msgstr "FlowPad isn't connected — Open starts it if it's installed"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad isn't installed on this computer"
+msgstr "FlowPad isn't installed on this computer"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -12791,6 +12960,10 @@ msgstr "folder"
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "Folder"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "Folder (optional)"
+msgstr "Folder (optional)"
 
 #: src/components/assets/useAssetsModel.tsx
 msgid "Folder already exists"
@@ -13185,6 +13358,10 @@ msgstr "Git access to {repo} is set. Open {file} again."
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr "Git changes"
+
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
+msgid "Git connection required"
+msgstr "Git connection required"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -13933,6 +14110,22 @@ msgstr "Hooks:"
 msgid "Host"
 msgstr "Host"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Hosts"
+msgstr "Hosts"
+
+#: src/components/data-sources/HostedDatasets.tsx
+#~ msgid "Hosts {0} datasets"
+#~ msgstr "Hosts {0} datasets"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "hosts {n} datasets"
+msgstr "hosts {n} datasets"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "hosts 1 dataset"
+msgstr "hosts 1 dataset"
+
 #: src/components/graph-view/ui/HeatLegend.tsx
 msgid "Hot"
 msgstr "Hot"
@@ -14151,6 +14344,10 @@ msgstr "IDE Connections (VS Code, Cursor, etc.)"
 msgid "Identity"
 msgstr "Identity"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Idle"
+msgstr "Idle"
+
 #: src/components/automations/IfThenGraphic.tsx
 msgid "If"
 msgstr "If"
@@ -14326,10 +14523,10 @@ msgid "inactive copy"
 msgstr "inactive copy"
 
 #: src/components/inbound/InboundView.tsx
-#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubSummaryLine.tsx
 #: src/types/ViewType.ts
-msgid "Inbound"
-msgstr "Inbound"
+#~ msgid "Inbound"
+#~ msgstr "Inbound"
 
 #: src/components/connections-manager.tsx
 msgid "Inbound routing"
@@ -14485,6 +14682,10 @@ msgstr "Inject ▶"
 #: src/components/graph-workflows/panels/InjectPanel.tsx
 msgid "inject event"
 msgstr "inject event"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "inline"
+msgstr "inline"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "inline (server loop — fast, direct SDK)"
@@ -14963,6 +15164,10 @@ msgstr "Its agent"
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
+msgid "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
+msgstr "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Its folder is removed too. Past runs stay in the history."
 msgstr "Its folder is removed too. Past runs stay in the history."
@@ -15151,6 +15356,7 @@ msgid "keyword / time — not supported"
 msgstr "keyword / time — not supported"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "kind"
 msgstr "kind"
 
@@ -15165,9 +15371,16 @@ msgstr "kind"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Kind"
 msgstr "Kind"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Kinds"
+msgstr "Kinds"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Knowledge Atlas"
@@ -15467,6 +15680,10 @@ msgstr "Leave conversation"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Leave empty to keep"
 msgstr "Leave empty to keep"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Leave it running. This card turns Running by itself once the machine connects."
+msgstr "Leave it running. This card turns Running by itself once the machine connects."
 
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "Leave live session mode"
@@ -16371,10 +16588,12 @@ msgstr "Looking up project…"
 msgid "Lowercase letters, digits, - and _ (not development)."
 msgstr "Lowercase letters, digits, - and _ (not development)."
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/inbound/DestinationPicker.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
 msgstr "Machine"
@@ -16394,6 +16613,20 @@ msgstr "Machine secrets"
 
 #~ msgid "Machine size"
 #~ msgstr "Machine size"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Machine type"
+msgstr "Machine type"
+
+#: src/components/asset-counters/hub-counters.tsx
+#: src/pages/hub-home/HubHome.tsx
+#: src/types/ViewType.ts
+msgid "Machines"
+msgstr "Machines"
+
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Machines that are running"
+msgstr "Machines that are running"
 
 #: src/components/automations/KindGallery.tsx
 msgid "Mail that asks for a refund; an agent drafts the reply."
@@ -17244,6 +17477,7 @@ msgstr "name"
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -17344,6 +17578,10 @@ msgstr "needs attention"
 msgid "Needs attention"
 msgstr "Needs attention"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "needs setup"
+msgstr "needs setup"
+
 #: src/components/data-sources/status-style.ts
 #~ msgid "Needs setup"
 #~ msgstr "Needs setup"
@@ -17415,9 +17653,11 @@ msgid "Never synced to cloud"
 msgstr "Never synced to cloud"
 
 #: src/components/open-project-component/project-actions-row.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "new"
 msgstr "new"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/data-sources/status-style.ts
@@ -17508,6 +17748,10 @@ msgstr "New contacts group"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "New credentials"
 msgstr "New credentials"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "New dataset"
+msgstr "New dataset"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -17626,8 +17870,8 @@ msgid "New sandbox"
 msgstr "New sandbox"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "New Sandbox"
-msgstr "New Sandbox"
+#~ msgid "New Sandbox"
+#~ msgstr "New Sandbox"
 
 #: src/components/events/EventsView.tsx
 #~ msgid "New schedule rule"
@@ -17878,6 +18122,10 @@ msgstr "No budget you can hand out"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
 msgstr "No budgets are allocated to you"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "No bundle attached."
+msgstr "No bundle attached."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "no bundle was ever uploaded"
@@ -19214,6 +19462,7 @@ msgstr "not fired yet"
 msgid "not found"
 msgstr "not found"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -19386,6 +19635,7 @@ msgstr "Not signed in to this assistant"
 msgid "not started"
 msgstr "not started"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "Not started"
@@ -19730,8 +19980,8 @@ msgid "number proven"
 msgstr "number proven"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Numbers and bots that message you, and where each message goes."
-msgstr "Numbers and bots that message you, and where each message goes."
+#~ msgid "Numbers and bots that message you, and where each message goes."
+#~ msgstr "Numbers and bots that message you, and where each message goes."
 
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
@@ -19811,6 +20061,10 @@ msgstr "On"
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "On — anyone with the launch link can try it"
 msgstr "On — anyone with the launch link can try it"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "On <0>{where}</0>, open a terminal."
+msgstr "On <0>{where}</0>, open a terminal."
 
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr "On a machine with Flowpad already running and signed in, the last line alone is enough."
@@ -20038,7 +20292,6 @@ msgstr "Oops! Page not found"
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open"
@@ -20130,8 +20383,12 @@ msgid "Open a project to see its assets."
 msgstr "Open a project to see its assets."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Open a project to see its schemas."
-msgstr "Open a project to see its schemas."
+msgid "Open a project to see its data model."
+msgstr "Open a project to see its data model."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#~ msgid "Open a project to see its schemas."
+#~ msgstr "Open a project to see its schemas."
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
@@ -20369,7 +20626,6 @@ msgstr "Open in Finder/Explorer"
 msgid "Open in Flowpad"
 msgstr "Open in Flowpad"
 
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "Open in FlowPad"
@@ -20459,6 +20715,10 @@ msgstr "Open my project"
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "Open new tab menu"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Open on any machine and use on-premise"
+msgstr "Open on any machine and use on-premise"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -20792,6 +21052,7 @@ msgstr "Open trigger.json"
 msgid "Open what it returned"
 msgstr "Open what it returned"
 
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open with your favorite coding agent"
 msgstr "Open with your favorite coding agent"
@@ -20934,8 +21195,8 @@ msgid "Or copy an invite link"
 msgstr "Or copy an invite link"
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "or download the message (.flowmsg)"
-msgstr "or download the message (.flowmsg)"
+#~ msgid "or download the message (.flowmsg)"
+#~ msgstr "or download the message (.flowmsg)"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "or open the link on your phone"
@@ -20971,7 +21232,6 @@ msgstr "Org & teams"
 #: src/components/token-plan/token-plan-math.ts
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
-#: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Organization"
 msgstr "Organization"
@@ -21405,6 +21665,7 @@ msgstr "Pause this machine"
 msgid "paused"
 msgstr "paused"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -22104,7 +22365,6 @@ msgstr "Progress"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
-#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "project"
 msgstr "project"
 
@@ -22299,7 +22559,6 @@ msgid "projected"
 msgstr "projected"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr "Projects"
@@ -22458,6 +22717,7 @@ msgstr "proven"
 msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
 msgstr "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -22868,13 +23128,17 @@ msgstr "Reading packages…"
 msgid "Reading projects…"
 msgstr "Reading projects…"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Reading the data model…"
+msgstr "Reading the data model…"
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
 msgstr "Reading the history…"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Reading the schemas…"
-msgstr "Reading the schemas…"
+#~ msgid "Reading the schemas…"
+#~ msgstr "Reading the schemas…"
 
 #~ msgid "Reading this team's people…"
 #~ msgstr "Reading this team's people…"
@@ -23655,6 +23919,10 @@ msgstr "Replace existing"
 msgid "Replace image"
 msgstr "Replace image"
 
+#: src/components/conversation/asset-review/ReplacePrompt.tsx
+msgid "Replace it"
+msgstr "Replace it"
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
 msgstr "Replace the stored key"
@@ -24129,6 +24397,7 @@ msgstr "Resumed — it polls on the next tick."
 
 #: src/components/agent-layout/DockLoadErrorView.tsx
 #: src/components/assets/editor/EntityResolutionGate.tsx
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -24376,8 +24645,13 @@ msgid "Row time range"
 msgstr "Row time range"
 
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Rows"
 msgstr "Rows"
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Rows at"
+msgstr "Rows at"
 
 #. placeholder {0}: i + 1
 #. placeholder {1}: claimTitle(r)
@@ -24637,6 +24911,10 @@ msgstr "Run this agent on its own, at a time you pick. Runs are headless and sho
 msgid "Run this live session in which project?"
 msgstr "Run this live session in which project?"
 
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Run:"
+msgstr "Run:"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -24646,6 +24924,7 @@ msgstr "running"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -24803,6 +25082,8 @@ msgstr "sandbox"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/settings-view/settings-utils.ts
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox"
 msgstr "Sandbox"
 
@@ -24839,8 +25120,8 @@ msgid "Sandbox upgraded"
 msgstr "Sandbox upgraded"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Sandboxes"
-msgstr "Sandboxes"
+#~ msgid "Sandboxes"
+#~ msgstr "Sandboxes"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -25025,6 +25306,10 @@ msgstr "Say what they should do."
 msgid "Say what to catch."
 msgstr "Say what to catch."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "says:"
+msgstr "says:"
+
 #. placeholder {0}: postScanResult.grand_total.toLocaleString()
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Scan & index complete — {0} records found"
@@ -25150,24 +25435,24 @@ msgid "Schedules · {0}"
 msgstr "Schedules · {0}"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "schema"
-msgstr "schema"
+#~ msgid "schema"
+#~ msgstr "schema"
 
 #: src/types/ViewType.ts
-msgid "Schema"
-msgstr "Schema"
+#~ msgid "Schema"
+#~ msgstr "Schema"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Schema tree"
-msgstr "Schema tree"
+#~ msgid "Schema tree"
+#~ msgstr "Schema tree"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Schemas"
-msgstr "Schemas"
+#~ msgid "Schemas"
+#~ msgstr "Schemas"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Schemas defined here"
-msgstr "Schemas defined here"
+#~ msgid "Schemas defined here"
+#~ msgstr "Schemas defined here"
 
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
@@ -25856,6 +26141,10 @@ msgstr "Sent to the sharer"
 msgid "Sent to your desktop — confirm it there."
 msgstr "Sent to your desktop — confirm it there."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Sent via FlowPad"
+msgstr "Sent via FlowPad"
+
 #. placeholder {0}: labelForType(sent[1])
 #: src/notifications/renderDesktopNotification.ts
 msgid "Sent you: {0}"
@@ -26486,6 +26775,14 @@ msgstr "Shared Context"
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
 msgstr "Shared sessions"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Shared Task"
+msgstr "Shared Task"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Shared Task: {taskTitle}"
+msgstr "Shared Task: {taskTitle}"
 
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
@@ -27637,6 +27934,10 @@ msgstr "Start"
 msgid "Start {0}"
 msgstr "Start {0}"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Start a cloud sandbox, or connect a computer you own."
+msgstr "Start a cloud sandbox, or connect a computer you own."
+
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Start a collaboration"
@@ -27731,6 +28032,10 @@ msgstr "start the workflow {name}"
 msgid "Start this server and list the tools it exposes"
 msgstr "Start this server and list the tools it exposes"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Start this task using one of these options:"
+msgstr "Start this task using one of these options:"
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Start time"
 msgstr "Start time"
@@ -27821,6 +28126,8 @@ msgstr "status"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
 #: src/components/conversation/task-it.tsx
@@ -27834,6 +28141,7 @@ msgstr "status"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Status"
 msgstr "Status"
@@ -27983,8 +28291,8 @@ msgid "stored →"
 msgstr "stored →"
 
 #: src/components/entity-card/entity-card-rows.ts
-msgid "Stored in"
-msgstr "Stored in"
+#~ msgid "Stored in"
+#~ msgstr "Stored in"
 
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
@@ -28509,8 +28817,8 @@ msgid "Teams"
 msgstr "Teams"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Teams and people across your org."
-msgstr "Teams and people across your org."
+#~ msgid "Teams and people across your org."
+#~ msgstr "Teams and people across your org."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "Teams in this organization"
@@ -28827,9 +29135,17 @@ msgstr "The credential was removed from your account."
 msgid "The credentials could not be saved."
 msgstr "The credentials could not be saved."
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "The data model could not be read."
+msgstr "The data model could not be read."
+
 #: src/components/data-sources/source-attention.ts
 #~ msgid "The dataset this source mirrors into could not be made current."
 #~ msgstr "The dataset this source mirrors into could not be made current."
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "the dataset's name"
+msgstr "the dataset's name"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -29165,8 +29481,8 @@ msgid "The same screen as on the hub: it lists the hub's claims you own; \"This 
 msgstr "The same screen as on the hub: it lists the hub's claims you own; \"This computer\" is just one of the places."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "The schemas could not be read."
-msgstr "The schemas could not be read."
+#~ msgid "The schemas could not be read."
+#~ msgstr "The schemas could not be read."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
@@ -29183,6 +29499,10 @@ msgstr "the sender is still staging it"
 #: src/components/inbound/AddRuleDialog.tsx
 msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
 msgstr "The sender's number as the vendor sends it. Already claimed by someone else → refused."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "The sender's upload didn't complete. Ask {firstName} to resend."
+msgstr "The sender's upload didn't complete. Ask {firstName} to resend."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -29263,8 +29583,8 @@ msgid "The transcript on disk was started under another project — the binding 
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "The upload didn't complete — ask {senderName} to resend."
-msgstr "The upload didn't complete — ask {senderName} to resend."
+#~ msgid "The upload didn't complete — ask {senderName} to resend."
+#~ msgstr "The upload didn't complete — ask {senderName} to resend."
 
 #~ msgid "The value could not be written."
 #~ msgstr "The value could not be written."
@@ -29752,6 +30072,10 @@ msgstr "this machine"
 msgid "This machine has no model to run the agent on. Set one up, then try again."
 msgstr "This machine has no model to run the agent on. Set one up, then try again."
 
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "This machine is not connected to the hub, so it cannot be opened from here."
+msgstr "This machine is not connected to the hub, so it cannot be opened from here."
+
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."
 msgstr "This message carries no assets."
@@ -29876,9 +30200,17 @@ msgstr "This project could not be shared."
 msgid "This project declares the same variables, and its values win"
 msgstr "This project declares the same variables, and its values win"
 
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "This project defines no kind"
+msgstr "This project defines no kind"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "This project defines no schema."
-msgstr "This project defines no schema."
+msgid "This project defines no kind."
+msgstr "This project defines no kind."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#~ msgid "This project defines no schema."
+#~ msgstr "This project defines no schema."
 
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
@@ -29886,6 +30218,10 @@ msgstr "This project doesn't exist or is no longer available."
 
 #~ msgid "This project has no assets yet."
 #~ msgstr "This project has no assets yet."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "This project has no dataset."
+msgstr "This project has no dataset."
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This project has no folder on disk and can't be opened."
@@ -30796,7 +31132,6 @@ msgstr "type"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -31013,6 +31348,7 @@ msgstr "Unpushed changes"
 msgid "unreachable"
 msgstr "unreachable"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
 msgstr "Unreachable"
@@ -31220,6 +31556,14 @@ msgstr "Upload files"
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "Upload image"
 msgstr "Upload image"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Upload it to FlowPad on any machine to open the conversation."
+msgstr "Upload it to FlowPad on any machine to open the conversation."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Upload it to FlowPad on any machine to open the task."
+msgstr "Upload it to FlowPad on any machine to open the task."
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"
@@ -31761,6 +32105,10 @@ msgstr "View the 1 {0} entity indexed this run"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "View the changes in this file"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "View the conversation using one of these options:"
+msgstr "View the conversation using one of these options:"
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "View the drivers every source is made from"
@@ -32567,6 +32915,10 @@ msgstr "worktree"
 msgid "Worktree"
 msgstr "Worktree"
 
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+msgid "World view"
+msgstr "World view"
+
 #: src/types/ViewType.ts
 msgid "WorldView"
 msgstr "WorldView"
@@ -32702,6 +33054,10 @@ msgstr "You already have a project named <0>{0}</0>. Open it, or install this on
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 
+#: src/components/conversation/asset-review/ReplacePrompt.tsx
+msgid "You already have this. Replace it with the shared version?"
+msgstr "You already have this. Replace it with the shared version?"
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "You approved this session only — {guestName} will need your approval again next time."
@@ -32812,6 +33168,14 @@ msgstr "You own — delete for everyone"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own this conversation — pick how you want to leave."
 msgstr "You own this conversation — pick how you want to leave."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You received a new message from <0>{senderName}</0>."
+msgstr "You received a new message from <0>{senderName}</0>."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You received a new task from <0>{senderName}</0>."
+msgstr "You received a new task from <0>{senderName}</0>."
 
 #: src/components/token-plan/ScopePath.tsx
 msgid "You spend through"
@@ -33020,8 +33384,8 @@ msgid "Your workspace is ready"
 msgstr "Your workspace is ready"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Your world"
-msgstr "Your world"
+#~ msgid "Your world"
+#~ msgstr "Your world"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Your WorldView"

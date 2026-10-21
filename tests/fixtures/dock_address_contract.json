@@ -85,7 +85,8 @@
     "llm-setup",
     "assistant",
     "vibe",
-    "inbound"
+    "inbound",
+    "machines"
   ],
   "subview_vocabularies": {
     "credentials": [
@@ -742,6 +743,14 @@
       "chrome": "workspace"
     },
     "inbound": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
+    "machines": {
       "addressable": true,
       "pointer": "none",
       "folds_pointer": false,

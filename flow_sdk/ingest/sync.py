@@ -64,6 +64,11 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
         await _fail_source(source, "capability_unavailable", f"requires {', '.join(source.required_capabilities)}", now)
         return report
 
+    # A source that hosts datasets holds their rows, not a feed: the datasets read and write it themselves
+    # (datasets/locations.py), so a poll only proves it is still set up -- nothing is fetched or ingested.
+    if hosted := await source.datasets():
+        return await _verify_only(source, stype, report, now, hosted)
+
     # `reflect` is a property of the SOURCE, knowable before any I/O: a reflecting source has no
     # record destination, and with a mode that has no reflector its files would be dropped while
     # the cursor advanced past them.
@@ -140,6 +145,32 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     await source.save_runtime()
     emit_sync_tag(source.provider, source.id, "completed", report=report)
     logger.info("[ingest] %s/%s %s", source.provider, source.name or source.account_key, report.as_counts())
+    return report
+
+
+async def _verify_only(source: DataSource, stype, report: IngestReport, now: datetime, hosted: list) -> IngestReport:
+    """One poll of a source that hosts datasets: its setup check, stamped like any run's ending."""
+    emit_sync_tag(source.provider, source.id, "started")
+    source.last_attempted_at = now
+    try:
+        if stype.has_setup:
+            verdict = await source.verify(hosted)
+            if verdict.get("transient"):
+                raise SourceUnavailable(str(verdict.get("detail") or ""))
+            if not verdict.get("ready"):   # verify moved the row to setup and said why
+                emit_sync_tag(source.provider, source.id, "completed", report=report)
+                return report
+    except Exception as exc:  # noqa: BLE001 — classified, recorded, never re-raised
+        health, code, detail = classify(exc)
+        source.consecutive_failures = (source.consecutive_failures or 0) + 1
+        await _fail_source(source, code, detail, now, health=health)
+        emit_sync_tag(source.provider, source.id, "completed", report=report)
+        return report
+    source.consecutive_failures = 0
+    source.last_synced_at = now
+    _stamp_source(source, SourceHealth.OK, None, None, now)
+    await source.save_runtime()
+    emit_sync_tag(source.provider, source.id, "completed", report=report)
     return report
 
 

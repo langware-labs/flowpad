@@ -151,6 +151,8 @@ export enum ViewType {
   // Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each
   // one's messages go. Rendered on the hub page AND the desk (one component, the hub decides).
   INBOUND = 'inbound', // /dock/<hub|desk>/inbound
+  // The hub's machines: cloud sandboxes and connected computers, with + Add machine. No pointer.
+  MACHINES = 'machines', // /dock/hub/machines
 }
 
 /**
@@ -195,7 +197,7 @@ export enum MachineSubview {
   METRICS = 'metrics', // E2B only - CPU/Memory charts
   LOGS = 'logs', // E2B only - sandbox logs
   SECRETS = 'secrets', // Which project secrets this node may see. NOT E2B-gated
-                       // — the local desktop node needs it just as much.
+  // — the local desktop node needs it just as much.
 }
 
 /**

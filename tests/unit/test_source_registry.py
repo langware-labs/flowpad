@@ -114,7 +114,7 @@ def test_every_shipped_driver_has_the_family_its_items_are():
     for folder in sorted(SHIPPED_ROOT.iterdir()):
         if (folder / "data_driver.json").is_file():
             families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
-    assert families["object"] == ["folder", "gcs", "gdrive", "git", "s3"]
+    assert families["object"] == ["flow_storage", "folder", "gcs", "gdrive", "gdrive_mount", "git", "s3"]
     assert families["record"] == ["hackernews", "jira", "rss"]
     assert len(families["message"]) == 18 and {"slack", "flow_whatsapp", "flow_telegram", "flow_slack"} <= set(families["message"])
 

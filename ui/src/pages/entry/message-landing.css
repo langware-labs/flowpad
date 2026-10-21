@@ -293,3 +293,69 @@
   cursor: pointer;
   font: inherit;
 }
+
+/* "FlowPad is connected" line under Open in FlowPad (OpenInFlowpadActions). */
+.nl-connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.nl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+  flex-shrink: 0;
+}
+
+.nl-dot-on {
+  background: #16a34a;
+}
+
+.nl-connection-spin {
+  animation: nl-spin 1s linear infinite;
+}
+
+.nl-refresh {
+  display: inline-flex;
+  border: 0;
+  background: none;
+  padding: 2px;
+  color: #888;
+  cursor: pointer;
+}
+
+.nl-refresh:hover:not(:disabled) {
+  color: #4f46e5;
+}
+
+.nl-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.nl-bundle-note {
+  font-size: 13px;
+  color: #888;
+}
+
+.nl-bundle-failed {
+  color: #b00020;
+}
+
+.nl-agents {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.nl-after {
+  margin-top: 20px;
+}
+
+.nl-footer a {
+  color: #aaa;
+}

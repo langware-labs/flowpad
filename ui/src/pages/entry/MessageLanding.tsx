@@ -1,8 +1,8 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ActionInfo, BodyStatus, cloudManager, FlowMessage, isHubOnly, TypeId } from '@sdk';
 import { useAuth, useEntity } from '@sdk/react/hooks';
-import { Loader2, RotateCw } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import React, { useMemo } from 'react';
 import { useParams } from 'react-router';
 import flowpadLogo from '@src/assets/logo.png';
 import { Avatar, AvatarFallback, AvatarImage } from '@src/components/ui/avatar';
@@ -10,8 +10,12 @@ import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
 import { inboundParams } from '@src/navigation/inbound-link';
 import { bounceToLoginOnce } from './login-bounce';
-import { openOnDesktop, useDesktopPresence } from './use-desktop-presence';
-import { LOCAL_API_PREFIX, useOpenInFlowpad } from './useOpenFlowpad';
+import claudeMark from '../../../../flow_sdk/server/icons/brands/assets/claude.svg';
+import codexMark from '../../../../flow_sdk/server/icons/brands/assets/codex.svg';
+import copilotMark from '../../../../flow_sdk/server/icons/brands/assets/copilot.svg';
+import opencodeMark from '../../../../flow_sdk/server/icons/brands/assets/opencode.svg';
+import { OpenInFlowpadActions } from './OpenInFlowpadActions';
+import { LOCAL_API_PREFIX } from './useOpenFlowpad';
 import WrongAccountPanel from './WrongAccountPanel';
 
 /** Hub messages carry a free-form metadata bag (task_title, spec_content, ...)
@@ -63,74 +67,14 @@ function LandingTopBar({ from, onLogIn }: { from?: string; onLogIn?: () => void 
   );
 }
 
-/** The one call to action: checked against the hub first, then Open (online) or offline + Open | Download. */
-function OpenArea({ messageId, download }: { messageId: string; download: (offline: boolean) => React.ReactNode }) {
-  const { presence, recheck } = useDesktopPresence(true);
-  const [busy, setBusy] = useState(false);
-  const [wentOffline, setWentOffline] = useState(false);
-  const launch = useOpenInFlowpad(
-    `${LOCAL_API_PREFIX}${new ActionInfo('open', FlowMessage.type, messageId, 'GET').actionUrl}`,
-  );
-  const offline = presence === 'offline' || wentOffline;
-
-  if (presence === 'checking') {
-    return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="landing-checking">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <Trans>Checking FlowPad status…</Trans>
-      </p>
-    );
-  }
-  if (offline) {
-    return (
-      <div className="flex flex-col items-center gap-2" data-testid="landing-offline">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Trans>FlowPad is offline</Trans>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={() => {
-              setWentOffline(false);
-              recheck();
-            }}
-            data-testid="landing-check-again"
-          >
-            <RotateCw className="h-3.5 w-3.5" />
-            <Trans>Check again</Trans>
-          </Button>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <button type="button" className="underline" onClick={() => void launch()} data-testid="landing-launch">
-            <Trans>Open</Trans>
-          </button>
-          <span className="text-muted-foreground">|</span>
-          {download(true)}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex w-full flex-col items-center gap-2" data-testid="landing-online">
-      <Button
-        className="h-12 w-full bg-brand text-base font-semibold text-brand-foreground hover:bg-brand/90"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          void openOnDesktop(messageId)
-            .then((delivered) => setWentOffline(delivered === 0))
-            .catch(() => setWentOffline(true))
-            .finally(() => setBusy(false));
-        }}
-        data-testid="landing-open"
-      >
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-        <Trans>Open in FlowPad</Trans>
-      </Button>
-      <span className="text-xs text-muted-foreground">{download(false)}</span>
-    </div>
-  );
-}
+/** The coding agents FlowPad opens a message with — the vendors' own marks (the brands icon pack's files),
+ *  bundled: this page also renders on the hub, which serves no icon packs. */
+const AGENT_MARKS: [string, string][] = [
+  [claudeMark, 'Claude Code'],
+  [codexMark, 'Codex'],
+  [copilotMark, 'GitHub Copilot'],
+  [opencodeMark, 'OpenCode'],
+];
 
 const MessageLanding: React.FC = () => {
   const { t } = useLingui();
@@ -213,66 +157,133 @@ const MessageLanding: React.FC = () => {
   // rows may still carry 'failed' — compare through string to keep the state.
   const bodyFailed = (flowMessage.body_status as string | undefined) === 'failed';
   const bodyUploading = flowMessage.body_status === BodyStatus.UPLOADING;
+  const openTargetPath = `${LOCAL_API_PREFIX}${new ActionInfo('open', FlowMessage.type, messageId, 'GET').actionUrl}`;
   const downloadUrl = attachmentFilename
     ? `${LOCAL_API_PREFIX}/graph/${FlowMessage.type}/${messageId}/fs/download/${encodeURIComponent(attachmentFilename)}`
     : '';
-  const download = (offline: boolean) =>
-    bodyFailed ? (
-      <span className="text-destructive">
-        <Trans>The upload didn't complete — ask {senderName} to resend.</Trans>
-      </span>
-    ) : bodyUploading ? (
-      <span>
-        <Trans>{senderName} is still uploading — try again in a moment.</Trans>
-      </span>
-    ) : downloadUrl ? (
-      <a
-        className={offline ? 'underline' : 'underline-offset-2 hover:underline'}
-        href={downloadUrl}
-        download={attachmentFilename}
-        data-testid="landing-download"
-      >
-        {offline ? <Trans>Download</Trans> : <Trans>or download the message (.flowmsg)</Trans>}
-      </a>
-    ) : null;
+  const isConversation = !(meta.task_id ?? '').trim();
+  const taskTitle = meta.task_title ?? meta.spec_title ?? t`Shared Task`;
+  const firstName = senderName.split(' ')[0];
 
-  return shell(
-    <div className="rounded-xl border bg-card p-6 shadow-sm sm:p-8">
-      <h1 className="text-2xl font-semibold" data-testid="landing-title">
-        <Trans>{senderName} sent you a message</Trans>
-      </h1>
-      {flowMessage.text && (
-        <div className="mt-6 flex gap-3 rounded-lg border bg-muted/40 p-4 sm:p-6" data-testid="landing-preview">
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className="text-xs">{initialsOf(senderName)}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold">{senderName}</div>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">{flowMessage.text}</p>
-            {attachmentFilename && (
-              <span className="mt-2 inline-block rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                {attachmentFilename}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-      {specContent && (
-        <div className="mt-6 rounded-lg border">
-          <div className="flex items-center justify-between border-b px-4 py-2 text-xs text-muted-foreground">
-            <Trans>Plan</Trans>
-            <button type="button" onClick={() => void copyPlan(specContent)}>
-              {planCopied ? <Trans>Copied!</Trans> : <Trans>Copy</Trans>}
-            </button>
-          </div>
-          <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-4 text-xs">{specContent}</pre>
-        </div>
-      )}
-      <div className="mt-6 flex justify-center">
-        <OpenArea messageId={messageId} download={download} />
+  return (
+    <div className="nl-page" data-testid="message-landing">
+      <div className="nl-header">
+        <h1 data-testid="landing-title">
+          {isConversation ? <Trans>Conversation with {senderName}</Trans> : <Trans>Shared Task: {taskTitle}</Trans>}
+        </h1>
       </div>
-    </div>,
-    senderName,
+      <div className="nl-container">
+        <div className="nl-intro">
+          <p className="nl-task-from">
+            {isConversation ? (
+              <Trans>
+                You received a new message from <strong>{senderName}</strong>.
+              </Trans>
+            ) : (
+              <Trans>
+                You received a new task from <strong>{senderName}</strong>.
+              </Trans>
+            )}
+          </p>
+        </div>
+
+        {flowMessage.text && (
+          <p className="nl-msg" data-testid="landing-preview">
+            <strong>{firstName}</strong> <Trans>says:</Trans> <em>&quot;{flowMessage.text}&quot;</em>
+          </p>
+        )}
+
+        <p className="nl-section-label">
+          {isConversation ? (
+            <Trans>View the conversation using one of these options:</Trans>
+          ) : (
+            <Trans>Start this task using one of these options:</Trans>
+          )}
+        </p>
+
+        <div className="nl-options">
+          <div className="nl-option">
+            <h3 className="nl-agents">
+              <span>
+                <Trans>Open with your favorite coding agent</Trans>
+              </span>
+              {AGENT_MARKS.map(([src, name]) => (
+                <img key={name} src={src} className="nl-agent-icon" width={20} height={20} alt={name} title={name} />
+              ))}
+            </h3>
+            <p>
+              {isConversation ? (
+                <Trans>
+                  FlowPad is a free, open-source desktop app for collaborating on AI-powered conversations. Install it
+                  once to open messages like this on your machine.
+                </Trans>
+              ) : (
+                <Trans>
+                  FlowPad is a free, open-source desktop app for collaborating on AI-powered tasks. Install it once to
+                  open tasks like this on your machine.
+                </Trans>
+              )}
+            </p>
+            <OpenInFlowpadActions openTargetPath={openTargetPath} showConnection />
+          </div>
+
+          <div className="nl-option">
+            <h3>
+              📦 <Trans>Open on any machine and use on-premise</Trans>
+            </h3>
+            <p>
+              {isConversation ? (
+                <Trans>Download the bundle with the conversation.</Trans>
+              ) : (
+                <Trans>Download the bundle with the task details.</Trans>
+              )}
+            </p>
+            {bodyFailed ? (
+              <p className="nl-bundle-note nl-bundle-failed">
+                <Trans>The sender&apos;s upload didn&apos;t complete. Ask {firstName} to resend.</Trans>
+              </p>
+            ) : bodyUploading ? (
+              <p className="nl-bundle-note">
+                <Trans>{firstName} is still uploading the bundle. Try again in a moment.</Trans>
+              </p>
+            ) : downloadUrl ? (
+              <a className="nl-btn" href={downloadUrl} download={attachmentFilename} data-testid="landing-download">
+                <Trans>Download {attachmentFilename}</Trans>
+              </a>
+            ) : (
+              <p className="nl-bundle-note">
+                <Trans>No bundle attached.</Trans>
+              </p>
+            )}
+            <p className="nl-after">
+              {isConversation ? (
+                <Trans>Upload it to FlowPad on any machine to open the conversation.</Trans>
+              ) : (
+                <Trans>Upload it to FlowPad on any machine to open the task.</Trans>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {specContent && (
+          <div className="nl-plan-wrap">
+            <div className="nl-plan-header">
+              <span className="nl-plan-label">
+                <Trans>Plan</Trans>
+              </span>
+              <button className="nl-copy-btn" onClick={() => void copyPlan(specContent)}>
+                <span className="nl-copy-label">{planCopied ? <Trans>Copied!</Trans> : <Trans>Copy</Trans>}</span>
+              </button>
+            </div>
+            <pre className="nl-plan-content">{specContent}</pre>
+          </div>
+        )}
+
+        <div className="nl-footer">
+          <Trans>Sent via FlowPad</Trans> &middot; <a href="https://flowpad.ai">flowpad.ai</a>
+        </div>
+      </div>
+    </div>
   );
 };
 

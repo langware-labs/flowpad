@@ -211,6 +211,7 @@ opens a different screen and reports success.
 | Home | `home` | landing, start |
 | Hooks | `hooks` | claude hooks |
 | Inbound routing | `inbound` | webhooks, inbound webhooks, message routing |
+| Machines *(hub)* | `machines` | sandboxes, computers |
 | Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
 | LLM sources | `llm-sources` | harness funding |

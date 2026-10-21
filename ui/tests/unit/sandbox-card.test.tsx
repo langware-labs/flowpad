@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   openSandbox: vi.fn(),
   openNewShell: vi.fn(() => Promise.resolve(null)),
   sandboxes: [] as Array<Record<string, unknown>>,
+  details: {} as Record<string, Record<string, unknown>>,
   sandboxesEnabled: true,
 }));
 
@@ -64,7 +65,7 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
     deletingId: null,
     upgradeSandbox: vi.fn(),
     upgradingId: null,
-    details: {},
+    details: h.details,
   }),
   // The real rule, not a stub: which button a card shows is exactly this
   // question, and a mock that always answered "launched" would let the
@@ -88,7 +89,8 @@ import { HubHome } from '@src/pages/hub-home/HubHome';
 function renderHome() {
   return render(
     <TooltipProvider>
-      <HubHome />
+      {/* The cards live on the Machines page since 093f0762d, not on Home. */}
+      <HubHome view="machines" />
     </TooltipProvider>,
   );
 }
@@ -98,6 +100,7 @@ beforeEach(() => {
   h.sandboxesEnabled = true;
   (dataContext as unknown as { bootstrapInfo: unknown }).bootstrapInfo = { sandboxes_enabled: true };
   h.sandboxes.length = 0;
+  for (const k of Object.keys(h.details)) delete h.details[k];
   // A LAUNCHED box: `node_provider_id` is what `ops/setup` writes, and its
   // presence is the whole difference between an Open card and a Launch one.
   h.sandboxes.push({ id: 'node-1', name: 'Sandbox One', node_provider_id: 'sbx-1' });
@@ -251,5 +254,52 @@ describe('the login line', () => {
 
     await screen.findByTestId('sandbox-open');
     expect(screen.queryByTestId('sandbox-auto-login-off')).toBeNull();
+  });
+});
+
+describe('a connected machine that is disconnected', () => {
+  // What the hub's `ops/status` answers for an enrolled machine with no live socket.
+  beforeEach(() => {
+    h.sandboxes[0] = { id: 'node-m', name: '@FLOWPAD-VM', node_provider: 'user_machine', node_provider_id: 'node-m' };
+    h.details['node-m'] = {
+      status: 'DISCONNECTED',
+      status_msg: 'machine is offline — run `flow connect` on it',
+      hostname: 'FLOWPAD-VM',
+    };
+  });
+
+  it('says Disconnected, not Paused', async () => {
+    renderHome();
+
+    expect((await screen.findByTestId('sandbox-status-label')).textContent).toBe('Disconnected');
+    expect(screen.queryByText('Paused')).toBeNull();
+  });
+
+  it('offers Connect instead of Open, Terminal and Upgrade — each of those can only fail', async () => {
+    renderHome();
+
+    expect(await screen.findByTestId('machine-connect')).toBeTruthy();
+    expect(screen.queryByTestId('sandbox-open')).toBeNull();
+    expect(screen.queryByTestId('machine-terminal')).toBeNull();
+    expect(screen.queryByTestId('sandbox-upgrade')).toBeNull();
+  });
+
+  it('Connect says what to run and on which machine', async () => {
+    renderHome();
+
+    await userEvent.click(await screen.findByTestId('machine-connect'));
+
+    expect((await screen.findByTestId('connect-machine-host')).textContent).toBe('FLOWPAD-VM');
+    expect(screen.getByTestId('connect-machine-command').textContent).toBe('flow connect');
+    expect(h.openSandbox).not.toHaveBeenCalled();
+  });
+
+  it('gets Open and Terminal back once it is connected again', async () => {
+    h.details['node-m'] = { status: 'READY' };
+    renderHome();
+
+    expect(await screen.findByTestId('sandbox-open')).toBeTruthy();
+    expect(screen.getByTestId('machine-terminal')).toBeTruthy();
+    expect(screen.queryByTestId('machine-connect')).toBeNull();
   });
 });

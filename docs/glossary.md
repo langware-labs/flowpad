@@ -176,6 +176,16 @@ mechanism: [`ontology.md`](ontology.md).
   schemas, instances are values. (`data_schema.json` is itself a value — of the kind
   `data_schema`, whose schema is `DataSchemaDocSpec`.)
 
+## Data model · data source · data driver (2026-10-21)
+
+- **Data model** — the project's SHAPE: its kinds and their schemas. The product word for what the
+  Schema view (`/dock/schema-tree`) navigates; one entry is a **kind**.
+- **Data source** — a CONTAINER: a configured `DataSource` that hosts datasets → rows (`"data_source":
+  <name>` in `dataset.json`, `DataSource.datasets()`). `local` (`<dataset>/rows/`) is every project's
+  default one. See [dataset locations](data-management/dataset-locations.md).
+- **Data driver** — the synchronizer: the code that reads and writes a system, declares what it needs
+  and runs its setup check (`DataDriver`).
+
 ## row · record · item (2026-10-11, one word since 2026-10-15)
 
 Three words were used for neighbours. Say which:

@@ -114,7 +114,7 @@ function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; 
                 key={group.itemKey(item)}
                 onClick={() => {
                   const pointer = group.itemPointer(item);
-                  if (pointer) navigation.openDock(pointer);
+                  if (pointer) navigation.openDockOnThisPage(pointer);
                 }}
                 className="cursor-pointer"
                 data-testid="asset-list-row"
@@ -129,7 +129,11 @@ function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; 
             {active && !active.isLoading && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={group.columns.length} className="py-10 text-center text-muted-foreground">
-                  {active.items.length === 0 ? <Trans>Nothing here yet.</Trans> : <Trans>No matches for “{query}”.</Trans>}
+                  {active.items.length === 0 ? (
+                    <Trans>Nothing here yet.</Trans>
+                  ) : (
+                    <Trans>No matches for “{query}”.</Trans>
+                  )}
                 </TableCell>
               </TableRow>
             )}

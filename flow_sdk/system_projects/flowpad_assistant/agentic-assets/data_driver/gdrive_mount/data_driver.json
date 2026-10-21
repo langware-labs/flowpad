@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "name": "gdrive_mount",
+  "title": "Google Drive (mounted folder)",
+  "description": "A folder of your Google Drive, used through Google Drive for desktop: rows are read and written in the Drive folder on this computer, and Drive keeps it in sync. Same folders as the Google Drive (API) driver.",
+  "kind": "datasource.fs.gdrive_mount",
+  "reflect": [
+    "none"
+  ],
+  "config": {
+    "path": {
+      "type": "text",
+      "label": "Folder",
+      "placeholder": "Sales Desk",
+      "hint": "A folder in My Drive, by its path. Made on first use."
+    },
+    "account": {
+      "type": "text",
+      "advanced": true,
+      "label": "Google account",
+      "placeholder": "you@example.com",
+      "hint": "Which signed-in Drive to use when Drive for desktop has several accounts."
+    },
+    "mount_root": {
+      "type": "path",
+      "advanced": true,
+      "label": "My Drive folder",
+      "hint": "Where My Drive is on this computer. Found by itself; set only when it is somewhere unusual."
+    }
+  },
+  "setup_wizards": [
+    {
+      "stage": "connect",
+      "label": "Set up Google Drive on this computer",
+      "wizard": "gdrive-mount-setup"
+    }
+  ],
+  "icon_name": "SourceFolder",
+  "group_icon_name": "GoogleDrive"
+}

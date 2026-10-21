@@ -98,7 +98,7 @@ export function InboundView({ api = InboundWebhooks }: { api?: InboundApi }) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold tracking-tight">
-            <Trans>Inbound</Trans>
+            <Trans>Channels</Trans>
           </h1>
           <p className="text-sm text-muted-foreground">
             <Trans>

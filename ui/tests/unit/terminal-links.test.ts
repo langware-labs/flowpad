@@ -6,6 +6,23 @@ import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 describe('terminal links', () => {
+  it('keeps each cell of an ASCII table its own link, never joining rows', async () => {
+    const sep = '  +-----------+--------+--------+';
+    const row = (k: string, v: string) => `  | ${k.padEnd(9)} | ${v.padEnd(6)} | ${v.padEnd(6)} |`;
+    const rows = [sep, row('git/html', 'PASS'), row('git/skill', '·'), row('plain/md', '·'), sep];
+    const terminal = new HeadlessTerminal({ cols: 140, rows: 8, allowProposedApi: true });
+    try {
+      await new Promise<void>((resolve) => terminal.write(rows.map((r, i) => `\x1b[${i + 1};1H${r}`).join(''), resolve));
+      for (const [y, name] of [[2, 'git/html'], [3, 'git/skill'], [4, 'plain/md']] as const) {
+        let links: ILink[] | undefined;
+        new TerminalLinkProvider(terminal as unknown as Terminal, () => {}).provideLinks(y, (value) => { links = value; });
+        expect(links?.map((link) => [link.text, link.range.start.y, link.range.end.y])).toEqual([[name, y, y]]);
+      }
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('finds the file reference or web URL under a buffer cell, without relying on hover', async () => {
     const terminal = new HeadlessTerminal({ cols: 80, rows: 5, allowProposedApi: true });
     try {

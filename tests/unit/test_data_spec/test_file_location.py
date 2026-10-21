@@ -181,7 +181,7 @@ async def test_rows_move_from_the_project_to_a_store_and_on_to_a_folder(stored, 
 
     moved = await _call(local, "move-rows", {"location": "mem:people"})
     assert moved.status_code == 200, moved.text
-    assert moved.json()["data"] == {"from": "local", "to": "mem:people", "rows": 2}
+    assert moved.json()["data"] == {"from": "local", "to": "mem:people", "rows": 2, "adopted": 0, "conflicts": []}
     assert {p.split("/")[1] for p in stored.store.files} == {"ada", "bob"}
     on_disk = json.loads((stored.root / "agentic-assets/dataset/moving/dataset.json").read_text())
     assert on_disk["metadata"]["location"] == "mem:people"
@@ -194,7 +194,7 @@ async def test_rows_move_from_the_project_to_a_store_and_on_to_a_folder(stored, 
     assert {r["key"] for r in (await _call(local, "rows", {})).json()["data"]["rows"]} == {"ada", "bob"}
 
 
-async def test_rows_never_move_into_a_location_that_holds_rows(stored):
+async def test_rows_moved_into_a_location_that_holds_rows_adopt_them(stored):
     full = await stored.dataset("full")
     await _call(full, "put-row", {"key": "ada", "row": {"input": {"name": "Ada"}}})          # mem:people now holds a row
     from flow_sdk.builtin.dataset import Dataset
@@ -203,9 +203,12 @@ async def test_rows_never_move_into_a_location_that_holds_rows(stored):
                     data_layout="io_folder", spec=full.spec)
     await other.save()
     await _call(other, "put-row", {"key": "bob", "row": {"input": {"name": "Bob"}}})
-    refused = await _call(other, "move-rows", {"location": "mem:people"})
-    assert refused.status_code == 400 and "already holds rows" in refused.text
-    assert set(stored.store.files) == {p for p in stored.store.files if p.startswith("rows/ada/")}
+    await _call(other, "put-row", {"key": "ada", "row": {"input": {"name": "Ada (mine)"}}})
+    moved = await _call(other, "move-rows", {"location": "mem:people"})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["data"] == {"from": "local", "to": "mem:people", "rows": 2, "adopted": 1, "conflicts": ["ada"]}
+    rows = {r["key"]: r["input"]["name"] for r in (await _call(other, "rows", {})).json()["data"]["rows"]}
+    assert rows == {"ada": "Ada", "bob": "Bob"}                                            # the copy there wins a shared key
     assert (await _call(other, "move-rows", {"location": {"driver": "crm", "map": {"key": "k", "input": {"k": "k"}}}})).status_code == 400
 
 

@@ -41,7 +41,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
-from flow_sdk.schema.data_spec.setup_stage_spec import NEED_CONNECTION, NEED_SETUP, SetupNeedSpec
+from flow_sdk.schema.data_spec.setup_stage_spec import NEED_CONNECTION, NEED_CREDENTIAL, NEED_SETUP, SetupNeedSpec
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 from flow_sdk.schema.types import EntityType
@@ -402,6 +402,24 @@ class DataSource(SetupSkippable, Entity):
         if self.status == SourceStatus.NEW.value and driver is not None and driver.has_setup:
             return "not verified"
         return ""
+
+    # ── the datasets it hosts ──────────────────────────────────────────────
+    #: Set by ``verify`` (does it host datasets?) for the driver's check (``SourceBinding.holds_rows``);
+    #: a fact about this run, never stored.
+    holds_rows: bool = APIField(default=False, persist=Persist.FALSE, sharing=Sharing.PRIVATE)
+
+    async def datasets(self) -> list:
+        """The datasets whose rows this source holds (``"data_source": <name>`` in their dataset.json), in
+        this source's project. A source that hosts any is a container, not a feed: a poll only proves it is
+        still set up, and nothing in it is ingested."""
+        from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
+
+        if not self.name:
+            return []
+        rows = await Dataset.get_all({"data_source": self.name}) or []
+        if self.project_id:
+            rows = [row for row in rows if str(getattr(row, "project_id", "") or self.project_id) == str(self.project_id)]
+        return rows
 
     # ── the access pattern: declare → get and check → bind ──────────────────
     @classmethod
@@ -2178,7 +2196,20 @@ class DataSource(SetupSkippable, Entity):
             return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
         return ApiSuccessResponse(data=verdict)
 
-    async def verify(self) -> Optional[dict]:
+    async def verify(self, hosted: Optional[list] = None) -> Optional[dict]:
+        """``_verify`` -- then the datasets this source hosts re-read where their rows are, so their
+        "kept locally" line follows the source's setup the moment it changes. ``hosted``: those datasets,
+        when the caller already has them."""
+        hosted = await self.datasets() if hosted is None else hosted
+        self.holds_rows = bool(hosted)
+        verdict = await self._verify()
+        if hosted:
+            from flow_sdk.datasets.locations import refresh_hosted  # noqa: PLC0415
+
+            await refresh_hosted(self, hosted)
+        return verdict
+
+    async def _verify(self) -> Optional[dict]:
         """Is this source's setup finished? ``None`` when no driver is registered.
 
         Two layers, in this order, because they fail for different reasons and
@@ -2194,11 +2225,14 @@ class DataSource(SetupSkippable, Entity):
         Moves the source to ACTIVE only when both pass. Nothing here polls or
         waits — it is one round trip per layer.
         """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        await DataDriver.find(self.provider or "")   # an authored driver loads on first use, as in ``get``
         driver = self._driver()
         if driver is None:
             return None
 
-        need = await self._verify_connection(driver)
+        need = await self._verify_connection(driver) or (await self._verify_credentials() if self.holds_rows else None)
         if need is not None:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = need.detail
@@ -2206,7 +2240,7 @@ class DataSource(SetupSkippable, Entity):
             self.verified_at = datetime.now(timezone.utc)
             await self.save_runtime()
             return {
-                "ready": False, "layer": "connection", "detail": need.detail,
+                "ready": False, "layer": need.kind, "detail": need.detail,
                 "status": self.status, "needs": [need.model_dump()],
             }
 
@@ -2272,6 +2306,25 @@ class DataSource(SetupSkippable, Entity):
         if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
         return await connection_need(provider)
+
+    async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
+        """For a source that holds datasets' rows (asked only for those: a feed's values may live in a
+        deployment's store this machine does not read): None unless the source reads a credential and NOT
+        ONE of its values is stored here, then what it needs. Some values may be optional (an address the config can give), so only "none at all" is
+        sure enough to call the source not set up; the driver's own check judges the rest."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        names = self.credentials.names()
+        stype = await DataDriver.find(self.provider or "")
+        if not names or stype is None:
+            return None
+        held = await stype.credentials_for(self)
+        if held.token is not None or any(v.get_secret_value() for v in held.values.values()):
+            return None
+        auth = self._auth()
+        title = str(getattr(auth, "credential", "") or self.provider or "credential")
+        return SetupNeedSpec(kind=NEED_CREDENTIAL, name=title, title=title, state="missing",
+                             detail=f"Needs the {title} credential ({', '.join(names)})")
 
     async def _verify_setup(self, stype):
         """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself

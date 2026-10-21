@@ -320,6 +320,7 @@ def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, perso
         credentials=credentials,
         persona=persona or Persona(),
         read_only=bool(getattr(row, "read_only", False)),
+        holds_rows=bool(getattr(row, "holds_rows", False)),
     )
 
 
@@ -512,7 +513,10 @@ class DriverRuntime:
         key = self.cls.local_tree_key
         if not key:
             return self.cache_root(row)
-        raw = str((getattr(row, "config", None) or {}).get(key) or "")
+        # The tree as the source is built with it: what the row names, or what ``configure`` derives
+        # (a mounted drive works its folder out on this computer instead of storing it).
+        config = {**(getattr(row, "config", None) or {}), **(self.cls.configure(row) or {})}
+        raw = str(config.get(key) or "")
         return Path(raw).expanduser().resolve() if raw else None
 
     def origin_for(self, row: Any) -> Any:

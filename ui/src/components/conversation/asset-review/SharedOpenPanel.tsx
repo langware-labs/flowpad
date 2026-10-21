@@ -3,7 +3,8 @@ import { Trans } from '@lingui/react/macro';
 import { FolderGit2, FolderOpen, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@src/components/ui/button';
-import { useOpenGitShare, type OpenShareOutcome } from './use-open-git-share';
+import { ReplacePrompt } from './ReplacePrompt';
+import { useOpenGitShare, type OpenShareOpts, type OpenShareOutcome } from './use-open-git-share';
 
 /**
  * A received share that carries Git AND a copy: one Open button, and only the
@@ -25,7 +26,7 @@ export function SharedOpenPanel({
   const opened = attachment.effectiveScope != null;
   const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
 
-  const open = async (opts: { projectId?: string; choice?: 'clone' | 'copy' } = {}) => setOutcome(await run(opts));
+  const open = async (opts: OpenShareOpts = {}) => setOutcome(await run(opts));
 
   return (
     <div className="flex flex-col gap-2" data-testid="shared-open-panel">
@@ -87,6 +88,13 @@ export function SharedOpenPanel({
             </Button>
           </div>
         </div>
+      )}
+      {!opened && outcome.needs === 'overwrite' && (
+        <ReplacePrompt
+          busy={busy}
+          onConfirm={() => void open({ ...outcome.asked, overwrite: true })}
+          testId="shared-overwrite"
+        />
       )}
       {outcome.error && (
         <p className="text-xs text-destructive" data-testid="shared-open-error">

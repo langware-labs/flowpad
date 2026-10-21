@@ -1,6 +1,10 @@
 import { OwnerLoadGate } from '@src/components/project-setup/OwnerLoadGate';
 import { AgentHomeAfterLoad } from '@src/project-home-page/AgentHomeAfterLoad';
-import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM, CONSUMER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
+import {
+  PROVIDER_PROJECT_PARAM,
+  HOME_AGENT_PARAM,
+  CONSUMER_PROJECT_PARAM,
+} from '@src/project-home-page/dependency-home';
 import { PrimaryContentRegion, PrimaryContentFallback } from '@sdk/react/primary-content';
 import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -300,6 +304,13 @@ function ContentPanelBody({
         return <OrganizationPage />;
       case ViewType.HUB_RECORDS:
         return <HubRecordsView type={currentDock?.pointer} />;
+      case ViewType.ASSET_LIST:
+        // The hub home's summary chips open their table here (hub-counters.tsx).
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AssetListView />
+          </Suspense>
+        );
       case ViewType.HUB_ENTITY:
         return <HubEntityView pointer={currentDock?.pointer} />;
       case ViewType.CONVERSATION:
@@ -332,6 +343,8 @@ function ContentPanelBody({
             <InboundView />
           </Suspense>
         );
+      case ViewType.MACHINES:
+        return <HubHome view="machines" />;
       case ViewType.HOME:
       default:
         return <HubHome />;
@@ -619,9 +632,12 @@ function ContentPanelBody({
   const loadProject = providerProject || (display && isAppBody ? project?.id : undefined);
   const homeAgent = currentDock?.options?.[HOME_AGENT_PARAM];
   const consumerProject = currentDock?.options?.[CONSUMER_PROJECT_PARAM] || currentDock?.scopeProjectId;
-  const renderedBody = homeAgent && consumerProject
-    ? <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
-    : renderBody(bodyViewType);
+  const renderedBody =
+    homeAgent && consumerProject ? (
+      <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
+    ) : (
+      renderBody(bodyViewType)
+    );
   const appAddress = isAppBody && !homeAgent ? appDockAddress(currentDock) : null;
   const body = loadProject ? (
     <OwnerLoadGate

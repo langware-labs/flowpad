@@ -84,10 +84,12 @@ describe('Deployments', () => {
     expect(pointer.toUrl()).toContain(`${AGENT_URL}/child/deployment/deployment-${CLOUD_ID}`);
   });
 
-  it('on the hub there is no local deployment and no New deployment', async () => {
+  it('on the hub there is no places call: nothing is listed and no New deployment', async () => {
     nav.hub = true;
     renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
-    expect(await screen.findByTestId(`agent-place-row-${CLOUD_ID}`)).toBeInTheDocument();
+    expect(await screen.findByTestId('agent-places-empty')).toBeInTheDocument();
+    expect(Agent.prototype.listPlaces).not.toHaveBeenCalled();
+    expect(screen.queryByTestId(`agent-place-row-${CLOUD_ID}`)).toBeNull();
     expect(screen.queryByTestId(`agent-place-row-${LOCAL_ID}`)).toBeNull();
     expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
   });
