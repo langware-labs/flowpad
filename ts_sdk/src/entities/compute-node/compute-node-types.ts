@@ -75,6 +75,8 @@ export enum ExecutionEnvironmentStatus {
   PAUSED = 'PAUSED',
   ERROR = 'ERROR',
   NOT_FOUND = 'NOT_FOUND',
+  /** An enrolled machine with no live connection. The hub cannot wake it — only `flow connect` on it can. */
+  DISCONNECTED = 'DISCONNECTED',
 }
 
 /**
@@ -107,6 +109,10 @@ export interface NodeStatus {
   end_at?: string | null;
   cpu_count?: number;
   memory_mb?: number;
+  /** Why the machine is in this state, in words a person can act on. */
+  status_msg?: string | null;
+  /** The machine's own hostname — where to run `flow connect` when it is disconnected. */
+  hostname?: string | null;
 }
 
 /**
