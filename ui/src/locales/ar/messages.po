@@ -1004,6 +1004,10 @@ msgstr "تعذر حذف {failed} من أصل {0}."
 msgid "{files} files need merging — let the assistant merge them"
 msgstr "{files} ملفات تحتاج إلى دمج — يمكن للمساعد دمجها"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "{firstName} is still uploading the bundle. Try again in a moment."
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
 msgstr "لدى {folderName} تغييرات لم تُدفع بعد. يمكن للمستقبل سحب ما هو موجود على المستودع البعيد فقط."
@@ -1317,13 +1321,12 @@ msgstr "{selectedCount} محددة"
 msgid "{senderName} has shared {sharedThing}"
 msgstr "شارك {senderName} {sharedThing}"
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "{senderName} is still uploading — try again in a moment."
-msgstr "لا يزال {senderName} يرفع الملف — يُرجى المحاولة بعد لحظات."
+#~ msgid "{senderName} is still uploading — try again in a moment."
+#~ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "{senderName} sent you a message"
-msgstr "أرسل لكم {senderName} رسالة"
+#~ msgid "{senderName} sent you a message"
+#~ msgstr ">>>>>>> aea919ba5"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
@@ -5104,7 +5107,8 @@ msgstr "إعادة التحقق"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Check again"
 msgstr "إعادة التحقق"
 
@@ -5152,9 +5156,12 @@ msgstr "جارٍ فحص {0}"
 msgid "Checking access…"
 msgstr "جارِ التحقق من الوصول…"
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "Checking FlowPad status…"
-msgstr "جارٍ التحقق من حالة FlowPad…"
+#~ msgid "Checking FlowPad status…"
+#~ msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Checking FlowPad…"
+msgstr ">>>>>>> aea919ba5"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Checking Git eligibility…"
@@ -6567,6 +6574,10 @@ msgstr "عنوان المحادثة"
 msgid "Conversation unavailable"
 msgstr "المحادثة غير متاحة"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Conversation with {senderName}"
+msgstr ""
+
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "Convert to Excalidraw"
 msgstr "تحويل إلى Excalidraw"
@@ -7782,6 +7793,10 @@ msgstr "تعذّر طرح السؤال"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Couldn't change this member's role."
 msgstr "تعذّر تغيير دور هذا العضو."
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Couldn't check FlowPad's connection"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -9688,13 +9703,16 @@ msgstr "مفصولة بنقاط؛ * يطابق جزءًا واحدًا، و* ف�
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/pages/entry/MessageLanding.tsx
 msgid "Download"
 msgstr "تنزيل"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "تنزيل .flowmsg"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download {attachmentFilename}"
+msgstr ""
 
 #. placeholder {0}: count === 1 ? 'attachment' : 'attachments'
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -9747,6 +9765,14 @@ msgstr "تنزيل الرسالة"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Download sample CSV"
 msgstr "تنزيل ملف CSV نموذجي"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download the bundle with the conversation."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download the bundle with the task details."
+msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
@@ -11908,6 +11934,14 @@ msgstr "لم يُفتح FlowPad؟ ثبّتوه ثم عودوا إلى هذه ا�
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered conversations. Install it once to open messages like this on your machine."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered tasks. Install it once to open tasks like this on your machine."
+msgstr ""
+
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
 msgstr "FlowPad تطبيق مكتبي مجاني ومفتوح المصدر للعمل على المشاريع مع وكلاء البرمجة. يكفي فتح المشروع هناك حتى يُجهّزه FlowPad على الجهاز."
@@ -11916,9 +11950,20 @@ msgstr "FlowPad تطبيق مكتبي مجاني ومفتوح المصدر لل�
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad تطبيق سطح مكتب مجاني ومفتوح المصدر للعمل على المشاريع مع وكلاء البرمجة لديكم. افتحوا هذا المشروع وسيجهّزه FlowPad على جهازكم."
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "FlowPad is offline"
-msgstr "FlowPad غير متصل"
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad is connected"
+msgstr ""
+
+#~ msgid "FlowPad is offline"
+#~ msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad isn't connected — Open starts it if it's installed"
+msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad isn't installed on this computer"
+msgstr ">>>>>>> aea919ba5"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -16847,6 +16892,10 @@ msgstr "لا توجد ميزانية يمكنكم منحها"
 msgid "No budgets are allocated to you"
 msgstr "لم تُخصَّص أي ميزانيات لكم"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "No bundle attached."
+msgstr ""
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "no bundle was ever uploaded"
 msgstr "لم تُرفع أي حزمة قط"
@@ -18822,7 +18871,6 @@ msgstr "الخطوات أدناه فقط"
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open"
@@ -19154,7 +19202,6 @@ msgstr "فتح في Finder/Explorer"
 msgid "Open in Flowpad"
 msgstr "فتح في Flowpad"
 
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "افتحوا في FlowPad"
@@ -19244,6 +19291,10 @@ msgstr "فتح مشروعي"
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "فتح قائمة التبويب الجديد"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Open on any machine and use on-premise"
+msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -19560,6 +19611,7 @@ msgstr "فتح trigger.json"
 msgid "Open what it returned"
 msgstr "فتح النتيجة"
 
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open with your favorite coding agent"
 msgstr "افتحوا باستخدام وكيل البرمجة المفضل لديكم"
@@ -19693,9 +19745,8 @@ msgstr "رسالة إلى المالك (اختياري)…"
 msgid "Or copy an invite link"
 msgstr "أو انسخوا رابط الدعوة"
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "or download the message (.flowmsg)"
-msgstr "أو تنزيل الرسالة (.flowmsg)"
+#~ msgid "or download the message (.flowmsg)"
+#~ msgstr ">>>>>>> aea919ba5"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "or open the link on your phone"
@@ -22241,6 +22292,10 @@ msgstr "استبدال الموجود"
 msgid "Replace image"
 msgstr "استبدال الصورة"
 
+#: src/components/conversation/asset-review/ReplacePrompt.tsx
+msgid "Replace it"
+msgstr ""
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
 msgstr "استبدال المفتاح المحفوظ"
@@ -23531,6 +23586,10 @@ msgstr "اذكروا ما يجب أن يفعلوه"
 msgid "Say what to catch."
 msgstr "اذكروا ما يجب التقاطه"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "says:"
+msgstr ""
+
 #. placeholder {0}: postScanResult.grand_total.toLocaleString()
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Scan & index complete — {0} records found"
@@ -24324,6 +24383,10 @@ msgstr "تم الإرسال إلى المُشارِك"
 msgid "Sent to your desktop — confirm it there."
 msgstr "أُرسل إلى سطح المكتب — أكّدوا هناك."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Sent via FlowPad"
+msgstr ""
+
 #. placeholder {0}: labelForType(sent[1])
 #: src/notifications/renderDesktopNotification.ts
 msgid "Sent you: {0}"
@@ -24928,6 +24991,14 @@ msgstr "السياق المشترك"
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
 msgstr "الجلسات المشتركة"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Shared Task"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Shared Task: {taskTitle}"
+msgstr ""
 
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
@@ -26085,6 +26156,10 @@ msgstr "بدء سير العمل {name}"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 msgid "Start this server and list the tools it exposes"
 msgstr "بدء تشغيل هذا الخادم وعرض الأدوات التي يوفّرها"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Start this task using one of these options:"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Start time"
@@ -27484,6 +27559,10 @@ msgstr "لا يزال المُرسِل يُعدّه"
 msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
 msgstr "رقم المُرسِل كما يرسله المزوّد. الرقم المستخدم لدى جهة أخرى يُرفض."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "The sender's upload didn't complete. Ask {firstName} to resend."
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
 msgstr "توجد أنشطة جديدة في الجلسة منذ آخر تحليل — يمكن إجراء تحليل جديد (وتبقى التحليلات السابقة محفوظة)"
@@ -27555,9 +27634,8 @@ msgstr "يعمل الرمز بصفة {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "بدأ النص المحفوظ على القرص ضمن مشروع آخر — الارتباط هنا مجمَّد لتفادي الانحراف الصامت. أعيدوا التحميل لإعادة التحديد، أو افتحوا الجلسة ضمن مشروعها الحقيقي."
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "The upload didn't complete — ask {senderName} to resend."
-msgstr "لم يكتمل الرفع — يُرجى طلب إعادة الإرسال من {senderName}."
+#~ msgid "The upload didn't complete — ask {senderName} to resend."
+#~ msgstr ">>>>>>> aea919ba5"
 
 #~ msgid "The value could not be written."
 #~ msgstr ""
@@ -29385,6 +29463,14 @@ msgstr "رفع الملفات"
 msgid "Upload image"
 msgstr "رفع صورة"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Upload it to FlowPad on any machine to open the conversation."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Upload it to FlowPad on any machine to open the task."
+msgstr ""
+
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"
 msgstr "رفع الرسالة"
@@ -29919,6 +30005,10 @@ msgstr "عرض كيان {0} الواحد المفهرس في هذا التشغي
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "عرض التغييرات في هذا الملف"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "View the conversation using one of these options:"
+msgstr ""
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "View the drivers every source is made from"
@@ -30827,6 +30917,10 @@ msgstr "لديكم بالفعل مشروع باسم <0>{0}</0>. افتحوه، �
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr "لديكم بالفعل مشروع باسم <0>{projectName}</0>. افتحوه، أو أعدّوا هذا المشروع باسم آخر."
 
+#: src/components/conversation/asset-review/ReplacePrompt.tsx
+msgid "You already have this. Replace it with the shared version?"
+msgstr ""
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "وافقتم على هذه الجلسة فقط — سيحتاج {guestName} إلى موافقتكم مرة أخرى في المرة القادمة."
@@ -30935,6 +31029,14 @@ msgstr "أنتم المالك — حذفها للجميع"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own this conversation — pick how you want to leave."
 msgstr "أنتم مالكو هذه المحادثة — يُرجى اختيار طريقة المغادرة."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You received a new message from <0>{senderName}</0>."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You received a new task from <0>{senderName}</0>."
+msgstr ""
 
 #: src/components/token-plan/ScopePath.tsx
 msgid "You spend through"

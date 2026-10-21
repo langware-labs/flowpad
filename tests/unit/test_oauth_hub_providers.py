@@ -159,3 +159,25 @@ async def test_non_provider_rows_from_the_hub_are_ignored(monkeypatch):
     monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake_get)
 
     assert [r.name for r in (await hp.hub_provider_rows()).values] == ["slack"]
+
+
+async def test_a_token_the_hub_holds_reads_as_connected(monkeypatch):
+    """Google is a local provider whose token lives on the hub (as ``googledrive``): ``credential_for``
+    resolves it, so its row must not read as missing (the setup panel asked to connect Google)."""
+    from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum
+    from flow_sdk.core.oauth import get_oauth_providers_as_env_table
+
+    payload = _hub_payload("googledrive")
+    payload["data"]["values"][0]["var_status"] = "AVAILABLE"
+
+    async def fake_get(entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        return payload
+
+    monkeypatch.setattr(hp, "_hub_reachable", lambda: True)
+    monkeypatch.setattr(hp, "_cloud_user_id", lambda: "cloud-user-held")
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake_get)
+
+    table = await get_oauth_providers_as_env_table(None)
+    google = next(r for r in table.values if r.name == "google")
+    assert google.var_status == EnvStatusEnum.AVAILABLE
+    assert hp.hub_held_providers() == {"googledrive"}
