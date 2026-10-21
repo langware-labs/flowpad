@@ -74,8 +74,8 @@ def test_it_runs_standalone_with_no_flowpad_imported():
     ("url", "trusted"),
     [
         (f"{HOST}/flowpad-0.2.1-py3-none-any.whl", True),
-        ("http://files.pythonhosted.org/x.whl", False),           # not https
-        ("https://evil.example.com/flowpad.whl", False),          # not PyPI's file host
+        ("http://files.pythonhosted.org/x.whl", False),  # not https
+        ("https://evil.example.com/flowpad.whl", False),  # not PyPI's file host
         ("https://files.pythonhosted.org.evil.com/x.whl", False),  # look-alike suffix
         ("https://user@evil.example.com/files.pythonhosted.org", False),
         (None, False),
@@ -194,7 +194,7 @@ def test_an_unparseable_desktop_version_is_a_usage_error(gate):
 
 
 def test_the_failure_says_why_releases_were_excluded(gate, monkeypatch, capsys):
-    """"No release satisfies the floor" was the message for four different causes; name the real ones."""
+    """ "No release satisfies the floor" was the message for four different causes; name the real ones."""
     releases = {
         "0.2.90": _release("0.2.90", yanked=True),
         "0.2.89": _release("0.2.89", host="https://evil.example.com/p"),
@@ -226,9 +226,20 @@ def test_no_stub_leaks_even_when_flow_sdk_was_not_imported_first():
     """``tests/conftest.py`` imports flow_sdk before any test runs, which hides the hazard. Run the check
     above with no conftest at all -- the condition the stubs exist for."""
     done = subprocess.run(
-        [sys.executable, "-m", "pytest", "--noconftest", "-q", "-p", "no:cacheprovider",
-         f"{Path(__file__)}::test_no_stub_package_is_left_in_sys_modules"],
-        cwd=REPO, capture_output=True, text=True, timeout=60,
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--noconftest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            f"{Path(__file__)}::test_no_stub_package_is_left_in_sys_modules",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
     assert done.returncode == 0, done.stdout + done.stderr
@@ -237,7 +248,11 @@ def test_no_stub_leaks_even_when_flow_sdk_was_not_imported_first():
 def test_a_release_candidate_never_makes_a_desktop_releasable(gate, monkeypatch, capsys):
     """The desktop never installs an rc by itself, so the gate must not pass a desktop because of one."""
     seen = []
-    releases = {"0.2.230rc1": _release("0.2.230rc1"), "0.2.223.dev1": _release("0.2.223.dev1"), "0.2.222": _release("0.2.222")}
+    releases = {
+        "0.2.230rc1": _release("0.2.230rc1"),
+        "0.2.223.dev1": _release("0.2.223.dev1"),
+        "0.2.222": _release("0.2.222"),
+    }
     doc = json.dumps({"releases": releases}).encode()
     monkeypatch.setattr(gate.urllib.request, "urlopen", lambda url, timeout=0: _Response(doc))
     monkeypatch.setattr(gate, "wheel_min_desktop", lambda url: seen.append(url) or None)
@@ -259,6 +274,7 @@ def test_when_only_pre_releases_exist_the_failure_says_so(gate, monkeypatch, cap
 
 
 # ── the gate checks the release ABOUT to be cut, and runs before anything expensive ──────────────────────
+
 
 def test_it_validates_the_version_about_to_be_released_not_the_one_on_disk(gate, capsys):
     gate.validate_files("99.0.0")
@@ -296,7 +312,12 @@ def test_an_unparseable_target_version_is_refused(gate):
 
 def test_the_cli_takes_backend_version():
     for version, code in (("99.0.0", 0), ("0.0.1", 1)):
-        done = subprocess.run([sys.executable, "-I", str(SCRIPT), "--backend-version", version], capture_output=True, text=True, timeout=60)
+        done = subprocess.run(
+            [sys.executable, "-I", str(SCRIPT), "--backend-version", version],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         assert done.returncode == code, (version, done.stdout + done.stderr)
 
 
@@ -305,6 +326,6 @@ def test_the_deploy_script_runs_the_gate_before_the_expensive_steps():
     (it used to run after all three, wasting a signing run and leaving _version.py bumped but uncommitted)."""
     text = (REPO / "scripts" / "deploy_to_github.sh").read_text(encoding="utf-8")
     gate = text.index("check_version_compat.py --backend-version")
-    for later in ("Running tests...", "Signing standalone flow-rs", "update_version_file \"$NEW_VERSION\""):
+    for later in ("Running tests...", "Signing standalone flow-rs", 'bump_version.sh" "$NEW_VERSION"'):
         assert gate < text.index(later), f"the gate must come before {later!r}"
     assert text.count("check_version_compat.py") == 1, "one call, at the start"
