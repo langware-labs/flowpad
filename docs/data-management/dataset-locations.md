@@ -7,7 +7,34 @@ The app ships the SHAPE (kinds, rules, viewers) and the DRIVERS. The rows live w
 puts them. One field in `dataset.json` says where: `location`. The spec is the module docstring of
 `flow_sdk/datasets/locations.py`.
 
-## The five forms
+## A data source (preferred)
+
+A dataset whose rows live outside the project names a **data source** instead of a driver:
+
+```json
+"data_source": "gtm-drive",          // agentic-assets/data_source/gtm-drive/data_source.json
+"path": "gtm-personas"          // its folder inside the source; default: the dataset's folder name
+```
+
+The source's driver and config are the location's; the driver places the dataset inside the source
+(`rows_within(config, path)` — Drive joins folder paths, S3/GCS join prefixes). A record system keeps
+its per-dataset part in a `location` object beside `data_source`, without `driver`:
+`{"config": {"resource": "companies"}, "map": {...}, "by": "crm"}`.
+
+- **`local` is every project's default source** — `<dataset>/rows/`, no field needed.
+- **Not set up on this machine → local, never an error.** Before a session the dataset asks its source
+  (`locations.readiness`: the `DataSource` row's `setup_owed`, disabled, config error). While the source
+  cannot hold rows they are read and written in `<dataset>/rows/`, and the dataset says why in
+  `rows_note` ("kept locally: gtm-drive needs setup: …"). Nothing is moved when the source is set up
+  later. A source not asked yet (an index read at boot) reads as local too.
+- **Existing data is adopted.** A dataset on a folder that already holds rows reads them on its first
+  pull; `move-rows` into one keeps what is there and adds the rest (a key on both sides keeps the copy
+  that is there, listed in `conflicts`). `move-rows` takes `{"data_source", "path"?}` as well as a location.
+- **A source knows what it hosts** (`DataSource.datasets()`). A source that hosts datasets is a
+  container, not a feed: its poll is only its setup check, nothing in it is ingested, and the setup
+  tree labels it "hosts N datasets".
+
+## The five inline forms
 
 | `location` | Rows live in |
 |---|---|

@@ -9,6 +9,14 @@ puts them. One field says where::
     "location": {"driver": "twenty", "config": {"resource": "companies"},
                  "map": {"key": "external_id", "input": {...}}, "by": "crm"}   # a record system
 
+A dataset that lives in a DATA SOURCE names it instead (``"data_source": "gtm-drive"``, optional
+``"path": "gtm-personas"`` -- its folder inside the source, the dataset's folder name by default). The
+source is the project's ``agentic-assets/data_source/<name>/data_source.json``: its driver and config are
+the location's, and a ``location`` object beside ``data_source`` adds the dataset's own part (a record
+system's ``config``/``map``/``by``). ``local`` -- the dataset's own ``rows/`` -- is every project's
+default source, and where the rows stay while a named source is not set up on this machine
+(``readiness``): never an error, and nothing is moved when it is set up later.
+
 A file location (local, a folder, or a ``RowFiles`` driver: Drive, S3) holds the row layout as it is
 on disk -- ``rows/<key>/row.json`` and the slot files beside it. A record location (a driver whose
 source is ``Mutable`` and listable: Twenty) holds one record per row, shaped by ``map``.
@@ -30,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import functools
 import hashlib
 import json
 import logging
@@ -57,6 +66,10 @@ class Location:
     by: Optional[str] = None
     read_only: bool = False
     raw: Any = None
+    #: The data source the location is resolved from ("" for one written inline), and the rows'
+    #: folder inside it.
+    source: str = ""
+    path: str = ""
 
     @property
     def remote(self) -> bool:
@@ -68,6 +81,8 @@ class Location:
             return LOCAL
         if self.kind == FOLDER:
             return f"file:{self.target}"
+        if self.source:
+            return f"{self.source} · {self.path}" if self.path else self.source
         return f"{self.driver}:{self.target}" if self.target else self.driver
 
 
@@ -86,7 +101,7 @@ def parse(value: Any) -> Location:
             raise ValueError(f"location: {value!r} is not local, file:<folder> or <driver>:<target>")
         return Location(FILES, driver=found.group(1), target=found.group(2).strip(), raw=value)
     if isinstance(value, dict):
-        unknown = set(value) - {"driver", "target", "config", "map", "by", "read_only"}
+        unknown = set(value) - {"driver", "target", "config", "map", "by", "read_only", "source", "path"}
         if unknown or not isinstance(value.get("driver"), str) or not _DRIVER.match(f"{value['driver']}:"):
             raise ValueError('location: {"driver", "target"?, "config"?, "map"?, "by"?, "read_only"?} is required')
         config = {} if value.get("config") is None else value["config"]
@@ -101,8 +116,137 @@ def parse(value: Any) -> Location:
         if by is not None and not isinstance(by, str):
             raise ValueError("location.by: one word, as a schema's `owned_by` (\"crm\")")
         return Location(RECORDS if shape is not None else FILES, driver=value["driver"], target=str(value.get("target") or ""),
-                        config=dict(config), map=shape, by=by, read_only=bool(value.get("read_only")), raw=value)
+                        config=dict(config), map=shape, by=by, read_only=bool(value.get("read_only")), raw=value,
+                        source=str(value.get("source") or ""), path=str(value.get("path") or "").strip("/"))
     raise ValueError("location: a string or an object is required")
+
+
+# ── a dataset's data source ──────────────────────────────────────────────────────────────────────
+
+def _project_of_folder(folder: Path | str) -> Optional[Path]:
+    """The project a dataset folder sits in (the folder above its ``agentic-assets``), or None."""
+    return next((parent.parent for parent in Path(folder).parents if parent.name == "agentic-assets"), None)
+
+
+@functools.lru_cache(maxsize=256)
+def _source_spec(manifest: str, mtime_ns: int) -> tuple[str, dict]:
+    """``(driver, config)`` of one ``data_source.json`` as ``DataSourceSpec`` reads it -- cached per file version."""
+    from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+    whole = load_json_dict(Path(manifest))
+    spec = DataSourceSpec.model_validate(whole["metadata"] if isinstance(whole.get("metadata"), dict) else whole)
+    return spec.provider, dict(spec.config)
+
+
+def source_document(folder: Path | str, name: str) -> dict:
+    """``data_source.json`` of the source ``name`` in the project of the dataset in ``folder``, as
+    ``{"provider", "config"}``; ``ValueError`` naming what is missing."""
+    root = _project_of_folder(folder)
+    manifest = root / "agentic-assets" / "data_source" / name / "data_source.json" if root else None
+    if manifest is None or not manifest.is_file():
+        raise ValueError(f"data_source: the project has no data source {name!r} (agentic-assets/data_source/{name}/)")
+    provider, config = _source_spec(str(manifest), manifest.stat().st_mtime_ns)
+    if not provider:
+        raise ValueError(f"data_source: {name!r} names no driver")
+    return {"provider": provider, "config": dict(config)}
+
+
+def declared(folder: Path | str, source: Any, path: Any, location: Any) -> Any:
+    """The location value a dataset declares: its ``location`` alone, or the data source it names
+    resolved into one (the source's driver and config, the dataset's own ``location`` object on top)."""
+    if source in (None, "", LOCAL):
+        return location
+    found = source_document(folder, str(source))
+    own = location if isinstance(location, dict) else {}
+    value: dict = {"driver": found["provider"], "config": {**found["config"], **(own.get("config") or {})}, "source": str(source)}
+    for key in ("map", "by", "read_only"):
+        if own.get(key) is not None:
+            value[key] = own[key]
+    if own.get("map") is None:
+        value["path"] = str(path or own.get("target") or Path(folder).name).strip("/")
+    return value
+
+
+#: What a named source answered for a dataset in this process: ``{(dataset folder, source): why}``, ``""``
+#: when the rows are in it. Filled by ``readiness`` (async: it asks the source's row).
+_checked: dict[tuple[str, str], str] = {}
+
+
+def held_back(folder: Path | str, source: Any) -> Optional[str]:
+    """Why the rows of the dataset in ``folder`` stay local instead of in ``source`` -- ``""`` when
+    they are in it, None when the source has not been asked yet in this process (the rows read as local)."""
+    if source in (None, "", LOCAL):
+        return ""
+    return _checked.get((str(folder), str(source)))
+
+
+def effective(folder: Path | str, source: Any, path: Any, location: Any) -> Location:
+    """Where a dataset's rows are NOW: its declared place, or the default local one while its source has
+    not said it can hold them. The one rule every reader and writer of the rows uses."""
+    if held_back(folder, source) != "":
+        return parse(None) if source not in (None, "", LOCAL) else parse(location)
+    return parse(declared(folder, source, path, location))
+
+
+async def source_refusal(name: str, project_id: str = "") -> str:
+    """Why the data source ``name`` cannot hold rows on this machine now, or ``""``."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.ingest.health import SourceHealth  # noqa: PLC0415
+
+    rows = await DataSource.get_all({"name": name}) or []
+    if project_id and len(rows) > 1:
+        rows = [row for row in rows if str(getattr(row, "project_id", "") or "") == project_id] or rows
+    if not rows:
+        return f"{name} is not set up on this machine"
+    row = rows[0]
+    if await DataDriver.find(row.provider or "") is None:
+        return f"{name}: no {row.provider} driver on this machine"
+    if owed := row.setup_owed():
+        return f"{name} needs setup: {owed}"
+    if row.status == SourceStatus.DISABLED.value:
+        return f"{name} is turned off"
+    if row.health == SourceHealth.CONFIG_ERROR.value:
+        return f"{name}: {row.error_detail or 'configuration error'}"
+    return ""
+
+
+def remember(folder: Path | str, source: Any, why: str) -> None:
+    _checked[(str(folder), str(source))] = why
+
+
+async def readiness(dataset: Any, *, cached: bool = False) -> str:
+    """Ask the dataset's source whether it can hold the rows now, and remember the answer for the
+    sync paths (``held_back``). ``""`` when the rows are in the source; else why they stay local.
+    ``cached``: an answer already given in this process stands (a source's verify refreshes it)."""
+    source = getattr(dataset, "data_source", None)
+    if source in (None, "", LOCAL) or not getattr(dataset, "asset_ref", ""):
+        return ""
+    if cached and (held := held_back(dataset.asset_ref, source)) is not None:
+        return held
+    try:
+        why = await source_refusal(str(source), await project_of(dataset))
+    except Exception as exc:  # noqa: BLE001 -- an index that cannot answer keeps the rows local, never fails a read
+        why = f"{source} could not be checked ({exc})"
+    remember(dataset.asset_ref, source, why)
+    return why
+
+
+async def refresh_hosted(source: Any, datasets: Optional[list] = None) -> None:
+    """Every dataset ``source`` hosts takes the source's answer -- asked once -- and its row says where its
+    rows are now."""
+    datasets = await source.datasets() if datasets is None else datasets
+    if not datasets:
+        return
+    try:
+        why = await source_refusal(str(source.name), str(getattr(source, "project_id", "") or ""))
+    except Exception as exc:  # noqa: BLE001 -- the check never fails over a note
+        why = f"{source.name} could not be checked ({exc})"
+    for dataset in datasets:
+        if getattr(dataset, "asset_ref", ""):
+            remember(dataset.asset_ref, source.name, why)
+            await dataset.note_where_rows_are()
 
 
 def rows_root(folder: Path | str, location: Location, dataset_id: str) -> Path:
@@ -130,7 +274,7 @@ def rows_root_of(folder: Path | str, header: Optional[dict] = None, dataset_id: 
 
         header = load_doc(folder / "dataset.json")[0]
     try:
-        location = parse(header.get("location"))
+        location = effective(folder, header.get("data_source"), header.get("path"), header.get("location"))
     except ValueError:
         return folder
     if location.kind == LOCAL:
@@ -175,7 +319,12 @@ async def opened(location: Location, project_id: str = "") -> AsyncIterator[Any]
 
     driver = await DataDriver.get(location.driver)
     config = dict(location.config)
-    if location.target:
+    if location.path:
+        within = getattr(driver.cls, "rows_within", None)
+        if within is None:
+            raise ValueError(f"data_source: the {location.driver} driver cannot hold a dataset's rows in a folder")
+        config = within(config, location.path)
+    elif location.target:
         target_of = getattr(driver.cls, "row_files_target", None)
         if target_of is None:
             raise ValueError(f"location: the {location.driver} driver cannot hold rows at {location.target!r}")
@@ -498,16 +647,19 @@ async def push(dataset: Any, location: Location, root: Optional[Path] = None) ->
         return await push_files(store, root or rows_folder(dataset, location), location)
 
 
-def _write_location(folder: Path, value: Any) -> None:
-    """``dataset.json``'s ``location``, rewritten in place (the rest of the file as it was)."""
+def _write_location(folder: Path, value: Any, source: Any = None, path: Any = None) -> None:
+    """``dataset.json``'s ``location`` / ``data_source`` / ``path``, rewritten in place (the rest of the file
+    as it was)."""
     from flow_sdk.schema.data_spec.layout import load_doc, write_doc  # noqa: PLC0415
 
     manifest = folder / "dataset.json"
     metadata, data = load_doc(manifest)
-    if value in (None, LOCAL):
-        metadata.pop("location", None)
-    else:
-        metadata["location"] = value
+    for key, held in (("location", None if value in (None, LOCAL) else value),
+                      ("data_source", None if source in (None, "", LOCAL) else source), ("path", path or None)):
+        if held is None:
+            metadata.pop(key, None)
+        else:
+            metadata[key] = held
     write_doc(manifest, metadata, data)
 
 
@@ -520,44 +672,61 @@ def _row_keys(root: Path) -> list[str]:
     return [p.name for p in _row_dirs(root) if (p / ROW_META).is_file()]
 
 
+def _target_of(dataset: Any, value: Any) -> tuple[Location, Any, Any]:
+    """A move's target: a location value, or ``{"data_source", "path"?}`` naming a data source."""
+    if isinstance(value, dict) and value.get("data_source") is not None and set(value) <= {"data_source", "path"}:
+        source, path = value["data_source"], value.get("path")
+        return parse(declared(dataset.asset_ref, source, path, None)), source, path
+    return parse(value), None, None
+
+
 async def move_rows(dataset: Any, value: Any) -> dict:
-    """Copy every row of ``dataset`` to the location ``value``, check the new location holds them all,
-    then make it the dataset's location (``dataset.json``). The rows at the old location are left as
-    they are -- deleting someone's data is theirs to decide. Refused when the new location already
-    holds rows, or is a record system (its records are made by the system, not copied in).
-    Returns ``{"from", "to", "rows"}``."""
+    """Copy every row of ``dataset`` to ``value`` (a location, or ``{"data_source", "path"?}``), check it
+    holds them all, then make it where the dataset's rows are (``dataset.json``). Rows already there
+    are ADOPTED: they stay and become the dataset's too; a key on both sides keeps the copy that is
+    there (listed as ``conflicts``). The old location keeps its rows -- deleting someone's data is
+    theirs to decide. A record system is refused: its records are made by the system, not copied in.
+    Returns ``{"from", "to", "rows", "adopted", "conflicts"}``."""
     import shutil  # noqa: PLC0415
 
-    old, new = parse(dataset.location), parse(value)
+    old = dataset._location()
+    new, source, path = _target_of(dataset, value)
+    if source not in (None, "", LOCAL) and (why := await source_refusal(str(source), await project_of(dataset))):
+        raise ValueError(f"rows cannot move into {source} yet: {why}")
     if new.kind == RECORDS:
         raise ValueError("rows move between file locations (local, a folder, Drive, S3); a record system makes its own records")
     if new.label() == old.label():
-        return {"from": old.label(), "to": new.label(), "rows": len(_row_keys(rows_folder(dataset, old)))}
-    async with session(dataset, old, write=False) as source:
-        keys = _row_keys(source)
+        n = len(_row_keys(rows_folder(dataset, old)))
+        return {"from": old.label(), "to": new.label(), "rows": n, "adopted": 0, "conflicts": []}
+    async with session(dataset, old, write=False) as here:
+        keys = set(_row_keys(here))
         target = rows_root(dataset.asset_ref, new, f"{dataset.id}-{_digest(json.dumps(new.raw, sort_keys=True).encode())}" if new.remote else str(dataset.id))
-        if _row_keys(target):
-            raise ValueError(f"{new.label()} already holds rows: move into an empty location")
-        if new.kind == FILES:
+        if new.remote and target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True, exist_ok=True)
+        if new.kind == FILES:   # what is out there first: the working copy starts as it
             async with opened(new, await project_of(dataset)) as store:
-                if any(_row_of(p) for p in await store.list_files()):
-                    raise ValueError(f"{new.label()} already holds rows: move into an empty location")
-        if target.resolve() != source.resolve():
-            if (target / "rows").exists():
-                shutil.rmtree(target / "rows")
-            target.mkdir(parents=True, exist_ok=True)
-            if (source / "rows").is_dir():
-                shutil.copytree(source / "rows", target / "rows")
+                await pull_files(store, target, new)
+        there_before = set(_row_keys(target)) if target.resolve() != here.resolve() else set()
+        conflicts = sorted(keys & there_before)
+        if target.resolve() != here.resolve():
+            for key in sorted(keys - there_before):
+                shutil.copytree(here / "rows" / key, target / "rows" / key, dirs_exist_ok=True)
         if new.kind == FILES:
             async with opened(new, await project_of(dataset)) as store:
                 await push_files(store, target, new)
                 there = {_row_of(p) for p in await store.list_files() if p.endswith("/row.json")}
         else:
             there = set(_row_keys(target))
-        if there != set(keys):
-            raise RuntimeError(f"{new.label()} holds {len(there)} rows after the move, not {len(keys)}: the location was not changed")
-    dataset.location = None if new.kind == LOCAL else new.raw
-    _write_location(Path(dataset.asset_ref), dataset.location)
+        if not keys <= there:
+            raise RuntimeError(f"{new.label()} is missing {len(keys - there)} of the {len(keys)} rows after the move: "
+                               f"where the rows are was not changed")
+    if source is not None:
+        dataset.data_source, dataset.path, dataset.location = source, path, None
+    else:
+        dataset.data_source, dataset.path = None, None
+        dataset.location = None if new.kind == LOCAL else new.raw
+    _write_location(Path(dataset.asset_ref), dataset.location, dataset.data_source, dataset.path)
     if new.remote:   # the new working copy is the one just filled
         final = rows_folder(dataset, new)
         if final.resolve() != target.resolve():
@@ -565,8 +734,11 @@ async def move_rows(dataset: Any, value: Any) -> dict:
                 shutil.rmtree(final)
             final.parent.mkdir(parents=True, exist_ok=True)
             target.rename(final)
+        if source is not None:   # moved there means it holds rows here: no need to ask again first
+            remember(dataset.asset_ref, source, "")
     await dataset.save()
-    return {"from": old.label(), "to": new.label(), "rows": len(keys)}
+    return {"from": old.label(), "to": new.label(), "rows": len(there), "adopted": len(there_before),
+            "conflicts": conflicts}
 
 
 # ── the gate: rows are data, not the project's code ──────────────────────────────────────────────

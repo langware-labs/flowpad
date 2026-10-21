@@ -619,7 +619,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
     const directory = isExplorer;
 
-    // The schema tree: `<project> › Schema › <schema> › …` — the pointer is the kinds unfolded
+    // The data model: `<project> › Data model › <kind> › …` — the pointer is the kinds unfolded
     // down to the selection (schema-tree-pointer.ts), each one a step back up.
     if (dock?.viewType === ViewType.SCHEMA_TREE) {
       const steps = parseSchemaTreePointer(dock.pointer);

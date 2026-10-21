@@ -51,6 +51,7 @@ const MACHINE_STATUS_LABEL: Record<ExecutionEnvironmentStatus, ReactNode> = {
   [ExecutionEnvironmentStatus.NOT_FOUND]: <Trans>Not found</Trans>,
   [ExecutionEnvironmentStatus.ERROR]: <Trans>Unreachable</Trans>,
   [ExecutionEnvironmentStatus.NEW]: <Trans>New</Trans>,
+  [ExecutionEnvironmentStatus.DISCONNECTED]: <Trans>Disconnected</Trans>,
 };
 
 function machineStatusLabel(row: MachineRow): ReactNode {

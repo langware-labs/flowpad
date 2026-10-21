@@ -77,6 +77,7 @@ __all__ = [
 #: ``setup``: its driver's own check (a bot not invited, a stage not run).
 NEED_CONNECTION = "connection"
 NEED_SETUP = "setup"
+NEED_CREDENTIAL = "credential"
 
 
 class SetupNeedSpec(DataSpec):

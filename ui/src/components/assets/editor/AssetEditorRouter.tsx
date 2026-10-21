@@ -51,6 +51,8 @@ import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
 import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
+import { GitConnectionRequiredCard } from './GitConnectionRequiredCard';
+import { needsGitConnection } from './git-connection';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { MarkdownEditor, type WikiLinkTarget } from './markdown/MarkdownEditor';
 import { detectLanguage } from '@sdk';
@@ -191,6 +193,10 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
     refetch: refetchEntity,
   } = useEntity<AnyEntity>(typeId);
   const { computeNode, flow } = useAgentContext();
+  // On the hub, a git-stored asset with no git link has no files to read: say so, skip the 404.
+  const gitBlocked =
+    !!typeId &&
+    needsGitConnection(hubReflect, dataManager.getTypeInfo(typeId.type)?.cloud_file_transport, typeIdEntity);
   const {
     data: entityRecord,
     isLoading: recordLoading,
@@ -200,7 +206,8 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
     queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
     queryFn: () => typeIdEntity!.record({ hubReflect }),
     // A fileless asset has no record refs to read: its view renders from the row.
-    enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID && !isFilelessEditor(ptr?.editor),
+    enabled:
+      !!typeIdEntity && !gitBlocked && ptr?.method === AssetRoutingMethod.TYPEID && !isFilelessEditor(ptr?.editor),
   });
 
   usePrimaryContentPending(!!typeId && (entityLoading || recordLoading));
@@ -320,6 +327,15 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
   }
   if (ptr.editor === AssetEditor.DIAGNOSIS_REQUEST) {
     return <DiagnosisRequestView value={ptr.value} />;
+  }
+
+  if (gitBlocked && typeIdEntity) {
+    return (
+      <GitConnectionRequiredCard
+        name={typeIdEntity.displayName || typeId.toString()}
+        onRetry={() => void refetchEntity()}
+      />
+    );
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /

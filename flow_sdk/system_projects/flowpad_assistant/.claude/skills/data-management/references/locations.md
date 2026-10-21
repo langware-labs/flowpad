@@ -9,7 +9,24 @@ is yours to build.
 
 ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
 
-## The forms
+## Prefer a data source
+
+Rows that live outside the project go in a **data source** the project declares
+(`agentic-assets/data_source/<name>/data_source.json`: `data_driver_name` + `data_driver_config`), and
+the dataset names it — not a driver:
+
+```json
+"data_source": "gtm-drive", "path": "gtm-personas"          // path: optional, default the dataset's folder name
+"data_source": "gtm-crm", "location": {"config": {"resource": "tasks"}, "map": {...}, "by": "crm"}   // a record system
+```
+
+- No `data_source` (or `"local"`) = the default source, `<dataset>/rows/`.
+- While the source is not set up on this machine the rows are read and written locally, and the
+  dataset's `rows_note` says why. That is not an error: don't "fix" it by inlining a location.
+- A folder that already holds rows is adopted (read on the first pull; `move-rows` keeps them).
+- `move-rows {"location": {"data_source": "<name>"}}` moves a dataset's rows into a source.
+
+## The inline forms (older; still read)
 
 | `location` | Rows live in |
 | --- | --- |
