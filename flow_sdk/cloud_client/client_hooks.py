@@ -148,7 +148,7 @@ async def _on_response(response: httpx.Response) -> None:
             # HTTP-layer auth failure (envelope status=fail with auth marker).
             # This is a real credential rejection from the hub's identity
             # check, not a WS-handshake reject — drop login state.
-            await invalidate_hub_login("rejected")
+            await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
             return
         await hub_error_reporter.recovered(method=response.request.method, path=request_path(response.request.url))
         return
@@ -157,7 +157,7 @@ async def _on_response(response: httpx.Response) -> None:
         await response.aread()
         # The one code that means the credential is dead (the hub sets it on nothing else).
         if not anonymous and _error_code(response) == "unauthenticated":
-            await invalidate_hub_login("rejected")
+            await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
     # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
     # error reporter so it becomes a HubClientErrorInfo warning in the UI
     # (createHubRequestFailedWarning), carrying method/path/status/message
@@ -175,6 +175,11 @@ async def _on_response(response: httpx.Response) -> None:
         # and the caller receives the hub's message verbatim in the proxied body.
         message=f"HTTP {status_code}" if passthrough else _response_message(response),
     )
+
+
+def _auth_signal_detail(response: httpx.Response) -> str:
+    """Which hub answer claimed the credential is dead — logged with the verdict."""
+    return f"{response.request.method} {request_path(response.request.url)} -> {response.status_code}: {_response_message(response)}"
 
 
 def _error_code(response: httpx.Response) -> str | None:
