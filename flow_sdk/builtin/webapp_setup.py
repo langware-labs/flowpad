@@ -86,8 +86,14 @@ def _run(command: str, folder: Path, log_name: str, seconds: float) -> tuple[int
     try:
         with log_file.open("ab") as log:
             done = subprocess.run(  # noqa: S602 — the app author's own install/build command
-                command, cwd=str(folder), shell=True, stdin=subprocess.DEVNULL, stdout=log,
-                stderr=subprocess.STDOUT, timeout=seconds, check=False,
+                command,
+                cwd=str(folder),
+                shell=True,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                timeout=seconds,
+                check=False,
             )
         code = done.returncode
     except subprocess.TimeoutExpired:
@@ -109,7 +115,9 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
     if which not in STEPS:
-        return _answer(ExitCode.NOT_FOUND, f"a web app has no setup step {which!r} (it has {', '.join(STEPS)})", ran=False)
+        return _answer(
+            ExitCode.NOT_FOUND, f"a web app has no setup step {which!r} (it has {', '.join(STEPS)})", ran=False
+        )
     if which == "present":
         from flow_sdk.builtin.webapp_load import present  # noqa: PLC0415
 
@@ -233,8 +241,11 @@ def _elsewhere(app, process: _Process, others: list[_DeclaredRow]) -> tuple[set[
     rows = [row for row in _declared_by(app) if row[1] != process.name] + others
     taken = {declared.port for _who, _name, declared in rows}
     clash = next(
-        (who for who, _name, declared in rows
-         if mine is not None and mine.required and declared.required and declared.port == mine.port),
+        (
+            who
+            for who, _name, declared in rows
+            if mine is not None and mine.required and declared.required and declared.port == mine.port
+        ),
         "",
     )
     return taken, clash
@@ -244,19 +255,22 @@ def _elsewhere(app, process: _Process, others: list[_DeclaredRow]) -> tuple[set[
 _STARTING: set[int] = set()
 
 
-def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = None) -> tuple[app_ports.PortAnswer, list, bool]:
+def _look(
+    app, process: _Process, taken: set[int], snapshot: Optional[list] = None
+) -> tuple[app_ports.PortAnswer, list, bool]:
     """What is declared against what is live — one trip off the loop. ``(the rule's answer, this
     process's listeners, it answers its health path)``."""
     serving = process.serving
     snapshot = app_ports.listeners() if snapshot is None else snapshot
     others = [one.serving for one in _processes(app) if one.serving is not serving]
     theirs = [declared.port for declared in map(_declared, others) if declared is not None]
-    mine = app_ports.of_app(
-        snapshot, Path(app.asset_ref), serving.start_cmd, [one.start_cmd for one in others], theirs
-    )
+    mine = app_ports.of_app(snapshot, Path(app.asset_ref), serving.start_cmd, [one.start_cmd for one in others], theirs)
     answer = app_ports.decide(
-        _declared(serving), mine, snapshot,
-        reserved=taken | _STARTING, answers=lambda port: health_answers(port, serving.health),
+        _declared(serving),
+        mine,
+        snapshot,
+        reserved=taken | _STARTING,
+        answers=lambda port: health_answers(port, serving.health),
     )
     # A holder that could not be named was already asked its health by the rule.
     up = answer.state == "running" and (answer.holder is None or health_answers(answer.port, serving.health))
@@ -275,14 +289,16 @@ async def answers_now(webapp_id: str) -> bool:
     placed = await _placed(app)
     services = await service_endpoint_ports(app) if any(p.service is not None for p in processes) else {}
     ports = [
-        (placed.backend.port if placed is not None else None) if process.service is None
+        (placed.backend.port if placed is not None else None)
+        if process.service is None
         else services.get(service_endpoint_name(app, process.service))
         for process in processes
     ]
     if not ports or not all(ports):
         return False
-    probes = (asyncio.to_thread(health_answers, int(port), process.serving.health)
-              for port, process in zip(ports, processes))
+    probes = (
+        asyncio.to_thread(health_answers, int(port), process.serving.health) for port, process in zip(ports, processes)
+    )
     return all(await asyncio.gather(*probes))
 
 
@@ -326,7 +342,13 @@ async def _start_all(app, folder: Path, *, check: bool) -> ReturnedValue:
 
 
 async def _start(
-    app, folder: Path, process: _Process, others: list[_DeclaredRow], env: dict, *, check: bool,
+    app,
+    folder: Path,
+    process: _Process,
+    others: list[_DeclaredRow],
+    env: dict,
+    *,
+    check: bool,
     snapshot: Optional[list] = None,
 ) -> ReturnedValue:
     serving = process.serving
@@ -334,7 +356,9 @@ async def _start(
     taken, clash = _elsewhere(app, process, others)
     if clash:
         port = _declared(serving).port
-        return _answer(ExitCode.NOT_YET, f"port {port} is declared by both {who} and {clash} — one of them must change", ran=False)
+        return _answer(
+            ExitCode.NOT_YET, f"port {port} is declared by both {who} and {clash} — one of them must change", ran=False
+        )
 
     found, mine, up = await asyncio.to_thread(_look, app, process, taken, snapshot)
     if not up and not check and found.state != "conflict":
@@ -354,11 +378,15 @@ async def _start(
     if found.state in ("conflict", "wrong_port"):
         # The page's reason is the app's own (its node already carries its name); a service's names it.
         named = f"{who}: " if process.service is not None else ""
-        return _answer(ExitCode.NOT_YET, f"{named}{found.note}" if found.state == "conflict" else f"{who} {found.note}", ran=False)
+        return _answer(
+            ExitCode.NOT_YET, f"{named}{found.note}" if found.state == "conflict" else f"{who} {found.note}", ran=False
+        )
     if up:
         await _keep(app, process, found.port, serving.start_cmd.replace("{port}", str(found.port)))
         return _answer(ExitCode.OK, f"running at http://127.0.0.1:{found.port}", ran=False, value=str(found.port))
-    return _answer(ExitCode.NOT_YET, f"{who} is not {'answering' if found.state == 'running' else 'running'}", ran=False)
+    return _answer(
+        ExitCode.NOT_YET, f"{who} is not {'answering' if found.state == 'running' else 'running'}", ran=False
+    )
 
 
 async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAnswer, env: dict) -> ReturnedValue:
@@ -370,20 +398,29 @@ async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAns
     port = found.port
     command = serving.start_cmd.replace("{port}", str(port))
     began = time.monotonic()
+    oom_before = await asyncio.to_thread(dev_server.oom_kills)
     _STARTING.add(port)
     try:
         proc, log_file = await asyncio.to_thread(
-            dev_server.start_process, command, cwd=folder, port=port, name=f"{app.name}-{process.name}".strip("-"), env=env
+            dev_server.start_process,
+            command,
+            cwd=folder,
+            port=port,
+            name=f"{app.name}-{process.name}".strip("-"),
+            env=env,
         )
 
         async def failed(detail: str) -> ReturnedValue:
+            starved = await _out_of_memory(who, oom_before, log_file)
             await asyncio.to_thread(dev_server.stop_group, proc.pid)
-            return _answer(ExitCode.NOT_YET, detail)
+            return _answer(ExitCode.NOT_YET, starved or detail)
 
         # A start command may hand off to a daemon and exit 0 (``docker compose up -d``): only a non-zero
         # exit is a crash. A server that took another port than the one it was told ends the wait too.
         opened = await asyncio.to_thread(
-            dev_server.wait_for_port, port, START_SECONDS,
+            dev_server.wait_for_port,
+            port,
+            START_SECONDS,
             exited=lambda: proc.poll() not in (None, 0) or bool(app_ports.listening_under(proc.pid) - {port}),
         )
     finally:
@@ -411,6 +448,23 @@ async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAns
         return await failed(f"{who} has no local placement to be served from")
     detail = f"running at http://127.0.0.1:{port}"
     return _answer(ExitCode.OK, f"{detail} ({found.note})" if found.note else detail, value=str(port))
+
+
+async def _out_of_memory(who: str, before: Optional[int], log_file: str) -> Optional[str]:
+    """Why a start failed when the kernel killed processes for lack of memory while it ran, else None.
+
+    A killed server never answers, so the start reads "does not answer" — true, and it sends the reader
+    to the app's code. The kernel's own count names the cause: this machine is too small for what runs on it."""
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    after = await asyncio.to_thread(dev_server.oom_kills)
+    if before is None or after is None or after <= before:
+        return None
+    killed = after - before
+    return (
+        f"{who} ran out of memory: the machine killed {killed} process{'es' if killed > 1 else ''} "
+        f"for lack of memory while it started — log: {log_file}"
+    )
 
 
 def _answers_by(port: int, health: str, deadline: float, proc) -> bool:
@@ -477,17 +531,19 @@ async def ports(webapp_id: str) -> list[dict]:
         found, _mine, _up = await asyncio.to_thread(_look, app, process, taken, snapshot)
         declared = _declared(process.serving)
         live = found.state in ("running", "wrong_port")
-        rows.append({
-            "app": app.name,
-            "process": process.name or "page",
-            "declared": declared.port if declared is not None else None,
-            "required": bool(declared is not None and declared.required),
-            "state": "conflict" if clash else "stopped" if found.state == "start" else found.state,
-            "port": found.port if live else None,
-            "pid": found.holder.pid if live and found.holder is not None else None,
-            "note": f"also declared by {clash}" if clash else found.note,
-            "log": _log_of(app, process, found.port) if live else None,
-        })
+        rows.append(
+            {
+                "app": app.name,
+                "process": process.name or "page",
+                "declared": declared.port if declared is not None else None,
+                "required": bool(declared is not None and declared.required),
+                "state": "conflict" if clash else "stopped" if found.state == "start" else found.state,
+                "port": found.port if live else None,
+                "pid": found.holder.pid if live and found.holder is not None else None,
+                "note": f"also declared by {clash}" if clash else found.note,
+                "log": _log_of(app, process, found.port) if live else None,
+            }
+        )
     return rows
 
 
