@@ -131,8 +131,20 @@ def project_hub(monkeypatch):
             raise HubError(row, f"hub said {row}")
         return row
 
+    async def _roster(entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert action == "members"
+        return _ROSTER
+
     monkeypatch.setattr(hub_http, "hub_get_or_raise", _get_or_raise)
+    monkeypatch.setattr(hub_http, "hub_get", _roster)
     return rows
+
+
+#: The recipient's own row on every project's hub roster: Dana invited them, Avi owns it.
+_ROSTER = [
+    {"type": "user", "role": "owner", "user_name": "Avi Owner"},
+    {"type": "user", "role": "member", "user_name": "Me", "invited_by_name": "Dana Levi"},
+]
 
 
 def _hub_project(pid: str) -> dict:
@@ -161,6 +173,7 @@ async def test_a_project_link_hydrates_it_and_hands_the_ui_its_set_up(project_hu
     params = _redirect_params(await _call_local("GET", f"project/{pid}/open"))
 
     assert params["project_id"] == [pid] and params["setup_git"] == ["1"]
+    assert params["sender_name"] == ["Dana Levi"], "the set-up names who shared it"
     assert '"owner": "langware-labs"' in params["git_origin"][0]
     row = await Project.get_one({"id": pid})
     assert row is not None and row.origin.owner == "langware-labs", "the link mirrors the project before set-up"
@@ -204,8 +217,11 @@ def project_list_hub(monkeypatch):
 
     rows: list[dict] = []
 
-    async def _hub_get(entity_type, entity_id=None, *args, **kwargs):
-        assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value and entity_id is None
+    async def _hub_get(entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value
+        if action == "members":
+            return _ROSTER
+        assert entity_id is None
         return rows
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
@@ -229,9 +245,11 @@ async def test_a_hub_project_this_desktop_never_saw_is_offered_for_set_up(projec
     [link] = await _new_cloud_projects()
 
     assert link["project_id"] == pid and link["setup_git"] == "1" and link["title"] == f"course-{pid[:8]}"
+    assert link["sender_name"] == "Dana Levi", "the set-up names who shared it"
     assert '"owner": "langware-labs"' in link["git_origin"]
     row = await Project.get_one({"id": pid})
     assert row is not None and row.remote and not row.fs_storage_mount_path, "mirrored file-less, ready to set up"
+    assert row.members[1]["invited_by_name"] == "Dana Levi", "cached for the footer warning"
     assert await _new_cloud_projects() == [], "offered once: the mirrored row is no longer new"
 
 

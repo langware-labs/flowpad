@@ -1825,6 +1825,11 @@ msgstr "פרויקט שנמצא ב-Hub נמשך בכל מקום שבו הפרו�
 #~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "A project was shared with you"
+msgstr "שותף איתכם פרויקט"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "כבר קיים פרויקט בשם הזה"
 
@@ -25539,6 +25544,7 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Someone"
 msgstr "מישהו"

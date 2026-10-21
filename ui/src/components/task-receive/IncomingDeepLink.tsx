@@ -112,7 +112,7 @@ function useOfferNewCloudProjects(held: boolean) {
           found.push({
             gitOrigin,
             projectName: link.title || 'Shared',
-            senderName: 'Someone',
+            senderName: link.sender_name,
             projectId: link.project_id,
             nameTaken: link.existing_project_id
               ? { existingProjectId: link.existing_project_id, suggestedName: link.suggested_name || '' }
@@ -177,7 +177,7 @@ export function IncomingDeepLink() {
     const projectId = params.get('project_id') || undefined;
     const projectError = params.get('project_error');
     const title = params.get('title') || 'Shared';
-    const senderName = params.get('sender_name') || 'Someone';
+    const senderName = params.get('sender_name') || undefined;
     const gitOriginParam = params.get('git_origin');
     let gitOrigin: ProjectOrigin | null = null;
     if (gitOriginParam) {
@@ -246,7 +246,7 @@ export function IncomingDeepLink() {
     }
 
     if (gitOrigin && taskId && isGitOrigin(gitOrigin) && isCompleteGitOrigin(gitOrigin)) {
-      setPendingTask({ taskId, taskTitle: title, senderName, gitOrigin });
+      setPendingTask({ taskId, taskTitle: title, senderName: senderName ?? t`Someone`, gitOrigin });
       return;
     }
 
