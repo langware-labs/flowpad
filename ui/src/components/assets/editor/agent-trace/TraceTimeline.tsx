@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -371,7 +372,7 @@ export function TraceTimeline({
               data-testid="trace-zoom-reset"
             >
               <Maximize2 className="h-3 w-3" />
-              reset zoom
+              <Trans>reset zoom</Trans>
             </button>
           )}
         </>

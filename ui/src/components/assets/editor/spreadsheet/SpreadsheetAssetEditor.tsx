@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { FSRef, Spreadsheet } from '@sdk';
 import { AssetEditorHeader } from '../AssetEditorHeader';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
@@ -26,11 +27,10 @@ function fmtOf(spreadsheet: Spreadsheet, path: string): 'csv' | 'xlsx' {
  * holds unsaved local CSV edits until saved).
  */
 export function SpreadsheetAssetEditor({ fsRef, spreadsheet }: SpreadsheetAssetEditorProps) {
+  const { t } = useLingui();
   const path = fsRef.path;
   const format = fmtOf(spreadsheet, path);
-  const reloadKey = entityReloadKey(
-    (spreadsheet as { updated_date?: unknown }).updated_date,
-  );
+  const reloadKey = entityReloadKey((spreadsheet as { updated_date?: unknown }).updated_date);
   const [dirty, setDirty] = useState(false);
   const markSpreadsheetEdited = useCallback(() => spreadsheet.markEdit(), [spreadsheet]);
 
@@ -53,10 +53,10 @@ export function SpreadsheetAssetEditor({ fsRef, spreadsheet }: SpreadsheetAssetE
     format === 'xlsx' ? (
       <span
         className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-        title="XLSX is opened read-only — edit the source in a spreadsheet app, or export to CSV to edit here."
+        title={t`XLSX is opened read-only — edit the source in a spreadsheet app, or export to CSV to edit here.`}
         data-testid="xlsx-readonly-badge"
       >
-        Read-only
+        <Trans>Read-only</Trans>
       </span>
     ) : null;
 
@@ -73,12 +73,7 @@ export function SpreadsheetAssetEditor({ fsRef, spreadsheet }: SpreadsheetAssetE
       />
       <div className="min-h-0 flex-1">
         {format === 'csv' ? (
-          <CsvGrid
-            fsRef={fsRef}
-            reloadKey={reloadKey}
-            onDirtyChange={setDirty}
-            onUserEdit={markSpreadsheetEdited}
-          />
+          <CsvGrid fsRef={fsRef} reloadKey={reloadKey} onDirtyChange={setDirty} onUserEdit={markSpreadsheetEdited} />
         ) : (
           <XlsxGrid fsRef={fsRef} reloadKey={reloadKey} />
         )}

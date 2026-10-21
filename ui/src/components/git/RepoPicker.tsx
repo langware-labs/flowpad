@@ -202,6 +202,8 @@ function RepoPickerImpl({
   }, [shown, owner, query, allowedRoles]);
   const orgPending = !!owner && !inList && orgRepos.isLoading;
   const restricted = !!owner && !inList && !!orgRepos.data?.restricted;
+  const filteredCount = filtered.length;
+  const totalCount = shown?.length ?? repos?.length ?? 0;
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -339,7 +341,9 @@ function RepoPickerImpl({
       </div>
       {repos && repos.length > 0 && (
         <div className="text-[11px] text-muted-foreground">
-          {filtered.length} of {shown?.length ?? repos.length} repos
+          <Trans>
+            {filteredCount} of {totalCount} repos
+          </Trans>
         </div>
       )}
     </div>

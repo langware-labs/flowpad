@@ -159,8 +159,8 @@ export function WizardHost() {
               processType={ProcessKind.Wizard}
               initialProcessId={active.process.id}
               dense
-              emptyStateText="The wizard is starting."
-              placeholder="Message the setup wizard..."
+              emptyStateText={t`The wizard is starting.`}
+              placeholder={t`Message the setup wizard...`}
             />
           )}
         </div>

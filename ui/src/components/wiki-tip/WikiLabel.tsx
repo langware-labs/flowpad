@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { ExternalLink, Eye } from 'lucide-react';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
@@ -67,21 +68,21 @@ export function WikiLabel({ wikiword, label, fragment, space }: WikiLabelProps) 
               data-testid="wiki-tip-kind"
               className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
             >
-              Wiki
+              <Trans>Wiki</Trans>
             </span>
             <span data-testid="wiki-tip-title" className="truncate text-sm font-semibold" title={wikiword}>
               {wikiword}
             </span>
           </div>
           <div className="text-xs text-muted-foreground">
-            Open the page here, or peek at it without leaving this view.
+            <Trans>Open the page here, or peek at it without leaving this view.</Trans>
           </div>
           <div className="flex gap-2 pt-1">
             <Button size="sm" variant="secondary" onClick={previewWiki}>
-              <Eye className="me-1 h-3.5 w-3.5" /> Preview
+              <Eye className="me-1 h-3.5 w-3.5" /> <Trans>Preview</Trans>
             </Button>
             <Button size="sm" variant="ghost" onClick={openWiki}>
-              <ExternalLink className="me-1 h-3.5 w-3.5" /> Open
+              <ExternalLink className="me-1 h-3.5 w-3.5" /> <Trans>Open</Trans>
             </Button>
           </div>
         </div>

@@ -175,7 +175,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               and shipped as remote_project_id for the receiver's mapping). */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Project{isRemote ? ' (optional)' : ''}
+              {isRemote ? <Trans>Project (optional)</Trans> : <Trans>Project</Trans>}
             </label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger>

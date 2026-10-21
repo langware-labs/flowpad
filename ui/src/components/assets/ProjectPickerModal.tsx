@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import {
   Dialog,
   DialogContent,
@@ -85,7 +85,7 @@ function renderRow(
       <div className="flex shrink-0 flex-col items-end gap-0.5">
         {r.raw.session_count > 0 && (
           <span className="text-xs text-muted-foreground">
-            {r.raw.session_count} session{r.raw.session_count !== 1 ? 's' : ''}
+            <Plural value={r.raw.session_count} one="# session" other="# sessions" />
           </span>
         )}
         <span className="text-xs text-muted-foreground/70">{relativeTime(r.raw.modified_at)}</span>

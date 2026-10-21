@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { cloudManager } from '@sdk';
 import { LockKeyhole, LogIn } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -24,9 +25,10 @@ interface LoginRequiredOverlayProps {
  * toast on these surfaces: being logged out is a normal state, so we show a
  * clear CTA instead of an error notification.
  */
-export function LoginRequiredOverlay({
-  description = 'Sign in to your Flowpad Cloud account to view and send conversations.',
-}: LoginRequiredOverlayProps) {
+export function LoginRequiredOverlay({ description }: LoginRequiredOverlayProps) {
+  const { t } = useLingui();
+  const descriptionText = description ?? t`Sign in to your Flowpad Cloud account to view and send conversations.`;
+  const cloudUrl = cloudManager.cloudUrl;
   const { isLocal } = usePrivacyMode();
   // The browser profiles of this machine; empty off it (hub), which hides the picker.
   const [browsers, setBrowsers] = useState<Browser[]>([]);
@@ -58,12 +60,17 @@ export function LoginRequiredOverlay({
         </div>
         <div className="space-y-1">
           <h3 className="text-sm font-semibold text-foreground">
-            {isLocal ? 'Unavailable in Local mode' : 'Login required'}
+            {isLocal ? <Trans>Unavailable in Local mode</Trans> : <Trans>Login required</Trans>}
           </h3>
           <p className="text-xs text-muted-foreground">
-            {isLocal
-              ? 'Conversations use Flowpad cloud, which is disabled in Local (private) data-privacy mode. Switch to Connected to sign in and share.'
-              : description}
+            {isLocal ? (
+              <Trans>
+                Conversations use Flowpad cloud, which is disabled in Local (private) data-privacy mode. Switch to
+                Connected to sign in and share.
+              </Trans>
+            ) : (
+              descriptionText
+            )}
           </p>
         </div>
         {!isLocal && (
@@ -71,11 +78,11 @@ export function LoginRequiredOverlay({
             onClick={() => handleLogin()}
             size="sm"
             className="w-full justify-center"
-            title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
+            title={cloudUrl ? t`Logging in to ${cloudUrl}` : undefined}
             data-testid="login-required-overlay-button"
           >
             <LogIn className="me-2 h-4 w-4" />
-            Login
+            <Trans>Login</Trans>
           </Button>
         )}
         {!isLocal && browsers.length > 0 && (
@@ -86,7 +93,7 @@ export function LoginRequiredOverlay({
                 className="-mt-2 self-end text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                 data-testid="login-required-overlay-profile"
               >
-                Select Chrome profile
+                <Trans>Select Chrome profile</Trans>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-w-xs">

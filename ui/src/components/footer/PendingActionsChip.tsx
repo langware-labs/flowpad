@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
@@ -279,7 +280,7 @@ export function PendingActionsChip() {
                         className="px-2 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
                         data-testid="activity-section-heading"
                       >
-                        Activity
+                        <Trans>Activity</Trans>
                       </div>
                     )}
                     <ul className="flex flex-col" data-testid="activity-list">
@@ -319,6 +320,7 @@ const WorkerRow = memo(function WorkerRow({
   onPick: (processId: string, mode: ExecutionMode) => void | Promise<void>;
   onRenamed: () => void;
 }) {
+  const { t } = useLingui();
   const rename = useInlineRename(row.name, async (next) => {
     await AgenticProcess.renameById(row.processId, next);
     AgenticProcess.markEditById(row.processId);
@@ -341,7 +343,7 @@ const WorkerRow = memo(function WorkerRow({
           rename={rename}
           className="min-w-0 flex-1 rounded border border-border bg-background px-1 py-0.5 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           testId="worker-rename-input"
-          ariaLabel="Rename worker"
+          ariaLabel={t`Rename worker`}
         />
       </li>
     );
@@ -379,8 +381,8 @@ const WorkerRow = memo(function WorkerRow({
         type="button"
         onClick={() => rename.startEditing()}
         className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100"
-        aria-label="Rename"
-        title="Rename"
+        aria-label={t`Rename`}
+        title={t`Rename`}
         data-testid="worker-rename-button"
       >
         <Pencil className="h-3 w-3" />

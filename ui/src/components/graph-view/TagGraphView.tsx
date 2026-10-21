@@ -1,4 +1,4 @@
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo } from 'react';
 import { GitFork, Network } from 'lucide-react';
 import { TypeId } from '@sdk';
@@ -85,7 +85,9 @@ export function TagGraphView() {
         data-tag="app.ui.button.clicked"
       >
         <GitFork size={15} />
-        <span>Graph</span>
+        <span>
+          <Trans>Graph</Trans>
+        </span>
       </button>
       <button
         type="button"
@@ -96,7 +98,9 @@ export function TagGraphView() {
         data-tag="app.ui.button.clicked"
       >
         <Network size={15} />
-        <span>Tree</span>
+        <span>
+          <Trans>Tree</Trans>
+        </span>
       </button>
     </div>
   );

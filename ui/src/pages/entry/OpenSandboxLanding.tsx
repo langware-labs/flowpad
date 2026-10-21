@@ -13,6 +13,8 @@ import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
 import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 import { errorMessage, errorStatus, isMissingGitCredential } from '@src/lib/error-message';
 import { ExternalLink, Github, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -84,6 +86,18 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * why rather than being asked a second time.
  */
 const RETURNED_PARAM = 'signed-in';
+
+/**
+ * Where on the box the browser lands: its project's home page.
+ *
+ * Arriving by a shared link is LAUNCHING the project, which is one of the loads
+ * that asks for the home page (`projectHomePageRedirect`). Without a `next` the
+ * hub's `open/system` lands on `/`, which does not ask — so the agent an author set
+ * as the home page showed only through its once-per-machine auto-launch: the first
+ * visitor got it, and everyone after (a second user, a return through sign-in)
+ * landed on the default home.
+ */
+const BOX_ARRIVAL_PATH = withHomePage(DockPointer.root()).toUrl();
 
 /**
  * Accept the invitation to THIS sandbox, if one is waiting for the signed-in user.
@@ -176,7 +190,7 @@ export default function OpenSandboxLanding() {
     try {
       // Round-trips through TypeId so a malformed id fails HERE, with a
       // sentence, rather than becoming a hub URL that 404s.
-      url = workspaceServiceUrl(new TypeId(ComputeNode.type, nodeId).id);
+      url = workspaceServiceUrl(new TypeId(ComputeNode.type, nodeId).id, BOX_ARRIVAL_PATH);
     } catch {
       started.current = true;
       setError(t`This link does not point at a sandbox.`);
@@ -316,7 +330,7 @@ export default function OpenSandboxLanding() {
     void (async () => {
       try {
         await provisionProject(node);
-        window.location.assign(workspaceServiceUrl(node.id));
+        window.location.assign(workspaceServiceUrl(node.id, BOX_ARRIVAL_PATH));
       } catch (e) {
         setLaunching(false);
         // Still no usable credential — the account they connected is not the one

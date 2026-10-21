@@ -694,7 +694,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                               {item.n}
                             </text>
                             <text className="tag" x={lo + 36} y={y + 1}>
-                              SUB-FLOW
+                              <Trans>SUB-FLOW</Trans>
                             </text>
                             <text className="label" x={lo + 36} y={y + 17}>
                               {item.label}
@@ -728,7 +728,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                       return (
                         <g
                           key={item.key}
-                          className={`m${item.reply ? ' reply' : ''}${markClass(item.target)}`}
+                          className={`m ${item.reply ? 'reply' : ''}${markClass(item.target)}`}
                           aria-label={`${item.n}. ${item.label}, from ${item.info.from} to ${item.info.to}`}
                           data-testid="chart-message"
                           {...common}
