@@ -380,6 +380,13 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  // Machines (page=hub): sandboxes and connected computers. No pointer.
+  [ViewType.MACHINES]: {
+    title: msg`Machines`,
+    iconName: 'Monitor',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',

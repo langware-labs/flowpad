@@ -225,7 +225,9 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
  *
  * URL: /dock/hub/home  (page=hub, viewType=home → routed here by ContentPanel).
  */
-export function HubHome() {
+/** `machines` renders only the Machines page (/dock/hub/machines); the default is the home. */
+export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
+  const showMachines = view === 'machines';
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
@@ -341,29 +343,35 @@ export function HubHome() {
   return (
     <div className="flex h-full flex-col overflow-auto">
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
-        {/* Hero — greeting, same typographic treatment as HomeLanding */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            <Trans>
-              Hey{' '}
-              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                {firstName}
-              </span>
-            </Trans>
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            <Trans>Explore your organization and everything you can reach.</Trans>
-          </p>
-          <HubSummaryLine />
-        </div>
+        {!showMachines && (
+          <>
+            {/* Hero — greeting, same typographic treatment as HomeLanding */}
+            <div className="flex flex-col items-center gap-3 text-center">
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+                <Trans>
+                  Hey{' '}
+                  <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                    {firstName}
+                  </span>
+                </Trans>
+              </h1>
+              <p className="text-lg text-muted-foreground">
+                <Trans>Explore your organization and everything you can reach.</Trans>
+              </p>
+              <HubSummaryLine />
+            </div>
 
-        {/* Projects other people gave you — the way from here to FlowPad. */}
-        <SharedProjectsBanner projects={sharedProjects} />
+            {/* Projects other people gave you — the way from here to FlowPad. */}
+            <SharedProjectsBanner projects={sharedProjects} />
 
-        {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
-        <ProjectActionsRow className="w-full self-start" />
+            {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
+            <ProjectActionsRow className="w-full self-start" />
+          </>
+        )}
 
-        {/* Pending invitations.
+        {showMachines && (
+          <>
+            {/* Pending invitations.
             Lives here because the hub page has no Stream Inbox: `renderHubBody`
             (content-panel.tsx) has no ViewType.STREAM_INBOX case, so `StreamInboxView` — and
             with it the usual home for `MembershipInvitations` — never renders
@@ -371,193 +379,191 @@ export function HubHome() {
             to appear. Above Sandboxes deliberately: a sandbox share is the
             invitation this page will mostly receive, and accepting one changes
             the list directly below it. Renders nothing when there are none. */}
-        <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
-        {pendingInviteCount > 0 && (
-          <p className="-mt-2 text-xs text-muted-foreground">
-            <Trans>Accepting adds it to your Sandboxes below.</Trans>
-          </p>
-        )}
+            <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
+            {pendingInviteCount > 0 && (
+              <p className="-mt-2 text-xs text-muted-foreground">
+                <Trans>Accepting adds it to your Sandboxes below.</Trans>
+              </p>
+            )}
 
-        {/* Machines — cloud sandboxes (E2B, ComputeNode flavor=workspace) and your own
-            computers. One "+" tile opens the sub-type catalogue, the same shape as
-            the desktop's "Add connection" (DesktopTile + TileSection dialog). */}
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            <Trans>Machines</Trans>
-          </h2>
-          <DesktopTile
-            Icon={Plus}
-            label={creating ? t`Creating…` : t`Add machine`}
-            loading={creating}
-            onClick={() => setAddMachineOpen(true)}
-            data-testid="add-machine-open"
-          />
-          <Dialog open={addMachineOpen} onOpenChange={setAddMachineOpen}>
-            <DialogContent className="max-w-2xl" data-testid="add-machine-dialog">
-              <DialogHeader>
-                <DialogTitle>
-                  <Trans>Add machine</Trans>
-                </DialogTitle>
-                <DialogDescription>
-                  <Trans>Start a cloud sandbox, or connect a computer you own.</Trans>
-                </DialogDescription>
-              </DialogHeader>
-              <TileSection title={<Trans>Machine type</Trans>}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DesktopTile
-                      Icon={Monitor}
-                      label={t`Sandbox`}
-                      disabled={!canCreateSandbox}
-                      onClick={() => {
-                        setAddMachineOpen(false);
-                        setNewSandbox({});
-                      }}
-                      data-testid="new-sandbox-button"
-                    />
-                  </TooltipTrigger>
-                  {!canCreateSandbox && (
-                    <TooltipContent>
-                      {!sandboxesEnabled ? (
-                        // An operator's missing provider config, not something the viewer can retry.
-                        <Trans>This hub isn't configured to run sandboxes</Trans>
-                      ) : (
-                        <Trans>Sign in to create sandboxes</Trans>
+            {/* Machines — hidden until the summary line's Machines chip is clicked. */}
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                <Trans>Machines</Trans>
+              </h2>
+              <DesktopTile
+                Icon={Plus}
+                label={creating ? t`Creating…` : t`Add machine`}
+                loading={creating}
+                onClick={() => setAddMachineOpen(true)}
+                data-testid="add-machine-open"
+              />
+              <Dialog open={addMachineOpen} onOpenChange={setAddMachineOpen}>
+                <DialogContent className="max-w-2xl" data-testid="add-machine-dialog">
+                  <DialogHeader>
+                    <DialogTitle>
+                      <Trans>Add machine</Trans>
+                    </DialogTitle>
+                    <DialogDescription>
+                      <Trans>Start a cloud sandbox, or connect a computer you own.</Trans>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <TileSection title={<Trans>Machine type</Trans>}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DesktopTile
+                          Icon={Monitor}
+                          label={t`Sandbox`}
+                          disabled={!canCreateSandbox}
+                          onClick={() => {
+                            setAddMachineOpen(false);
+                            setNewSandbox({});
+                          }}
+                          data-testid="new-sandbox-button"
+                        />
+                      </TooltipTrigger>
+                      {!canCreateSandbox && (
+                        <TooltipContent>
+                          {!sandboxesEnabled ? (
+                            // An operator's missing provider config, not something the viewer can retry.
+                            <Trans>This hub isn't configured to run sandboxes</Trans>
+                          ) : (
+                            <Trans>Sign in to create sandboxes</Trans>
+                          )}
+                        </TooltipContent>
                       )}
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DesktopTile
-                      Icon={Laptop}
-                      label={t`Machine`}
-                      disabled={!currentUser}
-                      onClick={() => {
-                        setAddMachineOpen(false);
-                        setAddMachineCode('');
-                      }}
-                      data-testid="add-machine-button"
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {currentUser ? (
-                      <Trans>Run `flow connect` on a machine and enter its code here</Trans>
-                    ) : (
-                      <Trans>Sign in to add machines</Trans>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </TileSection>
-            </DialogContent>
-          </Dialog>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DesktopTile
+                          Icon={Laptop}
+                          label={t`Machine`}
+                          disabled={!currentUser}
+                          onClick={() => {
+                            setAddMachineOpen(false);
+                            setAddMachineCode('');
+                          }}
+                          data-testid="add-machine-button"
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {currentUser ? (
+                          <Trans>Run `flow connect` on a machine and enter its code here</Trans>
+                        ) : (
+                          <Trans>Sign in to add machines</Trans>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TileSection>
+                </DialogContent>
+              </Dialog>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {sandboxes.map((d) => (
-              <div
-                key={d.id}
-                data-testid="sandbox-card"
-                data-node-id={d.id}
-                data-provider-id={d.node_provider_id}
-                data-status={details[d.id]?.status}
-                title={cardEnabled(d) ? undefined : t`Sandbox unavailable`}
-                className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
-                  details[d.id]?.status,
-                )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <CardGlyph node={d} />
-                  {editingId === d.id ? (
-                    <input
-                      autoFocus
-                      value={draftName}
-                      onChange={(e) => setDraftName(e.target.value)}
-                      onBlur={() => {
-                        void renameSandbox(d, draftName);
-                        setEditingId(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur();
-                        else if (e.key === 'Escape') setEditingId(null);
-                      }}
-                      data-testid="sandbox-name-input"
-                      className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraftName(d.name || '');
-                        setEditingId(d.id);
-                      }}
-                      disabled={!cardEnabled(d)}
-                      className="min-w-0 flex-1 truncate text-start text-sm hover:underline disabled:pointer-events-none"
-                      title={cardEnabled(d) ? t`Click to rename` : undefined}
-                      data-testid="sandbox-name"
-                    >
-                      {d.name || t`Sandbox`}
-                    </button>
-                  )}
-                  {/* A labelled button, and visible WITHOUT hovering.
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {sandboxes.map((d) => (
+                  <div
+                    key={d.id}
+                    data-testid="sandbox-card"
+                    data-node-id={d.id}
+                    data-provider-id={d.node_provider_id}
+                    data-status={details[d.id]?.status}
+                    title={cardEnabled(d) ? undefined : t`Sandbox unavailable`}
+                    className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
+                      details[d.id]?.status,
+                    )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <CardGlyph node={d} />
+                      {editingId === d.id ? (
+                        <input
+                          autoFocus
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          onBlur={() => {
+                            void renameSandbox(d, draftName);
+                            setEditingId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                            else if (e.key === 'Escape') setEditingId(null);
+                          }}
+                          data-testid="sandbox-name-input"
+                          className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftName(d.name || '');
+                            setEditingId(d.id);
+                          }}
+                          disabled={!cardEnabled(d)}
+                          className="min-w-0 flex-1 truncate text-start text-sm hover:underline disabled:pointer-events-none"
+                          title={cardEnabled(d) ? t`Click to rename` : undefined}
+                          data-testid="sandbox-name"
+                        >
+                          {d.name || t`Sandbox`}
+                        </button>
+                      )}
+                      {/* A labelled button, and visible WITHOUT hovering.
                       Opening is the one thing you come to this card to do, and
                       as a hover-only icon it was both undiscoverable and
                       indistinguishable from the share/secrets/delete icons
                       beside it. Those stay as hover icons — they are the rarer,
                       more destructive actions. */}
-                  {/* Two different acts behind one slot. A box that was never
+                      {/* Two different acts behind one slot. A box that was never
                       launched has no VM to open — the hub answers "this machine
                       has not been set up yet" — so offering "Open" would be a
                       button that 409s. Launch asks first; Open does not. */}
-                  {/* And nothing at all while the probe says the box is
+                      {/* And nothing at all while the probe says the box is
                       unreachable: there is a VM, so "Launch" is the wrong offer,
                       but opening it can only fail. The status line beside it
                       already says "Unreachable"; a button that reliably errors
                       would just be a second way to learn that. The slot comes
                       back on its own when the next poll finds the box. */}
-                  {isLaunched(d)
-                    ? !isUnreachable(details[d.id]) && (
+                      {isLaunched(d)
+                        ? !isUnreachable(details[d.id]) && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openSandbox(d)}
+                              disabled={!cardEnabled(d)}
+                              aria-label={t`Open sandbox`}
+                              data-testid="sandbox-open"
+                              className="h-7 shrink-0 px-2.5 text-xs"
+                            >
+                              <Trans>Open</Trans>
+                            </Button>
+                          )
+                        : null}
+                      {/* A connected machine's own shells: each click spins out one more
+                      terminal session on it (the same path as the terminal strip). */}
+                      {isUserMachine(d) && (
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => openSandbox(d)}
+                          onClick={() => void navigation.openNewShell({ computeNode: d })}
                           disabled={!cardEnabled(d)}
-                          aria-label={t`Open sandbox`}
-                          data-testid="sandbox-open"
+                          aria-label={t`Open a terminal on this machine`}
+                          data-testid="machine-terminal"
                           className="h-7 shrink-0 px-2.5 text-xs"
                         >
-                          <Trans>Open</Trans>
+                          <Trans>Terminal</Trans>
                         </Button>
-                      )
-                    : null}
-                  {/* A connected machine's own shells: each click spins out one more
-                      terminal session on it (the same path as the terminal strip). */}
-                  {isUserMachine(d) && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void navigation.openNewShell({ computeNode: d })}
-                      disabled={!cardEnabled(d)}
-                      aria-label={t`Open a terminal on this machine`}
-                      data-testid="machine-terminal"
-                      className="h-7 shrink-0 px-2.5 text-xs"
-                    >
-                      <Trans>Terminal</Trans>
-                    </Button>
-                  )}
-                  {isLaunched(d) ? null : (
-                    <Button
-                      size="sm"
-                      onClick={() => setLaunching(d)}
-                      disabled={!cardEnabled(d) || launchingId === d.id}
-                      aria-label={t`Launch sandbox`}
-                      data-testid="sandbox-launch"
-                      className="h-7 shrink-0 px-2.5 text-xs"
-                    >
-                      {launchingId === d.id && <Loader2 className="me-1.5 h-3 w-3 animate-spin" />}
-                      <Trans>Launch</Trans>
-                    </Button>
-                  )}
-                  {/* Upgrade the FlowPad app INSIDE the box — `flow stop`,
+                      )}
+                      {isLaunched(d) ? null : (
+                        <Button
+                          size="sm"
+                          onClick={() => setLaunching(d)}
+                          disabled={!cardEnabled(d) || launchingId === d.id}
+                          aria-label={t`Launch sandbox`}
+                          data-testid="sandbox-launch"
+                          className="h-7 shrink-0 px-2.5 text-xs"
+                        >
+                          {launchingId === d.id && <Loader2 className="me-1.5 h-3 w-3 animate-spin" />}
+                          <Trans>Launch</Trans>
+                        </Button>
+                      )}
+                      {/* Upgrade the FlowPad app INSIDE the box — `flow stop`,
                       `flow upgrade`, start — so a fleet is kept current without
                       anyone opening a terminal on the machines.
 
@@ -567,55 +573,55 @@ export function HubHome() {
                       hover-only, unlike the icons after it: this is how a box
                       gets a fix, and an upgrade nobody can find is an upgrade
                       nobody runs. */}
-                  {isLaunched(d) && !isUnreachable(details[d.id]) && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => setUpgrading(d)}
-                          disabled={!cardEnabled(d) || upgradingId === d.id}
-                          aria-label={t`Upgrade FlowPad on this sandbox`}
-                          data-testid="sandbox-upgrade"
-                          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                        >
-                          {upgradingId === d.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <ArrowUpCircle className="h-4 w-4" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {upgradingId === d.id ? (
-                          <Trans>Upgrading — this takes a minute or two</Trans>
-                        ) : (
-                          <Trans>Upgrade FlowPad on this sandbox</Trans>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSharing(d)}
-                    disabled={!cardEnabled(d) || !currentUser}
-                    aria-label={t`Share sandbox`}
-                    data-testid="sandbox-share"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingLogin(d)}
-                    disabled={!cardEnabled(d) || !currentUser}
-                    aria-label={t`Login access`}
-                    title={t`Who may log in to this sandbox`}
-                    data-testid="sandbox-login-access"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                  >
-                    <ShieldCheck className="h-4 w-4" />
-                  </button>
-                  {/* Sign THIS box out — shown only when the box is running the
+                      {isLaunched(d) && !isUnreachable(details[d.id]) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => setUpgrading(d)}
+                              disabled={!cardEnabled(d) || upgradingId === d.id}
+                              aria-label={t`Upgrade FlowPad on this sandbox`}
+                              data-testid="sandbox-upgrade"
+                              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                            >
+                              {upgradingId === d.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <ArrowUpCircle className="h-4 w-4" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {upgradingId === d.id ? (
+                              <Trans>Upgrading — this takes a minute or two</Trans>
+                            ) : (
+                              <Trans>Upgrade FlowPad on this sandbox</Trans>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSharing(d)}
+                        disabled={!cardEnabled(d) || !currentUser}
+                        aria-label={t`Share sandbox`}
+                        data-testid="sandbox-share"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingLogin(d)}
+                        disabled={!cardEnabled(d) || !currentUser}
+                        aria-label={t`Login access`}
+                        title={t`Who may log in to this sandbox`}
+                        data-testid="sandbox-login-access"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                      </button>
+                      {/* Sign THIS box out — shown only when the box is running the
                       session of the person looking at the page.
 
                       The condition is the point. A box holds one cloud session,
@@ -628,64 +634,66 @@ export function HubHome() {
 
                       This does NOT sign the viewer out of the hub page: the
                       credentials being cleared live on the box's disk. */}
-                  {isSignedInAsMe(d, currentUser?.email) && (
-                    <button
-                      type="button"
-                      onClick={() => void logoutSandbox(d)}
-                      disabled={loggingOutId === d.id || !cardEnabled(d)}
-                      aria-label={t`Sign this sandbox out`}
-                      title={t`Sign out of this sandbox (you stay signed in here)`}
-                      data-testid="sandbox-logout"
-                      className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                    >
-                      {loggingOutId === d.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <LogOut className="h-4 w-4" />
+                      {isSignedInAsMe(d, currentUser?.email) && (
+                        <button
+                          type="button"
+                          onClick={() => void logoutSandbox(d)}
+                          disabled={loggingOutId === d.id || !cardEnabled(d)}
+                          aria-label={t`Sign this sandbox out`}
+                          title={t`Sign out of this sandbox (you stay signed in here)`}
+                          data-testid="sandbox-logout"
+                          className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                        >
+                          {loggingOutId === d.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <LogOut className="h-4 w-4" />
+                          )}
+                        </button>
                       )}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={openSandboxSecrets}
-                    disabled={!cardEnabled(d)}
-                    aria-label={t`Machine secrets`}
-                    data-testid="sandbox-secrets"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void deleteSandbox(d)}
-                    disabled={deletingId === d.id || !cardEnabled(d)}
-                    aria-label={t`Delete sandbox`}
-                    data-testid="sandbox-delete"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
-                  >
-                    {deletingId === d.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-                <SandboxStatus
-                  info={details[d.id]}
-                  now={now}
-                  launched={isLaunched(d)}
-                  launching={launchingId === d.id}
-                  loggedInUser={d.logged_in_user}
-                  autoLogin={d.auto_login}
-                />
+                      <button
+                        type="button"
+                        onClick={openSandboxSecrets}
+                        disabled={!cardEnabled(d)}
+                        aria-label={t`Machine secrets`}
+                        data-testid="sandbox-secrets"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteSandbox(d)}
+                        disabled={deletingId === d.id || !cardEnabled(d)}
+                        aria-label={t`Delete sandbox`}
+                        data-testid="sandbox-delete"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                      >
+                        {deletingId === d.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    <SandboxStatus
+                      info={details[d.id]}
+                      now={now}
+                      launched={isLaunched(d)}
+                      launching={launchingId === d.id}
+                      loggedInUser={d.logged_in_user}
+                      autoLogin={d.auto_login}
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Progress used to render HERE, behind a dialog that had already
+              {/* Progress used to render HERE, behind a dialog that had already
               closed. It now lives inside NewSandboxDialog, which stays open for
               the whole create — so there is nothing left to show on the page. */}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* New-sandbox modal: name + optional git repo (with the connect-GitHub gate). */}

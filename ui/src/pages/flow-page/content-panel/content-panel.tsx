@@ -343,6 +343,8 @@ function ContentPanelBody({
             <InboundView />
           </Suspense>
         );
+      case ViewType.MACHINES:
+        return <HubHome view="machines" />;
       case ViewType.HOME:
       default:
         return <HubHome />;
