@@ -6190,6 +6190,10 @@ msgstr "Compute Op"
 msgid "compute_node-…"
 msgstr "compute_node-…"
 
+#: src/components/explorer-view/useExplorerModel.tsx
+msgid "Computer"
+msgstr "Computer"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
 msgstr "Computing diff…"
@@ -12917,6 +12921,7 @@ msgstr "History of {scopeLabel}’s budget"
 msgid "Holds"
 msgstr "Holds"
 
+#: src/components/explorer-view/useExplorerModel.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -20760,6 +20765,7 @@ msgstr "project"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
+#: src/components/explorer-view/useExplorerModel.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
