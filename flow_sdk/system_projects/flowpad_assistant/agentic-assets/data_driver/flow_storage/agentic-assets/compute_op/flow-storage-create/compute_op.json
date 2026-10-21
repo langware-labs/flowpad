@@ -1,0 +1,26 @@
+{
+  "type": "compute_op",
+  "id": "d52dd744-7ba0-427a-9ea7-30c4df754f0d",
+  "name": "flow-storage-create",
+  "label": "Create the data store",
+  "description": "A data store on the hub for this project (kept when one is named already).",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" create --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" create --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE create --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 60,
+    "source_step": "create"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" create --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" create --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE create --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "create"
+  }
+}

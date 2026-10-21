@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, AgentPlace } from '@sdk';
+import { isHubOnly } from '@sdk/utils/hub-runtime';
 
 /** Every mounted reader of an agent's places, so one reload (a launch, a switch) refreshes them all. */
 const readers = new Map<string, Set<() => void>>();
@@ -9,7 +10,10 @@ const readers = new Map<string, Set<() => void>>();
  * Deployments list, the Schedules section, a deployment's page. Re-read when the agent's place
  * settings change, and whenever any of them calls `reload`.
  */
-export function useAgentPlaces(agent: Agent | null | undefined): { places: AgentPlace[] | null; reload: () => Promise<void> } {
+export function useAgentPlaces(agent: Agent | null | undefined): {
+  places: AgentPlace[] | null;
+  reload: () => Promise<void>;
+} {
   const [places, setPlaces] = useState<AgentPlace[] | null>(null);
   const agentRef = useRef(agent);
   agentRef.current = agent;
@@ -18,6 +22,8 @@ export function useAgentPlaces(agent: Agent | null | undefined): { places: Agent
   const read = useCallback(async () => {
     const current = agentRef.current;
     if (!current) return;
+    // Places are this computer's deployments; the hub has no `places` call.
+    if (isHubOnly()) return setPlaces([]);
     try {
       setPlaces(await current.listPlaces());
     } catch {

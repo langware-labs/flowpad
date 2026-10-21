@@ -424,6 +424,11 @@ msgstr "{0, plural, one {# אדם} other {# אנשים}}"
 msgid "{0, plural, one {# result} other {# results}}"
 msgstr "{0, plural, one {תוצאה אחת} other {# תוצאות}}"
 
+#. placeholder {0}: d.num_rows ?? 0
+#: src/components/data-sources/HostedDatasets.tsx
+msgid "{0, plural, one {# row} other {# rows}}"
+msgstr "{0, plural, one {שורה אחת} other {# שורות}}"
+
 #. placeholder {0}: sessions.length
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "{0, plural, one {# session used this skill} other {# sessions used this skill}}"
@@ -447,6 +452,11 @@ msgstr "{0, plural, one {# צוות} other {# צוותים}}"
 #: src/components/hooks-manager/index.tsx
 msgid "{0, plural, one {# trigger} other {# triggers}}"
 msgstr "{0, plural, one {טריגר אחד} other {# טריגרים}}"
+
+#. placeholder {0}: datasets.length
+#: src/components/data-sources/HostedDatasets.tsx
+msgid "{0, plural, one {Hosts # dataset} other {Hosts # datasets}}"
+msgstr "{0, plural, one {מארח מאגר נתונים אחד} other {מארח # מאגרי נתונים}}"
 
 #. placeholder {0}: action.runCount
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -602,10 +612,15 @@ msgstr "לא ניתן היה לעדכן את {0} עבור פרויקט זה."
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} עדכני · {1} מיושן · {2} חלקי · {3} שגיאה"
 
-#. placeholder {0}: root.sources.length
+#. placeholder {0}: root.sources.length + 1
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{0} data sources"
 msgstr "{0} מקורות נתונים"
+
+#. placeholder {0}: root.datasets.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} datasets"
+msgstr "{0} מאגרי נתונים"
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
@@ -786,6 +801,11 @@ msgstr "מפתח {0}"
 msgid "{0} keys start with {1} — this one does not."
 msgstr "מפתחות {0} מתחילים ב-{1} — המפתח הזה לא."
 
+#. placeholder {0}: root.schemas.length
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{0} kinds"
+msgstr "{0} סוגים"
+
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "{0} messages"
@@ -921,6 +941,10 @@ msgstr "רשומות בדיסק"
 msgid "{0} removed"
 msgstr "{0} הוסרו"
 
+#: src/components/data-sources/HostedDatasets.tsx
+#~ msgid "{0} rows"
+#~ msgstr "{0} שורות"
+
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/connections-manager.tsx
@@ -928,10 +952,9 @@ msgstr "{0} הוסרו"
 msgid "{0} saved"
 msgstr "{0} נשמר"
 
-#. placeholder {0}: root.schemas.length
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "{0} schemas"
-msgstr "{0} סכמות"
+#~ msgid "{0} schemas"
+#~ msgstr "{0} סכמות"
 
 #. placeholder {0}: secrets.length
 #. placeholder {1}: secrets.length === 1 ? '' : 's'
@@ -1127,8 +1150,8 @@ msgid "{d}d ago"
 msgstr "לפני {d} ימים"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "{datasets} datasets"
-msgstr "{datasets} מערכי נתונים"
+#~ msgid "{datasets} datasets"
+#~ msgstr "{datasets} מערכי נתונים"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "{day} at {time}"
@@ -1193,6 +1216,10 @@ msgstr "{files} קבצים דורשים מיזוג — ניתן לתת לעוז�
 #: src/components/git/RepoPicker.tsx
 msgid "{filteredCount} of {totalCount} repos"
 msgstr "{filteredCount} מתוך {totalCount} מאגרים"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "{firstName} is still uploading the bundle. Try again in a moment."
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
@@ -1394,6 +1421,10 @@ msgstr "{ms} ms"
 msgid "{n} files changed, first {path}"
 msgstr "{n} קבצים השתנו, הראשון: {path}"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "{n} rows"
+msgstr "{n} שורות"
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "תמונת הפרופיל של {name}"
@@ -1592,12 +1623,12 @@ msgid "{senderName} invited you"
 msgstr "{senderName} הזמינו אתכם"
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "{senderName} is still uploading — try again in a moment."
-msgstr "ההעלאה של {senderName} עדיין מתבצעת — נסו שוב בעוד רגע."
+#~ msgid "{senderName} is still uploading — try again in a moment."
+#~ msgstr "ההעלאה של {senderName} עדיין מתבצעת — נסו שוב בעוד רגע."
 
 #: src/pages/entry/MessageLanding.tsx
-msgid "{senderName} sent you a message"
-msgstr "הודעה מ-{senderName}"
+#~ msgid "{senderName} sent you a message"
+#~ msgstr ">>>>>>> aea919ba5"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
@@ -1976,8 +2007,8 @@ msgid "1 change not published"
 msgstr "שינוי אחד לא פורסם"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "1 data source"
-msgstr "מקור נתונים אחד"
+#~ msgid "1 data source"
+#~ msgstr "מקור נתונים אחד"
 
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
@@ -2000,6 +2031,7 @@ msgstr "שינוי חדש אחד בענן — משכו אותו"
 msgid "1 problem"
 msgstr "בעיה אחת"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "1 row"
 msgstr "שורה אחת"
@@ -2433,12 +2465,17 @@ msgstr "הפעילו"
 msgid "Activations only"
 msgstr "הפעלות בלבד"
 
+#: src/components/asset-counters/AssetCounterRow.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "active"
 msgstr "פעיל"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -2738,8 +2775,13 @@ msgid "Add link"
 msgstr "הוסיפו קישור"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Add Machine"
-msgstr "הוספת מחשב"
+#: src/pages/hub-home/HubHome.tsx
+msgid "Add machine"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+#~ msgid "Add Machine"
+#~ msgstr ""
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Add New Hook"
@@ -2975,6 +3017,7 @@ msgid "agent"
 msgstr "סוכן"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
@@ -3068,6 +3111,7 @@ msgstr "מזהה ה-AgenticProcess שאליו מקושרת הערת הפרומפ
 msgid "agents"
 msgstr "סוכנים"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/i18n/type-labels.ts
@@ -3077,6 +3121,10 @@ msgstr "סוכנים"
 #: src/components/asset-counters/agent-counters.tsx
 msgid "Agents in {projectName} with a deployment"
 msgstr "סוכנים עם פריסה ב-{projectName}"
+
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Agents with a live deployment"
+msgstr ""
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -5199,6 +5247,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitignoredNotice.tsx
@@ -5458,8 +5507,11 @@ msgstr "מזהה ערוץ (מזהה מקור נתונים שם)"
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/types/ViewType.ts
 msgid "Channels"
 msgstr "ערוצים"
 
@@ -5547,7 +5599,8 @@ msgstr "בדקו שוב"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Check again"
 msgstr "בדקו שוב"
 
@@ -5595,9 +5648,12 @@ msgstr "בודק את {0}"
 msgid "Checking access…"
 msgstr "בודקים את הגישה…"
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "Checking FlowPad status…"
-msgstr "בודקים את מצב FlowPad…"
+#~ msgid "Checking FlowPad status…"
+#~ msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Checking FlowPad…"
+msgstr ">>>>>>> aea919ba5"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Checking Git eligibility…"
@@ -5656,6 +5712,7 @@ msgstr "בודקים אם {folderName} מוכן לשיתוף"
 msgid "checking…"
 msgstr "בדיקה…"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "בבדיקה…"
@@ -5749,6 +5806,10 @@ msgstr "בחרו תיקייה…"
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Choose the endpoint this one draws from."
 msgstr "בחרו את נקודת הקצה שממנה זו נשענת."
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "Choose the kind of each row"
+msgstr "בחרו את הסוג של כל שורה"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -6092,7 +6153,6 @@ msgid "Click to edit which models this budget may call"
 msgstr "לחצו לעריכת המודלים שהתקציב הזה רשאי להפעיל"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
-#: src/pages/hub-home/HubHome.tsx
 msgid "Click to rename"
 msgstr "לחצו כדי לשנות שם"
 
@@ -6750,6 +6810,7 @@ msgstr "אישור: {0}"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "התחברו"
@@ -6768,6 +6829,10 @@ msgstr "חיבור ל־{group}"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Connect {label}"
 msgstr "חיבור {label}"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Connect {where}"
+msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
@@ -6825,6 +6890,10 @@ msgstr "חברו את GitHub כדי לשתף פרויקט שקבציו נמצא�
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Connect new source"
 msgstr "חברו מקור חדש"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connect this machine"
+msgstr ""
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -7067,6 +7136,10 @@ msgstr "כותרת שיחה"
 #: src/routes/loaders/load-conversation.ts
 msgid "Conversation unavailable"
 msgstr "השיחה אינה זמינה"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Conversation with {senderName}"
+msgstr ""
 
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "Conversations"
@@ -7532,6 +7605,10 @@ msgstr "לא ניתן ליצור את התקציב"
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "Could not create the chart"
 msgstr "לא ניתן היה ליצור את התרשים"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "Could not create the dataset"
+msgstr "לא ניתן היה ליצור את מאגר הנתונים"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
@@ -8297,6 +8374,10 @@ msgstr "השאלה לא נשלחה"
 msgid "Couldn't change this member's role."
 msgstr "לא ניתן היה לשנות את התפקיד של החבר הזה."
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Couldn't check FlowPad's connection"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
@@ -8525,6 +8606,7 @@ msgstr "מעבד:"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -8861,6 +8943,15 @@ msgstr "כל יום בשעה {time}"
 msgid "Data (JSON)"
 msgstr "נתונים (JSON)"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "data model"
+msgstr "מודל נתונים"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/types/ViewType.ts
+msgid "Data model"
+msgstr "מודל נתונים"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
@@ -8873,7 +8964,9 @@ msgstr "סכמת נתונים"
 msgid "data source"
 msgstr "מקור נתונים"
 
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Data source"
 msgstr "מקור נתונים"
@@ -8888,6 +8981,7 @@ msgstr "שם מקור הנתונים"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -8920,14 +9014,28 @@ msgstr "סטטיסטיקות מסד נתונים"
 msgid "Database switched"
 msgstr "בסיס נתונים הוחלף"
 
+#: src/components/quick-create/registry.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/i18n/type-labels.ts
 msgid "Dataset"
 msgstr "מערך נתונים"
 
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/quick-create/registry.ts
+msgid "Dataset created"
+msgstr "מאגר הנתונים נוצר"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "dataset schema"
-msgstr "סכמת מערך נתונים"
+msgid "dataset kind"
+msgstr "סוג של מאגר נתונים"
+
+#~ msgid "dataset schema"
+#~ msgstr "סכמת מערך נתונים"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Datasets"
+msgstr "מאגרי נתונים"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
@@ -9597,6 +9705,10 @@ msgstr "סוכן פרוס"
 msgid "Deployed without its definition"
 msgstr "פרסו ללא הגדרתו"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Deployment"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deployment deleted"
 msgstr "הפריסה נמחקה"
@@ -9615,6 +9727,8 @@ msgstr "מבט־על של הפריסה"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -9950,6 +10064,7 @@ msgstr "השבתת טלמטריה וניתוח נתונים"
 #: src/components/llm-endpoints/ChainTree.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "disabled"
 msgstr "מכובה"
 
@@ -10019,8 +10134,10 @@ msgid "Disconnect"
 msgstr "התנתקו"
 
 #: src/components/account/user-info.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 #: src/components/terminal/TabbedTerminal.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Disconnected"
 msgstr "התנתק"
 
@@ -10246,13 +10363,16 @@ msgstr "מופרד בנקודות; * תואם חלק אחד, * בסוף תואם
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/pages/entry/MessageLanding.tsx
 msgid "Download"
 msgstr "הורידו"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "הורידו .flowmsg"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download {attachmentFilename}"
+msgstr ""
 
 #. placeholder {0}: count === 1 ? 'attachment' : 'attachments'
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -10314,6 +10434,14 @@ msgstr "הורידו הודעה"
 msgid "Download sample CSV"
 msgstr "הורדת קובץ CSV לדוגמה"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download the bundle with the conversation."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Download the bundle with the task details."
+msgstr ""
+
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "הורדה הושלמה"
@@ -10367,6 +10495,7 @@ msgstr "התמקד לפי"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Driver"
 msgstr "מנהל התקן"
 
@@ -11146,6 +11275,10 @@ msgstr "כל סוכן ש-{projectName} יכול להפעיל"
 msgid "Every agent on this machine"
 msgstr "כל סוכן במחשב הזה"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Every agent you can reach"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr "כל הקצאה שניתנה, שונתה או הוסרה כאן ובכל מה שמומן ממנה. לקריאה בלבד."
@@ -11175,6 +11308,10 @@ msgstr "כל יום"
 msgid "Every day at {time}"
 msgstr "כל יום בשעה {time}"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Every deployment you can reach"
+msgstr ""
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Every few minutes or hours"
 msgstr "כל כמה דקות או שעות"
@@ -11190,6 +11327,10 @@ msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק.
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "every machine"
 msgstr "בכל מחשב"
+
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Every machine you can reach"
+msgstr ""
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr ""
@@ -11332,8 +11473,8 @@ msgid "Everything this run has shown"
 msgstr "כל מה שהוצג בהרצה זו"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Everything you can reach, as a live graph."
-msgstr "כל מה שניתן להגיע אליו, כגרף חי."
+#~ msgid "Everything you can reach, as a live graph."
+#~ msgstr "כל מה שניתן להגיע אליו, כגרף חי."
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Everything you can see"
@@ -12059,8 +12200,8 @@ msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feed
 msgstr "המשוב כבוי: לפרויקט הזה אין מאגר נתונים למשוב על תרשימים (chartit.feedback)."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Feeds"
-msgstr "מזינה"
+#~ msgid "Feeds"
+#~ msgstr "מזינה"
 
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -12149,6 +12290,12 @@ msgstr "הצעות קבצים"
 #: src/components/settings-view/settings-utils.ts
 msgid "File suggestion configuration"
 msgstr "תצורת הצעות קבצים"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "file system"
+msgstr "מערכת הקבצים"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "File…"
@@ -12627,6 +12774,14 @@ msgstr "FlowPad לא נפתח? התקינו אותו וחזרו לדף הזה."
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad מאתחל את המאגר, ולאחר מכן מציע את ההתקנה בענף ביקורת נפרד."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered conversations. Install it once to open messages like this on your machine."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered tasks. Install it once to open tasks like this on your machine."
+msgstr ""
+
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
 msgstr "FlowPad היא אפליקציית שולחן עבודה חינמית וקוד פתוח לעבודה על פרויקטים עם סוכני הקוד שלך. פתחו בה פרויקט ו-FlowPad יגדיר אותו במחשב שלך."
@@ -12635,9 +12790,20 @@ msgstr "FlowPad היא אפליקציית שולחן עבודה חינמית ו�
 msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
 msgstr "FlowPad היא אפליקציית דסקטופ חינמית בקוד פתוח לעבודה על פרויקטים עם סוכני הקוד שלכם. פתחו את הפרויקט הזה ו-FlowPad יגדיר אותו במחשב שלכם."
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "FlowPad is offline"
-msgstr "FlowPad במצב לא מקוון"
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad is connected"
+msgstr ""
+
+#~ msgid "FlowPad is offline"
+#~ msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad isn't connected — Open starts it if it's installed"
+msgstr ""
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad isn't installed on this computer"
+msgstr ">>>>>>> aea919ba5"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -12697,6 +12863,10 @@ msgstr "מתיקייה"
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "תיקייה"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "Folder (optional)"
+msgstr "תיקייה (אופציונלי)"
 
 #: src/components/assets/useAssetsModel.tsx
 msgid "Folder already exists"
@@ -13083,6 +13253,10 @@ msgstr "הגישה ל-Git אל {repo} הוגדרה. פתחו שוב את {file}.
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr "שינויים בגיט"
+
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
+msgid "Git connection required"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -13828,6 +14002,22 @@ msgstr "קישורים:"
 msgid "Host"
 msgstr "מארח"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Hosts"
+msgstr "מארח"
+
+#: src/components/data-sources/HostedDatasets.tsx
+#~ msgid "Hosts {0} datasets"
+#~ msgstr "מארח {0} מאגרי נתונים"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "hosts {n} datasets"
+msgstr "מארח {n} מאגרי נתונים"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "hosts 1 dataset"
+msgstr "מארח מאגר נתונים אחד"
+
 #: src/components/graph-view/ui/HeatLegend.tsx
 msgid "Hot"
 msgstr "חם"
@@ -14044,6 +14234,10 @@ msgstr "חיבורי IDE (VS Code, Cursor, וכו')"
 msgid "Identity"
 msgstr "זהות"
 
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Idle"
+msgstr ""
+
 #: src/components/automations/IfThenGraphic.tsx
 msgid "If"
 msgstr "אם"
@@ -14218,10 +14412,10 @@ msgid "inactive copy"
 msgstr "עותק לא פעיל"
 
 #: src/components/inbound/InboundView.tsx
-#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubSummaryLine.tsx
 #: src/types/ViewType.ts
-msgid "Inbound"
-msgstr "נכנסות"
+#~ msgid "Inbound"
+#~ msgstr "נכנסות"
 
 #: src/components/connections-manager.tsx
 msgid "Inbound routing"
@@ -14373,6 +14567,10 @@ msgstr "הזרקה ▶"
 #: src/components/graph-workflows/panels/InjectPanel.tsx
 msgid "inject event"
 msgstr "הזרקת אירוע"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "inline"
+msgstr "מוטבע"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "inline (server loop — fast, direct SDK)"
@@ -14850,6 +15048,10 @@ msgstr "הסוכן שלו"
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "התוכן שלו נראה כנתונים בינאריים (לדוגמה תמונה), ולכן לא ניתן להציג אותו בעורך."
 
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
+msgid "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Its folder is removed too. Past runs stay in the history."
 msgstr "התיקייה שלה תימחק גם כן. ההרצות הקודמות יישארו בהיסטוריה."
@@ -15031,6 +15233,7 @@ msgid "keyword / time — not supported"
 msgstr "מילת מפתח / זמן — לא נתמך"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "kind"
 msgstr "סוג"
 
@@ -15045,9 +15248,16 @@ msgstr "סוג"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Kind"
 msgstr "סוג"
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Kinds"
+msgstr "סוגים"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Knowledge Atlas"
@@ -15342,6 +15552,10 @@ msgstr "עזבו שיחה"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Leave empty to keep"
 msgstr "השאירו ריק כדי לשמור"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Leave it running. This card turns Running by itself once the machine connects."
+msgstr ""
 
 #~ msgid "Leave live session mode"
 #~ msgstr ""
@@ -16233,10 +16447,12 @@ msgstr "חיפוש פרויקט…"
 msgid "Lowercase letters, digits, - and _ (not development)."
 msgstr "אותיות קטנות, ספרות, - ו-_ (לא development)."
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/inbound/DestinationPicker.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
 msgstr "מכונה"
@@ -16256,6 +16472,20 @@ msgstr "סודות המכונה"
 
 #~ msgid "Machine size"
 #~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Machine type"
+msgstr ""
+
+#: src/components/asset-counters/hub-counters.tsx
+#: src/pages/hub-home/HubHome.tsx
+#: src/types/ViewType.ts
+msgid "Machines"
+msgstr ""
+
+#: src/components/asset-counters/hub-counters.tsx
+msgid "Machines that are running"
+msgstr ""
 
 #: src/components/automations/KindGallery.tsx
 msgid "Mail that asks for a refund; an agent drafts the reply."
@@ -17101,6 +17331,7 @@ msgstr "שם"
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -17201,6 +17432,10 @@ msgstr "דורש תשומת לב"
 msgid "Needs attention"
 msgstr "דורש תשומת לב"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "needs setup"
+msgstr "דורש הגדרה"
+
 #~ msgid "Needs setup"
 #~ msgstr ""
 
@@ -17271,9 +17506,11 @@ msgid "Never synced to cloud"
 msgstr "מעולם לא סונכרן לענן"
 
 #: src/components/open-project-component/project-actions-row.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "new"
 msgstr "חדש"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/data-sources/status-style.ts
@@ -17363,6 +17600,10 @@ msgstr "קבוצת אנשי קשר חדשה"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "New credentials"
 msgstr "אישורים חדשים"
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "New dataset"
+msgstr "מאגר נתונים חדש"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -17480,8 +17721,8 @@ msgid "New sandbox"
 msgstr "ארגז חול חדש"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "New Sandbox"
-msgstr "סנדבוקס חדש"
+#~ msgid "New Sandbox"
+#~ msgstr "סנדבוקס חדש"
 
 #~ msgid "New schedule rule"
 #~ msgstr "כלל תזמון חדש"
@@ -17726,6 +17967,10 @@ msgstr "אין תקציב שאפשר לחלק"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
 msgstr "לא הוקצו לכם תקציבים"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "No bundle attached."
+msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "no bundle was ever uploaded"
@@ -19051,6 +19296,7 @@ msgstr "עדיין לא הופעל"
 msgid "not found"
 msgstr "לא נמצא"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -19219,6 +19465,7 @@ msgstr "לא מחובר לעוזר הזה"
 msgid "not started"
 msgstr "לא התחיל"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "טרם התחיל"
@@ -19561,8 +19808,8 @@ msgid "number proven"
 msgstr "המספר אומת"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Numbers and bots that message you, and where each message goes."
-msgstr "מספרים ובוטים ששולחים לך הודעות, ולאן כל הודעה מגיעה."
+#~ msgid "Numbers and bots that message you, and where each message goes."
+#~ msgstr "מספרים ובוטים ששולחים לך הודעות, ולאן כל הודעה מגיעה."
 
 #: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
@@ -19642,6 +19889,10 @@ msgstr "פעיל"
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "On — anyone with the launch link can try it"
 msgstr "פעיל — כל מי שיש לו קישור הפעלה יכול לנסות"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "On <0>{where}</0>, open a terminal."
+msgstr ""
 
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr ""
@@ -19865,7 +20116,6 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/workers/WorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open"
@@ -19957,8 +20207,11 @@ msgid "Open a project to see its assets."
 msgstr "יש לפתוח פרויקט כדי לראות את הנכסים שלו."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Open a project to see its schemas."
-msgstr "פתחו פרויקט כדי לראות את הסכמות שלו."
+msgid "Open a project to see its data model."
+msgstr "פתחו פרויקט כדי לראות את מודל הנתונים שלו."
+
+#~ msgid "Open a project to see its schemas."
+#~ msgstr "פתחו פרויקט כדי לראות את הסכמות שלו."
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
@@ -20194,7 +20447,6 @@ msgstr "פתיחה ב-Finder/Explorer"
 msgid "Open in Flowpad"
 msgstr "פתיחה ב-Flowpad"
 
-#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "פתיחה ב-FlowPad"
@@ -20284,6 +20536,10 @@ msgstr "פתחו את הפרויקט שלי"
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "פתחו תפריט כרטיסייה חדש"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Open on any machine and use on-premise"
+msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -20616,6 +20872,7 @@ msgstr "פתחו את trigger.json"
 msgid "Open what it returned"
 msgstr "פתיחת התוצאה שהוחזרה"
 
+#: src/pages/entry/MessageLanding.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open with your favorite coding agent"
 msgstr "פתיחה עם סוכן הקוד המועדף עליכם"
@@ -20757,9 +21014,8 @@ msgstr "הודעה לבעלים (אופציונלי)…"
 msgid "Or copy an invite link"
 msgstr "או העתיקו קישור הזמנה"
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "or download the message (.flowmsg)"
-msgstr "או הורידו את ההודעה (.flowmsg)"
+#~ msgid "or download the message (.flowmsg)"
+#~ msgstr ">>>>>>> aea919ba5"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "or open the link on your phone"
@@ -20795,7 +21051,6 @@ msgstr "ארגון וצוותים"
 #: src/components/token-plan/token-plan-math.ts
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
-#: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Organization"
 msgstr "ארגון"
@@ -21220,6 +21475,7 @@ msgstr "השהו את המכונה הזו"
 msgid "paused"
 msgstr "מושהה"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -21915,7 +22171,6 @@ msgstr "התקדמות"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
-#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "project"
 msgstr "פרויקט"
 
@@ -22110,7 +22365,6 @@ msgid "projected"
 msgstr "משוער"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr "פרויקטים"
@@ -22268,6 +22522,7 @@ msgstr "אומת"
 msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
 msgstr "מאמת את המספר: ה-hub קורא ל-GET <server>/<phone number id> עם הערך הזה. נשמר לכתיבה בלבד."
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -22675,13 +22930,17 @@ msgstr "קורא חבילות…"
 msgid "Reading projects…"
 msgstr "קורא פרויקטים…"
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Reading the data model…"
+msgstr "קורא את מודל הנתונים…"
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
 msgstr "טוענים את ההיסטוריה…"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Reading the schemas…"
-msgstr "קוראים את הסכמות…"
+#~ msgid "Reading the schemas…"
+#~ msgstr "קוראים את הסכמות…"
 
 #~ msgid "Reading this team's people…"
 #~ msgstr ""
@@ -23458,6 +23717,10 @@ msgstr "החלפת הקיים"
 msgid "Replace image"
 msgstr "החלפת תמונה"
 
+#: src/components/conversation/asset-review/ReplacePrompt.tsx
+msgid "Replace it"
+msgstr ""
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
 msgstr "החלפת המפתח השמור"
@@ -23928,6 +24191,7 @@ msgstr "חודש — הבדיקה הבאה תתבצע במחזור הקרוב."
 
 #: src/components/agent-layout/DockLoadErrorView.tsx
 #: src/components/assets/editor/EntityResolutionGate.tsx
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -24173,8 +24437,13 @@ msgid "Row time range"
 msgstr "טווח זמן שורה"
 
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Rows"
 msgstr "שורות"
+
+#: src/components/entity-card/entity-card-rows.ts
+msgid "Rows at"
+msgstr "השורות ב"
 
 #. placeholder {0}: i + 1
 #. placeholder {1}: claimTitle(r)
@@ -24429,6 +24698,10 @@ msgstr "ניתן להריץ את הסוכן באופן עצמאי, בזמן לב
 msgid "Run this live session in which project?"
 msgstr "באיזה פרויקט להריץ את סשן זמן האמת הזה?"
 
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Run:"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -24438,6 +24711,7 @@ msgstr "פועל"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -24595,6 +24869,8 @@ msgstr "סנדבוקס"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/settings-view/settings-utils.ts
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox"
 msgstr "ארגז חול"
 
@@ -24631,8 +24907,8 @@ msgid "Sandbox upgraded"
 msgstr "ארגז החול שודרג"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Sandboxes"
-msgstr "סנדבוקסים"
+#~ msgid "Sandboxes"
+#~ msgstr "סנדבוקסים"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -24815,6 +25091,10 @@ msgstr "ציינו מה הסוכן צריך לעשות."
 msgid "Say what to catch."
 msgstr "ציינו מה לתפוס."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "says:"
+msgstr ""
+
 #. placeholder {0}: postScanResult.grand_total.toLocaleString()
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Scan & index complete — {0} records found"
@@ -24940,24 +25220,24 @@ msgid "Schedules · {0}"
 msgstr "תזמונים · {0}"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "schema"
-msgstr "סכמה"
+#~ msgid "schema"
+#~ msgstr "סכמה"
 
 #: src/types/ViewType.ts
-msgid "Schema"
-msgstr "סכמה"
+#~ msgid "Schema"
+#~ msgstr "סכמה"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Schema tree"
-msgstr "עץ הסכמות"
+#~ msgid "Schema tree"
+#~ msgstr "עץ הסכמות"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Schemas"
-msgstr "סכמות"
+#~ msgid "Schemas"
+#~ msgstr "סכמות"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "Schemas defined here"
-msgstr "סכמות שמוגדרות כאן"
+#~ msgid "Schemas defined here"
+#~ msgstr "סכמות שמוגדרות כאן"
 
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
@@ -25641,6 +25921,10 @@ msgstr "נשלח למי ששיתף"
 msgid "Sent to your desktop — confirm it there."
 msgstr "נשלח לשולחן העבודה שלכם — אשרו שם."
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Sent via FlowPad"
+msgstr ""
+
 #. placeholder {0}: labelForType(sent[1])
 #: src/notifications/renderDesktopNotification.ts
 msgid "Sent you: {0}"
@@ -26265,6 +26549,14 @@ msgstr "הקשר משותף"
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
 msgstr "סשנים משותפים"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Shared Task"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Shared Task: {taskTitle}"
+msgstr ""
 
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
@@ -27411,6 +27703,10 @@ msgstr "התחילו"
 msgid "Start {0}"
 msgstr "התחילו {0}"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Start a cloud sandbox, or connect a computer you own."
+msgstr ""
+
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Start a collaboration"
@@ -27505,6 +27801,10 @@ msgstr "הפעלת תהליך העבודה {name}"
 msgid "Start this server and list the tools it exposes"
 msgstr "הפעילו את השרת הזה והציגו את הכלים שהוא חושף"
 
+#: src/pages/entry/MessageLanding.tsx
+msgid "Start this task using one of these options:"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Start time"
 msgstr "זמן התחלה"
@@ -27594,6 +27894,8 @@ msgstr "סטטוס"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
 #: src/components/conversation/task-it.tsx
@@ -27607,6 +27909,7 @@ msgstr "סטטוס"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Status"
 msgstr "סטטוס"
@@ -27753,8 +28056,8 @@ msgid "stored →"
 msgstr "שמרו →"
 
 #: src/components/entity-card/entity-card-rows.ts
-msgid "Stored in"
-msgstr "מאוחסן ב"
+#~ msgid "Stored in"
+#~ msgstr "מאוחסן ב"
 
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "Stored in the project's repository on the hub"
@@ -28272,8 +28575,8 @@ msgid "Teams"
 msgstr "צוותים"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Teams and people across your org."
-msgstr "צוותים ואנשים ברחבי הארגון שלכם."
+#~ msgid "Teams and people across your org."
+#~ msgstr "צוותים ואנשים ברחבי הארגון שלכם."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "Teams in this organization"
@@ -28589,9 +28892,17 @@ msgstr "האישור הוסר מחשבונכם."
 msgid "The credentials could not be saved."
 msgstr "שמירת האישורים נכשלה."
 
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "The data model could not be read."
+msgstr "לא ניתן היה לקרוא את מודל הנתונים."
+
 #: src/components/data-sources/source-attention.ts
 #~ msgid "The dataset this source mirrors into could not be made current."
 #~ msgstr "לא ניתן היה לעדכן את מערך הנתונים שמקור זה משתקף אליו."
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "the dataset's name"
+msgstr "שם מאגר הנתונים"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -28924,8 +29235,8 @@ msgid "The same screen as on the hub: it lists the hub's claims you own; \"This 
 msgstr "אותו מסך כמו ב-hub: הוא מציג את ה-claims שבבעלותכם ב-hub; ״המחשב הזה״ הוא רק אחד המקומות."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "The schemas could not be read."
-msgstr "לא ניתן היה לקרוא את הסכמות."
+#~ msgid "The schemas could not be read."
+#~ msgstr "לא ניתן היה לקרוא את הסכמות."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
@@ -28942,6 +29253,10 @@ msgstr "השולח עדיין מכין אותו"
 #: src/components/inbound/AddRuleDialog.tsx
 msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
 msgstr "מספר השולח כפי שהספק שולח אותו. אם הוא כבר משויך למישהו אחר — הבקשה נדחית."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "The sender's upload didn't complete. Ask {firstName} to resend."
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -29018,9 +29333,8 @@ msgstr "האסימון פועל בשם {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
 
-#: src/pages/entry/MessageLanding.tsx
-msgid "The upload didn't complete — ask {senderName} to resend."
-msgstr "ההעלאה לא הושלמה — בקשו מ-{senderName} לשלוח שוב."
+#~ msgid "The upload didn't complete — ask {senderName} to resend."
+#~ msgstr ">>>>>>> aea919ba5"
 
 #~ msgid "The value could not be written."
 #~ msgstr ""
@@ -29503,6 +29817,10 @@ msgstr "המחשב הזה"
 msgid "This machine has no model to run the agent on. Set one up, then try again."
 msgstr "במחשב הזה אין מודל להרצת הסוכן. הגדירו מודל ונסו שוב."
 
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "This machine is not connected to the hub, so it cannot be opened from here."
+msgstr ""
+
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."
 msgstr "ההודעה הזו אינה מכילה נכסים."
@@ -29627,9 +29945,16 @@ msgstr "לא ניתן היה לשתף את הפרויקט הזה."
 msgid "This project declares the same variables, and its values win"
 msgstr "הפרויקט הזה מגדיר את אותם משתנים, והערכים שלו גוברים"
 
+#: src/components/quick-create/DatasetCreateDialog.tsx
+msgid "This project defines no kind"
+msgstr "הפרויקט הזה לא מגדיר אף סוג"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "This project defines no schema."
-msgstr "הפרויקט הזה לא מגדיר סכמה."
+msgid "This project defines no kind."
+msgstr "הפרויקט הזה לא מגדיר אף סוג."
+
+#~ msgid "This project defines no schema."
+#~ msgstr "הפרויקט הזה לא מגדיר סכמה."
 
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
@@ -29637,6 +29962,10 @@ msgstr "הפרויקט הזה לא קיים או כבר אינו זמין."
 
 #~ msgid "This project has no assets yet."
 #~ msgstr "לפרויקט הזה עדיין אין נכסים."
+
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "This project has no dataset."
+msgstr "לפרויקט הזה אין מאגר נתונים."
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This project has no folder on disk and can't be opened."
@@ -30543,7 +30872,6 @@ msgstr "סוג"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -30760,6 +31088,7 @@ msgstr "שינויים שלא נדחפו"
 msgid "unreachable"
 msgstr "לא נגיש"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
 msgstr "לא נגיש"
@@ -30967,6 +31296,14 @@ msgstr "העלו קבצים"
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "Upload image"
 msgstr "העלו תמונה"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Upload it to FlowPad on any machine to open the conversation."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Upload it to FlowPad on any machine to open the task."
+msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"
@@ -31502,6 +31839,10 @@ msgstr "הציגו את הישות מסוג {0} שאונדקסה בהרצה זו
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "הצגת השינויים בקובץ הזה"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "View the conversation using one of these options:"
+msgstr ""
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "View the drivers every source is made from"
@@ -32299,6 +32640,10 @@ msgstr "worktree"
 msgid "Worktree"
 msgstr "Worktree"
 
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+msgid "World view"
+msgstr ""
+
 #: src/types/ViewType.ts
 msgid "WorldView"
 msgstr "תצוגת עולם"
@@ -32434,6 +32779,10 @@ msgstr "כבר יש לכם פרויקט בשם <0>{0}</0>. פתחו אותו, א
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr "כבר יש לכם פרויקט בשם <0>{projectName}</0>. פתחו אותו, או הגדירו את הפרויקט הזה בשם אחר."
 
+#: src/components/conversation/asset-review/ReplacePrompt.tsx
+msgid "You already have this. Replace it with the shared version?"
+msgstr ""
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "אישרתם רק את הסשן הזה — {guestName} יצטרך/תצטרך את האישור שלכם שוב בפעם הבאה."
@@ -32542,6 +32891,14 @@ msgstr "אתם בעלים — מחקו לכל אחד"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own this conversation — pick how you want to leave."
 msgstr "אתם בעלים של שיחה זו — בחרו איך אתם רוצים לעזוב."
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You received a new message from <0>{senderName}</0>."
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "You received a new task from <0>{senderName}</0>."
+msgstr ""
 
 #: src/components/token-plan/ScopePath.tsx
 msgid "You spend through"
@@ -32748,8 +33105,8 @@ msgid "Your workspace is ready"
 msgstr "סביבת העבודה שלכם מוכנה"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Your world"
-msgstr "עולמכם"
+#~ msgid "Your world"
+#~ msgstr "עולמכם"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Your WorldView"

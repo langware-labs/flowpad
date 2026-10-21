@@ -1,7 +1,9 @@
 /**
- * The schema tree — what data a project holds, top to bottom.
+ * The data model — what data a project holds, top to bottom: its kinds (a kind is the NAME,
+ * its schema the definition), the datasets that keep rows of them, and the data sources that
+ * host those datasets (every project has the implicit `local` one: its own file system).
  *
- * On the left a tree whose roots are projects: the schemas each one defines, every schema unfolding
+ * On the left a tree whose roots are projects: the kinds each one defines, every schema unfolding
  * to the kinds its fields name (`uses` a row another dataset keeps, or holds the value `inside`),
  * then the project's data sources. On the right the card of what is selected: where it is defined,
  * the dataset that keeps its rows, what uses it, its fields. A kind named in the card is a link:
@@ -12,8 +14,10 @@
  * `currentDock`. Unfolding is the only local state.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DataSource, enumValues, linkTargets, Project, unwrap, type SchemaNode, type SchemaUse, type Shape } from '@sdk';
+import { DataSource, enumValues, LOCAL_SOURCE, linkTargets, Project, unwrap, type SchemaNode, type SchemaUse, type Shape } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { i18n, type MessageDescriptor } from '@lingui/core';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { openSource } from '@src/components/data-sources/data-sources-pointer';
@@ -24,7 +28,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useContext } from '@src/hooks/useContext';
 import { cn } from '@src/lib/utils';
 import {
-  bareKind, DATA_SCHEMA_TYPE, homeOf, loadSchemaRoots, nodeOf, pathAfterLink, usedBy, type SchemaRoot,
+  bareKind, DATA_SCHEMA_TYPE, datasetsOf, homeOf, hostedBy, loadSchemaRoots, nodeOf, pathAfterLink, usedBy,
+  type DatasetLine, type SchemaRoot,
 } from './schema-tree-model';
 import { parseSchemaTreePointer, SOURCE_SEGMENT } from './schema-tree-pointer';
 
@@ -50,7 +55,7 @@ export function SchemaTreeView() {
     if (!projectId) return;
     loadSchemaRoots(projectId)
       .then((roots) => live && setModel(roots))
-      .catch((error) => live && setFailure(errorMessage(error, t`The schemas could not be read.`)));
+      .catch((error) => live && setFailure(errorMessage(error, t`The data model could not be read.`)));
     return () => {
       live = false;
     };
@@ -66,17 +71,17 @@ export function SchemaTreeView() {
   if (!projectId) {
     return (
       <p className="p-6 text-sm text-muted-foreground">
-        <Trans>Open a project to see its schemas.</Trans>
+        <Trans>Open a project to see its data model.</Trans>
       </p>
     );
   }
   if (failure) return <p className="p-6 text-sm">{failure}</p>;
-  if (!model) return <p className="p-6 text-sm text-muted-foreground">{t`Reading the schemas…`}</p>;
+  if (!model) return <p className="p-6 text-sm text-muted-foreground">{t`Reading the data model…`}</p>;
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[minmax(220px,300px)_minmax(0,1fr)]" data-testid="schema-tree">
       <nav
-        aria-label={t`Schema tree`}
+        aria-label={t`Data model`}
         className="max-h-[45vh] overflow-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r"
       >
         {model.map((root) => (
@@ -153,7 +158,7 @@ function SchemaRootRows({ root, ...tree }: TreeProps & { root: SchemaRoot }) {
     <div>
       <Row {...tree} rootId={root.id} at={[]} label={root.name} type={Project.type} strong />
       <ul className="ml-4 border-l border-border pl-1">
-        {root.schemas.length > 0 && <li className={group}><Trans>Schemas</Trans></li>}
+        {root.schemas.length > 0 && <li className={group}><Trans>Kinds</Trans></li>}
         {root.schemas.map((node) => (
           <KindRows key={node.kind} {...tree} rootId={root.id} kind={node.kind} at={[node.kind]} />
         ))}
@@ -218,15 +223,24 @@ function SchemaCard({
 
   if (!root) return <p className="text-muted-foreground">{t`No project to show.`}</p>;
 
+  const datasetLink = (d: DatasetLine) => (
+    <button key={d.id} type="button" data-open={`dataset-${d.id}`} className={LINK} onClick={() => void openDataset(d.id)}>
+      {d.name}
+    </button>
+  );
+  const datasetLinks = (lines: DatasetLine[]) => <span className="flex flex-wrap gap-x-3.5 gap-y-1">{lines.map(datasetLink)}</span>;
+  const rowCount = (n: number) => (n === 1 ? t`1 row` : t`${n} rows`);
+
   if (source) {
-    const feeds = root.schemas.filter((n) => n.dataset?.source_id === source.id);
+    const hosted = hostedBy(root, source.name);
     return (
       <>
         <Head title={source.name} tag={t`data source`} />
         <Facts rows={[
           [t`Defined in`, root.name],
-          [t`Type`, source.provider],
-          [t`Feeds`, feeds.length ? kindLinks(feeds) : t`no dataset`],
+          [t`Driver`, source.provider],
+          [t`Status`, source.status && sourceStatusLabel(source.status)],
+          [t`Hosts`, hosted.length ? datasetLinks(hosted) : t`no dataset`],
           [t`Open`, <button type="button" data-open={`data_source-${source.id}`} className={LINK} onClick={() => openSource(navigation, source.id)}>{t`Open the data source`}</button>],
         ]} />
       </>
@@ -234,20 +248,68 @@ function SchemaCard({
   }
 
   if (!node) {
-    const rows = root.schemas.reduce((n, k) => n + (k.dataset?.rows ?? 0), 0);
-    const datasets = root.schemas.filter((k) => k.dataset).length;
+    const rows = root.datasets.reduce((n, d) => n + d.rows, 0);
+    const local = hostedBy(root, LOCAL_SOURCE);
+    const hosts = (n: number) => (n === 1 ? t`hosts 1 dataset` : t`hosts ${n} datasets`);
+    const cell = 'py-1.5 pr-3';
     return (
       <>
-        <Head title={root.name} tag={t`project`} />
+        <Head title={root.name} tag={t`data model`} />
         <Facts rows={[
           [t`Folder`, root.folder],
           [t`Holds`, [
-            t`${root.schemas.length} schemas`, t`${datasets} datasets`, t`${rows} rows`,
-            root.sources.length === 1 ? t`1 data source` : t`${root.sources.length} data sources`,
+            t`${root.schemas.length} kinds`, t`${root.datasets.length} datasets`, t`${rows} rows`,
+            // + the implicit local source
+            t`${root.sources.length + 1} data sources`,
           ].join(' · ')],
         ]} />
-        <Section>{t`Schemas defined here`}</Section>
-        {root.schemas.length ? kindLinks(root.schemas) : <p className="text-muted-foreground">{t`This project defines no schema.`}</p>}
+        <Section>{t`Kinds`}</Section>
+        {root.schemas.length ? kindLinks(root.schemas) : <p className="text-muted-foreground">{t`This project defines no kind.`}</p>}
+
+        <Section>{t`Datasets`}</Section>
+        {root.datasets.length ? (
+          <table className="w-full border-collapse" data-testid="data-model-datasets">
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground">
+                <th className={cn(cell, 'font-medium')}>{t`Dataset`}</th>
+                <th className={cn(cell, 'font-medium')}>{t`Kind`}</th>
+                <th className={cn(cell, 'font-medium')}>{t`Data source`}</th>
+                <th className="py-1.5 font-medium">{t`Rows`}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {root.datasets.map((d) => (
+                <tr key={d.id} data-dataset={d.id} className="border-t border-border align-top">
+                  <td className={cell}>{datasetLink(d)}</td>
+                  <td className={cell}>{d.kind ? kindLink(d.kind) : <span className="text-muted-foreground">{t`inline`}</span>}</td>
+                  <td className={cell}>
+                    {d.rowsAt}
+                    {d.rowsNote && <div className="text-xs text-muted-foreground">{d.rowsNote}</div>}
+                  </td>
+                  <td className="py-1.5">{rowCount(d.rows)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-muted-foreground">{t`This project has no dataset.`}</p>
+        )}
+
+        <Section>{t`Data sources`}</Section>
+        <ul className="flex flex-col gap-1" data-testid="data-model-sources">
+          <li data-source={LOCAL_SOURCE} className="flex flex-wrap gap-x-2">
+            <span className="font-medium">{LOCAL_SOURCE}</span>
+            <span className="text-muted-foreground">· {t`file system`} · {hosts(local.length)}</span>
+          </li>
+          {root.sources.map((s) => (
+            <li key={s.id} data-source={s.name} className="flex flex-wrap gap-x-2">
+              <button type="button" data-open={`data_source-${s.id}`} className={LINK} onClick={() => openSource(navigation, s.id)}>{s.name}</button>
+              <span className="text-muted-foreground">
+                {[s.provider, hosts(hostedBy(root, s.name).length), s.status && sourceStatusLabel(s.status)].filter(Boolean).join(' · ')}
+              </span>
+            </li>
+          ))}
+        </ul>
       </>
     );
   }
@@ -256,6 +318,17 @@ function SchemaCard({
   const feeder = node.dataset?.source_id ? home.sources.find((s) => s.id === node.dataset!.source_id) : undefined;
   const users = usedBy(model, node.kind);
   const count = node.dataset?.rows ?? 0;
+  // The datasets whose `spec` names this kind, and the data sources hosting them.
+  const keptIn = datasetsOf(model, node.kind);
+  const hostNames = [...new Set(keptIn.map((d) => d.source))];
+  const hostLink = (name: string) => {
+    const s = model.flatMap((r) => r.sources).find((x) => x.name === name);
+    return s ? (
+      <button key={name} type="button" data-open={`data_source-${s.id}`} className={LINK} onClick={() => openSource(navigation, s.id)}>{name}</button>
+    ) : (
+      <span key={name}>{name === LOCAL_SOURCE ? `${LOCAL_SOURCE} · ${t`file system`}` : name}</span>
+    );
+  };
   return (
     <>
       {path.length > 1 && (
@@ -263,17 +336,23 @@ function SchemaCard({
           {path.map((k) => nodeOf(model, k)?.name ?? bareKind(k)).join('  ›  ')}
         </div>
       )}
-      <Head title={node.name} tag={node.subkind === 'dataset' ? t`dataset schema` : t`schema`} mono />
+      <Head title={node.name} tag={node.subkind === 'dataset' ? t`dataset kind` : t`kind`} mono />
       <p className="my-1.5 text-muted-foreground">{node.description}</p>
       <Facts rows={[
         [t`Kind`, <span className="font-mono text-xs">{node.kind}</span>],
         [t`Defined in`, `${home.name} · ${node.folder}/`],
-        [t`Dataset`, node.dataset ? (
+        [t`Dataset`, keptIn.length ? (
+          <span className="flex flex-wrap gap-x-3.5 gap-y-1">
+            {keptIn.map((d) => <span key={d.id}>{datasetLink(d)} · {rowCount(d.rows)}</span>)}
+          </span>
+        ) : node.dataset ? (
           <button type="button" data-open={`dataset-${node.dataset.id}`} className={LINK} onClick={() => void openDataset(node.dataset!.id)}>
             {node.dataset.title} · {count === 1 ? t`1 row` : t`${count} rows`}
           </button>
         ) : t`none of its own · stored inside the rows of the schema that uses it`],
-        [t`Data source`, !node.dataset ? undefined : feeder ? (
+        [t`Data source`, hostNames.length ? (
+          <span className="flex flex-wrap gap-x-3.5 gap-y-1">{hostNames.map(hostLink)}</span>
+        ) : !node.dataset ? undefined : feeder ? (
           <button type="button" data-open={`data_source-${feeder.id}`} className={LINK} onClick={() => openSource(navigation, feeder.id)}>{feeder.name}</button>
         ) : node.dataset.source_id ? t`a source this project does not list` : t`none · written by hand`],
         [t`Used by`, users.length ? kindLinks(users) : t`nothing`],
@@ -313,6 +392,14 @@ function SchemaCard({
       )}
     </>
   );
+}
+
+/** A data source's status, as a person reads it. */
+function sourceStatusLabel(status: string): string {
+  const labels: Record<string, MessageDescriptor> = {
+    new: msg`new`, setup: msg`needs setup`, active: msg`active`, disabled: msg`disabled`,
+  };
+  return labels[status] ? i18n._(labels[status]) : status;
 }
 
 function Head({ title, tag, mono }: { title: string; tag: string; mono?: boolean }) {

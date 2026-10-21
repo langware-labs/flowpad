@@ -1,0 +1,26 @@
+{
+  "type": "compute_op",
+  "id": "e585a0a6-d3b1-4c79-9cff-9b1dee0a702a",
+  "name": "gdrive-mount-sign-in",
+  "label": "Sign in to Google Drive",
+  "description": "Drive for desktop running, signed in, and starting with the computer.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" sign-in --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" sign-in --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE sign-in --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 600,
+    "source_step": "sign-in"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" sign-in --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" sign-in --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE sign-in --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "sign-in"
+  }
+}

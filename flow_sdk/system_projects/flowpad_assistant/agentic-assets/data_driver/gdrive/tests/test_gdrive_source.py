@@ -81,7 +81,7 @@ class _Drive:
 
     def _mint(self, meta: dict, data: bytes = b"") -> dict:
         self._next += 1
-        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}", "version": "1"}
+        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}", "version": "1", "headRevisionId": f"r{self._next}.1"}
         if meta.get("mimeType") != self.FOLDER:
             meta.setdefault("mimeType", "application/octet-stream")
             meta["size"] = str(len(data))
@@ -93,9 +93,9 @@ class _Drive:
         for term in q.split(" and "):
             if term == "trashed = false":
                 ok = not meta.get("trashed")
-            elif m := re.fullmatch(r"'(.+)' in parents", term):
-                parent = m.group(1)
-                ok = parent in (meta.get("parents") or ()) or (parent in ("root",) and not meta.get("parents"))
+            elif m := re.fullmatch(r"\(?((?:'[^']+' in parents(?: or )?)+)\)?", term):
+                parents = re.findall(r"'([^']+)' in parents", m.group(1))
+                ok = any(p in (meta.get("parents") or ()) or (p == "root" and not meta.get("parents")) for p in parents)
             elif m := re.fullmatch(r"name = '(.*)'", term):
                 ok = meta.get("name") == m.group(1).replace("\\'", "'")
             elif m := re.fullmatch(r"mimeType (!?=) '(.+)'", term):
@@ -168,6 +168,7 @@ class _Drive:
             self.content[file_id] = raw
             found["size"] = str(len(raw))
             found["version"] = str(int(found.get("version") or 0) + 1)
+            found["headRevisionId"] = f"{file_id}.{found['version']}"   # content only: Drive's version also moves on metadata
             return 200, json.dumps(found).encode(), {}
         return 404, b"{}", {}
 
@@ -601,9 +602,29 @@ async def test_rows_in_a_drive_folder_keep_the_row_files_contract():
     gtm = next(f for f in drive.files if f.get("name") == "GTM")
     rows = next(f for f in drive.files if f.get("name") == "Rows")
     assert gtm["mimeType"] == rows["mimeType"] == _Drive.FOLDER and rows["parents"] == [gtm["id"]]
-    kept = [f for f in drive.files if f.get("parents") == [rows["id"]]]
-    assert {f["name"] for f in kept} == {"rows/a/row.json", "rows/a/input/x.json"}        # one file per path, flat
-    assert all(f.get("trashed") for f in kept)                                            # a delete is Drive's trash
+    def under(folder):
+        return {f["name"]: f for f in drive.files if f.get("parents") == [folder["id"]]}
+
+    top = under(rows)                                                                     # the disk layout, as folders
+    assert set(top) == {"rows"} and top["rows"]["mimeType"] == _Drive.FOLDER
+    row = under(top["rows"])["a"]
+    assert row["mimeType"] == _Drive.FOLDER and set(under(row)) == {"row.json", "input"}
+    assert set(under(under(row)["input"])) == {"x.json"}
+    assert under(row)["row.json"].get("trashed") and under(under(row)["input"])["x.json"].get("trashed")
+
+
+async def test_rows_kept_as_flat_named_files_are_still_read():
+    """Rows written before folders (one file NAMED ``rows/<key>/row.json``) are adopted, not lost."""
+    drive = _Drive()
+    with _serving(drive) as base:
+        binding = SourceBinding(source_id="ds-rows", config={"base_url": base, "path": "GTM/Rows"}, credentials=TOKEN)
+        async with DriveSource(binding) as source:
+            await source.write_file("rows/new/row.json", b"{}")
+        rows = next(f for f in drive.files if f.get("name") == "Rows")
+        drive.files.append({"id": "legacy1", "name": "rows/old/row.json", "mimeType": "application/json",
+                            "parents": [rows["id"]], "headRevisionId": "r1", "modifiedTime": "2026-01-01T00:00:00Z"})
+        async with DriveSource(binding) as source:
+            assert set(await source.list_files()) == {"rows/new/row.json", "rows/old/row.json"}
 
 
 async def test_rows_in_a_read_only_drive_source_are_never_written():
@@ -619,3 +640,13 @@ async def test_rows_in_a_read_only_drive_source_are_never_written():
 
 async def test_a_drive_location_names_the_folder():
     assert DriveSource.row_files_target("GTM/Rows/leads") == {"path": "GTM/Rows/leads"}
+
+
+async def test_a_source_holding_datasets_makes_its_missing_folder_later(driver, tmp_path):
+    """A project's new data source has no folder in Drive yet: the first row write makes it."""
+    with _serving(_Drive(_tree())) as base:
+        source = _source(tmp_path, base, path="GTM/New")
+        source.holds_rows = True
+        assert (await driver.verify(source)).ready is True
+        source.read_only = True                     # read-only cannot make it: still a setup problem
+        assert (await driver.verify(source)).ready is False

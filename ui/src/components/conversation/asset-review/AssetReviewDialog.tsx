@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import { isAssetConflict, ReplacePrompt } from './ReplacePrompt';
 import type { OpenShareOutcome } from './use-open-git-share';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
@@ -399,12 +400,21 @@ function AttachmentReviewDialog({
   } = useEntity<Project>(selectedProjectTypeId);
   const selectedInstalled = selected.effectiveScope != null;
 
-  const installAllToProject = async (projectId: string, name?: string) => {
+  // An install the receiver already has (an earlier share of the same asset): the backend answers
+  // 409 `asset_conflict`; the dialog asks once, then repeats the same install with `overwrite`.
+  const [replace, setReplace] = useState<(() => void) | null>(null);
+
+  const installAllToProject = async (projectId: string, name?: string, overwrite = false) => {
     setBusyAction('project');
+    setReplace(null);
     try {
-      for (const a of installable) await a.install('project', projectId);
+      for (const a of installable) await a.install('project', projectId, { overwrite });
       notify.success({ title: labels.added, message: name ?? '' });
     } catch (err) {
+      if (!overwrite && isAssetConflict(err)) {
+        setReplace(() => () => void installAllToProject(projectId, name, true));
+        return;
+      }
       console.error('[asset-review] batch project install failed', err);
       notify.error({ title: labels.addFailed });
     } finally {
@@ -422,12 +432,17 @@ function AttachmentReviewDialog({
     setPickerOpen(true);
   };
 
-  const handleInstallGlobal = async () => {
+  const handleInstallGlobal = async (overwrite = false) => {
     setBusyAction('global');
+    setReplace(null);
     try {
-      for (const a of installable) await a.install('user');
+      for (const a of installable) await a.install('user', undefined, { overwrite });
       notify.success({ title: t`Installed`, message: t`${installable.length} attachments` });
     } catch (err) {
+      if (!overwrite && isAssetConflict(err)) {
+        setReplace(() => () => void handleInstallGlobal(true));
+        return;
+      }
       console.error('[asset-review] batch global install failed', err);
       notify.error({ title: t`Install failed` });
     } finally {
@@ -579,6 +594,11 @@ function AttachmentReviewDialog({
                   </Button>
                 ))}
             </>
+          )}
+          {replace && (
+            <div className="basis-full">
+              <ReplacePrompt busy={busy} onConfirm={replace} testId="asset-replace" />
+            </div>
           )}
           {selectedInstalled && !selectedProjectTypeId && (
             <Button size="sm" variant="secondary" onClick={() => void openSelected()} data-testid="asset-open-entity">

@@ -1,0 +1,33 @@
+{
+  "name": "gdrive-mount-setup",
+  "description": "Use a Google Drive folder through Google Drive for desktop: install it, sign in, and the folder is made. Your rows then live in that Drive folder and Drive keeps them in sync.",
+  "version": 1,
+  "enabled": true,
+  "icon": "HardDrive",
+  "steps": [
+    {
+      "id": "install",
+      "label": "Install Google Drive",
+      "kind": "compute",
+      "ref": "gdrive-mount-install"
+    },
+    {
+      "id": "sign-in",
+      "label": "Sign in to Google Drive",
+      "kind": "compute",
+      "ref": "gdrive-mount-sign-in"
+    },
+    {
+      "id": "folder",
+      "label": "Make the folder",
+      "kind": "compute",
+      "ref": "gdrive-mount-folder"
+    },
+    {
+      "id": "verify",
+      "label": "Check",
+      "kind": "compute",
+      "ref": "gdrive-mount-verify"
+    }
+  ]
+}

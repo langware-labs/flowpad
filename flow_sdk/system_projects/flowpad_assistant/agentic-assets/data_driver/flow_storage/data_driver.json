@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "name": "flow_storage",
+  "title": "Flowpad data store",
+  "icon_name": "Flowpad",
+  "description": "A data store on the Flowpad hub: your project's data files, kept on the hub and shared with the project's members. Datasets keep their rows here; offline, they keep them locally until the hub answers.",
+  "kind": "datasource.fs.flow_storage",
+  "reflect": [
+    "none"
+  ],
+  "config": {
+    "store_id": {
+      "type": "text",
+      "label": "Data store",
+      "account_key": true,
+      "placeholder": "made by setup",
+      "hint": "The hub data store's id. Setup makes one for the project when it is empty."
+    },
+    "prefix": {
+      "type": "text",
+      "advanced": true,
+      "label": "Folder",
+      "hint": "A folder inside the store; empty for the whole store."
+    }
+  },
+  "setup_wizards": [
+    {
+      "stage": "create",
+      "label": "Create the project's data store",
+      "wizard": "flow-storage-setup"
+    }
+  ]
+}

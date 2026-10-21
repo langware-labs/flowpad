@@ -1,7 +1,7 @@
 /**
  * The attached channels of ONE owner — the local user's stream inbox or an agent's —
  * on the stream inbox's header line, as a row of round marks with a status dot
- * (presence-row pattern): green dot = listening, dashed ring = paused, "!" =
+ * (presence-row pattern): green check = listening, dashed ring = paused, yellow "!" =
  * a person must act (`ATTENTION[kind].mark`). ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
@@ -28,7 +28,7 @@
  */
 import { type ReactNode, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
-import { Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
@@ -341,12 +341,19 @@ function ChannelMark({
         >
           {/* The badge sits top-right here: bottom-right is the listening dot's. */}
           <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
-          {state === 'on' && attention === 0 && <span className={cn(MARK_BADGE, 'size-2.5 bg-emerald-500')} />}
+          {state === 'on' && attention === 0 && (
+            <span
+              className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-emerald-500 text-white')}
+              data-testid="attached-channel-on"
+            >
+              <Check className="size-2" strokeWidth={4} />
+            </span>
+          )}
           {attention > 0 && (
             <span
               className={cn(
                 MARK_BADGE,
-                'grid size-3.5 place-items-center bg-amber-500 text-[9px] font-bold leading-none text-white',
+                'grid size-3.5 place-items-center bg-yellow-400 text-[9px] font-bold leading-none text-black',
               )}
               data-testid="attached-channel-attention"
             >

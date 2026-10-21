@@ -6,7 +6,7 @@
  * invariant that makes two id unions worth having: a hub id must never appear
  * in the desk rail, where `RAIL_ITEMS` would render it as a silent `null`.
  */
-import { ViewType, WorldViewProjection } from '@sdk';
+import { ViewType } from '@sdk';
 import { describe, it, expect } from 'vitest';
 
 import { buildHubRailItems } from '@src/components/collapsed-sidebar/hub-rail';
@@ -36,9 +36,6 @@ describe('buildHubRailItems', () => {
   it('keeps the content browsers ahead of it, in order', () => {
     expect(buildHubRailItems(t).map((i) => i.id)).toEqual([
       'stream_inbox',
-      'tasks',
-      'docs',
-      'world',
       'organization',
       'token-plan',
       'llm-endpoints',
@@ -71,8 +68,6 @@ describe('buildHubRailItems', () => {
 
     expect(pointers).toEqual({
       stream_inbox: 'conversation',
-      tasks: 'task',
-      docs: 'markdown',
     });
   });
 
@@ -83,7 +78,8 @@ describe('buildHubRailItems', () => {
     // rail now opens the master-detail screen.
     const items = buildHubRailItems(t);
 
-    expect(items.find((i) => i.id === 'world')?.pointer).toBe(WorldViewProjection.WORLD);
+    // World view itself moved off the rail, into the user menu.
+    expect(items.find((i) => i.id === 'world')).toBeUndefined();
 
     const organization = items.find((i) => i.id === 'organization');
     expect(organization?.viewType).toBe(ViewType.ORGANIZATION);

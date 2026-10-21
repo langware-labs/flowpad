@@ -1250,7 +1250,13 @@ export class NavigationActions {
 
   /** Open the table behind one home counter (see `DockPointer.forCounterAssets`). */
   openAssetList(group: string, counter: string): void {
-    this.openDock(DockPointer.forCounterAssets(group, counter));
+    this.openDockOnThisPage(DockPointer.forCounterAssets(group, counter));
+  }
+
+  /** Open a desk pointer on the page we are on: on the hub a bare desk pointer would revert to hub home. */
+  openDockOnThisPage(pointer: IDockPointer | DockPointer): void {
+    const dock = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    this.openDock(this.here.page === PageId.HUB ? dock.withPage(PageId.HUB) : dock);
   }
 
   /**

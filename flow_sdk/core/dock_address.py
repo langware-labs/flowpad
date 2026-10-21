@@ -192,6 +192,8 @@ class ViewType(StrEnum):
     # Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each one's
     # messages go. Rendered on the hub page AND the desk.
     INBOUND = "inbound"  # /dock/<hub|desk>/inbound
+    # The hub's machines: cloud sandboxes and connected computers, with + Add machine.
+    MACHINES = "machines"  # /dock/hub/machines
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -740,6 +742,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         aliases=("webhooks", "inbound webhooks", "message routing"),
         pages=("hub", "desk"),
     ),
+    ViewType.MACHINES: _m(_NONE, label="Machines", aliases=("sandboxes", "computers"), pages=("hub",)),
 }
 
 

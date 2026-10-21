@@ -161,7 +161,8 @@ const ROWS: Record<string, RowSpec[]> = {
   dataset: [
     [msg`Rows`, (e) => count(e.num_rows)],
     [msg`Annotated`, (e) => count(e.num_annotated)],
-    [msg`Stored in`, (e) => locationLabel(e.location as DatasetLocation | null | undefined)],
+    // The backend's own label of where the rows are; old rows carry only the legacy `location`.
+    [msg`Rows at`, (e) => text(e.rows_at) || locationLabel(e.location as DatasetLocation | null | undefined)],
     UPDATED,
   ],
   llm_endpoint: [

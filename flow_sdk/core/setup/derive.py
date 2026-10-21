@@ -245,8 +245,12 @@ class ProjectTree:
                 "name": op.name, "label": "Check the sign-in",
                 "steps": [{"id": "verify", "label": "Check the sign-in", "kind": "compute", "ref": op.name}],
             })
+        label = str(source.name or source.provider)
+        hosted = len(await source.datasets())
+        if hosted:   # a container of datasets reads as one: what setting it up is for
+            label = f"{label} · hosts {hosted} dataset{'s' if hosted != 1 else ''}"
         self.nodes[node_id] = SetupNode(
-            id=node_id, label=str(source.name or source.provider), children=tuple([before] if before else needs),
+            id=node_id, label=label, children=tuple([before] if before else needs),
             inputs=inputs, run=verify,
         )
         return node_id
