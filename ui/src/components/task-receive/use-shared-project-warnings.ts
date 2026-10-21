@@ -1,4 +1,4 @@
-import { type UserWarning, ViewType } from '@sdk';
+import { type ConversationParticipant, type UserWarning, ViewType } from '@sdk';
 import { projectOriginOf } from '@sdk/models/FSOrigin';
 import { useLingui } from '@lingui/react/macro';
 import { useProjects } from '@src/hooks/use-projects';
@@ -7,6 +7,12 @@ import { useMemo } from 'react';
 
 /** The warning id of a shared project that is not set up here, one per project. */
 export const sharedProjectWarningId = (projectId: string) => `shared-project-not-set-up:${projectId}`;
+
+/** Who shared a project with you: the hub stamps `invited_by_name` on your own row of the cached roster. */
+function sharerName(project: { members?: ConversationParticipant[] }): string | undefined {
+  const own = project.members?.find((m) => typeof m.invited_by_name === 'string' && m.invited_by_name);
+  return own?.invited_by_name as string | undefined;
+}
 
 /**
  * A shared project this desktop holds as a row with no files — its set-up was
@@ -29,7 +35,7 @@ export function useSharedProjectWarnings(): UserWarning[] {
       if (!gitOrigin) continue;
       const name = project.name || t`a shared project`;
       const setUp = () =>
-        setPendingProject({ gitOrigin, projectName: name, senderName: 'Someone', projectId: project.id });
+        setPendingProject({ gitOrigin, projectName: name, senderName: sharerName(project), projectId: project.id });
       warnings.push({
         id: sharedProjectWarningId(project.id),
         icon: 'FolderX',
