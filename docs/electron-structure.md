@@ -7,9 +7,9 @@ id: 8edcadfe-73f7-4252-97ab-c1dd33acdb01
 This document describes the **actual** state of the `electron/` directory on branch `FLOWPAD-2110`.
 It complements [`electron.md`](electron.md) (an older, general overview).
 
-> **Correction to `electron.md`:** it says the Electron version should match the PyPI version.
-> That is **not true**. The versions are independent: the desktop app is updated through
-> electron-updater, and the engine (`flowpad` on PyPI) is installed and updated through `uv tool install`.
+> **Versions:** the desktop app and the engine release independently — the desktop is updated through
+> electron-updater, the engine (`flowpad` on PyPI) through `uv tool install`. What keeps an installed pair
+> workable is the bidirectional compatibility contract in [`version-compatibility.md`](version-compatibility.md).
 
 ## 1. Overview
 
@@ -39,6 +39,8 @@ Electron (main.js)
 | Module | Role |
 | --- | --- |
 | `semver.js` | Version comparison. |
+| `engine-compat.js` | Desktop <-> engine compatibility: the floors (`engine-compat.json` / the wheel's `flow_sdk/compat.json`), `checkPair`, `selectCompatibleRelease`, `isInstallableVersion`. See `docs/version-compatibility.md`. |
+| `wheel-compat.js` | `readWheelMember` — reads one member (a candidate release's `flow_sdk/compat.json`) out of a remote wheel with HTTP Range requests: tens of KB instead of the whole wheel, no package code run. |
 | `shutdown.js` | Graceful backend stop. |
 | `backend-wait.js` | Waiting for the server to come up. |
 | `flow-rs-keychain.js` | Reading keys from the keychain. |

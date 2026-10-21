@@ -9,6 +9,7 @@ said "upgraded successfully" on a box that stayed on its old version (seen on th
 from __future__ import annotations
 
 import subprocess
+import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -32,6 +33,7 @@ def ran(monkeypatch):
     return calls
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows installs detached — see the test below")
 def test_it_installs_the_latest_release_as_a_pin_and_says_what_changed(monkeypatch, ran):
     monkeypatch.setattr(self_update, "latest_release", lambda: "999.0.0")
 
@@ -40,6 +42,47 @@ def test_it_installs_the_latest_release_as_a_pin_and_says_what_changed(monkeypat
     assert out.exit_code == 0, out.output
     assert [cmd[1:] for cmd in ran] == [["tool", "install", "flowpad==999.0.0"]]
     assert f"flowpad upgraded: {__version__} -> 999.0.0." in out.output
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows installs detached -- covered in test_version_install_compat")
+def test_a_release_that_rejects_the_managing_desktop_is_rolled_back(monkeypatch, ran):
+    """A desktop-managed backend must not keep a release whose ``min_desktop_version`` the running
+    desktop fails -- the same invariant POST /version/install enforces."""
+    monkeypatch.setattr(self_update, "latest_release", lambda: "999.0.0")
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: "needs Desktop 0.2.60")
+
+    out = CliRunner().invoke(app, ["upgrade"])
+
+    assert out.exit_code == 1
+    assert len(ran) == 2, "installed, then put back (the restore succeeds on its first attempt)"
+    assert "flowpad==999.0.0" in ran[0] and f"flowpad=={__version__}" in ran[1], "the previous release is pinned back"
+    assert "not compatible with the running desktop" in out.output and "0.2.60" in out.output
+    assert f"flowpad {__version__} has been restored." in out.output
+    assert "flowpad upgraded:" not in out.output
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the detached relay exists only on Windows")
+def test_on_windows_the_install_runs_detached_after_this_command_exits(monkeypatch, ran):
+    """Windows cannot replace the running ``flow.exe``, so ``flow upgrade`` must NOT install
+    in-process (``ran`` stays empty); it schedules ``python -m flow_sdk.server.self_update
+    upgrade <latest>`` to run detached once this command (and its parent) exit."""
+    monkeypatch.setattr(self_update, "latest_release", lambda: "999.0.0")
+    spawned: list[list[str]] = []
+
+    class FakePopen:  # a CLASS, not a lambda: asyncio's windows_utils subclasses subprocess.Popen on import
+        def __init__(self, cmd, **kwargs):
+            spawned.append([str(c) for c in cmd])
+            self.pid = 1
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+
+    out = CliRunner().invoke(app, ["upgrade"])
+
+    assert out.exit_code == 0, out.output
+    assert ran == [], "the install must not run in this process on Windows"
+    assert len(spawned) == 1
+    assert spawned[0][1:5] == ["-m", "flow_sdk.server.self_update", "upgrade", "999.0.0"]
+    assert "as soon as this command exits" in out.output
 
 
 def test_the_install_never_forces_a_rebuild_of_the_environment_it_runs_in(monkeypatch):
