@@ -35,18 +35,16 @@ def compat_check(
     json_out: Annotated[bool, typer.Option("--json", help="Machine-readable verdict on stdout.")] = False,
 ) -> None:
     """Check desktop <-> backend version compatibility for this installed backend."""
-    import json  # noqa: PLC0415
-
     from flow_sdk import __version__  # noqa: PLC0415
+    from flow_sdk.cli.commands._common import fail, ok  # noqa: PLC0415
     from flow_sdk.utils import compat  # noqa: PLC0415
 
     try:
         min_desktop = compat.backend_min_desktop_version()
     except compat.CompatError as exc:
         if json_out:
-            typer.echo(json.dumps({"compatible": False, "error": str(exc)}))
-        else:
-            typer.echo(f"Invalid compatibility metadata: {exc}", err=True)
+            fail(1, "INVALID_COMPAT_METADATA", str(exc))
+        typer.echo(f"Invalid compatibility metadata: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     verdict = compat.check_pair(
@@ -56,14 +54,14 @@ def compat_check(
         min_backend_version=desktop_min_backend,
     )
     if json_out:
-        typer.echo(json.dumps({
+        ok({
             "compatible": verdict.compatible,
             "backend_version": __version__,
             "desktop_version": desktop_version,
             "min_desktop_version": min_desktop,
             "min_backend_version": desktop_min_backend,
             "reasons": verdict.reasons,
-        }))
+        })
     elif verdict.compatible:
         typer.echo(f"Compatible: backend {__version__} <-> desktop {desktop_version}.")
     else:
