@@ -76,6 +76,8 @@ class AgentSpec(AssetDocumentSpec):
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
     intro: Optional[str] = None
+    #: ``intro`` in other languages, keyed by locale code (``he``, ``ar``, ``en-US``).
+    intro_translations: Optional[dict[str, str]] = None
     auto_launch: Optional[bool] = None
     auto_launch_prompt: Optional[str] = None
     #: Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal.

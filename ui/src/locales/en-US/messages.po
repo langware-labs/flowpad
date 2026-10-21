@@ -2377,6 +2377,11 @@ msgstr "Add Hook"
 #~ msgid "Add input"
 #~ msgstr "Add input"
 
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
+msgid "Add intro in another language"
+msgstr "Add intro in another language"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
@@ -5656,7 +5661,6 @@ msgid "Click to edit which models this budget may call"
 msgstr "Click to edit which models this budget may call"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
-#: src/pages/hub-home/HubHome.tsx
 msgid "Click to rename"
 msgstr "Click to rename"
 
@@ -6281,6 +6285,7 @@ msgstr "Confirm: {0}"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "Connect"
@@ -6299,6 +6304,10 @@ msgstr "Connect {group}"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Connect {label}"
 msgstr "Connect {label}"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Connect {where}"
+msgstr "Connect {where}"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
@@ -6358,6 +6367,10 @@ msgstr "Connect GitHub to share a project whose files live in a GitHub repositor
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Connect new source"
 msgstr "Connect new source"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connect this machine"
+msgstr "Connect this machine"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -9513,7 +9526,9 @@ msgid "Disconnect"
 msgstr "Disconnect"
 
 #: src/components/account/user-info.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/collaboration/SharedSessionView.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -13905,6 +13920,11 @@ msgstr "Intro"
 msgid "Intro — shown as the agent's first message, not sent to the model"
 msgstr "Intro — shown as the agent's first message, not sent to the model"
 
+#. placeholder {0}: nameOf(code)
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
+msgid "Intro in {0}"
+msgstr "Intro in {0}"
+
 #: src/components/assets/DependencyChips.tsx
 msgid "invalid"
 msgstr "invalid"
@@ -14632,6 +14652,10 @@ msgstr "Leave conversation"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Leave empty to keep"
 msgstr "Leave empty to keep"
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Leave it running. This card turns Running by itself once the machine connects."
+msgstr "Leave it running. This card turns Running by itself once the machine connects."
 
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "Leave live session mode"
@@ -18744,6 +18768,10 @@ msgstr "On"
 msgid "On — anyone with the launch link can try it"
 msgstr "On — anyone with the launch link can try it"
 
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "On <0>{where}</0>, open a terminal."
+msgstr "On <0>{where}</0>, open a terminal."
+
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr "On a machine with Flowpad already running and signed in, the last line alone is enough."
 
@@ -22061,7 +22089,8 @@ msgstr "Remove"
 
 #. placeholder {0}: asset.label
 #. placeholder {0}: c.label
-#. placeholder {0}: source.name
+#. placeholder {0}: nameOf(code)
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
@@ -23331,6 +23360,10 @@ msgstr "Run this agent on its own, at a time you pick. Runs are headless and sho
 msgid "Run this live session in which project?"
 msgstr "Run this live session in which project?"
 
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "Run:"
+msgstr "Run:"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -23477,6 +23510,7 @@ msgstr "sandbox"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/settings-view/settings-utils.ts
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox"
@@ -28209,6 +28243,10 @@ msgstr "this machine"
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "This machine has no model to run the agent on. Set one up, then try again."
 msgstr "This machine has no model to run the agent on. Set one up, then try again."
+
+#: src/pages/hub-home/ConnectMachineDialog.tsx
+msgid "This machine is not connected to the hub, so it cannot be opened from here."
+msgstr "This machine is not connected to the hub, so it cannot be opened from here."
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."

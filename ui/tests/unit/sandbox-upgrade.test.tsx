@@ -84,7 +84,7 @@ import { HubHome } from '@src/pages/hub-home/HubHome';
 function renderHome() {
   return render(
     <TooltipProvider>
-      <HubHome />
+      <HubHome view="machines" />
     </TooltipProvider>,
   );
 }

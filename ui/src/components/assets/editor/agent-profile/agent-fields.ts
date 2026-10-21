@@ -24,6 +24,7 @@ export type AgentDocumentPatch = Partial<
     | 'cli_options'
     | 'enabled'
     | 'intro'
+    | 'intro_translations'
     | 'auto_launch'
     | 'auto_launch_prompt'
     | 'vibe_only'
