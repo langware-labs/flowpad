@@ -2353,6 +2353,11 @@ msgstr "Add Hook"
 #~ msgid "Add input"
 #~ msgstr "Add input"
 
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
+msgid "Add intro in another language"
+msgstr "Add intro in another language"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
@@ -13773,6 +13778,11 @@ msgstr "Intro"
 msgid "Intro — shown as the agent's first message, not sent to the model"
 msgstr "Intro — shown as the agent's first message, not sent to the model"
 
+#. placeholder {0}: nameOf(code)
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
+msgid "Intro in {0}"
+msgstr "Intro in {0}"
+
 #: src/components/assets/DependencyChips.tsx
 msgid "invalid"
 msgstr "invalid"
@@ -21881,7 +21891,8 @@ msgstr "Remove"
 
 #. placeholder {0}: asset.label
 #. placeholder {0}: c.label
-#. placeholder {0}: source.name
+#. placeholder {0}: nameOf(code)
+#: src/components/assets/editor/agent-profile/AgentIntroTranslations.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
