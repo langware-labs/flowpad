@@ -459,14 +459,12 @@ async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monke
 
 
 @async_context
-async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a_question_onto_it(monkeypatch):
-    """A person watching gets the popup — steps blank, explanation readable —
-    and nothing else: no LLM-source resolution, no install, no question, until
-    the popup's own Start button calls `POST /wizard/<id>/start` (the
-    same function this would otherwise call directly). A headless box (no tab,
-    ever) has no Start to press, so it keeps running itself unattended — that
-    is the OTHER parametrized case just above, which never mocks a connection
-    and so takes this same function's other branch."""
+async def test_a_live_tab_drives_the_first_run_flow_so_the_trigger_neither_opens_nor_runs_anything(monkeypatch):
+    """A person watching: the APP drives the first-run flow (every load, before a project setup, on an
+    invitation -- `first-run-flow` in the UI), so the trigger opens no popup and runs nothing: an install that
+    already ran the wizard fully must not see it again. A headless box (no tab, ever) has no one to drive it, so
+    it keeps running itself unattended -- the OTHER parametrized case just above, which never mocks a
+    connection and so takes this same function's other branch."""
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
     from flow_sdk.core.wizard import start as wizard_start
@@ -501,8 +499,8 @@ async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a
     try:
         await _run_llm_setup_trigger(trigger, [])
 
-        assert navigated == [str(wizard.id)], "the popup opens"
-        assert called == [], "nothing runs until Start is pressed"
+        assert navigated == [], "the app opens the popup, when the first-run flow needs it"
+        assert called == [], "nothing runs until the person presses Start"
     finally:
         await _cleanup(wizard, trigger)
 

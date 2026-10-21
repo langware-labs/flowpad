@@ -45,6 +45,21 @@ def _rejected_body(request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+def _first_run_required(request: Request, exc: Exception) -> JSONResponse:
+    """Project setup asked for before the first-run wizard is done, as the FAIL envelope a client can read.
+
+    412 (a precondition not met) with ``data.blocked == "first_run_setup"``: a client tells it from any other
+    refusal by that, and shows "finish the first-time setup" instead of an error. Not 409 -- clients already read
+    a 409 from these very routes as a NAME COLLISION. One handler, so a door that calls
+    ``require_first_run_setup()`` is guarded without each one building the refusal."""
+    from flow_sdk.core.wizard.first_run import BLOCKED_FIRST_RUN, BLOCKED_MESSAGE  # noqa: PLC0415
+
+    return JSONResponse(
+        status_code=412,
+        content={"status": "FAIL", "message": BLOCKED_MESSAGE, "data": {"blocked": BLOCKED_FIRST_RUN}},
+    )
+
+
 class FlowServer:
     """Builder that assembles a FastAPI app from SDK components."""
 
@@ -129,6 +144,9 @@ class FlowServer:
         # where it expected a sentence and put an object into React, which replaced the
         # whole page with the error screen.
         app.add_exception_handler(RequestValidationError, _rejected_body)
+        from flow_sdk.core.wizard.first_run import FirstRunSetupRequired  # noqa: PLC0415
+
+        app.add_exception_handler(FirstRunSetupRequired, _first_run_required)
 
         # 5. Core routers
         from .routes import bootstrap_router, health_router, wiki_router

@@ -95,6 +95,32 @@ async def test_decline_keeps_setup_required_and_approval_runs_setup_then_declare
 
 
 @pytest.mark.asyncio
+async def test_approving_a_setup_before_the_first_run_wizard_is_done_waits_instead_of_failing(machine, monkeypatch):
+    """The first-run wizard comes first. The refusal is a SETUP_REQUIRED that says why (a wait the screen offers a
+    way out of), not a FAILED that a screen would retry or report -- and nothing ran."""
+    from types import SimpleNamespace as NS
+
+    from flow_sdk.core.wizard import first_run
+
+    async def closed():
+        return NS(id="w-1", name=first_run.FIRST_RUN_WIZARD, gates_project_setup=True)
+
+    monkeypatch.setattr(first_run, "first_run_wizard", closed)
+
+    refused = await load_project(machine.project, tree=machine.tree, approved=True)
+
+    assert refused.state is LoadState.SETUP_REQUIRED
+    assert refused.blocked == first_run.BLOCKED_FIRST_RUN
+    assert not machine.ran and (machine.project.id, "") not in project_setup._RUNS
+
+    # The wizard is done: the very same approval now starts the run.
+    monkeypatch.setattr(first_run, "first_run_gate_open", lambda *_a, **_k: True)
+    started = await load_project(machine.project, tree=machine.tree, approved=True)
+    assert started.state is LoadState.RUNNING and started.blocked is None
+    assert (await settle(machine)).state is LoadState.READY
+
+
+@pytest.mark.asyncio
 async def test_stopped_service_reloads_without_repeating_setup(machine):
     machine.installed.update(("prepare", "install", "home", "app"))
     result = await load_project(machine.project, tree=machine.tree)

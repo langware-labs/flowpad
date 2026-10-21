@@ -92,6 +92,9 @@ export interface ProjectLoadResult {
   display?: string | null;
   /** A failed load setup has not been tried for yet: an approved Load runs setup, then loads again. */
   setup_available?: boolean;
+  /** Why setup was refused before it began (`'first_run_setup'`: the first-run wizard is not done). A
+   *  `setup_required` load carrying it is a wait, not a failure. */
+  blocked?: 'first_run_setup' | null;
   /** What the check found, for a `setup_required` load: the tree as it stands before anything runs. */
   tree?: SetupTreeResult | null;
   /** What a `running` load is doing: `load` only starts what is set up, `setup` sets up first. */

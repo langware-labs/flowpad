@@ -10,6 +10,10 @@ whether its setup and service are usable. Listing dependencies does not start wo
 Load checks declared prerequisites. If any are unmet it returns `setup_required`, without
 executing installation or asking setup questions. The app presents **X requires setup**,
 with **Set up** and **Not now**. Not now leaves the requirement intact; it is not a skip.
+
+While the first-run wizard (`llm-setup`) has not run fully, a load that would set up returns `setup_required` with
+`blocked: "first_run_setup"` instead: a wait, not a failure. The screen starts the first-run flow and goes on by
+itself once the gate is open (see `flow_sdk/core/wizard/first_run.py`).
 Explicit approval runs setup and then Load. Later Open calls repeat the checks and restore
 a stopped runtime without repeating satisfied installation steps.
 

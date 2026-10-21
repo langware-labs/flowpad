@@ -66,6 +66,8 @@ export interface IWizard extends IEntity {
    *  Set on the document (`WizardSpec.popup`) for a wizard someone glances
    *  at and can set aside; it is started from its own Start button. */
   popup?: boolean;
+  /** Project setup begins only after this wizard is done (`WizardSpec.gates_project_setup`): the first-run wizard. */
+  gates_project_setup?: boolean;
   /** Said under the steps when a run passes; empty says nothing. From the document. */
   success_message?: string;
   /** Said when a run ended short (a failed or declined step); empty says nothing. */
@@ -84,6 +86,9 @@ export interface IWizard extends IEntity {
    *  entity's `system` flag, which is a different fact and reads false here. */
   shipped?: boolean;
   run_state?: WizardRunState;
+  /** Whether project setup may begin. True for every wizard but the first-run one; for that one, true once it
+   *  has run fully (stamped for good), or the person chose to go on without it (this backend session only). */
+  first_run_gate_open?: boolean;
   /** Why this wizard has no steps, or `''`. The reader deliberately swallows a
    *  malformed `wizard.json` (one bad document must not wedge an indexer
    *  walking a hundred assets), which made "I saved it and my wizard
@@ -116,6 +121,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   description?: string;
   label?: string;
   popup?: boolean;
+  gates_project_setup?: boolean;
   success_message?: string;
   failure_message?: string;
   restart_label?: string;
@@ -131,6 +137,9 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
    *  entity's `system` flag, which is a different fact and reads false here. */
   shipped?: boolean;
   run_state?: WizardRunState;
+  /** Whether project setup may begin. True for every wizard but the first-run one; for that one, true once it
+   *  has run fully (stamped for good), or the person chose to go on without it (this backend session only). */
+  first_run_gate_open?: boolean;
   document_error?: string;
   activity_path?: string;
 
@@ -143,12 +152,14 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     // from here. The UI mirrors it, the backend owns it.
     this.label = entity.label;
     this.popup = entity.popup;
+    this.gates_project_setup = entity.gates_project_setup;
     this.success_message = entity.success_message;
     this.failure_message = entity.failure_message;
     this.restart_label = entity.restart_label;
     this.agent = entity.agent;
     this.shipped = entity.shipped;
     this.run_state = entity.run_state;
+    this.first_run_gate_open = entity.first_run_gate_open;
     this.document_error = entity.document_error;
     this.activity_path = entity.activity_path;
   }
@@ -238,6 +249,27 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   async start(): Promise<{ llm_source: ReturnedValue | null; wizard: WizardResult }> {
     return await dataManager.callAction<void, { llm_source: ReturnedValue | null; wizard: WizardResult }>(
       new ActionInfo('start', Wizard.type, this.id, 'POST'),
+    );
+  }
+
+  /**
+   * May a project be set up here yet? Asked once at load, before the wizard is known. The backend holds the answer
+   * until the shipped wizard can be looked up (a fresh database indexes it ~40s after the app is serving).
+   */
+  static async firstRunState(): Promise<'open' | 'closed'> {
+    const answer = await dataManager.callAction<undefined, { state: 'open' | 'closed' }>(
+      new ActionInfo('first-run-state', Wizard.type, null, 'GET'),
+    );
+    return answer?.state === 'closed' ? 'closed' : 'open';
+  }
+
+  /**
+   * Go on without finishing this wizard: opens the first-run gate for this backend session (a restart closes it again), so a project can be set up
+   * though an install was declined or blocked. Only the first-run wizard gates anything (400 for another).
+   */
+  async continueWithoutSetup(): Promise<{ first_run_gate_open: boolean }> {
+    return await dataManager.callAction<void, { first_run_gate_open: boolean }>(
+      new ActionInfo('continue-without-setup', Wizard.type, this.id, 'POST'),
     );
   }
 }

@@ -189,6 +189,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
     from flow_sdk.builtin.project_setup import start_setup
     from flow_sdk.core.setup.derive import ProjectTree
     from flow_sdk.core.setup.execute import execute_setup
+    from flow_sdk.core.wizard.first_run import BLOCKED_FIRST_RUN, FirstRunSetupRequired
 
     pid = str(project.id)
     target = str(asset.typeid) if asset is not None else ""
@@ -260,11 +261,16 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                         needs_setup = True
                     # Showing one app: set up and start THAT app — the rest of the project (a credential
                     # nobody has given yet, an app beside it) is its own item and never holds this one.
-                    run = await start_setup(project, root=target, tree=tree if needs_setup else operational,
-                                            load_after=needs_setup, providers=providers,
-                                            dependency_approval=approved, ancestors=(*ancestors, pid))
-                    result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run,
-                                        phase="setup" if needs_setup else "load")
+                    try:
+                        run = await start_setup(project, root=target, tree=tree if needs_setup else operational,
+                                                load_after=needs_setup, providers=providers,
+                                                dependency_approval=approved, ancestors=(*ancestors, pid))
+                        result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run,
+                                            phase="setup" if needs_setup else "load")
+                    except FirstRunSetupRequired as refused:
+                        # Not a failure to report: the first-run wizard comes first, and the screen says so.
+                        result = LoadResult(state=LoadState.SETUP_REQUIRED, project_id=pid, detail=str(refused),
+                                            blocked=BLOCKED_FIRST_RUN)
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))

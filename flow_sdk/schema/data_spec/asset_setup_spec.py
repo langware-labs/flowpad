@@ -185,5 +185,8 @@ class LoadResult(DataSpec):
     #: What the check found, for a load that stopped at SETUP_REQUIRED: the tree as it stands, so the
     #: question "set up?" can show what setting up means before anything runs.
     tree: Optional[SetupTreeResult] = None
+    #: Why setup was refused before it began (``"first_run_setup"``: the first-run wizard is not done), absent otherwise.
+    #: A SETUP_REQUIRED result carrying it is a wait, not a failure: the screen offers the wizard and goes on from there.
+    blocked: Optional[Literal["first_run_setup"]] = None
     #: What a RUNNING load is doing: ``load`` only starts what is set up, ``setup`` sets up first.
     phase: Optional[Literal["load", "setup"]] = None

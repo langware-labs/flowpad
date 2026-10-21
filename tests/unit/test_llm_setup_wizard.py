@@ -24,6 +24,7 @@ import pytest
 
 from flow_sdk.assets.types.wizard import read_wizard
 from flow_sdk.core.compute_op import ask, ask_window
+from flow_sdk.core.wizard import first_run
 from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, PromptResult
@@ -356,19 +357,20 @@ async def test_a_test_backend_can_switch_first_run_setup_off(monkeypatch):
     monkeypatch.setattr(builtin_triggers, "_wizard_for", wizard_for)
     trigger = SimpleNamespace(uname="llm-setup-on-tab-ready")
 
-    monkeypatch.setenv(builtin_triggers.SKIP_FIRST_RUN_SETUP_ENV, "true")
+    monkeypatch.setenv(first_run.SKIP_FIRST_RUN_SETUP_ENV, "true")
     await builtin_triggers._run_llm_setup_trigger(trigger, [])
     assert resolved == [], "switched off: the wizard is never even looked up"
 
-    monkeypatch.delenv(builtin_triggers.SKIP_FIRST_RUN_SETUP_ENV)
+    monkeypatch.delenv(first_run.SKIP_FIRST_RUN_SETUP_ENV)
     await builtin_triggers._run_llm_setup_trigger(trigger, [])
     assert resolved == [trigger], "unset: the trigger runs as it does on a real install"
 
 
 @pytest.mark.parametrize(("assigned", "shown"), [(None, True), ("sandbox", False), ("agent", False)])
 async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched(monkeypatch, assigned, shown):
-    """On a desktop someone is watching, the popup waits for their Start. A sandbox or an agent's
-    box comes with its tools: there the setup runs itself and is never put on screen."""
+    """On a desktop someone is watching, the app drives the first-run flow: the trigger itself opens and runs
+    nothing. A sandbox or an agent's box comes with its tools: there the setup runs itself and is never put on
+    screen."""
     from types import SimpleNamespace
 
     from flow_sdk.core.compute import llm_source
@@ -398,7 +400,7 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
 
     await builtin_triggers._run_llm_setup_trigger(SimpleNamespace(uname="llm-setup-on-tab-ready"), [])
 
-    assert calls == (["popup"] if shown else ["ran itself, off screen"])
+    assert calls == ([] if shown else ["ran itself, off screen"]), "watched: the UI drives the flow; unwatched: it ran itself"
 
 
 async def test_a_question_waits_with_no_deadline(monkeypatch):

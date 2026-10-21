@@ -23,6 +23,8 @@ import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowMod
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
 import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
+import { FirstRunFlowRoot } from '@src/components/first-run-flow/FirstRunFlow';
+import { useDialogsAllowed } from '@src/components/first-run-flow/first-run-flow-store';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
 import { SourceSetupDialogRoot } from '@src/components/setup-wizard/SourceSetupDialog';
 import { MissingDependenciesDialogRoot } from '@src/components/project-home/MissingDependenciesDialog';
@@ -102,6 +104,10 @@ const GlobalEvents = () => {
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   useAsyncSdkInit();
+  // While the first-run flow is up no other dialog is shown: each of these waits, and its store keeps what was
+  // asked meanwhile, so it appears when the flow ends. Not the wizard's own (the ask modal, the LLM-source
+  // dialogs) and not a flow the person started by a click (OAuth, GitHub device flow).
+  const dialogsAllowed = useDialogsAllowed();
   const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
 
@@ -166,24 +172,23 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <AskModalRoot />
         {/* A popup wizard (first-run setup) shown over the current page, which stays as it was. */}
         <WizardPopupRoot />
+        {/* The first-run flow: the wizard, and what Skip leads to (window 2, window 3). Desktop only. */}
+        {!isHubOnly() && <FirstRunFlowRoot />}
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
-        {!isHubOnly() && <AddAssetDialogRoot />}
+        {!isHubOnly() && dialogsAllowed && <AddAssetDialogRoot />}
         <GitHubDeviceFlowModal />
         <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         {!isHubOnly() && <HarnessSignInDialogRoot />}
-        {!isHubOnly() && (
-          <>
-            <ProjectSetupDialogRoot />
-            <ProjectLoadDialogRoot />
-          </>
-        )}
-        {!isHubOnly() && <SourceSetupDialogRoot />}
+        {/* Both stay mounted through the first-run flow and hide themselves: they keep what they were refused. */}
+        {!isHubOnly() && <ProjectSetupDialogRoot />}
+        {!isHubOnly() && <ProjectLoadDialogRoot />}
+        {!isHubOnly() && dialogsAllowed && <SourceSetupDialogRoot />}
         {/* A required dependency of the open project is not on this machine. */}
-        {!isHubOnly() && <MissingDependenciesDialogRoot />}
+        {!isHubOnly() && dialogsAllowed && <MissingDependenciesDialogRoot />}
         <MigrateLegacyKeychain />
         <SessionTakenOverOverlay />
         <SnifferActiveNotice />

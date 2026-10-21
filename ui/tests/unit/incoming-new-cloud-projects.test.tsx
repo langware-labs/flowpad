@@ -14,6 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ cloudUser: null as { id: string } | null, closeLaunch: null as (() => void) | null }));
 
+// Project setup waits for the first-run wizard (`first-run-gate.tsx`); here that wizard is done.
+vi.mock('@src/components/project-setup/first-run-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/project-setup/first-run-gate')>()),
+  useFirstRunGate: () => ({ state: 'open', continueAnyway: vi.fn() }),
+}));
+
 vi.mock('@sdk/react/hooks', () => ({ useAuth: () => ({ cloudUser: h.cloudUser }) }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),

@@ -59,9 +59,9 @@ const side = vi.hoisted(() => ({
 /** The trigger section links into the Automations dock, so the form now reads dock
  *  navigation — which is URL-first and needs a Router the unit tier has not
  *  got. The link target has its own test. */
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), goHome: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), goHome: vi.fn(), dock: null as { isRoot: boolean } | null }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: nav, currentDock: null }),
+  useDockNavigation: () => ({ navigation: nav, currentDock: nav.dock }),
 }));
 
 vi.mock('@src/navigation/useSideWindows', () => ({
@@ -78,6 +78,7 @@ vi.mock('@src/lib/minimize-to-element', () => ({
 }));
 
 import { openWizardPopup, useWizardPopupStore } from '@src/components/assets/editor/wizard/wizard-popup-store';
+import { useFirstRunFlowStore } from '@src/components/first-run-flow/first-run-flow-store';
 import { WizardViewer } from '@src/components/assets/editor/wizard/WizardViewer';
 
 const wizard = (runState: Record<string, unknown>, shipped = false) =>
@@ -279,6 +280,30 @@ describe('a fully finished run', () => {
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
   });
 
+  it.each(['wizard-go-home', 'wizard-close'])(
+    'in the first-run flow, %s after a finished run waits for the gate instead of reading as Skip (window 2)',
+    async (button) => {
+      useFirstRunFlowStore.getState().start('project_setup');
+      act(() => openWizardPopup('wizard-x'));
+      const firstRun = { ...(withMessage(finished) as Record<string, unknown>), gates_project_setup: true, popup: true } as never;
+      renderWizard(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={firstRun} />);
+      await waitFor(() => expect(screen.getByTestId(button)).toBeTruthy());
+
+      fireEvent.click(screen.getByTestId(button));
+
+      expect(useFirstRunFlowStore.getState().minimized).toBe(true);
+      useFirstRunFlowStore.getState().end();
+    },
+  );
+
+  it('"Go to homepage" does not navigate when the app is already on the home page', () => {
+    nav.dock = { isRoot: true };
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(finished)} />);
+    fireEvent.click(screen.getByTestId('wizard-go-home'));
+    expect(nav.goHome).not.toHaveBeenCalled();
+    nav.dock = null;
+  });
+
   it('says nothing about being finished while the run is still going, or has not run at all', () => {
     const stillGoing = { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', ran: false, steps: {} } };
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(stillGoing)} />);
@@ -367,6 +392,7 @@ describe('a popup wizard', () => {
     expect(screen.getByTestId('wizard-finished')).toBeTruthy();
     expect(screen.queryByTestId('wizard-restart')).toBeNull();
     expect(screen.queryByTestId('wizard-not-finished')).toBeNull();
+    expect(screen.queryByTestId('wizard-working')).toBeNull();
   });
 
   it('shows the ordinary page unless it is presented as a popup — even a wizard that asks for one', () => {
@@ -390,10 +416,25 @@ describe('a popup wizard', () => {
     expect(screen.queryByTestId('wizard-viewer-shell')).toBeNull();
   });
 
-  it('minimizing flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+  it('before Start there is nothing to minimize: X closes it, with no flight to the footer chip', async () => {
     act(() => openWizardPopup('wizard-x'));
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+
+    expect(screen.queryByTestId('wizard-minimize')).toBeNull();
+    fireEvent.click(screen.getByTestId('wizard-close'));
+
+    expect(minimize.toProcessChip).not.toHaveBeenCalled();
+    expect(useWizardPopupStore.getState().open).toBe(false);
+    expect(nav.goHome).not.toHaveBeenCalled();
+  });
+
+  it('once a run is going, minimizing flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+    act(() => openWizardPopup('wizard-x'));
+    const started = { ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, steps: {} } } } as never;
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={started} />);
+
     fireEvent.click(screen.getByTestId('wizard-minimize'));
+
     expect(minimize.toProcessChip).toHaveBeenCalledTimes(1);
     expect(useWizardPopupStore.getState().open).toBe(false);
     expect(nav.goHome).not.toHaveBeenCalled();
@@ -410,6 +451,69 @@ describe('a popup wizard', () => {
     await waitFor(() => expect(screen.getByTestId('wizard-form')).toBeTruthy());
   });
 
+  it('keeps saying it is working while the run has begun but no step has reported (the LLM chooser, the shell opening)', async () => {
+    const withStep = () =>
+      refWith(() => Promise.resolve(JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] })));
+    const view = await renderPopup(<WizardViewer presentation="popup" fsRef={withStep()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    // The backend has begun the run: a "still running" result is on the record, and no step has reported yet.
+    // ...and every step already has a pending node and a blank planned outcome, as the real run writes them.
+    const blank = { exit_code: ExitCode.OK, detail: '', ran: false, reported: false };
+    const begun = {
+      ...popupWizard(),
+      run_state: { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', steps: { a: blank } } },
+    } as never;
+    view.rerender(
+      <TooltipProvider delayDuration={0}>
+        <WizardViewer presentation="popup" fsRef={withStep()} wizard={begun} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('wizard-starting')).toBeTruthy();
+  });
+
+  it('once a step has run, the working line goes and does not come back between one check and the next', async () => {
+    h.start.mockReturnValue(new Promise(() => undefined));
+    const ref = fsRef();
+    const stepsDoc = refWith(() =>
+      Promise.resolve(JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] })),
+    );
+    void ref;
+    const blank = { exit_code: ExitCode.OK, detail: '', ran: false, reported: false };
+    const wizardWith = (step: Record<string, unknown>) =>
+      ({ ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', steps: { a: step } } } }) as never;
+    const popup = (w: never) => <WizardViewer presentation="popup" fsRef={stepsDoc} wizard={w} />;
+    const view = await renderPopup(popup(popupWizard()));
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    // A step reports it ran, then the next check's passing leaves a blank outcome again.
+    view.rerender(<TooltipProvider delayDuration={0}>{popup(wizardWith({ ...blank, ran: true, detail: 'installed' }))}</TooltipProvider>);
+    await waitFor(() => expect(screen.queryByTestId('wizard-starting')).toBeNull());
+    view.rerender(<TooltipProvider delayDuration={0}>{popup(wizardWith(blank))}</TooltipProvider>);
+
+    expect(screen.queryByTestId('wizard-starting')).toBeNull();
+    // ...but the run is still going, and one steady line says so (between two checks no row is spinning).
+    expect(screen.getByTestId('wizard-working')).toBeTruthy();
+  });
+
+  it('given the screen to the LLM chooser and handed back, it still says it is working (suspended, not unmounted)', async () => {
+    h.start.mockReturnValue(new Promise(() => undefined)); // the real call resolves only when the whole run has ended
+    const ref = fsRef();
+    const popup = popupWizard();
+    const popupWith = (suspended: boolean) => (
+      <WizardViewer presentation="popup" fsRef={ref} wizard={popup} suspended={suspended} />
+    );
+    const view = await renderPopup(popupWith(false));
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    view.rerender(<TooltipProvider delayDuration={0}>{popupWith(true)}</TooltipProvider>);
+    await waitFor(() => expect(screen.queryByTestId('wizard-popup')).toBeNull());
+
+    view.rerender(<TooltipProvider delayDuration={0}>{popupWith(false)}</TooltipProvider>);
+    expect(await screen.findByTestId('wizard-starting')).toBeTruthy();
+  });
+
   it('offers no Run/Reset — a popup wizard has Start instead', async () => {
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     expect(screen.queryByTestId('wizard-run')).toBeNull();
@@ -417,13 +521,34 @@ describe('a popup wizard', () => {
     expect(screen.getByTestId('wizard-start')).toBeTruthy();
   });
 
-  it('Start calls the wizard′s own `start` action, which the backend waits for, then gets out of the way', async () => {
+  it('Start calls the wizard′s own `start` action, which the backend waits for', async () => {
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     fireEvent.click(screen.getByTestId('wizard-start'));
     expect(h.start).toHaveBeenCalledTimes(1);
-    // Nothing left for it to do once the call is accepted — the run's own
-    // live state takes over, the same way it does for any other run.
-    await waitFor(() => expect(screen.queryByTestId('wizard-start')).toBeNull());
+  });
+
+  it('between Start and the first step going live the screen says so -- it never goes blank', async () => {
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    // The block stays, disabled, saying it is starting and what is going on: seconds of silence read as broken.
+    const button = screen.getByTestId('wizard-start');
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Starting');
+    expect(screen.getByTestId('wizard-starting').textContent).toContain('Checking what is already installed');
+  });
+
+  it('...and gets out of the way once the run has begun reporting', async () => {
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+    expect(screen.getByTestId('wizard-starting')).toBeTruthy();
+    cleanup();
+
+    const started = { ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, steps: {} } } } as never;
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={started} />);
+
+    expect(screen.queryByTestId('wizard-start')).toBeNull();
+    expect(screen.queryByTestId('wizard-starting')).toBeNull();
   });
 
   it('offers no Start once a run already exists — nothing left to wait for', async () => {

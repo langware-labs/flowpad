@@ -98,6 +98,9 @@ async def ensure_launched_project(project_id: str, someone_typeid: str | None = 
 
 @action.post(action_name="launch-ensure", types=[BuiltinEntityType.PROJECT.value], allow_missing_target=True)
 async def launch_ensure_project() -> ApiResponse:
+    from flow_sdk.core.wizard.first_run import require_first_run_setup  # noqa: PLC0415
+
+    await require_first_run_setup()
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         return ApiFailResponse(message="launch-ensure requires a project: project/<id>/launch-ensure", status_code=400)

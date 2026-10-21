@@ -8,6 +8,12 @@ import { Project, type ProjectLoadResult } from '@sdk';
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 import { useProjectLoadStore } from '@src/components/project-setup/project-load-store';
 
+// Project setup waits for the first-run wizard (`first-run-gate.tsx`); here that wizard is done.
+vi.mock('@src/components/project-setup/first-run-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/project-setup/first-run-gate')>()),
+  useFirstRunGate: () => ({ state: 'open', continueAnyway: vi.fn() }),
+}));
+
 vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }), useWatch: () => {} }));
 vi.mock('@src/hooks/use-process-progress-info', () => ({
   useProcessProgressInfo: () => ({ statusMessage: 'Killing the process on port 4400', activityLabel: null, elapsedTime: '12s' }),

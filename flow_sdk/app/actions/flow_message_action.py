@@ -4828,8 +4828,19 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     membership_target.target_type == BuiltinEntityType.PROJECT.value
                     and getattr(ent, "origin", None) is not None
                 ):
+                    from flow_sdk.core.wizard.first_run import (  # noqa: PLC0415
+                        BLOCKED_FIRST_RUN,
+                        BLOCKED_MESSAGE,
+                        FirstRunSetupRequired,
+                    )
+
                     try:
                         await ent.setup_from_git_origin()
+                    except FirstRunSetupRequired:
+                        # Accepted, but not cloned: the first-run wizard comes first, then this is asked again.
+                        return ApiFailResponse(
+                            message=BLOCKED_MESSAGE, status_code=412, data={"blocked": BLOCKED_FIRST_RUN}
+                        )
                     except Exception as setup_err:  # noqa: BLE001
                         logger.warning(
                             "[invitation-accept] project Git setup failed: %s",

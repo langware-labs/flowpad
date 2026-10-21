@@ -40,6 +40,8 @@ const EXACT: Record<string, MessageDescriptor> = {
 const PATTERNS: Array<[RegExp, (m: RegExpMatchArray, i18n: I18n) => string]> = [
   [/^(.+) is required to continue$/, (m, i18n) => i18n._(msg`${m[1]} is required to continue`)],
   [/^Install (.+)\?$/, (m, i18n) => i18n._(msg`Install ${m[1]}?`)],
+  // An ask step's label is the QUESTION ("Install Node.js?"); what the person watches is the tool being checked.
+  [/^checking Install (.+)\?$/, (m, i18n) => i18n._(msg`checking ${m[1]}`)],
   [/^checking (.+)$/, (m, i18n) => i18n._(msg`checking ${m[1]}`)],
   [/^(.+): waiting for you…$/, (m, i18n) => i18n._(msg`${m[1]}: waiting for you…`)],
   [/^(.+): agent, again$/, (m, i18n) => i18n._(msg`${m[1]}: agent, again`)],

@@ -16,6 +16,12 @@ const projectId = '77777777-7777-4777-8777-777777777777';
 const appId = '49bebcda-996c-5bfe-ad14-5c4b6fdc2f11';
 const app = `micro_app-${appId}`;
 
+// Project setup waits for the first-run wizard (`first-run-gate.tsx`); here that wizard is done.
+vi.mock('@src/components/project-setup/first-run-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/project-setup/first-run-gate')>()),
+  useFirstRunGate: () => ({ state: 'open', continueAnyway: vi.fn() }),
+}));
+
 vi.mock('@sdk/react/hooks', () => ({
   useEntity: () => ({ data: { project_id: projectId, displayName: 'Service' }, isLoading: false }),
 }));

@@ -10,6 +10,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Project, type ProjectLoadResult, type SetupNodeResult } from '@sdk';
 
 const h = vi.hoisted(() => ({ question: null as string | null }));
+// Project setup waits for the first-run wizard (`first-run-gate.tsx`); here that wizard is done.
+vi.mock('@src/components/project-setup/first-run-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/project-setup/first-run-gate')>()),
+  useFirstRunGate: () => ({ state: 'open', continueAnyway: vi.fn() }),
+}));
+
 vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }) }));
 vi.mock('@src/components/ask/ask-claims', () => ({
   claimAskRun: () => () => {},

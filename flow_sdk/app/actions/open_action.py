@@ -82,7 +82,9 @@ async def install_project_from_hub() -> ApiResponse:
     is taken too."""
     from flow_sdk.builtin.project import DuplicateProjectNameError, Project  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.core.wizard.first_run import require_first_run_setup  # noqa: PLC0415
 
+    await require_first_run_setup()
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         return ApiFailResponse(

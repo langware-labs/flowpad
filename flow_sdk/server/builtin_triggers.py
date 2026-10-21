@@ -29,9 +29,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _log = logging.getLogger(__name__)
 
-#: Set to ``true`` on a test backend to keep the first-run llm-setup trigger from running.
-SKIP_FIRST_RUN_SETUP_ENV = "FLOWPAD_SKIP_FIRST_RUN_SETUP"
-
+from flow_sdk.core.wizard.first_run import SKIP_FIRST_RUN_SETUP_ENV  # noqa: E402
 
 # ── Built-in callbacks ───────────────────────────────────────────────────────
 
@@ -336,9 +334,6 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
     _log.info("wizard trigger %r: %s — %s", trigger.uname, "ok" if result.ok else "not done", result.detail)
 
 
-LLM_SETUP_WIZARD = "llm-setup"
-
-
 @trigger_callbacks.register(
     "builtin_run_llm_setup",
     meaning="First-run setup, fired by the llm-setup wizard's own trigger: settles an "
@@ -349,7 +344,7 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
     from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
 
     # A test backend is a fresh install every run, so this would fire on the first tab of
-    # every suite, steer it to the wizard page and start installing tools on the runner.
+    # every suite and start installing tools on the runner.
     # The wizard's own Start button (`POST /wizard/<id>/start`) is a person acting and is not gated.
     if os.environ.get(SKIP_FIRST_RUN_SETUP_ENV, "").lower() == "true":
         _log.info("llm setup trigger %r: skipped (%s=true)", trigger.uname, SKIP_FIRST_RUN_SETUP_ENV)
@@ -361,22 +356,24 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
         return
 
     from flow_sdk.core.compute.llm_source import person_is_watching  # noqa: PLC0415
-    from flow_sdk.core.wizard.start import navigate_to_wizard, start_wizard  # noqa: PLC0415
+    from flow_sdk.core.wizard.start import start_wizard  # noqa: PLC0415
 
-    # A popup wizard, and a person looking: put its page in front of them — steps blank, its
-    # explanation readable — and stop. Racing an install question onto the screen the instant the
-    # popup opens leaves no time to read what any of it is for; they press its own Start
-    # (`POST /wizard/<id>/start`, the same `start_wizard`). With nobody watching there is no Start to
-    # press, so it starts itself.
+    # A popup wizard, and a person looking: do nothing here. The APP opens it (the first-run flow in the UI: every
+    # load, before a project setup, on an invitation) and the person presses its own Start
+    # (`POST /wizard/<id>/start`, the same `start_wizard`). With nobody watching there is no Start to press, so it
+    # starts itself.
     #
     # Not on a box the hub launched (a sandbox, an agent's machine): its template already carries
     # every tool this wizard asks about, so there is nothing to read first and nothing to install —
-    # the popup would only cover what the person opened the box for. There it runs itself, off screen.
+    # a popup would only cover what the person opened the box for. There it runs itself, off screen.
     from flow_sdk.instance_settings.runtime import get_assigned_runtime  # noqa: PLC0415
 
     on_hub_box = get_assigned_runtime() is not None
     if wizard.popup and person_is_watching() and not on_hub_box:
-        await navigate_to_wizard(wizard)
+        # The app drives the first-run flow itself (every load, before a project setup, on an invitation): its
+        # three windows, and what each Skip leads to, are the tab's (`first-run-flow`). Opening the popup from
+        # here too would put the wizard up when it has already run fully.
+        _log.info("llm setup trigger %r: a live tab is watching; the app drives the first-run flow", trigger.uname)
         return
 
     _source, result = await start_wizard(wizard, unattended=True, shown=not on_hub_box)

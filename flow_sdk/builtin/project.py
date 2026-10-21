@@ -950,6 +950,7 @@ class Project(SetupSkippable, Entity):
         app). Answers at once with the run's address, which a screen claims to draw them in place."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
 
+        # `start_setup` is gated on the first-run wizard itself.
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
     @action.post(action_name="setup-stop")
@@ -1992,6 +1993,11 @@ class Project(SetupSkippable, Entity):
         project is usable without what it additionally asked for, and resolving
         is idempotent, so re-opening retries.
         """
+        from flow_sdk.core.wizard.first_run import require_first_run_setup  # noqa: PLC0415
+
+        # The door every route to a received project passes (the action, an accepted invitation, a restored
+        # reference): none of them may clone and set it up before the first-run wizard is done.
+        await require_first_run_setup()
         origin = as_project_origin(self.origin)
         if origin is None:
             raise RuntimeError("Shared project has no Git origin")
@@ -2036,8 +2042,12 @@ class Project(SetupSkippable, Entity):
     @action.post(action_name="setup-from-git")
     async def setup_from_git(self) -> ApiResponse:
         """Materialize a remote project's transmitted GitOrigin locally."""
+        from flow_sdk.core.wizard.first_run import FirstRunSetupRequired  # noqa: PLC0415
+
         try:
             return ApiSuccessResponse(data=await self.setup_from_git_origin())
+        except FirstRunSetupRequired:
+            raise  # the server answers it as 412 + data.blocked, which the app reads
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=str(exc), status_code=400)
 

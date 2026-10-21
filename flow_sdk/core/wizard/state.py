@@ -250,6 +250,30 @@ def read_tree(run: str) -> "Optional[SetupTreeResult]":
         return None
 
 
+#: The first-run wizard has run fully (or the person chose to go on without it) and project setup may begin.
+#: A fact about the INSTANCE, not about one run, so it lives in a file of its own beside the run record: not
+#: archived by ``reset_run``, and written WITHOUT the run lock -- ``execute_wizard`` holds that lock for a whole
+#: run, and a writer waiting on it from the event loop froze the server for as long as the run took.
+FIRST_RUN_FILENAME = "first_run.json"
+FIRST_RUN_DONE = "first_run_done"
+
+
+def _first_run_path(wizard_id: str) -> Path:
+    return run_dir(wizard_id) / FIRST_RUN_FILENAME
+
+
+def first_run_done(wizard_id: str) -> bool:
+    """Whether the first-run wizard was stamped done. Never raises: unreadable reads as not done."""
+    return bool(read_json(_first_run_path(wizard_id)).get(FIRST_RUN_DONE))
+
+
+def mark_first_run_done(wizard_id: str) -> None:
+    """Record, durably, that the first-run wizard is done. Idempotent; never cleared by a later run."""
+    path = _first_run_path(wizard_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(path, {FIRST_RUN_DONE: True})
+
+
 #: Step fields that carry OUTPUT rather than a verdict — what `strip_heavy` drops.
 _HEAVY = ("stdout", "stderr", "text", "value")
 

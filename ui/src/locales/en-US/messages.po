@@ -5139,6 +5139,7 @@ msgstr "Checking"
 
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "checking {0}"
 msgstr "checking {0}"
 
@@ -5179,6 +5180,10 @@ msgstr "Checking project membership…"
 msgid "Checking the app…"
 msgstr "Checking the app…"
 
+#: src/components/project-setup/first-run-gate.tsx
+#~ msgid "Checking the first-time setup…"
+#~ msgstr "Checking the first-time setup…"
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Checking the help desk files"
 msgstr "Checking the help desk files"
@@ -5194,6 +5199,10 @@ msgstr "Checking the tag index…"
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Checking what funds {harnessLabel}…"
 msgstr "Checking what funds {harnessLabel}…"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Checking what is already installed…"
+msgstr "Checking what is already installed…"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Checking what this needs…"
@@ -5694,6 +5703,7 @@ msgid "Cloning…"
 msgstr "Cloning…"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -6498,6 +6508,10 @@ msgstr "context tokens"
 msgid "Continue"
 msgstr "Continue"
 
+#: src/components/first-run-flow/FirstRunFlow.tsx
+msgid "Continue anyway"
+msgstr "Continue anyway"
+
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
 msgstr "Continue journey"
@@ -6960,6 +6974,10 @@ msgstr "Could not commit and push"
 #: src/components/connections-manager.tsx
 msgid "Could not connect to {displayName}."
 msgstr "Could not connect to {displayName}."
+
+#: src/components/project-setup/first-run-gate.tsx
+msgid "Could not continue"
+msgstr "Could not continue"
 
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "Could not convert the chart"
@@ -11614,6 +11632,10 @@ msgstr "Find machine"
 msgid "Find or type an organization…"
 msgstr "Find or type an organization…"
 
+#: src/components/project-setup/first-run-gate.tsx
+#~ msgid "Finish first-time setup"
+#~ msgstr "Finish first-time setup"
+
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Finish installing the FlowPad GitHub App on {repo}, then"
 msgstr "Finish installing the FlowPad GitHub App on {repo}, then"
@@ -11646,6 +11668,10 @@ msgstr "Finish signing in on the page that opened in your browser."
 msgid "Finish that, then press Verify again."
 msgstr "Finish that, then press Verify again."
 
+#: src/components/project-setup/first-run-gate.tsx
+#~ msgid "Finish the first-time setup before setting up a project. It installs the tools Flowpad relies on."
+#~ msgstr "Finish the first-time setup before setting up a project. It installs the tools Flowpad relies on."
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Finish the setup above before deploying"
 msgstr "Finish the setup above before deploying"
@@ -11665,6 +11691,10 @@ msgstr "finishing"
 #: src/components/assets/editor/AssetDiscussButton.tsx
 #~ msgid "Finishing asset load…"
 #~ msgstr "Finishing asset load…"
+
+#: src/components/project-setup/first-run-gate.tsx
+msgid "Finishing the first-time setup first…"
+msgstr "Finishing the first-time setup first…"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 #~ msgid "Fire (synthetic test)"
@@ -11906,6 +11936,10 @@ msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgra
 #: src/components/version-popover/version-popover.tsx
 msgid "Flowpad version"
 msgstr "Flowpad version"
+
+#: src/components/first-run-flow/FirstRunFlow.tsx
+msgid "Flowpad was not installed with all the required dependencies"
+msgstr "Flowpad was not installed with all the required dependencies"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Flowpad works best with a few tools on your machine: Claude Code, Python, Git and Node.js. We'll check what's already there and only ask before installing anything that's missing."
@@ -23092,6 +23126,7 @@ msgid "Run script"
 msgstr "Run script"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+#: src/components/first-run-flow/FirstRunFlow.tsx
 msgid "Run setup"
 msgstr "Run setup"
 
@@ -25747,6 +25782,10 @@ msgstr "Some things need attention."
 #~ msgid "some tools"
 #~ msgstr "some tools"
 
+#: src/components/first-run-flow/FirstRunFlow.tsx
+msgid "Some tools Flowpad relies on are missing, so parts of it may not work. Run the setup to install them."
+msgstr "Some tools Flowpad relies on are missing, so parts of it may not work. Run the setup to install them."
+
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
@@ -26140,6 +26179,7 @@ msgstr "Starting your app…"
 msgid "Starting your sandbox…"
 msgstr "Starting your sandbox…"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -28555,6 +28595,14 @@ msgstr "to"
 msgid "To"
 msgstr "To"
 
+#: src/components/first-run-flow/FirstRunFlow.tsx
+#~ msgid "To install the missing tools any time, open Settings, then General, then Run setup again."
+#~ msgstr "To install the missing tools any time, open Settings, then General, then Run setup again."
+
+#: src/components/first-run-flow/FirstRunFlow.tsx
+msgid "To install the missing tools at any time, go to <0>Settings → General → Run setup again</0>."
+msgstr "To install the missing tools at any time, go to <0>Settings → General → Run setup again</0>."
+
 #: src/pages/entry/entry-shell.tsx
 msgid "To open the {label}:"
 msgstr "To open the {label}:"
@@ -30644,6 +30692,10 @@ msgstr "Working on {0}"
 msgid "Working on {hostName}'s machine…"
 msgstr "Working on {hostName}'s machine…"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Working on it — this can take a few minutes…"
+msgstr "Working on it — this can take a few minutes…"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Working tree"
 msgstr "Working tree"
@@ -30863,6 +30915,10 @@ msgstr "You can also add an LLM key in LLM Sources."
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "You can close this window."
 msgstr "You can close this window."
+
+#: src/components/first-run-flow/FirstRunFlow.tsx
+msgid "You can run the setup later"
+msgstr "You can run the setup later"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."

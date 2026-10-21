@@ -528,6 +528,11 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
     from flow_sdk.core.setup.walk import SetupControl  # noqa: PLC0415
+    from flow_sdk.core.wizard.first_run import require_first_run_setup  # noqa: PLC0415
+
+    # Raises FirstRunSetupRequired. Every door into a project's setup passes here, so none can start it
+    # before the first-run wizard is done; a run already going is joined below only once the gate has let it by.
+    await require_first_run_setup()
 
     pid = str(project.id)
     key = (pid, root)
