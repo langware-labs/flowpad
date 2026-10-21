@@ -386,6 +386,22 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
     return f"{text}\n\n{note}" if note else text
 
 
+async def _hub_roster(project_id: str) -> list[dict]:
+    """A hub project's role roster in the client shape (``name``/``email``/``role``);
+    empty when the hub can't be asked."""
+    from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response  # noqa: PLC0415
+
+    payload = await hub_http.hub_get(BuiltinEntityType.PROJECT, project_id, "members")
+    return _normalize_hub_response("members", hub_http.rows_of(payload))
+
+
+def _sharer_name(members: list) -> Optional[str]:
+    """Who shared a project with this user: the hub stamps ``invited_by_name`` on
+    the caller's own roster row only."""
+    return next((m["invited_by_name"] for m in members if isinstance(m, dict) and m.get("invited_by_name")), None)
+
+
 class Project(SetupSkippable, Entity):
     @classmethod
     async def get_last_active(cls, workspace_id: str | None = None) -> Optional["Project"]:
@@ -2554,7 +2570,7 @@ class Project(SetupSkippable, Entity):
             return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
         if project.fs_storage_mount_path:
             return ProjectOpenLinkSpec(project_id=entity_id)
-        return project._setup_link() or ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+        return await project._setup_link() or ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
 
     @classmethod
     async def _name_taken_link(cls, row: dict, taken: DuplicateProjectNameError) -> "ProjectOpenLinkSpec | None":
@@ -2576,25 +2592,32 @@ class Project(SetupSkippable, Entity):
             setup_git="1",
             git_origin=json.dumps(origin.model_dump(mode="json")),
             title=name,
+            sender_name=_sharer_name(await _hub_roster(str(row["id"]))),
             existing_project_id=conflict["existing_project_id"],
             suggested_name=conflict["suggested_name"],
         )
 
-    def _setup_link(self) -> "ProjectOpenLinkSpec | None":
+    async def _setup_link(self) -> "ProjectOpenLinkSpec | None":
         """The "X shared a project with you" set-up for this file-less row, or
-        ``None`` when it has no origin to clone from."""
+        ``None`` when it has no origin to clone from. X is whoever invited this
+        user, read from the hub roster — which is cached on the row, so the "not set up
+        here" warning names the same person when it reopens the set-up."""
         import json  # noqa: PLC0415
 
         from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
+        from flow_sdk.server.routes._hub_reflect import mirror_hub_response_into_local  # noqa: PLC0415
 
         origin = as_project_origin(self.origin)
         if origin is None:
             return None
+        if roster := await _hub_roster(str(self.id)):
+            await mirror_hub_response_into_local(self, "members", roster)
         return ProjectOpenLinkSpec(
             project_id=str(self.id),
             setup_git="1",
             git_origin=json.dumps(origin.model_dump(mode="json")),
             title=self.name or None,
+            sender_name=_sharer_name(self.members),
         )
 
     @classmethod
@@ -2624,7 +2647,7 @@ class Project(SetupSkippable, Entity):
                 # not sink the sweep for every other project.
                 link = await cls._name_taken_link(row, e)
             else:
-                link = project._setup_link() if project is not None else None
+                link = await project._setup_link() if project is not None else None
             if link is not None:
                 links.append(link)
         return links

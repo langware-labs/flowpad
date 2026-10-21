@@ -284,6 +284,8 @@ export interface NewCloudProjectLink {
   /** A project origin as JSON — what the set-up dialog clones. */
   git_origin: string;
   title?: string;
+  /** Who shared it — whoever invited this user to the project. */
+  sender_name?: string;
   /** Its name is already this project's here: the set-up asks — open that one, or
    *  install this one under another name ({@link Project.installFromHub}). */
   existing_project_id?: string;
