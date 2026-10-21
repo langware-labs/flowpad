@@ -3,8 +3,15 @@
  * shows. Running = one of the project's agents with an agent deployment; the
  * table behind a box is addressed by its URL alone.
  */
-import type { Agent, Deployment } from '@sdk';
-import { agentSource, deploymentsByAgent, runningRows, toAgentRows } from '@src/components/asset-counters/agent-counters';
+import type { Agent, ComputeNode, Deployment } from '@sdk';
+import { ExecutionEnvironmentStatus } from '@sdk';
+import { isActiveAgent, isActiveMachine, isLiveDeployment } from '@src/components/asset-counters/hub-counters';
+import {
+  agentSource,
+  deploymentsByAgent,
+  runningRows,
+  toAgentRows,
+} from '@src/components/asset-counters/agent-counters';
 import { matchesQuickSearch, quickSearchTerms } from '@src/components/asset-counters/quick-search';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -68,5 +75,29 @@ describe('quick search', () => {
     expect(matchesQuickSearch(haystack, quickSearchTerms('Local DANA'))).toBe(true);
     expect(matchesQuickSearch(haystack, quickSearchTerms('dana e2b'))).toBe(false);
     expect(matchesQuickSearch(haystack, quickSearchTerms('   '))).toBe(true);
+  });
+});
+
+describe('hub counters — active rules', () => {
+  const dep = (state: string | null) => ({ status: { provider_state: state } }) as unknown as Deployment;
+
+  it('a deployment is live unless paused', () => {
+    expect(isLiveDeployment(dep('running'))).toBe(true);
+    expect(isLiveDeployment(dep(null))).toBe(true);
+    expect(isLiveDeployment(dep('paused'))).toBe(false);
+  });
+
+  it('an agent is active only with a live deployment', () => {
+    const a = {} as Agent;
+    expect(isActiveAgent({ agent: a, deployments: [] })).toBe(false);
+    expect(isActiveAgent({ agent: a, deployments: [dep('paused')] })).toBe(false);
+    expect(isActiveAgent({ agent: a, deployments: [dep('paused'), dep('running')] })).toBe(true);
+  });
+
+  it('a machine is active only when READY', () => {
+    const node = {} as ComputeNode;
+    expect(isActiveMachine({ node, status: ExecutionEnvironmentStatus.READY })).toBe(true);
+    expect(isActiveMachine({ node, status: ExecutionEnvironmentStatus.PAUSED })).toBe(false);
+    expect(isActiveMachine({ node, status: null })).toBe(false);
   });
 });
