@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { HardDrive, User as UserIcon } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -27,9 +28,18 @@ function explorerScopeMode(scope: ScopeFilter): ExplorerScopeMode {
  * and the default scope is `all` (vs Assets' project default).
  */
 export function useExplorerModel() {
+  const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
-  const { typeId, locatorTypeId, anchorForScope, projectRootPath, projectAvailable, projectId, projectName, contextDirs } =
-    useExplorerComputeNode();
+  const {
+    typeId,
+    locatorTypeId,
+    anchorForScope,
+    projectRootPath,
+    projectAvailable,
+    projectId,
+    projectName,
+    contextDirs,
+  } = useExplorerComputeNode();
 
   const scope = useMemo<ScopeFilter>(() => currentDock?.scopeFilter ?? allScope(), [currentDock]);
   const scopeMode = explorerScopeMode(scope);
@@ -38,13 +48,13 @@ export function useExplorerModel() {
   const rootLabel = useMemo(() => {
     switch (scopeMode) {
       case 'user':
-        return 'Home';
+        return t`Home`;
       case 'project':
-        return projectName ?? 'Project';
+        return projectName ?? t`Project`;
       default:
-        return 'Computer';
+        return t`Computer`;
     }
-  }, [scopeMode, projectName]);
+  }, [scopeMode, projectName, t]);
 
   const rootIcon = useMemo(() => {
     switch (scopeMode) {
