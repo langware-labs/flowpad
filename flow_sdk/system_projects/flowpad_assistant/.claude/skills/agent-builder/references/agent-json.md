@@ -45,6 +45,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `auto_launch` | Start this agent when its project is opened (once per project, per machine) | yes | chat |
 | `auto_launch_prompt` | The first user message, sent on the user's behalf at auto-launch | yes | chat |
 | `chief_of_staff` | The agent delegates long work to `subagents` through the task ledger | yes | chat |
+| `vibe_only` | Its sessions stay in Vibe: no tab strip, no switch to Chat or Terminal | yes | chat |
 | `subagents` | Names of the SubAgents a chief of staff may hand work to | yes | chat |
 | `input` | The shape the caller must pass in (a shape form, below) | yes | typed |
 | `output` | The shape the agent must write back (a shape form, below) | yes | typed |

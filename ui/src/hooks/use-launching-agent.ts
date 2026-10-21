@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Agent, Deployment, TypeId } from '@sdk';
+import { Agent, AgenticProcess, Deployment, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 
 /**
@@ -13,7 +13,10 @@ import { useEntity } from '@src/hooks/entity-hooks';
  * popover) defer the two lookups until it is open; the execution panel, which
  * signs every turn with it, leaves it on.
  */
-export function useLaunchingAgent(deploymentId: string | null | undefined, options?: { enabled?: boolean }): Agent | null {
+export function useLaunchingAgent(
+  deploymentId: string | null | undefined,
+  options?: { enabled?: boolean },
+): Agent | null {
   const enabled = options?.enabled !== false;
   const deploymentTypeId = useMemo(
     () => (deploymentId ? new TypeId(Deployment.type, deploymentId) : null),
@@ -22,4 +25,15 @@ export function useLaunchingAgent(deploymentId: string | null | undefined, optio
   const deployment = useEntity<Deployment>(deploymentTypeId, { enabled }).data;
   const agentTypeId = deployment?.agentTypeId ?? null;
   return useEntity<Agent>(agentTypeId, { enabled }).data ?? null;
+}
+
+/**
+ * The vibe-only Agent (`Agent.vibe_only`) the session `processId` was launched
+ * through, or null. Such a session stays in Vibe: no tab strip, no surface switch.
+ */
+export function useVibeOnlyAgent(processId: string | null | undefined): Agent | null {
+  const typeId = useMemo(() => (processId ? new TypeId(AgenticProcess.type, processId) : null), [processId]);
+  const process = useEntity<AgenticProcess>(typeId).data;
+  const agent = useLaunchingAgent(process?.deployment_id);
+  return agent?.vibe_only ? agent : null;
 }
