@@ -621,7 +621,7 @@ chip-surfacing issue (see §8).
 **Every screen is a tab; every dock pointer is a potential tab.** Target
 surfaces: docs/markdowns, skills, workflows, code editors, terminals,
 processes, agents, file browser, scan page — plus the existing viewer surfaces
-(diff, webapp, graph, whiteboard, wiki, lens/transcript). One strip model, one
+(diff, webapp, graph, chart, wiki, lens/transcript). One strip model, one
 resolver, one membership mechanism, regardless of what the tab shows.
 
 The terminal-tab model from Part 1 is the template: _a tab IS an entity,
@@ -642,7 +642,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
 | workflow                                                                   | `forWorkflows(id)`                   | **yes** `workflow`                               | A                                        |
 | agent / process                                                            | AP terminal pointer                  | **yes** `agentic_process`                        | A (template)                             |
 | terminal                                                                   | `forShell(id)`                       | **yes** `shell`                                  | A (template)                             |
-| spec / task / whiteboard                                                   | per-type pointers                    | **yes**                                          | A                                        |
+| spec / task / chart                                                        | per-type pointers                    | **yes**                                          | A                                        |
 | code editor file                                                           | `forFile(path)`                      | **no** — `load-asset.ts:78`: CODE is file-only   | ~~B~~ → C _(Part 3: bucket B dissolved)_ |
 | file browser / explorer                                                    | `forExplorer(path)`                  | **no** — raw VFS path                            | ~~B~~ → C _(Part 3: bucket B dissolved)_ |
 | wiki page                                                                  | `forWiki(name, …, wikiRef)`          | indirect — resolves to an asset `TypeId` at view time | A (resolves at view time)                |
@@ -656,7 +656,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
   **base Entity** (`entity_model.py:81`) and every type inherits membership;
   `tab_order` + `last_active_at` ride along (Shell already has both —
   `shell.py:100-102`). Opening materializes (`tabbed=true`); closing clears it
-  (non-null — broadcasts). Markdown, skill, workflow, spec, task, whiteboard
+  (non-null — broadcasts). Markdown, skill, workflow, spec, task, chart
   join the strip with **zero per-type tab plumbing**.
 - **(B) — DISSOLVED into C (Part 3 decision 20a).** The original plan minted
   v5 path-entities for code files and explorer paths. Rejected: the unified
@@ -744,7 +744,7 @@ TypeIds and v5 path-ids alike), `pending-intent`, the `last_active_at` seed,
 1. **U1 — viewer-tab merge**: retire `useViewerStore` membership; bucket-C
    surfaces become URL-dock transient tabs; fix the overview reset bug.
 2. **U2 — bucket A**: `tabbed` on base Entity already live from Phase 2; wire
-   open/close/pin for markdown, skill, workflow, spec, task, whiteboard; strip
+   open/close/pin for markdown, skill, workflow, spec, task, chart; strip
    renders heterogeneous kinds via TypeInfo icons; preview-tab promotion.
 3. ~~**U3 — bucket B**: v5 path-entities for code files + explorer; rename
    lifecycle.~~ **Dropped — bucket B dissolved into C (Part 3, decision 20a).

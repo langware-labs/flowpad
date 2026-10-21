@@ -93,6 +93,9 @@ if TYPE_CHECKING:
 
 _TRANSFER_MODE_COPY = "copy"
 _TRANSFER_MODE_GIT = "git"
+# A share's default: every entry with a usable git origin carries its pointer AND
+# its bytes, and each receiver opens it by git when it can, else from the bytes.
+_TRANSFER_MODE_BOTH = "both"
 _GIT_TRANSFERS_FILE = "git_transfers.json"
 
 # The origin map: ``{"<type>-<id>": <FSOrigin dump>}`` for every git/local-backed
@@ -198,10 +201,19 @@ class GitReferenceType(Protocol):
 
     @classmethod
     async def restore_reference(
-        cls, entity_id: str, metadata: dict, origin: Any, *, overwrite: bool, owner_typeid: str | None = None
+        cls,
+        entity_id: str,
+        metadata: dict,
+        origin: Any,
+        *,
+        overwrite: bool,
+        owner_typeid: str | None = None,
+        project_root: Path | None = None,
+        project_id: str | None = None,
     ) -> bool:
         """Install a staged reference: write the received row, and whatever else
-        makes it usable here. ``False`` means it could not be restored."""
+        makes it usable here. ``project_root``/``project_id`` are the receiver's
+        project to open it in. ``False`` means it could not be restored."""
 
 
 def git_reference_cls(entry_type: str) -> type[GitReferenceType] | None:
@@ -408,7 +420,7 @@ async def _pack_attachment_entry(
       - DB-record (no on-disk asset_ref: task/conversation/flow_message/
         claude_session/flowpad_diagnosis) → their header.json serializers.
       - file-backed asset (``TypeInfo.main_subdir is not None``: skill, agent,
-        workflow, whiteboard, spec, prompt, markdown, plan, command, rule) →
+        workflow, chart, spec, prompt, markdown, plan, command, rule) →
         the ONE generic ``_pack_file_backed_attachment``.
     URL attachments have no bytes to bundle — silently skipped.
     """
@@ -432,6 +444,10 @@ async def _pack_attachment_entry(
     elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
         await _pack_remote_worker_session_attachment(entry_id, attachment_dir)
     else:
+        if transfer_mode == _TRANSFER_MODE_BOTH and await _pack_both_reference_attachment(
+            entry_type, entry_id, attachment_dir, origins, repo_cache, transfers
+        ):
+            return
         if await _pack_git_reference_attachment(
             entry_type,
             entry_id,
@@ -439,7 +455,7 @@ async def _pack_attachment_entry(
             origins,
             repo_cache,
             transfers,
-            transfer_mode,
+            _TRANSFER_MODE_COPY if transfer_mode == _TRANSFER_MODE_BOTH else transfer_mode,
         ):
             return
         if await _pack_webapp_artifact_attachment(
@@ -447,7 +463,7 @@ async def _pack_attachment_entry(
             entry_id,
             attachment_dir,
             transfers,
-            transfer_mode,
+            _TRANSFER_MODE_COPY if transfer_mode == _TRANSFER_MODE_BOTH else transfer_mode,
         ):
             return
         info = SchemaRegistry.get(entry_type)
@@ -466,7 +482,7 @@ async def _pack_attachment_entry(
 
 # ---------------------------------------------------------------------------
 # File-backed asset packing — ONE family handler for skill, agent, workflow,
-# whiteboard, spec, prompt, markdown, plan, command, rule (any type whose
+# chart, spec, prompt, markdown, plan, command, rule (any type whose
 # TypeInfo declares ``main_subdir``). The canonical record is the on-disk
 # asset_ref (a file or a folder); pack copies it verbatim under the bundle at
 # ``attachment/<type>-@<id>/<main_subdir>/<leaf>`` so the in-bundle relpath
@@ -700,6 +716,9 @@ async def resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
     if stored is not None and getattr(stored, "transportable", False):
         return stored
     path = getattr(ent, "path", None)
+    if not path and callable(getattr(ent, "local_origin_path", None)):
+        # An artifact keeps no path of its own; its LOCAL origin is where it is.
+        path = ent.local_origin_path()
     if not path:
         return None
     live = await asyncio.to_thread(GitOrigin.for_asset_path, str(path), repo_cache)
@@ -744,6 +763,36 @@ async def _pack_git_reference_attachment(
     return True
 
 
+async def _pack_both_reference_attachment(
+    entry_type: str,
+    entry_id: str,
+    attachment_dir: Path,
+    origins: dict | None,
+    repo_cache: dict | None,
+    transfers: dict | None,
+) -> bool:
+    """``both`` for a git-reference type: its git pointer, plus — for an artifact
+    whose bytes can ride (a shared file, a webapp folder) — those bytes, under ONE
+    transfers entry marked ``both``. A reference with no bytes to carry (a folder,
+    a project) stays a plain git reference. False when it has no git origin, so
+    the caller falls through to the copy carriers."""
+    if not await _pack_git_reference_attachment(
+        entry_type, entry_id, attachment_dir, origins, repo_cache, transfers, _TRANSFER_MODE_GIT
+    ):
+        return False
+    key = _entry_key(entry_type, entry_id)
+    git_entry = transfers[key]
+    if await _pack_webapp_artifact_attachment(entry_type, entry_id, attachment_dir, transfers, _TRANSFER_MODE_COPY):
+        transfers[key] = {
+            **transfers[key],
+            "metadata_path": git_entry["metadata_path"],
+            "transfer_mode": _TRANSFER_MODE_BOTH,
+        }
+    else:
+        transfers[key] = git_entry
+    return True
+
+
 async def _pack_webapp_artifact_attachment(
     entry_type: str,
     entry_id: str,
@@ -751,7 +800,7 @@ async def _pack_webapp_artifact_attachment(
     transfers: dict | None,
     transfer_mode: str,
 ) -> bool:
-    """Copy-mode carrier for a folder-backed webapp ``artifact`` with no git remote.
+    """Copy-mode carrier for a local ``artifact``: a webapp folder, or one shared file.
 
     ``artifact`` is a graph entity (no ``main_subdir``, no walker), so the
     file-backed packer never handles it and the git-reference packer only fires in
@@ -763,6 +812,10 @@ async def _pack_webapp_artifact_attachment(
     it up. The receiver mirrors the folder into the target project and materializes
     the row pointing ``path`` at the served folder (see
     ``_restore_webapp_artifact_entry``). Returns True when it handled the entry.
+
+    A shared FILE (``SHARED_FILE_KIND``: a page, doc, image or video shared as
+    itself) rides the same way as ``shared/<id>/<name>``, marked ``single_file`` so the
+    receiver may keep it in their own folder rather than a project.
     """
     if transfer_mode != _TRANSFER_MODE_COPY or transfers is None:
         return False
@@ -778,21 +831,33 @@ async def _pack_webapp_artifact_attachment(
     if getattr(origin, "kind", None) != "local":
         return False
     src = Path(str(origin.base)) / str(origin.rel_path or ".")
-    if not src.is_dir():
-        return False  # only a folder artifact rides as bytes; nothing to serve otherwise
+    if src.is_file():
+        from flow_sdk.builtin.artifact import SHARED_FILE_KIND  # noqa: PLC0415
+
+        if getattr(ent, "kind", None) != SHARED_FILE_KIND:
+            return False
+        # One folder per shared file: two different files named index.html must not collide.
+        slug, bytes_rel, single_file = src.name, f"shared/{entry_id}/{src.name}", True
+    elif src.is_dir():
+        slug = _safe_entity_name(ent)
+        bytes_rel, single_file = f"webapps/{slug}", False
+    else:
+        return False  # only a folder or a shared file rides as bytes; nothing to serve otherwise
 
     key = _entry_key(entry_type, entry_id)
-    slug = _safe_entity_name(ent)
-    dest = attachment_dir / key / "webapps" / slug
+    dest = attachment_dir / key / bytes_rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    pack_tree(src, dest, type_name=entry_type)
-    metadata_path = _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent)
+    if single_file:
+        await asyncio.to_thread(shutil.copy2, src, dest)  # an image or video can be large
+    else:
+        pack_tree(src, dest, type_name=entry_type)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_COPY,
-        "metadata_path": metadata_path,
+        "metadata_path": _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent),
         "entity_mode": "metadata",
         "slug": slug,
-        "bytes_rel": f"webapps/{slug}",
+        "bytes_rel": bytes_rel,
+        **({"single_file": True} if single_file else {}),
     }
     return True
 
@@ -834,7 +899,7 @@ async def _pack_file_backed_attachment(
     # ship as BYTES: the receiver has no clone of the sender's repos, and the
     # fail-closed origin guard below would otherwise kill the whole bundle for
     # tasks living outside any repo (e.g. ~/tasks).
-    if transfer_mode == _TRANSFER_MODE_GIT and entry_type == BuiltinEntityType.TASK.value:
+    if transfer_mode in (_TRANSFER_MODE_GIT, _TRANSFER_MODE_BOTH) and entry_type == BuiltinEntityType.TASK.value:
         transfer_mode = _TRANSFER_MODE_COPY
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
@@ -880,6 +945,13 @@ async def _pack_file_backed_attachment(
             "metadata_path": metadata_path,
         }
         return
+
+    if transfer_mode == _TRANSFER_MODE_BOTH and origin is not None and src_root is not None and transfers is not None:
+        # The pointer rides beside the bytes packed below.
+        transfers[_entry_key(entry_type, entry_id)] = {
+            "transfer_mode": _TRANSFER_MODE_BOTH,
+            "metadata_path": _write_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent),
+        }
 
     if src_root is None:
         # No on-disk source — render the main doc through the type's serializer
@@ -1251,7 +1323,7 @@ async def _restore_git_transfer_entry(
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
+    if not isinstance(transfer, dict) or transfer.get("transfer_mode") not in (_TRANSFER_MODE_GIT, _TRANSFER_MODE_BOTH):
         return False
     parsed = _parse_entry_key(key)
     if parsed is None:
@@ -1273,7 +1345,9 @@ async def _restore_git_transfer_entry(
     # pull/reuse-local; local = resolve an existing mount). Everything below is
     # origin-kind-agnostic — it operates only on the returned local_root + the
     # universal rel_path.
-    local_root, project_id = await get_origin_driver(origin.kind).materialize(
+    # A received share opens EXACTLY the shared version and never touches the
+    # receiver's own checkout (``materialize_pinned``).
+    local_root, project_id = await get_origin_driver(origin.kind).materialize_pinned(
         origin,
         preferred_root=preferred_project_root,
         preferred_project_id=preferred_project_id,
@@ -1291,7 +1365,15 @@ async def _restore_git_transfer_entry(
             same_asset = existing_asset.resolve() == asset_ref.resolve()
         except OSError:
             same_asset = str(existing_asset) == str(asset_ref)
-        if not same_asset:
+        # The same shared asset (same repo + path) arriving at a newer commit is
+        # a new VERSION of what the receiver has, not a clash with their work.
+        existing_origin = getattr(existing, "origin", None)
+        same_share = (
+            existing_origin is not None
+            and getattr(existing_origin, "key", None) is not None
+            and (existing_origin.key() == origin.key())
+        )
+        if not same_asset and not same_share:
             raise FlowMessageExistsError(
                 [
                     {
@@ -1302,12 +1384,11 @@ async def _restore_git_transfer_entry(
                 ]
             )
 
-    scope = _git_origin_index_scope(local_root, origin.rel_path, info)
     try:
-        record_type = RecordType(entry_type)
+        RecordType(entry_type)
     except ValueError:
         return False
-    await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(record_type,), project_id=project_id)
+    await _index_git_checkout(entry_type, local_root, origin, info, project_id)
     await _apply_git_transfer_metadata(
         tmp_root,
         transfer,
@@ -1318,7 +1399,75 @@ async def _restore_git_transfer_entry(
         owner_typeid=owner_typeid,
     )
     await _stamp_origins({(entry_type, entry_id)}, {key: origin.model_dump(mode="python")}, owner_typeid)
+    # The walk persists with notify=False: announce the row, as the copy path
+    # does, so a receiver UI that already asked for it (and cached the miss)
+    # sees it without a reload.
+    await _notify_received_assets({(entry_type, entry_id)})
     return True
+
+
+#: (checkout, commit) pairs whose ``received_with`` companions are already
+#: indexed: a checkout at a commit never changes, so re-opening it skips the walk.
+_COMPANIONS_INDEXED: set[tuple[str, str]] = set()
+
+
+async def _index_git_checkout(entry_type: str, local_root: Path, origin, info, project_id: str | None) -> None:
+    """Index the asset of a git share from the checkout it was opened in, and
+    what its type declares it needs from the same checkout (``received_with``)
+    — in ONE walk over the checkout when the asset's own type is among those."""
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    companions = tuple(dict.fromkeys(info.received_with)) if info is not None else ()
+    seen = (str(local_root), getattr(origin, "head_commit", None) or "")
+    if entry_type not in companions:
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+    elif seen in _COMPANIONS_INDEXED:
+        # The companions are indexed; the asset itself may be new at this commit.
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+        return
+    if companions and seen not in _COMPANIONS_INDEXED:
+        await _reindex_root(
+            local_root,
+            RecordType.REAL_PROJECT_CWD,
+            types=tuple(RecordType(t) for t in companions),
+            project_id=project_id,
+        )
+        if seen[1]:
+            _COMPANIONS_INDEXED.add(seen)
+
+
+async def reopen_git_share(entry_type: str, entry_id: str, origin, local_root: Path, project_id: str | None) -> Path:
+    """Point an already-received git share at another checkout of it (a newer
+    commit): index it there and stamp the origin with that commit. Answers the
+    asset's new path."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    asset_ref = _asset_ref_for_git_origin(local_root, origin.rel_path, info)
+    if asset_ref is None or not asset_ref.exists():
+        raise FileNotFoundError(f"shared asset not found: {local_root / origin.rel_path}")
+    # The row already exists (it was received before), so a walk alone does not
+    # move it: point its record and row at the new checkout first, then index there.
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+    patch = {"type": entry_type, "id": entry_id, "asset_ref": str(asset_ref)}
+    if project_id:
+        patch["project_id"] = project_id
+    record = FSRecord(type=entry_type, id=entry_id)
+    record.asset_ref = str(asset_ref)
+    await asyncio.to_thread(record.save_metadata, patch)
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    ent = await cls.get_one({"id": entry_id}) if cls is not None else None
+    if ent is not None:
+        await _overlay_fields_on_row(ent, patch, None, label=f"{entry_type}-@{entry_id} (git update)")
+    await _index_git_checkout(entry_type, local_root, origin, info, project_id)
+    await _stamp_origins(
+        {(entry_type, entry_id)}, {_entry_key(entry_type, entry_id): origin.model_dump(mode="python")}, None
+    )
+    await _notify_received_assets({(entry_type, entry_id)})
+    return asset_ref
 
 
 async def _restore_git_reference_entity_entry(
@@ -1330,6 +1479,8 @@ async def _restore_git_reference_entity_entry(
     overwrite: bool,
     owner_typeid: str | None,
     name: str | None = None,
+    project_root: Path | None = None,
+    project_id: str | None = None,
 ) -> bool:
     """Materialize an entity whose bytes are supplied by git, not the bundle.
 
@@ -1338,7 +1489,7 @@ async def _restore_git_reference_entity_entry(
     ``restore_reference`` hook write its row (and, for a project, clone it).
     ``name`` replaces the sender's name — the receiver's choice when it is taken here.
     """
-    if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
+    if not isinstance(transfer, dict) or transfer.get("transfer_mode") not in (_TRANSFER_MODE_GIT, _TRANSFER_MODE_BOTH):
         return False
     parsed = _parse_entry_key(key)
     if parsed is None:
@@ -1353,7 +1504,15 @@ async def _restore_git_reference_entity_entry(
     origin = ORIGIN_ADAPTER.validate_python(origins_map.get(key) or payload.get("origin"))
     if origin is None:
         return False
-    return await cls.restore_reference(entry_id, payload, origin, overwrite=overwrite, owner_typeid=owner_typeid)
+    return await cls.restore_reference(
+        entry_id,
+        payload,
+        origin,
+        overwrite=overwrite,
+        owner_typeid=owner_typeid,
+        project_root=project_root,
+        project_id=project_id,
+    )
 
 
 async def _restore_webapp_artifact_entry(
@@ -1367,14 +1526,14 @@ async def _restore_webapp_artifact_entry(
     overwrite: bool,
     owner_typeid: str | None,
 ) -> Path | None:
-    """Install a copy-mode folder webapp artifact: mirror its staged bytes into the
-    project and materialize the ``Artifact`` row pointing ``path`` at the served
-    folder (no clone).
+    """Install a copy-mode artifact: mirror its staged bytes (a webapp folder or a
+    shared file) under ``project_root`` and materialize the ``Artifact`` row
+    pointing at them (no clone).
 
     The counterpart of ``_pack_webapp_artifact_attachment``. ``entry_dir`` holds
-    only ``webapps/<slug>/…`` (the declaration rode separately at
+    only the bytes (the declaration rode separately at
     ``metadata/<key>/metadata.json``), so ``_restore_file_backed_entry`` mirrors it
-    verbatim under ``project_root``. Returns the served folder path, or None.
+    verbatim under ``project_root``. Returns the served path, or None.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
     from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
@@ -1388,29 +1547,37 @@ async def _restore_webapp_artifact_entry(
     # verbatim — raises FlowMessageExistsError on a real collision when overwrite=False).
     _restore_file_backed_entry(entry_dir, project_root, overwrite)
     served = project_root / PurePosixPath(bytes_rel)
-    if not served.is_dir():
+    single_file = bool(transfer.get("single_file"))
+    if not (served.is_file() if single_file else served.is_dir()):
         return None
 
     # Materialize the row from the shipped declaration — pick only the artifact's
     # own fields (never the sender-local project_id / audit columns).
     payload = _read_transfer_metadata(unpacked_root, transfer)
+    # Where the bytes now live. A shared file also opens as the file itself
+    # (``_shared_file_target`` reads asset_ref).
+    location = {"origin": LocalOrigin(base=str(served.parent), rel_path=served.name)}
+    if single_file:
+        location["asset_ref"] = str(served)
+
+    existing = await Artifact.get_one({"id": asset_id})
+    if existing is not None and not overwrite:
+        # Idempotent re-receive: heal a missing location, leave the rest untouched.
+        if getattr(existing, "origin", None) is None or (single_file and existing.asset_ref != str(served)):
+            for field, value in location.items():
+                setattr(existing, field, value)
+            await existing.save(owner_typeid)
+        return served
+
     new_payload = {
         "type": EntityType.ARTIFACT.value,
         "id": asset_id,
         "name": payload.get("name") or f"artifact-{asset_id[:8]}",
         "kind": payload.get("kind") or "application.web",
         "description": payload.get("description"),
-        "origin": LocalOrigin(base=str(served.parent), rel_path=served.name).model_dump(mode="python"),
         "project_id": project_id,
+        **location,
     }
-
-    existing = await Artifact.get_one({"id": asset_id})
-    if existing is not None and not overwrite:
-        # Idempotent re-receive: heal a missing origin, leave the rest untouched.
-        if getattr(existing, "origin", None) is None:
-            existing.origin = LocalOrigin(base=str(served.parent), rel_path=served.name)
-            await existing.save(owner_typeid)
-        return served
 
     artifact = Artifact.model_validate(new_payload)
     artifact.id = asset_id
@@ -1771,9 +1938,38 @@ def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Pat
     return zip_path
 
 
+async def _stamp_sender_project(conversation_id: str | None, share_opts: dict, owner_typeid) -> None:
+    """Record where a share came from on the receiver's conversation
+    (``remote_project_id``), unless it already says."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+    project_id = share_opts.get("project_id")
+    if not conversation_id or not project_id:
+        return
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None or conv.remote_project_id:
+        return
+    conv.remote_project_id = project_id
+    conv.remote_project_name = share_opts.get("project_name") or conv.remote_project_name
+    await conv.save(owner_typeid, notify=False)
+
+
+async def _sender_project_of(flow_message: "FlowMessage") -> dict:
+    """``{project_id, project_name}`` of the sender's conversation, if it has a project."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    conv = await Conversation.get_one({"id": flow_message.conversation_id}) if flow_message.conversation_id else None
+    project_id = getattr(conv, "project_id", None)
+    if not project_id:
+        return {}
+    project = await Project.get_one({"id": project_id})
+    return {"project_id": project_id, "project_name": getattr(project, "name", None)}
+
+
 def _normalize_transfer_mode(transfer_mode: str | None) -> str:
     mode = (transfer_mode or _TRANSFER_MODE_COPY).strip().lower()
-    if mode not in {_TRANSFER_MODE_COPY, _TRANSFER_MODE_GIT}:
+    if mode not in {_TRANSFER_MODE_COPY, _TRANSFER_MODE_GIT, _TRANSFER_MODE_BOTH}:
         raise ValueError(f"Unsupported bundle transfer_mode: {transfer_mode!r}")
     return mode
 
@@ -1978,8 +2174,13 @@ async def pack_bundle(
         _write_origin_files(tmp_root, origins)
         if transfers:
             _write_json(tmp_root / _GIT_TRANSFERS_FILE, transfers)
-        if create_bookmark:
-            _write_json(tmp_root / _SHARE_OPTIONS_FILE, {"create_bookmark": True})
+        share_options: dict = {"create_bookmark": True} if create_bookmark else {}
+        if origins:
+            # A share of repo assets says which project it came from, so the
+            # receiver can open it in the matching project of theirs.
+            share_options.update(await _sender_project_of(flow_message))
+        if share_options:
+            _write_json(tmp_root / _SHARE_OPTIONS_FILE, share_options)
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
@@ -2154,7 +2355,7 @@ def _send_time_from_pointer_index(tmp_root: Path, fm_id: str) -> str | None:
 
 
 def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: str | None = None) -> None:
-    """Fill a legacy bundle's missing send-time on ``fm_data``, in place.
+    """Fill a legacy bundle's missing send-time and hub clock on ``fm_data``, in place.
 
     THE one place that decides a message's send-time on receive. It must be
     applied at EVERY site that can persist a FlowMessage out of a bundle — a
@@ -2187,10 +2388,11 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     if fm_data.get("created_date"):
         return
     ts = _send_time_from_pointer_index(tmp_root, fm_id)
-    if not ts:
-        return
-    fm_data["created_date"] = ts
-    if not fm_data.get("updated_date"):
+    if ts:
+        fm_data["created_date"] = ts
+    # Independent of ``ts``: a bundle with no pointer index still has the hub
+    # clock, and without it the row is born ``now()``.
+    if not fm_data.get("updated_date") and (hub_updated or ts):
         fm_data["updated_date"] = hub_updated or ts
 
 
@@ -2426,7 +2628,7 @@ async def unpack_bundle(
 ) -> "FlowMessage":
     """Extract .flowmsg into the message's STAGING area, return FlowMessage.
 
-    File-backed assets (skill, agent, workflow, whiteboard, spec, prompt,
+    File-backed assets (skill, agent, workflow, chart, spec, prompt,
     markdown, plan, command, rule) and git-transfer assets are NOT copied into
     any project or indexed here. The extracted tree persists under the
     FlowMessage's record-data dir (``download/`` + ``unpacked/`` — see
@@ -2622,6 +2824,8 @@ async def unpack_bundle(
                 create_bookmark = bool(_share_opts.get("create_bookmark"))
             except Exception:
                 logger.warning("[bundle] unreadable %s; ignoring", _SHARE_OPTIONS_FILE, exc_info=True)
+            else:
+                await _stamp_sender_project(staging_conv_id, _share_opts, owner_typeid)
 
         # Every git-transfer entry (file-backed asset OR graph artifact) is STAGED
         # like a file-backed asset — nothing materializes at download; the row +
@@ -2642,9 +2846,10 @@ async def unpack_bundle(
             # bytes dir (attachment/<key>/) and forces project-only install (a
             # webapp can't live under ~/.claude).
             _tmode = (transfer or {}).get("transfer_mode") or "git"
-            if _tmode == _TRANSFER_MODE_COPY:
+            if _tmode in (_TRANSFER_MODE_COPY, _TRANSFER_MODE_BOTH):
                 _unpacked = fm_data_ops.staged_entry_rel_path(key)
-                _user_scope: bool | None = False
+                # A shared file may live in the recipient's own folder; a webapp needs a project.
+                _user_scope: bool | None = bool((transfer or {}).get("single_file"))
             else:
                 _unpacked = str(transfer.get("metadata_path") or "")
                 _user_scope = None
@@ -2691,7 +2896,7 @@ async def unpack_bundle(
                 entry_type, entry_id = parsed
 
                 # FILE-BACKED ASSET FAMILY (TypeInfo.main_subdir set): one branch
-                # for skill/agent/workflow/whiteboard/spec/prompt/markdown/plan/
+                # for skill/agent/workflow/chart/spec/prompt/markdown/plan/
                 # command/rule. STAGED — the subtree already persists under the
                 # message's unpacked/ dir; record a MessageAttachment row so the
                 # UI can review + explicitly install (copy + reindex live in the

@@ -196,6 +196,18 @@ class DataDriver(DriverRuntime, Entity):
 
     @computed_field
     @property
+    def holds_rows(self) -> bool:
+        """Whether a dataset's rows can live in a store of this driver (``"location": "<name>:<target>"``):
+        its source is ``RowFiles`` and maps a location's target onto its config. What a location picker
+        offers, without naming a provider."""
+        from flow_sdk.sources.protocols import RowFiles  # noqa: PLC0415
+
+        driver = self._loaded()
+        cls = driver.cls if driver is not None else None
+        return bool(cls is not None and callable(getattr(cls, "row_files_target", None)) and issubclass(cls, RowFiles))
+
+    @computed_field
+    @property
     def sends(self) -> bool:
         """Whether a source of this driver answers on its channel: a MessageSource that sends.
 
@@ -207,6 +219,18 @@ class DataDriver(DriverRuntime, Entity):
         """
         driver = self._loaded()
         return bool(driver is not None and driver.can_send)
+
+    @computed_field
+    @property
+    def sign_in_title(self) -> str:
+        """What a person calls the sign-in this driver reads through (its ``auth.connector``) — ``GitHub`` —
+        or ``""`` when it needs none. Read off the provider registry, so no surface spells a provider name."""
+        connector = self.auth.connector if self.auth is not None else ""
+        if not connector:
+            return ""
+        from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+
+        return shipped_provider_title(connector) or connector.title()
 
     @computed_field
     @property

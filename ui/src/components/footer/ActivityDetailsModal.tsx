@@ -7,6 +7,11 @@
  */
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
+import { Activity, isTerminal } from '@sdk/activity';
+import { notify } from '@src/notifications';
+import { Button } from '@src/components/ui/button';
 import { useActivityReceipt, useActivitySpec } from '@src/store/activity-store';
 import { useActivityDetailsStore } from '@src/store/use-activity-details-store';
 import { useElapsedMs } from '@src/hooks/useActivity';
@@ -26,6 +31,18 @@ export function ActivityDetailsModalRoot() {
       ? receipt
       : null);
   const elapsedMs = useElapsedMs(spec);
+  const { t } = useLingui();
+  const [terminating, setTerminating] = useState(false);
+
+  const terminate = async (node: NonNullable<typeof live>) => {
+    setTerminating(true);
+    try {
+      const ended = await Activity.get(node.path, node.subject_entity ?? null).cancel(t`Terminated by user`);
+      if (!ended) notify.error({ title: t`Couldn't terminate ${node.label || node.name}`, transient: true });
+    } finally {
+      setTerminating(false);
+    }
+  };
 
   return (
     <Dialog open={open && !!payload} onOpenChange={setOpen}>
@@ -38,6 +55,15 @@ export function ActivityDetailsModalRoot() {
               {elapsedMs > 0 && ` · ${humanizeSeconds(elapsedMs / 1000)}`}
             </p>
           )}
+          {spec && !isTerminal(spec) && spec.message && (
+            <p
+              className="truncate text-xs text-muted-foreground"
+              title={spec.message}
+              data-testid="activity-details-message"
+            >
+              {spec.message}
+            </p>
+          )}
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto pe-1">
           {spec ? (
@@ -45,9 +71,24 @@ export function ActivityDetailsModalRoot() {
               <ActivityRow spec={spec} detail />
             </ul>
           ) : (
-            <p className="px-3 py-2 text-xs italic text-muted-foreground">Nothing is running at this address anymore.</p>
+            <p className="px-3 py-2 text-xs italic text-muted-foreground">
+              Nothing is running at this address anymore.
+            </p>
           )}
         </div>
+        {live && !isTerminal(live) && (
+          <div className="flex justify-end">
+            <Button
+              variant="destructive"
+              size="sm"
+              data-testid="activity-details-terminate"
+              disabled={terminating}
+              onClick={() => void terminate(live)}
+            >
+              {t`Terminate`}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

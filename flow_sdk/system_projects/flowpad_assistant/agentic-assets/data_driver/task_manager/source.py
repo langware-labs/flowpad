@@ -68,6 +68,11 @@ class TaskMessageData(MessageData):
     #: The session the task came from — where the creator answers task news.
     origin_session: str = ""
 
+    @property
+    def item_title(self) -> str:
+        return self.subject or ""
+
+
 
 class TaskMessageSpec(MessageSpec):
     """Said into a task's thread: a comment on the task. The task IS the thread."""

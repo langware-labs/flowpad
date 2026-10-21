@@ -1,13 +1,13 @@
 /**
- * Dataset — a folder of examples (flow_sdk/builtin/dataset.py). When bound to a
+ * Dataset — a folder of rows (flow_sdk/builtin/dataset.py). When bound to a
  * DataSource (`source_id`) its rows are that source's items: `promote` turns
- * items into examples, `annotate` writes an example's gold label.
+ * items into rows, `annotate` writes a row's gold label.
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import type { ApiWarning } from '../ApiResponse';
 import apiClient from '../client';
 import { IEntity, EntityMerge } from '../IEntity';
-import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
+import type { EvalRow, EvalRun, EvalTrace } from '../evals/types';
 import { ExpressionNode, type MatchMap, type OrderByType } from '../FlowSync/query';
 import { EventBus, targetOf } from '../tags/EventBus';
 import { startTagBridge } from '../tags/ws-bridge';
@@ -36,7 +36,7 @@ export function coerceToKind(kind: unknown, text: string): unknown {
 
 /** The keyword authoring form of a dataset shape: one row describes every row. */
 export interface DatasetAuthoringSpec {
-  examples: [{ input: unknown; output?: unknown; ground_truth?: unknown; context?: unknown }];
+  rows: [{ input: unknown; output?: unknown; ground_truth?: unknown; context?: unknown }];
 }
 
 /** What `spec` holds: the inline form, or the NAME of a registered dataset kind
@@ -45,7 +45,7 @@ export type DatasetSpecForm = DatasetAuthoringSpec | string;
 
 /** One row going in: `input` required, the other slots and the row's role optional. */
 export interface DatasetRowInput {
-  /** The row's key — its example folder's name (`a-z 0-9 _ -`). Append numbers a row without one. */
+  /** The row's key — its row folder's name (`a-z 0-9 _ -`). Append numbers a row without one. */
   key?: string;
   input: unknown;
   context?: unknown;
@@ -55,7 +55,7 @@ export interface DatasetRowInput {
   data?: Record<string, unknown>;
 }
 
-/** One row read back with its slots' VALUES (`GET example/<id>`). */
+/** One row read back with its slots' VALUES (`GET row/<id>`). */
 export interface DatasetRow extends DatasetRowInput {
   /** The row's own id, stored in the row: it survives a rename and a re-clone. */
   id: string;
@@ -63,7 +63,7 @@ export interface DatasetRow extends DatasetRowInput {
   ref: string;
   /** The row's content version: pass it to `put(…, { expected })` so a write never lands over a change it did not see. */
   version: string;
-  /** The example folder's name — address the row by it (`put`, `deleteRow`, `rename`, `example`). */
+  /** The row folder's name — address the row by it (`put`, `deleteRow`, `rename`, `row`). */
   key: string;
   kind: 'train' | 'eval' | 'test';
   metadata: Record<string, unknown>;
@@ -90,7 +90,7 @@ export interface DatasetRowProblem {
   id: string;
   ref: string;
   /** @deprecated the old name of `id` — use `id` / `ref`. */
-  example_id: string;
+  row_id: string;
   key: string;
   version: string;
   error: string;
@@ -183,8 +183,8 @@ export interface DatasetSyncResult {
   updated: string[];
   unchanged: string[];
   deleted: string[];
-  num_examples: number;
-  /** `mirror` only: records whose value does not fit the row kind, kept as problem rows (`rows().problems`). */
+  num_rows: number;
+  /** `mirror` only: records whose value does not fit the row kind, kept as problem rows (`query().problems`). */
   misfit?: { key: string; details: CheckDetail[] }[];
   /** `mirror` only: link ids no row holds, left out of the row. */
   unlinked?: { key: string; field: string; value: string }[];
@@ -212,7 +212,7 @@ export interface DatasetRowsChange {
   op: 'put' | 'delete' | 'rename' | 'sync';
   keys: string[];
   count: number;
-  /** The rows as a whole after this write (the same `version` a `rows()` read carries); what
+  /** The rows as a whole after this write (the same `version` a `query()` read carries); what
    *  `onRowsChanged` compares on reconnect. `sync` with no keys is "something moved while you were
    *  away". */
   version: string;
@@ -253,10 +253,35 @@ export interface IDataset extends IEntity {
   field_spec?: Record<string, string>;
   delimiter?: string;
   spec?: DatasetSpecForm | null;
-  num_examples?: number;
+  num_rows?: number;
   kind_counts?: Record<string, number>;
   num_annotated?: number;
   asset_ref?: string;
+  /** The kind each row is, resolved by the backend (`Dataset.row_kind`) — named specs too. */
+  row_kind?: string;
+  /** Where the rows live (`dataset.json` `location`): `local` (the default), `file:<folder>`,
+   *  `<driver>:<target>` (`gdrive:GTM/Rows`, `s3:bucket/prefix`), or a record system. */
+  location?: DatasetLocation | null;
+}
+
+/** A record system the rows live in: one record per row, shaped by `map`. */
+export interface RecordLocation {
+  driver: string;
+  target?: string;
+  config?: Record<string, unknown>;
+  map?: { key: string; input: Record<string, unknown> };
+  by?: string;
+  read_only?: boolean;
+}
+
+export type DatasetLocation = string | RecordLocation;
+
+/** How a location reads to a person: `local`, `file:~/rows`, `s3:bucket/prefix`, `twenty: companies`. */
+export function locationLabel(location: DatasetLocation | null | undefined): string {
+  if (!location) return 'local';
+  if (typeof location === 'string') return location;
+  const target = location.target || Object.values(location.config ?? {}).filter((v) => typeof v === 'string').join('/');
+  return target ? `${location.driver}: ${target}` : location.driver;
 }
 
 // `implements IDataset` only checks the class; it contributes no members, so every
@@ -276,7 +301,8 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   field_spec: Record<string, string> = {};
   delimiter: string = ',';
   spec: DatasetSpecForm | null = null;
-  num_examples: number = 0;
+  location: DatasetLocation | null = null;
+  num_rows: number = 0;
   kind_counts: Record<string, number> = {};
   num_annotated: number = 0;
   asset_ref: string = '';
@@ -290,7 +316,8 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     this.field_spec = entity.field_spec ?? this.field_spec;
     this.delimiter = entity.delimiter ?? this.delimiter;
     this.spec = entity.spec ?? this.spec;
-    this.num_examples = entity.num_examples ?? this.num_examples;
+    this.location = entity.location ?? this.location;
+    this.num_rows = entity.num_rows ?? this.num_rows;
     this.kind_counts = entity.kind_counts ?? this.kind_counts;
     this.num_annotated = entity.num_annotated ?? this.num_annotated;
     this.asset_ref = entity.asset_ref ?? this.asset_ref;
@@ -305,14 +332,14 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
       title: name,
       source_id: sourceId,
       data_layout: 'io_folder',
-      spec: { examples: [{ input: 'ingest.source_item', output }] },
+      spec: { rows: [{ input: 'ingest.source_item', output }] },
     });
   }
 
   /** The output shape of one row, in authoring form (`{field: kind}`), or null — null too when
    *  `spec` NAMES a kind: that shape lives in the kind (see `GET /api/v1/kinds/<kind>`). */
   get outputShape(): unknown {
-    return typeof this.spec === 'string' ? null : (this.spec?.examples?.[0]?.output ?? null);
+    return typeof this.spec === 'string' ? null : (this.spec?.rows?.[0]?.output ?? null);
   }
 
   /** The registered kind every row is, when `spec` names one; else null. */
@@ -320,10 +347,11 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return typeof this.spec === 'string' ? this.spec : null;
   }
 
-  /** The kind each row is — its `input` — for a named spec too (`kindForm(specKind).slots.input`);
-   *  an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
+  /** The kind each row is — its `input` — for a named spec too: the backend resolves it
+   *  (`row_kind`); an inline spec answers here directly. A row is one instance: `<rowKind>.id.<row id>`. */
   get rowKind(): string | null {
-    const input = typeof this.spec === 'object' ? this.spec?.examples?.[0]?.input : null;
+    if (this.row_kind) return this.row_kind;
+    const input = typeof this.spec === 'object' ? this.spec?.rows?.[0]?.input : null;
     return typeof input === 'string' ? input.replace(/^\?/, '') : null;
   }
 
@@ -351,16 +379,16 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** The rows as the disk holds them: which item each came from, and whether it carries gold.
-   *  NOT named `examples`: a dataset read by id carries an `examples` FIELD on the wire, and
-   *  assigning it onto the instance hid a method of that name ("examples is not a function"). */
-  async listExamples(): Promise<{
-    examples: { example_id: string; key: string; item_id: string | null; kind: string; annotated: boolean }[];
+   *  NOT named `rows`: a dataset read by id carries a `rows` FIELD on the wire, and assigning it
+   *  onto the instance would hide a method of that name (why the read is `query`). */
+  async rowIndex(): Promise<{
+    rows: { row_id: string; key: string; item_id: string | null; kind: string; annotated: boolean }[];
   }> {
-    return this.get('examples');
+    return this.get('row-index');
   }
 
-  /** Items → examples. Returns the new example ids. */
-  async promote(sourceItemIds: string[]): Promise<{ example_ids: string[]; num_examples: number }> {
+  /** Items → rows. Returns the new row ids. */
+  async promote(sourceItemIds: string[]): Promise<{ ids: string[]; num_rows: number }> {
     return this.post('promote', { source_item_ids: sourceItemIds });
   }
 
@@ -370,7 +398,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   async append(
     rows: DatasetRowInput[],
     options: { by?: string } = {},
-  ): Promise<{ example_ids: string[]; num_examples: number; warnings?: ApiWarning[] }> {
+  ): Promise<{ ids: string[]; num_rows: number; warnings?: ApiWarning[] }> {
     return this.post('append', { rows, ...writer(options) });
   }
 
@@ -379,7 +407,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  match, ordered and paged — `total` is how many matched before paging; `problems` is still
    *  every row that does not fit. A field is a path into the row: `key`, `input.stage`,
    *  `input.stage_dates.won`; a date compares as its ISO string. */
-  async rows(
+  async query(
     query: DatasetRowQuery = {},
   ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }> {
     const found = await this.get<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }>(
@@ -390,7 +418,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return found;
   }
 
-  /** The rows version the last `rows()` on this instance read — so a listener on it never asks the
+  /** The rows version the last `query()` on this instance read — so a listener on it never asks the
    *  page to re-read what it just read, whichever came first, the read or the subscription. */
   private rowsRead?: string;
 
@@ -467,25 +495,25 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.get('evals');
   }
 
-  /** One eval run: the run and every evaluated example, joined to its input / context / data. */
-  async evalRun(runId: string): Promise<{ run: EvalRun; examples: EvalExampleRow[]; count_metrics: string[]; explain: Record<string, string> }> {
+  /** One eval run: the run and every evaluated row, joined to its input / context / data. */
+  async evalRun(runId: string): Promise<{ run: EvalRun; rows: EvalRow[]; count_metrics: string[]; explain: Record<string, string> }> {
     return this.get(`eval/${encodeURIComponent(runId)}`);
   }
 
-  /** Run this dataset's eval now; answers the new run. */
-  /** How one example's answer was reached in a run (its `trace`), fetched only when it is opened. */
-  async evalTrace(runId: string, exampleId: string): Promise<EvalTrace | null> {
-    const found = (await this.get(`eval/${encodeURIComponent(runId)}/${encodeURIComponent(exampleId)}`)) as { trace?: EvalTrace | null };
+  /** How one row's answer was reached in a run (its `trace`), fetched only when it is opened. */
+  async evalTrace(runId: string, rowId: string): Promise<EvalTrace | null> {
+    const found = (await this.get(`eval/${encodeURIComponent(runId)}/${encodeURIComponent(rowId)}`)) as { trace?: EvalTrace | null };
     return found?.trace ?? null;
   }
 
+  /** Run this dataset's eval now; answers the new run. */
   async runEval(options: { eval?: string; kinds?: string[] } = {}): Promise<EvalRun> {
     return this.post('run-eval', options);
   }
 
-  /** One example with its slots' values — by its key or its id. */
-  async example(keyOrId: string): Promise<DatasetRow> {
-    return this.get(`example/${encodeURIComponent(keyOrId)}`);
+  /** One row with its slots' values — by its key or its id. */
+  async row(keyOrId: string): Promise<DatasetRow> {
+    return this.get(`row/${encodeURIComponent(keyOrId)}`);
   }
 
   /** Create the row `key`, or replace the one there. Checked first — a row that does not fit writes
@@ -497,13 +525,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     key: string,
     row: Omit<DatasetRowInput, 'key'>,
     options: { expected?: string; by?: string } = {},
-  ): Promise<{ example_id: string; key: string; num_examples: number; warnings?: ApiWarning[] }> {
+  ): Promise<{ row_id: string; key: string; num_rows: number; warnings?: ApiWarning[] }> {
     return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
   /** Remove one row, by key or id. Refused (409) while another row links to it, and — with
    *  `expected` (the version read) — when the row changed since. */
-  async deleteRow(keyOrId: string, options: { expected?: string } = {}): Promise<{ key: string; num_examples: number }> {
+  async deleteRow(keyOrId: string, options: { expected?: string } = {}): Promise<{ key: string; num_rows: number }> {
     return this.post('delete-row', { key: keyOrId, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
@@ -513,7 +541,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   async putMany(
     rows: DatasetKeyedRow[],
     options: { expected?: Record<string, string>; by?: string } = {},
-  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number; warnings?: ApiWarning[] }> {
+  ): Promise<{ ids: string[]; keys: string[]; num_rows: number; warnings?: ApiWarning[] }> {
     return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
@@ -522,7 +550,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   async deleteRows(
     keys: string[],
     options: { expected?: Record<string, string> } = {},
-  ): Promise<{ keys: string[]; num_examples: number }> {
+  ): Promise<{ keys: string[]; num_rows: number }> {
     return this.post('delete-rows', { keys, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
@@ -545,27 +573,21 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   /** Give a row a new key. Its id stays (stored in the row), so every link to it still holds; a key
    *  copied OUTSIDE Flowpad (a CRM field, a URL) is the one thing that does not follow. With
    *  `expected` (the version read), refused (409) when the row changed since. */
-  async rename(keyOrId: string, newKey: string, options: { expected?: string } = {}): Promise<{ example_id: string; key: string }> {
+  async rename(keyOrId: string, newKey: string, options: { expected?: string } = {}): Promise<{ row_id: string; key: string }> {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
-   *  row of this dataset's kind, and the dataset is made to hold exactly those (as `sync`). `map`
-   *  says how an item becomes a row, in the path grammar — `{key: 'external_id', input: {name:
-   *  'name', stage: 'data.stage'}}` (`{value: x}` is a constant). `by` is the outside system the
-   *  rows are written as (default: the source's provider). */
-  async mirror(
-    sourceId: string,
-    map: { key: string; input: Record<string, unknown> },
-    options: { by?: string; prune?: boolean; match?: DatasetRowQuery['match'] } = {},
-  ): Promise<DatasetSyncResult> {
-    return this.post('mirror', {
-      source_id: sourceId,
-      map,
-      ...writer(options),
-      ...(options.prune === undefined ? {} : { prune: options.prune }),
-      ...(options.match ? { match: matchJson(options.match) } : {}),
-    });
+  /** Bring the rows of a remote location (Drive, S3, a record system) up to date now — what every
+   *  read does first. `moved` names the rows that changed. */
+  async pull(): Promise<{ moved: string[]; num_rows: number }> {
+    return this.post('pull', {});
+  }
+
+  /** Copy every row to `location`, check it holds them all, then make it this dataset's location
+   *  (`dataset.json`). The old location keeps its rows. Refused (400) when the new location already
+   *  holds rows or is a record system. */
+  async moveRows(location: DatasetLocation): Promise<{ from: string; to: string; rows: number }> {
+    return this.post('move-rows', { location });
   }
 
   /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value
@@ -584,8 +606,8 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('validate', {});
   }
 
-  /** Write one example's gold label (validated against the output shape). */
-  async annotate(exampleId: string, groundTruth: unknown): Promise<{ example_id: string; num_annotated: number }> {
-    return this.post('annotate', { example_id: exampleId, ground_truth: groundTruth });
+  /** Write one row's gold label (validated against the output shape). */
+  async annotate(rowId: string, groundTruth: unknown): Promise<{ row_id: string; num_annotated: number }> {
+    return this.post('annotate', { row_id: rowId, ground_truth: groundTruth });
   }
 }

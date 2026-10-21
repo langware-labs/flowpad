@@ -176,6 +176,26 @@ workers can never share one transcript. Two layers, keyed on the same predicate:
 2. Frontend `useProcessSurface` declines the reconcile rather than firing a call
    it knows will 409, and retries at idle.
 
+**Not a turn, but refused too: a headless worker parked on background work.** The
+agent answered and left work running (a dev server, a watcher), so `claude -p`
+stays alive for it — `busy` is false and the chat takes messages. `→interactive`
+is still refused (409, `BACKGROUND_TASKS_RUNNING`): a terminal started now would
+`--resume` the session beside a live process, and two processes must not write one
+transcript. The work cannot move to the terminal either — it is a child of the
+process that started it, and Claude Code only hands work between processes inside
+its own background-session supervisor, which flowpad does not use. So the only ways
+forward are to wait or to end it. `SurfaceSwitchWaitNotice` offers **Switch anyway**
+(only when `background_work` is true), behind a confirmation that says the work
+ends; confirming calls `stop-background`, and `useProcessSurface` retries the switch
+when `background_work` clears — `busy` never flips for it, so that field is its own
+retry trigger.
+
+A different trap on the way back: after such a switch, a session resumed in the
+terminal finds the stopped work and the CLI writes a `<task-notification>` row with
+`status: stopped`. The agent does not answer it, so `worker_status._is_stop_report`
+makes the tail scan look past it — read as a prompt it ended in `api_timeout`, busy
+for good, and the switch back to chat was greyed ("not while the agent is working").
+
    Layer 1 only actually covered `→interactive` once the frontend stopped
    routing that direction at `open` (FLOWPAD-2130). While it did, the guard was
    real but unreachable from the UI, and layer 2 mirrored the unguarded route

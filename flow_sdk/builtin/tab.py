@@ -27,7 +27,7 @@ import contextlib
 import json as _json
 import logging
 import uuid
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar, FrozenSet
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
@@ -37,6 +37,7 @@ from flow_sdk.builtin.tab_order import (
     filter_for_project,
 )
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.core.dock_address import VIEW_META, PageId, ViewType, parse_view_type
 from flow_sdk.api.api_types.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
@@ -276,7 +277,7 @@ def tab_id_for(pointer: str) -> str:
     return mint_uuid(key=f"tab:{hash_str}", namespace=uuid.NAMESPACE_URL)
 
 
-class Tab(Entity):
+class Tab(ProjectedFields, Entity):
     type: str = APIField(default=EntityType.TAB.value)
 
     # Canonical serialized DockPointer (frontend ``DockPointer.tabHash``). The
@@ -286,6 +287,10 @@ class Tab(Entity):
     # fast reverse lookup. Null for target-less surfaces (settings/search/diff).
     target_type: str | None = APIField(default=None)
     target_id: str | None = APIField(default=None)
+    # Derived: the client computes them from the pointer (it owns the pointer
+    # grammar), and only ``ensure_tab_created`` writes them onto a row.
+    derived_fields: ClassVar[FrozenSet[str]] = frozenset({"target_type", "target_id"})
+    derived_writer: ClassVar[str] = "ensure_tab_created"
 
     # Advisory grouping edge to the opener tab (the vibe display tab is the first
     # consumer). Never affects ordering/close/recency; children stay ordinary
@@ -328,6 +333,9 @@ class Tab(Entity):
     status: str | None = APIField(default=None, persist=Persist.FALSE)
     is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
     target_remote: bool = NoDBAPIField(default=False)
+    # The CONTENT target's own project. Differs from ``project_id`` on a guest
+    # tab — an asset of another project shown inside this one.
+    target_project_id: str | None = NoDBAPIField(default=None)
 
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
@@ -383,8 +391,10 @@ class Tab(Entity):
         reconcile = getattr(target, "reconcile_name", None)
         if callable(reconcile):
             current = await reconcile()
-            if current is not None:
+            if current is not None and current.name and self.name != current.name:
                 self.name = current.name
+                if self.exist_in_db:
+                    await self.save()
 
     async def set_label(self, name: str) -> None:
         """Set an ordinary label; worker labels always project their target."""
@@ -730,6 +740,10 @@ async def _reap_orphans(
         if shell_row is not None:
             reparent[tab.id] = shell_row.id
     reaped_display = await _delete_rows(display_rows, deleted_ids)
+    # Retired active-display rows (``workspaceActive|<host>``): dropped, not migrated.
+    reaped_retired = await _delete_rows(
+        [t for t in tabs if t.id not in deleted_ids and _is_retired_active_display(t.pointer)], deleted_ids
+    )
 
     # Every hard-deleted row's children heal in ONE pass: display children
     # re-anchor to their process's shell tab; everything else nulls (soft-close
@@ -801,7 +815,7 @@ async def _reap_orphans(
             except Exception:
                 continue
 
-    if reaped_target or reaped_pointer or reaped_display or healed_children or healed_nonadoptable or healed_dangling:
+    if reaped_target or reaped_pointer or reaped_display or reaped_retired or healed_children or healed_nonadoptable or healed_dangling:
         # Background reap (no user navigation) — ONE ping per cycle so clients
         # refetch once and the dangling chips drop live.
         await broadcast_tabs_changed()
@@ -971,6 +985,8 @@ async def ensure_tab_created(
     # though the target HAS a project. When the client didn't supply a usable
     # project, resolve it from the target entity server-side (``reconcile_tab_project``
     # keeps it fresh on later target-project changes).
+    # Explicit project dock URLs also own their presentation project: showing a
+    # file from another project must not move its tab out of the caller's strip.
     # A SCOPE-KEYED row is the exception: its project is its scope, never its
     # target's (``_pointer_scope_project``), so the target derivation below must
     # not run for one. Stamping it at rest — not only on the read path — is what
@@ -979,6 +995,8 @@ async def ensure_tab_created(
     scope_keyed, scope_project = _pointer_scope_project(pointer)
     if scope_keyed:
         project_id = scope_project
+    elif pointer_project := await _project_from_pointer(pointer):
+        project_id = pointer_project
     elif (project_id is _UNSET or not project_id) and target_type and target_id:
         resolved = await _project_of_target(target_type, target_id)
         if resolved:
@@ -1041,7 +1059,7 @@ async def ensure_tab_created(
             ("target_id", target_id),
         ):
             if val is not None and getattr(existing, attr) != val:
-                setattr(existing, attr, val)
+                existing._write_derived(**{attr: val})
                 dirty = True
         # ``project_id`` is re-derived from the target on every (re)open, so an
         # EXPLICIT value — including ``None`` when the target is now projectless —
@@ -1096,6 +1114,17 @@ async def ensure_tab_created(
             elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
                 existing.parent_tab_id = parent_tab_id
                 dirty = True
+            elif parent_tab_id == "" and existing.parent_tab_id is not None:
+                # ``""`` = opened as its OWN tab, outside any workspace: it leaves its group.
+                existing.parent_tab_id = None
+                dirty = True
+            elif not parent_tab_id and existing.parent_tab_id is not None:
+                # Reopened from outside any workspace while its group is closed: no
+                # strip can show a child of a closed parent, so it comes back top-level.
+                parent = await Tab.get_one({"id": existing.parent_tab_id})
+                if parent is None or not parent.visible:
+                    existing.parent_tab_id = None
+                    dirty = True
         if dirty:
             await existing.save()
         if reopened:
@@ -1147,28 +1176,23 @@ async def ensure_tab_created(
     return tab, True
 
 
-#: The hash namespace of a Vibe workspace's ACTIVE DISPLAY row
-#: (``workspaceActive|<host>``) — mirrors ``ACTIVE_DISPLAY_HASH_NS`` in
-#: ``ui/src/navigation/DockPointer.ts``.
-ACTIVE_DISPLAY_HASH_NS = "workspaceActive"
+#: The hash namespace of the RETIRED active-display row (``workspaceActive|<host>``): one
+#: re-pointed row per Vibe workspace. A shown thing is now an ordinary child tab, so such
+#: rows are dropped on read (``_reap_orphans``) and rebuilt as children on the next show.
+_RETIRED_ACTIVE_DISPLAY_NS = "workspaceActive"
 
 
-def _is_active_display(pointer: str | None) -> bool:
-    """Is this the Vibe workspace's active-display row (its hash is host-keyed)?"""
-    return bool(pointer) and _pointer_to_hash(pointer).split('|', 1)[0] == ACTIVE_DISPLAY_HASH_NS
+def _is_retired_active_display(pointer: str | None) -> bool:
+    return (
+        _RETIRED_ACTIVE_DISPLAY_NS in (pointer or "")
+        and _pointer_to_hash(pointer).split('|', 1)[0] == _RETIRED_ACTIVE_DISPLAY_NS
+    )
 
 
 async def _carry_children_out(tab: Tab) -> None:
     """``tab`` stopped being a host (its Vibe tab became a terminal): its visible
-    nested tabs become top-level tabs, right after it, in their order. The
-    workspace's ACTIVE DISPLAY row (``workspaceActive|<host>``) is workspace
-    chrome, not a tab of its own: it stays attached (the global strip never shows
-    a child) and is the Display again when the session returns to Vibe."""
-    children = [
-        child
-        for child in await Tab.get_all({"parent_tab_id": tab.id, "visible": True})
-        if not _is_active_display(child.pointer)
-    ]
+    nested tabs become top-level tabs, right after it, in their order."""
+    children = await Tab.get_all({"parent_tab_id": tab.id, "visible": True})
     if not children:
         return
     for child in children:
@@ -1249,12 +1273,12 @@ async def show_placement(process_id: str) -> dict[str, Any]:
     background agent). The decision used to be the frontend's, read from the one
     app-wide view mode, which two sessions shown two ways cannot share.
 
-    ``project_id`` is the showing process's own project: the tab minted for a
-    file no project owns belongs to it. Resolved here, server-side, like the
-    chip's project on every other tab — never from a client's tab snapshot.
+    ``project_id`` comes from the calling tab, falling back to the process's
+    project when no tab is open. A shown file keeps this presentation project
+    even when the file itself belongs to another project.
     """
     tab = await process_tab(process_id)
-    project_id = await _project_of_target("agentic_process", process_id)
+    project_id = tab.project_id if tab is not None else await _project_of_target("agentic_process", process_id)
     if tab is None:
         return {"tab_id": None, "host": False, "project_id": project_id}
     return {"tab_id": tab.id, "host": _pointer_is_host(tab.pointer), "project_id": project_id}
@@ -1298,8 +1322,10 @@ async def reconcile_tab_project(target_type: str, target_id: str, project_id: st
     """
     changed = 0
     for tab in await _tabs_for_target(target_type, target_id):
-        if tab.project_id != project_id:
-            tab.project_id = project_id
+        presentation_project = await _project_from_pointer(tab.pointer)
+        resolved_project = presentation_project or project_id
+        if tab.project_id != resolved_project:
+            tab.project_id = resolved_project
             await tab.save()
             changed += 1
     if changed:
@@ -1427,11 +1453,11 @@ async def _load_remote_targets(
     return by_type_id
 
 
-def _populate_tab_target_remote(
+def _populate_tab_target_fields(
     tabs: list[Tab],
     target_map: "dict[tuple[str, str], object]",
 ) -> None:
-    """Populate API-only target cloud state without persisting Tab rows."""
+    """Populate the API-only target fields (cloud state, content project) without persisting Tab rows."""
     for tab in tabs:
         target = (
             target_map.get((tab.target_type, str(tab.target_id)))
@@ -1439,6 +1465,11 @@ def _populate_tab_target_remote(
             else None
         )
         tab.target_remote = bool(getattr(target, "remote", False))
+        tab.target_project_id = (
+            getattr(target, "project_id", None)
+            if tab.target_type not in _DB_BACKED_TARGET_TYPES
+            else None
+        )
 
 
 async def _project_from_pointer(pointer: str | None) -> str | None:
@@ -1473,9 +1504,8 @@ def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
     ``_resolve_tab_projects`` (the read path, for rows never re-minted).
 
     Discriminated on the scope-key grammar (``scopeFilterKey``,
-    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash": the workspace's
-    active display carries an explicit hash too (``workspaceActive|<host>``) and
-    is NOT scope-keyed — its project legitimately follows its target. Reads the
+    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash" (a dependency home
+    carries an explicit hash too and is NOT scope-keyed). Reads the
     hash through ``_pointer_to_hash`` (the one owner of the pointer-format
     grammar), like ``_pointer_view_type``; the ``rsplit`` also tolerates the
     non-desk ``page|vt|scope`` form.
@@ -1514,13 +1544,10 @@ async def _resolve_tab_projects(tabs: list[Tab]) -> None:
     durable persistence of the heal moves to the next ``ensure_tab``/open of the
     same pointer.
 
-    Resolution order: for a SCOPE-KEYED row the scope itself (see
-    ``_pointer_scope_project``) — the one case that also CORRECTS a non-null
-    stamp, because a row the client reuses without re-minting (``materializeTab``
-    short-circuits) never reaches ``ensure_tab``'s matching arm; otherwise the
-    target entity's own project (authoritative — includes
-    the claude-session on-disk recovery), else the project a project-scoped dock
-    URL itself declares (``/dock/project/<id>/...``)."""
+    Explicit presentation wins: scope-keyed rows use their scope; project dock
+    URLs use their named project, including when an old stamp names the target's
+    project. Other rows retain their stamp or resolve it from the target.
+    """
     for tab in tabs:
         # Overrides, not just fills: the stamp it replaces was derived from a
         # target this row no longer shows.
@@ -1528,13 +1555,15 @@ async def _resolve_tab_projects(tabs: list[Tab]) -> None:
         if scope_keyed:
             tab.project_id = scope_project
             continue
+        pointer_project = await _project_from_pointer(tab.pointer)
+        if pointer_project:
+            tab.project_id = pointer_project
+            continue
         if tab.project_id:
             continue
         resolved: str | None = None
         if tab.target_type and tab.target_id:
             resolved = await _project_of_target(tab.target_type, tab.target_id)
-        if not resolved:
-            resolved = await _project_from_pointer(tab.pointer)
         if not resolved:
             continue
         tab.project_id = resolved
@@ -1556,7 +1585,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     result = [by_id[tab_id] for tab_id in filtered]
     await _populate_tab_statuses(result, target_map)
     remote_target_map = await _load_remote_targets(result, target_map)
-    _populate_tab_target_remote(result, remote_target_map)
+    _populate_tab_target_fields(result, remote_target_map)
     return result
 
 
@@ -1579,6 +1608,7 @@ def _serialize_row(tab: Tab) -> dict:
         "status": tab.status,
         "is_disabled": tab.is_disabled,
         "target_remote": bool(tab.target_remote),
+        "target_project_id": tab.target_project_id,
     }
 
 
@@ -1634,7 +1664,7 @@ async def _http_new_tab(
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
     updated project-filtered list, and ``created`` — whether this call minted the
     row, which the client's view-mode memory policy keys ``TabCreate`` on."""
-    _tab, created = await ensure_tab_created(
+    tab, created = await ensure_tab_created(
         pointer,
         target_type=target_type,
         target_id=target_id,
@@ -1646,7 +1676,7 @@ async def _http_new_tab(
         parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
-    return await _list_response(project_id, created=created)
+    return await _list_response(tab.project_id, created=created)
 
 
 _action_registry.register(
@@ -1688,7 +1718,7 @@ async def _http_list_all(cls):
     await _resolve_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
     remote_target_map = await _load_remote_targets(tabs, target_map)
-    _populate_tab_target_remote(tabs, remote_target_map)
+    _populate_tab_target_fields(tabs, remote_target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 

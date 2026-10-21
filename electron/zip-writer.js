@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * A minimal ZIP writer — deflate, UTF-8 names, no ZIP64 — so the "Share with us" bundle needs
+ * A minimal ZIP writer — deflate, UTF-8 names, no ZIP64 — so the "Send Report" bundle needs
  * no dependency and no `zip`/`tar` binary (Linux images often lack zip; Windows has neither by
  * default before 10). Every reader (Explorer, Finder, unzip, mail clients' previews) opens it.
  */

@@ -455,6 +455,10 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
       native default stays unset because Claude keeps ``~/.claude.json`` beside
       its default ``~/.claude/`` transcript directory.
 
+    * ``FLOWPAD_INVOCATION_ID`` / ``FLOWPAD_PARENT_CALL_ID`` — the FlowCall run
+      that spawned this worker (``context_data`` ``invocation_id`` / ``call_id``),
+      so its calls join that run's trace.
+
     ``setdefault`` semantics for the scope (an explicit override wins);
     mutates and returns ``env``.
 
@@ -472,6 +476,18 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
     env["FLOWPAD_PYTHON"] = sys.executable
+    # The FlowCall run this worker serves (``runner._agent`` / a process call stamp it on
+    # ``context_data``): its own `flow op run` calls join that run, under the call that spawned it.
+    # From the process row, never inherited: a worker no call spawned is a root of its own.
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+    from flow_sdk.utils.environment import INVOCATION_ENV, PARENT_CALL_ENV  # noqa: PLC0415
+
+    context = getattr(process, "context_data", None) or {}
+    for key, name in (("invocation_id", INVOCATION_ENV), ("call_id", PARENT_CALL_ENV)):
+        if is_valid_entity_id(str(context.get(key) or "")):
+            env[name] = str(context[key])
+        else:
+            env.pop(name, None)
     # `$FLOWPAD_FLOW` (this install's `flow`) and `FLOW_INSTANCE`, the pair a step's completion
     # check runs with (`flow_env`): an agent handed that check as its bar must be able to run the
     # same command, or it is told "done when this exits 0" about a command it cannot execute.

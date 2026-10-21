@@ -3,6 +3,7 @@
     flow op list                 — every op and what it is for
     flow op check <name>         — ask the question; change nothing
     flow op run <name>           — ask, make the one call, prove
+    flow op trace <invocation>   — one run's logged calls, as a tree (blocks with a ``log``)
 
 A thin HTTP caller over the same entity actions the UI calls; no logic here. With NO backend
 running, ``check`` / ``run`` run a SHIPPED op in this process instead (``core.wizard.local_run``),
@@ -25,13 +26,13 @@ caller believes a goal was reached that nobody attempted.
 """
 from __future__ import annotations
 
+import json
+import sys
+from pathlib import Path
 from typing import Any, NoReturn, Optional
 
 import typer
 from typing_extensions import Annotated
-
-from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT, CHECK_TIMEOUT
-from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 from flow_sdk.cli.commands._common import (
     discover_port,
@@ -41,6 +42,9 @@ from flow_sdk.cli.commands._common import (
     ok,
     post_graph_json,
 )
+from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT, CHECK_TIMEOUT
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+from flow_sdk.schema.types import EntityType
 
 op_app = typer.Typer(
     name="op",
@@ -111,7 +115,7 @@ def _rows(payload: Any) -> list[dict]:
     return [row for row in (payload or []) if isinstance(row, dict)]
 
 
-def _find(name: str) -> dict:
+def _find(name: str, project: Optional[str] = None) -> dict:
     """The op row named ``name``.
 
     Exits 4 when there is none, listing what IS indexed: a name that resolves to
@@ -119,9 +123,14 @@ def _find(name: str) -> dict:
     anything runs — not to fail later inside an action.
     """
     rows = _rows(get_graph_json(_url("compute_op"), on_error=_on_error()))
-    for row in rows:
-        if row.get("name") == name:
-            return row
+    project_id = project.removeprefix(f"{EntityType.PROJECT.value}-") if project is not None else None
+    matches = [row for row in rows if (
+        row.get("name") == name or f"{EntityType.COMPUTE_OP.value}-{row.get('id')}" == name
+    ) and (project_id is None or row.get("project_id") == project_id)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        fail(EXIT_REQUEST_FAILED, "AMBIGUOUS_OP", f"Multiple blocks named {name!r}; pass --project or a compute_op TypeId.")
     known = ", ".join(sorted(str(row.get("name") or "") for row in rows)) or "none are indexed"
     fail(EXIT_NOT_FOUND, "OP_NOT_FOUND", f"No compute op named {name!r}. Known: {known}")
 
@@ -130,7 +139,7 @@ def _find(name: str) -> dict:
 def list_ops() -> None:
     rows = _rows(get_graph_json(_url("compute_op"), on_error=_on_error()))
     ok({"ops": [
-        {k: row.get(k) for k in ("name", "description", "shipped")}
+        {k: row.get(k) for k in ("id", "name", "description", "subkind", "input", "output", "output_spec_kind", "project_id", "shipped")}
         for row in rows
     ]})
 
@@ -177,8 +186,16 @@ def run(
         bool,
         typer.Option("--yes", help="No backend running: answer the op's confirm question yes, here."),
     ] = False,
+    input_json: Annotated[Optional[str], typer.Option("--input-json", "--input", help="Input as JSON (including null or a list).")] = None,
+    input_file: Annotated[Optional[Path], typer.Option("--input-file", help="Read input JSON from a file, or - for stdin.")] = None,
+    project: Annotated[Optional[str], typer.Option("--project", help="Owning project for a named block.")] = None,
 ) -> None:
+    body = _call_body(approved, input_json, input_file)
+    if "input" in body or project is not None:
+        body["answer_tagged"] = True
     if discover_port(required=False) is None:
+        if "input" in body or project is not None:
+            fail(EXIT_REQUEST_FAILED, "BACKEND_REQUIRED", "Typed or project-scoped calls require the instance backend.")
         _here(name, yes=yes)
     if yes:
         fail(
@@ -187,12 +204,41 @@ def run(
             "--yes answers questions in this terminal, which only happens with no backend running; "
             "with one running, its questions are asked in the app.",
         )
-    row = _find(name)
+    row = _find(name, project)
     returned: Optional[dict] = post_graph_json(
         _url(f"compute_op/{row['id']}/run"),
-        {"approved": approved},
+        body,
         timeout=_wait_for(row),
         on_error=_on_error(f"Compute op not found: {name}"),
     )
     ok({"op": name, "returned": returned or {}})
     _exit_with(returned)
+
+
+@op_app.command("trace", help="One run's logged calls as a tree: every block call that shares its invocation id.")
+def trace(invocation_id: Annotated[str, typer.Argument(help="The run's invocation id (a ReturnedValue's invocation_id).")]) -> None:
+    from flow_sdk.core.compute_op.call_log import trace as run_trace  # noqa: PLC0415
+
+    # The logs are files in this instance's temp folder: read here, no backend needed.
+    roots = run_trace(invocation_id)
+    if not roots:
+        fail(EXIT_NOT_FOUND, "TRACE_NOT_FOUND", f"No logged calls for run {invocation_id} (only blocks with a `log` are logged).")
+    ok({"invocation_id": invocation_id, "calls": roots})
+
+
+def _call_body(approved: bool, input_json: Optional[str], input_file: Optional[Path]) -> dict:
+    """Preserve omitted input separately from explicit JSON null."""
+    if input_json is not None and input_file is not None:
+        fail(EXIT_REQUEST_FAILED, "INVALID_INPUT", "Use either --input-json or --input-file.")
+    from flow_sdk.utils.environment import inherited_trace  # noqa: PLC0415
+
+    # A worker spawned by a call joins that call's run (``apply_worker_env``).
+    body: dict[str, Any] = {"approved": approved, **inherited_trace()}
+    try:
+        if input_file is not None:
+            input_json = sys.stdin.read() if str(input_file) == "-" else input_file.read_text(encoding="utf-8")
+        if input_json is not None:
+            body["input"] = json.loads(input_json)
+    except (OSError, ValueError) as exc:
+        fail(EXIT_REQUEST_FAILED, "INVALID_INPUT", str(exc))
+    return body

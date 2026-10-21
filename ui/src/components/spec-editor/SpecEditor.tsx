@@ -284,7 +284,7 @@ const PlanFileEditor: React.FC = () => {
         </span>
         <button
           type="button"
-          title={t`Copy path`}
+          title={t`Copy path: ${filePath}`}
           className="shrink-0 rounded p-0.5 hover:bg-muted hover:text-foreground"
           onClick={() => void navigator.clipboard.writeText(filePath)}
         >

@@ -15,10 +15,11 @@ export enum AssetEditor {
   AGENT = 'agent',
   SKILL = 'skill',
   TASK = 'task',
-  WHITEBOARD = 'whiteboard',
+  CHART = 'chart',
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
+  DOCUMENT_FILE = 'document_file', // .docx / .txt read-only preview — entity-backed
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
@@ -126,10 +127,11 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
   [AssetEditor.TASK]: [RecordType.TASK],
-  [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
+  [AssetEditor.CHART]: [RecordType.CHART],
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
   [AssetEditor.DECK]: [RecordType.DECK],
   [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
+  [AssetEditor.DOCUMENT_FILE]: [RecordType.DOCUMENT_FILE],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
   [AssetEditor.WIZARD]: [RecordType.WIZARD],
@@ -275,6 +277,16 @@ export function spreadsheetExtensions(): string[] {
   return fromRegistry.length ? fromRegistry : STATIC_SPREADSHEET_EXTENSIONS;
 }
 
+/** Static document-file extensions — the fallback when the registry is unbound. */
+const STATIC_DOCUMENT_FILE_EXTENSIONS = ['docx', 'txt'];
+
+/** Extensions of the read-only `document_file` type (listed in the Documents
+ *  tree beside markdown) — same derivation as markdown. */
+export function documentFileExtensions(): string[] {
+  const fromRegistry = registryExtensionsForType(RecordType.DOCUMENT_FILE);
+  return fromRegistry.length ? fromRegistry : STATIC_DOCUMENT_FILE_EXTENSIONS;
+}
+
 /** Extension → file-only viewer/editor for the rows that never come from the
  * registry. Single source: every "open/show a raw file" surface (openFile,
  * explorer, chat attachments, vibe display) routes through `editorForPath`, so
@@ -313,9 +325,10 @@ export function extToEditor(): Record<string, AssetEditor> {
  * extension is plain `html`. The UI's `isMcpAppPath` delegates here. */
 const MCP_APP_PATH_RE = /\.mcp\.html?$/i;
 
-/** A kind-tagged value file — `diagnosis.value.json`. Its last-dot extension is plain `json`,
- * which stays the code editor's: only the suffix says the file is one value of a kind. */
-export const VALUE_PATH_RE = /\.value\.json$/i;
+/** A kind-tagged value file — `diagnosis.value.json`, or a value store's `value/<name>/value.json`
+ * (`flow_sdk/values.py` VALUE_FILE). Its last-dot extension is plain `json`, which stays the code
+ * editor's: only the name says the file is one value of a kind. */
+export const VALUE_PATH_RE = /(\.value\.json|[/\\]value[/\\][^/\\]+[/\\]value\.json)$/i;
 
 /**
  * Editor for a RAW file path (no entity). Unknown extensions fall back to the

@@ -151,6 +151,14 @@ export function useUiCommandListener(): void {
         renderDesktopNotification((msg.info ?? {}) as NotificationPayload);
         return;
       }
+      // `open_link`: the hub asked this desktop to open a received message (its email landing page).
+      // The backend already fetched and synced it; this is the same `/dock/home?action=open…` the deep
+      // link lands on, so `IncomingDeepLink` takes it from here. The desktop window comes forward first.
+      if (msg.kind === 'open_link') {
+        (window as unknown as { electronAPI?: { focusWindow?: () => void } }).electronAPI?.focusWindow?.();
+        window.location.assign(`/dock/home?${new URLSearchParams(msg.query ?? {}).toString()}`);
+        return;
+      }
       // `install_request`: the hub relayed a one-click install to this desktop.
       // Open the Add-asset dialog with the published row; the person picks the
       // project and confirms there — nothing is written until then.

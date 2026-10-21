@@ -4,7 +4,7 @@ Names and presence only — no value ever appears in these shapes.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Callable, Mapping, Optional
 
 from pydantic import ConfigDict
 
@@ -17,6 +17,16 @@ from flow_sdk.schema.data_spec.credential_contract import (
     Requirement,
 )
 from flow_sdk.schema.data_spec.spec import DataSpec
+
+
+class CredentialWaySpec(DataSpec):
+    """How a ONE_OF way of several variables is offered: its title and one line under it. A way of one variable
+    is offered by that variable's own label and hint."""
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str = ""
+    hint: str = ""
 
 
 class CredentialVarStatusSpec(DataSpec):
@@ -34,10 +44,14 @@ class CredentialVarStatusSpec(DataSpec):
     required: Requirement = CredentialRequirement.MUST
     kind: CredentialVarKind = CredentialVarKind.TEXT
     #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type —
-    #: ``cli`` for a sign-in a command-line tool holds.
+    #: ``cli`` for a sign-in a command-line tool holds, ``connection`` for an oauth grant.
     store: str = "env"
-    #: A value exists in that store (cli: its check passed on this computer).
+    #: A value exists in that store (cli: its check passed on this computer; oauth: the grant is held and
+    #: covers ``scopes``).
     present: bool = False
+    #: oauth: the provider whose grant this way is, and the scopes it must cover.
+    provider: str = ""
+    scopes: list[str] = []
     #: cli: the command a person runs on this computer to sign in.
     login: str = ""
     #: cli: the declaration's own ``login`` / ``check`` (every OS) — what an edit of the credential sends back.
@@ -50,6 +64,8 @@ class CredentialVarStatusSpec(DataSpec):
     warning: Optional[str] = None
     #: The typeid of the project credential overriding this user one, if any.
     shadowed_by: Optional[str] = None
+    #: ONE_OF: the way this variable belongs to (``CredentialVarSpec.way``); empty = its own name.
+    way: str = ""
 
     @property
     def is_must(self) -> bool:
@@ -59,12 +75,67 @@ class CredentialVarStatusSpec(DataSpec):
     def is_one_of(self) -> bool:
         return self.required is CredentialRequirement.ONE_OF
 
+    @property
+    def holds_value(self) -> bool:
+        """A store keeps a value for it — not a sign-in (``cli``) or a grant (``oauth``), which live elsewhere."""
+        return self.kind not in (CredentialVarKind.CLI, CredentialVarKind.OAUTH)
 
-def group_held(vars: list) -> bool:
-    """The ONE_OF rule, said once: no group, or one of its members present. ``vars`` are anything with
-    ``is_one_of`` and ``present`` (a status row's, a setup requirement's)."""
-    group = [v for v in vars if v.is_one_of]
-    return not group or any(v.present for v in group)
+
+def ways(vars: Mapping[str, Any]) -> dict[str, list[str]]:
+    """The ONE_OF ways of ``vars`` in declaration order: ``{way: [member var names]}``. A var's way is its
+    declared ``way``, else its own name. ``vars`` maps a name to anything with ``is_one_of`` and ``way``."""
+    out: dict[str, list[str]] = {}
+    for name, v in vars.items():
+        if v.is_one_of:
+            out.setdefault(getattr(v, "way", "") or name, []).append(name)
+    return out
+
+
+def way_named(vars: Mapping[str, Any], name: str, grouped: Optional[dict[str, list[str]]] = None) -> str:
+    """The way ``name`` says — a way's own name, or a member var's name (the alias a choice stored before ways
+    had names); ``""`` when it names neither. ``grouped``: ``ways(vars)``, when the caller has it already."""
+    if not name:
+        return ""
+    if name in (ways(vars) if grouped is None else grouped):
+        return name
+    v = vars.get(name)
+    return (getattr(v, "way", "") or name) if v is not None and v.is_one_of else ""
+
+
+def way_order(vars: Mapping[str, Any], choice: str = "", grouped: Optional[dict[str, list[str]]] = None) -> list[str]:
+    """Which way of a ONE_OF group is active — the order, said once: the way chosen here (``choice``, while it
+    names a way or a member), else a stored value's way, then a grant's (``oauth``), then a tool's sign-in
+    (``cli``), each in declaration order. Returns WAY names (:func:`ways`; ``grouped`` when already computed)."""
+    grouped = ways(vars) if grouped is None else grouped
+    chosen = way_named(vars, choice, grouped)
+    if chosen:
+        return [chosen]
+    rank = {CredentialVarKind.OAUTH: 1, CredentialVarKind.CLI: 2}
+    return sorted(grouped, key=lambda way: max(rank.get(vars[m].kind, 0) for m in grouped[way]))
+
+
+def active_way(
+    vars: Mapping[str, Any], choice: str, held: Callable[[str], bool], grouped: Optional[dict[str, list[str]]] = None
+) -> str:
+    """The active way: the chosen one (held or not), else the first in :func:`way_order` whose every member
+    ``held`` (asked per VAR name) says is there; ``""`` when none is."""
+    grouped = ways(vars) if grouped is None else grouped
+    chosen = way_named(vars, choice, grouped)
+    if chosen:
+        return chosen
+    return next((way for way in way_order(vars, grouped=grouped) if all(held(m) for m in grouped[way])), "")
+
+
+def group_held(vars: list, choice: str = "") -> bool:
+    """The ONE_OF rule, said once: no group, or every member of its active way (:func:`active_way`) present.
+    ``vars`` are anything with ``env_var``, ``is_one_of``, ``kind``, ``way`` and ``present`` (a status row's,
+    a setup requirement's)."""
+    by_name = {v.env_var: v for v in vars}
+    grouped = ways(by_name)
+    if not grouped:
+        return True
+    active = active_way(by_name, choice, lambda name: by_name[name].present, grouped)
+    return bool(active) and all(by_name[m].present for m in grouped[active])
 
 
 class CredentialStatusRowSpec(DataSpec):
@@ -102,6 +173,10 @@ class CredentialStatusRowSpec(DataSpec):
     setup_skipped: Optional[SetupSkipSpec] = None
     #: Where its folder is on this machine — what "Skip → Always" would remove.
     asset_ref: str = ""
+    #: The ONE_OF way set up here (``Credential.chosen``); ``""`` when none is chosen yet.
+    setup_choice: str = ""
+    #: How each ONE_OF way of several variables is offered (``CredentialSpec.ways``).
+    ways: dict[str, CredentialWaySpec] = {}
     #: ``connected`` (every MUST value present and one of the ONE_OF ones / the grant held and covering), ``partial`` (some values;
     #: a grant missing scopes), ``needs_reauth`` (oauth: the grant went stale) or ``missing``.
     state: str
@@ -110,7 +185,7 @@ class CredentialStatusRowSpec(DataSpec):
     @property
     def missing(self) -> list[str]:
         """The variables still needed: every absent MUST, and a ONE_OF group's members while none is there."""
-        held = group_held(self.vars)
+        held = group_held(self.vars, self.setup_choice)
         return [v.env_var for v in self.vars if not v.present and (v.is_must or (v.is_one_of and not held))]
 
 

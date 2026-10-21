@@ -40,7 +40,7 @@ def _declare(root: Path, home_page, *, entries=()) -> None:
 def _ready_home(project, asset=None, kind=None):
     result = {"asset": asset, "type": kind, "lifecycle": {
         "state": "ready", "project_id": str(project.id), "detail": "", "run": None, "asset": asset, "display": None,
-        "setup_available": False, "tree": None,
+        "setup_available": False, "tree": None, "phase": None,
     }}
     if asset:
         result["load_run"] = None
@@ -240,9 +240,11 @@ async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_
     _declare(root, str(app.typeid))
 
     opened = await project.open_home_page()
-    assert opened["asset"] == str(app.typeid) and opened["lifecycle"]["state"] == "running"
-    assert (await _RUNS[(str(project.id), "")]).ok
-    assert load_state(str(project.id)).state is LoadState.READY
+    # A static app needs no setup step: the open's load places it and it is ready at once.
+    assert opened["asset"] == str(app.typeid) and opened["lifecycle"]["state"] == "ready"
+    # Opening an app never starts the project's own setup run.
+    assert (str(project.id), "") not in _RUNS
+    assert load_state(str(project.id), asset=str(app.typeid)).state is LoadState.READY
     assert [(p.subkind, p.backend.type) for p in await webapp_routes(app.id)] == [("app", "static")]
 
 
@@ -304,7 +306,7 @@ async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_a
     assert answer["asset"] == str(app.typeid) and answer["type"] == "micro_app"
     assert answer["load_run"] == f"setup-project-{project.id}"
     assert answer["lifecycle"]["state"] == "running"
-    assert started == [("", str(app.typeid))], "the provider project owns the shared run"
+    assert started == [(str(app.typeid), str(app.typeid))], "the app's own run: nothing beside it holds it"
 
 
 @pytest.mark.parametrize("reference", ["./../foreign", "./agentic-assets/../../foreign", "./C:/foreign", "./.", "./"])

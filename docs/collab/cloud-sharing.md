@@ -5,14 +5,23 @@ title: Cloud sharing — what leaves your machine
 
 # Cloud sharing — what leaves your machine
 
-**Cloud sharing uploads metadata and coordinates. It never uploads document
-bytes, and it never uploads secret values.**
+**Link creates the project in Flowpad Cloud, using the same action as Link to cloud on Project Home.** It sends the project declaration, not the whole project folder, and requires a cloud login. It does not require a Git checkout or grant GitHub repository access.
 
-Linking a project to the cloud publishes a *declaration*: this project exists,
-it is called this, and its content lives in this git repository at this commit.
-A reviewer who opens a shared document is served by the hub cloning that
-repository **with their own GitHub token** — so read access is GitHub's ACL,
-not Flowpad's. If they cannot clone the repo, they see an error, not your code.
+Sharing selected assets can publish their content into the project's hub-hosted repository. **Send files to cloud** is a separate action that publishes the project folder. Linking, sharing assets, and sending the whole folder are different operations.
+
+The Share dialog opens with **To** empty unless the surface that opened it names recipients; it never refills the previous share's recipients.
+
+When the project is not linked, Share first asks to link it. **Link** links silently and goes straight on to the Share dialog; **Skip** shares without linking, so recipients get a copy. Sharing from an unlinked project shows an amber warning icon next to the title; clicking it links the project.
+
+After linking, each recipient who is not a project member gets a line under **To**: "*name* is not a member · Fix · Learn more". **Fix** swaps the line for a [project role](./project-roles.md) picker set to Member. Nothing is chosen until you press Fix, and an unfixed recipient is shared with no new membership. Existing roles remain unchanged. Membership is added only when you click Share, not Link.
+
+**One share carries the Git pointer and a copy.** When the shared file is committed and pushed, the message carries both — its repo, branch, commit and path, and its bytes — whoever the recipients are; each receiver opens it by Git if they can, else from the copy. A file with uncommitted or unpushed changes is asked about first, before anything else: "*X* has changes. Commit before share?" — **Commit & share** commits and pushes just that file; **Share as is** sends the copy only. Fix still invites (the send invites first, then sends); it no longer decides Git or copy.
+
+**The receiver opens it in the right project.** The message names the sender's project, and the receiver's conversation keeps it as `remote_project_id`. Opening a share picks, in order: the conversation's project; the local project already chosen for the sender's project; the local project that is a checkout of the shared repo. Two or more checkouts → asked once; none → **Clone as project** or **Open the copy**. The answer is kept (the conversation's project, and sender project → local project), so it is not asked again. A share opens by Git only inside a checkout of its repo, at the shared commit; anywhere else it opens from the copy — never in a hidden clone.
+
+**When Git cannot open it** (no access, the branch or commit is gone), the copy opens and the receiver is told why, with **Request access**: a structured "Git request access" message to the sharer, naming the repo, branch and file. The sharer gives access outside Flowpad, then **Done** tells the requester to open it again — or **Forward**s it to someone who can. When the conversation's project is not a checkout of the shared repo, the receiver is warned and **Tell sender** sends the sharer a "Please check" message.
+
+**Don't show again** skips the link reminder on this instance; it neither links projects automatically nor changes permissions. Reset it in Preferences → Notifications → Cloud link prompt when sharing.
 
 > This page is load-bearing. `tests/unit/test_cloud_share_contract.py` asserts
 > that the lists below match what the code actually sends; adding a field to
@@ -100,28 +109,24 @@ A markdown doc, skill or agent published to the cloud sends a
 `layout` is the position of the asset inside the repo. Plus the git origin:
 provider, owner, repo, branch, commit, and the path within the repo.
 
-**No bytes.** The hub stores a reference. When someone opens the document, the
-hub clones the repo server-side using that viewer's GitHub credentials and
-reads the file at that commit.
+**The projection is metadata.** Content delivery depends on the selected transfer path: a direct GitHub reference requires provider access, while published content in a hub-hosted repository uses Flowpad access controls. The projection alone does not mean no file bytes were uploaded.
 
 ## What this means for you
 
-* A private repo stays private. Sharing a project does not grant anyone access
-  to your code — GitHub does.
-* A teammate without repo access sees the project row and the document's
-  title, and gets an error where the content would be.
-* Secret values never leave your machine.
-* Your local filesystem paths never leave your machine at all.
-* Linking a project is not the same as inviting people. Access is granted
-  separately, in the project's Members list.
+* Linking declares the project; it does not send the whole project folder.
+* Sharing selected asset content or sending files to the cloud can upload bytes to a hub-hosted repository. Do not use linking's metadata-only behavior as a guarantee about those separate actions.
+* Project membership and direct GitHub repository access are separate permissions. Linking does not grant either one to a recipient.
+* A Guest project role does not allow opening the project. Member includes project read access.
+* Invitations happen on Share for selected non-members with a role other than None. They can also be managed in the project's Members list.
+* The field classification above describes the project declaration and portable metadata, not every possible content-transfer payload.
 
-## Proving it end to end
+## Direct GitHub transfer validation
 
 `ui/tests/hub_playwright/tagit_share_real_github.spec.ts` runs the whole chain
 unstubbed. It **skips** unless the env below is set, so it stays green on a
 machine without credentials.
 
-It needs a real GitHub repo because nothing cheaper reaches the last mile:
+This test covers the direct GitHub transfer path, not metadata-only linking or hub-hosted repositories. It needs a real GitHub repo:
 `AssetGitWorktree` requires an `https://github.com/...` origin (a `file://`
 bare repo gives `ORIGIN_INVALID`), and the hub serves the document by cloning
 from GitHub with the *viewer's* token — so "a reviewer can read it" is only

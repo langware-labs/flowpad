@@ -38,19 +38,37 @@ logger = logging.getLogger(__name__)
 PROJECT = "project"
 
 
-def _op(name: str, label: str, step: str, *, kind: str = "webapp_step") -> ComputeOpSpec:
+#: The agent that repairs a web app's setup step when the step itself fails (``agentic-assets/agent/setup-fixer``).
+FIXER_AGENT = "setup-fixer"
+
+
+def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "") -> ComputeOpSpec:
     """An in-process step of the run's web app (``webapp_step``) or source (``source_step``): the call is the
-    step, the check is the same step in check mode."""
+    step, the check is the same step in check mode. ``fixer``: the prompt of the step's last resort — while
+    its check still fails, the setup-fixer repairs what the step stands on, then the step runs again; the
+    check is the proof. A load never runs it (``LoadTree`` strips it): only a setup run fixes."""
+    attempts = [
+        {"subkind": "agent", "exe_data": {"agent": FIXER_AGENT, "prompt": fixer}},
+        {"subkind": "cli", "exe_data": {kind: step}},
+    ] if fixer else []
     return ComputeOpSpec.model_validate({
         "name": name, "label": label, "subkind": "cli", "exe_data": {kind: step}, "completion_check": {kind: step},
+        "attempts": attempts,
     })
+
+
+def _fixer_prompt(project_id: str, app) -> str:
+    return (f"Use the setup-fixer skill. The step above of web app {app.name} ({app.typeid}, folder "
+            f"{app.asset_ref}) in project {project_id} failed. Repair what it stands on; the step runs again "
+            "after you and its own check is the proof.")
 
 
 def _holder(asset_ref: str) -> str:
     """The node a declared ``asset_setup`` folder is for when it does not say: the asset folder that holds
-    it (``data_driver:<name>`` inside a driver, ``data_source:<name>`` inside a source), else the project."""
+    it (``data_driver:<name>`` inside a driver, ``data_source:<name>`` inside a source, ``webapp:<name>``
+    inside a web app), else the project."""
     parts = Path(asset_ref).parts
-    for family in ("data_source", "data_driver"):
+    for family in ("data_source", "data_driver", "webapp"):
         for i in range(len(parts) - 2, -1, -1):
             if parts[i] == family and i + 1 < len(parts) and parts[i + 1] != "asset_setup":
                 return f"{family}:{parts[i + 1]}"
@@ -61,13 +79,17 @@ class ProjectTree:
     """One project's derived setup tree. ``load()`` once, then hand ``resolve_node`` / ``resolve_op`` to
     ``execute_setup``. Built in memory per run, like the setup wizard it replaces — nothing is written."""
 
-    def __init__(self, project: Any, *, ai: bool = True, display: str = ""):
+    def __init__(self, project: Any, *, ai: bool = True, display: str = "", connect_here: bool = True):
         self.project = project
+        #: Whether a connection step signs the person in itself (the CLI), or only checks (a screen does it).
+        self.connect_here = connect_here
         self.pid = str(project.id)
         self.root = f"project-{self.pid}"
         self.ai = ai
         self.display = display
         self.nodes: dict[str, SetupNode] = {}
+        #: Each web app's node, by the app's name — where a declaration inside its folder attaches.
+        self.webapp_nodes: dict[str, str] = {}
         self.ops: dict[str, ComputeOpSpec] = {}
         self.gaps: list = []
         #: A source's FIRST setup stage: what the source needs is set up before it, never beside it.
@@ -152,16 +174,40 @@ class ProjectTree:
 
         node_id = requirement_node_id(req)
         if node_id not in self.nodes:
-            label = req.title or req.name
+            label = f"{req.title or req.name} sign-in" if req.is_oauth else (req.title or req.name)
             if self._skipped(node_id, label, req.skipped):
                 return node_id
-            wizard, ops = compile_setup(self.pid, [req], ai=self.ai)
+            wizard, ops = compile_setup(self.pid, [req], ai=self.ai, connect_here=self.connect_here)
             self.ops.update(ops)
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=label,
                 run=wizard.model_copy(update={"name": node_id, "label": label}) if wizard.steps else None,
+                children=self._connection_needs(req) if req.is_oauth else (),
             )
         return node_id
+
+    def _connection_needs(self, req) -> tuple[str, ...]:
+        """What a connection itself needs, as nodes below it: the project's credential for the provider
+        (installed from the catalog when missing), which needs the provider's sign-in to exist here or on
+        the hub. Each is set up before the one above it — a sign-in never starts for a provider nobody has."""
+        provider = req.provider or req.name
+        title = req.title or provider
+        scopes = ",".join(req.scopes)
+
+        def step(node_id: str, label: str, which: str, children: tuple[str, ...] = ()) -> str:
+            if node_id not in self.nodes:
+                op = _op(f"{node_id}:check", label, which, kind="requirement_step")
+                self.ops[op.name] = op
+                run = WizardSpec.model_validate({
+                    "name": op.name, "label": label,
+                    "steps": [{"id": "check", "label": label, "kind": "compute", "ref": op.name}],
+                })
+                self.nodes[node_id] = SetupNode(id=node_id, label=label, run=run, children=children)
+            return node_id
+
+        available = step(f"provider:{provider}", f"{title} sign-in service", f"provider:{provider}")
+        return (step(f"oauth-credential:{provider}", f"{title} credential",
+                     f"credential:{provider}:{self.pid}:{scopes}", (available,)),)
 
     async def _source_node(self, source, needs: list[str]) -> str:
         node_id = str(source.typeid)
@@ -193,11 +239,11 @@ class ProjectTree:
         # and still ``new`` does not hold the project up.
         verify = None
         if not before:
-            op = _op(f"{node_id}:verify", "Verify", "verify", kind="source_step")
+            op = _op(f"{node_id}:verify", "Check the sign-in", "verify", kind="source_step")
             self.ops[op.name] = op
             verify = WizardSpec.model_validate({
-                "name": op.name, "label": "Verify",
-                "steps": [{"id": "verify", "label": "Verify", "kind": "compute", "ref": op.name}],
+                "name": op.name, "label": "Check the sign-in",
+                "steps": [{"id": "verify", "label": "Check the sign-in", "kind": "compute", "ref": op.name}],
             })
         self.nodes[node_id] = SetupNode(
             id=node_id, label=str(source.name or source.provider), children=tuple([before] if before else needs),
@@ -215,12 +261,14 @@ class ProjectTree:
 
     def _webapp_node(self, app) -> str:
         node_id = str(app.typeid)
+        self.webapp_nodes[str(app.name)] = node_id
         label = str(app.title or app.name) if hasattr(app, "title") else str(app.name)
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
         steps = []
         for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start"), ("present", "Verify display")):
-            op = _op(f"{node_id}:{step}", f"{what} {label}", step)
+            op = _op(f"{node_id}:{step}", f"{what} {label}", step,
+                     fixer=_fixer_prompt(self.pid, app) if step != "present" else "")
             self.ops[op.name] = op
             steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
         setup = WizardSpec.model_validate({"name": node_id, "label": f"Set up {label}", "steps": steps[:2]})
@@ -302,6 +350,9 @@ class ProjectTree:
         if subject.startswith("data_driver:"):
             driver = subject.split(":", 1)[1]
             return [str(s.typeid) for s in sources if s.provider == driver]
+        if subject.startswith("webapp:"):
+            node = self.webapp_nodes.get(subject.split(":", 1)[1])
+            return [node] if node else [self.root]
         if subject.startswith("data_source:"):
             name = subject.split(":", 1)[1]
             return [str(s.typeid) for s in sources if str(s.name) == name or Path(str(s.asset_ref or "")).name == name]

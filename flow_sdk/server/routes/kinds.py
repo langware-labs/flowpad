@@ -148,7 +148,7 @@ async def row_by_ref(ref: str, project: str) -> ApiResponse | JSONResponse:
 
     def read() -> "tuple[str, str, Any] | None":
         found = Dataset.find_row(ref, root)
-        return (found[0].id, found[1], found[0].example(found[1])) if found else None
+        return (found[0].id, found[1], found[0].row(found[1])) if found else None
 
     found = await asyncio.to_thread(read)
     if found is None:

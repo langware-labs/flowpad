@@ -274,13 +274,13 @@ async def _catch_up_after_reconnect() -> None:
         logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
 
     try:
-        from flow_sdk.app.actions.membership_sync import sync_remote_teams
+        from flow_sdk.app.actions.membership_sync import sync_remote_memberships
         from flow_sdk.builtin.user import User
 
         user = await User.get_local()
-        await sync_remote_teams(user.typeid if user else None)
+        await sync_remote_memberships(user.typeid if user else None)
     except Exception as e:  # noqa: BLE001
-        logger.warning("hub WS reconnect team catch-up failed (non-fatal): %s", e)
+        logger.warning("hub WS reconnect membership catch-up failed (non-fatal): %s", e)
 
     try:
         from flow_sdk.instance_settings.llm_endpoint import (
@@ -780,7 +780,7 @@ class HubWebSocketManager:
 
         try:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
-                await websocket.send(APIMessage(direct_resource_type="user").model_dump_json())
+                await websocket.send(APIMessage(action="current-user").model_dump_json())
                 # The hub's opening ``ws_ready_msg`` greeting is consumed by
                 # ``connect_hub_websocket``. The reply is the first frame that IS
                 # one: the hub may fan out pushes (a ``data_op_msg`` for a

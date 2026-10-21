@@ -132,7 +132,7 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             if place is Placement.DOCUMENT:
                 (root / names.field_file(name, names.ext_for(annotation))).unlink(missing_ok=True)
             elif place is Placement.FILE_BYTES:
-                (root / names.field_file(name, getattr(annotation, "ext", ".bin"))).unlink(missing_ok=True)
+                names.drop_bytes_files(root, name)
             elif place in (Placement.DIR_LIST, Placement.DIR_DICT) and (root / name).is_dir():
                 _drop_stale_elements(root / name, {})
             continue
@@ -140,8 +140,10 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             path = root / names.field_file(name, names.ext_for(type(held)))
             path.write_text(_document_text(held), encoding="utf-8")
         elif place is Placement.FILE_BYTES:
-            ext = getattr(type(held), "ext", ".bin")
-            path = root / names.field_file(name, ext)
+            # The value's own extension (a decoded image is ``.png``); a file the field held under
+            # another one would be read back instead of this, so it goes.
+            path = root / names.field_file(name, getattr(held, "ext", ".bin"))
+            names.drop_bytes_files(root, name, keep=path)
             path.write_bytes(bytes(held))
             held.path = path  # ``Binary.path``
         elif place is Placement.DIR_LIST and any(isinstance(element, str) for element in held or []):

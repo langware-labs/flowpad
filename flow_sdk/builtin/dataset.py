@@ -1,49 +1,52 @@
-"""``Dataset`` — a folder-backed collection of examples for eval & training.
+"""``Dataset`` — a folder-backed collection of rows for eval & training.
 
-A dataset holds many ``Example`` rows in one of two physical layouts (see
+A dataset holds many ``Row`` rows in one of two physical layouts (see
 ``DataLayoutEnum``):
 
-- ``CSV``        — a single ``data.csv`` file; each row is an example.
-- ``IO_FOLDER``  — an ``examples/`` folder where each example dir carries
+- ``CSV``        — a single ``data.csv`` file; each row is a row.
+- ``IO_FOLDER``  — an ``rows/`` folder where each row dir carries
   ``input`` / ``output`` / ``ground_truth`` slots (file, folder, or numbered
-  occurrences) plus ``«slot».json`` metadata sidecars and an ``example.json``.
+  occurrences) plus ``«slot».json`` metadata sidecars and an ``row.json``.
   Legacy ``input.txt`` / ``expected.txt`` are still accepted.
 
-Either layout parses into the same shape: one ``ExampleSpec`` row per example
-whose slots are artifacts — a ``FileRef`` (an example-relative path), a
+Either layout parses into the same shape: one ``RowSpec`` row per row
+whose slots are artifacts — a ``FileRef`` (a row-relative path), a
 ``FolderSpec`` (its members, recursively), or a ``TextSpec`` (a CSV cell) — and
 whose sidecars ride in ``metadata`` under their full filename. Nothing here holds
 file CONTENTS; the layout resolves a ref to bytes when a consumer asks. The
 dataset ``spec`` (a :class:`DatasetSpec` parametrization) types the slots.
 
-Every dataset JSON file (``dataset.json``, ``example.json``, ``«slot».json``) is a
+Every dataset JSON file (``dataset.json``, ``row.json``, ``«slot».json``) is a
 two-section document — ``{"metadata": {...}, "data": {...}}``. ``metadata`` holds
 flowpad-managed known fields (parsed into typed attributes); ``data`` is a free
 object the use case owns. Both are surfaced on the carrier models below.
 
-The container is the entity; an ``Example`` is a plain Pydantic row parsed from
+The container is the entity; an ``Row`` is a plain Pydantic row parsed from
 disk on demand (a 50k-row CSV stays one record, not 50k entities). The
-train/eval/test split lives *per-example* as ``Example.kind`` — "the eval set"
-is simply ``dataset.examples(ExampleKind.EVAL)``.
+train/eval/test split lives *per-row* as ``Row.kind`` — "the eval set"
+is simply ``dataset.of_kind(RowKind.EVAL)``.
 
-The on-disk grammar (both layouts, per-example reads and writes, the index)
-lives in ``flow_sdk/schema/data_spec/layout.py``; the indexer's extractor and
-id mint in ``flow_sdk/fs_store/indexer/functions/dataset.py``; the type
-registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
+The on-disk grammar (both layouts, per-row reads and writes, the index)
+lives in ``flow_sdk/schema/data_spec/layout.py``; the derived counts in
+``flow_sdk/assets/types/dataset.py``; the type registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional
+import contextlib
+import functools
+from typing import Any, ClassVar, Dict, FrozenSet, List, Optional, Union
 
-from pydantic import ValidationError, model_validator
+from pydantic import ValidationError, computed_field, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
-from flow_sdk.datasets.projection import ROW_KEY, delete_through, is_link, write_through
+from flow_sdk.core.entity.projected_fields import ProjectedFields
+from flow_sdk.datasets.projection import ROW_KEY, delete_through, is_link, key_field, write_through
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
@@ -54,21 +57,24 @@ from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-
     DEFAULT_DATASET_SPEC,
     DataLayoutEnum,
     DatasetSpec,
-    ExampleKind,
-    ExampleSpec,
+    RowKind,
+    RowSpec,
 )
 
-# Canonical per-example metadata filename inside an IO_FOLDER example dir.
+# Canonical per-row metadata filename inside an IO_FOLDER row dir.
 # Owned here (the model module) so writers (GraphWorkflowManager's born-compatible
-# example stamps) and the indexer's reader agree by construction.
-from flow_sdk.schema.data_spec.layout import EXAMPLE_META  # noqa: F401 — re-exported
+# row stamps) and the indexer's reader agree by construction.
+from flow_sdk.schema.data_spec.layout import ROW_META, ROWS_DIR  # noqa: F401 — re-exported
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
-#: What `examples` holds: paths, folders and cells — never file CONTENTS.
-ARTIFACT_ROW = DEFAULT_DATASET_SPEC.example_type()
+#: What `rows` holds: paths, folders and cells — never file CONTENTS.
+ARTIFACT_ROW = DEFAULT_DATASET_SPEC.row_type()
 # The manifest — also the repo walker's marker for "this folder is a dataset".
 MANIFEST = "dataset.json"
 
 logger = logging.getLogger(__name__)
+# One write at a time per dataset while it goes out to the system that owns it (``Dataset._writing``).
+_WRITING = new_registry()
 
 
 def _pairs(rows: Any) -> list[tuple[Optional[str], dict]]:
@@ -78,7 +84,7 @@ def _pairs(rows: Any) -> list[tuple[Optional[str], dict]]:
 
 
 # Re-exported: the enums live with the value models.
-__all__ = ["ConflictError", "Dataset", "DatasetManifestSpec", "LinkError", "RowRefused", "DataLayoutEnum", "ExampleKind", "ExampleSpec", "EXAMPLE_META", "MANIFEST"]
+__all__ = ["ConflictError", "Dataset", "DatasetManifestSpec", "LinkError", "RowRefused", "DataLayoutEnum", "RowKind", "RowSpec", "ROW_META", "MANIFEST"]
 
 
 #: A field that holds a DATASET shape — ``DatasetSpec.parse`` reads the keyword
@@ -101,6 +107,63 @@ def _raw_input(shape: Any, ex_dir: Path) -> Any:
         return read_fields(spec, ex_dir / "input")
     except Exception:  # noqa: BLE001 -- a report of a broken row never breaks itself
         return None
+
+
+_IGNORED: set[str] = set()
+
+
+def _keep_out_of_git(rows: Path) -> None:
+    """A local dataset's rows are data, not the project's code: on its first write here, its ``rows/``
+    goes into the ``.gitignore`` beside it (``utils.git_ignore.ensure_ignored``) -- once per process.
+    Rows git already tracks stay tracked: untracking someone's data is theirs to decide."""
+    key = str(rows)
+    if key in _IGNORED:
+        return
+    _IGNORED.add(key)
+    from flow_sdk.utils.git_ignore import ensure_ignored  # noqa: PLC0415
+
+    try:
+        rows.mkdir(parents=True, exist_ok=True)
+        ensure_ignored(rows)
+    except Exception:  # noqa: BLE001 -- keeping rows out of git never fails a write
+        logger.debug("dataset rows %s: could not keep out of git", rows, exc_info=True)
+
+
+def _reads_rows(fn: Any) -> Any:
+    """A sync read of the rows: from a script, a remote location is pulled first (``_sync_rows``)."""
+    @functools.wraps(fn)
+    def inner(self: "Dataset", *args: Any, **kwargs: Any) -> Any:
+        if not self.asset_ref:
+            return fn(self, *args, **kwargs)
+        with self._sync_rows(write=False):
+            return fn(self, *args, **kwargs)
+    return inner
+
+
+def _on_rows(*, write: bool) -> Any:
+    """An async method or row action that reads (or writes) the rows: run inside ``rows_session``. A
+    row action answers what the location refused (another writer got there first: 409; the location
+    could not be reached: 502); a method raises it."""
+    def wrap(fn: Any) -> Any:
+        answers = fn.__name__.endswith("_action")
+
+        @functools.wraps(fn)
+        async def inner(self: "Dataset", *args: Any, **kwargs: Any) -> Any:
+            if not self.asset_ref:
+                return await fn(self, *args, **kwargs)
+            try:
+                async with self.rows_session(write=write):
+                    return await fn(self, *args, **kwargs)
+            except ConflictError as exc:
+                if not answers:
+                    raise
+                return _refused(exc, 409)
+            except (ConnectionError, PermissionError, LookupError) as exc:
+                if not answers:
+                    raise
+                return ApiFailResponse(message=f"rows at {self._location().label()}: {exc}", status_code=502)
+        return inner
+    return wrap
 
 
 class LinkError(ValueError):
@@ -162,7 +225,7 @@ def _refused(exc: "LinkError | ConflictError", status_code: int) -> ApiFailRespo
     return ApiFailResponse(message=str(exc), status_code=status_code, data={"errors": exc.errors, "details": exc.details})
 
 
-class Dataset(Entity):
+class Dataset(ProjectedFields, Entity):
     """A dataset folder — the ROW. Its shape on disk is ``DatasetManifestSpec``
     (``TypeInfo.asset_spec``); where ``dataset.json`` lands and how the rows
     are laid out is the disk serializer's, driven by ``TypeInfo``
@@ -186,15 +249,20 @@ class Dataset(Entity):
     # and validates rows against DEFAULT_DATASET_SPEC. See datasets.md.
     spec: Optional[ShapeForm] = APIField(None)
 
+    # Where the rows live (``datasets/locations.py``): ``local`` (the default, ``<dataset>/rows/``,
+    # kept out of git), ``file:<folder>``, ``<driver>:<target>`` (Drive, S3) or a record system
+    # (``{"driver", "config", "map", "by"}``). ``dataset.json`` stays in the project either way.
+    location: Optional[Union[str, Dict[str, Any]]] = APIField(None)
+
     # The rows. EAGER — `from_fs` reads them all — but DB-excluded: the record
     # file and `from_fs_ref` carry them, the SQLite row does not.
-    examples: List[ARTIFACT_ROW] = NoDBAPIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.TRUE)  # type: ignore[valid-type]
+    rows: List[ARTIFACT_ROW] = NoDBAPIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.TRUE)  # type: ignore[valid-type]
 
-    # Denormalized counts surfaced in lists — computed from the rows by the
-    # entity (num_examples/kind_counts) and by the indexer (the other three).
+    # Denormalized counts surfaced in lists — DERIVED, one deriver:
+    # `assets/types/dataset.py:derive_counts` (indexer, validator, refresh_counts).
     # Persist.TRUE: they ride the shadow index so `from_record` lifts them onto
     # the DB row; they are NOT header fields, so the manifest never carries them.
-    num_examples: int = APIField(0, persist=Persist.TRUE)
+    num_rows: int = APIField(0, persist=Persist.TRUE)
     kind_counts: Dict[str, int] = APIField({}, persist=Persist.TRUE)
     num_annotated: int = APIField(0, persist=Persist.TRUE)
     num_multi_output: int = APIField(0, persist=Persist.TRUE)
@@ -206,45 +274,48 @@ class Dataset(Entity):
     created_at: Optional[datetime] = APIField(None)
 
     # Absolute path of the dataset folder on disk, stamped by the indexer /
-    # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors WHITEBOARD.
+    # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors CHART.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+
+    derived_fields: ClassVar[FrozenSet[str]] = frozenset(
+        {"num_rows", "kind_counts", "num_annotated", "num_multi_output", "num_binary_inputs"}
+    )
+    derived_writer: ClassVar[str] = "flow_sdk.assets.types.dataset.derive_counts"
 
     @model_validator(mode="after")
     def _counts_follow_the_rows(self) -> "Dataset":
-        """``num_examples`` / ``kind_counts`` are FACTS about ``examples`` —
-        derived here, so an entity built from rows (a save) and one read from
-        disk agree, and neither can carry a stale count."""
-        if self.examples:
-            from flow_sdk.assets.types.dataset import dataset_counts
+        """The counts are FACTS about ``rows`` — derived here, so an entity
+        built from rows (a save) and one read from disk agree, and neither can
+        carry a stale count."""
+        if "rows" in self.model_fields_set:   # rows given (a save, a parse): even none means zero
+            from flow_sdk.assets.types.dataset import derive_counts, row_facts
 
-            counts = dataset_counts(str(example.kind) for example in self.examples)
-            self.num_examples = counts["num_examples"]
-            self.kind_counts = counts["kind_counts"]
+            self._write_derived(**derive_counts(row_facts(row) for row in self.rows))
         return self
 
-    def of_kind(self, kind: ExampleKind) -> List[ExampleSpec]:
-        """'The eval set' is ``dataset.of_kind(ExampleKind.EVAL)``."""
-        return [e for e in self.examples if e.kind == kind]
+    def of_kind(self, kind: RowKind) -> List[RowSpec]:
+        """'The eval set' is ``dataset.of_kind(RowKind.EVAL)``."""
+        return [e for e in self.rows if e.kind == kind]
 
-    # ── the curation seam: SourceItem → example → gold ───────────────────
+    # ── the curation seam: SourceItem → row → gold ───────────────────
 
-    def _example_type(self) -> Any:
-        """The declared example shape, compiled.
+    def _dataset_type(self) -> Any:
+        """The declared row shape, compiled.
 
         ``spec`` holds the authoring FORM (it is a document field, so it is
         data); a class is built only here, where one is actually needed.
         ``DatasetSpec.parse`` rather than ``DataSpec.parse`` — a dataset form
-        names ``examples``, not fields.
+        names ``rows``, not fields.
         """
         return DatasetSpec.parse(self.spec) if self.spec else DEFAULT_DATASET_SPEC
 
     @property
     def input_shape(self) -> Any:
-        return self._example_type().example_type().input_type()
+        return self._dataset_type().row_type().input_type()
 
     @property
     def output_shape(self) -> Any:
-        return self._example_type().example_type().output_type()
+        return self._dataset_type().row_type().output_type()
 
     @property
     def declared_kind(self) -> str:
@@ -256,42 +327,110 @@ class Dataset(Entity):
             raise ValueError("dataset has no folder on disk yet")
         return Path(self.asset_ref)
 
+    def _location(self) -> Any:
+        """The parsed ``location`` -- parsed once per value (every row access asks)."""
+        from flow_sdk.datasets.locations import parse  # noqa: PLC0415
+
+        held = getattr(self, "_parsed_location", None)
+        if held is None or held[0] != self.location:
+            held = (self.location, parse(self.location))
+            object.__setattr__(self, "_parsed_location", held)
+        return held[1]
+
+    def _rows_root(self) -> Path:
+        """The local folder whose ``rows/`` holds this dataset's rows: the dataset's own, the folder
+        ``file:`` names, or the working copy of a remote location (``datasets/locations.py``)."""
+        from flow_sdk.datasets.locations import rows_folder  # noqa: PLC0415
+
+        self._folder()
+        return rows_folder(self, self._location())
+
+    def rows_session(self, *, write: bool = False) -> Any:
+        """``async with dataset.rows_session(write=...)``: the rows of a remote location pulled first,
+        and a write's changes pushed after -- what every async read and write here runs in. A no-op for
+        rows on this machine, and inside another session of the same dataset."""
+        from flow_sdk.datasets.locations import session  # noqa: PLC0415
+
+        self._folder()
+        return session(self, self._location(), write=write)
+
+    async def pull(self) -> list[str]:
+        """Bring a remote location's working copy up to date now; the keys of the rows that moved."""
+        from flow_sdk.datasets.locations import pull  # noqa: PLC0415
+
+        return await pull(self, self._location())
+
+    @contextlib.contextmanager
+    def _sync_rows(self, *, write: bool) -> Any:
+        """A sync read or write of a remote location. From a script (no running loop) it pulls and
+        pushes itself; inside the server a write must come through a session (an action, the async
+        API) and a read reads the working copy as last pulled."""
+        from flow_sdk.datasets.locations import inside  # noqa: PLC0415
+
+        location = self._location()
+        if write and location.kind == "local" and self.asset_ref:
+            _keep_out_of_git(Path(self.asset_ref) / ROWS_DIR)
+        if not location.remote or not self.asset_ref or inside(self._rows_root()):
+            yield
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            if write:
+                raise RuntimeError(f"rows at {location.label()} are written through a row action or the async API "
+                                   f"(put, put_many, sync), not a sync call inside the server")
+            yield
+            return
+        from flow_sdk.datasets.locations import entered, pull, push  # noqa: PLC0415
+
+        asyncio.run(pull(self, location))
+        with entered(self._rows_root()):
+            try:
+                yield
+                if write:
+                    asyncio.run(push(self, location))
+            except BaseException:
+                if write:
+                    with contextlib.suppress(Exception):
+                        asyncio.run(pull(self, location))
+                raise
+
     def _index(self) -> List[Dict[str, Any]]:
-        """Per-example scalars from the folder — the cheap read (one
-        ``example.json`` per dir), never the typed payloads."""
+        """Per-row scalars from the folder — the cheap read (one
+        ``row.json`` per dir), never the typed payloads."""
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         if self.data_layout != DataLayoutEnum.IO_FOLDER or not self.asset_ref:
             return []
-        return dataset_layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
+        return dataset_layout_for(self.data_layout).index(self._rows_root(), dataset_id=self.id)
 
     async def refresh_counts(self) -> "Dataset":
-        """Re-derive the denormalized counts after a per-example write (the
+        """Re-derive the denormalized counts after a per-row write (the
         actions here, or a caller that appended rows itself), and broadcast the row. A write changes only the counts, and those follow
-        from the cheap index — re-parsing every example's payload (what a full
+        from the cheap index — re-parsing every row's payload (what a full
         reindex does) would make labelling N rows O(N²)."""
-        rows = self._index()
-        from flow_sdk.assets.types.dataset import dataset_counts
+        from flow_sdk.assets.types.dataset import derive_counts
 
-        counts = dataset_counts(row["kind"] for row in rows)
-        self.num_examples = counts["num_examples"]
-        # `annotated` is the layout's `has_ground_truth` — the rule the indexer's
-        # `count_annotated` applies too, so a label and a reindex agree.
-        self.num_annotated = sum(1 for row in rows if row["annotated"])
-        self.kind_counts = counts["kind_counts"]
+        # The index rows carry the same per-row facts `row_facts` gives the
+        # indexer, so all five counters agree with a reindex.
+        self._write_derived(**derive_counts(self._index()))
         await self.save()
         return self
 
-    @action.get(action_name="examples")
-    async def examples_action(self):
+    @action.get(action_name="row-index")
+    @_on_rows(write=False)
+    async def row_index_action(self):
         """The rows as the disk holds them — id, the source item behind each,
         and whether it carries gold. What an editor needs to show promoted /
-        labelled state without the DB-excluded ``examples`` field."""
-        return ApiSuccessResponse(data={"examples": self._index()})
+        labelled state without the DB-excluded ``rows`` field."""
+        return ApiSuccessResponse(data={"rows": self._index()})
 
+    @_on_rows(write=True)
     async def promote(self, item_ids: list[str]) -> list[str]:
-        """Items → example rows (``input/item.json`` + provenance). Returns the
-        new example ids. Raises ``LookupError`` for an unknown item,
+        """Items → row rows (``input/item.json`` + provenance). Returns the
+        new row ids. Raises ``LookupError`` for an unknown item,
         ``ValueError`` when the dataset cannot take source items."""
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.schema.data_spec.dataset_spec import FileRef, FolderSpec  # noqa: PLC0415
@@ -312,20 +451,24 @@ class Dataset(Entity):
                 raise LookupError(f"no source_item {item_id}")
             if self.source_id and item.data_source_id != self.source_id:
                 raise ValueError(f"item {item_id} belongs to another source")
-            contents, provenance = item.as_example_input()
+            contents, provenance = item.as_row_input()
             batch.append((
                 ARTIFACT_ROW(
-                    kind=ExampleKind.TRAIN,
+                    kind=RowKind.TRAIN,
                     input=FolderSpec(path=INPUT, files={"item.json": FileRef(path=f"{INPUT}/item.json")}),
                     metadata={"source": provenance},
                 ),
                 contents,
             ))
-        return layout.append_many(self._folder(), batch, dataset_id=self.id)
+        with self._lock():   # a row write like any other: one at a time, and said
+            ids = layout.append_many(self._rows_root(), batch, dataset_id=self.id)
+        self._tell("put", ids)   # a numbered row is named by its id
+        return ids
 
-    async def annotate(self, example_id: str, ground_truth: Any, *, by: str = "") -> None:
-        """One example's gold label -- a value, or a LIST of acceptable answers -- validated against
-        the output shape (``ValidationError``). It REPLACES any gold the example had. The gold of a
+    @_on_rows(write=True)
+    async def annotate(self, row_id: str, ground_truth: Any, *, by: str = "") -> None:
+        """One row's gold label -- a value, or a LIST of acceptable answers -- validated against
+        the output shape (``ValidationError``). It REPLACES any gold the row had. The gold of a
         named shape is written as the shape's own document (``ground_truth/decision.json``) so it
         reads back exactly as the walker writes it; any other as ``ground_truth/label.json``."""
         from pydantic import TypeAdapter  # noqa: PLC0415
@@ -344,31 +487,31 @@ class Dataset(Entity):
         named = bool(getattr(shape, "spec_kind", ""))
         with self._lock():   # a row write like any other: one at a time, and said
             written = dataset_layout_for(self.data_layout).annotate(
-                self._folder(), example_id, payload, dataset_id=self.id, by=by,
+                self._rows_root(), row_id, payload, dataset_id=self.id, by=by,
                 main=_main_document(shape) if named else ANNOTATION_FILE,
             )
-        self._tell("put", [self._key_of(written, example_id)])
+        self._tell("put", [self._key_of(written, row_id)])
 
-    def set_data(self, example_id: str, data: dict) -> None:
-        """Replace one example's free ``data`` (a suite tag, a note) -- its inputs and golds untouched."""
+    def set_data(self, row_id: str, data: dict) -> None:
+        """Replace one row's free ``data`` (a suite tag, a note) -- its inputs and golds untouched."""
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         with self._lock():
-            written = dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
-        self._tell("put", [self._key_of(written, example_id)])
+            written = dataset_layout_for(self.data_layout).set_data(self._rows_root(), row_id, dict(data), dataset_id=self.id)
+        self._tell("put", [self._key_of(written, row_id)])
 
     def _key_of(self, written: Any, given: str) -> str:
         """The key of the row a layout write touched: the row folder its answer (a path) lies in."""
-        examples = (self._folder() / "examples").resolve()
+        rows = (self._rows_root() / ROWS_DIR).resolve()
         try:
-            return Path(written).resolve().relative_to(examples).parts[0]
+            return Path(written).resolve().relative_to(rows).parts[0]
         except (TypeError, ValueError, IndexError):
             return given
 
     @property
     def row_type(self) -> Any:
-        """The ``ExampleSpec`` every row of this dataset is -- typed when ``spec`` names its slots."""
-        return self._example_type().example_type()
+        """The ``RowSpec`` every row of this dataset is -- typed when ``spec`` names its slots."""
+        return self._dataset_type().row_type()
 
     def _typed_rows_or_raise(self) -> Any:
         row = self.row_type
@@ -380,10 +523,12 @@ class Dataset(Entity):
 
     _ROW_KEYS = frozenset({"input", "context", "ground_truth", "output", "kind", "data"})
 
+    @computed_field
     @property
     def row_kind(self) -> str:
         """The kind every row is (its ``input``): a row is one instance of it, referenced as
-        ``<row kind>.id.<row id>``. ``""`` when the spec names no kind."""
+        ``<row kind>.id.<row id>``. ``""`` when the spec names no kind. Sent to clients, so the TS
+        ``Dataset.rowKind`` answers for a named spec without resolving the kind itself."""
         from flow_sdk.datasets.links import row_kind  # noqa: PLC0415
 
         return row_kind(self.spec)
@@ -409,6 +554,7 @@ class Dataset(Entity):
         """A row as the API hands it out: its slots, plus ``key``, ``id``, ``ref`` and ``version``."""
         return {**row.model_dump(mode="json"), "ref": self.ref_of(row.id)}
 
+    @contextlib.contextmanager
     def _lock(self) -> Any:
         """One cross-process lock per project for row writes: a write's link checks (the rows it points
         at, the rows that point at it) and the write itself happen as one step, even with two writers
@@ -416,21 +562,22 @@ class Dataset(Entity):
         the sections are a few file operations, so a wait that does not end is a deadlock to fix."""
         from flow_sdk.instances.atomic import locked  # noqa: PLC0415
 
-        return locked(self._owner() / ".flow" / "dataset-rows.lock")
+        with locked(self._owner() / ".flow" / "dataset-rows.lock"), self._sync_rows(write=True):
+            yield
 
     def store_ids(self) -> int:
-        """Store each row's id in its ``example.json`` where it still has only the legacy derived one
+        """Store each row's id in its ``row.json`` where it still has only the legacy derived one
         (which follows the dataset's .flow id -- not in git -- and so changes on a fresh clone). Run
         once on a dataset that predates stored ids; returns how many rows it stamped."""
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs, _load_example_meta, row_id, stored_row_id  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _row_dirs, _load_row_meta, row_id, stored_row_id  # noqa: PLC0415
 
         self._typed_rows_or_raise()
         stamped = 0
         with self._lock():
-            for ex_dir in _example_dirs(self._folder()):
-                metadata, data = _load_example_meta(ex_dir)
+            for ex_dir in _row_dirs(self._rows_root()):
+                metadata, data = _load_row_meta(ex_dir)
                 if not stored_row_id(metadata):
-                    FolderLayout().write_example_meta(ex_dir, {**metadata, "id": row_id(ex_dir, self.id, metadata)}, data)
+                    FolderLayout().write_row_meta(ex_dir, {**metadata, "id": row_id(ex_dir, self.id, metadata)}, data)
                     stamped += 1
         return stamped
 
@@ -439,7 +586,7 @@ class Dataset(Entity):
 
         return (store_of(self._folder()), store_of(self._owner()))
 
-    def _link_details(self, example: Any, cache: Optional[dict] = None, stores: Optional[tuple] = None) -> list[dict]:
+    def _link_details(self, row: Any, cache: Optional[dict] = None, stores: Optional[tuple] = None) -> list[dict]:
         """What a row's links break, as ``{path, code, message}``: a reference that names nothing (no
         row of its kind beside this dataset, nor a value in this dataset's or its owner's value store),
         a row kind copied in, and every rule across rows its schema declares (``flow_sdk.datasets.rules``)."""
@@ -447,7 +594,7 @@ class Dataset(Entity):
         from flow_sdk.datasets.rules import rule_breaks  # noqa: PLC0415
 
         stores, cache, out = stores or self._stores(), cache if cache is not None else {}, []
-        for slot, value in slot_values(example):
+        for slot, value in slot_values(row):
             out += [{**d, "path": f"{slot}.{d['path']}"}
                     for d in dangling_details(value, self._owner(), stores=stores, cache=cache)]
             out += rule_breaks(value, self._owner(), cache=cache, path=f"{slot}.")
@@ -461,15 +608,16 @@ class Dataset(Entity):
         return [d for slot in SLOTS
                 for d in raw_dangling_details(raw.get(slot), self._owner(), stores=stores, cache=cache, path=f"{slot}.")]
 
+    @_reads_rows
     def read_lenient(self) -> tuple[list, list[tuple[str, Any]]]:
         """``(rows that fit their shape, [(key, input as stored)] for those that do not)`` -- read as
         they are, no link or rule checks (``rows_and_problems`` adds those). What a scan over every row
         of a project reads (``links.link_index``)."""
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs, _ReadShape  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _row_dirs, _ReadShape  # noqa: PLC0415
 
         row_type = self._typed_rows_or_raise()
         layout, shape, rows, broken = FolderLayout(), _ReadShape.of(row_type), [], []
-        for ex_dir in _example_dirs(self._folder()):
+        for ex_dir in _row_dirs(self._rows_root()):
             try:
                 row = layout.read_typed(ex_dir, row_type, dataset_id=self.id, shape=shape)
             except ValidationError:
@@ -541,27 +689,27 @@ class Dataset(Entity):
                 index.take(key, value)
         return index
 
-    def _unique_details(self, key: str, example: Any, seen: dict) -> list[dict]:
-        """The ``unique`` rules the row ``key`` (as ``example``) breaks against the other rows -- and
+    def _unique_details(self, key: str, row: Any, seen: dict) -> list[dict]:
+        """The ``unique`` rules the row ``key`` (as ``row``) breaks against the other rows -- and
         against the rows already checked in this call (``seen``), which it then joins."""
         if "unique" not in seen:
             seen["unique"] = self._unique_index(seen.get("unique_skip", ()))
         if seen["unique"] is None:
             return []
-        return [{**d, "path": f"input.{d['path']}"} for d in seen["unique"].take(key, example.input)]
+        return [{**d, "path": f"input.{d['path']}"} for d in seen["unique"].take(key, row.input)]
 
-    @staticmethod
-    def _owned_details(example: Any, before: Any, by: Optional[str]) -> list[dict]:
+    def _owned_details(self, row: Any, before: Any, by: Optional[str]) -> list[dict]:
         """The fields an outside system owns (``owned_by`` in the schema) that this write would set or
         change without being that owner (``by``). ``before`` is the row's input as it is (a value, or
         the stored dict of a row that no longer fits), None for a new row -- which may leave an owned
-        field empty, never fill it."""
-        owned = getattr(type(example.input), "__owned__", None) or {}
+        field empty, never fill it. Rows that live in a record system also refuse a field its map does
+        not hold (``not_stored``): kept only in this machine's working copy, it would be lost."""
+        out = self._unstored_details(row)
+        owned = getattr(type(row.input), "__owned__", None) or {}
         if not owned:
-            return []
-        now = example.input.model_dump(mode="json")
+            return out
+        now = row.input.model_dump(mode="json")
         was = before if isinstance(before, dict) else before.model_dump(mode="json") if before is not None else {}
-        out = []
         for name, owner in owned.items():
             if owner == by or now.get(name) == was.get(name):
                 continue
@@ -571,6 +719,26 @@ class Dataset(Entity):
                         "message": f"{name} is owned by {owner}: only a writer that writes as {owner!r} (by={owner!r}) sets it"})
         return out
 
+    def _unstored_details(self, row: Any) -> list[dict]:
+        """A record location's rows hold only what its map reads from the record: a value in any other
+        field has nowhere to live but this machine's working copy, so no writer sets one."""
+        from flow_sdk.datasets.locations import RECORDS  # noqa: PLC0415
+
+        if not self.asset_ref:
+            return []
+        try:
+            location = self._location()
+        except ValueError:
+            return []
+        if location.kind != RECORDS:
+            return []
+        mapped = set((location.map or {}).get("input") or {})
+        now = row.input.model_dump(mode="json")
+        return [{"path": f"input.{name}", "code": "not_stored",
+                 "message": f"{name} has no field in {location.driver}: add one and map it in the dataset's location, "
+                            f"or keep it in a dataset of its own"}
+                for name, value in now.items() if name not in mapped and value not in (None, "", [], {})]
+
     def _row_in(self, raw: Any, n: int, *, keyed: bool = False, cache: Optional[dict] = None) -> Any:
         """One incoming row as the declared row type -- ``ValueError`` for a malformed row,
         ``ValidationError`` for one that does not fit the shape."""
@@ -579,11 +747,11 @@ class Dataset(Entity):
         unknown = set(raw) - self._ROW_KEYS - ({"key"} if keyed else set())
         if unknown:
             raise ValueError(f"row {n}: unknown keys {sorted(unknown)}")
-        example = self._typed_rows_or_raise().model_validate({k: v for k, v in raw.items() if k != "key"})
-        broken = self._link_details(example, cache) if self.asset_ref else []
+        row = self._typed_rows_or_raise().model_validate({k: v for k, v in raw.items() if k != "key"})
+        broken = self._link_details(row, cache) if self.asset_ref else []
         if broken:
             raise LinkError(broken)
-        return example
+        return row
 
     async def append(self, rows: list[dict], *, by: Optional[str] = None) -> list[str]:
         """Typed rows in -- ``{input, context?, ground_truth?, output?, kind?, data?, key?}`` each,
@@ -591,8 +759,8 @@ class Dataset(Entity):
 
         The counterpart of ``promote`` for a dataset whose input is not a source item: a request, a
         prompt, anything the dataset's own spec defines. A row with a ``key`` lands in
-        ``examples/<key>/`` (refused when the key is taken); the others are numbered. Returns the new
-        example ids. A new row of a mirrored kind is made in the outside system first (see ``put``)."""
+        ``rows/<key>/`` (refused when the key is taken); the others are numbered. Returns the new
+        row ids. A new row of a mirrored kind is made in the outside system first (see ``put``)."""
         return (await self._append_through(rows, by=by))[0]
 
     async def _append_through(self, rows: list[dict], *, by: Optional[str] = None,
@@ -605,18 +773,18 @@ class Dataset(Entity):
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         with self._lock():
-            examples, seen, refused = [], {"links": {}}, []
+            typed, seen, refused = [], {"links": {}}, []
             for n, raw in enumerate(rows, 1):
-                example = self._row_in(raw, n, keyed=True, cache=seen["links"])
+                row = self._row_in(raw, n, keyed=True, cache=seen["links"])
                 named = raw.get("key") or f"(row {n})"   # a numbered row has no key yet: named by its place
                 refused += [{**d, "path": f"{named}.{d['path']}" if len(rows) > 1 else d["path"]}
-                            for d in self._owned_details(example, None, by) + self._unique_details(named, example, seen)]
-                examples.append((example, None))
+                            for d in self._owned_details(row, None, by) + self._unique_details(named, row, seen)]
+                typed.append((row, None))
             if refused:
                 raise LinkError(refused)
             keys = [raw.get("key") for raw in rows]
             ids = dataset_layout_for(self.data_layout).append_many(
-                self._folder(), examples, dataset_id=self.id, keys=keys)
+                self._rows_root(), typed, dataset_id=self.id, keys=keys)
         self._tell("put", [key or rid for key, rid in zip(keys, ids)])   # a numbered row is named by its id
         return ids
 
@@ -653,8 +821,8 @@ class Dataset(Entity):
                 self._prepare_put(key, {k: v for k, v in row.items() if k != "key"}, None,
                                   {"by": by, "links": cache if cache is not None else {}})
                 return []
-            example = self._row_in(row, 1, keyed=True, cache=cache)
-            return self._owned_details(example, None, by) + self._unique_details("(this row)", example, {})
+            row = self._row_in(row, 1, keyed=True, cache=cache)
+            return self._owned_details(row, None, by) + self._unique_details("(this row)", row, {})
         except ValidationError as exc:
             from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
@@ -680,7 +848,7 @@ class Dataset(Entity):
         listener whose socket was down learns whether anything moved without reading a row."""
         from flow_sdk.schema.data_spec.layout import rows_version  # noqa: PLC0415
 
-        return rows_version(self.asset_ref) if self.asset_ref else ""
+        return rows_version(self._rows_root()) if self.asset_ref else ""
 
     def emit_rows_changed(self, op: str, keys: list[str]) -> None:
         """Say on THIS process's bus that rows changed (``op``: ``put`` / ``delete`` / ``rename`` /
@@ -723,16 +891,16 @@ class Dataset(Entity):
     _SLOT_NAMES = ("input", "context", "ground_truth", "output")
 
     def _prepare_put(self, key: str, row: dict, expected: Optional[str], seen: dict) -> tuple[Any, Any]:
-        """One row of a put, checked and ready to write: ``(example, the row it replaces or None)``.
+        """One row of a put, checked and ready to write: ``(row, the row it replaces or None)``.
         Nothing is written. Called under the row lock; ``seen`` is the caller's memory for the whole
         call (the linked rows read, the read shape, the rows that reach this dataset), so a batch
         reads each of those once."""
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _load_example_meta, _ReadShape, check_key, row_id, row_version  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _load_row_meta, _ReadShape, check_key, row_id, row_version  # noqa: PLC0415
 
-        row_type, layout, folder = self._typed_rows_or_raise(), FolderLayout(), self._folder()
+        row_type, layout, folder = self._typed_rows_or_raise(), FolderLayout(), self._rows_root()
         if not isinstance(row, dict):
             raise ValueError("row: an object is required")
-        old_dir = layout.example_dir(folder, check_key(key), dataset_id=self.id)
+        old_dir = layout.row_dir(folder, check_key(key), dataset_id=self.id)
         merged: dict[str, Any] = {}
         metadata: dict[str, Any] = {}
         old = stored = None
@@ -741,8 +909,8 @@ class Dataset(Entity):
         if old_dir is not None:
             if expected is not None and row_version(old_dir) != expected:
                 raise ConflictError(f"row {key!r} changed since version {expected}")
-            metadata, merged["data"] = _load_example_meta(old_dir)
-            merged["kind"] = metadata.pop("kind", None) or ExampleKind.TRAIN.value
+            metadata, merged["data"] = _load_row_meta(old_dir)
+            merged["kind"] = metadata.pop("kind", None) or RowKind.TRAIN.value
             if "shape" not in seen:
                 seen["shape"] = _ReadShape.of(row_type)
             try:
@@ -756,9 +924,9 @@ class Dataset(Entity):
                     if value is not None:
                         merged[slot] = value
         merged.update(row)
-        example = self._row_in(merged, 1, cache=seen.setdefault("links", {}))
+        row = self._row_in(merged, 1, cache=seen.setdefault("links", {}))
         before = old.input if old is not None else stored if isinstance(stored, dict) else None
-        refused = self._owned_details(example, before, seen.get("by")) + self._unique_details(key, example, seen)
+        refused = self._owned_details(row, before, seen.get("by")) + self._unique_details(key, row, seen)
         if refused:
             raise LinkError(refused)
         if old_dir is not None and self.row_kind and self.asset_ref:
@@ -767,18 +935,18 @@ class Dataset(Entity):
             if "dependants" not in seen:
                 seen["dependants"] = self._dependants()
             if seen["dependants"] is not None:
-                broken = self._dependants_broken(self.ref_of(row_id(old_dir, self.id)), example.input,
+                broken = self._dependants_broken(self.ref_of(row_id(old_dir, self.id)), row.input,
                                                  seen["dependants"], seen.setdefault("rules", {}))
                 if broken:
                     raise LinkError(broken)
         if metadata:
-            example = example.model_copy(update={"metadata": {**metadata, **example.metadata}})
-        return example, old
+            row = row.model_copy(update={"metadata": {**metadata, **row.metadata}})
+        return row, old
 
     async def put(self, key: str, row: dict, *, expected: Optional[str] = None, by: Optional[str] = None) -> str:
         """Write the row ``key`` -- create it, or replace the one there. Validated BEFORE anything is
         written, references included. Slots the row leaves out (``ground_truth``, ``output``,
-        ``context``) and the example's metadata (kind, annotations, source) are kept from the row it
+        ``context``) and the row's metadata (kind, annotations, source) are kept from the row it
         replaces, so editing an input never drops its gold. ``expected`` is the ``version`` the
         caller read: a row that changed since is ``ConflictError``, nothing written. ``by`` names
         the outside system this writer writes for (``"crm"``): only it sets a field the schema marks
@@ -807,17 +975,26 @@ class Dataset(Entity):
             logger.warning("dataset %s: %s", self.name, "; ".join(w["message"] for w in through[2]))
         return through
 
+    def _writing(self) -> asyncio.Lock:
+        """Held while a write goes out to the system that owns the rows: the version a writer read is
+        checked, sent out and written here as one step, so a second writer from that version is refused
+        instead of landing over the first, out there and here in a different order. Per process: only
+        the server holds a driver (``_outside_first``)."""
+        return keyed_loop_lock(_WRITING, str(self._folder()))
+
+    @_on_rows(write=True)
     async def _write_through(self, pairs: list[tuple[Optional[str], dict]], by: Optional[str], expected: Optional[dict],
                              served: bool, here: Any) -> tuple[list[str], list[Optional[str]], list[dict]]:
         """THE row write: ``pairs`` are ``(key, row)`` -- a key of None for a row not named yet. What an
         outside system owns goes to it first (``_outside_first``) and the rows are then written as it
         answered, under the keys its mirror gives them; when nothing of the kind applies, ``here()``
         writes them as given. → ``(ids, the keys written, warnings)``."""
-        through = await self._outside_first(pairs, by, expected, served) if pairs else None
-        if through is None:
-            return here(), [key for key, _ in pairs], []
-        sent, as_, warnings = through
-        return self._put_many_here([{**row, "key": key} for key, row in sent], None, as_), [key for key, _ in sent], warnings
+        async with self._writing():
+            through = await self._outside_first(pairs, by, expected, served) if pairs else None
+            if through is None:
+                return here(), [key for key, _ in pairs], []
+            sent, as_, warnings = through
+            return self._put_many_here([{**row, "key": key} for key, row in sent], None, as_), [key for key, _ in sent], warnings
 
     async def _put_through(self, key: str, row: dict, *, expected: Optional[str] = None, by: Optional[str] = None,
                            served: bool = False) -> tuple[str, str, list[dict]]:
@@ -830,8 +1007,8 @@ class Dataset(Entity):
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
         with self._lock():
-            example, _ = self._prepare_put(key, row, expected, {"by": by})
-            rid = FolderLayout().put_example(self._folder(), key, example, dataset_id=self.id)
+            row, _ = self._prepare_put(key, row, expected, {"by": by})
+            rid = FolderLayout().put_row(self._rows_root(), key, row, dataset_id=self.id)
         self._tell("put", [key])
         return rid
 
@@ -851,7 +1028,7 @@ class Dataset(Entity):
 
     def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict, *,
                       lenient: bool = False) -> tuple[list, list[dict]]:
-        """Every row of a batch checked (``_prepare_put``): ``(ready, misfit)`` -- ``[(key, example,
+        """Every row of a batch checked (``_prepare_put``): ``(ready, misfit)`` -- ``[(key, row,
         old)]`` for the rows that fit, and ``[{key, row, details}]`` for each that does not (its
         shape, links, rules; the details' paths are the row's own, ``input.x``). Unless ``lenient``,
         one row that does not fit is ONE ``LinkError`` naming every such row under ``<key>.``;
@@ -863,7 +1040,7 @@ class Dataset(Entity):
         ready, conflicts, misfit = [], [], []
         for key, row in rows:
             try:
-                example, old = self._prepare_put(key, row, expected.get(key), seen)
+                row, old = self._prepare_put(key, row, expected.get(key), seen)
             except ConflictError as exc:
                 conflicts.append(str(exc))
             except ValidationError as exc:
@@ -874,7 +1051,7 @@ class Dataset(Entity):
             except ValueError as exc:
                 raise LinkError([{"path": key, "code": "row", "message": str(exc)}]) from exc
             else:
-                ready.append((key, example, old))
+                ready.append((key, row, old))
         if conflicts:
             raise ConflictError("; ".join(conflicts))
         if misfit and (not lenient or any(d.get("code") == "owned" for m in misfit for d in m["details"])):
@@ -900,13 +1077,14 @@ class Dataset(Entity):
     def _put_many_here(self, rows: list[dict], expected: Optional[dict[str, str]], by: Optional[str]) -> list[str]:
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
-        keyed, layout, folder = self._keyed(rows), FolderLayout(), self._folder()
+        keyed, layout, folder = self._keyed(rows), FolderLayout(), self._rows_root()
         with self._lock():
             ready, _ = self._prepare_many(keyed, expected or {}, {"by": by})
-            ids = [layout.put_example(folder, key, example, dataset_id=self.id) for key, example, _ in ready]
+            ids = [layout.put_row(folder, key, row, dataset_id=self.id) for key, row, _ in ready]
         self._tell("put", [key for key, _ in keyed])
         return ids
 
+    @_on_rows(write=True)
     async def sync(self, rows: list[dict], *, prune: bool = True, match: Any = None, by: Optional[str] = None,
                    lenient: bool = False) -> dict:
         """Make the dataset hold exactly ``rows`` (``[{key, input, ...}]``) -- what a mirror of an
@@ -934,7 +1112,7 @@ class Dataset(Entity):
         from flow_sdk.datasets.query import expression, matches  # noqa: PLC0415
         from flow_sdk.schema.data_spec.layout import FolderLayout, _ReadShape  # noqa: PLC0415
 
-        keyed, layout, folder, node = self._keyed(rows), FolderLayout(), self._folder(), expression(match)
+        keyed, layout, folder, node = self._keyed(rows), FolderLayout(), self._rows_root(), expression(match)
         with self._lock():
             gone = []
             if prune:
@@ -950,25 +1128,25 @@ class Dataset(Entity):
             ready, misfit = self._prepare_many(keyed, {}, seen, lenient=lenient)
             out: dict[str, Any] = {"created": [], "updated": [], "unchanged": [], "deleted": []}
             write = []
-            for key, example, old in ready:
+            for key, row, old in ready:
                 same = old is not None and all(
-                    getattr(example, slot) == getattr(old, slot) for slot in self._SLOT_NAMES) and example.kind == old.kind
-                out["unchanged" if same else "created" if layout.example_dir(folder, key, dataset_id=self.id) is None else "updated"].append(key)
+                    getattr(row, slot) == getattr(old, slot) for slot in self._SLOT_NAMES) and row.kind == old.kind
+                out["unchanged" if same else "created" if layout.row_dir(folder, key, dataset_id=self.id) is None else "updated"].append(key)
                 if not same:
-                    write.append((key, example))
+                    write.append((key, row))
             if not lenient:   # a lenient sync has already set aside every row still referenced (`used`)
                 self._check_delete(gone, {})
-            for key, example in write:
-                layout.put_example(folder, key, example, dataset_id=self.id)
+            for key, row in write:
+                layout.put_row(folder, key, row, dataset_id=self.id)
             if misfit:
                 main = (seen.get("shape") or _ReadShape.of(self._typed_rows_or_raise())).mains["input"]
                 for m in misfit:
-                    layout.put_problem_example(folder, m["key"], m["row"].get("input") or {}, dataset_id=self.id, main_document=main)
+                    layout.put_problem_row(folder, m["key"], m["row"].get("input") or {}, dataset_id=self.id, main_document=main)
                 out["misfit"] = [{"key": m["key"], "details": m["details"]} for m in misfit]
             if used:
                 out["referenced"] = [{"key": key, "details": [{"path": "", "code": "referenced", "message": why}]}
                                      for key, why in used.items()]
-            out["deleted"] = [layout.delete_example(folder, key, dataset_id=self.id) for key in gone]
+            out["deleted"] = [layout.delete_row(folder, key, dataset_id=self.id) for key in gone]
         self._tell("sync", out["created"] + out["updated"] + out["deleted"] + [m["key"] for m in misfit])   # nothing moved: nothing said
         return out
 
@@ -978,6 +1156,7 @@ class Dataset(Entity):
         ``ConflictError`` when ``expected`` (the version read) is not the row's version any more."""
         return self.delete_rows([key_or_id], expected=None if expected is None else {key_or_id: expected})[0]
 
+    @_on_rows(write=True)
     async def mirror(self, items: Any, map: dict, *, by: Optional[str] = None, prune: bool = True,   # noqa: A002 -- the word
                      match: Any = None) -> dict:
         """Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
@@ -1000,7 +1179,7 @@ class Dataset(Entity):
         An item whose ``key`` path is empty is skipped; a key is made a row key (lowercased, other
         characters ``-``).
         ``by`` names the outside system these rows are written as (the owner of the schema's
-        ``owned_by`` fields); it defaults to the source's provider. ``match`` narrows what ``prune``
+        ``owned_by`` fields). ``match`` narrows what ``prune``
         may remove, as in ``sync``."""
         import re  # noqa: PLC0415
 
@@ -1009,13 +1188,8 @@ class Dataset(Entity):
 
         if not isinstance(map, dict) or not isinstance(map.get("key"), str) or not isinstance(map.get("input"), dict):
             raise ValueError('map: {"key": <path>, "input": {<field>: <path>}} is required')
-        provider = None
         if not isinstance(items, list):
-            from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-
-            provider = getattr(items, "provider", None) or None
-            found = await SourceItem.get_all({"data_source_id": str(items.id)}) or []
-            items = [item.model_dump(mode="json") for item in found]
+            raise ValueError("items: a list of records is required")
 
         targets: dict[tuple[str, str], dict[str, str]] = {}
         unlinked: list[dict] = []
@@ -1074,9 +1248,13 @@ class Dataset(Entity):
         # never by its row key alone: a row made before the mirror (keyed as its author liked) or
         # renamed since keeps its key, its id and every link to it. A record no row holds gets a key
         # made from its id.
-        key_field_ = next((name for name, path in map["input"].items() if path == map["key"]), None)
+        key_field_ = key_field(map)
         keyed_by_natural = {str(fields[key_field_]): key for key, fields in held.items()
                             if key_field_ and fields.get(key_field_) not in (None, "")} if key_field_ else {}
+        # Rows that live in a record system hold only what the map reads: nothing of the app's is kept.
+        from flow_sdk.datasets.locations import RECORDS  # noqa: PLC0415
+
+        keeps_own = not (self.asset_ref and self._location().kind == RECORDS)
         rows, taken = [], set()
         for item in items:
             named = field_of(item, map["key"])
@@ -1086,10 +1264,39 @@ class Dataset(Entity):
             if not key or key in taken:
                 raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
             taken.add(key)
-            own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
+            own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]} if keeps_own else {}
             rows.append({"key": key, "input": {**empties, **own, **shaped(map["input"], item, key, "")}})
-        done = await self.sync(rows, prune=prune, match=match, by=by or provider, lenient=True)
+        done = await self.sync(rows, prune=prune, match=match, by=by, lenient=True)
+        if not keeps_own and key_field_:
+            self._adopt_record_ids(key_field_)
         return {**done, "unlinked": unlinked} if unlinked else done
+
+    def _adopt_record_ids(self, key_field_: str) -> int:
+        """Rows that live in a record system take the record's own id when it is an entity id (a uuid):
+        the same row has the same id in every working copy, on every machine, so a link to it
+        (``<kind>.id.<uuid>``) from a dataset elsewhere holds. Adopted, never invented. Returns how many
+        rows took theirs."""
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _load_row_meta, _row_dirs  # noqa: PLC0415
+
+        adopted = 0
+        with self._lock():
+            for ex_dir in _row_dirs(self._rows_root()):
+                metadata, data = _load_row_meta(ex_dir)
+                try:
+                    held = json.loads((ex_dir / "input" / self._main_input()).read_text(encoding="utf-8")).get(key_field_)
+                except (OSError, ValueError, AttributeError):
+                    continue
+                own = str(held).lower() if isinstance(held, str) else ""
+                if is_valid_entity_id(own) and metadata.get("id") != own:
+                    FolderLayout().write_row_meta(ex_dir, {**metadata, "id": own}, data)
+                    adopted += 1
+        return adopted
+
+    def _main_input(self) -> str:
+        from flow_sdk.schema.data_spec.layout import _ReadShape  # noqa: PLC0415
+
+        return _ReadShape.of(self._typed_rows_or_raise()).mains["input"]
 
     @staticmethod
     def _empty_required(input_type: Any) -> dict[str, Any]:
@@ -1117,11 +1324,11 @@ class Dataset(Entity):
         error ``delete_rows`` documents. Nothing is removed. Called under the row lock."""
         from flow_sdk.schema.data_spec.layout import FolderLayout, row_version  # noqa: PLC0415
 
-        layout, folder = FolderLayout(), self._folder()
-        found = {given: layout.example_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
+        layout, folder = FolderLayout(), self._rows_root()
+        found = {given: layout.row_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
         missing = [given for given, ex_dir in found.items() if ex_dir is None]
         if missing:
-            raise LookupError(f"no example {', '.join(missing)} in {folder}")
+            raise LookupError(f"no row {', '.join(missing)} in {folder}")
         dirs = list({ex_dir.name: ex_dir for ex_dir in found.values()}.values())
         stale = [ex_dir.name for given, ex_dir in found.items() if given in expected and row_version(ex_dir) != expected[given]]
         if stale:
@@ -1148,8 +1355,8 @@ class Dataset(Entity):
         turn, so this narrows the going set until it stops changing."""
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
-        layout, folder = FolderLayout(), self._folder()
-        dirs = [ex_dir for ex_dir in (layout.example_dir(folder, key, dataset_id=self.id) for key in keys) if ex_dir is not None]
+        layout, folder = FolderLayout(), self._rows_root()
+        dirs = [ex_dir for ex_dir in (layout.row_dir(folder, key, dataset_id=self.id) for key in keys) if ex_dir is not None]
         users, going, held = self._users(dirs), {ex_dir.name for ex_dir in dirs}, {}
         while True:
             more = self._referenced([d for d in dirs if d.name in going], [u for d, u in zip(dirs, users) if d.name in going], going)
@@ -1169,9 +1376,9 @@ class Dataset(Entity):
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
         self._typed_rows_or_raise()
-        layout, folder = FolderLayout(), self._folder()
+        layout, folder = FolderLayout(), self._rows_root()
         with self._lock():
-            gone = [layout.delete_example(folder, ex_dir.name, dataset_id=self.id)
+            gone = [layout.delete_row(folder, ex_dir.name, dataset_id=self.id)
                     for ex_dir in self._check_delete(keys, expected or {})]
         self._tell("delete", gone)
         return gone
@@ -1186,45 +1393,48 @@ class Dataset(Entity):
         layout = FolderLayout()
         with self._lock():
             if expected is not None:
-                ex_dir = layout.example_dir(self._folder(), key_or_id, dataset_id=self.id)
+                ex_dir = layout.row_dir(self._rows_root(), key_or_id, dataset_id=self.id)
                 if ex_dir is not None and row_version(ex_dir) != expected:
                     raise ConflictError(f"row {ex_dir.name!r} changed since version {expected}")
-            rid = layout.rename_example(self._folder(), key_or_id, new_key, dataset_id=self.id)
+            rid = layout.rename_row(self._rows_root(), key_or_id, new_key, dataset_id=self.id)
         self._tell("rename", [key_or_id, new_key])
         return rid
 
-    def example(self, example_id: str) -> Optional[dict]:
-        """One example with its slots' VALUES (not paths) -- what an editor shows. None if absent."""
+    @_reads_rows
+    def row(self, row_id: str) -> Optional[dict]:
+        """One row with its slots' VALUES (not paths) -- what an editor shows. None if absent."""
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
         row_type = self._typed_rows_or_raise()
         layout = FolderLayout()
-        ex_dir = layout.example_dir(self._folder(), example_id, dataset_id=self.id)
+        ex_dir = layout.row_dir(self._rows_root(), row_id, dataset_id=self.id)
         if ex_dir is None:
             return None
         row = layout.read_typed(ex_dir, row_type, dataset_id=self.id)
         return None if row is None else self._row_out(row)
 
+    @_reads_rows
     def validate_rows(self) -> list[dict]:
-        """Every row read as the declared shape: ``[{example_id, key, error}]`` for the rows that do
+        """Every row read as the declared shape: ``[{row_id, key, error}]`` for the rows that do
         not fit. Indexing reads rows as artifacts on purpose (fast, never fatal); this is the check."""
         return self.rows_and_problems()[1]
 
+    @_reads_rows
     def rows_and_problems(self) -> tuple[list, list[dict]]:
         """``(rows that fit, problems)`` -- one row that does not fit never hides the others. A
-        problem is ``{id, ref, key, version, error, errors, details, input}`` (``example_id`` = ``id``:
+        problem is ``{id, ref, key, version, error, errors, details, input}`` (``row_id`` = ``id``:
         DEPRECATED, the old name -- use ``id`` / ``ref``; ``details`` = ``errors`` as ``{path, code,
         message}``): ``errors`` lists everything
         wrong with the row, a dangling reference included; ``error`` is the first; ``input`` is the
         row's input as stored, unchecked (None when unreadable) -- so a caller can still find the
         row by a natural key in it and repair it."""
         from flow_sdk.datasets.links import detail_lines, shape_details  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs, _ReadShape, row_id, row_version  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _row_dirs, _ReadShape, row_id, row_version  # noqa: PLC0415
 
         row_type = self._typed_rows_or_raise()
         layout, rows, problems, shape, cache = FolderLayout(), [], [], _ReadShape.of(row_type), {}
         stores = self._stores() if self.row_kind else ()
-        for ex_dir in _example_dirs(self._folder()):
+        for ex_dir in _row_dirs(self._rows_root()):
             try:
                 row = layout.read_typed(ex_dir, row_type, dataset_id=self.id, shape=shape)
             except ValidationError as exc:
@@ -1240,7 +1450,7 @@ class Dataset(Entity):
             if failed and self.row_kind:
                 details += self._raw_link_details({"input": raw}, cache, stores)
             rid, errors = row_id(ex_dir, self.id), detail_lines(details)
-            problems.append({"example_id": rid, "id": rid, "ref": self.ref_of(rid), "key": ex_dir.name,
+            problems.append({"row_id": rid, "id": rid, "ref": self.ref_of(rid), "key": ex_dir.name,
                              "error": errors[0], "errors": errors, "details": details,
                              "version": row_version(ex_dir), "input": raw})
         # ``unique`` rules: of the rows that share a value, the first by key keeps it; the others are
@@ -1256,7 +1466,7 @@ class Dataset(Entity):
                     kept.append(row)
                     continue
                 errors = detail_lines(details)
-                problems.append({"example_id": row.id, "id": row.id, "ref": self.ref_of(row.id), "key": row.key,
+                problems.append({"row_id": row.id, "id": row.id, "ref": self.ref_of(row.id), "key": row.key,
                                  "error": errors[0], "errors": errors, "details": details,
                                  "version": row.version, "input": row.input.model_dump(mode="json")})
             rows = kept
@@ -1313,6 +1523,7 @@ class Dataset(Entity):
 
         return with_subqueries(expression(match), values)
 
+    @_reads_rows
     def query(self, match: Any = None, *, order_by: Any = None, limit: Optional[int] = None, offset: Optional[int] = None,
               q: Optional[str] = None, expand: Optional[list[str]] = None, records: Optional[dict] = None) -> dict:
         """SOME of the rows: ``{rows, total, problems}``. ``match`` is an expression (``{op, operands}``)
@@ -1364,12 +1575,7 @@ class Dataset(Entity):
                                 out["linked"][ref] = found
         return out
 
-    def rows(self, match: Any = None, **asked: Any) -> dict:
-        """THE read: ``{rows, total, problems}`` -- every row, or those ``match`` selects. The name the
-        TypeScript client, the ``rows`` action and ``dm_ctl ds-rows`` use; ``query`` is the same call.
-        (``read_rows`` / ``rows_and_problems`` hand back typed values for code that scores or syncs.)"""
-        return self.query(match, **asked)
-
+    @_reads_rows
     def count(self, match: Any = None, *, group_by: Optional[list[str]] = None, metrics: Optional[dict[str, str]] = None,
               order_by: Any = None, week_start: str = "monday", q: Optional[str] = None, records: Optional[dict] = None) -> dict:
         """How many rows match -- the SAME ``match`` and ``q`` as ``query``, so a number and the list
@@ -1389,22 +1595,23 @@ class Dataset(Entity):
                      metrics=metrics, order_by=order_by, week_start=week_start, q=q,
                      follow=lambda ref: (linked(ref) or {}).get("row"))
 
+    @_reads_rows
     def used_by(self, keys: Optional[list[str]] = None) -> dict[str, list[dict]]:
         """Who links to each row: ``{key: [{dataset_id, kind, key}]}`` for ``keys`` (keys or ids; every
         row when left out) -- ``[]`` for a row nothing links to. What a delete is refused for ("used
         by ..."), asked ahead of time; and its opposite, the rows nothing uses. Reads only the datasets
         whose schema can reach this kind (``links.linkers_of``), once."""
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _row_dirs  # noqa: PLC0415
 
         self._typed_rows_or_raise()
-        layout, folder = FolderLayout(), self._folder()
+        layout, folder = FolderLayout(), self._rows_root()
         if keys is None:
-            dirs = list(_example_dirs(folder))
+            dirs = list(_row_dirs(folder))
         else:
-            found = {given: layout.example_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
+            found = {given: layout.row_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
             missing = [given for given, ex_dir in found.items() if ex_dir is None]
             if missing:
-                raise LookupError(f"no example {', '.join(missing)} in {folder}")
+                raise LookupError(f"no row {', '.join(missing)} in {folder}")
             dirs = list({ex_dir.name: ex_dir for ex_dir in found.values()}.values())
         return {ex_dir.name: [{k: v for k, v in u.items() if k != "folder"} for u in users]
                 for ex_dir, users in zip(dirs, self._users(dirs))}
@@ -1427,12 +1634,13 @@ class Dataset(Entity):
         return [[{"dataset_id": datasets[at].id, "kind": kind, "key": key, "folder": at}
                  for at, kind, key, _ in index.get(self.ref_of(row_id(ex_dir, self.id)), [])] for ex_dir in dirs]
 
+    @_reads_rows
     def read_rows(self) -> list:
         """Every row read as the declared shape (raises on a row that does not fit -- ``validate_rows``
         names them one by one)."""
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
-        return FolderLayout().read(self._folder(), self._typed_rows_or_raise(), dataset_id=self.id)
+        return FolderLayout().read(self._rows_root(), self._typed_rows_or_raise(), dataset_id=self.id)
 
     def score(self) -> dict:
         """Each recorded ``output`` against its gold answers (``flow_sdk.datasets.score``)."""
@@ -1508,6 +1716,7 @@ class Dataset(Entity):
         return out
 
     @action.get(action_name="rows")
+    @_on_rows(write=False)
     async def rows_action(self):
         """``{rows, total, problems}`` -- every row that fits with its slots' VALUES (and ``key``,
         ``id``, ``ref``, ``version``), and the ones that do not, by key: one bad row hides nothing.
@@ -1524,7 +1733,8 @@ class Dataset(Entity):
 
     @action.get(action_name="rows-version")
     async def rows_version_action(self):
-        """``{"version"}`` -- ``rows_version``, off the loop: every reconnecting listener asks."""
+        """``{"version"}`` -- ``rows_version``, off the loop: every reconnecting listener asks. Rows at a
+        remote location answer as last pulled -- a poll never costs a whole listing of the store."""
         return ApiSuccessResponse(data={"version": await asyncio.to_thread(self.rows_version)})
 
     async def _records_asked(self, asked: dict) -> dict:
@@ -1565,6 +1775,7 @@ class Dataset(Entity):
         return records
 
     @action.get(action_name="count")
+    @_on_rows(write=False)
     async def count_action(self):
         """``{total, groups}`` -- how many rows match ``?filter=`` (as ``rows``), and per distinct
         value of ``?group_by=`` (field paths, comma-separated): ``[{by, count}]``."""
@@ -1577,6 +1788,7 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
 
     @action.get(action_name="used-by")
+    @_on_rows(write=False)
     async def used_by_action(self):
         """``GET used-by[?keys=a,b]`` → ``{used_by: {key: [{dataset_id, kind, key}]}}``: who links to each
         row (every row when ``keys`` is left out); ``[]`` for a row nothing links to. 404 a key that is no row."""
@@ -1593,6 +1805,7 @@ class Dataset(Entity):
         return ApiSuccessResponse(data={"used_by": users})
 
     @action.post(action_name="score")
+    @_on_rows(write=False)
     async def score_action(self):
         """Recorded outputs scored against the gold → ``{rows, scored, correct, accuracy, wrong}``."""
         try:
@@ -1601,8 +1814,9 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
 
     @action.post(action_name="append")
+    @_on_rows(write=True)
     async def append_action(self):
-        """``{"rows": [...]}`` → ``{"example_ids", "num_examples"}``; a row that does not fit is a 400
+        """``{"rows": [...]}`` → ``{"ids", "num_rows"}``; a row that does not fit is a 400
         naming it, and nothing is written."""
         body = await read_json_body(get_current_request_info())
         if isinstance(body, ApiFailResponse):
@@ -1619,7 +1833,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return _written({"ids": ids, "example_ids": ids, "num_examples": fresh.num_examples}, warnings)
+        return _written({"ids": ids, "num_rows": fresh.num_rows}, warnings)
 
     async def _row_body(self, *required: str) -> "dict | ApiFailResponse":
         body = await read_json_body(get_current_request_info())
@@ -1631,8 +1845,9 @@ class Dataset(Entity):
         return body
 
     @action.post(action_name="put-row")
+    @_on_rows(write=True)
     async def put_row_action(self):
-        """``{"key", "row"}`` → ``{"example_id", "key", "num_examples"}``: create or replace the row
+        """``{"key", "row"}`` → ``{"row_id", "key", "num_rows"}``: create or replace the row
         ``key``. A row that does not fit is a 400 and nothing is written."""
         body = await self._row_body("key", "row")
         if isinstance(body, ApiFailResponse):
@@ -1649,17 +1864,19 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return _written({"id": eid, "example_id": eid, "key": key, "num_examples": fresh.num_examples}, warnings)
+        return _written({"id": eid, "row_id": eid, "key": key, "num_rows": fresh.num_rows}, warnings)
 
     @action.post(action_name="delete-row")
+    @_on_rows(write=True)
     async def delete_row_action(self):
-        """``{"key"}`` (a key or an example id) → ``{"key", "num_examples"}``; 404 when absent."""
+        """``{"key"}`` (a key or a row id) → ``{"key", "num_rows"}``; 404 when absent."""
         body = await self._row_body("key")
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
-            key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
+            async with self._writing():
+                gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
+                key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except ConflictError as exc:
@@ -1669,7 +1886,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"key": key, "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"key": key, "num_rows": fresh.num_rows})
 
     async def _bulk(self, write: Any) -> Any:
         """Run one bulk row write and answer its refusals the way the single-row actions do."""
@@ -1685,9 +1902,10 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
 
     @action.post(action_name="put-rows")
+    @_on_rows(write=True)
     async def put_rows_action(self):
-        """``{"rows": [{key, input, ...}], "expected"?: {key: version}}`` → ``{"example_ids", "keys",
-        "num_examples"}``: every row created or replaced, or -- one that does not fit (400, its
+        """``{"rows": [{key, input, ...}], "expected"?: {key: version}}`` → ``{"ids", "keys",
+        "num_rows"}``: every row created or replaced, or -- one that does not fit (400, its
         ``details`` under ``<key>.<path>``) or changed since (409) -- none of them."""
         body = await self._row_body("rows")
         if isinstance(body, ApiFailResponse):
@@ -1698,11 +1916,12 @@ class Dataset(Entity):
             return done
         ids, keys, warnings = done
         fresh = await self.refresh_counts()
-        return _written({"ids": ids, "example_ids": ids, "keys": keys, "num_examples": fresh.num_examples}, warnings)
+        return _written({"ids": ids, "keys": keys, "num_rows": fresh.num_rows}, warnings)
 
     @action.post(action_name="delete-rows")
+    @_on_rows(write=True)
     async def delete_rows_action(self):
-        """``{"keys": [...], "expected"?: {key: version}}`` → ``{"keys", "num_examples"}``: all of
+        """``{"keys": [...], "expected"?: {key: version}}`` → ``{"keys", "num_rows"}``: all of
         them removed, or none (404 a key that is no row, 409 a row changed since or still referenced)."""
         body = await self._row_body("keys")
         if isinstance(body, ApiFailResponse):
@@ -1711,18 +1930,20 @@ class Dataset(Entity):
             return ApiFailResponse(message="keys: a list of row keys is required", status_code=400)
 
         async def remove() -> list[str]:
-            gone = await delete_through(self, body["keys"], body.get("expected"))
-            return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
+            async with self._writing():
+                gone = await delete_through(self, body["keys"], body.get("expected"))
+                return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
         keys = await self._bulk(remove)
         if isinstance(keys, ApiFailResponse):
             return keys
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"keys": keys, "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"keys": keys, "num_rows": fresh.num_rows})
 
     @action.post(action_name="sync-rows")
+    @_on_rows(write=True)
     async def sync_rows_action(self):
         """``{"rows": [...], "prune"?: true, "match"?: {...}}`` → ``{created, updated, unchanged,
-        deleted, num_examples}`` (``Dataset.sync``): the dataset made to hold exactly these rows."""
+        deleted, num_rows}`` (``Dataset.sync``): the dataset made to hold exactly these rows."""
         body = await read_json_body(get_current_request_info())
         if isinstance(body, ApiFailResponse):
             return body
@@ -1732,25 +1953,37 @@ class Dataset(Entity):
         if isinstance(done, ApiFailResponse):
             return done
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={**done, "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={**done, "num_rows": fresh.num_rows})
 
-    @action.post(action_name="mirror")
-    async def mirror_action(self):
-        """``{"source_id", "map", "by"?, "prune"?, "match"?}`` → ``{created, updated, unchanged, deleted,
-        num_examples}``: this dataset made the typed mirror of that data source's items (``Dataset.mirror``)."""
-        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    @action.post(action_name="move-rows")
+    async def move_rows_action(self):
+        """``{"location"}`` → ``{from, to, rows}``: copy every row to that location, check it holds them
+        all, then make it this dataset's ``location``. The old location keeps its rows. 400 when the new
+        location already holds rows or is a record system; 502 when a location could not be reached."""
+        from flow_sdk.datasets.locations import move_rows  # noqa: PLC0415
 
-        body = await self._row_body("source_id", "map")
+        body = await self._row_body("location")
         if isinstance(body, ApiFailResponse):
             return body
-        source = await DataSource.get_by_id(str(body["source_id"]))
-        if source is None:
-            return ApiFailResponse(message=f"no data source {body['source_id']!r}", status_code=404)
-        done = await self._bulk(lambda: self.mirror(source, body["map"], by=body.get("by"), prune=body.get("prune", True), match=body.get("match")))
-        if isinstance(done, ApiFailResponse):
-            return done
+        try:
+            done = await move_rows(self, body["location"])
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        except (ConnectionError, PermissionError, LookupError, RuntimeError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=502)
+        await self.refresh_counts()
+        return ApiSuccessResponse(data=done)
+
+    @action.post(action_name="pull")
+    async def pull_action(self):
+        """``{}`` → ``{moved, num_rows}``: bring the rows of a remote location (Drive, S3, a record
+        system) up to date now -- what every read does first; the keys of the rows that moved."""
+        try:
+            moved = await self.pull()
+        except Exception as exc:  # noqa: BLE001 -- the location's own words, to the caller
+            return ApiFailResponse(message=f"pull from {self._location().label()} failed: {exc}", status_code=502)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={**done, "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"moved": moved, "num_rows": fresh.num_rows})
 
     @action.post(action_name="rows-changed")
     async def rows_changed_action(self):
@@ -1766,8 +1999,9 @@ class Dataset(Entity):
         return ApiSuccessResponse(data={"told": len(body["keys"])})
 
     @action.post(action_name="rename-row")
+    @_on_rows(write=True)
     async def rename_row_action(self):
-        """``{"key", "new_key", "expected"?}`` → ``{"example_id", "key"}`` -- the row's id (kept)
+        """``{"key", "new_key", "expected"?}`` → ``{"row_id", "key"}`` -- the row's id (kept)
         and its new key; 409 when ``expected`` is not the row's version any more."""
         body = await self._row_body("key", "new_key")
         if isinstance(body, ApiFailResponse):
@@ -1780,9 +2014,10 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=404)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        return ApiSuccessResponse(data={"example_id": eid, "key": body["new_key"]})
+        return ApiSuccessResponse(data={"row_id": eid, "key": body["new_key"]})
 
     @action.post(action_name="store-ids")
+    @_on_rows(write=True)
     async def store_ids_action(self):
         """``{"stamped"}``: store each row's id where it still has only the legacy derived one."""
         try:
@@ -1791,6 +2026,7 @@ class Dataset(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
 
     @action.post(action_name="check-row")
+    @_on_rows(write=False)
     async def check_row_action(self):
         """``{"row"}`` → ``{"ok", "errors", "details"}``: would this row fit? Nothing is written."""
         body = await self._row_body("row")
@@ -1801,21 +2037,22 @@ class Dataset(Entity):
         except ValueError as exc:   # the dataset itself cannot take typed rows
             return ApiFailResponse(message=str(exc), status_code=400)
 
-    @action.get(action_name="example")
-    async def example_action(self):
-        """``GET example/<example_id>`` → the example with its slots' values."""
+    @action.get(action_name="row")
+    @_on_rows(write=False)
+    async def row_action(self):
+        """``GET row/<row_id>`` → the row with its slots' values."""
         request_info = get_current_request_info()
-        example_id = ((request_info.sub_path or "") if request_info else "").strip("/")
-        if not example_id:
-            return ApiFailResponse(message="example id required: example/<example_id>", status_code=400)
+        row_id = ((request_info.sub_path or "") if request_info else "").strip("/")
+        if not row_id:
+            return ApiFailResponse(message="row id required: row/<row_id>", status_code=400)
         try:
-            found = self.example(example_id)
+            found = self.row(row_id)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         except ValidationError as exc:
             return _misfit(exc, None, self, "the row does not match the dataset's shape")   # 400, as every misfit
         if found is None:
-            return ApiFailResponse(message=f"no example {example_id}", status_code=404)
+            return ApiFailResponse(message=f"no row {row_id}", status_code=404)
         return ApiSuccessResponse(data=found)
 
     @action.get(action_name="evals")
@@ -1838,25 +2075,25 @@ class Dataset(Entity):
 
     @action.get(action_name="eval")
     async def eval_action(self):
-        """``GET eval/<run_id>`` → ``{run, examples, count_metrics, explain}``: the ``EvalRun`` and every
-        ``ExampleEval``, each joined to its example's ``input`` / ``context`` / ``data`` / ``kind`` -- so
+        """``GET eval/<run_id>`` → ``{run, rows, count_metrics, explain}``: the ``EvalRun`` and every
+        ``RowEval``, each joined to its row's ``input`` / ``context`` / ``data`` / ``kind`` -- so
         a browser drills down to what was typed, where, and what was offered, without a second request.
-        A trace (how an answer was reached, ~7 KB each) is left out of the listing: only the example a
-        person opens needs one -- ``GET eval/<run_id>/<example_id>`` → ``{trace}``."""
+        A trace (how an answer was reached, ~7 KB each) is left out of the listing: only the row a
+        person opens needs one -- ``GET eval/<run_id>/<row_id>`` → ``{trace}``."""
         from flow_sdk.evals import store  # noqa: PLC0415
 
         request_info = get_current_request_info()
-        run_id, _, example_id = ((request_info.sub_path or "") if request_info else "").strip("/").partition("/")
+        run_id, _, row_id = ((request_info.sub_path or "") if request_info else "").strip("/").partition("/")
         if not run_id:
             return ApiFailResponse(message="run id required: eval/<run_id>", status_code=400)
         try:
-            run, examples = await asyncio.to_thread(store.load, self._folder(), run_id)
+            run, rows = await asyncio.to_thread(store.load, self._folder(), run_id)
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
-        if example_id:
-            found = next((ex for ex in examples if ex.example_id == example_id), None)
+        if row_id:
+            found = next((ex for ex in rows if ex.row_id == row_id), None)
             if found is None:
-                return ApiFailResponse(message=f"no example {example_id} in run {run_id}", status_code=404)
+                return ApiFailResponse(message=f"no row {row_id} in run {run_id}", status_code=404)
             return ApiSuccessResponse(data={"trace": found.trace.model_dump(mode="json") if found.trace else None})
 
         def read_rows() -> dict:
@@ -1865,12 +2102,12 @@ class Dataset(Entity):
             except (ValueError, ValidationError):
                 return {}
 
-        rows, explain = await asyncio.gather(
+        by_id, explain = await asyncio.gather(
             asyncio.to_thread(read_rows), asyncio.to_thread(store.explanations, self._folder(), self.declared_kind)
         )
         joined = []
-        for ex in examples:
-            row = rows.get(ex.example_id)
+        for ex in rows:
+            row = by_id.get(ex.row_id)
             dumped = row.model_dump(mode="json", include={"input", "context", "data", "kind"}) if row else {}
             # A logged row keeps its own run's trace in its data -- not this eval's; it stays home too.
             if isinstance(dumped.get("data"), dict):
@@ -1879,7 +2116,7 @@ class Dataset(Entity):
         return ApiSuccessResponse(
             data={
                 "run": run.model_dump(mode="json"),
-                "examples": joined,
+                "rows": joined,
                 "count_metrics": run.count_metrics(),
                 "explain": explain.get(run.eval_name, {}),
             }
@@ -1903,6 +2140,7 @@ class Dataset(Entity):
         return ApiSuccessResponse(data=record.model_dump(mode="json", exclude={"slices"}))
 
     @action.post(action_name="validate")
+    @_on_rows(write=False)
     async def validate_action(self):
         """Every row checked against the declared shape → ``{"checked", "problems": [...]}``."""
         try:
@@ -1910,11 +2148,12 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"checked": fresh.num_examples, "problems": problems})
+        return ApiSuccessResponse(data={"checked": fresh.num_rows, "problems": problems})
 
     @action.post(action_name="promote")
+    @_on_rows(write=True)
     async def promote_action(self):
-        """``{"source_item_ids": [...]}`` → ``{"example_ids": [...], "num_examples"}``."""
+        """``{"source_item_ids": [...]}`` → ``{"ids": [...], "num_rows"}``."""
         body = await read_json_body(get_current_request_info())
         if isinstance(body, ApiFailResponse):
             return body
@@ -1922,28 +2161,29 @@ class Dataset(Entity):
         if not isinstance(ids, list) or not ids:
             return ApiFailResponse(message="source_item_ids: a non-empty list is required", status_code=400)
         try:
-            example_ids = await self.promote(ids)
+            row_ids = await self.promote(ids)
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except (ValueError, NotImplementedError) as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_ids": example_ids, "num_examples": fresh.num_examples})
+        return ApiSuccessResponse(data={"ids": row_ids, "num_rows": fresh.num_rows})
 
     @action.post(action_name="annotate")
+    @_on_rows(write=True)
     async def annotate_action(self):
-        """``{"example_id", "ground_truth"}`` → ``{"example_id", "num_annotated"}``;
+        """``{"row_id", "ground_truth"}`` → ``{"row_id", "num_annotated"}``;
         a shape mismatch is a 400 carrying the output JSON schema."""
         from pydantic import TypeAdapter  # noqa: PLC0415
 
         body = await read_json_body(get_current_request_info())
         if isinstance(body, ApiFailResponse):
             return body
-        example_id = str(body.get("example_id") or "")
-        if not example_id or "ground_truth" not in body:
-            return ApiFailResponse(message="example_id and ground_truth are required", status_code=400)
+        row_id = str(body.get("row_id") or "")
+        if not row_id or "ground_truth" not in body:
+            return ApiFailResponse(message="row_id and ground_truth are required", status_code=400)
         try:
-            await self.annotate(example_id, body["ground_truth"], by=current_user_id())
+            await self.annotate(row_id, body["ground_truth"], by=current_user_id())
         except ValidationError as exc:
             return ApiFailResponse(
                 message="ground_truth does not match the dataset's output shape", status_code=400,
@@ -1954,4 +2194,4 @@ class Dataset(Entity):
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_id": example_id, "num_annotated": fresh.num_annotated})
+        return ApiSuccessResponse(data={"row_id": row_id, "num_annotated": fresh.num_annotated})

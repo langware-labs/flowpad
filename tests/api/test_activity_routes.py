@@ -91,7 +91,9 @@ async def test_a_bad_body_is_a_validation_error(client, raw):
 
 
 async def test_block_or_resume_on_an_ended_activity_is_refused(client):
-    # A child: its root stays tracked after it ends, so the address still names the ended node.
+    # A child of a root that reports itself: the root stays tracked after the child ends, so the
+    # address still names the ended node (a root only a child created would end with it).
+    await post(client, "index", "total", value=1)
     await post(client, "index/pdf", "inc_success")
     await post(client, "index/pdf", "done")
     for verb in ("block", "resume"):

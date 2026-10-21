@@ -70,7 +70,8 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
 }
 
 /** A dependency, source or web app goes by its own name (its title is where it comes from); a credential by its title. */
-const namesItself = (req: ProjectSetupRequirement) => req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
+const namesItself = (req: ProjectSetupRequirement) =>
+  req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
@@ -124,7 +125,14 @@ function JustificationInfo({ req }: { req: ProjectSetupRequirement }) {
 export function ProjectSetupDialogRoot() {
   const { open, payload, setOpen } = useProjectSetupStore();
   if (!payload) return null;
-  return <ProjectSetupDialog projectId={payload.projectId} projectName={payload.projectName} open={open} onOpenChange={setOpen} />;
+  return (
+    <ProjectSetupDialog
+      projectId={payload.projectId}
+      projectName={payload.projectName}
+      open={open}
+      onOpenChange={setOpen}
+    />
+  );
 }
 
 export function ProjectSetupDialog({
@@ -141,7 +149,6 @@ export function ProjectSetupDialog({
   const { t } = useLingui();
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
   const [busy, setBusy] = useState(NONE);
-  const [choosing, setChoosing] = useState<string | null>(null);
   const [selected, setSelected] = useState(NONE);
   const { navigation } = useDockNavigation();
   const assistant = useOptionalFloatingChat();
@@ -187,7 +194,6 @@ export function ProjectSetupDialog({
     for (const req of reqs) {
       try {
         settle(await Project.skipSetup(projectId, req.typeid, scope, { name: req.name }));
-        setChoosing(null);
       } catch (e) {
         notify.error({ title: errorMessage(e, t`Could not skip ${req.name}`) });
       }
@@ -201,7 +207,6 @@ export function ProjectSetupDialog({
     if (on) next.add(rowKey(req));
     else next.delete(rowKey(req));
     setSelected(next);
-    setChoosing(null);
   };
 
   const unskip = async (req: ProjectSetupRequirement) => {
@@ -258,11 +263,9 @@ export function ProjectSetupDialog({
       skipped={skipped}
       running={running}
       busy={busy.has(rowKey(req))}
-      choosing={choosing === rowKey(req)}
       selected={selected.has(rowKey(req))}
       onSelect={skipped ? undefined : (on) => select(req, on)}
-      onChoose={selecting ? undefined : (on) => setChoosing(on ? rowKey(req) : null)}
-      onSkip={(scope) => void skip([req], scope)}
+      onSkip={selecting ? undefined : () => setSelected(new Set([rowKey(req)]))}
       onUndo={() => void unskip(req)}
       onOpen={() => openRow(req)}
       onExplain={assistant ? (button) => explain(req, button) : undefined}
@@ -274,13 +277,10 @@ export function ProjectSetupDialog({
       <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto" data-testid="project-setup-dialog">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Set up {projectName}</Trans>
+            <Trans>Project requirements</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>
-              What this project needs before it can run here. Close it any time — starting again picks up where it
-              stopped.
-            </Trans>
+            <Trans>Needed to run {projectName} on this computer.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -366,7 +366,8 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {setup.tree && (
+        {/* The steps are for watching a run; while a question is open the question is the screen. */}
+        {setup.tree && !questionId && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
           </div>
@@ -468,8 +469,8 @@ const own = (handler: () => void) => (event: MouseEvent) => {
 };
 
 /**
- * The skip choice — Locally (a mark on its record, here) | Always (removed from the project, staged in git) |
- * Cancel — of one row, or of every selected row. ``whyNotAlways`` set means Always is not offered, and why.
+ * The selection bar's skip choice — Locally (a mark on its record, here) | Always (removed from the project, staged in git) |
+ * Cancel — of every selected row. ``whyNotAlways`` set means Always is not offered, and why.
  */
 function SkipChoice({
   id,
@@ -530,18 +531,16 @@ function SkipChoice({
 
 /**
  * One requirement: the whole row opens its page (role=link, Enter too); its checkbox selects it for the
- * selection bar, and while any row is selected no row offers its own Skip (no ``onChoose``). Skip opens the
- * inline choice; a skipped row says what will not work and offers Undo.
+ * selection bar, and while any row is selected no row offers its own Skip (no ``onSkip``). Skip selects just this
+ * row, so it gets the same Locally | Always | Cancel bar as a multi-row selection; a skipped row says what will not work and offers Undo.
  */
 function RequirementRow({
   req,
   skipped = false,
   running,
   busy,
-  choosing = false,
   selected = false,
   onSelect,
-  onChoose,
   onSkip,
   onUndo,
   onOpen,
@@ -551,11 +550,9 @@ function RequirementRow({
   skipped?: boolean;
   running: boolean;
   busy: boolean;
-  choosing?: boolean;
   selected?: boolean;
   onSelect?: (on: boolean) => void;
-  onChoose?: (on: boolean) => void;
-  onSkip?: (scope: ProjectSetupSkipScope) => void;
+  onSkip?: () => void;
   onUndo?: () => void;
   onOpen: () => void;
   onExplain?: (button: HTMLElement) => void;
@@ -563,6 +560,9 @@ function RequirementRow({
   const { t } = useLingui();
   const Icon = iconOf(req);
   const name = namesItself(req) ? req.name : req.title || req.name;
+  const usedBy = req.used_by.join(', ');
+  // Unique per row: a credential and the data source using it can share a name.
+  const rowId = req.kind === 'pack' ? req.name : `${req.kind}-${req.name}`;
   const keyOpen = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && event.target === event.currentTarget) onOpen();
   };
@@ -576,7 +576,7 @@ function RequirementRow({
         'flex cursor-pointer flex-col gap-1 rounded border px-3 py-2 text-sm hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary',
         skipped && 'opacity-70',
       )}
-      data-testid={`project-setup-req-${req.name}`}
+      data-testid={`project-setup-req-${rowId}`}
       data-typeid={req.typeid}
     >
       <div className="flex items-center gap-2">
@@ -585,7 +585,7 @@ function RequirementRow({
             checked={selected}
             disabled={busy}
             aria-label={t`Select ${name}`}
-            data-testid={`project-setup-select-${req.name}`}
+            data-testid={`project-setup-select-${rowId}`}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
             onCheckedChange={(on) => onSelect(on === true)}
@@ -593,23 +593,26 @@ function RequirementRow({
         )}
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <span className="font-medium">{name}</span>
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          <span className="truncate text-xs text-muted-foreground" title={[req.title, req.note].filter(Boolean).join(' — ')}>
-            {skipped
-              ? req.required
-                ? t`required — it will not work here until it is set up`
-                : t`optional — skipped here`
-              : detailOf(req, t` or `)}
+        {skipped ? (
+          <span className="text-xs text-muted-foreground" data-testid={`project-setup-skipped-note-${rowId}`}>
+            {req.required ? t`Required — skipped on this machine` : t`Optional — skipped on this machine`}
           </span>
-          {!skipped && <JustificationInfo req={req} />}
-        </div>
+        ) : (
+          <span
+            className="rounded-full border px-2 text-xs text-muted-foreground"
+            data-testid={`project-setup-chip-${rowId}`}
+          >
+            {req.required ? t`Required` : t`Optional`}
+          </span>
+        )}
+        <div className="flex-1" />
         {busy && <Loader2 className="size-3 animate-spin" />}
-        {!busy && !choosing && onExplain && (
+        {!busy && onExplain && (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs"
-            data-testid={`project-setup-explain-${req.name}`}
+            data-testid={`project-setup-explain-${rowId}`}
             onClick={(event) => {
               event.stopPropagation();
               onExplain(event.currentTarget);
@@ -623,38 +626,37 @@ function RequirementRow({
             variant="ghost"
             size="sm"
             className="h-6 gap-1 px-2 text-xs"
-            data-testid={`project-setup-undo-${req.name}`}
+            data-testid={`project-setup-undo-${rowId}`}
             onClick={own(() => onUndo?.())}
           >
             <Undo2 className="size-3" />
             <Trans>Undo</Trans>
           </Button>
         )}
-        {!busy && !skipped && !choosing && onChoose && (
+        {!busy && !skipped && onSkip && (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs"
-            data-testid={`project-setup-skip-${req.name}`}
-            onClick={own(() => onChoose(true))}
+            data-testid={`project-setup-skip-${rowId}`}
+            onClick={own(onSkip)}
           >
             <Trans>Skip</Trans>
           </Button>
         )}
       </div>
-      {choosing && !busy && (
-        <div className="flex items-center gap-2 ps-6 text-xs" data-testid={`project-setup-skip-choice-${req.name}`}>
-          <SkipChoice
-            id={req.name}
-            whyNotAlways={req.can_skip_always ? '' : req.why_not_always || t`It cannot be removed from the project`}
-            onSkip={(scope) => onSkip?.(scope)}
-            onCancel={() => onChoose?.(false)}
-          />
-          {!req.can_skip_always && req.why_not_always && (
-            <span className="truncate text-muted-foreground" data-testid={`project-setup-why-not-always-${req.name}`}>
-              {req.why_not_always}
-            </span>
-          )}
+      {/* The WHY, whole: one line a person reads to decide — never truncated. A skipped row says only that. */}
+      {!skipped && (
+        <div className="flex items-start gap-1 ps-6 text-xs text-muted-foreground">
+          <span data-testid={`project-setup-detail-${rowId}`} title={req.note || undefined}>
+            {detailOf(req, t` or `)}
+          </span>
+          <JustificationInfo req={req} />
+        </div>
+      )}
+      {!skipped && !!usedBy && (
+        <div className="ps-6 text-xs text-muted-foreground" data-testid={`project-setup-used-by-${rowId}`}>
+          <Trans>Used by: {usedBy}</Trans>
         </div>
       )}
     </li>

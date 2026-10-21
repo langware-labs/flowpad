@@ -25,6 +25,7 @@ address is only an address.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
@@ -79,6 +80,17 @@ async def execute_wizard(
     its ``wizard_id`` then names the kind of run, not a Wizard row. `cwd` is where the steps
     run (a project folder); the run's own record stays in its run directory either way.
     """
+    if resolve_op is None and (spec.output_from is not None or any(
+        step.input_from is not None or "input_value" in step.model_fields_set for step in spec.steps
+    )):
+        from flow_sdk.builtin.wizard import Wizard
+
+        owner = await Wizard.get_by_id(wizard_id)
+        project = owner.project_id if owner is not None else None
+
+        async def resolve_op(ref):
+            return await _resolve_op(ref, project=project, typed=True)
+
     key = run_key(wizard_id, target)
     workdir: "Path" = run_dir(key)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -215,7 +227,7 @@ def _slug(asset_ref: str) -> str:
     return Path(asset_ref).name if asset_ref else ""
 
 
-async def _resolve_op(name: str):
+async def _resolve_op(name: str, *, project=None, typed=False):
     """A ComputeOp by name, with ITS own trust — never the caller's.
 
     A shipped wizard that reaches an op living in a cloned project must not lend
@@ -224,11 +236,11 @@ async def _resolve_op(name: str):
     from flow_sdk.builtin.compute_op import ComputeOp  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
 
-    row = await ComputeOp.by_name(name)
+    row = await ComputeOp.resolve(name, project=project) if typed else await ComputeOp.by_name(name)
     if row is None:
         return None
     spec = row.spec()
-    return None if spec is None else Resolved(spec, row.is_system())
+    return None if spec is None else Resolved(spec, row.is_system(), Path(row.asset_ref) if row.asset_ref else None, row.project_id)
 
 
 async def _resolve_wizard(name: str):

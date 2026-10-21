@@ -1,5 +1,6 @@
 import type { ComputeNode } from '@sdk';
 import { AutoLoginField } from '@src/pages/hub-home/AutoLoginField';
+import { LoginAccessField } from '@src/pages/hub-home/LoginAccessField';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -10,7 +11,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { StepList } from '@src/components/ui/step-list';
-import type { Step } from '@src/hooks/use-sandboxes';
+import { DEFAULT_LOGIN_ACCESS, type LoginAccess, type Step } from '@src/hooks/use-sandboxes';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -21,7 +22,7 @@ interface LaunchSandboxDialogProps {
   /** The written-down box about to be booted for the first time. */
   sandbox: ComputeNode | null;
   /** Boot it and set up whatever it was created with. Resolves when ready. */
-  onLaunch: (node: ComputeNode, opts: { autoLogin: boolean }) => Promise<ComputeNode | null>;
+  onLaunch: (node: ComputeNode, opts: { autoLogin: boolean; loginAccess: LoginAccess }) => Promise<ComputeNode | null>;
   /** Open a launched box, from this dialog's own click. */
   onOpen: (node: ComputeNode) => void;
   /** Live progress rows for the launch in flight. */
@@ -54,6 +55,7 @@ export function LaunchSandboxDialog({
   const { t } = useLingui();
   const [phase, setPhase] = useState<'idle' | 'launching' | 'launched'>('idle');
   const [autoLogin, setAutoLogin] = useState(true);
+  const [loginAccess, setLoginAccess] = useState<LoginAccess>(DEFAULT_LOGIN_ACCESS);
   const [launched, setLaunched] = useState<ComputeNode | null>(null);
   const [error, setError] = useState('');
 
@@ -63,6 +65,7 @@ export function LaunchSandboxDialog({
     if (!open) return;
     setPhase('idle');
     setAutoLogin(true);
+    setLoginAccess(DEFAULT_LOGIN_ACCESS);
     setLaunched(null);
     setError('');
   }, [open]);
@@ -72,7 +75,7 @@ export function LaunchSandboxDialog({
     setPhase('launching');
     setError('');
     try {
-      const node = await onLaunch(sandbox, { autoLogin });
+      const node = await onLaunch(sandbox, { autoLogin, loginAccess });
       if (!node) {
         // The hook refused because a launch was already in flight. Nothing
         // booted, so this is not an error — just offer the button again.
@@ -85,7 +88,7 @@ export function LaunchSandboxDialog({
       setError(e instanceof Error ? e.message : String(e));
       setPhase('idle');
     }
-  }, [sandbox, phase, autoLogin, onLaunch]);
+  }, [sandbox, phase, autoLogin, loginAccess, onLaunch]);
 
   const handleOpen = useCallback(() => {
     if (!launched) return;
@@ -106,7 +109,10 @@ export function LaunchSandboxDialog({
         </DialogHeader>
 
         {phase === 'idle' && (
-          <AutoLoginField checked={autoLogin} onChange={setAutoLogin} testId="launch-auto-login" />
+          <>
+            <AutoLoginField checked={autoLogin} onChange={setAutoLogin} testId="launch-auto-login" />
+            <LoginAccessField value={loginAccess} onChange={setLoginAccess} testId="launch-allow-login" />
+          </>
         )}
 
         {error && <p className="text-xs text-destructive">{error}</p>}

@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.external_apis.decision import DecisionError
+from flow_sdk.fs_store.indexer.roots import system_project_id
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 
@@ -128,6 +129,8 @@ async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
     """With SmartNavigationLog on, the real action answers a dock and the decision lands as a row of
     the instance's SmartNavigationLog dataset in Flowpad's temp folder -- indexed, so the UI lists it, and found again (one
     dataset) on the next decision."""
+    from pathlib import Path
+
     from flow_sdk import config
     from flow_sdk.core import navigation_log
     from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
@@ -148,8 +151,14 @@ async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
             assert body["data"]["dock"]["viewType"] in ("data-sources", "preferences")
         await navigation_log.drain()
         listed = (await bootstrapped_client.get('/api/v1/graph/dataset?filter={"name":"SmartNavigationLog"}')).json()
-        [row] = listed["data"]
-        assert (row["title"], row["num_examples"]) == ("SmartNavigationLog", 2)
+        # This instance's log, by where it lives: an earlier test's log (its own temp) is indexed too.
+        here = navigation_log.folder().resolve()
+        [row] = [r for r in listed["data"] if Path(r["asset_ref"]).resolve() == here]
+        assert (row["title"], row["num_rows"]) == ("SmartNavigationLog", 2)
+        # Flowpad's own log, not the user's work: system scope under the system project, so it is not
+        # listed in every user project.
+        assert row["scope"] == "system"
+        assert row.get("project_id") == await system_project_id()
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 
@@ -247,7 +256,7 @@ async def test_logging_a_decision_never_rereads_the_log(bootstrapped_client, mon
     from flow_sdk import config
     from flow_sdk.builtin.dataset import Dataset
     from flow_sdk.core import navigation_log
-    from flow_sdk.core.navigation_decision import decide_run
+    from flow_sdk.core.navigation_decision import call
     from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
     from flow_sdk.schema.data_spec.layout import FolderLayout
 
@@ -260,16 +269,17 @@ async def test_logging_a_decision_never_rereads_the_log(bootstrapped_client, mon
     write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
     try:
         request = {"utterance": "open data sources", "here": {"view": "home"}}
-        outcome, answer = await decide_run(request)
         for _ in range(3):
-            assert await navigation_log.log(request, outcome, answer)
+            await call(request)
+            await navigation_log.drain()
         reads = []
         real = FolderLayout.read
         monkeypatch.setattr(FolderLayout, "read", lambda self, *a, **k: reads.append(1) or real(self, *a, **k))
-        assert await navigation_log.log(request, outcome, answer)
+        await call(request)
+        await navigation_log.drain()
         assert reads == [], "appending one row read the whole log"
         here = navigation_log.folder().resolve()
         [row] = [r for r in await Dataset.get_all({"name": navigation_log.TITLE}) if Path(r.asset_ref).resolve() == here]
-        assert row.num_examples == 4
+        assert row.num_rows == 4
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

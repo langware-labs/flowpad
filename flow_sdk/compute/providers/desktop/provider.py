@@ -60,6 +60,11 @@ _INHERITED_NO_COLOR_ENV_VARS = (
     "CODEX_CI",
 )
 
+# The terminal the SERVER was launched from. A Flowpad PTY is its own xterm, not
+# that app: inherited, ``TERM_PROGRAM=Apple_Terminal`` makes zsh load Apple's
+# session save, whose exit chatter ("Saving session...") then lands in output.
+_INHERITED_HOST_TERMINAL_ENV_VARS = ("TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID")
+
 _FALSEY_COLOR_ENV_VARS = (
     "CLICOLOR",
     "CLICOLOR_FORCE",
@@ -98,7 +103,7 @@ def _build_interactive_pty_env(
 
     env = without_inherited_claude_session(os.environ)
 
-    for key in _INHERITED_NO_COLOR_ENV_VARS:
+    for key in (*_INHERITED_NO_COLOR_ENV_VARS, *_INHERITED_HOST_TERMINAL_ENV_VARS):
         env.pop(key, None)
 
     for key in _FALSEY_COLOR_ENV_VARS:

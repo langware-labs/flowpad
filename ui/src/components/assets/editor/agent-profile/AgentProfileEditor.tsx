@@ -17,6 +17,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
+import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
@@ -80,6 +81,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
+  const introTranslations = profile.intro_translations ?? {};
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
@@ -185,7 +187,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     },
     [save],
   );
-
 
   const AgentIcon = iconForType(Agent.type);
   const avatarImageUrl =
@@ -377,8 +378,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   />
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">
+                  <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
                     <Trans>Intro — shown as the agent's first message, not sent to the model</Trans>
+                    <AddIntroTranslationButton
+                      translations={introTranslations}
+                      onAdd={(code) => content.setField('intro_translations', { ...introTranslations, [code]: '' })}
+                    />
                   </div>
                   <Textarea
                     value={intro}
@@ -389,6 +394,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     data-testid="agent-intro-field"
                     className="min-h-16 resize-none text-sm"
                     rows={2}
+                  />
+                  <IntroTranslationFields
+                    translations={introTranslations}
+                    onChange={(next) => content.setField('intro_translations', next)}
+                    onCommit={(next) => commit('intro_translations', next)}
                   />
                 </div>
                 <AgentPhoneField
@@ -427,11 +437,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     <Trans>
-                      Once per project, the first time it is opened. Enabling this turns off auto-launch for the other agents in this project.
+                      Once per project, the first time it is opened. Enabling this turns off auto-launch for the other
+                      agents in this project.
                     </Trans>
                   </p>
                   {autoLaunched !== null ? (
-                    <div className="mt-2 flex items-center justify-between gap-2" data-testid="agent-auto-launch-status">
+                    <div
+                      className="mt-2 flex items-center justify-between gap-2"
+                      data-testid="agent-auto-launch-status"
+                    >
                       <span className="text-xs text-muted-foreground">
                         {autoLaunched ? (
                           <Trans>Already launched in this project</Trans>
@@ -453,6 +467,24 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                       ) : null}
                     </div>
                   ) : null}
+                </div>
+                <div className="rounded-md border border-border px-3 py-2" data-testid="agent-vibe-only">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">
+                      <Trans>Vibe only</Trans>
+                    </span>
+                    <Switch
+                      checked={!!profile.vibe_only}
+                      onCheckedChange={(v) => void save({ vibe_only: v })}
+                      aria-label={t`Vibe only`}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    <Trans>
+                      Sessions with this agent stay in Vibe: no tabs, and no switch to Chat or Terminal. New sessions
+                      are reached from Recent.
+                    </Trans>
+                  </p>
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                   <span className="text-sm">
@@ -519,7 +551,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               {/* Sharing and the public grant land on the published hub row — nothing to toggle on the hub's own
                   read-only view. Outside the definition's fieldsets: an unreadable agent document must not
                   disable controls that never touch it. */}
-              {!hub && moreOpened && <AgentVisibilitySection agent={agent} version={version} />}
+              {!hub && moreOpened && (
+                <AgentVisibilitySection agent={agent} version={version} onPublished={loadVersion} />
+              )}
             </div>
           </details>
         </section>

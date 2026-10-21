@@ -1,6 +1,7 @@
 import { launchSurfaceField } from '../process/launch-surface';
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
+import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -65,6 +66,15 @@ export interface AgentTokenAllocation {
   source: string;
   cost_usd_per_day?: number | null;
   model: string;
+}
+
+/** How signed-out visitors run an agent: the hub's `VisitorDeployment` -- whether the owner allows it, and
+ *  optionally the LLM endpoint each visitor's budget is drawn from and what each visitor may spend of it.
+ *  With no `llm_source` the visitor brings their own token source. */
+export interface AgentVisitorDeployment {
+  allow_visitor_deployment: boolean;
+  llm_source?: string | null;
+  cap_usd?: number | null;
 }
 
 export interface AgentReadinessItem {
@@ -159,6 +169,8 @@ export class Agent extends APIEntity<Agent> {
   /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
    *  Presentation only — never part of the transcript, never sent to the model. */
   intro?: string;
+  /** `intro` in other languages, keyed by locale code (`he`, `ar`, `en-US`). */
+  intro_translations: Record<string, string>;
   /** Launch once, the first time the project this agent lives in is opened.
    *  Oldest wins when several agents in a project set it; the rest are
    *  cancelled with a warning. See `Agent.auto_launch_for` (backend). */
@@ -167,6 +179,8 @@ export class Agent extends APIEntity<Agent> {
    *  with `use(…, true)` — auto-launch included — delivered via
    *  the prompt queue. Independent of `auto_launch`. */
   auto_launch_prompt?: string;
+  /** Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal. */
+  vibe_only: boolean;
   /** What every new session as this agent opens with: a place (`Tab.pointer` JSON, a
    *  file named inside the agent's project), a `navigate` compute op in the agent's
    *  project that repairs it when it cannot be used yet (`{op}`), or a wizard
@@ -211,8 +225,10 @@ export class Agent extends APIEntity<Agent> {
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
+    this.intro_translations = entity.intro_translations || {};
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
+    this.vibe_only = entity.vibe_only ?? false;
     this.auto_open = entity.auto_open ?? null;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
@@ -316,6 +332,15 @@ export class Agent extends APIEntity<Agent> {
     return (await this.post('run', { prompt })) as PromptResult;
   }
 
+  /** Launch admission: OK means accepted; executor names the process to observe.
+   * Unlike the legacy run method, a held slot is returned as a FlowCall answer.
+   */
+  async launch(prompt: string): Promise<PromptResult> {
+    const action = new ActionInfo('run', Agent.type, this.id, 'POST');
+    action.bodyParameters = { prompt };
+    return dataManager.callFlowAction<PromptResult>(action);
+  }
+
   /**
    * Add a scheduled run: a child trigger asset under this agent's folder that
    * runs the agent headlessly with `prompt`. Indexed and armed before it
@@ -357,6 +382,14 @@ export class Agent extends APIEntity<Agent> {
       ...autoPromptBody(autoPrompt),
       ...launchSurfaceField(),
     })) as AgentUseResult;
+  }
+
+  /**
+   * Opening the agent again lands on its last chat: re-apply `auto_open` there
+   * (`POST /agent/<id>/resume`) — only what is not open yet; the display is not moved.
+   */
+  async resume(processId: string): Promise<void> {
+    await this.post('resume', { process_id: processId });
   }
 
   /**
@@ -429,6 +462,20 @@ export class Agent extends APIEntity<Agent> {
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
     };
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
+  }
+
+  /**
+   * Allow (or stop) signed-out visitors running this agent, each in a sandbox of their own -- funded, when
+   * `setup.llm_source` is given, by a public child of it capped at `setup.cap_usd`:
+   * `POST agent/<id>/setup_visitor_deployment`. Hub-owned and owner-only, so it is reflected to the hub;
+   * allowing is refused (409) for an agent visitors could not run, (403) for a source the caller may not
+   * allocate from. Visitors reach it only through the agent's `visitor` audience (`PUBLIC_VIEWER_ROLE`).
+   */
+  async setupVisitorDeployment(setup: AgentVisitorDeployment): Promise<AgentVisitorDeployment> {
+    const info = new ActionInfo('setup_visitor_deployment', this.getType(), this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { ...setup };
+    return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */
@@ -699,5 +746,3 @@ export interface AgentVersionState {
   has_repo: boolean;
   pending_changes: number;
 }
-
-

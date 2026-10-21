@@ -101,6 +101,34 @@ export interface ProjectDependencies {
   /** True while the background resolve that opening the project started is still
    *  running — `missing` may only mean "not fetched yet". */
   resolving: boolean;
+  /** Only with `{ declarers: true }`: every asset whose own flow.json declares
+   *  dependencies, with ALL its entries — `dependencies` above lists each once. */
+  declarers?: DependencyDeclarer[];
+}
+
+/** One entry of an asset's own flow.json, as written. */
+export interface DeclaredDependency {
+  key: string;
+  source: string;
+  /** The id an id entry names; null for a location. */
+  typeid: string | null;
+  name: string;
+  /** How the dependency it names stands here, if the walk reached it. */
+  state: DependencyState['state'] | null;
+}
+
+/** An asset whose own flow.json declares dependencies; `name` is its own folder name. */
+export interface DependencyDeclarer {
+  asset: string | null;
+  name: string;
+  type: string | null;
+  /** Its folder, relative to the project root when inside it. */
+  path: string | null;
+  /** The entry label that reached it, for one reached through another asset. */
+  label: string | null;
+  /** How the walk reached it: `[]` for one of the project's own assets. */
+  via_path: string[];
+  dependencies: DeclaredDependency[];
 }
 
 /** What `adoptHelpdeskFromGit` found after attaching the repo.
@@ -226,6 +254,22 @@ export interface ProjectReadiness {
   gaps: ProjectSetupRequirement[];
 }
 
+/** One process of a project's app (`GET project/<id>/app-ports`). */
+export interface ProjectAppPort {
+  app: string;
+  /** `page`, or a service's name. */
+  process: string;
+  declared: number | null;
+  required: boolean;
+  /** `running`, `stopped`, or `conflict` (its port is held by another program). */
+  state: string;
+  port: number | null;
+  pid: number | null;
+  note: string;
+  /** The log the process writes, when Flowpad started it and it is running. */
+  log?: string | null;
+}
+
 /** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
 export interface ProjectSetupRun {
   /** The run's address — what its questions name (`Question.run`). */
@@ -240,6 +284,8 @@ export interface NewCloudProjectLink {
   /** A project origin as JSON — what the set-up dialog clones. */
   git_origin: string;
   title?: string;
+  /** Who shared it — whoever invited this user to the project. */
+  sender_name?: string;
   /** Its name is already this project's here: the set-up asks — open that one, or
    *  install this one under another name ({@link Project.installFromHub}). */
   existing_project_id?: string;
@@ -834,12 +880,19 @@ export class Project extends APIEntity<Project> {
   /** Every dependency declared in this project's `flow.json`, as it stands on
    *  this machine, plus the warnings (required, not here, not dismissed). Never
    *  fetches: a dependency not on this machine yet reads `missing`. */
-  async dependencies(options: { asset?: string } = {}): Promise<ProjectDependencies> {
-    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies', options);
+  async dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
+    const { declarers, ...params } = options;
+    const response = await this.get<(Partial<ProjectDependencies> & Partial<ProjectContextPayload>) | null>(
+      'dependencies',
+      declarers ? { ...params, declarers: '1' } : params,
+    );
+    // The listing carries the project's resolved context: a background add lands here.
+    this.adoptContext(response);
     return {
       dependencies: response?.dependencies ?? [],
       warnings: response?.warnings ?? [],
       resolving: response?.resolving === true,
+      ...(declarers ? { declarers: response?.declarers ?? [] } : {}),
     };
   }
 
@@ -867,7 +920,8 @@ export class Project extends APIEntity<Project> {
    *  `hub:<project-id>` or `file:<path>` string — or a plain local folder (a
    *  folder inside a git checkout is written as its repo) or a bare git URL.
    *  `path` points at a sub-folder of the source; `optional` files it under
-   *  `optionalDependencies` (and installs it now); `label` / `description` are
+   *  `optionalDependencies` (and installs it now); `local` keeps it on this device
+   *  only — written to no file of the project; `label` / `description` are
    *  the entry's human-friendly name; `asset` (a TypeId) declares it in that
    *  asset's own `flow.json` (ids only). Rejects with the backend's message on a
    *  bad source. */
@@ -877,6 +931,7 @@ export class Project extends APIEntity<Project> {
       name?: string;
       path?: string;
       optional?: boolean;
+      local?: boolean;
       label?: string;
       description?: string;
       asset?: string;
@@ -889,9 +944,30 @@ export class Project extends APIEntity<Project> {
       );
       this.adoptContext(response);
       if (!response?.dependency) throw new Error('add-dependency returned no dependency');
-      for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
+      // The backend fetches, indexes and loads it in the background — announce it once that lands.
+      if (!options.asset) void this.announceWhenResolved(response.dependency.name);
+      else for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
       return response.dependency;
     });
+  }
+
+  /** Wait (without holding the caller) for the background add to finish, then tell
+   *  the dependency listeners and refresh the dependency list. */
+  private async announceWhenResolved(name: string): Promise<void> {
+    try {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const { dependencies, resolving } = await this.dependencies();
+        if (resolving) continue;
+        const dependency = dependencies.find((d) => d.name === name && !d.via);
+        if (dependency) for (const listener of dependencyLoadListeners) listener(dependency, this.id);
+        return;
+      }
+    } catch (err) {
+      console.warn('[project] dependency announce failed', err);
+    } finally {
+      notifyDependenciesChanged(this.id);
+    }
   }
 
   /** Run a dependency verb, then tell every listener for this project
@@ -1047,6 +1123,25 @@ export class Project extends APIEntity<Project> {
     return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
   }
 
+  /** Every process of every app of the project here (`GET project/<id>/app-ports`): its declared port, its live
+   *  port and its state. */
+  static async appPorts(projectId: string): Promise<ProjectAppPort[]> {
+    const actionInfo = new ActionInfo('app-ports', Project.type, projectId, 'GET');
+    const data = await dataManager.callAction<void, { ports: ProjectAppPort[] }>(actionInfo);
+    return data?.ports ?? [];
+  }
+
+  /** Stop an app of the project on this machine, whoever started it (`POST project/<id>/app-stop`); `restart`
+   *  starts it again on its port. Answers whether it worked, and why not. */
+  static async stopApp(projectId: string, app: string, restart = false): Promise<{ ok: boolean; detail: string }> {
+    const actionInfo = new ActionInfo('app-stop', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { app, restart };
+    const data = await dataManager.callAction<{ app: string; restart: boolean }, { apps: { ok: boolean; detail: string }[] }>(
+      actionInfo,
+    );
+    return data?.apps?.[0] ?? { ok: false, detail: `no app named ${app}` };
+  }
+
   /** The setup run's state (`GET project/<id>/setup-run`). */
   static async setupRun(projectId: string, root = ''): Promise<ProjectSetupRun | null> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
@@ -1108,6 +1203,14 @@ export class Project extends APIEntity<Project> {
     const result = (await dataManager.callAction<void, ProjectLoadResult>(actionInfo)) ?? null;
     notifyProjectLoad(result);
     return result;
+  }
+
+  /** Phase one of an open: the app's last READY verdict, only while it still answers where it runs —
+   *  else null (load it). Never starts anything. */
+  static async validateLoad(projectId: string, asset: string, display = ''): Promise<ProjectLoadResult | null> {
+    const actionInfo = new ActionInfo('load-state', Project.type, projectId, 'GET');
+    actionInfo.queryParameters = { asset, validate: 'true', ...(display ? { display } : {}) };
+    return (await dataManager.callAction<void, ProjectLoadResult>(actionInfo)) ?? null;
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),

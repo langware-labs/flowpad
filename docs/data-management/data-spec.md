@@ -26,7 +26,7 @@ class DataSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 ```
 
-Every schema inherits from it — `ExampleSpec`, `DatasetSpec`, the three leaves, a
+Every schema inherits from it — `RowSpec`, `DatasetSpec`, the three leaves, a
 user's `class EmailInput(DataSpec)`, and every schema parsed from YAML. A value is
 immutable (`frozen`); build a changed one with `model_copy(update=...)`. Asset
 document schemas (`AssetDocumentSpec`, `FrontMatter`) relax `extra` to `"ignore"`
@@ -45,7 +45,7 @@ Subclassing **registers** the schema under its kind in the one `SchemaRegistry`
 (`__pydantic_init_subclass__` — the hook that sees `model_fields`). Two rules,
 both enforced: `spec_kind` must stay a `ClassVar` (annotating it makes it a
 field, and the guard — an `assert` in the hook — trips at class creation); and a
-Pydantic **parametrization** (`ExampleSpec[A, B]`) inherits its origin's kind and
+Pydantic **parametrization** (`RowSpec[A, B]`) inherits its origin's kind and
 deliberately does not register — only a *named* subclass does. So does a plain
 subclass that declares no kind of its own: `spec_kind` must be in the class's own
 `__dict__`, because an inherited one is not a new kind. Without that rule
@@ -80,7 +80,7 @@ three are input-side marks:
 | `"crm.company\|crm.lead"` — a link to several kinds | a `value_ref` of any | a reference only |
 
 A dataset row is an instance: its reference is `<row kind>.id.<row id>`, the id stored in the row's
-`example.json` (`metadata.id`, a v4 minted on first write) so it survives a rename and a re-clone.
+`row.json` (`metadata.id`, a v4 minted on first write) so it survives a rename and a re-clone.
 `Dataset.check / append / put` refuse a reference to a row no dataset beside it holds, and
 `delete_row` refuses while another row still references the one being deleted
 (`flow_sdk/datasets/links.py`). A list of references is written inline in the document; a list of
@@ -118,8 +118,8 @@ what was written — that is what keeps `agent.json` and `dataset.json` readable
 ### `spec_kind` is the connector
 
 An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
-**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `binary`)
-→ its Python type; a registered kind → its class (`register_kind` /
+**one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool` `date`, and `binary`, which
+`io/native.py` adds) → its Python type; a registered kind → its class (`register_kind` /
 `kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
 opaque, never minted. A kind referenced before it is registered resolves to
 `Any` — compilation is eager, so there is no cycle to detect.
@@ -154,22 +154,22 @@ here once; it is gone, and the name now belongs to an unrelated enum in
 
 Self-referential kinds.
 
-## `ExampleSpec` / `DatasetSpec` — typed by generics
+## `RowSpec` / `DatasetSpec` — typed by generics
 
 `Spec` is the suffix for a **schema** — a class whose instances are values, not an
 entity, never a row of its own. The one entity is `Dataset`.
 
 ```python
-class ExampleSpec(DataSpec, Generic[I, O, C]):
-    id: str; kind: ExampleKind                    # `kind` is the ROW role — a field
+class RowSpec(DataSpec, Generic[I, O, C]):
+    id: str; kind: RowKind                    # `kind` is the ROW role — a field
     input: I
     output: O | list[O] | None                    # numbered occurrences on disk → list[O]
     ground_truth: O | list[O] | None              # the gold answer — the SAME shape as output
     context: C | None
-    metadata: dict; data: dict                    # example.json sections ∪ sidecars by filename
+    metadata: dict; data: dict                    # row.json sections ∪ sidecars by filename
 
 class DatasetSpec(DataSpec, Generic[E]):
-    examples: list[E]
+    rows: list[E]
 ```
 
 `DatasetSpec[MyExample]` validates every row as `MyExample` — a dataset can be
@@ -181,7 +181,7 @@ Three built-in leaves say what a slot holds when it is a file, a folder, or a
 CSV cell — **the type IS the file/folder distinction**:
 
 ```python
-class FileRef(DataSpec):    spec_kind = "file_ref"; path: str            # example-relative POSIX; resolved by the layout
+class FileRef(DataSpec):    spec_kind = "file_ref"; path: str            # row-relative POSIX; resolved by the layout
 class FolderSpec(DataSpec): spec_kind = "folder";   path: str; files: dict[str, FileRef | FolderSpec]
 class TextSpec(DataSpec):   spec_kind = "text";     text: str
 ```
@@ -194,18 +194,18 @@ rendered authoring form has no map (the `{"*": …}` map is input only), so a
 default slot (`Artifact = FileRef | FolderSpec | TextSpec`).
 
 The keyword authoring form lives in `dataset.json` (see
-[datasets.md](datasets.md)) and compiles to `DatasetSpec[ExampleSpec[I, O, C]]`.
+[datasets.md](datasets.md)) and compiles to `DatasetSpec[RowSpec[I, O, C]]`.
 
 ## `DatasetLayout` — the one thing that knows the disk
 
-`ExampleSpec` is a value; it never learns whether it came from a CSV row or a
+`RowSpec` is a value; it never learns whether it came from a CSV row or a
 folder of files. A layout does: `read(folder, spec) -> list[E]` turns the disk
-into typed rows, `write(folder, examples)` turns rows back. `CsvLayout` and
+into typed rows, `write(folder, rows)` turns rows back. `CsvLayout` and
 `FolderLayout` are a 1:1 port of the old walker — the on-disk grammar is
-unchanged, and the 74 grammar tests are its spec. `FolderLayout.write_example`
-/ `write_example_meta` are the primitives the graph-workflow capture seam
-(`prepare_execution_io`, `_stamp_example`) calls, so an execution directory IS
-an example directory and the two writers cannot drift.
+unchanged, and the 74 grammar tests are its spec. `FolderLayout.write_row`
+/ `write_row_meta` are the primitives the graph-workflow capture seam
+(`prepare_execution_io`, `_stamp_row`) calls, so an execution directory IS
+a row directory and the two writers cannot drift.
 
 ## The schema IS the layout — `TypeInfo.asset_spec`
 
@@ -222,11 +222,11 @@ is an entity field with a compatible core (the entity may narrow: `str` → `Typ
 | `prompt: Body` | the markdown body — never in the header; `<field>.md` beside `<type>.json` in the entity layout |
 | `data: FreeSection` | the free `data` section of a two-section JSON manifest |
 | `FileRef` / `FolderSpec` | bytes — a file, a directory |
-| `list[ExampleSpec]` | rows, written by the `DatasetLayout` `TypeInfo.rows_layout_field` names |
+| `list[RowSpec]` | rows, written by the `DatasetLayout` `TypeInfo.rows_layout_field` names |
 | a field typed as another **asset type** | a sub-asset with its own identity — recognised by the REGISTRY (the nested class's type has an `asset_spec`), never by inheritance; a `list[…]` of a file-layout type is a directory of files |
 
 ```python
-class SubAgentSpec(FrontMatter):            # a DataSpec with extra="ignore" (hand-edited file)
+class SubAgentSpec(FrontMatter):            # a schema with extra="ignore" (hand-edited file)
     file_ext: ClassVar[str | None] = ".md"
     name: str | None = None
     tools: Any = None
@@ -271,7 +271,7 @@ header and a counter is written only once it moved.
 `manifest_layout="entity"` is the default home for a native folder asset's fields: ONE JSON
 document named after the type, shaped like the record shadow `metadata.json`, rendered and read
 in one place (`render_entity_json` / `read_entity_json`, `flow_sdk/assets/serialization.py`).
-Agent is the first type on it; task, spec, prompt and whiteboard are next.
+Agent is the first type on it; task, spec, prompt and chart are next.
 
 ```
 agentic-assets/agent/whatsapp-e2e/
@@ -360,10 +360,10 @@ type with no spec.
 
 | site | what |
 |---|---|
-| `Dataset.spec` / `Dataset.examples` | the dataset's shape (`DatasetSpec[…]`) and its rows (`list[ExampleSpec]`) |
+| `Dataset.spec` / `Dataset.rows` | the dataset's shape (`DatasetSpec[…]`) and its rows (`list[RowSpec]`) |
 | `Agent.input` / `Agent.output` | the agent's I/O contract as authoring FORMS (`ShapeForm`) — `input + template → output`. Declaration only: never in `to_agent_options` (md5'd into `last_started_hash`) |
 | `CapabilitySpec.value_spec` / `CapabilityValue.spec` | the shape of a capability's discovered value (`fs_ref`); `value_type` is the spec's kind |
-| `prepare_execution_io` / `_stamp_example` | the capture seam, writing through `FolderLayout` |
+| `prepare_execution_io` / `_stamp_row` | the capture seam, writing through `FolderLayout` |
 | `AgentSpec`, `SubAgentSpec`, `DatasetManifestSpec`, `DataDriverSpec`, `SourceItemSpec` | the `asset_spec` of Agent / SubAgent / Dataset / DataDriver / SourceItem |
 | `SpecDocSpec`, `PromptSpec`, `SkillSpec`, `MarkdownSpec` / `ClaudeMdSpec`, `TaskSpec` | the `asset_spec` of the `.md`-backed types — `TaskSpec` is also the share whitelist |
 | `AgentTraceSpec`, `UsageReportSpec`, `AssetCleanupReportSpec` | flat JSON reports (`manifest_layout="flat"`, a `FreeSection` payload; `SectionedHeader` for `summary`/`data`) |
@@ -391,7 +391,7 @@ read, and the asset scan reports it as an issue naming the rename — `TypeInfo.
   "target": {"shape": "?navigator.target",  "description": "what to open"}}}
 ```
 
-* **The subkind is optional.** Implicit: `fields` is a `record`, `examples` (`input` / `output` /
+* **The subkind is optional.** Implicit: `fields` is a `record`, `rows` (`input` / `output` /
   `context` → shapes) a `dataset`. Explicit: `"subkind"` declared and checked against the body.
   None: no body — a documentation node that registers nothing.
 * **Form additions** (input side only): `?<shape>` may be absent, `enum:a|b` is one of these

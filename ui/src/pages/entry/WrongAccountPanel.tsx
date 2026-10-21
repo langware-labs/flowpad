@@ -1,6 +1,5 @@
 import { cloudManager, navigator as sdkNavigator } from '@sdk';
 import React from 'react';
-import './message-landing.css';
 
 /**
  * Which of the two refusals this is.
@@ -54,36 +53,20 @@ const WrongAccountPanel: React.FC<WrongAccountPanelProps> = ({
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#f5f4ff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          background: '#fff',
-          borderRadius: 12,
-          boxShadow: '0 2px 16px rgba(0,0,0,0.10)',
-          padding: '48px 40px',
-          maxWidth: 420,
-          width: '90%',
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
-        <h2 style={{ margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>
-          {noAccess ? 'You do not have access to this yet' : 'Wrong account'}
-        </h2>
-        <p style={{ margin: '0 0 28px', fontSize: 15, color: '#444', lineHeight: 1.6 }}>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
+      <div className="w-full max-w-md rounded-xl border bg-card p-10 text-center shadow-sm">
+        <div className="mb-4 text-4xl">🔒</div>
+        <h2 className="mb-3 text-xl font-bold">{noAccess ? 'You do not have access to this yet' : 'Wrong account'}</h2>
+        <p className="mb-7 text-sm leading-relaxed text-muted-foreground">
           {noAccess
             ? 'If someone just invited you, open the invitation and accept it first. If you signed in with a different account than the one it was sent to, sign in again below.'
             : 'This invitation was sent to a different email address. Please sign in with the correct account to view it.'}
         </p>
-        <button className="nl-btn" style={{ display: 'inline-block', marginTop: 0 }} onClick={handleSignIn}>
+        <button
+          type="button"
+          className="rounded-md bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground hover:bg-brand/90"
+          onClick={handleSignIn}
+        >
           {noAccess ? 'Sign in with a different account' : 'Sign in with the correct account'}
         </button>
       </div>

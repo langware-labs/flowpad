@@ -28,7 +28,7 @@ context.
 - [[Sub agents]] — a Claude Code subagent with its own system prompt.
 - [[Task assets]] — a tracked piece of work with a plan.
 - [[Markdown documents]] — a plain document.
-- [[Whiteboard assets]] — an Excalidraw drawing.
+- [[Charts]] — a sequence diagram, an Excalidraw drawing, or a mermaid diagram.
 - [[Prompt library]] — reusable prompt text you can queue into a session.
 - [[Credentials]] — a named set of environment variables (an API key) that agents and terminals receive.
 - [[Diagnosis requests]] — diagnose Flowpad on someone else's computer: they run one command, you read the result.

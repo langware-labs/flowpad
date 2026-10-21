@@ -31,3 +31,19 @@ def test_wire_sequence_overrides_independent_producer_counters() -> None:
     assert first["instance_id"] != 900
     assert second["instance_id"] != 1
     assert second["instance_id"] == first["instance_id"] + 1
+
+
+def test_cleared_entity_field_travels_as_null() -> None:
+    """The client merges an update into its row: an omitted field keeps the old value."""
+    from flow_sdk.builtin.conversation import Conversation
+
+    conversation = Conversation(id=ENTITY_ID, title="t", ended_at=None)
+    op = current_messages.DataOpMessage(
+        op=current_messages.OperationType.UPDATE,
+        to_entity=CurrentTypeId(type="conversation", id=ENTITY_ID),
+        data=conversation,
+    )
+
+    wire = resource_tracker._prepare_data_op_message(op)
+
+    assert "ended_at" in wire["data"] and wire["data"]["ended_at"] is None

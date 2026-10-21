@@ -237,6 +237,38 @@ async def a_message_source_lists_messages_and_can_answer(subject: Subject) -> No
         assert isinstance(item.data, MessageData), f"{type(item.data).__name__} is not a message"
 
 
+# ── reading backwards ──────────────────────────────────────────────────────
+
+
+def _when(item: Any) -> Any:
+    return getattr(item.data, "sent_at", None) or getattr(item.data, "published_at", None)
+
+
+@check(Listable)
+async def a_backward_read_is_refused_unless_declared(subject: Subject) -> None:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    if type(subject.source()).pages_backward:
+        return
+    async with await _closing(subject) as s:
+        await _expect(Unsupported, s.fetch(narrow={"before": datetime.now(timezone.utc)}))  # type: ignore[attr-defined]
+
+
+@check(Listable)
+async def a_backward_read_lists_only_what_is_older_newest_first(subject: Subject) -> None:
+    if not type(subject.source()).pages_backward:
+        return
+    async with await _closing(subject) as s:
+        dated = [w for w in (_when(i) for i in (await s.fetch()).items) if w is not None]  # type: ignore[attr-defined]
+        assert len(dated) >= 2, "seed at least two dated items to read backwards over"
+        bound = max(dated)
+        page = await s.fetch(narrow={"before": bound})  # type: ignore[attr-defined]
+        whens = [_when(i) for i in page.items]
+        assert page.items, "something older than the newest item is listed"
+        assert all(w is not None and w < bound for w in whens), "only items older than the bound"
+        assert whens == sorted(whens, reverse=True), "newest first"
+
+
 # ── Readable ───────────────────────────────────────────────────────────────
 
 

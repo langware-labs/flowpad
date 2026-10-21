@@ -12,9 +12,12 @@ id: 94e1bd96-adda-45d6-ac5e-0356fa4ca5b3
 > **4. Never destroy the user's data to fix a symptom.**
 > **5. Credentials and invites are the user's step** — name the exact click.
 
-Reached when no installed source can express what the user named. The output is
-ONE self-contained folder asset — everything the source needs lives in it, and
-nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
+First inspect installed and project drivers: can configuration select the requested
+resource, or can that driver be extended without duplicating its transport? One provider's
+related record endpoints normally belong to one configurable driver with several sources.
+For that case or a consolidation, read [the configurable-driver recipe](../references/configurable-drivers.md).
+Create a new driver only when none fits. Its output is ONE self-contained folder asset —
+everything the source needs lives in it, and nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
 
 `SC` means `python3 <this skill>/scripts/source_ctl.py`; `flow source …` is the CLI
 over the same backend actions.
@@ -24,7 +27,7 @@ over the same backend actions.
 ```
 <project>/agentic-assets/data_driver/<name>/
     data_driver.json          the manifest (DataDriver): presentation, kind, auth, the config form
-    source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
+    source.py                 exactly ONE concrete flow_sdk.sources.Source subclass — the registered source
     transport.py …            optional helper modules, imported relatively (`from .transport import …`)
     tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double
     tests/matrix.py           its Double (a loopback provider) and its case in the data source matrix
@@ -105,10 +108,12 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     def _item(self, key, raw) -> SourceItemSpec: ...
 
     # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
-    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A source then
-    # mirrors into a dataset (`mirror` in data_source.json) and the app's row writes reach the system
-    # through these (the data-management skill's `references/mirroring.md`; in a repo checkout also
-    # docs/data-management/mirroring-a-system-of-record.md)
+    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A driver
+    # that is `Mutable` AND lists its records (`iterate`) can then hold a dataset's rows: the dataset's
+    # `dataset.json` says `"location": {"driver": "<name>", "config": {...}, "map": {...}, "by": "<owner>"}`,
+    # every read pulls the records, and the app's row writes reach the system through these (the
+    # data-management skill's `references/locations.md`; in a repo checkout also
+    # docs/data-management/dataset-locations.md)
     async def create(self, data: WikiPageData) -> SourceItemSpec: ...
     async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
     async def delete(self, origin) -> None: ...
@@ -119,7 +124,16 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     # READ-BACK counts: when the write succeeded and re-reading the record fails (a rate limit), answer it
     # from what the write itself returned, with a warning -- the record exists.
     # NEVER INVENT A VALUE for a field the system owns (`stage or "prospect"`): record what it has, None
-    # when it has none -- an invented value is mirrored into a row as if the system had said it.
+    # when it has none -- an invented value lands in a row as if the system had said it.
+
+    # A FILE STORE (a drive, a bucket) can hold a dataset's rows as files: implement `RowFiles`
+    # (flow_sdk.sources.protocols) -- list_files / read_file / write_file / delete_file, each write and delete
+    # conditional on `expected` (the version read, or "" for "must not exist"; a mismatch raises
+    # `sources.Conflict` and changes nothing) -- plus the classmethod `row_files_target(target) -> dict`, which
+    # maps the text after `<driver>:` in `"location": "<driver>:<target>"` onto this driver's config. The
+    # driver then shows in the dataset editor's Move… picker (`DataDriver.holds_rows`). Prove it with
+    # `sources.testing.check_row_files`; `MemoryRowFiles` is the in-memory double. The shipped `s3` and
+    # `gdrive` drivers are the templates.
 
     # A system that POSTS changes: take them, and a change outside lands at once instead of at the next poll
     # (docs/data-management/data-sources.md, Webhooks): webhook_challenge / webhook_account / events_from_webhook (+ webhook_authentic).
@@ -154,7 +168,7 @@ class's own method (`build`, `configure`, `query`, `origin_id_for`,
   `flow_sdk.sources.testing` over a `local_http_server` double
   (`flow_sdk.ingest.testing`), plus the wire cases (paging, errors → the right
   health). Import the class with
-  `WikiSource = asset_module("wiki").WikiSource` (`flow_sdk.ingest.source_registry`).
+  `WikiSource = asset_module("wiki").WikiSource` (`flow_sdk.ingest.driver_registry`).
   Name the file `test_<name>_source.py` — test module names are global.
 - `tests/matrix.py`: a `Double` — the provider over a loopback socket, with `config`
   (including any base-URL seam the driver reads), `secrets` keyed as the manifest's `auth`

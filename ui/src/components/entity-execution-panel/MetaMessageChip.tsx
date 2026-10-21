@@ -33,7 +33,7 @@ export function MetaMessageChip({
   const content = flowData.content ?? '';
   const skillDir = parseSkillDir(content);
   const skillName = structuredName ?? (skillDir ? basename(skillDir) : null);
-  const label = skillName ? t`Using skill: ${skillName}` : t`System note`;
+  const label = skillName ? t`Using skill: ${skillName}` : (parseTaskNotificationSummary(content) ?? t`System note`);
   const [open, setOpen] = useState(false);
   const links = useLinkHandlers();
   const { openSkill, opening } = useOpenSkill();
@@ -91,6 +91,17 @@ export function MetaMessageChip({
       )}
     </div>
   );
+}
+
+/**
+ * A finished background task is reported to the agent as a `<task-notification>` envelope (task id,
+ * output file, status, ...). Its `<summary>` is the one line meant for a person — "Background command
+ * "wait" completed (exit code 0)" — so the chip says that instead of the generic "System note".
+ */
+export function parseTaskNotificationSummary(content: string): string | null {
+  if (!content.trimStart().startsWith('<task-notification>')) return null;
+  const summary = content.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim();
+  return summary || null;
 }
 
 /** Skill injections carry "Base directory for this skill: …/skills/<name>". */

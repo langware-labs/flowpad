@@ -26,6 +26,7 @@
  * stays the canonical `user`/`projects` params (`applyScopeToParams`); every mode
  * projects losslessly down to an effective `(user, projects)` set there.
  */
+import { normalizeEntityId } from '../models/TypeId';
 import {
   type UrlObjectCodec,
   clearUrlObject,
@@ -257,7 +258,6 @@ export function scopeToQueryString(scope: ScopeFilter): string {
 /** UUID v4/v5 — the only legal entity-id versions (mirrors TypeId.ts / the
  *  entity-id non-negotiable). A URL-supplied `activeProjectId` must pass this
  *  before it's adopted; anything else is ignored. */
-const ENTITY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * The scope object's reserved URL-namespace slot. The `scope-<field>` grammar is
@@ -285,9 +285,9 @@ export const SCOPE_CODEC: UrlObjectCodec<ScopeFilter> = registerUrlObject<ScopeF
       case 'user':
         return { mode };
       case 'project': {
-        const id = (fields.activeProjectId ?? '').trim();
         // Adopt-on-validate: a foreign/garbage id never becomes a scope anchor.
-        return id && ENTITY_ID_RE.test(id) ? { mode, activeProjectId: id } : userScope();
+        const id = normalizeEntityId(fields.activeProjectId);
+        return id ? { mode, activeProjectId: id } : userScope();
       }
       case 'filter':
         return {

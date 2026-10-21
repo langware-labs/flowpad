@@ -1,5 +1,5 @@
 /**
- * The data-viewer contract — how a VALUE of a kind is shown, inside any app's page.
+ * The value-viewer contract — how a VALUE of a kind is shown, inside any app's page.
  *
  * A viewer is a webapp asset with `kind: application.web.viewer` whose `views` say, per kind, whether
  * it shows a `single` value, a `collection`, or both (`flow_sdk/schema/data_spec/webapp_spec.py`).
@@ -92,7 +92,7 @@ export interface ViewRequest {
   /** What the host knows that the value does not (an eval's `dataset_spec`, metric words).
    *  `omit: string[]` — fields edit mode leaves out (a producer-only field, like a confidence). */
   meta?: Record<string, unknown>;
-  /** Something happened the host may act on (`select`, `slice`, `verdict`, `label`). */
+  /** Something happened the host may act on: `slice` and `cause` (a string), `verdict`. */
   on?: (event: string, detail?: unknown) => void;
 }
 
@@ -102,6 +102,8 @@ export interface CollectionRequest {
   /** Highlight one item (an index into `items`). */
   selected?: number;
   meta?: Record<string, unknown>;
+  /** `select`: the item at an index into `items` was picked — always that index (a number).
+   *  `cause`: a cause (a string) was picked. */
   on?: (event: string, detail?: unknown) => void;
 }
 
@@ -130,7 +132,30 @@ export interface ViewerContext {
   open?: (part: OpenRequest) => void;
   /** Open an entity (a TypeId) in Flowpad — the host navigates. Absent when there is no host. */
   navigate?: (typeid: string) => void;
+  /** Relationship rows, distinct from the registry's choices of viewer modules. */
+  candidates?: RelationshipCandidates;
 }
+
+export interface RelationshipCandidate {
+  key: string;
+  label: string;
+  value: unknown;
+}
+
+export interface RelationshipQuery {
+  kind: string;
+  field: string;
+  parent: Record<string, unknown>;
+  selected: RelationshipCandidate[];
+  search: string;
+  cursor?: string;
+}
+
+/** The host owns filtering and pagination; the picker never infers relationship rules. */
+export type RelationshipCandidates = (query: RelationshipQuery) => Promise<{
+  items: RelationshipCandidate[];
+  next?: string;
+}>;
 
 /** A part to open on its own: a value of a kind, and what to call it in the trail. */
 export interface OpenRequest {

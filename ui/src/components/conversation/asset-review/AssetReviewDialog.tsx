@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro';
+import type { OpenShareOutcome } from './use-open-git-share';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { isHubRepoOrigin, projectSourceLabel } from '@sdk/models/FSOrigin';
@@ -13,9 +14,10 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { notify } from '@src/notifications';
-import { buildDockPointer, iconForEntity } from '../EntityChip';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
-import { ProjectInstallAction } from './ProjectInstallAction';
+import { isCloudOnlyProject, ProjectInstallAction } from './ProjectInstallAction';
 import { ProjectPreview } from './ProjectPreview';
 import { StagedAssetViewer } from './StagedAssetViewer';
 
@@ -32,6 +34,50 @@ function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; d
   }
   if (ma.unpacked_path) return { label: t`Embedded in message`, Icon: Package, detail: null };
   return { label: t`Cloud`, Icon: Cloud, detail: null };
+}
+
+/** What a git share points at — the bytes arrive by git when it is downloaded. */
+function GitPointerPreview({ ma }: { ma: MessageAttachment }) {
+  const origin = (ma.origin ?? null) as (GitOrigin & { head_commit?: string | null }) | null;
+  const commit = origin?.head_commit ? origin.head_commit.slice(0, 12) : null;
+  return (
+    <div
+      className="rounded border border-border px-4 py-5 text-sm text-muted-foreground"
+      data-testid="git-pointer-preview"
+    >
+      <p>
+        <Trans>
+          Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.
+        </Trans>
+      </p>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs">
+        {origin?.rel_path && (
+          <>
+            <dt>
+              <Trans>Path</Trans>
+            </dt>
+            <dd className="truncate text-foreground">{origin.rel_path}</dd>
+          </>
+        )}
+        {commit && (
+          <>
+            <dt>
+              <Trans>Version</Trans>
+            </dt>
+            <dd className="text-foreground">{commit}</dd>
+          </>
+        )}
+        {origin?.branch && (
+          <>
+            <dt>
+              <Trans>Branch</Trans>
+            </dt>
+            <dd className="text-foreground">{origin.branch}</dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
 }
 
 const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.origin != null;
@@ -139,6 +185,9 @@ interface AssetReviewDialogProps {
   /** A project reference with no MessageAttachment row: the popup shows the
    *  project branch alone. */
   project?: ProjectReviewRef;
+  /** Why opening the clicked attachment just failed (a 1-click git open), shown
+   *  inline beside its Retry. */
+  initialOutcome?: OpenShareOutcome | null;
 }
 
 /**
@@ -160,10 +209,18 @@ function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps 
       <DialogContent className="sm:max-w-xl" data-testid="asset-review-dialog">
         <DialogHeader>
           <DialogTitle className="font-bold">
-            <Trans>Received project — review before installing.</Trans>
+            {isCloudOnlyProject(row) ? (
+              <Trans>Received project</Trans>
+            ) : (
+              <Trans>Received project — review before installing.</Trans>
+            )}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            <Trans>Review the shared project and install it.</Trans>
+            {isCloudOnlyProject(row) ? (
+              <Trans>Review and open the shared project.</Trans>
+            ) : (
+              <Trans>Review the shared project and install it.</Trans>
+            )}
           </DialogDescription>
         </DialogHeader>
         <ProjectInstallAction
@@ -193,6 +250,7 @@ function AttachmentReviewDialog({
   attachments,
   initialAttachmentId,
   attachmentProjectId,
+  initialOutcome,
 }: AssetReviewDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -445,9 +503,7 @@ function AttachmentReviewDialog({
         <DialogHeader>
           {/* Whole-popup title — the per-entity icon/name/type moved down to the
               selected-entity pane. Singular vs plural tracks the list size. */}
-          <DialogTitle className="font-bold">
-            {multi ? labels.titleMany : labels.titleOne}
-          </DialogTitle>
+          <DialogTitle className="font-bold">{multi ? labels.titleMany : labels.titleOne}</DialogTitle>
           <DialogDescription className="sr-only">
             <Trans>Review each attached asset and choose how to install it.</Trans>
           </DialogDescription>
@@ -466,7 +522,11 @@ function AttachmentReviewDialog({
               onDone={onClose}
             />
           ) : selectedIsGit ? (
-            <AssetInstallActions attachment={selected} conversationProjectId={attachmentProjectId} />
+            <AssetInstallActions
+              attachment={selected}
+              conversationProjectId={attachmentProjectId}
+              initialOutcome={selected.id === initialAttachmentId ? initialOutcome : null}
+            />
           ) : (
             <>
               {allProject ? (
@@ -581,6 +641,9 @@ function AttachmentReviewDialog({
             {selected.asset_type === Project.type ? (
               // A project has no staged files: it previews from its row.
               <ProjectPreview project={selectedProjectRow} fallbackName={selected.name} />
+            ) : selectedIsGit ? (
+              // A git share stages a POINTER, not files: say what it opens.
+              <GitPointerPreview ma={selected} />
             ) : (
               <StagedAssetViewer attachment={selected} />
             )}

@@ -58,7 +58,7 @@ async def test_hub_ws_rest_current_user_matches_rest_current_user(hub_base_url, 
         rest_user = await client.get_user()
 
     async with connect_hub_websocket(_config(hub_base_url), connection_id=str(uuid.uuid4())) as websocket:
-        message = APIMessage(direct_resource_type="user")
+        message = APIMessage(action="current-user")
         await websocket.send(message.model_dump_json())
         ws_response = await _recv_json(websocket)
 
@@ -68,9 +68,7 @@ async def test_hub_ws_rest_current_user_matches_rest_current_user(hub_base_url, 
         ws_response = ws_response.get("content") or {}
 
     assert str(ws_response.get("status")).lower() == "success"
-    ws_users = ws_response["data"]
-    assert isinstance(ws_users, list)
-    assert any(user.get("id") == rest_user["id"] for user in ws_users)
+    assert ws_response["data"]["id"] == rest_user["id"]
 
 
 @pytest.mark.asyncio

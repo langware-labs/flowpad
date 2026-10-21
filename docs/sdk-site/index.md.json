@@ -1,25 +1,25 @@
 {
   "schema_version": 1,
-  "typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
-  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "typeid": "markdown_index-cf2b1efb-c17b-5707-b85b-93a8a65a472e",
+  "parent_ref": "markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb",
+  "vault_root": "/Users/tzahi/_dev/langware/github/flowpad-open-source/docs",
   "folder_rel_path": "sdk-site",
   "folder_name": "sdk-site",
-  "inputs_hash": "faea95917418034c0315bac7b5ddb65aee4c88b5a0b290bd21fecdc090116e22",
+  "inputs_hash": "4fccae04f48f3d9c11a06c654d4a0a18b1379ebb7353f9593ae2fe994bcbc6dd",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The public Flow SDK guide: DataSpec schemas and values, AgenticProcess, and an executable workflow of agents answering channel messages, built into the SDK site.",
+  "self_summary": "The public Flow SDK guide: typed schemas and values, agents, FlowCall outcomes and composition, channels, credentials, deployments, and executable examples.",
   "files": [
     {
       "name": "flow-sdk.md",
       "rel_path": "flow-sdk.md",
       "title": "Flow SDK: Agentic orchestration SDK. Git-native agents you own.",
-      "summary": "Flow SDK guide covering DataSpec and AgenticProcess, secrets, data connectors, agents and deployments in nine chapters of executable Python examples, plus rules for coding agents.",
-      "content_hash": "f7370870a8f67c82d238bbdb5af8d2c403e0c5f43696a55efa62bd832c3e1b9f",
-      "size_bytes": 39363
+      "summary": "Flow SDK guide to DataSpec and AgenticProcess building blocks, secrets, data connectors, agents, and a nine-chapter tutorial from typed shapes to deployment.",
+      "content_hash": "75aa9ae86a17b09e859698f487a78d0865d7aaa627efa67b5bfbe36fcb6461bd",
+      "size_bytes": 40205
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T10:49:35Z",
+  "generated_at": "2026-10-20T12:52:40.795640+00:00",
   "latest_process_ref": ""
 }

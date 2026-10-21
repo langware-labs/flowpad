@@ -49,11 +49,11 @@ class FlowpadServerInfo:
 
     @property
     def url(self) -> str:
-        return f"http://localhost:{self.port}{DEFAULT_WEBHOOK_PATH}"
+        return f"http://127.0.0.1:{self.port}{DEFAULT_WEBHOOK_PATH}"
 
     @property
     def health_url(self) -> str:
-        return f"http://localhost:{self.port}{DEFAULT_HEALTH_PATH}"
+        return f"http://127.0.0.1:{self.port}{DEFAULT_HEALTH_PATH}"
 
 
 class FlowpadStatus:

@@ -247,6 +247,75 @@ def test_tail_status_end_turn_is_complete(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
+def _task_notification(status: str, summary: str) -> dict:
+    text = (
+        "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
+        f"<output-file>/tmp/b1.output</output-file>\n<status>{status}</status>\n"
+        f"<summary>{summary}</summary>\n</task-notification>"
+    )
+    return {"type": "user", "message": {"role": "user", "content": text}}
+
+
+def _answered_turn() -> list[dict]:
+    return [
+        {"type": "user", "message": {"role": "user", "content": "start it"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+    ]
+
+
+def test_tail_status_a_stop_report_is_not_a_prompt_the_agent_owes_an_answer(tmp_path: Path):
+    """A session resumed in the terminal finds work its previous process left and the CLI writes a ``stopped``
+    row. The agent answers nothing and the terminal sits idle at its prompt — the tail must not read that
+    row as an unanswered request (it ended in ``api_timeout``: busy for good, no switch back to chat)."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            *_answered_turn(),
+            _task_notification("stopped", "Background shell command didn't finish before the previous session ended"),
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def test_tail_status_a_killed_report_is_not_a_prompt_either(tmp_path: Path):
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [*_answered_turn(), _task_notification("killed", 'Background command "x" was stopped')])
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def test_tail_status_a_finished_task_still_wakes_the_agent(tmp_path: Path):
+    """``completed`` is the report the agent DOES answer: until it does, a turn is owed and the tail is working."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f, [*_answered_turn(), _task_notification("completed", 'Background command "x" completed (exit code 0)')]
+    )
+    os.utime(f, None)
+    assert _tail_status(f) != WorkerStatus.COMPLETE
+
+
+def test_tail_status_an_agent_that_answers_a_stop_report_is_read_from_its_own_rows(tmp_path: Path):
+    """When the agent DOES respond to the report, its rows come after it and decide the status."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            *_answered_turn(),
+            _task_notification("stopped", "Background shell command didn't finish before the previous session ended"),
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": None,
+                    "content": [{"type": "thinking", "thinking": "hm"}],
+                },
+            },
+        ],
+    )
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.THINKING
+
+
 def test_tail_status_post_turn_system_lines_do_not_hide_end_turn(tmp_path: Path):
     """Claude 2.1.x closes an interactive turn with ``stop_hook_summary`` +
     ``turn_duration`` and writes ``last-prompt`` only at exit. The end_turn before
@@ -257,8 +326,14 @@ def test_tail_status_post_turn_system_lines_do_not_hide_end_turn(tmp_path: Path)
         f,
         [
             {"type": "user", "message": {"role": "user", "content": "go"}},
-            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn",
-                                              "content": [{"type": "text", "text": "x" * 8000}]}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "x" * 8000}],
+                },
+            },
             {"type": "system", "subtype": "stop_hook_summary", "content": "y" * 3000},
             {"type": "system", "subtype": "turn_duration", "durationMs": 2100},
             {"type": "cost-state"},

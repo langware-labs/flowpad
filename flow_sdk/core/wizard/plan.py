@@ -83,6 +83,12 @@ async def _walk(
     required: bool,
 ) -> None:
     for step in spec.steps:
+        # Typed inputs are resolved and validated when the step is reached. Asking early
+        # could execute a check before validation or before the producing step exists.
+        if step.input_from is not None or "input_value" in step.model_fields_set:
+            if step.bind:
+                produced.add(step.bind)
+            continue
         # A ``when`` that waits on a produced value is not known yet, so nothing under it is planned.
         if not (set(step.when) & produced) and not _unmatched(values, step):
             scope = _scope(values, step)
@@ -97,7 +103,7 @@ async def _walk(
                     )
             else:
                 op = await _trusted(plan, plan.resolve_op, step.ref)
-                if op is not None and _askable_early(op, late, kept=bool(step.bind or spec.output)):
+                if op is not None and _askable_early(op, late, kept=bool(step.bind or spec.output or spec.output_from == step.id)):
                     env = input_env(scope)
                     said = await check_op(op, workdir=plan.workdir, platform=plan.platform, env=env, shell=plan.shell)
                     if said.exit_code is ExitCode.NOT_YET:
@@ -107,7 +113,7 @@ async def _walk(
                             op=op.name,
                             prompt=fill(exe.prompt or step.display_label, env),
                             detail=fill(exe.detail, env),
-                            kind=op.output_spec_kind,
+                            kind=op.output_shape,
                             secret=exe.secret,
                             required=required and step.required,
                         ))
@@ -133,10 +139,13 @@ def _askable_early(op: ComputeOpSpec, produced: "set[str]", *, kept: bool) -> bo
         return False
     if (placeholders(exe.prompt) | placeholders(exe.detail)) & produced:
         return False
-    if op.output_spec_kind == ConfirmSpec.spec_kind:
+    shape = op.output_shape
+    if not isinstance(shape, str):
+        return False  # Inline records/lists are asked in place; AskItemSpec carries a kind name.
+    if shape == ConfirmSpec.spec_kind:
         return True  # An approval is an approval whenever it is given.
     # One typed value, and somebody keeps it.
-    return isinstance(fields_of_kind(op.output_spec_kind), str) and kept
+    return isinstance(fields_of_kind(shape), str) and kept
 
 
 async def ask_needs(

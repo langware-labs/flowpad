@@ -25,7 +25,7 @@ export interface ConversationSendPayload {
   sharedContextEntities?: string[];
   /** Body-bundle transfer policy + per-share opt-ins. Defaults to copy. */
   shareConfig?: {
-    transferMode?: 'copy' | 'git';
+    transferMode?: 'copy' | 'git' | 'both';
     /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
      *  asset when it installs. Default off. */
     createBookmark?: boolean;
@@ -88,7 +88,7 @@ export interface ShareAttachmentCheck {
  */
 export async function checkShareAttachments(
   assetReferences: readonly string[],
-  options: { transferMode?: 'copy' | 'git' } = {},
+  options: { transferMode?: 'copy' | 'git' | 'both' } = {},
 ): Promise<ShareAttachmentCheck> {
   const refs = [...new Set(assetReferences)];
   if (refs.length === 0) return { unshippable: [], gitignored: [] };
@@ -285,7 +285,14 @@ export async function createAndSendConversation(
 ): Promise<CreateAndSendResult> {
   const { conversation_id: conversationId } = await createConversationForShare(params, opts);
 
-  await sendToExistingConversation(conversationId, payload);
+  // A conversation may start with just a title — send only when there is content.
+  const hasContent =
+    !!payload.text?.trim() ||
+    !!payload.files?.length ||
+    !!payload.assetReferences?.length ||
+    !!payload.sharedContextEntities?.length ||
+    !!payload.shareConfig;
+  if (hasContent) await sendToExistingConversation(conversationId, payload);
 
   if (opts?.draftRef) opts.draftRef.current = null;
   return { conversation_id: conversationId };

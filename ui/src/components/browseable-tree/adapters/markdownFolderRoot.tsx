@@ -2,7 +2,8 @@ import { t } from '@lingui/core/macro';
 import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
+import { documentsTreeType, isDocumentFilePath, isMarkdownDocumentPath } from '@src/lib/markdown-path';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import apiClient from '@sdk/client';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
@@ -255,13 +256,15 @@ export function childrenForPrefix(args: {
     .map((name) => {
       const childRel = norm ? `${norm}/${name}` : name;
       const childAbs = vaultAbsForPrefix(vaultAbsPath, childRel);
+      const leafType = documentsTreeType(name);
+      const LeafIcon = iconForType(leafType);
       return {
         id: `md-file:${typeid}:${childAbs}`,
         kind: 'asset',
         label: name,
-        icon: <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
+        icon: <LeafIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
         hasChildren: false as const,
-        pointer: DockPointer.forAssetEditor(typeName, childAbs),
+        pointer: DockPointer.forAssetEditor(leafType, childAbs),
         dragData: {
           kind: 'markdown-file',
           id: `md-file:${typeid}:${childAbs}`,
@@ -421,7 +424,7 @@ function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
  */
 function markdownResourcePath(p: DockPointer): string | null {
   const resourcePath = p.resourceVfsPath?.machinePath ?? null;
-  return isMarkdownDocumentPath(resourcePath) ? resourcePath : null;
+  return isMarkdownDocumentPath(resourcePath) || isDocumentFilePath(resourcePath) ? resourcePath : null;
 }
 
 function findVaultForAbsPath(vaults: AssetTypeVault[], absPath: string): AssetTypeVault | null {

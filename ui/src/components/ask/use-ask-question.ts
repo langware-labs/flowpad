@@ -10,6 +10,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 import type { AssistState } from './AskAssist';
 import type { AskItem } from './AskItems';
+import { SKIPPED } from './AskSkipButton';
 
 /**
  * A question a ComputeOp put to a person — the data and actions behind it,
@@ -19,6 +20,34 @@ import type { AskItem } from './AskItems';
  * renderings of it.
  */
 
+/** How often a screen showing a question tells the backend so. Under the backend's ``SEEN_SECONDS`` (60 s):
+ *  a question someone has open never times out, one nobody shows any more ends a minute later. */
+export const KEEP_OPEN_MS = 20_000;
+
+/** One timer per question on screen, however many screens show it (a modal over a dialog with the same form). */
+const keepingOpen = new Map<string, { screens: number; timer: ReturnType<typeof setInterval> }>();
+
+/** While `questionId` is on screen, the op asking it keeps waiting for the answer. */
+export function useKeepQuestionOpen(questionId: string | null | undefined): void {
+  useEffect(() => {
+    if (!questionId) return;
+    const held = keepingOpen.get(questionId);
+    if (held) {
+      held.screens += 1;
+    } else {
+      const say = () => void Promise.resolve(apiClient.post(`/api/v1/ask/${questionId}/seen`)).catch(() => undefined);
+      say();
+      keepingOpen.set(questionId, { screens: 1, timer: setInterval(say, KEEP_OPEN_MS) });
+    }
+    return () => {
+      const entry = keepingOpen.get(questionId);
+      if (!entry || (entry.screens -= 1) > 0) return;
+      clearInterval(entry.timer);
+      keepingOpen.delete(questionId);
+    };
+  }, [questionId]);
+}
+
 export type Shape = Record<string, unknown> | string | null;
 
 /** One way to answer a "pick one way" question (`AskChoiceBlock`). */
@@ -27,10 +56,21 @@ export interface AskChoice {
   value: string;
   label: string;
   hint: string;
+  /** Where to get the value — a link under its input. */
+  help_url?: string;
+  /** The example shown in an empty input. */
+  placeholder?: string;
   secret: boolean;
   file: boolean;
   /** A sign-in command: nothing is typed, the person runs it. Empty: a value is typed. */
   command: string;
+  /** A sign-in through Flowpad: the screen connects this provider (its grant covering `scopes`), then answers
+   *  the choice's `value` — nothing typed, nothing stored. Empty: not this kind of way. */
+  provider?: string;
+  scopes?: string[];
+  /** A way of several values given together: one input per field, answered as newline-joined
+   *  `<field.value>=<typed>` lines. Empty: the choice is one value (or a sign-in). */
+  fields?: AskChoice[];
 }
 
 export interface AskQuestion {
@@ -57,6 +97,8 @@ export interface AskQuestion {
   wizard_id?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
+  /** A setup asked: the person may skip that step instead (`POST ask/<id>/skip`), and setup goes on. */
+  skippable?: boolean;
   /** The op names an agent that can answer instead (AI Assist). */
   assist_available?: boolean;
   assist?: AssistState | null;
@@ -71,6 +113,8 @@ export function fieldsOf(shape: Shape): string[] {
   return [''];
 }
 
+const SETTLED_BY: Record<string, 'cancelled' | 'skipped'> = { '/cancel': 'cancelled', '/skip': 'skipped' };
+
 export function useAskQuestion(questionId: string | undefined) {
   const { _ } = useLingui();
   const { navigation } = useDockNavigation();
@@ -80,8 +124,10 @@ export function useAskQuestion(questionId: string | undefined) {
   // The KIND of ending, not its text — the text depends on whether there is
   // something better to show instead (see `settledMessage` below), which can
   // only be decided once `wizardId` is known.
-  const [settledKind, setSettledKind] = useState<'' | 'gone' | 'cancelled' | 'answered'>('');
+  const [settledKind, setSettledKind] = useState<'' | 'gone' | 'cancelled' | 'answered' | 'skipped'>('');
   const [busy, setBusy] = useState(false);
+
+  useKeepQuestionOpen(settledKind ? null : questionId);
 
   useEffect(() => {
     if (!questionId) return;
@@ -106,7 +152,7 @@ export function useAskQuestion(questionId: string | undefined) {
       setError('');
       try {
         await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        setSettledKind(path === '/cancel' ? 'cancelled' : 'answered');
+        setSettledKind(SETTLED_BY[path] ?? 'answered');
       } catch (reason) {
         // A 422 means the value did not match the shape the op declared. The
         // question is still open, so this is correctable in place.
@@ -129,6 +175,7 @@ export function useAskQuestion(questionId: string | undefined) {
   const answer = useCallback((value: string | Record<string, unknown>) => send('/answer', { value }), [send]);
 
   const cancel = useCallback(() => send('/cancel'), [send]);
+  const skip = useCallback(() => send('/skip'), [send]);
   /** The cards are the form (`AskChoiceBlock`): no bare field, and no Send of the question's own. */
   const hasChoices = hasChoicesOf(question);
   /** The question settled while AI Assist worked on it: the agent answered. */
@@ -164,6 +211,7 @@ export function useAskQuestion(questionId: string | undefined) {
   const settledMessage = useMemo(() => {
     if (settledKind === 'gone') return _(msg`This question is no longer waiting.`);
     if (settledKind === 'cancelled') return _(msg`Cancelled.`);
+    if (settledKind === 'skipped') return _(SKIPPED);
     if (settledKind === 'answered') return wizardId ? null : _(msg`Got it — your answer was sent.`);
     return null;
   }, [settledKind, wizardId, _]);
@@ -180,6 +228,7 @@ export function useAskQuestion(questionId: string | undefined) {
     submit,
     answer,
     cancel,
+    skip,
     agentAnswered,
     wizardId,
     openWizard,

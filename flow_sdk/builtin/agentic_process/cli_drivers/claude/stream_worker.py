@@ -25,8 +25,14 @@ Prompt delivery / cancel semantics:
   Only if the CLI doesn't wind down within the existing ``CANCEL_GRACE_SECONDS``
   does the legacy SIGTERM → grace → SIGKILL escalation run.
 - In streaming-input mode the CLI stays alive after the turn waiting for more
-  stdin; ``execute()`` closes stdin as soon as the terminal ``result`` event
-  arrives so the process exits and the stream reaches EOF.
+  stdin; ``execute()`` closes stdin once the CLI reports ``idle`` (its own
+  ``session_state_changed``, enabled by ``CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS``)
+  AND no background work is running, so the process exits and the stream reaches
+  EOF. Closing at ``result`` instead exited a process whose background command
+  was still running. While that work runs the worker is *parked* (``parked``):
+  alive, idle, and able to take a new user message on the same stdin
+  (``claim_for_message`` + ``write_user_message``) — see ``worker_turns``. A CLI
+  that never reports its state is closed at ``result``, as before.
 - A user-requested cancel is NOT an error: after ``close_session()``, the
   interrupted turn's ``result`` (which the CLI reports as ``is_error``) is
   reclassified to ``outcome=aborted`` and the worker emits the canonical
@@ -41,8 +47,8 @@ import json
 import logging
 import os
 import time
-from uuid import uuid4
 from typing import AsyncIterator
+from uuid import uuid4
 
 from flow_sdk import toplog
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
@@ -64,6 +70,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    error_frame,
+    status_frame,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.transcript_durability_gate import (
     TranscriptDurabilityGate,
     stream_event,
@@ -74,14 +84,9 @@ from flow_sdk.builtin.agentic_process.turn_abort import (
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
-    FlowDataType,
     FlowElementType,
 )
 from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
-    error_frame,
-    status_frame,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +104,7 @@ _AUTH_ERROR_TEXT = (
 
 
 class _TranscriptDurabilityGate(TranscriptDurabilityGate):
-    """The shared ordering gate, told what Claude's two vendor facts are.
+    """The shared ordering gate, told what Claude's three vendor facts are.
 
     Claude Code 2.1.207 writes an ``assistant`` stream-json event to stdout
     before appending the matching assistant row to its session JSONL. Exposing
@@ -122,7 +127,20 @@ class _TranscriptDurabilityGate(TranscriptDurabilityGate):
     means the held block was narration. Passive events
     (``rate_limit_event``-style statuses) are not continuations — they may
     legitimately trail the real final answer, so they join the hold.
+
+    Claude Code 2.1.299 has already appended the assistant row by the time it
+    prints the turn's ``result`` (measured: 9/9 turns, short answers and long
+    ones), so ``result`` is where the hold ends. Waiting for process exit
+    instead is no longer a small extra delay: the CLI now keeps the process
+    alive after the turn until the background work the agent launched finishes
+    (``docs/en/headless``, "Background tasks at exit"), then takes another turn
+    with the outcome. Measured on a 20s background command, the answer reached
+    the chat 25.6s after it was printed — the whole turn looked frozen, and the
+    completion report it exists to deliver landed with it instead of arriving
+    live.
     """
+
+    result_proves_durability = True
 
     def is_terminal_candidate(self, event: dict, frames: list[FlowData]) -> bool:
         if event.get("type") != "assistant":
@@ -155,6 +173,80 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         self._cancel_requested = False
         self._cancelled_gracefully = False
         self._stdin_open = False
+        #: The CLI's own word for what it is doing (``session_state_changed``:
+        #: ``running`` / ``idle`` / ``requires_action``); ``None`` until it has said
+        #: anything, which is also what a CLI that predates the event looks like.
+        self._session_state: str | None = None
+        #: Set when the user ended the background work a parked worker was waiting on (see
+        #: :meth:`stop_parked`): the process exiting is what they asked for, not a crash or an abort.
+        self._stopped_while_parked = False
+        #: Ids of the background work the CLI reports as still running
+        #: (``background_tasks_changed`` carries the COMPLETE current set).
+        self._background_task_ids: set[str] = set()
+        self._result_seen = False
+
+    @property
+    def session_state(self) -> str | None:
+        return self._session_state
+
+    @property
+    def parked(self) -> bool:
+        """Idle between turns, kept alive only because background work still runs.
+
+        The CLI answered and went ``idle`` but its stdin is still open: the one state
+        in which a NEW user message can be written to this same process and answered
+        in about a second while the background work carries on. False while a turn
+        runs, once stdin is closed (the process is exiting), after a stop was asked
+        for, and for a CLI that never reported its state.
+        """
+        proc = self._proc
+        return (
+            proc is not None
+            and proc.returncode is None
+            and self._stdin_open
+            and self._session_state == "idle"
+            and not self._cancel_requested
+        )
+
+    async def stop_parked(self) -> bool:
+        """End a parked worker and the background work it is waiting on. False if it was not parked.
+
+        There is no turn to interrupt: the CLI is idle, alive only for work the agent left running
+        (a dev server, a watcher). Ending it means ending the process, so the process tree goes
+        with it — SIGTERM first, as the CLI documents, then the usual escalation.
+        """
+        if not self.parked:
+            return False
+        self._stopped_while_parked = True
+        self._cancel_requested = True
+        await self._terminate_process()
+        return True
+
+    def claim_for_message(self) -> bool:
+        """Take the parked worker for one new turn. No await between check and claim.
+
+        Two requests racing to deliver a message must not both see ``parked``: the
+        state flips to ``running`` here, before either of them can yield to the loop.
+        The CLI confirms with its own ``running`` a moment later.
+        """
+        if not self.parked:
+            return False
+        self._session_state = "running"
+        return True
+
+    async def write_user_message(self, text: str) -> bool:
+        """Write one stream-json user message to the live CLI. False when it could not be written."""
+        proc = self._proc
+        if proc is None or proc.stdin is None or not self._stdin_open:
+            return False
+        message = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
+        try:
+            proc.stdin.write((json.dumps(message) + "\n").encode("utf-8"))
+            await proc.stdin.drain()
+        except Exception:
+            logger.warning("ClaudeCLIStreamWorker: writing a message to the parked CLI failed", exc_info=True)
+            return False
+        return True
 
     @property
     def cancelled_gracefully(self) -> bool:
@@ -175,6 +267,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
         self._process_run_id = None
+        self._stopped_while_parked = False
+        self._session_state = None
+        self._background_task_ids = set()
+        self._result_seen = False
         # A turn must never start on a token we already know is dead — the CLI
         # would renew it inside this request and, if that renewal is slow, give
         # up and hand the user a raw 401. One file read on every healthy turn;
@@ -243,14 +339,15 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                         sid = event.get("session_id") if event else None
                         if isinstance(sid, str) and sid:
                             self._session_id = sid
-                # Streaming-input mode: the CLI idles for more stdin after the
-                # turn's terminal ``result``. Close stdin so it exits and the
-                # stream reaches EOF (a killed/graceful-interrupted turn ends
-                # via process exit instead).
-                if event is not None and event.get("type") == "result":
-                    self._close_stdin()
+                self._observe_session_events(event)
+                self._close_stdin_when_finished()
                 for fd in durability_gate.feed(event, frames):
-                    yield self._humanize_auth_error(fd)
+                    # Reclassify here too, not only on the drain path: the gate
+                    # releases a turn's RESULT at the turn's own ``result``, so
+                    # an interrupted turn's error result now reaches the chat
+                    # from this loop and would otherwise paint a user-initiated
+                    # stop as a crash.
+                    yield self._reclassify_cancelled(self._humanize_auth_error(fd))
         except asyncio.CancelledError:
             # Caller cancelled the async iteration — propagate after cleanup.
             cancelled = True
@@ -286,7 +383,11 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             # terminator so downstream parsers always see a close.
             # The converter emits END after RESULT; if Claude crashed or was
             # killed before RESULT, we still owe the consumer an END frame.
-            if not cancelled and self._cancel_requested:
+            if self._stopped_while_parked:
+                # No turn was running, so nothing was aborted and nothing crashed: the user ended
+                # the background work. The process exiting needs no frame of its own.
+                pass
+            elif not cancelled and self._cancel_requested:
                 # Canonical turn-abort STATUS: marks in-flight tool calls
                 # terminated in the chat grouping (same shape as the durable
                 # sidecar marker replay).
@@ -492,6 +593,11 @@ class ClaudeCLIStreamWorker(AgenticWorker):
 
         base_env = without_inherited_claude_session(os.environ)
         env = build_worker_spawn_env("claude", env_from_opts, base_env=base_env)
+        # The CLI's own report of whether it is running a turn or idle between them
+        # (documented: ``CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS``, which works with
+        # ``--print --output-format stream-json --verbose`` — exactly these flags). It is
+        # what tells a parked worker from a busy one without counting turns.
+        env["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
         argv = resolve_worker_argv0("claude", argv, env)
         return argv, env, stdin_payload
 
@@ -524,6 +630,46 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             CANCEL_GRACE_SECONDS,
             run_id=self._process_run_id,
         )
+
+    def _observe_session_events(self, event: dict | None) -> None:
+        """Mirror the CLI's own typed signals: its state, the result, its background work."""
+        if event is None:
+            return
+        if event.get("type") == "result":
+            self._result_seen = True
+        subtype = event.get("subtype")
+        if subtype == "session_state_changed":
+            state = event.get("state")
+            if isinstance(state, str) and state:
+                self._session_state = state
+        elif subtype == "background_tasks_changed":
+            tasks = event.get("tasks")
+            if isinstance(tasks, list):
+                self._background_task_ids = {
+                    task["task_id"] for task in tasks if isinstance(task, dict) and task.get("task_id")
+                }
+
+    def _close_stdin_when_finished(self) -> None:
+        """Close stdin once there is nothing left for this process to do.
+
+        Streaming-input mode keeps the CLI alive after a turn, waiting for more
+        stdin; closing it is what makes the process exit and the stream reach EOF.
+        With the CLI's state events that moment is ``idle`` with no background work
+        left — NOT the turn's ``result``: the CLI prints ``result`` while a
+        background command it started is still running, and a process that exits
+        then takes that command (and the report the agent owes the user when it
+        ends) with it. While work is running the process is parked instead — see
+        :attr:`parked` — and ``claude -p`` keeps it alive on its own account.
+
+        A CLI that never reports its state is closed at ``result``, as before. A
+        stop that was asked for closes at ``idle`` whatever is still running.
+        """
+        if not self._result_seen:
+            return
+        if self._session_state is None:
+            self._close_stdin()
+        elif self._session_state == "idle" and (self._cancel_requested or not self._background_task_ids):
+            self._close_stdin()
 
     def _close_stdin(self) -> None:
         """Close the child's stdin pipe (idempotent)."""
@@ -695,5 +841,3 @@ def _turn_debug_file(session_id: str | None) -> str | None:
         return str(logs_dir / f"{name}.txt")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")[:-3]
     return str(logs_dir / f"{name}-{stamp}.txt")
-
-

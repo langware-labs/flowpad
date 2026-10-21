@@ -63,7 +63,7 @@ async def test_editors_rank_nested_then_kind_then_type(bootstrapped_client, user
     tag = f"--{ns}--.nav.dataset"
     # The kinds live in the FIRST dataset; the second names the same kind and ships no editor.
     own = _dataset(tmp_path, "with-own-editor", tag)
-    top = _spec(own, "nav.dataset", {"examples": {"input": "nav.request", "output": "nav.decision"}}, ns)
+    top = _spec(own, "nav.dataset", {"rows": {"input": "nav.request", "output": "nav.decision"}}, ns)
     _spec(top, "nav.request", {"fields": {"utterance": {"shape": "string", "description": "what was typed"}}}, ns)
     _spec(
         top, "nav.decision", {"fields": {"route": {"shape": "enum:quick|agentic"}, "target": {"shape": "?string"}}}, ns
@@ -94,7 +94,7 @@ async def test_a_kind_reads_as_a_form_with_its_descriptions(bootstrapped_client,
     from flow_sdk.schema.data_spec import declared
 
     ns = f"formtest{uuid.uuid4().hex[:8]}"
-    top = _spec(tmp_path, "nav.dataset", {"examples": {"input": "nav.request", "output": "nav.decision"}}, ns)
+    top = _spec(tmp_path, "nav.dataset", {"rows": {"input": "nav.request", "output": "nav.decision"}}, ns)
     _spec(top, "nav.request", {"fields": {"utterance": {"shape": "string", "description": "what was typed"}}}, ns)
     _spec(
         top, "nav.decision", {"fields": {"route": {"shape": "enum:quick|agentic"}, "target": {"shape": "?string"}}}, ns
@@ -120,7 +120,7 @@ async def test_a_projects_schemas_read_as_one_tree(bootstrapped_client, user, tm
     _spec(tmp_path, "crm.company", {"fields": {"name": {"shape": "string", "description": "The company."}}}, ns)
     _spec(tmp_path, "crm.note", {"fields": {"text": {"shape": "string"}}}, ns)
     _spec(tmp_path, "crm.lead", {"fields": {"company": {"shape": "?crm.company"}, "notes": {"shape": ["crm.note"]}}}, ns)
-    _dataset(tmp_path, "companies", {"examples": [{"input": f"--{ns}--.crm.company"}]})
+    _dataset(tmp_path, "companies", {"rows": [{"input": f"--{ns}--.crm.company"}]})
     await _index(tmp_path)
     companies = (await _datasets(tmp_path))["companies"]
 

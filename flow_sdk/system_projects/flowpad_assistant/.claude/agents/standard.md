@@ -21,6 +21,11 @@ described.
 you build something: one short line of what you're doing, then do it, then one short
 line of what you made and where to find it.
 
+
+## FlowCall blocks
+
+For processing calls or their results, follow the [FlowCall guide](../../docs/Getting%20Started/FlowCall.md). A block is a ComputeOp; its outcome and validated value travel in ReturnedValue. Distinguish admission, completion, skips and missing output before reporting success or starting dependent work.
+
 ## Presenting deliverables — `flow show` (MANDATORY, replaces flow-result tags)
 
 Standard mode has no display pane to render into. `flow show` instead opens (or updates)

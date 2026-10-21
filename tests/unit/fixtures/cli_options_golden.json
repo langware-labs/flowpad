@@ -2860,7 +2860,9 @@
             "--add-dir",
             "/extra",
             "resume",
-            "s1"
+            "s1",
+            "--",
+            "-rf danger"
           ],
           "env": {}
         },
@@ -2881,7 +2883,9 @@
             "--add-dir",
             "/extra",
             "resume",
-            "s1"
+            "s1",
+            "--",
+            "fix the bug"
           ],
           "env": {}
         },
@@ -2902,7 +2906,9 @@
             "--add-dir",
             "/extra",
             "resume",
-            "s1"
+            "s1",
+            "--",
+            "line one\nline two"
           ],
           "env": {}
         },
@@ -2965,7 +2971,9 @@
             "--add-dir",
             "/extra",
             "resume",
-            "s1"
+            "s1",
+            "--",
+            "-rf danger"
           ],
           "env": {}
         },
@@ -2986,7 +2994,9 @@
             "--add-dir",
             "/extra",
             "resume",
-            "s1"
+            "s1",
+            "--",
+            "fix the bug"
           ],
           "env": {}
         },
@@ -3007,7 +3017,9 @@
             "--add-dir",
             "/extra",
             "resume",
-            "s1"
+            "s1",
+            "--",
+            "line one\nline two"
           ],
           "env": {}
         },
@@ -3059,7 +3071,9 @@
             "-c",
             "check_for_update_on_startup=false",
             "-c",
-            "model_reasoning_effort=low"
+            "model_reasoning_effort=low",
+            "--",
+            "-rf danger"
           ],
           "env": {}
         },
@@ -3069,7 +3083,9 @@
             "-c",
             "check_for_update_on_startup=false",
             "-c",
-            "model_reasoning_effort=low"
+            "model_reasoning_effort=low",
+            "--",
+            "fix the bug"
           ],
           "env": {}
         },
@@ -3079,7 +3095,9 @@
             "-c",
             "check_for_update_on_startup=false",
             "-c",
-            "model_reasoning_effort=low"
+            "model_reasoning_effort=low",
+            "--",
+            "line one\nline two"
           ],
           "env": {}
         },
@@ -3118,7 +3136,9 @@
             "-c",
             "check_for_update_on_startup=false",
             "-c",
-            "model_reasoning_effort=low"
+            "model_reasoning_effort=low",
+            "--",
+            "-rf danger"
           ],
           "env": {}
         },
@@ -3128,7 +3148,9 @@
             "-c",
             "check_for_update_on_startup=false",
             "-c",
-            "model_reasoning_effort=low"
+            "model_reasoning_effort=low",
+            "--",
+            "fix the bug"
           ],
           "env": {}
         },
@@ -3138,7 +3160,9 @@
             "-c",
             "check_for_update_on_startup=false",
             "-c",
-            "model_reasoning_effort=low"
+            "model_reasoning_effort=low",
+            "--",
+            "line one\nline two"
           ],
           "env": {}
         },

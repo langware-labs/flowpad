@@ -38,3 +38,27 @@ async def test_a_drive_source_that_writes_back_asks_for_drive_and_a_read_only_on
     assert await wanted_extra_scopes("google") == [DRIVE]
     assert await wanted_extra_scopes("googledrive") == [DRIVE], "the hub's name for the same connection"
     assert DRIVE in writer.connections.scopes("google") and DRIVE not in reader.connections.scopes("google")
+
+
+async def test_a_dataset_whose_rows_live_in_drive_asks_for_drive(monkeypatch):
+    """Keeping a dataset's rows in Drive (``"location": "gdrive:..."``) writes there: the connect asks for it."""
+    from flow_sdk.builtin.dataset import Dataset
+
+    async def datasets(*a, **k):
+        return [Dataset(name="leads", location="gdrive:GTM/Rows"), Dataset(name="notes")]
+
+    monkeypatch.setattr(Dataset, "get_all", datasets)
+    assert await wanted_extra_scopes("google") == [DRIVE]
+
+
+async def test_a_dataset_whose_rows_live_in_a_bucket_asks_for_storage_writes_and_a_gcs_source_never_does(monkeypatch):
+    from flow_sdk.builtin.dataset import Dataset
+
+    storage = "https://www.googleapis.com/auth/devstorage.read_write"
+    assert storage not in make_data_source("gcs", config={"bucket": "acme"}).connections.scopes("google")
+
+    async def datasets(*a, **k):
+        return [Dataset(name="leads", location="gcs:acme/leads")]
+
+    monkeypatch.setattr(Dataset, "get_all", datasets)
+    assert await wanted_extra_scopes("google") == [storage]

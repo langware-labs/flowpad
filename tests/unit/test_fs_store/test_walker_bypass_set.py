@@ -33,11 +33,12 @@ BESPOKE: dict[str, str] = {
     "plugin": "one user-global registry file, one ref per plugin entry",
     # markdown's docs walk IS declared; its per-FOLDER project emitter stays bespoke.
     "markdown": "markdown_in_folder_fn: the typed-ancestor fence (skip .md under any dir another type claims) is a cross-type rule",
+    "document_file": "document_files_in_folder_fn: the same docs-folder + typed-ancestor fence as markdown, for .docx/.txt",
 }
 
 DECLARED = {
     "claude_rules", "command", "plan", "todo_file", "subagent", "skill",
-    "markdown", "dynamic_workflow", "spreadsheet",
+    "markdown", "document_file", "dynamic_workflow", "spreadsheet", "chart",
 }
 
 

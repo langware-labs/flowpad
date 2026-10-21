@@ -115,18 +115,25 @@ async def source_item_of(message: Any):
     return await SourceItem.get_one({"id": str(item_id)}) if item_id else None
 
 
-async def _resolve(message: Any):
-    """``(source row, driver, source item)`` for a message that mirrors a channel message."""
+async def channel_of_source(source_id: Optional[str], provider: str = "", *, what: str = "this") -> tuple[Any, Any]:
+    """``(source row, loaded driver)`` behind a channel source — ``provider`` when the caller knows
+    which driver speaks it, else the source's own. ``LookupError`` when either is gone."""
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
+    source = await DataSource.get_by_id(source_id) if source_id else None
+    driver = DataDriver.loaded(provider or source.provider) if source is not None else None
+    if driver is None:
+        raise LookupError(f"the channel of {what} is gone")
+    return source, driver
+
+
+async def _resolve(message: Any):
+    """``(source row, driver, source item)`` for a message that mirrors a channel message."""
     item = await source_item_of(message)
     if item is None or item.origin is None:
         raise ValueError("this message did not come through a channel on this machine; there is nothing to react to")
-    source = await DataSource.get_by_id(item.data_source_id)
-    driver = DataDriver.loaded(source.provider) if source is not None else None
-    if driver is None:
-        raise LookupError(f"the channel of message {getattr(message, 'id', '?')} is gone")
+    source, driver = await channel_of_source(item.data_source_id, what=f"message {getattr(message, 'id', '?')}")
     return source, driver, item
 
 
@@ -157,4 +164,4 @@ async def unreact(message: Any, emoji: str = "") -> list[MessageReaction]:
     return folded
 
 
-__all__ = ["OURS", "apply_reactions", "fold", "react", "source_item_of", "unreact"]
+__all__ = ["OURS", "apply_reactions", "channel_of_source", "fold", "react", "source_item_of", "unreact"]

@@ -33,12 +33,12 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     driver behind it — ``provider`` when the conversation names one (two drivers can speak one
     channel), else the driver registered under the channel's name (``DataDriver.loaded`` is a
     registry lookup — safe on a serialization path), else a bare source channel titled from its
-    name. What the channel can do — files, replies, quotes, reactions — is read off the driver's class."""
+    name. What the channel can do — files, replies, quotes, reactions, actions — is read off the driver's class."""
     key = (name or "").strip() or HOME_CHANNEL
     if key == HOME_CHANNEL:
         return FLOWPAD
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415 — builtin must not import drivers at load
-    from flow_sdk.sources.protocols import Reacting  # noqa: PLC0415
+    from flow_sdk.sources.protocols import Reacting, actions_of  # noqa: PLC0415
 
     driver = (DataDriver.loaded(provider) if provider else None) or DataDriver.loaded(key)
     cls = getattr(driver, "cls", None)
@@ -53,6 +53,7 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
         replies=bool(getattr(cls, "replies", False)),
         quotes=bool(getattr(cls, "quotes", False)),
         reacts=isinstance(cls, type) and issubclass(cls, Reacting),
+        actions=list(actions_of(cls)),
     )
 
 

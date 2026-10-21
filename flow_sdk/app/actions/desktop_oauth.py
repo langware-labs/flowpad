@@ -36,7 +36,10 @@ from flow_sdk.core.oauth.provider_registry import (
     OAuthFlowKind,
     TokenShape,
     client_id_for,
+    client_secret_for,
     get_local_provider,
+    normalize_credential_dict,
+    token_request,
     user_credentials_name,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -592,52 +595,6 @@ async def _save_token_for_session_user(user_id: str, provider: str, value: Any) 
     return await record_credential(user, provider, value)
 
 
-def _normalize_credential_dict(provider: LocalOAuthProvider, token_response: dict) -> dict:
-    """The stored shape for a CREDENTIAL_DICT provider.
-
-    Persists only Flowpad-owned OAuth fields — never the harness's own
-    credentials. Selected by ``TokenShape``, not by provider name, so this is
-    the one place a provider's token shape is allowed to matter.
-    """
-    now = int(time.time() * 1000)
-    expires_at = token_response.get("expires_at")
-    expires_in = token_response.get("expires_in")
-    if expires_at is None and expires_in is not None:
-        try:
-            expires_at = now + int(expires_in) * 1000
-        except (TypeError, ValueError):
-            expires_at = None
-
-    scope = token_response.get("scope")
-    scopes = token_response.get("scopes")
-    if scopes is None and isinstance(scope, str):
-        scopes = scope.split()
-
-    credentials = {
-        "provider": provider.name,
-        "access_token": token_response.get("access_token"),
-        "refresh_token": token_response.get("refresh_token"),
-        "token_type": token_response.get("token_type"),
-        "scope": scope,
-        "scopes": scopes or [],
-        "expires_at": expires_at,
-        "created_at": now,
-    }
-    for key in (
-        "account",
-        "account_uuid",
-        "email",
-        "organization",
-        "organization_name",
-        "organization_uuid",
-        "subscription_type",
-        "rate_limit_tier",
-    ):
-        if key in token_response:
-            credentials[key] = token_response[key]
-    return credentials
-
-
 async def _save_token_response(user_id: str, provider_name: str, token_response: dict) -> bool:
     """Normalize a token response to its provider's stored shape, then record it."""
     provider = get_local_provider(provider_name)
@@ -646,7 +603,7 @@ async def _save_token_response(user_id: str, provider_name: str, token_response:
         return False
 
     if provider.token_shape is TokenShape.CREDENTIAL_DICT:
-        value: Any = _normalize_credential_dict(provider, token_response)
+        value: Any = normalize_credential_dict(provider, token_response)
         has_token = bool(value.get("access_token"))
     else:
         value = token_response.get("access_token")
@@ -960,27 +917,13 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             "state": final_state,
             "code_verifier": session.code_verifier,
         }
+        if secret := client_secret_for(provider.name):
+            token_data["client_secret"] = secret
 
-        # Exchange code for token.
-        #
-        # FORM-encoded unless the provider is the exception: RFC 6749 §4.1.3
-        # says the token request is `application/x-www-form-urlencoded`, and a
-        # spec-following endpoint rejects a JSON body outright rather than
-        # ignoring it (Entra answers `AADSTS900144: the request body must
-        # contain 'grant_type'` — it never parsed the JSON). JSON was hard-coded
-        # here while Anthropic was the only local code grant, so its endpoint's
-        # tolerance read as the rule.
-        body = {"json": token_data} if provider.token_request_json else {"data": token_data}
-        content_type = "application/json" if provider.token_request_json else "application/x-www-form-urlencoded"
+        # Exchange code for token — form- or JSON-encoded as the provider asks (``token_request``).
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                provider.endpoints.token_url,
-                **body,
-                headers={
-                    "Content-Type": content_type,
-                    "Accept": "application/json",
-                },
-                timeout=30.0,
+                provider.endpoints.token_url, **token_request(provider, token_data), timeout=30.0
             )
 
             if response.status_code != 200:

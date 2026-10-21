@@ -23,7 +23,8 @@ IGNORED_DIRS = {".flow", "__pycache__"}
 
 
 def _routed_paths(text: str) -> set[str]:
-    return set(re.findall(r"(?:modes|references|scripts)/[A-Za-z0-9_.-]+", text))
+    # A path into ANOTHER skill (`../other-skill/references/x.md`) is not one of this skill's files.
+    return set(re.findall(r"(?<![/\w])(?:modes|references|scripts)/[A-Za-z0-9_.-]+", text))
 
 
 def _authored_files() -> list[Path]:
@@ -150,13 +151,13 @@ def test_probe_copy_renames_every_project_namespace_whichever_call_copied_it(tmp
     schema.mkdir(parents=True)
     (schema / "data_schema.json").write_text('{"type": "data_schema", "ns": "acme"}')
     ds = tmp_path / "real/agentic-assets/dataset/leads"
-    (ds / "examples/dana").mkdir(parents=True)
-    (ds / "dataset.json").write_text('{"id": "1", "metadata": {"spec": {"examples": [{"input": "--acme--.crm.lead"}]}}}')
+    (ds / "rows/dana").mkdir(parents=True)
+    (ds / "dataset.json").write_text('{"id": "1", "metadata": {"spec": {"rows": [{"input": "--acme--.crm.lead"}]}}}')
     dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(schema)], no_rows=False))
     out = dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(ds)], no_rows=True))   # a SECOND call
     manifest = json.loads((root / "agentic-assets/dataset/leads/dataset.json").read_text())
-    assert manifest["metadata"]["spec"]["examples"][0]["input"] == "--dmprobeabc--.crm.lead"
-    assert out["renamed_namespaces"] == ["acme"] and not (root / "agentic-assets/dataset/leads/examples").exists()
+    assert manifest["metadata"]["spec"]["rows"][0]["input"] == "--dmprobeabc--.crm.lead"
+    assert out["renamed_namespaces"] == ["acme"] and not (root / "agentic-assets/dataset/leads/rows").exists()
 
 
 def test_probe_drop_refuses_a_probe_whose_assets_carry_ids(tmp_path, monkeypatch):
@@ -272,7 +273,9 @@ def test_dm_ctl_asks_who_uses_rows(monkeypatch):
     assert _dm_calls(monkeypatch, ["ds-used-by", "companies"]) == [("GET", "/graph/dataset/ds1/used-by", None)]
 
 
-def test_dm_ctl_mirrors_a_data_source(monkeypatch):
-    mapping = '{"key": "external_id", "input": {"name": "name"}}'
-    assert _dm_calls(monkeypatch, ["ds-mirror", "deals", "src-1", mapping, "--by", "crm", "--no-prune"]) == [
-        ("POST", "/graph/dataset/ds1/mirror", {"source_id": "src-1", "map": {"key": "external_id", "input": {"name": "name"}}, "prune": False, "by": "crm"})]
+def test_dm_ctl_pulls_and_moves_rows(monkeypatch):
+    assert _dm_calls(monkeypatch, ["ds-pull", "deals"]) == [("POST", "/graph/dataset/ds1/pull", {})]
+    assert _dm_calls(monkeypatch, ["ds-move", "deals", "s3:acme/deals"]) == [("POST", "/graph/dataset/ds1/move-rows", {"location": "s3:acme/deals"})]
+    crm = '{"driver": "twenty", "config": {"resource": "opportunities"}}'
+    assert _dm_calls(monkeypatch, ["ds-move", "deals", crm]) == [
+        ("POST", "/graph/dataset/ds1/move-rows", {"location": {"driver": "twenty", "config": {"resource": "opportunities"}}})]

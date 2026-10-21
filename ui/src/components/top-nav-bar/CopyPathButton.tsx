@@ -10,7 +10,7 @@ export function CopyPathButton({ path, testId, className }: { path: string; test
     <CopyButton
       value={path}
       testId={testId}
-      title={t`Copy path`}
+      title={t`Copy path: ${path}`}
       copiedIconClassName="text-green-500"
       className={cn(
         'gap-1.5 rounded-sm px-1 py-1 text-left font-mono text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground',

@@ -15,7 +15,7 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
 }
@@ -23,13 +23,13 @@ async function openEditor(page: Page, id: string) {
 async function injectAndSave(page: Page, skeleton: unknown[]) {
   await page.evaluate((skel) => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     api.updateScene({ elements: lib.convertToExcalidrawElements(skel) });
   }, skeleton);
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
-    (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+    const api = (window as any).__chartApi;
+    (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
   });
 }
 
@@ -173,7 +173,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
 
     // Scene now contains rectangles labelled Foo and Bar.
     const labels = await page.evaluate(() =>
-      (window as any).__whiteboardApi
+      (window as any).__chartApi
         .getSceneElements()
         .map((e: any) => e.text || '')
         .filter(Boolean),

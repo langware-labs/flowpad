@@ -15,7 +15,7 @@ A process is described by **two orthogonal booleans**, not one mode selector. Ol
 
 | Axis                   | Field      | `true`                                                    | `false`                                                                                         |
 | ---------------------- | ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Transport** (worker) | `pty_mode` | Interactive PTY: long-lived worker in a `Shell`-owned PTY | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn, no `Shell`/PTY |
+| **Transport** (worker) | `pty_mode` | Interactive PTY: long-lived worker in a `Shell`-owned PTY | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn (it outlives the turn only while the agent's background work runs — a *parked* worker), no `Shell`/PTY |
 | **Visibility** (UI)    | `visible`  | Shown as a terminal tab / loader attaches an xterm        | Not attached as a terminal tab (chat surface, or backgrounded)                                  |
 
 In this codebase **"headless" is a synonym for** **`pty_mode === false`** (the JSON-stream transport). It is *not* a separate axis from `pty_mode` — it is the name for one pole of it. The genuine orthogonality is `pty_mode` (transport) ⟂ `visible` (tab shown), enforced deliberately: `set-visible` (`agentic_process.py:1783`) flips the tab without ever touching transport, and `prompt()`'s docstring is explicit that routing is "on the transport intent `pty_mode` (NOT tab-visibility)".
@@ -142,11 +142,11 @@ Characteristics:
 | Aspect             | Current behavior                                                                                                                                      |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PTY                | None. No `Shell` is required.                                                                                                                         |
-| Worker lifetime    | One subprocess per prompt turn.                                                                                                                       |
+| Worker lifetime    | One subprocess per prompt turn — except Claude while the agent's background work runs: the subprocess outlives the turn, *parked* (see below).         |
 | Output             | Worker events are converted to `FlowData`.                                                                                                            |
 | Session continuity | `session_id` is persisted on the process and reused by later turns where supported.                                                                   |
 | Status             | `status` usually remains `running` after a successful turn so the process can accept another prompt; `worker_status` is derived from transcript tail. |
-| Concurrency        | One in-flight prompt per process, guarded by `_PROMPT_LOCKS`.                                                                                         |
+| Concurrency        | One in-flight prompt per process, guarded by `_PROMPT_LOCKS` — held for the TURN, not for the subprocess (a parked worker holds no lock).            |
 | Cancel             | `cancel-prompt` terminates the in-flight print-mode worker.                                                                                           |
 
 Backend routing:
@@ -191,6 +191,57 @@ const { process } = await AgenticProcess.spawn(
   },
 );
 ```
+
+#### Background work: one worker, several turns (Claude)
+
+**Why.** `claude -p` waits for background commands the agent started instead of killing them
+(measured on 2.1.299; on 2.1.278 it killed a background shell ~5s after stdin closed — the change happened somewhere between, so re-check after a CLI update with the long test `tests/long_tests/test_parked_worker_messages.py`). Flowpad
+used to close the CLI's stdin at the turn's `result` and hold the answer until the process exited,
+so while background work ran the chat read "working", a message the user typed waited in the queue,
+and the report of the work finishing could not reach them live.
+
+**The story of one process** (`ClaudeCLIStreamWorker`, `WorkerTurns`):
+
+```text
+1. A message arrives -> a worker is spawned with the CLI's state events on
+   (CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: session_state_changed running|idle) and
+   background_tasks_changed (the COMPLETE set of live tasks).
+2. The agent starts background work and answers. The answer is released to the chat at `result`
+   (TranscriptDurabilityGate.result_proves_durability), not at process exit.
+3. The CLI reports `idle`. Decision, on EVERY report (stdin is the CLI's input; closing it is what
+   lets the process exit):
+       idle and no background tasks  -> close stdin: the process exits (the ordinary one-turn case)
+       idle and tasks running        -> keep stdin open: the worker is PARKED
+       a stop was requested          -> close stdin whatever is running
+   A CLI that never reports its state is closed at `result`, as before.
+4. PARKED: the turn is over. WorkerTurns.end() closes that turn's response stream, releases the
+   prompt lock and runs the turn-end tail (which also drains the prompt queue). `busy` is false;
+   the entity says `background_work: true`. The process stays registered.
+5. A message arrives (HTTP `prompt` or a queue drain):
+       parked? -> claim_for_message()   one synchronous step: of two racing deliveries, one wins
+                  WorkerTurns.begin()   `busy` on, lock taken, the sender's stream attached
+                  write_user_message()  to the SAME process's stdin; answered in about a second
+       not parked -> spawn a new worker, as always
+6. The background work ends. The CLI starts a turn ON ITS OWN to report it (`session_state_changed:
+   running` with no delivery behind it): WorkerTurns.route() calls begin() — `busy` on, no response
+   stream (nobody sent it; the transcript carries it and the UI follows it via `observe-turn`).
+7. That turn ends `idle`, no tasks left -> stdin closes -> the process exits -> the runner's
+   `finally` ends the last turn and unregisters the worker.
+```
+
+`WorkerTurns.route()` reads the worker's CURRENT state, not the frame in hand: a state frame can be
+handled after a delivered message already started the next turn, and the previous turn's `idle` must
+not end that one.
+
+**Ways out of the parked state.** The work finishes (steps 6-7); `stop-background` (the composer's
+"Background tasks" chip) ends the process and the work with it, with no abort/crash frame; a
+`switch-mode` to the terminal is refused (409) — the UI offers *Switch anyway*, which stops the work
+first (see `mode-switching.md`); the process exiting (`exit`, backend restart) ends everything, and a
+restart does not bring the work back.
+
+**What it costs.** A parked worker is a live `claude` process (~290MB) for as long as the work runs,
+and a work that never ends (a dev server) holds it until stopped. A per-turn `permission_mode` cannot
+change on a live CLI, so a delivered message runs in the mode the worker started with.
 
 Claude print mode uses `ClaudeCLIStreamWorker`:
 
@@ -402,7 +453,7 @@ AND (
 )
 ```
 
-`busy` (`is_turn_busy`) is true when the per-process prompt lock is held, a print-mode worker is registered, a turn is marked in flight, or — PTY transport only — the raw `worker_status` is a mid-turn activity state. `is_ready_for_input(process)` computes `busy` itself; callers that already hold it (the serializer, `get_status`) call `is_ready_from_busy(status, busy, pty_mode=..., session_id=...)`.
+`busy` (`is_turn_busy`) is true when the per-process prompt lock is held, a print-mode worker is registered and not parked on background work, a turn is marked in flight, or — PTY transport only — the raw `worker_status` is a mid-turn activity state. `is_ready_for_input(process)` computes `busy` itself; callers that already hold it (the serializer, `get_status`) call `is_ready_from_busy(status, busy, pty_mode=..., session_id=...)`.
 
 ### WorkerMode
 

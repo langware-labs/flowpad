@@ -70,6 +70,11 @@ class Source:
     page_size: ClassVar[int] = DEFAULT_PAGE_SIZE
     #: The source hands back a ``resume_cursor`` the application may persist across sessions.
     durable_cursor: ClassVar[bool] = False
+    #: The source reads BACKWARDS on demand: its query takes a ``before`` narrow and answers the page just
+    #: older than it, newest first — what a list paged past its oldest held row asks for. One page per ask (the
+    #: next ask moves ``before`` to the oldest it got; ``next_cursor`` may be None), never a backfill, and it never
+    #: moves the forward cursor. Undeclared, a ``before`` narrow is ``Unsupported``.
+    pages_backward: ClassVar[bool] = False
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
     #: A pass read from the start to the end lists the WHOLE collection (a table, a CRM object): a
@@ -129,6 +134,8 @@ class Source:
         query = self.query()
         if not narrow:
             return query
+        if "before" in narrow and not type(self).pages_backward:
+            raise Unsupported(f"{type(self).__name__} cannot read backwards")
         if query is None:
             raise ValueError(f"{type(self).__name__} lists without a query; nothing to narrow")
         unknown = sorted(set(narrow) - set(type(query).model_fields))
@@ -380,9 +387,14 @@ class Scope:
         self.namespace = namespace
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        """``namespace`` joined with ``within`` — ``<account>/<container>``, or whichever exists."""
+        """``namespace`` joined with ``within`` — ``<account>/<container>``, or whichever exists.
+
+        The origin also carries its account-free ``scope_of(*within)`` (in-process), which is what
+        a stored item's identity is built from: the account never joins identity."""
         namespace = "/".join(part for part in (self.namespace, *within) if part)
-        return CloudOrigin(kind=self.kind, namespace=namespace, key=key)
+        origin = CloudOrigin(kind=self.kind, namespace=namespace, key=key)
+        origin._scope = scope_of(*within)
+        return origin
 
     def key(self, origin: object) -> str:
         if not isinstance(origin, CloudOrigin):
@@ -390,6 +402,39 @@ class Scope:
         if origin.kind != self.kind or origin.namespace != self.namespace:
             raise ValueError(f"{origin!r} is outside this source's scope")
         return origin.key
+
+
+def _escape_part(part: str) -> str:
+    return part.replace("%", "%25").replace("/", "%2F")
+
+
+def scope_of(*within: str) -> str:
+    """THE scope of an item: the container parts a source narrows its ids by (a channel, a feed
+    url, ``tasks``/<task id>), each percent-escaped for ``%`` and ``/`` and joined with ``/`` — a
+    feed url keeps its slashes inside its own part. The account is not a part: an item's identity
+    is ``(data_source_id, scope, key)``, so a source whose account changes keeps its rows."""
+    return "/".join(_escape_part(str(part)) for part in within if part)
+
+
+def scope_parts(scope: str) -> list[str]:
+    """``scope_of`` undone: the container parts a scope joins."""
+    return [part.replace("%2F", "/").replace("%25", "%") for part in scope.split("/") if part]
+
+
+def scope_in(origin: CloudOrigin, account: str = "") -> str:
+    """The scope ``origin`` was built in. Exact for an origin a ``Scope`` minted (it carries it);
+    otherwise recovered from ``namespace`` by stripping the ``account`` prefix — the remainder is
+    taken as ONE part, which is exact for every single-container source and for a lifted flat
+    envelope (namespace = account, or the kind for an account-less source → ``""``)."""
+    known = origin._scope
+    if known is not None:
+        return known
+    namespace = origin.namespace
+    if namespace in (account, origin.kind):
+        return ""
+    if account and namespace.startswith(account + "/"):
+        namespace = namespace[len(account) + 1:]
+    return scope_of(namespace)
 
 
 def positive_int(value: object, name: str, maximum: Optional[int] = None) -> int:
@@ -417,4 +462,4 @@ async def _settle(future: "asyncio.Future[T]", undo: Optional[Callable[[T], obje
         undo(future.result())
 
 
-__all__ = ["Altitude", "CollectionSource", "Family", "Scope", "Source", "positive_int"]
+__all__ = ["Altitude", "CollectionSource", "Family", "Scope", "Source", "positive_int", "scope_in", "scope_of", "scope_parts"]

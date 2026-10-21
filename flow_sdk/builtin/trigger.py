@@ -290,8 +290,7 @@ async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Opti
         try:
             result = await run_then(trigger, inputs=dict(inputs or {}), scope_key=scope_key)
             results.append(result)
-            if not result.ok:
-                error = result.detail or "the wizard did not finish"
+            error = _failure_of(result)                    # a wizard whose slot is held is busy, not failed
         except Exception as exc:  # noqa: BLE001 — the fire's row must still be written
             logger.exception("Trigger %s: the then wizard raised", trigger.name)
             error = f"then: {exc}"
@@ -375,7 +374,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
 
 
 async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_test: bool,
-                            run_id: Optional[str] = None) -> None:
+                            run_id: Optional[str] = None, inputs: Optional[dict[str, Any]] = None) -> None:
     """The work of one schedule fire, and its log row.
 
     Dispatches via the action handler registry (same path as FSOp's ``_fire``
@@ -394,7 +393,7 @@ async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_te
     # action dispatch. ``changes`` is empty for schedule fires — RUN_SCRIPT
     # then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
     flow_error = await activate_flows_for_trigger(trigger_id, entity.name or trigger_id, trigger=entity)
-    outcome = await run_trigger_actions(entity, changes=[])
+    outcome = await run_trigger_actions(entity, changes=[], inputs=inputs)
     errors = [e for e in (flow_error, outcome.error) if e]
 
     # A RUN_AGENT action answers with the run it started — its ``executor``

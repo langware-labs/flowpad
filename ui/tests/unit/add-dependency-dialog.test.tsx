@@ -27,23 +27,40 @@ afterEach(() => {
 });
 
 describe('AddDependencyDialog', () => {
-  it('offers one tile per source — a single Project tile, no separate hub one', () => {
+  it('offers only the sources that fit the kind — a single Project tile, no separate hub one', async () => {
+    const user = userEvent.setup();
     renderDialog();
-    for (const id of ['project', 'browse', 'git']) {
-      expect(screen.getByTestId(`add-dependency-${id}`)).toBeInTheDocument();
-    }
+    const tiles = () =>
+      ['project', 'browse', 'git'].filter((id) => screen.queryByTestId(`add-dependency-${id}`) !== null);
+    // Local lives only on this device: a folder here, never a git repo.
+    expect(tiles()).toEqual(['project', 'browse']);
+    // Required travels with the project: a git repo, never a folder only this computer has.
+    await user.click(screen.getByTestId('add-dependency-kind-required'));
+    expect(tiles()).toEqual(['project', 'git']);
     expect(screen.queryByTestId('add-dependency-hub')).not.toBeInTheDocument();
   });
 
-  it('adds a required dependency by default', async () => {
+  it('adds a local package by default, with Local the first choice', async () => {
     const user = userEvent.setup();
     const { onPick, onOpenChange } = renderDialog();
-    expect(screen.getByTestId('add-dependency-kind-required')).toHaveAttribute('aria-checked', 'true');
+    const kinds = screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'));
+    expect(kinds).toEqual(['add-dependency-kind-local', 'add-dependency-kind-required', 'add-dependency-kind-optional']);
+    expect(screen.getByTestId('add-dependency-kind-local')).toHaveAttribute('aria-checked', 'true');
 
     await user.click(screen.getByTestId('add-dependency-browse'));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(onPick).toHaveBeenCalledWith('browse', 'required');
+    expect(onPick).toHaveBeenCalledWith('browse', 'local');
+  });
+
+  it('passes Required when chosen', async () => {
+    const user = userEvent.setup();
+    const { onPick } = renderDialog();
+
+    await user.click(screen.getByTestId('add-dependency-kind-required'));
+    await user.click(screen.getByTestId('add-dependency-git'));
+
+    expect(onPick).toHaveBeenCalledWith('git', 'required');
   });
 
   it('passes Optional when chosen', async () => {

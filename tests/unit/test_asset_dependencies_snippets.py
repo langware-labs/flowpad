@@ -41,6 +41,7 @@ def drive(monkeypatch):
     """§7's Drive: the gdrive asset's own loopback double, holding ``Knowledge/{Company,Sales,Dana}``
     with one Google Doc each, behind a doubled ``google`` connection."""
     from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.core.oauth import provider_probe
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
     from flow_sdk.sources.testing.http import local_http_server
     from tests.utils.snippets import point_driver_at
@@ -61,6 +62,11 @@ def drive(monkeypatch):
     with local_http_server(serve) as base:
         point_driver_at(monkeypatch, "gdrive", "DRIVE_API_BASE", base)
         monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", fake._credentials(fake.TOKEN))
+
+        async def signed_in(_provider):  # Verify asks the machine's sign-in; the doubled connection has one
+            return {"ok": True}
+
+        monkeypatch.setattr(provider_probe, "connection_answer", signed_in)
         yield
 
 

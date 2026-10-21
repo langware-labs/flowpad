@@ -41,6 +41,7 @@ from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapp
 
 from pydantic import StringConstraints
 
+from flow_sdk.builtin.source_item import ChannelMessageSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
@@ -94,7 +95,7 @@ _PAGE = "page:"
 
 class SlackMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.slack"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw", "recorded"})
+    digest_exclude: ClassVar[frozenset[str]] = frozenset({"raw", "recorded"})
 
     raw: Optional[dict] = None
     #: A sent message whose record is the provider's echo, not a copy made at send (an upload: Slack
@@ -119,6 +120,8 @@ class SlackSource(MessageSource):
     Config = SlackConfig
     provider = "slack"
     durable_cursor = True
+    #: ``narrow={"before": t}`` reads one page of history older than ``t`` (``latest``), newest first.
+    pages_backward = True
     page_size = HISTORY_PAGE
     pages_per_pass = 1
     #: A Slack source is ABOUT its channel: a caller reuses the row that names it.
@@ -162,9 +165,7 @@ class SlackSource(MessageSource):
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
     def outbound_spec(cls) -> type:
-        from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
-
-        return SlackMessageSpec
+        return ChannelMessageSpec
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
         """The application's send arguments as a Slack message: ``to`` is the channel (a Slack thread
@@ -203,6 +204,8 @@ class SlackSource(MessageSource):
             raise Unsupported("reading a single Slack thread is not supported")
 
         params: dict[str, Any] = {"channel": channel, "limit": min(limit, HISTORY_PAGE), "inclusive": "false"}
+        if query.before is not None:
+            return await self._older(channel, query.before, params)
         oldest, newest = _start(query, cursor)
         if isinstance(cursor, str) and cursor.startswith(_PAGE):
             params["cursor"] = _page_state(cursor)["cursor"]
@@ -224,6 +227,15 @@ class SlackSource(MessageSource):
             next_cursor=_PAGE + json.dumps({"cursor": more, "oldest": oldest, "newest": newest}) if more else None,
             resume_cursor=_RESUME + newest if newest else None,
         )
+
+    async def _older(self, channel: str, before: datetime, params: dict[str, Any]) -> ChangePage:
+        """One page of the channel's messages sent strictly before ``before``, newest first, as
+        ``conversations.history`` answers ``latest`` with ``inclusive=false``. Neither reads nor moves
+        the forward cursor; reactions stay with the forward read."""
+        body = await self._call("conversations.history", **params, latest=f"{before.timestamp():.6f}")
+        messages = [m for m in body.get("messages") or [] if m.get("ts") and m.get("subtype") not in NOT_A_MESSAGE]
+        messages.sort(key=lambda m: _ts_key(str(m["ts"])), reverse=True)
+        return ChangePage(items=tuple(self._item(channel, m) for m in messages if _ts_key(str(m["ts"])) < before.timestamp()))
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None

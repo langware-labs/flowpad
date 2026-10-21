@@ -16,7 +16,7 @@
 #
 # Usage:
 #   scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
-#   scripts/instance_ctl.sh kill   <name> [--keep-env]
+#   scripts/instance_ctl.sh kill   <name> [--keep-env | --purge]
 #   scripts/instance_ctl.sh status [<name>]
 #   scripts/instance_ctl.sh list
 #   scripts/instance_ctl.sh gc     [--yes] [--age DAYS]
@@ -124,14 +124,18 @@ spawn_detached() {
 #   * it is not on the protected list (long-lived instances),
 #   * no live process carries FLOW_INSTANCE=<name> in its environment
 #     (ownership check — port checks lie once the 500X/600X band is recycled),
-#   * no file under its data dir was touched within the age window.
+#   * no file under its data dir was touched within the age window (1 day),
+#   * no git repo in its workspace has uncommitted changes (kept, and said so).
+# The instance dir holds everything: DB, records, its projects (workspace/),
+# workspaces/ and user-scope assets (home/). Pre-move instances also left
+# ~/Flowpad workspaces/{<name>,.home/<name>,.workspaces/<name>}; gc sweeps those too.
 # Runs automatically (with --yes) at the start of every launch, so leftovers
 # from abandoned scratch instances can't accumulate again.
 # ---------------------------------------------------------------------------
 PROTECTED_INSTANCES="${PROTECTED_INSTANCES:-prod oss dev-1 dev-2}"
 
 cmd_gc() {
-  local yes=0 age_days=7
+  local yes=0 age_days=1
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes) yes=1; shift;;
@@ -169,11 +173,16 @@ cmd_gc() {
     in_list "$name" "$PROTECTED_INSTANCES" && continue
     [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
     [ -n "$(find "$d" -type f -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
+    if has_dirty_repo "$d/workspace" || has_dirty_repo "$(legacy_workspace "$name")"; then
+      log "gc: keeping '$name' — a repo in its workspace has uncommitted changes"
+      continue
+    fi
     candidates[${#candidates[@]}]="$name"; count=$((count + 1))
   done
 
   if [ "$count" = 0 ]; then
     log "gc: nothing to clean (dead + idle >${age_days}d; protected: $PROTECTED_INSTANCES)"
+    gc_legacy_workspaces "$ps_env_dump" "$age_days"
     return 0
   fi
 
@@ -195,10 +204,53 @@ cmd_gc() {
       log "gc: refusing to delete protected instance '$n'"
       continue
     fi
-    rm -rf "$(instance_dir "$n")"
-    rm -f "$(env_file "$n")"
+    purge_instance_files "$n" || true
   done
   log "gc: removed $count instance dir(s)"
+  gc_legacy_workspaces "$ps_env_dump" "$age_days"
+}
+
+# The pre-move home of a non-prod instance's projects (now <instance_dir>/workspace).
+LEGACY_WORKSPACES="$HOME/Flowpad workspaces"
+legacy_workspace() { echo "$LEGACY_WORKSPACES/$1"; }
+
+# Whether any git repo up to 3 levels under $1 has uncommitted changes.
+has_dirty_repo() {
+  local root="$1" g
+  [ -d "$root" ] || return 1
+  while IFS= read -r g; do
+    [ -n "$(git -C "$(dirname "$g")" status --porcelain 2>/dev/null | head -1)" ] && return 0
+  done < <(find "$root" -maxdepth 4 -name .git -type d 2>/dev/null)
+  return 1
+}
+
+# Everything one instance owns on disk: its dir (DB, records, workspace, home) and env file,
+# plus its pre-move folders under ~/Flowpad workspaces.
+purge_instance_files() {
+  local n="$1"
+  in_list "$n" "$PROTECTED_INSTANCES" && { warn "refusing to purge protected instance '$n'"; return 1; }
+  rm -rf "$(instance_dir "$n")"
+  rm -f "$(env_file "$n")"
+  rm -rf "$(legacy_workspace "$n")" "$LEGACY_WORKSPACES/.home/$n" "$LEGACY_WORKSPACES/.workspaces/$n"
+}
+
+# Leftovers under ~/Flowpad workspaces whose instance is dead and has no dir any more
+# (the sweep above only sees names that still have an instance dir).
+gc_legacy_workspaces() {
+  local ps_env_dump="$1" age_days="${2:-1}" d name
+  [ -d "$LEGACY_WORKSPACES" ] || return 0
+  for d in "$LEGACY_WORKSPACES"/*/ "$LEGACY_WORKSPACES"/.home/*/ "$LEGACY_WORKSPACES"/.workspaces/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    case "$name" in *[[:space:]]*|*/*) continue;; esac
+    in_list "$name" "$PROTECTED_INSTANCES" && continue
+    [ -d "$(instance_dir "$name")" ] && continue
+    [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
+    [ -n "$(find "$d" -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
+    if has_dirty_repo "$d"; then log "gc: keeping $d — uncommitted changes"; continue; fi
+    rm -rf "$d"
+  done
+  rmdir "$LEGACY_WORKSPACES/.home" "$LEGACY_WORKSPACES/.workspaces" "$LEGACY_WORKSPACES" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -386,8 +438,9 @@ EOF
 cmd_kill() {
   local name="${1:-}"; shift || true
   [ -n "$name" ] || die "kill needs an instance name"
-  local keep_env=0
+  local keep_env=0 purge=0
   [ "${1:-}" = "--keep-env" ] && keep_env=1
+  [ "${1:-}" = "--purge" ] && purge=1
 
   local reg; reg="$(registry "$name")"
   local fe_port="" be_port="" be_pid="" fe_pid="" ef=""
@@ -440,6 +493,13 @@ cmd_kill() {
   if [ "$keep_env" = 0 ] && [ -n "$ef" ] && [ -f "$ef" ]; then
     rm -f "$ef"; log "removed env file $ef"
   fi
+  if [ "$purge" = 1 ]; then
+    if has_dirty_repo "$(instance_dir "$name")/workspace" || has_dirty_repo "$(legacy_workspace "$name")"; then
+      warn "not purging '$name': a repo in its workspace has uncommitted changes"
+    else
+      purge_instance_files "$name" && log "purged '$name' (data, workspace, assets)"
+    fi
+  fi
   log "instance '$name' stopped"
 }
 
@@ -477,7 +537,7 @@ main() {
     *) cat >&2 <<EOF
 usage:
   scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
-  scripts/instance_ctl.sh kill   <name> [--keep-env]
+  scripts/instance_ctl.sh kill   <name> [--keep-env | --purge]
   scripts/instance_ctl.sh status [<name>]
   scripts/instance_ctl.sh list
   scripts/instance_ctl.sh gc     [--yes] [--age DAYS]

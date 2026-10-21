@@ -528,6 +528,11 @@ class ScanActionsMixin:
             context_data.update(launch_surface_fields(context_data.pop(LAUNCH_SURFACE_KEY, None)))
             workdir = context_data.pop("workdir", None)
             project_id = context_data.pop("project_id", None)
+            # A chat with no project (`scratch`): run in the instance's chat scratch folder.
+            if context_data.pop("scratch", False) and not workdir and not project_id:
+                from flow_sdk.builtin.remote_worker_session import chat_scratch_workdir  # noqa: PLC0415
+
+                workdir = str(chat_scratch_workdir())
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
             target_typeid_str = context_data.pop("target_typeid_str", None)
             # Dock view the chat belongs to — the Flowpad Assistant keeps one chat per context.

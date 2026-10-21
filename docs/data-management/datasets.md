@@ -6,28 +6,29 @@ id: 214b0833-33ad-5a42-b825-688700d6277a
 
 How to lay out a **dataset** on disk so the Flowpad library discovers and parses
 it. This is the user-facing contract — the folders and files *you* create. The
-parser lives in `flow_sdk/fs_store/indexer/functions/dataset.py`; the entity and
-row models in `flow_sdk/builtin/dataset.py`.
+parser is `flow_sdk/schema/data_spec/layout.py` + `flow_sdk/assets/types/dataset.py`
+(registered in `flow_sdk/schema/type_info/dataset_type_info.py`); the entity in
+`flow_sdk/builtin/dataset.py`, the row model in `flow_sdk/schema/data_spec/dataset_spec.py`.
 
 A dataset is a **folder** under `agentic-assets/dataset/<slug>/`, marked by a
 `dataset.json` manifest at its root. Without that manifest the folder is **not**
-discovered as a dataset. It holds many **examples** (rows) in one of two physical
+discovered as a dataset. It holds many **rows** in one of two physical
 layouts, chosen by `data_layout` in the manifest:
 
 | `data_layout` | Shape | Use when |
 |---|---|---|
-| `csv` | one `data.csv`; each row is an example | flat, tabular, text-only data |
-| `io_folder` | an `examples/` tree; one sub-folder per example | files, binaries, multiple outputs, multi-annotation gold |
+| `csv` | one `data.csv`; each row is a row | flat, tabular, text-only data |
+| `io_folder` | a `rows/` tree; one sub-folder per row | files, binaries, multiple outputs, multi-annotation gold |
 
-Every example normalizes to the same `ExampleSpec` shape regardless of layout, so
-downstream code reads `dataset.examples` / `dataset.of_kind(ExampleKind.EVAL)`
+Every row normalizes to the same `RowSpec` shape regardless of layout, so
+downstream code reads `dataset.rows` / `dataset.of_kind(RowKind.EVAL)`
 without caring which layout produced it.
 
 ---
 
 ## 0. The two-section convention (`metadata` + `data`)
 
-**Every domain dataset JSON file** — `dataset.json`, `example.json`, and the `<slot>.json`
+**Every domain dataset JSON file** — `dataset.json`, `row.json`, and the `<slot>.json`
 sidecars — is a two-section document:
 
 ```jsonc
@@ -51,7 +52,7 @@ The FlowPad-managed `.flow/capsules/*.json` files are not dataset domain
 documents and use the capsule schema described under Portability below.
 
 > The `csv` layout is the one exception — `data.csv` cells are not JSON docs; its
-> leftover columns land in `Example.metadata` (see §2).
+> leftover columns land in `Row.metadata` (see §2).
 
 ---
 
@@ -68,8 +69,9 @@ configuration + metadata, in the two-section form:
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
     "field_spec": { "input": "question" },          // CSV column remap only (§2)
     "delimiter": ",",                               // CSV only
+    "location": "local",                            // where the rows live (default "local")
     "spec": {                                       // a DatasetSpec authoring form (§ Spec)
-      "examples": [ { "input":  { "question": "string" },
+      "rows": [ { "input":  { "question": "string" },
                       "output": { "category": "string" } } ]
     }
   },
@@ -80,16 +82,21 @@ configuration + metadata, in the two-section form:
 ```
 
 Computed fields you **do not** write — the indexer fills them in:
-`num_examples`, `kind_counts`, `num_annotated`, `num_multi_output`,
+`num_rows`, `kind_counts`, `num_annotated`, `num_multi_output`,
 `num_binary_inputs`.
+
+`location` says where the rows live: `"local"` (`<dataset>/rows/`, kept out of git), `"file:<folder>"`,
+`"<driver>:<target>"` (`gdrive:GTM/Rows/leads`, `s3:my-bucket/gtm/leads`), or a record system
+(`{"driver", "config", "map", "by"?}`). The dataset folder holds the shape; the rows go where the
+person puts them — see [dataset locations](dataset-locations.md).
 
 ### The `spec`
 
 `spec` is a [`DatasetSpec`](data-spec.md) authoring form — the shape every row
-has, written as ONE example shape:
+has, written as ONE row shape:
 
 ```jsonc
-"spec": { "examples": [ { "input":  { "subject": "string", "body": "string" },
+"spec": { "rows": [ { "input":  { "subject": "string", "body": "string" },
                           "output": { "category": "string" },
                           "context": { "history": ["string"] } } ] }
 ```
@@ -97,7 +104,7 @@ has, written as ONE example shape:
 `input` is required; `output` / `ground_truth` share one shape (either name
 declares it); `context` is optional. Each slot is a `DataSpec` authoring form —
 a bare kind (`"file_ref"`, `"text"`, a registered class), an object, or a
-one-element list. It compiles to `DatasetSpec[ExampleSpec[I, O, C]]`, a real
+one-element list. It compiles to `DatasetSpec[RowSpec[I, O, C]]`, a real
 Pydantic parametrization, and is stored back in exactly this form with kinds
 normalized.
 
@@ -108,7 +115,7 @@ be lost over a bad metadata key.
 
 The index pass reads rows as ARTIFACTS regardless of `spec`: a file is a
 `FileRef`, not its contents. Validating contents against the declared shape
-means opening the files — `dataset.example_type.model_validate(...)` — and is
+means opening the files — `dataset.row_type.model_validate(...)` — and is
 the consumer's call.
 
 ### Portability
@@ -134,10 +141,10 @@ moves a folder that still relies on one into the sidecar.
 ```
 agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "csv" }, "data": {} }
-  data.csv            # one row per example
+  data.csv            # one row per row
 ```
 
-`data.csv` columns map onto the canonical example fields. By default the layout
+`data.csv` columns map onto the canonical row fields. By default the layout
 (`CsvLayout`) looks for columns named `input`, `expected`, and `kind`. If your
 headers differ, remap them with `field_spec` (canonical → your header):
 
@@ -150,13 +157,13 @@ question,answer,difficulty
 capital of France?,Paris,easy
 ```
 
-- `input` → `ExampleSpec.input` as a `TextSpec` cell, `expected` →
-  `ExampleSpec.ground_truth` as a `TextSpec` (the column keeps its legacy name;
+- `input` → `RowSpec.input` as a `TextSpec` cell, `expected` →
+  `RowSpec.ground_truth` as a `TextSpec` (the column keeps its legacy name;
   the row field is the gold slot — there is no `expected` field on the row),
-  `kind` → `ExampleSpec.kind` (`train` | `eval` | `test`; default `train`).
-- **Any column not mapped lands in `ExampleSpec.metadata`** (here: `difficulty`).
+  `kind` → `RowSpec.kind` (`train` | `eval` | `test`; default `train`).
+- **Any column not mapped lands in `RowSpec.metadata`** (here: `difficulty`).
 - A CSV row never holds a file or a folder: `CsvLayout.write` refuses anything
-  but a `TextSpec` cell, and the per-example verbs (`promote` / `annotate`) are
+  but a `TextSpec` cell, and the per-row verbs (`promote` / `annotate`) are
   `io_folder` only.
 
 `field_spec` is a column **rename map only** — it is not a schema and is ignored
@@ -169,13 +176,13 @@ by the `io_folder` layout.
 ```
 agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "io_folder" }, "data": {} }
-  examples/
-    0001/             # one folder per example (the folder name is the example key)
+  rows/
+    0001/             # one folder per row (the folder name is the row key)
     0002/
     ...
 ```
 
-Each `examples/<name>/` folder describes **one example** through up to four
+Each `rows/<name>/` folder describes **one row** through up to four
 **slots** plus metadata.
 
 ### 3.1 Slots: `input`, `output`, `ground_truth`, `context`
@@ -185,7 +192,7 @@ Each `examples/<name>/` folder describes **one example** through up to four
 | `input` | what the system is given (the prompt / scan / document). **Required** — a folder with no input in any form is skipped. |
 | `output` | candidate / produced result(s). Informational; **never** treated as the gold. |
 | `ground_truth` | the **gold** — the correct/expected answer; multiple = several annotations (consensus). |
-| `context` | what surrounds the input (history, retrieved documents). Optional; the `C` of `ExampleSpec[I, O, C]`. |
+| `context` | what surrounds the input (history, retrieved documents). Optional; the `C` of `RowSpec[I, O, C]`. |
 
 Each slot's **data** may take any of these forms:
 
@@ -197,7 +204,7 @@ Each slot's **data** may take any of these forms:
 | numbered folders | `ground_truth-1/`, `ground_truth-2/` | multiple artifacts (consensus annotations) |
 
 Numbering (`<slot>-<N>`) is how you express **multiple outputs** and **multiple
-ground-truth annotations** for the same example. The bare form and numbered
+ground-truth annotations** for the same row. The bare form and numbered
 forms can coexist (bare sorts first).
 
 ### 3.2 Sidecars: `<slot>.json`
@@ -207,7 +214,7 @@ artifact — **not** slot data. `.json` is *always* a sidecar in a slot position
 `metadata`/`data` sections land on the artifact's `.metadata`/`.data`.
 
 ```
-examples/0001/
+rows/0001/
   input.pdf            # input data
   input.json           # { "metadata": { "pages": 3 }, "data": { … } }  ← input sidecar
   ground_truth/grade.json   # gold data (structured → use the folder form)
@@ -218,32 +225,31 @@ examples/0001/
 > for the sidecar, put structured slot *data* inside the folder
 > (`ground_truth/grade.json`), not at `ground_truth.json`.
 
-### 3.3 Example metadata: `example.json`
+### 3.3 Row metadata: `row.json`
 
-Per-example metadata lives in `example.json` (the file `meta.json` is still
-accepted as a back-compat alias; `example.json` wins per section on conflict).
+Per-row metadata lives in `row.json`.
 
 ```jsonc
-// examples/0001/example.json
+// rows/0001/row.json
 {
-  "metadata": { "kind": "eval", "layout": "pages" }, // known → lifted to Example.kind/.layout
-  "data":     { "anything": "you want" }              // free → Example.data
+  "metadata": { "kind": "eval", "layout": "pages" }, // known → lifted to Row.kind/.layout
+  "data":     { "anything": "you want" }              // free → Row.data
 }
 ```
 
 - Reserved keys `kind` and `layout` (in the **metadata** section) are lifted onto
-  `Example.kind` / `Example.layout`, and the whole metadata section is kept on
-  `Example.metadata`; the data section is kept on `Example.data`.
-- An example-level `id` is **ignored** — example ids are derived deterministically
-  (`example_id`: a uuid5 of `<dataset id>:<folder name>`, or the CSV row index) so
-  re-indexing is idempotent. An example is a value inside the dataset row, not an
-  entity, which is why a derived id is allowed here.
+  `Row.kind` / `Row.layout`, and the whole metadata section is kept on
+  `Row.metadata`; the data section is kept on `Row.data`.
+- The row's `id` is `metadata.id` (a v4 minted on first write). A row that stores none
+  falls back to the legacy `derived_row_id` (uuid5 of `<dataset id>:<folder name>`) and
+  stores it on its next write. **The one exception: CSV rows** have nowhere to store an
+  id, so theirs is always computed — uuid5 of `<dataset id>:<row index>`.
 
 ### 3.4 Resolution rules (the fine print)
 
 - **Gold = `ground_truth` only.** `output` never feeds the gold.
 - **Legacy `expected.txt`** (and `input.txt`) still work: `input.txt` →
-  `Example.input`, `expected.txt` is folded onto the `ground_truth` slot. A
+  `Row.input`, `expected.txt` is folded onto the `ground_truth` slot. A
   native `ground_truth.*` wins over a legacy `expected.txt` if both exist.
 - **File beats folder**: if both a bare file and a same-named folder claim one
   slot+index (e.g. `input.txt` *and* `input/`), the file wins and the folder is
@@ -252,13 +258,13 @@ accepted as a back-compat alias; `example.json` wins per section on conflict).
   not even `.txt`. The `.txt`/`.md` extension matters only to `is_binary`, which
   feeds the `num_binary_inputs` count. Decoding a file is the consumer's job.
 
-### 3.5 Canonical example
+### 3.5 Canonical row
 
 ```
 agentic-assets/dataset/grader-e2e/
   .flow/capsules/identity.json     # { "version": 1, "data": { "id": "<uuid-v4-or-v5>" } }
   dataset.json                     # { "metadata": { "data_layout": "io_folder", "title": "Grader E2E" }, "data": {} }
-  examples/0001/
+  rows/0001/
     input.pdf                      # raw input (binary; referenced, not read)
     input.json                     # { "metadata": { "pages": 3 }, "data": {} }   ← input sidecar
     output-1.txt   output-2.txt    # two candidate outputs
@@ -266,52 +272,54 @@ agentic-assets/dataset/grader-e2e/
     ground_truth.json              # { "metadata": { "rater": "A" }, "data": {} } ← gold sidecar
     ground_truth-2/grade.json      # gold annotation #2 (consensus)
     ground_truth-2.json            # { "metadata": { "rater": "B" }, "data": {} }
-    example.json                   # { "metadata": { "kind": "eval", "layout": "pages" }, "data": {} }
+    row.json                   # { "metadata": { "kind": "eval", "layout": "pages" }, "data": {} }
 ```
 
 ---
 
 ## 4. What the parser produces
 
-Each example becomes an `ExampleSpec` (`flow_sdk/schema/data_spec/dataset_spec.py`)
-— a VALUE model (the `Spec` suffix), never an entity. `Dataset.examples` is the
+Each row becomes a `RowSpec` (`flow_sdk/schema/data_spec/dataset_spec.py`)
+— a VALUE model (the `Spec` suffix), never an entity. `Dataset.rows` is the
 list, populated eagerly by `DiskSerializer.load` (a Dataset is written by `save()` — the serializer writes `dataset.json` and the rows through `DatasetLayout`):
 
 ```python
-class ExampleSpec(DataSpec, Generic[I, O, C]):
-    id: str                          # deterministic uuid5(dataset_id : key) — the row index (csv) or folder name (io_folder)
-    kind: ExampleKind                # train | eval | test  (from example.json metadata; a FIELD, not the spec_kind hook)
+class RowSpec(DataSpec, Generic[I, O, C]):
+    id: str                          # io_folder: row.json metadata.id (legacy fallback uuid5); csv: always uuid5(dataset_id : row index)
+    key: str                         # the row folder's name
+    version: str                     # digest of the row's files — pass back as `expected`
+    kind: RowKind                # train | eval | test  (from row.json metadata; a FIELD, not the spec_kind hook)
     input: I
     output: O | list[O] | None       # one occurrence → O; numbered output-1, output-2… → list[O], canonical order
     ground_truth: O | list[O] | None # the gold answer — same shape as output
     context: C | None
-    metadata: dict                   # example.json `metadata` (+ CSV leftover columns) ∪ sidecars by filename
-    data: dict                       # example.json `data` section (free, use-case-owned)
+    metadata: dict                   # row.json `metadata` (+ CSV leftover columns) ∪ sidecars by filename
+    data: dict                       # row.json `data` section (free, use-case-owned)
 ```
 
-`layout` is a property reading `metadata["layout"]`, not a field. `ExampleSpec`
+`layout` is a property reading `metadata["layout"]`, not a field. `RowSpec`
 is generic in `I, O, C`; the index pass reads every row as
-`DEFAULT_DATASET_SPEC.example_type()` (`ExampleSpec[Artifact, Artifact, DataSpec]`).
+`DEFAULT_DATASET_SPEC.row_type()` (`RowSpec[Artifact, Artifact, DataSpec]`).
 
 The slots hold the three leaves. **The type IS the file/folder distinction:**
 
 | On disk | In the row |
 |---|---|
-| a file (`input.pdf`) | `FileRef(path="input.pdf")` — its example-relative POSIX path, never read |
+| a file (`input.pdf`) | `FileRef(path="input.pdf")` — its row-relative POSIX path, never read |
 | a folder (`ground_truth/`) | `FolderSpec(path="ground_truth", files={...})` — members by filename, recursively |
 | a CSV cell | `TextSpec(text="…")` |
 | numbered occurrences (`output-1.txt`, `output-2.txt`) | `output = [FileRef, FileRef]` — bare first, then numeric ascending |
 | a sidecar (`ground_truth-2.json`) | `metadata["ground_truth-2.json"] = {"metadata": …, "data": …}` — legal as an orphan with no data key |
 
 ```python
-# examples/0001/ from §3.5
-ExampleSpec(
-    kind=ExampleKind.EVAL,           # lifted from example.json metadata.kind
+# rows/0001/ from §3.5
+RowSpec(
+    kind=RowKind.EVAL,           # lifted from row.json metadata.kind
     input=FileRef(path="input.pdf"),
     output=[FileRef(path="output-1.txt"), FileRef(path="output-2.txt")],
     ground_truth=[FolderSpec(path="ground_truth", files={"grade.json": FileRef(path="ground_truth/grade.json")}),
                   FolderSpec(path="ground_truth-2", files={"grade.json": FileRef(path="ground_truth-2/grade.json")})],
-    metadata={"kind": "eval", "layout": "pages",                       # the whole example.json metadata section …
+    metadata={"kind": "eval", "layout": "pages",                       # the whole row.json metadata section …
               "input.json": {"metadata": {"pages": 3}, "data": {}},   # … plus every sidecar under its filename
               "ground_truth.json": {"metadata": {"rater": "A"}, "data": {}},
               "ground_truth-2.json": {"metadata": {"rater": "B"}, "data": {}}},
@@ -321,16 +329,16 @@ ExampleSpec(
 
 The on-disk grammar is unchanged; what changed is that it is now read and
 written by ONE object — [`DatasetLayout`](data-spec.md) (`CsvLayout` /
-`FolderLayout`). `ExampleSpec` never learns which layout it came from. A
+`FolderLayout`). `RowSpec` never learns which layout it came from. A
 `FileRef` becomes an absolute path only in `FolderLayout.resolve`.
 
-An example directory with no `input` DATA (a lone `input.json` sidecar is not
+A row directory with no `input` DATA (a lone `input.json` sidecar is not
 data) is skipped entirely and not counted. An `expected*` file is the legacy
 alias for `ground_truth`, honoured only when no native gold data exists.
 
-The graph-workflow capture seam (`prepare_execution_io`, `_stamp_example`)
+The graph-workflow capture seam (`prepare_execution_io`, `_stamp_row`)
 writes through the same `FolderLayout`, so an execution directory IS an
-`io_folder` example directory by construction.
+`io_folder` row directory by construction.
 
 ## 5. Authoring checklist
 
@@ -342,10 +350,10 @@ writes through the same `FolderLayout`, so an execution directory IS an
 - [ ] If the dataset declares a shape, put its compact `DataSpec` under
       `dataset.json` `metadata.spec`.
 - [ ] **csv**: `data.csv` present; non-standard headers remapped via `field_spec`.
-- [ ] **io_folder**: every `examples/<name>/` has an `input` artifact (file/folder).
+- [ ] **io_folder**: every `rows/<name>/` has an `input` artifact (file/folder).
 - [ ] Gold goes under `ground_truth` (structured gold → folder form, e.g.
       `ground_truth/grade.json`); multiple annotations use `ground_truth-1`, `-2`, …
-- [ ] `<slot>.json` is a sidecar (metadata/data), not slot data; `example.json`
+- [ ] `<slot>.json` is a sidecar (metadata/data), not slot data; `row.json`
       `metadata` carries `kind`/`layout`.
 - [ ] Run the indexer (`flow record index`) to register the dataset and counts.
 
@@ -361,7 +369,7 @@ A dataset can be **bound to a DataSource** (`Dataset.source_id`, authored in
 envelope — plus the output shape the person chose, in the keyword form:
 
 ```json
-{"examples": [{"input": "ingest.source_item", "output": {"topic": "string", "sentiment": "string"}}]}
+{"rows": [{"input": "ingest.source_item", "output": {"topic": "string", "sentiment": "string"}}]}
 ```
 
 Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
@@ -369,15 +377,15 @@ Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
 
 | Action | Body | Writes |
 | --- | --- | --- |
-| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance; replies `{example_ids, num_examples}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
-| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json` (replacing any earlier gold), validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{example_id, num_annotated}` |
-| `GET /graph/dataset/<id>/examples` | — | `{"examples": [{example_id, item_id, kind, annotated}]}` read from the folder |
+| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `rows/NNNN/input/item.json` (the envelope) + `row.json` with `metadata.source` provenance; replies `{ids, num_rows}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
+| `POST /graph/dataset/<id>/annotate` | `{"row_id", "ground_truth"}` | `rows/NNNN/ground_truth/label.json` (replacing any earlier gold), validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{row_id, num_annotated}` |
+| `GET /graph/dataset/<id>/row-index` | — | `{"rows": [{row_id, item_id, kind, annotated}]}` read from the folder |
 
-Both are per-example writes (`FolderLayout.append_many` / `annotate`) — the
+Both are per-row writes (`FolderLayout.append_many` / `annotate`) — the
 other rows are never rewritten — and both re-derive the counts from the cheap
-per-example index (`FolderLayout.index`: one `example.json` per dir plus an
+per-row index (`FolderLayout.index`: one `row.json` per dir plus an
 `exists` on `ground_truth/`, never the payloads) and save the row, so
-`num_examples` / `num_annotated` follow the disk without a full reindex. Numbering
+`num_rows` / `num_annotated` follow the disk without a full reindex. Numbering
 follows the highest existing `NNNN`, never the count, so a gap is preserved. The
 editor webapp nested in every shipped source definition carries the pane that
 drives them; the `connect-data-source` skill's `define` mode drives them for an
@@ -388,17 +396,16 @@ agent.
 **The model, on one page.** Five nouns: a **kind** is a name (`--acme--.crm.lead`); a **schema** is
 the definition under it (fields, `rules`, `owned_by`, `include`); a **dataset** is the folder that
 keeps the rows of one kind; a **row** is one value of it, with a `key` (its name, yours to choose),
-an `id` (stored in the row, never computed), a `ref` (`<kind>.id.<id>` — what a link holds) and a
+an `id` (stored in the row — computed only for a CSV row, which has nowhere to store one), a `ref` (`<kind>.id.<id>` — what a link holds) and a
 `version` (pass it back as `expected`); a **problem** is a row that does not fit, reported beside
-the rows that do. "Row" is the word; "example" is the same thing seen as eval data and on disk
-(`examples/<key>/`), which is why some older names (`example()`, `example_id`) still say it.
+the rows that do. "Row" is the word, in the API, on disk (`rows/<key>/row.json`) and in evals.
 
-Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
+Eight verbs, the same in Python, TypeScript, REST and `dm_ctl` (the full REST list is below):
 
 | Verb | Python | TypeScript | REST | Says |
 |---|---|---|---|---|
-| rows | `rows(match, …)` (= `query`) | `rows(query)` | `GET rows` | some or all rows, plus every problem |
-| count | `count(match, group_by, metrics)` | `count(query)` | `GET count` | how many match — the SAME question as rows |
+| query | `query(match, …)` | `query(query)` | `GET rows` | some or all rows, plus every problem (`Dataset.rows` in Python is the parsed list, not a verb) |
+| count | `count(match, group_by, metrics)` | `count(query)` | `GET count` | how many match — the SAME question as query |
 | check | `check_row(row)` (`check` → its lines) | `check(row)` | `check-row` | would this write pass? A row that names its `key` is judged exactly as `put` would judge it (merged with the slots it leaves out, against the rules of the rows that reach it); writes nothing |
 | append | `append(rows)` | `append(rows)` | `append` | new rows |
 | put | `put` / `put_many` | `put` / `putMany` | `put-row` / `put-rows` | create or replace, by key |
@@ -407,15 +414,17 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
 | sync | `sync(rows, prune, match)` | `sync(rows, …)` | `sync-rows` | hold exactly these rows |
 
 (`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
-verbs carry `_row`. Writes are awaited; reads are plain calls.)
+verbs carry `_row`. Async (awaited): `append`, `put`, `put_many`, `sync`, `mirror`, `pull`, `promote`,
+`annotate`. Synchronous: `delete_row`, `delete_rows`, `rename_row`, `set_data` (replace one row's
+free `data`, Python only), `store_ids`, and every read.)
 
-Four laws. (1) Every write is checked first and is all or nothing — except a MIRROR of an outside
+Four laws. (1) Every write is checked first and is all or nothing — except the pull of a record
 system (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
-writes the rest (see [mirroring a system of record](mirroring-a-system-of-record.md)). (2) A refusal is read by
+writes the rest (see [dataset locations](dataset-locations.md)). (2) A refusal is read by
 `details[].code` — `[{path, code, message}]` on every refusal, with `errors` as its lines: **400** the
 row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`,
-and in a mirrored dataset `not_writable`, `source_refused`, `unlinked`),
-**404** no such row, **409** it changed since (`conflict`, `gone`) or is still linked to (`referenced`).
+and in a record-system location `not_writable`, `source_refused`, `unlinked`),
+**404** no such row, **409** it changed since (`conflict`, `gone`, or another writer at the location got there first) or is still linked to (`referenced`).
 In Python these are `RowRefused` (alias `LinkError`), `LookupError`, `ConflictError`. (3) One bad row
 never hides the others. (4) A change is announced as a hint (`dataset.rows.changed`: keys, never
 values) — re-read.
@@ -431,11 +440,13 @@ value, written by the generic walker as `«slot»/<last kind segment>.json` (`in
 `ground_truth/decision.json`), several gold answers as `ground_truth-1/`, `ground_truth-2/` — any
 one is right.
 
-A row's **key** is its example folder's name (`examples/<key>/`); its **id** is stored in the row
-(`example.json` `metadata.id`, a v4 minted on first write — a row written before that adopts its legacy
-`layout.example_id` on its next write), so a rename or a re-clone keeps it. Every read hands back `key`,
-`id`, `ref` (`<row kind>.id.<id>`, how another row links to this one) and `version`. A key a caller
-chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`, …).
+A row's **key** is its row folder's name (`rows/<key>/`); its **id** is stored in the row
+(`row.json` `metadata.id`, a v4 minted on first write — a row written before that adopts its legacy
+`layout.row_id` on its next write), so a rename or a re-clone keeps it. Every read hands back `key`,
+`id`, `ref` (`<row kind>.id.<id>`, how another row links to this one) and `version`. The row kind
+is `Dataset.row_kind`, a computed field sent to clients — TS `rowKind` / `refOf(id)` read it, so a
+dataset whose `spec` names a kind links its rows too. A key a caller
+chooses is `a-z 0-9 _ -`, starts with a letter or digit, at most 120 chars; `append` numbers rows that bring none (`0001`, `0002`, …).
 
 | verb | what |
 |---|---|
@@ -444,8 +455,8 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST delete-row {key, expected?}` | remove one row (a key or an id); 404 when absent, 409 while another row references it or (with `expected`) when it changed since |
 | `POST rename-row {key, new_key, expected?}` | move a row to a new key; its id (and every reference to it) stays |
 | `POST check-row {row}` | `{ok, errors, details}` for one row — shape, references and the schema's rules, links checked even when the shape fails; writes nothing |
-| `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
-| `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
+| `GET row/<key or id>` | one row's slot VALUES (an editor's read) |
+| `POST annotate {row_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
 | `GET rows` | `{rows, total, problems, linked?, version}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing. `?filter={match, order_by, limit, offset, expand}` (JSON) and `?q=` answer only the rows that match, ordered and paged; `total` counts the matches before paging, and `problems` is still every row that does not fit; `version` is the rows as a whole these were read from |
 | `GET rows-version` | `{version}`: the rows as a whole (`Dataset.rows_version` — a digest of every row file's path, size and mtime, no row read; `""` with no rows yet). Any write by anyone moves it; a listener compares it with the last it heard and re-reads only when it moved |
 | `GET count` | `{total, groups, metrics?}`: how many rows match `?filter=` / `?q=`, and per `?group_by=<path or bucket>,…`: `[{by, count, metrics?}]`; `?metrics={name: "distinct:<path>"}`, `?order_by=`, `?week_start=` |
@@ -453,24 +464,27 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
-| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows` plus `misfit?: [{key, details}]` (records kept as problem rows) and `unlinked?: [{key, field, value}]`; NOT all or nothing — one record that does not fit never stops the rest; see [mirroring a system of record](mirroring-a-system-of-record.md) |
+| `POST pull` | `{moved, num_rows}`: bring a remote location's working copy up to date now (`Dataset.pull`, TS `pull()`); see [dataset locations](dataset-locations.md) |
+| `POST move-rows {location}` | `{from, to, rows}`: copy every row to another location, check the count, rewrite `dataset.json`; the old location keeps its rows. Refused into a non-empty location or a record system (TS `moveRows(location)`) |
+| `POST store-ids` | `{stamped}`: store each row's id in `row.json` where it still has only the legacy derived one (`Dataset.store_ids`; run once on an old dataset) |
+| `GET evals` · `GET eval/<run>[/<row>]` · `POST run-eval {eval?, kinds?}` | eval runs: the list, one run with its rows (or one row's `trace`), a new run — TS `evalRuns` / `evalRun` / `evalTrace` / `runEval`; see [evals](evals.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
-| `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
+| `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `row_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
 Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
-those, not the lines. Three numbers are not the same: `num_examples` counts every row folder,
-`count().total` and `rows().total` count the rows that FIT (the rest are `problems`).
-A field that must live both here and in an outside system is THAT SYSTEM'S field: mirrored in,
-marked `owned_by`, and an edit here is sent there first
-([mirroring a system of record](mirroring-a-system-of-record.md)) — never kept in step by hand.
-`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`
-is for two stores with no source between them (a file copied to a drive), not for a mirrored row.
+those, not the lines. Three numbers are not the same: `num_rows` counts every row folder,
+`count().total` and `query().total` count the rows that FIT (the rest are `problems`).
+A field that must live both here and in an outside system is THAT SYSTEM'S field: the rows live in
+that system (`location`), the field is mapped and marked `owned_by`, and an edit here is sent there
+first ([dataset locations](dataset-locations.md)) — never kept in step by hand.
+`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `(decision, value)`, decision `"same"` / `"here"` / `"there"` / `"hold"`,
+is for two stores with no source between them (a file copied to a drive), not for a row in a record system.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
 `ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;
 the TypeScript twin is `QueryFilter.validate`, and `test_fixtures/dataset_query_cases.json` is run by
-both). A date compares as its ISO string. From Python: `Dataset.rows(match, order_by=, limit=, offset=,
+both). A date compares as its ISO string. From Python: `Dataset.query(match, order_by=, limit=, offset=,
 q=, expand=)`, `Dataset.count(match, group_by=, metrics=, order_by=, week_start=, q=)`.
 
 **One path grammar** — the one a schema's `rules` write, with the slot spelled out (a rule path is a
@@ -517,7 +531,7 @@ store, so the link is not judged on a write from disk; over REST, `expand` retur
 `linked[<ref>] = {type, id, record}`, and a path continues INTO the record
 (`{"input.email.author_display": "Ann"}`, `group_by=["input.email.thread_key"]`): the `rows` and
 `count` actions read the records a question's paths lead to, once each. From disk a record cannot
-be read, so a script hands over the ones it fetched — `ds.rows(match, records={ref: record})`, with
+be read, so a script hands over the ones it fetched — `ds.query(match, records={ref: record})`, with
 `flow_sdk.local_client.graph_get("source_item", {"match": {"data_source_id": id}, "limit": 50})`.
 Record ids are per machine: keep the provider's `external_id` beside the link in a dataset that travels.
 
@@ -532,13 +546,13 @@ once and read what their checks need once. A delete reads only the datasets whos
 the row's kind (`links.linkers_of`) — none when nothing links to it — where it used to re-read every
 row of the project per row deleted.
 
-**One run at a time.** A script that mirrors an outside system wraps its whole run in
+**One run at a time.** A script that copies an outside system in wraps its whole run in
 `flow_sdk.datasets.run.single_run(project_root, "<name>")`: two runs at once (a trigger's and a
 person's "Sync now") would decide on the same reading and overwrite each other's state. The lock is a
 file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `RunBusy`.
 
 **Rows changing is an event.** Every row write — a label (`annotate`) and a row's free `data` included — emits `dataset.rows.changed` once per call — target
-`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
+`dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count, version}`, never a value — and
 the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
 TypeScript. A writer outside the server process tells the running instance (`Dataset.announce`, the
 `rows-changed` action) — telling is never a reason for a write to fail. A write made while a page
@@ -558,8 +572,10 @@ A dataset opens in the app that edits it (`flow_sdk/builtin/faas/editors.py`, `G
 its own nested editor (`<dataset>/agentic-assets/webapp/<name>/`, kind `application.web.editor`),
 else an editor whose `webapp.json` `edits` names the dataset's kind or an ancestor of it (most
 specific first), else one that edits the `dataset` type — the shipped generic editor. The SDK app
-behind them is `mountDatasetEditor`: it builds every form from the declared kinds
-(`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
+behind them is `mountDatasetEditor`: it draws nothing itself — it mounts the kind's collection and
+single [value viewers](../display-capabilities.md#viewers-for-a-kind) (a kind with none gets the
+generic viewer, built from the kind definitions at `GET /api/v1/kinds/<kind>`), so one editor serves
+every typed dataset.
 
 The example is the SmartNavigator eval set. Its row schemas ship as flat `data_schema` folders
 (`flowpad_assistant/agentic-assets/data_schema/navigat*`); its rows do not — they live beside the

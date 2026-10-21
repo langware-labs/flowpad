@@ -54,3 +54,20 @@ it('discards a previous agent response when the resource scope changes', async (
   expect(result.current.dependencies).toEqual([]);
   expect(result.current.isLoading).toBe(false);
 });
+
+it('shows source health for ready API dependencies without local files and preserves resolution failures', () => {
+  const source = new DataSource({
+    id: '77777777-7777-4777-8777-000000000021', name: 'Read-only Gmail',
+    provider: 'gmail', read_only: true, status: 'active', health: 'ok',
+  });
+  const state: DependencyState = {
+    name: 'mail', source: source.typeId.toString(), typeid: source.typeId.toString(),
+    state: 'ready', required: true, dismissed: false, path: '.', local_path: null,
+  };
+  const props = { sources: [source], onOpen: vi.fn(), isOpen: () => false };
+  const { rerender } = render(<SourceDependencyRows states={[state]} {...props} />);
+  expect(screen.getByText('Added directly · Running')).toBeVisible();
+  expect(screen.queryByText(/Files not available/)).toBeNull();
+  rerender(<SourceDependencyRows states={[{ ...state, state: 'missing', reason: 'Source cannot be resolved' }]} {...props} />);
+  expect(screen.getByText('Added directly · Source cannot be resolved')).toBeVisible();
+});

@@ -130,6 +130,7 @@ class Activity:
         "seq",
         "_released",
         "claim_deadline",
+        "_implicit",
     )
 
     def __init__(
@@ -180,6 +181,10 @@ class Activity:
         #: the liveness bound that keeps a producer which died without ending its activity
         #: from owning the address forever. ``None`` on a node nobody claimed.
         self.claim_deadline: Optional[float] = None
+        #: Created only as an ancestor of a deeper address (``automation`` for
+        #: ``automation/<id>``) and never addressed itself. Nobody will end such a node, so it
+        #: ends with its last child (see :meth:`_finish`).
+        self._implicit = False
 
     # ------------------------------------------------------------------ address
 
@@ -637,6 +642,12 @@ class Activity:
                 node.updated_at = now
         self._monitor._finished(self)
         self.release_waiters()
+        parent = self._parent
+        if parent is not None and parent._implicit and not parent.is_terminal:
+            children = parent._children.values()
+            if all(c.is_terminal for c in children):
+                failed = any(c.state == ActivityState.FAILED for c in children)
+                parent._finish(ActivityState.FAILED if failed else ActivityState.COMPLETED, None)
         return self
 
     def release_waiters(self) -> None:

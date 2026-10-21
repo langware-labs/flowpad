@@ -26,9 +26,11 @@ import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
+import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
 import { HUB_HOME_CARD } from './card-style';
+import { openInbound } from '@src/components/inbound/inbound-pointer';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
@@ -41,8 +43,10 @@ import {
   Loader2,
   LogOut,
   Monitor,
+  ShieldCheck,
   Trash2,
   UserPlus,
+  Webhook,
 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -304,6 +308,7 @@ export function HubHome() {
   // The sandbox whose share dialog is open, or null. Holds the node itself so
   // the dialog can read `auto_login` without a second fetch.
   const [sharing, setSharing] = useState<ComputeNode | null>(null);
+  const [editingLogin, setEditingLogin] = useState<ComputeNode | null>(null);
   // The never-launched sandbox whose launch dialog is open, or null. Launching
   // asks first because it is the click that starts costing money, and because
   // auto-login can only be chosen before the box signs anyone in. Opening an
@@ -399,6 +404,21 @@ export function HubHome() {
             </span>
             <span className="text-sm text-muted-foreground">
               <Trans>Teams and people across your org.</Trans>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openInbound(navigation)}
+            data-testid="hub-home-inbound"
+            className={HUB_HOME_CARD}
+          >
+            <Webhook className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
+            <span className="text-base font-semibold">
+              <Trans>Inbound</Trans>
+            </span>
+            <span className="text-sm text-muted-foreground">
+              <Trans>Numbers and bots that message you, and where each message goes.</Trans>
             </span>
           </button>
 
@@ -637,6 +657,17 @@ export function HubHome() {
                   >
                     <UserPlus className="h-4 w-4" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingLogin(d)}
+                    disabled={!cardEnabled(d) || !currentUser}
+                    aria-label={t`Login access`}
+                    title={t`Who may log in to this sandbox`}
+                    data-testid="sandbox-login-access"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                  </button>
                   {/* Sign THIS box out — shown only when the box is running the
                       session of the person looking at the page.
 
@@ -767,6 +798,17 @@ export function HubHome() {
         // Only opens the launcher — the share dialog closes itself, as it does on
         // every other exit.
         onLaunchInstead={() => setLaunching(sharing)}
+      />
+
+      {/* Who may sign the box in from a browser. Owner-only on the hub; the
+          dialog shows the hub's refusal to anyone else. */}
+      <LoginAccessDialog
+        open={!!editingLogin}
+        onOpenChange={(o) => {
+          if (!o) setEditingLogin(null);
+        }}
+        sandbox={editingLogin}
+        onSaved={() => void refetch()}
       />
 
       {/* Upgrading stops the app inside the box, reinstalls it from PyPI and

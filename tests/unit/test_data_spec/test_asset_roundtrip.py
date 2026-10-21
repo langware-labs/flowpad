@@ -30,7 +30,7 @@ from flow_sdk.schema.data_spec.dataset_spec import (
     DEFAULT_DATASET_SPEC,
     DataLayoutEnum,
     DatasetSpec,
-    ExampleKind,
+    RowKind,
     FileRef,
 )
 from tests.unit.test_data_spec._roundtrip import (
@@ -105,23 +105,24 @@ def _spec_fields(cls: type) -> set[str]:
 
 NOT_ON_DISK[SubAgent] = set(SubAgent.model_fields) - _spec_fields(SubAgent) - {"id"}
 NOT_ON_DISK[Agent] = set(Agent.model_fields) - _spec_fields(Agent) - {"id", "name"}
-NOT_ON_DISK[Dataset] = set(Dataset.model_fields) - _spec_fields(Dataset) - {"id", "examples"}
-_Row = DEFAULT_DATASET_SPEC.example_type()
+NOT_ON_DISK[Dataset] = set(Dataset.model_fields) - _spec_fields(Dataset) - {"id", "rows"}
+_Row = DEFAULT_DATASET_SPEC.row_type()
 OVERRIDES[Dataset] = {
     "data_layout": DataLayoutEnum.IO_FOLDER,
-    "spec": DatasetSpec.parse({"examples": [{"input": "file_ref", "output": "file_ref"}]}),
-    "examples": [_Row(
-        kind=ExampleKind.EVAL,
+    "location": "local",
+    "spec": DatasetSpec.parse({"rows": [{"input": "file_ref", "output": "file_ref"}]}),
+    "rows": [_Row(
+        kind=RowKind.EVAL,
         input=FileRef(path="input.txt"),
         output=[FileRef(path="output-1.txt"), FileRef(path="output-2.txt")],
-        # `kind` rides in example.json.metadata and is lifted-but-preserved on read
+        # `kind` rides in row.json.metadata and is lifted-but-preserved on read
         # (the grammar's reserved-keys rule), so an authored row carries it too.
         metadata={"note": 1, "kind": "eval", "input.json": {"metadata": {"pages": 3}, "data": {}}},
         data={"x": 1},
     )],
 }
 # the written dir is named 0001, which re-mints the row id and sets its key — compare rows without them
-COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude={"id", "key", "version"}) for r in rows]}
+COMPARE[Dataset] = {"rows": lambda rows: [r.model_dump(mode="json", exclude={"id", "key", "version"}) for r in rows]}
 
 
 def _register_probe_types() -> None:

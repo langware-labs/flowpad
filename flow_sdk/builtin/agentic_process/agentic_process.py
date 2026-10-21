@@ -82,6 +82,7 @@ from flow_sdk.builtin.agentic_process.switch_mode_spec import (
     SwitchToCliBody,
     parse_switch_mode_body,
 )
+from flow_sdk.builtin.agentic_process.worker_turns import WorkerTurns, worker_turns_for
 from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
     backend_restart_requested,
@@ -240,6 +241,26 @@ _PROMPT_TASKS: dict[str, asyncio.Task] = {}
 _TRANSCRIPT_SIZE_AT_PROMPT: dict[str, int] = {}
 
 
+def _sse_response(handler: "StreamingResponseHandler") -> Any:
+    """The event-stream response of ONE turn's listener.
+
+    For a turn delivered to a worker that is already running. A client that goes away
+    only stops listening: the worker and its transcript are not this response's to
+    wait for (the first turn's response has a grace for that — see ``_http_prompt``).
+    """
+    from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
+
+    async def _body():
+        async for xml_chunk in handler:
+            yield xml_chunk
+
+    return StreamingResponse(
+        _body(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
 def register_prompt_task(
     process_id: str, task: asyncio.Task, on_done: "Callable[[], Awaitable[Any]] | None" = None
 ) -> None:
@@ -263,10 +284,20 @@ def register_prompt_task(
     task.add_done_callback(finished)
 
 
+def prompt_worker_parked(process_id: str) -> bool:
+    """True while a print-mode worker is alive but idle between turns (see ``worker_turns``).
+
+    It stays registered — exit and cancel still find it — but it is waiting on background
+    work, not running a turn, so it must not read as one: ``busy`` is false and a new
+    message goes to this same process.
+    """
+    return bool(getattr(_PROMPT_WORKERS.get(process_id), "parked", False))
+
+
 def prompt_task_active(process_id: str) -> bool:
     """A headless turn's task is still running its tail (slot release, turn-end bookkeeping)."""
     task = _PROMPT_TASKS.get(process_id)
-    return task is not None and not task.done()
+    return task is not None and not task.done() and not prompt_worker_parked(process_id)
 
 
 async def selected_worker_type() -> "str | None":
@@ -307,7 +338,7 @@ def prompt_worker_active(process_id: str) -> bool:
     worker exists; worker registration then keeps every serializer's ``busy``
     projection true until the driver has emitted its final FlowData.
     """
-    return process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS
+    return process_id in _PROMPT_ADMISSIONS or (process_id in _PROMPT_WORKERS and not prompt_worker_parked(process_id))
 
 
 def any_prompt_in_flight() -> bool:
@@ -414,6 +445,7 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "last_started_snapshot",
     "last_started_hash",
     "restart_required",
+    "restart_changed_fields",
     # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
     # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
     # (tab_order). A delegated write is exactly as invisible to the caller as an
@@ -583,7 +615,18 @@ async def _index_additional_dir(
         new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope=scope, read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
-        result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
+        # A scoped dependency may itself be an asset folder. Scope walkers
+        # discover children under mounts, so also seed that asset explicitly.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        roots = [new_root]
+        root_type = SchemaRegistry.type_for(p, placed_only=True)
+        info = SchemaRegistry.get(root_type) if root_type else None
+        if info is not None and not info.keyed_by_ref and info.claims(p) is None:
+            roots.append(
+                FSRef(p, record_type=RecordType(root_type), parent=new_root, layout=info.layout_of(p, verify=True))
+            )
+        result = await get_shared_indexer().index(IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True))
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
     except Exception:
@@ -845,6 +888,13 @@ class AgenticProcess(Entity):
             "True iff a worker-relevant field changed since the last successful "
             "start_pty() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
             "Set automatically by the save-hook; can also be set externally via API."
+        ),
+    )
+    restart_changed_fields: list[str] = APIField(
+        default_factory=list,
+        description=(
+            "Names of the launch-config fields behind ``restart_required`` "
+            "(the ``restart-info`` diff). Empty when no restart is required."
         ),
     )
     start_failure: str | None = APIField(
@@ -1134,6 +1184,7 @@ class AgenticProcess(Entity):
         *,
         input: Any = None,
         output_spec: Any = None,
+        on_executor: Callable[[str], None] | None = None,
         **kwargs,
     ) -> "PromptResult":
         """One-shot: create → send → wait → answer → stop. Answers a ``PromptResult`` — ``text`` is the
@@ -1143,6 +1194,7 @@ class AgenticProcess(Entity):
         ``input`` / ``output_spec``: typed folder I/O — see ``process_io``. Headless by default
         (``pty_mode=True`` for the interactive transport); ``workdir`` defaults to the caller's cwd;
         an unnamed worker is the harness selected in settings.
+        ``on_executor`` receives the exact child identity before its first turn.
         """
         from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
             finish_io,
@@ -1162,6 +1214,8 @@ class AgenticProcess(Entity):
         proc = cls(workdir=workdir, **kwargs)
         prepare_io(proc, input=input, output_spec=spec)
         try:
+            if on_executor is not None:
+                on_executor(str(proc.typeid))
             if not proc.pty_mode:
                 return await take_turn(proc, instruction, spec)
             started = await proc.start_pty()
@@ -1258,6 +1312,14 @@ class AgenticProcess(Entity):
             "is_resume": is_resume,
             "worker_pid": shell.worker_pid,
         }
+
+    def _worker_started_at(self) -> datetime | None:
+        """When the current worker started, from ``_record_worker_started_at``."""
+        value = (self.context_data or {}).get(AgenticProcessContextKey.WORKER_STARTED_AT.value)
+        try:
+            return datetime.fromisoformat(value) if value else None
+        except ValueError:
+            return None
 
     def _record_worker_started_at(self, started_at: str | None) -> None:
         if not started_at:
@@ -1799,6 +1861,7 @@ class AgenticProcess(Entity):
             self.last_started_snapshot = snapshot_payload
             self.last_started_hash = self._restart_snapshot(snapshot_payload)
             self.restart_required = False
+            self.restart_changed_fields = []
             await self.save()
 
             # The worker is live with the queued prompt as its launch arg; the
@@ -2054,14 +2117,21 @@ class AgenticProcess(Entity):
         if isinstance(switch, SwitchToCliBody):
             # Leaving the PTY kills its background work (a background shell, a
             # subagent) along with it. The turn has ended, so ``busy`` is False —
-            # wait for the work's own task-notification instead.
+            # wait for the work's own task-notification instead. Work launched by
+            # an earlier worker died with it and is never notified, so only this
+            # worker's launches count.
             if (
                 self.pty_mode
                 and (path := self.transcript_path)
-                and await asyncio.to_thread(running_background_tasks, path)
+                and await asyncio.to_thread(running_background_tasks, path, self._worker_started_at())
             ):
                 return ApiFailResponse(message=BACKGROUND_TASKS_RUNNING, status_code=409)
             return await self._enter_cli_mode()
+        # A print-mode worker parked on background work still has the session open: a
+        # terminal started now would resume the same session beside it. The same wait
+        # as the other direction — the work, not the turn, is what is still running.
+        if prompt_worker_parked(self.id):
+            return ApiFailResponse(message=BACKGROUND_TASKS_RUNNING, status_code=409)
         # INTERACTIVE: locked start_pty (not _perform_open) so a watchdog race
         # can't double-spawn. Connection id is the one request-scoped value the
         # body cannot carry — ``_http_open`` picks it up the same way.
@@ -2865,6 +2935,55 @@ class AgenticProcess(Entity):
         rows = await Artifact.get_all({"generated_by": str(self.typeid)})
         return ApiSuccessResponse(data={"artifacts": [row.model_dump(mode="json") for row in rows]})
 
+    @action.post(action_name="session-transcript")
+    async def _http_session_transcript(self) -> ApiSuccessResponse | ApiFailResponse:
+        """The session transcript a share attaches for this process — any worker.
+
+        Answers with the transcript's TypeId (indexing that one file if it has no
+        row yet), so no caller builds ``<type>-<session id>``: the type comes from
+        the vendor and the id from the row, which for codex is derived, not the
+        session id. ``type_id`` is null with a ``reason`` when there is nothing to
+        attach. POST: it may write the row.
+        """
+        from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
+            index_session_file,
+        )
+
+        vendor = self._vendor()
+        session_type = vendor.session_entity_type
+        if session_type is None:
+            return ApiSuccessResponse(
+                data={"type_id": None, "reason": f"{vendor.key} sessions cannot be attached yet."}
+            )
+        path = self.transcript_path
+        if path is None or not path.exists():
+            path = await self._fork_source_transcript_path()
+        if path is None or not path.exists():
+            return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
+        if vendor.transcript_owned_by_run:
+            path = self._snapshot_transcript(session_type, path)
+        entity_id = await index_session_file(session_type, path)
+        if entity_id is None:
+            return ApiSuccessResponse(data={"type_id": None, "reason": "This session's transcript could not be read."})
+        return ApiSuccessResponse(data={"type_id": f"{session_type}-{entity_id}", "reason": None})
+
+    def _snapshot_transcript(self, session_type: str, path: Path) -> Path:
+        """Copy a run-owned transcript to ``records_data/<type>/`` so the shared row outlives the
+        run. The name keeps the prefix that tells the file's format; one copy per session, kept
+        current (re-copied only when the run's file changed)."""
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        name = path.name if self.session_id and self.session_id in path.name else f"{path.stem}-{self.id}{path.suffix}"
+        dest = get_instance_settings().records_data_dir / session_type / name
+        src = path.stat()
+        if dest.exists() and (d := dest.stat()).st_size == src.st_size and d.st_mtime >= src.st_mtime:
+            return dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, dest)
+        return dest
+
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
         """Return project-scoped web artifacts with their local placement."""
@@ -3295,6 +3414,25 @@ class AgenticProcess(Entity):
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
+    async def _deliver_to_parked_worker(self, message: str, *, sink: "StreamingResponseHandler | None" = None) -> bool:
+        """Hand ``message`` to this process's worker if it is parked on background work.
+
+        A print-mode worker the agent left background work running in stays alive between
+        turns (see ``worker_turns``). The message goes to THAT process — answered in about a
+        second while the work carries on — rather than waiting for the work to end or starting
+        a second CLI on the same session. ``sink`` is the response stream of the request that
+        sent it; a delivery with none (the queue's) is followed through the transcript.
+        False when no worker is parked: the caller starts one as usual.
+
+        The per-turn permission mode cannot change on a live CLI, so a delivered message runs in
+        the mode the worker started with.
+        """
+        turns = worker_turns_for(self.id)
+        if turns is None or not prompt_worker_parked(self.id):
+            return False
+        composed = self.driver.compose_prompt(message, self.get_agents_json())
+        return await turns.deliver(composed, sink)
+
     async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
         """Schedule a worker run with *instruction* and return immediately.
 
@@ -3318,6 +3456,8 @@ class AgenticProcess(Entity):
             self.context_data = {k: v for k, v in self.context_data.items() if k != PENDING_USER_INPUT_KEY}
             await self.save()
         if not self.pty_mode:
+            if await self._deliver_to_parked_worker(instruction):
+                return ApiSuccessResponse(data={"status": "started", "worker": self.driver.name})
             admission = try_admit_prompt(self.id)
             if admission is None:
                 return ApiFailResponse(
@@ -3826,6 +3966,11 @@ class AgenticProcess(Entity):
         apply_worker_env(env_vars, self)
         await apply_worker_secret_env(env_vars, self)
 
+        # A fork with no transcript of its own yet branches off its parent; once the
+        # first turn materialises it, ``resumable`` is true and it resumes itself.
+        fork_source = None
+        if not resumable and self.driver.pins_resume_cwd:
+            fork_source = (self.cli_config or {}).get("fork_session_id")
         context = _AgenticContext(
             workdir=self.workdir,
             env_vars=env_vars,
@@ -3834,7 +3979,8 @@ class AgenticProcess(Entity):
             effort=(self.cli_config or {}).get("effort"),
             add_dirs=list(self.resolved_add_dirs or []),
             session_id=self.session_id if (self.session_id and not resumable) else None,
-            resume_session_id=self.session_id if resumable else None,
+            resume_session_id=fork_source or (self.session_id if resumable else None),
+            fork_session=bool(fork_source),
             disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
             **self._process_asset_context_kwargs(process_assets),
         )
@@ -3900,6 +4046,14 @@ class AgenticProcess(Entity):
             await self.reconcile_name(first_prompt=message)
             return self._run_pty_prompt(message)
 
+        # A worker parked on background work takes the message itself: the same process
+        # answers in about a second while the work carries on. Only when there is none
+        # does a message start a fresh worker below.
+        if prompt_worker_parked(self.id):
+            delivery = StreamingResponseHandler()
+            if await self._deliver_to_parked_worker(message, sink=delivery):
+                return _sse_response(delivery)
+
         admission = try_admit_prompt(self.id)
         if admission is None:
             return ApiFailResponse(
@@ -3930,7 +4084,11 @@ class AgenticProcess(Entity):
             composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
             handler = StreamingResponseHandler()
             worker = self.driver.stream_worker(self)
+            turns = WorkerTurns(self, worker, log_prefix="prompt", lock=lock)
+            # Attached before the task exists: whatever way the turn ends, this stream ends with it.
+            turns.sink = handler
             register_prompt_worker(self.id, worker)
+            turns.register()
         except BaseException:
             release_prompt_admission(self.id, admission)
             raise
@@ -3952,39 +4110,46 @@ class AgenticProcess(Entity):
             """
             adopt_session = self.make_turn_session_adopter("prompt")
             try:
-                async with lock:
-                    # Kick off lifecycle transition so observers see RUNNING.
-                    if self.status != ProcessStatus.RUNNING.value:
-                        self.status = ProcessStatus.RUNNING.value
-                        try:
-                            await self.save()
-                        except Exception:
-                            # WARNING (not DEBUG) so headless / migration use
-                            # cases can observe persistence failure. The catch
-                            # is intentional: TestClient shutdown can pop the
-                            # DB driver mid-turn (see project_testclient_close
-                            # _db_split_brain memo) and we don't want to crash
-                            # the turn over a transient race.
-                            logger.warning("prompt: lifecycle save failed", exc_info=True)
+                # The lock spans the turn, not the process: a worker parked on
+                # background work between turns holds none (see ``worker_turns``).
+                await turns.begin(announce=False)
+                # Kick off lifecycle transition so observers see RUNNING.
+                if self.status != ProcessStatus.RUNNING.value:
+                    self.status = ProcessStatus.RUNNING.value
+                    try:
+                        await self.save()
+                    except Exception:
+                        # WARNING (not DEBUG) so headless / migration use
+                        # cases can observe persistence failure. The catch
+                        # is intentional: TestClient shutdown can pop the
+                        # DB driver mid-turn (see project_testclient_close
+                        # _db_split_brain memo) and we don't want to crash
+                        # the turn over a transient race.
+                        logger.warning("prompt: lifecycle save failed", exc_info=True)
 
-                    async for fd in worker.execute(prompt=composed_prompt, context=context):
-                        # Persist session_id on first capture so subsequent turns
-                        # resume. Do this BEFORE forwarding the frame: the worker
-                        # captures the id up-front (e.g. codex's leading
-                        # ``thread.started``), but a client that breaks on the
-                        # first flow frame closes the stream and cancels this turn
-                        # — saving after ``on_flow_data`` races that disconnect and
-                        # loses the id, breaking headless multi-turn resume.
-                        # Adopt-on-change (not only when unset): workers report the id
-                        # from structured CLI events, and the worker's actual id must
-                        # win when a preassigned id failed to stick or the CLI rotates
-                        # ids across resumed turns — a stale id points at a session
-                        # that doesn't exist. Adoption (and the paired restart-
-                        # snapshot re-pointing) is owned by ``adopt_worker_session``
-                        # via the turn-scoped adopter, which trusts only the
-                        # turn-INITIAL report (spurious-rotation guard).
-                        await adopt_session(worker.get_session_id())
-                        await handler.on_flow_data(fd)
+                async for fd in worker.execute(prompt=composed_prompt, context=context):
+                    # Persist session_id on first capture so subsequent turns
+                    # resume. Do this BEFORE forwarding the frame: the worker
+                    # captures the id up-front (e.g. codex's leading
+                    # ``thread.started``), but a client that breaks on the
+                    # first flow frame closes the stream and cancels this turn
+                    # — saving after ``on_flow_data`` races that disconnect and
+                    # loses the id, breaking headless multi-turn resume.
+                    # Adopt-on-change (not only when unset): workers report the id
+                    # from structured CLI events, and the worker's actual id must
+                    # win when a preassigned id failed to stick or the CLI rotates
+                    # ids across resumed turns — a stale id points at a session
+                    # that doesn't exist. Adoption (and the paired restart-
+                    # snapshot re-pointing) is owned by ``adopt_worker_session``
+                    # via the turn-scoped adopter, which trusts only the
+                    # turn-INITIAL report (spurious-rotation guard).
+                    await adopt_session(worker.get_session_id())
+                    routed = await turns.route(fd)
+                    # Whoever sent the turn in flight listens to it; a turn nobody
+                    # sent (the CLI's report of finished background work) has no
+                    # stream — its transcript carries it, ``observe-turn`` shows it.
+                    if routed is not None and turns.sink is not None:
+                        await turns.sink.on_flow_data(routed)
             except WorkerSpawnError as e:
                 # No subprocess ever started — end the process FAILED with the
                 # start_failure latch. The worker already yielded the ERROR
@@ -3992,10 +4157,13 @@ class AgenticProcess(Entity):
                 await latch_spawn_failure(self, e)
             except Exception as e:
                 logger.exception("prompt: worker error")
-                await handler.add_str_to_queue(Exception(f"prompt error: {e}"))
+                await (turns.sink or handler).add_str_to_queue(Exception(f"prompt error: {e}"))
             finally:
-                # Signal end-of-stream to downstream consumers.
-                await handler.on_flow_data(None)
+                # Signal end-of-stream to downstream consumers: whichever stream is
+                # attached now (the first turn's, or a later turn's message).
+                await turns.close()
+                turns.release_lock()
+                turns.discard()
                 unregister_prompt_worker(self.id, worker)
                 # Shared turn-end tail (broadcast, reindex, default-name stamp,
                 # queue drain) — every exit lands here: complete, crash, AND
@@ -4007,6 +4175,7 @@ class AgenticProcess(Entity):
             turn_task = asyncio.create_task(_run_turn())
             register_prompt_task(self.id, turn_task, on_done=self.notify_updated)
         except BaseException:
+            turns.discard()
             unregister_prompt_worker(self.id, worker)
             raise
 
@@ -4015,7 +4184,7 @@ class AgenticProcess(Entity):
                 async for xml_chunk in handler:
                     yield xml_chunk
             finally:
-                if not turn_task.done():
+                if not turn_task.done() and not prompt_worker_parked(self.id):
                     # Client disconnected; let the turn finish to keep JSONL coherent,
                     # but don't block the HTTP handler beyond a short grace.
                     try:
@@ -4092,6 +4261,21 @@ class AgenticProcess(Entity):
             else:
                 return ApiSuccessResponse(data={"cancelled": True, "transport": "pty"})
         return ApiFailResponse(message="no in-flight prompt turn")
+
+    @action.post(action_name="stop-background")
+    async def _http_stop_background(self) -> ApiSuccessResponse | ApiFailResponse:
+        """End the background work a parked worker is waiting on (a dev server, a watcher).
+
+        ``cancel-prompt`` stops a TURN; here no turn is running — the agent answered and left work
+        behind, kept alive by its own process. Stopping it ends that process and the work with it.
+        Nothing is stopped when no worker is parked (409): the work may have just ended on its own.
+        """
+        if self.hub_route:
+            return await self._relay_json("stop-background", body={})
+        worker = _PROMPT_WORKERS.get(self.id)
+        if worker is None or not prompt_worker_parked(self.id) or not await worker.stop_parked():
+            return ApiFailResponse(message="no background work to stop", status_code=409)
+        return ApiSuccessResponse(data={"stopped": True})
 
     async def _typed_pty_delivery(self, message: str, *, landed: "asyncio.Event") -> bool:
         """Type ``message`` into the live PTY once it can actually receive it.
@@ -5103,6 +5287,12 @@ class AgenticProcess(Entity):
         """
         descriptor = await asyncio.to_thread(lambda: self.transcript)
         if descriptor is None or not descriptor.session_id:
+            return None
+        # Discovery can match by cwd and launch time, which finds a sibling's
+        # session as readily as our own. A session another process already
+        # owns is never ours.
+        owners = await AgenticProcess.local_owners_of_session(descriptor.session_id)
+        if any(owner.id != self.id for owner in owners):
             return None
         await self._persist_transcript_session_id(descriptor)
         return self.session_id if self.session_id == descriptor.session_id else None
@@ -6165,7 +6355,13 @@ class AgenticProcess(Entity):
                 # already does the same recompute on session rotation — this is
                 # the same move for a process that has not rotated yet.
                 self.last_started_hash = reference
-            self.restart_required = self._restart_snapshot() != reference
+            payload = self._restart_snapshot_payload()
+            self.restart_required = self._restart_snapshot(payload) != reference
+            self.restart_changed_fields = (
+                sorted({c["field"] for c in self._diff_snapshot_fields(self.last_started_snapshot, payload)})
+                if self.restart_required
+                else []
+            )
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
@@ -6680,6 +6876,9 @@ class AgenticProcess(Entity):
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
+        # A worker parked on background work: not a turn (``busy`` is false) but the agent's process
+        # is alive and holds the work. The UI offers to end it; see ``stop-background``.
+        data["background_work"] = prompt_worker_parked(self.id)
         data["ready_for_input"] = is_ready_from_busy(
             self.status, busy, pty_mode=self.pty_mode, session_id=self.session_id
         )
@@ -8169,6 +8368,13 @@ class AgenticProcess(Entity):
             )
 
     @classmethod
+    async def local_owners_of_session(cls, session_id: str) -> list["AgenticProcess"]:
+        """Every local process stamped with ``session_id`` (shared/forked sessions can have several)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        return await cls.local_rows(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
+
+    @classmethod
     async def get_by_session_id(cls, session_id: str) -> "AgenticProcess | None":
         """Resolve the AgenticProcess that owns ``session_id`` (None if unknown)."""
         if not session_id:
@@ -8399,6 +8605,19 @@ class AgenticProcess(Entity):
             self.plan_path = path_str
             await self.save()
         await cross_link_entities(plan, self, b_data={"path": path_str})
+
+    async def _fork_source_transcript_path(self) -> Path | None:
+        """The transcript a fork branched off, while the fork has none of its own.
+
+        A fork writes its own JSONL only on its first turn; until then everything
+        it holds is its source session's transcript.
+        """
+        fork_source = (self.cli_config or {}).get("fork_session_id")
+        if not fork_source or not self.driver.pins_resume_cwd:
+            return None
+        source_id = await self._find_resumable_session(fork_source)
+        record = get_claude_session(source_id) if source_id else None
+        return Path(record.jsonl_path) if record and record.jsonl_path else None
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""

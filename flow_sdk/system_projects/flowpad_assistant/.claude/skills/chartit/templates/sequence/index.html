@@ -1,0 +1,111 @@
+<!doctype html>
+<!-- chartit sequence (network flow) chart. Copy this folder to <project>/agentic-assets/webapp/chart-<slug>/, fill
+     webapp.json, set CHARTIT.key, paste assets/feedback-toolbar.js into the last <script>. The chart is drawn from
+     the chart row (chartit.chart, `sequence` field) and redraws whenever the row changes — edit the ROW, not this page.
+     Serve with `flow app serve "Chart — <title>"` so /sdk/ resolves and feedback saves. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chart — TITLE</title>
+<script>
+  (function () { var t = new URLSearchParams(location.search).get('theme');
+    if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark'); })();
+</script>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #1f2328; --box: #ffffff; --hover: #6d28d9; }
+  :root.dark { --bg: #16181c; --fg: #e6e8eb; --muted: #9198a1; --line: #c9ced4; --box: #1f2228; --hover: #a78bfa; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 16px 20px 0; }
+  h1 { margin: 0; font-size: 18px; }
+  #wrap { overflow: auto; padding: 12px 20px 96px; }   /* bottom clear for the feedback toolbar */
+  svg text { fill: var(--fg); font-size: 12px; }
+  .box rect { fill: var(--box); stroke: var(--line); stroke-width: 1.2; }
+  .box text { font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+  .life { stroke: var(--line); stroke-width: 1.2; }
+  .msg path { fill: none; stroke: var(--line); stroke-width: 1.3; }
+  .msg.dashed path { stroke-dasharray: 5 4; }
+  .msg text { text-anchor: middle; }
+  .msg .hit { stroke: transparent; stroke-width: 14; fill: none; }
+  .msg:hover path:not(.hit), .box:hover rect { stroke: var(--hover); stroke-width: 2; }
+  .msg:hover text, .box:hover text { fill: var(--hover); }
+  .head { fill: var(--line); }
+</style>
+</head>
+<body>
+<header><h1 id="title"></h1></header>
+<div id="wrap"><svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+<script>
+  // The chart's row key in the project's `charts` dataset. `chart` is an optional OFFLINE copy of the row's
+  // input (drawn at once, and the only data when the page is not served by Flowpad).
+  window.CHARTIT = { key: 'SLUG' };
+
+  // Draws a chartit.chart value whose `sequence` = {participants:[{id,label,note?}], messages:[{id,from,to,label,style?,note?}]}.
+  // Every box and arrow carries data-target (its id) and data-label — the toolbar's click-to-comment handles.
+  window.chartitRender = function (value) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const seq = value.sequence || { participants: [], messages: [] };
+    document.getElementById('title').textContent = value.title || '';
+    const COL = 230, LEFT = 30, TOP = 10, BOX_W = 150, BOX_H = 48, ROW = 38, SELF = 46, PAD = 30;
+    const svg = document.getElementById('chart');
+    svg.replaceChildren();
+    const el = (tag, attrs, parent = svg) => {
+      const n = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+      parent.append(n); return n;
+    };
+    const tip = (g, text) => { if (text) el('title', {}, g).textContent = text; };
+    const x = {};
+    seq.participants.forEach((p, i) => { x[p.id] = LEFT + BOX_W / 2 + i * COL; });
+
+    const defs = el('defs', {});
+    const mk = el('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 10, refY: 5, markerWidth: 9, markerHeight: 9, orient: 'auto-start-reverse' }, defs);
+    el('path', { d: 'M0,0 L10,5 L0,10 z', class: 'head' }, mk);
+
+    // messages first, to know the height
+    let y = TOP + BOX_H + PAD;
+    const msgs = el('g', {});
+    seq.messages.forEach((m) => {
+      const g = el('g', { class: 'msg' + (m.style === 'dashed' ? ' dashed' : ''), 'data-target': m.id, 'data-label': m.label }, msgs);
+      tip(g, m.note);
+      const x1 = x[m.from], x2 = x[m.to];
+      if (x1 === undefined || x2 === undefined) { console.warn(`chartit: message ${m.id} names an unknown participant`); return; }
+      if (m.from === m.to) {
+        const d = `M${x1},${y} h${-55} v${SELF - 10} h${55}`;
+        el('path', { d, class: 'hit' }, g);
+        el('path', { d, 'marker-end': 'url(#arrow)' }, g);
+        el('text', { x: x1 - 60, y: y + SELF / 2 - 2, 'text-anchor': 'end' }, g).textContent = m.label;
+        y += SELF + 4;
+      } else {
+        const d = `M${x1},${y} L${x2},${y}`;
+        el('path', { d, class: 'hit' }, g);
+        el('path', { d, 'marker-end': 'url(#arrow)' }, g);
+        el('text', { x: (x1 + x2) / 2, y: y - 6 }, g).textContent = m.label;
+        y += ROW;
+      }
+    });
+    const bottom = y + PAD;
+
+    // lifelines and boxes under the arrows
+    const lanes = el('g', {});
+    svg.insertBefore(lanes, msgs);
+    seq.participants.forEach((p) => {
+      el('line', { x1: x[p.id], y1: TOP + BOX_H, x2: x[p.id], y2: bottom, class: 'life', 'marker-end': 'url(#arrow)' }, lanes);
+      const g = el('g', { class: 'box', 'data-target': p.id, 'data-label': p.label.split('\n')[0] }, lanes);
+      tip(g, p.note);
+      el('rect', { x: x[p.id] - BOX_W / 2, y: TOP, width: BOX_W, height: BOX_H }, g);
+      const lines = p.label.split('\n');
+      lines.forEach((t, k) => {
+        el('text', { x: x[p.id], y: TOP + BOX_H / 2 + (k - (lines.length - 1) / 2) * 14 }, g).textContent = t;
+      });
+    });
+    const width = LEFT * 2 + BOX_W + Math.max(0, seq.participants.length - 1) * COL;
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', bottom + 12);
+    svg.setAttribute('viewBox', `0 0 ${width} ${bottom + 12}`);
+  };
+</script>
+<script>/* PASTE assets/feedback-toolbar.js HERE */</script>
+</body>
+</html>

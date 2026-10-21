@@ -36,17 +36,13 @@ export function UploadedMessageReview({
   );
 }
 
-interface ProjectUploadMessageButtonProps {
-  projectId: string;
-}
-
 /**
- * Upload a `.flowmsg` someone handed over, then review what it carries with THIS
- * project as the install target. Nothing goes live at upload — the review
+ * Upload a `.flowmsg` someone handed over, then review what it carries (no
+ * project preset as the install target). Nothing goes live at upload — the review
  * dialog's install is the consent step, exactly as for a message received in a
  * conversation.
  */
-export function ProjectUploadMessageButton({ projectId }: ProjectUploadMessageButtonProps) {
+export function ProjectUploadMessageButton() {
   const { t } = useLingui();
   const inputRef = useRef<HTMLInputElement>(null);
   // "upload a message" (smart navigation): the same file picker the button opens.
@@ -88,18 +84,18 @@ export function ProjectUploadMessageButton({ projectId }: ProjectUploadMessageBu
         }}
       />
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs"
+        className="h-7 text-xs"
         onClick={() => inputRef.current?.click()}
         disabled={busy}
-        title={t`Upload a .flowmsg and install what it carries into this project`}
+        title={t`Open a .flowmsg and install what it carries`}
         data-testid="project-upload-message"
       >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-        {t`Upload message`}
+        {busy ? <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" /> : <Upload className="me-1 h-3.5 w-3.5" />}
+        {t`Open`}
       </Button>
-      {review && <UploadedMessageReview {...review} projectId={projectId} onClose={() => setReview(null)} />}
+      {review && <UploadedMessageReview {...review} projectId={null} onClose={() => setReview(null)} />}
     </>
   );
 }

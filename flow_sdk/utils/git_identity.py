@@ -74,6 +74,17 @@ def parse_git_origin_url(url: str) -> tuple[str, str, str] | None:
             return None
         return ("file", path.parent.as_posix(), _strip_git_suffix(path.name))
 
+    if parsed is not None and (parsed.port or parsed.scheme not in ("https", "ssh")):
+        # A self-hosted remote reached by its own scheme/port (a git daemon, an
+        # on-prem http server): keep the base URL as the provider so the clone
+        # URL rebuilds exactly — never rewritten to https on the default port.
+        host = (parsed.hostname or "").lower()
+        segments = [s for s in unquote(parsed.path or "").split("/") if s]
+        if not host or len(segments) < 2:
+            return None
+        base = f"{parsed.scheme}://{host}" + (f":{parsed.port}" if parsed.port else "")
+        return (base, "/".join(segments[:-1]), _strip_git_suffix(segments[-1]))
+
     host = _host_of(raw)
     if not host:
         return None
@@ -96,5 +107,9 @@ def git_origin_clone_url(provider: str, owner: str, name: str) -> str:
         plain = base / leaf
         path = plain if plain.exists() else base / f"{leaf}.git"
         return path.resolve().as_uri()
+    if "://" in provider:
+        # Self-hosted (see ``parse_git_origin_url``): the server resolves the
+        # bare path itself (``git daemon`` tries ``<path>`` then ``<path>.git``).
+        return f"{provider.rstrip('/')}/{owner.strip('/')}/{_strip_git_suffix(name)}"
     host = _PROVIDER_HOSTS.get(provider.strip().lower(), provider.strip())
     return f"https://{host}/{owner}/{_strip_git_suffix(name)}.git"

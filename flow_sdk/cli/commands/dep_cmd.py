@@ -6,6 +6,7 @@
     flow dep add ../handbook                       # a folder in git is written as its repo
     flow dep add git+https://github.com/acme/handbook#main --path legal --optional
     flow dep add hub:8c1f0b2e-…                    # a hub project
+    flow dep add ../notes --local                  # a local package: this device only, never committed
     flow dep remove handbook                       # leaves the folder on disk alone
     flow dep sync [--update]                       # fetch what is missing; --update pulls Flowpad's clones
     flow dep install policies                      # bring in an optional one
@@ -62,10 +63,14 @@ def _url(port: int, project_id: str, action: str) -> str:
 
 
 @dep_app.command("list")
-def list_(project: ProjectOpt = None) -> None:
+def list_(
+    project: ProjectOpt = None,
+    declarers: Annotated[bool, typer.Option("--declarers", help="Also list every asset whose own flow.json declares dependencies, with all its entries.")] = False,
+) -> None:
     """Every declared dependency and its state on this machine."""
     port = discover_port(required=True)
-    ok(get_graph_json(_url(port, _project(port, project), "dependencies"), on_error=_refused) or {})
+    url = _url(port, _project(port, project), "dependencies") + ("?declarers=1" if declarers else "")
+    ok(get_graph_json(url, on_error=_refused) or {})
 
 
 @dep_app.command("add")
@@ -74,6 +79,7 @@ def add(
     name: Annotated[Optional[str], typer.Option("--name", help="The dependency's name (default: the folder or repo name).")] = None,
     path: Annotated[Optional[str], typer.Option("--path", help="A folder inside the source.")] = None,
     optional: Annotated[bool, typer.Option("--optional", help="Declare it under optionalDependencies.")] = False,
+    local: Annotated[bool, typer.Option("--local", help="Keep it on this device only: never written to flow.json or any project file.")] = False,
     label: Annotated[Optional[str], typer.Option("--label", help="A human-friendly name for the entry.")] = None,
     description: Annotated[Optional[str], typer.Option("--description", help="What it is for.")] = None,
     asset: Annotated[Optional[str], typer.Option("--asset", help="Declare it in this asset's own flow.json (a TypeId); ids only.")] = None,
@@ -84,7 +90,7 @@ def add(
     raw = source.strip()
     if not raw.startswith(("git+", "hub:", "file:")) and os.path.isdir(os.path.expanduser(raw)):
         raw = caller_abs_path(raw)   # a folder is the CALLER's, not the server's working directory
-    body = {"source": raw, "name": name or "", "path": path or "", "optional": optional,
+    body = {"source": raw, "name": name or "", "path": path or "", "optional": optional, "local": local,
             "label": label or "", "description": description or "", "asset": asset or ""}
     ok(post_graph_json(_url(port, _project(port, project), "add-dependency"), body, timeout=FETCH_SECONDS, on_error=_refused))
 

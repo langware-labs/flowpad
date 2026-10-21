@@ -56,7 +56,7 @@ What each line does:
 * `agent.process_message(m)` prompts with the message body and answers with a
   frozen `PromptResult`: `text` is the assistant's reply, `executor` the process
   that ran it. A turn the process would not take answers `NOT_YET` with
-  `ran=False` instead of hanging — see [call-returns](call-returns.md).
+  `ran=False` instead of hanging — see [FlowCall](call-returns.md).
 * `EmailMessageSpec.reply_to(m, body=...)` addresses the author, keeps the
   thread, adds `Re:` once. `m.reply(spec)` sends it through the driver and
   then acks — the ack piggybacks on the reply. It records its intent before
@@ -92,7 +92,7 @@ across turns). Pinned by `tests/unit/test_workflows_snippets.py`; the send leg
 live by `tests/long_tests/test_telegram_send.py`.
 
 ```python
-from flow_sdk.blocks import StreamInbox, TelegramMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow("support-bot"):
@@ -102,12 +102,13 @@ async with workflow("support-bot"):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)     # session per chat
-            await m.reply(TelegramMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # to the chat
 ```
 
 Channels disagree on who a reply targets: email replies to the author,
 Telegram replies to the chat. Each `MessageSpec` subclass owns its `reply_to`,
-so the loop body does not change between them.
+and a provider's subclass lives in its driver's asset folder — `m.reply_spec(...)`
+asks the driver for it, so the loop body does not change between them.
 
 Name the class only when the loop already knows its channel, as these do. Code
 that handles whichever source it is given should ask instead — `await m.reply(out.text)`
@@ -125,7 +126,7 @@ and by `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/sl
 against a loopback Slack.
 
 ```python
-from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow("channel-helper"):
@@ -135,7 +136,7 @@ async with workflow("channel-helper"):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
-            await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # into the thread
 ```
 
 * The Slack token is the machine's connected Slack credential; there is no
@@ -143,7 +144,7 @@ async with workflow("channel-helper"):
   so an unconnected instance fails on that line with the fix in the message
   (see [connections](connections.md)). It reuses the source whose `channel`
   is that id — one source per channel.
-* `SlackMessageSpec.reply_to(m, ...)` sets `to` to the channel the message's
+* Slack's spec (a `ChannelMessageSpec`) sets `to` to the channel the message's
   origin names (the last part of `m.origin_namespace`) and carries `m.thread_key` through as `thread_ts`, so the answer
   lands in the thread. A top-level message is its own thread root.
 * The loop never answers itself: the first `send` stamps the bot's user id
@@ -186,8 +187,8 @@ in `tests/unit/test_blocks_email.py`. Useful when you want the shapes without a 
 ```python
 from pydantic import ValidationError
 
-from flow_sdk.blocks import EmailMessageSpec, PromptResult, SlackMessageSpec, TelegramMessageSpec
-from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.blocks import EmailMessageSpec, PromptResult
+from flow_sdk.builtin.source_item import ChannelMessageSpec, SourceItem
 
 # m: a message as `listen()` delivers it — here, three built by hand
 mail = SourceItem(provider="agentmail", kind="content.message.email", external_id="<m1@provider>",
@@ -214,8 +215,7 @@ except ValidationError:
 
 PromptResult.satisfied("The agent replied.", text="done")   # what a turn returns
 
-TelegramMessageSpec.reply_to(chat, body="x").to   # ['12345'] — the chat: the leading part of thread_key
-SlackMessageSpec.reply_to(post, body="x").to      # ['C0123456789'] — the channel, from origin_namespace
+ChannelMessageSpec.reply_to(post, body="x").to    # ['C0123456789'] — the channel, from origin_namespace
 ```
 
 Three channels, three answers to "who does a reply go to": email to the

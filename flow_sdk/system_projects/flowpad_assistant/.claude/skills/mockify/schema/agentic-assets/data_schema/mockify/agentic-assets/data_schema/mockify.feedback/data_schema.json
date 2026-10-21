@@ -1,0 +1,41 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "mock": {
+      "shape": "mockify.mock",
+      "description": "The mock the comment is on (a link to its row)."
+    },
+    "step": {
+      "shape": "string",
+      "description": "The step id the comment is on."
+    },
+    "text": {
+      "shape": "string",
+      "description": "The comment."
+    },
+    "decision": {
+      "shape": "?string",
+      "description": "The decision id it answers (D2), when it answers one."
+    },
+    "anchor": {
+      "shape": "?mockify.anchor",
+      "description": "The element the comment is on, when the reviewer pointed at one."
+    },
+    "screenshot": {
+      "shape": "?binary",
+      "description": "An image the reviewer attached or pasted."
+    },
+    "element_shot": {
+      "shape": "?binary",
+      "description": "A picture of the pointed-at element as it looked (best effort)."
+    },
+    "status": {
+      "shape": "enum:open|submitted|addressed",
+      "description": "open: saved, not sent; submitted: sent to the building session; addressed: the mock was revised for it."
+    },
+    "created": {
+      "shape": "string",
+      "description": "When it was written (ISO 8601)."
+    }
+  }
+}

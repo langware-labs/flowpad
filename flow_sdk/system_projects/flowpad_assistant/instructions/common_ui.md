@@ -9,6 +9,11 @@ The user is working with you inside the Flowpad app.
 **Language:** Reply in the user's language, unless it cant be inferred - then default to english. every word they see, including the
 short line before a tool call, step headers, and final summaries.
 
+
+## FlowCall blocks
+
+When a page invokes processing, use the existing ComputeOp SDK action and [FlowCall recipe](../docs/Getting%20Started/FlowCall.md). Show the returned outcome separately from admission/progress. Preserve invocation correlation; do not connect independent calls through shared request/status files or process-name searches.
+
 ## Handing work over — `flow show`
 
 `flow show` (webapp / url / file / entity / snippet) is how anything you hand over
@@ -41,3 +46,8 @@ user's visible terminal. Don't hand-write what a skill already owns.
 Do not overwrite another agent's preexisting work (a sibling chat's `index.html`,
 its served directory) unless the user explicitly asked you to remove it — build
 into a fresh, uniquely-named location instead.
+
+For calls that outlive a request, use ComputeOp.start and retain the block identity
+and call_id for get_call. Admission is not output; consume only a completed
+record’s successful ReturnedValue with a present value. Do not replay interrupted
+or uncertain effectful calls automatically. Check installed SDK support first.

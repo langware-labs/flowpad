@@ -1,3 +1,6 @@
+---
+id: 8c7cec8d-bb58-4116-b83e-f9006f23a228
+---
 # Scan and index — snippets
 
 Finding what is on disk is the first half of every index run. `flow_sdk.diskio` holds that

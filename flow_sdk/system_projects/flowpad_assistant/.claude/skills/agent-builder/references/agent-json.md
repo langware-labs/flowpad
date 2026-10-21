@@ -15,6 +15,11 @@ folder is the name. The schema is
 `AgentSpec` in `flow_sdk/schema/data_spec/agent_spec.py` — read it when a field
 below is not enough.
 
+
+## FlowCall integration
+
+For callable work, distinguish the agent definition from the reusable FlowCall block and its ReturnedValue answer. Use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) to connect declared input/output and composition; retain the agent’s existing prompt, deployment and permission rules.
+
 ## Fields
 
 "Enforced" means the launch actually applies it. A **declared** field is saved and
@@ -37,9 +42,11 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `load_flowpad_assistant` | Give the worker the Flowpad Assistant's skills | yes | all |
 | `cli_options` | Vendor CLI keys passed through as-is | yes | all |
 | `intro` | Welcome text shown at the top of the chat — **the model never sees it** | yes | chat |
+| `intro_translations` | `intro` in other languages, keyed by locale code (`he`, `ar`, `en-US`); the chat shows the active locale's entry, else `intro` | yes | chat |
 | `auto_launch` | Start this agent when its project is opened (once per project, per machine) | yes | chat |
 | `auto_launch_prompt` | The first user message, sent on the user's behalf at auto-launch | yes | chat |
 | `chief_of_staff` | The agent delegates long work to `subagents` through the task ledger | yes | chat |
+| `vibe_only` | Its sessions stay in Vibe: no tab strip, no switch to Chat or Terminal | yes | chat |
 | `subagents` | Names of the SubAgents a chief of staff may hand work to | yes | chat |
 | `input` | The shape the caller must pass in (a shape form, below) | yes | typed |
 | `output` | The shape the agent must write back (a shape form, below) | yes | typed |

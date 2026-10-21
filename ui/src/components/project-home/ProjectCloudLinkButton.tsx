@@ -1,6 +1,6 @@
 import { cloudManager, type Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
 import { errorMessage } from '@src/lib/error-message';
 import { hubPageUrl } from '@src/lib/hub-page-url';
 import { openExternal } from '@src/lib/open-external';
@@ -22,15 +22,12 @@ interface ProjectCloudLinkButtonProps {
  * git checkout, have a remote, be clean or pushed, or have GitHub connected.
  * The mutation is the ordinary `project.share()` action behind the cloud-login
  * gate; this component never writes `remote` itself.
- *
- * Once linked, "Send files to cloud" copies the whole folder (as git sees it) to that same
- * repository — what a launch link or a sandbox needs to check the project out.
  */
 export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps) {
   const { t } = useLingui();
   const hubMode = isHubOnly();
   const published = project.remote === true;
-  const requireCloudLogin = useCloudLoginGate();
+  const { linkProject: linkToCloud } = useLinkProjectToCloud();
   const [publishing, setPublishing] = useState(false);
   const publishInFlight = useRef(false);
 
@@ -39,15 +36,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
     publishInFlight.current = true;
     setPublishing(true);
     try {
-      const login = await requireCloudLogin();
-      if (!login.ok) {
-        notify.error({ title: t`Could not link project to cloud`, message: login.error });
-        return;
-      }
-      const canonical = await project.share();
-      if (canonical.remote !== true) {
-        throw new Error('The server did not confirm the cloud link.');
-      }
+      await linkToCloud(project);
       notify.success({ title: t`Project linked to cloud`, message: t`This project is now available in the cloud.` });
     } catch (error) {
       notify.error({ title: t`Could not link project to cloud`, message: errorMessage(error, t`Linking failed.`) });
@@ -55,22 +44,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
       publishInFlight.current = false;
       setPublishing(false);
     }
-  }, [project, requireCloudLogin, t]);
-
-  const sendFiles = useCallback(async () => {
-    if (publishInFlight.current) return;
-    publishInFlight.current = true;
-    setPublishing(true);
-    try {
-      await project.publishFiles();
-      notify.success({ title: t`Files sent to cloud`, message: t`This project can now be opened from the cloud.` });
-    } catch (error) {
-      notify.error({ title: t`Could not send the files`, message: errorMessage(error, t`Sending failed.`) });
-    } finally {
-      publishInFlight.current = false;
-      setPublishing(false);
-    }
-  }, [project, t]);
+  }, [project, linkToCloud, t]);
 
   // The Hub Project page is read-only with respect to desktop publication.
   if (hubMode) return null;
@@ -114,28 +88,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
         {body}
       </span>
     );
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        {badge}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void sendFiles()}
-          disabled={publishing}
-          data-testid="project-publish-files"
-          title={t`Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox`}
-          className="h-7 gap-1.5 px-2 text-xs"
-        >
-          {publishing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-          ) : (
-            <CloudUpload className="h-3.5 w-3.5" aria-hidden />
-          )}
-          <Trans>Send files to cloud</Trans>
-        </Button>
-      </span>
-    );
+    return badge;
   }
 
   return (

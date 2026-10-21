@@ -10,16 +10,26 @@ import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLingui } from '@lingui/react/macro';
 import { Pencil } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 /** Existing-agent browsing on Overview; session launching on the other homes. */
 export function ProjectAgentsStrip({
   projectId,
   className,
   presentation = 'launch',
+  startsNew = false,
+  headerExtra,
+  fallback = null,
 }: {
   projectId?: string | null;
   className?: string;
   presentation?: 'launch' | 'browse';
+  /** A tile STARTS a new chat with the agent (Vibe's New) instead of opening its last one. */
+  startsNew?: boolean;
+  /** Shown beside the section title (e.g. counter chips). */
+  headerExtra?: ReactNode;
+  /** Rendered instead of the strip when there are no agents. */
+  fallback?: ReactNode;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -33,16 +43,16 @@ export function ProjectAgentsStrip({
   const agents = browsing ? allAgents : allAgents.slice(0, MAX_HOME_AGENTS);
   const { launch, busyId } = useAgentLauncher();
 
-  if (agents.length === 0) return null;
+  if (agents.length === 0) return <>{fallback}</>;
 
   return (
     // `text-start`: the hero surfaces are `text-center`, and a centered section
     // heading over a left-packed grid reads as a mistake.
     <div className={cn('text-start', className)} data-testid="project-agents-strip">
-      <TileSection title={labelForType(Agent.type)}>
+      <TileSection title={labelForType(Agent.type)} headerExtra={headerExtra}>
         {agents.map((agent) => {
           const useDisabled = !browsing && (!agent.enabled || !!busyId);
-          const useAgent = () => void launch(agent, project?.id ?? null);
+          const useAgent = () => void launch(agent, project?.id ?? null, { fresh: startsNew });
           const editLabel = `${t`Edit`} ${agent.displayName}`;
           return (
             <div key={agent.id} className="relative h-20 w-20">

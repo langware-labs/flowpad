@@ -24,6 +24,15 @@ chain of `index.md` files, one per folder, under any indexed docs root. This
 skill is the READ side: descend that chain to reach the right document in
 O(depth) reads instead of scanning the whole tree.
 
+## FlowCall lookup
+
+In Flowpad, **FlowCall** names the call-and-result mechanism; `ReturnedValue`
+is its answer contract. Questions about work calls, outcomes, and composing
+returned values should route to that contract before API transport docs.
+Use the docs index to find FlowCall (the source-checkout page remains
+`docs/snippets/call-returns.md`). An installed assistant can read the
+[shipped guide](../../../docs/Getting%20Started/FlowCall.md) without a checkout.
+
 ## Protocol
 
 1. **Locate the entry index.** Look for `index.md` in, in order: the working

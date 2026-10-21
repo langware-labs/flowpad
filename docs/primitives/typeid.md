@@ -41,7 +41,7 @@ Standard UUID v4. The default for dynamically created entities.
 | **Enum**       | `IdentifierType.UUID`                                                 |
 | **Pattern**    | `[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}` |
 | **Example**    | `user-550e8400-e29b-41d4-a716-446655440000`                           |
-| **Validation** | `is_valid_uuid4()` (Python), `isValidUUIDv4()` (TS)                   |
+| **Validation** | `is_valid_entity_id()` (Python), `isValidEntityId()` (TS) — lowercase v4/v5 |
 
 Entities that don't specify an `id` on creation get a random UUID v4 assigned automatically (`DBBaseRecord.__init__`).
 
@@ -296,7 +296,7 @@ process_result, shell, notification, data_source, source_item, llm_endpoint
 A selection of registered types:
 
 ```
-task, skill, subagent, command, plan, markdown, spec, deck, whiteboard,
+task, skill, subagent, command, plan, markdown, spec, deck, chart,
 spreadsheet, dataset, claude_session, claude_md, claude_memory, claude_rules,
 claude_hook, claude_error, claude_debug_log, todo_file, mcp_server,
 codex_session, copilot_session, ...

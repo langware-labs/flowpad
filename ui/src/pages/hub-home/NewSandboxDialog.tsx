@@ -1,6 +1,7 @@
 import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, Project, TypeId, type GitOrigin } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { AutoLoginField } from '@src/pages/hub-home/AutoLoginField';
+import { LoginAccessField } from '@src/pages/hub-home/LoginAccessField';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -17,7 +18,13 @@ import { cn } from '@src/lib/utils';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { RepoPicker } from '@src/components/git/RepoPicker';
 import type { ComputeNode } from '@sdk';
-import type { ContextProject, SandboxSetup, Step } from '@src/hooks/use-sandboxes';
+import {
+  DEFAULT_LOGIN_ACCESS,
+  type ContextProject,
+  type LoginAccess,
+  type SandboxSetup,
+  type Step,
+} from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
 import { Briefcase, GitBranch, Github, Link2, Loader2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -76,7 +83,7 @@ interface NewSandboxDialogProps {
    * fourth state: the progress has to be visible somewhere, and behind a closed
    * dialog is not somewhere.
    */
-  onLaunch: (node: ComputeNode, opts: { autoLogin: boolean }) => Promise<ComputeNode | null>;
+  onLaunch: (node: ComputeNode, opts: { autoLogin: boolean; loginAccess: LoginAccess }) => Promise<ComputeNode | null>;
   /** Open a launched box. Called from the dialog's own Open click, so the tab
    *  is claimed inside a real user gesture. */
   onOpen: (node: ComputeNode) => void;
@@ -157,6 +164,7 @@ export function NewSandboxDialog({
   // to get a box that never signs anyone in — after the launch the session
   // already exists, and turning it off then is a sign-out, not a setting.
   const [autoLogin, setAutoLogin] = useState(true);
+  const [loginAccess, setLoginAccess] = useState<LoginAccess>(DEFAULT_LOGIN_ACCESS);
   const [error, setError] = useState('');
 
   // Reset on OPEN only. `defaultName` changes whenever the sandbox list refetches
@@ -174,6 +182,7 @@ export function NewSandboxDialog({
     setOpenPanel(null);
     setError('');
     setAutoLogin(true);
+    setLoginAccess(DEFAULT_LOGIN_ACCESS);
     // Reopening starts a NEW sandbox. Without this the dialog would come back up
     // on the `created` phase, showing Done/Launch for the box made last time.
     setPhase('idle');
@@ -313,7 +322,7 @@ export function NewSandboxDialog({
     setPhase('launching');
     setError('');
     try {
-      const node = await onLaunch(created, { autoLogin });
+      const node = await onLaunch(created, { autoLogin, loginAccess });
       if (!node) {
         // The hook refused because a launch was already in flight. Nothing
         // booted, so this is not an error to report — just offer Launch again.
@@ -327,7 +336,7 @@ export function NewSandboxDialog({
       setError(e instanceof Error ? e.message : String(e));
       setPhase('created');
     }
-  }, [created, phase, autoLogin, onLaunch]);
+  }, [created, phase, autoLogin, loginAccess, onLaunch]);
 
   const handleOpen = useCallback(() => {
     if (!created) return;
@@ -420,9 +429,18 @@ export function NewSandboxDialog({
           </div>
         )}
 
-        {/* The one thing about the box you can only decide before it boots. */}
+        {/* Auto-login can only be decided before the box boots; login access is
+            set here too and can be changed later from the card. */}
         {phase === 'created' && (
-          <AutoLoginField checked={autoLogin} onChange={setAutoLogin} testId="sandbox-auto-login" className="mt-3" />
+          <>
+            <AutoLoginField checked={autoLogin} onChange={setAutoLogin} testId="sandbox-auto-login" className="mt-3" />
+            <LoginAccessField
+              value={loginAccess}
+              onChange={setLoginAccess}
+              testId="sandbox-allow-login"
+              className="mt-3"
+            />
+          </>
         )}
 
         <DialogFooter className="mt-4">

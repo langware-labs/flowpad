@@ -321,3 +321,36 @@ def setup_project(
     code = asyncio.run(_run(project, dry_run=dry_run, ai=not no_ai, as_json=as_json, deployment_id=deployment or ""))
     if code:
         raise typer.Exit(code)
+
+
+@project_app.command("load")
+def load_project_cmd(
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+    asset: Annotated[str, typer.Option("--asset", help="The app to load, as a TypeId (micro_app-<uuid>).")] = "",
+    approve: Annotated[bool, typer.Option("--approve", help="Run owed setup, then load.")] = False,
+    wait: Annotated[bool, typer.Option("--wait", help="Follow a running load to its verdict.")] = False,
+) -> None:
+    """Load a project (or one of its apps) through the same gate as opening it, and print the verdict.
+
+    The verdict carries ``asset_folder`` — the app's own folder — so a caller never builds a backend URL
+    to find it. Exit 0 on ``ready``, NOT_YET otherwise."""
+    import time  # noqa: PLC0415
+
+    from flow_sdk.cli.commands._common import discover_port, get_graph_json, graph_url, ok, post_graph_json  # noqa: PLC0415
+    from flow_sdk.cli.commands.dep_cmd import _project, _refused  # noqa: PLC0415
+
+    port = discover_port(required=True)
+    pid = _project(port, project)
+    result = post_graph_json(graph_url(port, f"project/{pid}/load"), {"approved": approve, "asset": asset},
+                             on_error=_refused) or {}
+    while wait and result.get("state") == "running":
+        time.sleep(2)
+        state_url = graph_url(port, f"project/{pid}/load-state") + (f"?asset={asset}" if asset else "")
+        result = get_graph_json(state_url, on_error=_refused) or result
+    if asset and "-" in asset:
+        kind, _, uid = asset.partition("-")
+        row = get_graph_json(graph_url(port, f"{kind}/{uid}"), on_error=lambda *_: None) or {}
+        result["asset_folder"] = row.get("asset_ref")
+    if result.get("state") != "ready":
+        fail(int(ExitCode.NOT_YET), str(result.get("state") or "failed").upper(), result.get("detail") or "Not ready", result)
+    ok(result)

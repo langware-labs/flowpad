@@ -38,6 +38,10 @@ from flow_sdk.schema.data_spec.io.placement import is_document, placement_of
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
+#: Process entry points: importing one RUNS it (``server.run`` loads ``.env.local`` over the
+#: environment, switching every later test in the session to that instance). They declare no shape.
+ENTRY_POINTS = frozenset({"flow_sdk.server.run"})
+
 #: Kept honest by `test_no_package_outside_this_list_declares_a_shape`.
 SHAPE_PACKAGES = (
     "flow_sdk.assets",
@@ -67,6 +71,8 @@ def _every_shape() -> list[type]:
     for package in SHAPE_PACKAGES:
         module = importlib.import_module(package)
         for found in pkgutil.walk_packages(module.__path__, package + "."):
+            if found.name in ENTRY_POINTS:
+                continue
             try:
                 importlib.import_module(found.name)
             except Exception:  # noqa: BLE001 — a module that cannot import declares nothing
@@ -123,17 +129,22 @@ EXPECTED_PAIRS = {
     ("FREE_SECTION", "FREE_SECTION"),  # the other one
     ("SCALAR", "DIR_LIST"),          # a list of shapes: JSON-able, but io explodes it
     ("SCALAR", "DIR_DICT"),          # a dict of shapes: same
-    ("ROWS", "DIR_LIST"),            # `Dataset.examples` — the single ROWS field
+    ("ROWS", "DIR_LIST"),            # `Dataset.rows` — the single ROWS field
     # (`FILE_REF`/`DIR_LIST` went with `MessageSpec.attachments: list[FileRef]` — an outgoing
     # message's files are `MessageFile` values now, which land as SCALAR/DIR_LIST.)
+}
+#: Pairs that show up only when a data driver's own module happens to be imported in the
+#: same run (a driver's shapes live in its asset folder, loaded on demand).
+DRIVER_ONLY_PAIRS = {
+    ("SCALAR", "FILE_BYTES"),        # a `Binary` field (Gmail's `InlineImage.content`): io writes a file
 }
 
 
 def test_the_two_tables_produce_only_the_pairs_we_have_accounted_for():
     pairs = _cross_tab()
-    extra = {p: _WHERE[p][:4] for p in set(pairs) - EXPECTED_PAIRS}
+    extra = {p: _WHERE[p][:4] for p in set(pairs) - EXPECTED_PAIRS - DRIVER_ONLY_PAIRS}
     assert not extra, f"new (FieldKind, Placement) pair(s): {extra}"
-    assert set(pairs) == EXPECTED_PAIRS
+    assert set(pairs) - DRIVER_ONLY_PAIRS == EXPECTED_PAIRS
 
 
 def test_neither_table_determines_the_other():
@@ -149,7 +160,7 @@ def test_neither_table_determines_the_other():
         by_kind[kind].add(placement)
         by_placement[placement].add(kind)
 
-    assert by_kind["SCALAR"] == {"INLINE", "DIR_LIST", "DIR_DICT"}
+    assert by_kind["SCALAR"] - {"FILE_BYTES"} == {"INLINE", "DIR_LIST", "DIR_DICT"}
     assert by_placement["DIR_LIST"] == {"SCALAR", "ROWS"}
 
 
@@ -190,6 +201,12 @@ def test_an_entity_document_is_always_a_document_but_not_the_reverse():
     assert len(documents) > len(entity_documents), "the two predicates have collapsed into one"
 
 
+def _in_asset_folder(path) -> bool:
+    """Inside an asset folder (one holding its ``<family>.json`` manifest, e.g. a data driver):
+    loaded by its asset loader, never imported as a package, so it is not a shape package."""
+    return any((parent / f"{parent.parent.name}.json").is_file() for parent in path.parents)
+
+
 def test_no_package_outside_this_list_declares_a_shape():
     """``SHAPE_PACKAGES`` is hand-written, so it needs a way to go wrong loudly.
 
@@ -205,6 +222,7 @@ def test_no_package_outside_this_list_declares_a_shape():
     found = {
         f"flow_sdk.{path.relative_to(root).parts[0]}"
         for path in root.rglob("*.py")
-        if len(path.relative_to(root).parts) > 1 and declares.search(path.read_text(encoding="utf-8", errors="ignore"))
+        if len(path.relative_to(root).parts) > 1 and not _in_asset_folder(path)
+        and declares.search(path.read_text(encoding="utf-8", errors="ignore"))
     }
     assert found <= set(SHAPE_PACKAGES), sorted(found - set(SHAPE_PACKAGES))

@@ -63,8 +63,9 @@ class _ProgressEmitter:
     ``total_fn`` the table-level total for them.
     """
 
-    def __init__(self, on_progress, *, job_name: str, rows_fn, total_fn) -> None:
+    def __init__(self, on_progress, *, job_name: str, rows_fn, total_fn, roots=()) -> None:
         self._on_progress = on_progress
+        self._roots = tuple(r.path for r in roots)
         self._job_name = job_name
         self._rows_fn = rows_fn
         self._total_fn = total_fn
@@ -81,6 +82,7 @@ class _ProgressEmitter:
             done=sum(r.done for r in rows),
             total=self._total_fn(rows),
             text=text,
+            roots=self._roots,
             ts=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -523,7 +525,7 @@ def _source_gone_orphans(
     gone either — absence there is not deletion. Stat-per-candidate — callers
     run this off-loop via ``asyncio.to_thread``.
     """
-    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
 
     def _declared_source(eid: str) -> str:
         row = db_rows.get(eid)
@@ -534,10 +536,8 @@ def _source_gone_orphans(
     return {
         eid
         for eid in candidates
-        if (aref := _declared_source(eid))
-        and not Path(aref).exists()
-        # An unreachable root is not a deletion — see ``source_unreachable``.
-        and not source_unreachable(aref)
+        # An unreachable root is not a deletion — see ``source_gone``.
+        if source_gone(_declared_source(eid))
     }
 
 
@@ -765,6 +765,9 @@ class FSIndexer:
                 "errors": 0,
                 "duration_ms": 0.0,
                 "skipped": 0,
+                # Files parsed this run. ``indexed`` counts RECORDS, and one file can
+                # yield several, so progress counts files to stay on the files total.
+                "parsed_refs": 0,
                 "orphans_found": 0,
                 "orphans_db_removed": 0,
                 "orphans_disk_removed": 0,
@@ -789,7 +792,7 @@ class FSIndexer:
                 rows.append(
                     TypeProgressRow(
                         type_name=str(rt),
-                        done=int(acc["indexed"]) + int(acc["skipped"]),
+                        done=int(acc["parsed_refs"]) + int(acc["skipped"]),
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
@@ -802,6 +805,7 @@ class FSIndexer:
             on_progress,
             job_name="index",
             rows_fn=index_rows,
+            roots=opts.roots if opts.roots is not None else self._roots,
             total_fn=lambda rows: sum(r.total for r in rows),
         )
 
@@ -1043,7 +1047,11 @@ class FSIndexer:
                 ",".join(item.duplicate_paths),
             )
 
-        async with _db_session() as _idx_session:
+        from flow_sdk.wiki.run_scope import link_scope  # noqa: PLC0415
+
+        # Links resolve from per-run memory: a database read per link would sit
+        # inside the batch's writer lock (see flow_sdk/wiki/run_scope.py).
+        async with _db_session() as _idx_session, link_scope():
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
                 await _hand_over_if_waited_on()
                 progress.current = ref.record_type
@@ -1157,6 +1165,7 @@ class FSIndexer:
                             object.__setattr__(rec, "project_id", cwd_pid)
                         await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                     acc["indexed"] += len(records)
+                    acc["parsed_refs"] += 1
                     # Same-path reconciliation: a successful parse enumerates
                     # the file's COMPLETE record set (all landed in seen_ids
                     # just above), so any other pre-existing id anchored to
@@ -1301,39 +1310,15 @@ class FSIndexer:
             )
 
         # ----- Orphan handling -----
-        # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
-        # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
-        # condition is independent of which materializations remain — DB
-        # row only, fs_record dir only, or both. We detect by looking at
-        # BOTH known materializations and asking the same question for each:
-        # was this id seen during the scan (meaning Layer 1 still exists)?
+        # DEFINITION: a record is orphan iff its own source file is deleted
+        # (``source_gone``). Candidates are the ids this walk did not see, across
+        # both materializations (DB rows and record homes on disk); each one is then
+        # stat-checked, so a record outside the walked roots is never removed.
+        # ``opts.scope_filter`` narrows which orphans are reported and acted on.
         #
-        #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
-        #
-        # ``opts.scope_filter`` is applied on top: orphan-ness is determined
-        # globally (so a cross-scope reference still rescues a record), but
-        # only orphans whose (scope, project_id) match the filter are
-        # reported and acted on. The callers wiring this on top MUST walk
-        # every source — the all-projects root set (USER_HOME + one
-        # REAL_PROJECT_CWD per project), NOT default_roots() — so
-        # ``seen_ids`` is global; otherwise records under a project tree
-        # that wasn't walked would falsely appear orphan. (See the
-        # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
-        #
-        # SAFETY GUARD: a destructive orphan_action with a narrowed walk
-        # (custom roots) and no scope_filter would silently wipe records
-        # referenced from outside the walked subtree. Refuse — fall back
-        # to INDEX (non-destructive) and emit a warning. The caller's
-        # ScopeFilter-aware wrapper is responsible for either widening the
-        # walk to global or supplying a scope_filter.
+        # A candidate is acted on only once ``_source_gone_orphans`` confirms its own
+        # file is deleted, so a narrowed walk cannot remove a record it did not visit.
         effective_orphan_action = opts.orphan_action
-        if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
-            logging.warning(
-                "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
-                "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
-                effective_orphan_action,
-            )
-            effective_orphan_action = OrphanAction.INDEX
         orphan_records: dict[RecordType, list[str]] = {}
         orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
         # Disk walks (records-root iterdir, per-type dir enumeration) run
@@ -1645,6 +1630,7 @@ class FSIndexer:
             on_progress,
             job_name="scan",
             rows_fn=scan_rows,
+            roots=roots_for_walk,
             total_fn=lambda _rows: 0,  # 0 = unknown for scan; UI hides percentage
         )
 

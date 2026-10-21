@@ -13,7 +13,7 @@ from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("fresh_user_scope")]
 
-SHAPE = {"examples": [{"input": "ingest.source_item", "output": {"sentiment": "string"}}]}
+SHAPE = {"rows": [{"input": "ingest.source_item", "output": {"sentiment": "string"}}]}
 
 
 @pytest.fixture
@@ -107,23 +107,23 @@ async def test_promote_then_annotate_lands_on_disk_and_in_counts(bootstrapped_cl
     items = await _items(client, sid)
     resp = await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
     assert resp.status_code == 200, resp.text
-    [eid] = resp.json()["data"]["example_ids"]
-    assert resp.json()["data"]["num_examples"] == 1
-    item_doc = json.loads((folder / "examples" / "0001" / "input" / "item.json").read_text())
+    [eid] = resp.json()["data"]["ids"]
+    assert resp.json()["data"]["num_rows"] == 1
+    item_doc = json.loads((folder / "rows" / "0001" / "input" / "item.json").read_text())
     assert item_doc["external_id"] == items[0]["external_id"] and item_doc["body"] == items[0]["body"]
 
     resp = await client.post(
         f"/api/v1/graph/dataset/{ds['id']}/annotate",
-        json={"example_id": eid, "ground_truth": {"sentiment": "positive"}},
+        json={"row_id": eid, "ground_truth": {"sentiment": "positive"}},
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["num_annotated"] == 1
-    assert json.loads((folder / "examples" / "0001" / "ground_truth" / "label.json").read_text()) == {
+    assert json.loads((folder / "rows" / "0001" / "ground_truth" / "label.json").read_text()) == {
         "sentiment": "positive"
     }
 
     row = (await client.get(f"/api/v1/graph/dataset/{ds['id']}")).json()["data"]
-    assert row["num_examples"] == 1 and row["num_annotated"] == 1
+    assert row["num_rows"] == 1 and row["num_annotated"] == 1
     listed = (await client.get("/api/v1/graph/dataset", params={"filter": json.dumps({"source_id": sid})})).json()[
         "data"
     ]
@@ -138,14 +138,14 @@ async def test_shape_and_layout_are_enforced(bootstrapped_client, user, tmp_path
     [item] = await _items(client, sid)
     [eid] = (
         await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [item["id"]]})
-    ).json()["data"]["example_ids"]
+    ).json()["data"]["ids"]
 
     bad = await client.post(
-        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"mood": "x"}}
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": eid, "ground_truth": {"mood": "x"}}
     )
     assert bad.status_code == 400 and "schema" in bad.json()["data"], bad.text
     missing = await client.post(
-        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": "nope", "ground_truth": {"sentiment": "p"}}
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": "nope", "ground_truth": {"sentiment": "p"}}
     )
     assert missing.status_code == 404
 
@@ -158,7 +158,7 @@ async def test_shape_and_layout_are_enforced(bootstrapped_client, user, tmp_path
     assert refused.status_code == 400 and "ingest.source_item" in refused.json()["message"]
 
 
-async def test_examples_listing_reports_promoted_items_and_gold(bootstrapped_client, user, tmp_path):
+async def test_rows_listing_reports_promoted_items_and_gold(bootstrapped_client, user, tmp_path):
     client = bootstrapped_client
     pid = await _project(client, tmp_path)
     sid = await _source_with_items(client, 2)
@@ -166,13 +166,14 @@ async def test_examples_listing_reports_promoted_items_and_gold(bootstrapped_cli
     items = await _items(client, sid)
     [eid] = (
         await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
-    ).json()["data"]["example_ids"]
-    listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/examples")).json()["data"]["examples"]
-    assert listed == [{"example_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False}]
+    ).json()["data"]["ids"]
+    listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/row-index")).json()["data"]["rows"]
+    assert listed == [{"row_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False,
+                       "multi_output": False, "binary_input": True}]
     await client.post(
-        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"sentiment": "neutral"}}
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": eid, "ground_truth": {"sentiment": "neutral"}}
     )
-    listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/examples")).json()["data"]["examples"]
+    listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/row-index")).json()["data"]["rows"]
     assert listed[0]["annotated"] is True
 
 
@@ -191,7 +192,7 @@ def _declare_nav_kinds(root: Path) -> str:
         (folder / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns, **body}))
         return folder
 
-    top = spec(root, "nav.dataset", {"examples": {"input": "nav.request", "output": "nav.decision"}})
+    top = spec(root, "nav.dataset", {"rows": {"input": "nav.request", "output": "nav.decision"}})
     spec(top, "nav.request", {"fields": {"utterance": {"shape": "string"}}})
     spec(top, "nav.decision", {"fields": {"route": {"shape": "enum:quick|agentic"}, "target": {"shape": "?string"}}})
     assert set(declared.load_root(root).values()) == {""}
@@ -216,7 +217,7 @@ async def test_typed_rows_append_read_annotate_and_validate(bootstrapped_client,
         {"input": {"utterance": "x"}, "ground_truth": {"route": "maybe"}},
     ]})
     assert bad.status_code == 400 and bad.json()["data"]["errors"], bad.text
-    assert not list((Path(ds["asset_ref"]) / "examples").glob("*")), "a refused batch writes no example"
+    assert not list((Path(ds["asset_ref"]) / "rows").glob("*")), "a refused batch writes no row"
 
     resp = await client.post(f"{base}/append", json={"rows": [
         {"kind": "eval", "input": {"utterance": "open data sources"},
@@ -225,23 +226,44 @@ async def test_typed_rows_append_read_annotate_and_validate(bootstrapped_client,
         {"input": {"utterance": "summarize the zoom task"}},
     ]})
     assert resp.status_code == 200, resp.text
-    first, second = resp.json()["data"]["example_ids"]
-    assert resp.json()["data"]["num_examples"] == 2
+    first, second = resp.json()["data"]["ids"]
+    assert resp.json()["data"]["num_rows"] == 2
 
-    got = (await client.get(f"{base}/example/{first}")).json()["data"]
+    got = (await client.get(f"{base}/row/{first}")).json()["data"]
     assert got["input"] == {"utterance": "open data sources"}
     assert got["ground_truth"] == [{"route": "quick", "target": "view:data-sources"}, {"route": "quick", "target": "view:connectors"}]
     assert got["kind"] == "eval" and got["data"] == {"tags": ["alias"]}
 
-    resp = await client.post(f"{base}/annotate", json={"example_id": second, "ground_truth": {"route": "agentic"}})
+    resp = await client.post(f"{base}/annotate", json={"row_id": second, "ground_truth": {"route": "agentic"}})
     assert resp.status_code == 200 and resp.json()["data"]["num_annotated"] == 2, resp.text
-    assert (await client.get(f"{base}/example/{second}")).json()["data"]["ground_truth"] == {"route": "agentic", "target": None}
+    assert (await client.get(f"{base}/row/{second}")).json()["data"]["ground_truth"] == {"route": "agentic", "target": None}
 
     checked = (await client.post(f"{base}/validate")).json()["data"]
     assert checked == {"checked": 2, "problems": []}, checked
     # A hand-edited row that no longer fits is named, not fatal.
-    gold = Path(ds["asset_ref"]) / "examples" / "0002" / "ground_truth" / "decision.json"
+    gold = Path(ds["asset_ref"]) / "rows" / "0002" / "ground_truth" / "decision.json"
     assert gold.is_file(), "annotate writes the typed gold as the shape's own document"
     gold.write_text('{"route": "sideways"}')
     problems = (await client.post(f"{base}/validate")).json()["data"]["problems"]
-    assert [p["example_id"] for p in problems] == [second] and "ground_truth" in problems[0]["error"], problems
+    assert [p["row_id"] for p in problems] == [second] and "ground_truth" in problems[0]["error"], problems
+
+
+async def test_promote_is_a_row_write_that_says_so(bootstrapped_client, user, tmp_path, monkeypatch):
+    """Promoted rows land like any other write: one ``dataset.rows.changed`` naming the new row ids."""
+    from flow_sdk.tags import ws_forward
+    from flow_sdk.tags.bus import on_tag
+
+    monkeypatch.setattr(ws_forward, "_started", True)
+    heard: list = []
+    off = on_tag("dataset.rows.changed", heard.append)
+    try:
+        client = bootstrapped_client
+        pid = await _project(client, tmp_path)
+        sid = await _source_with_items(client)
+        ds = await _dataset(client, pid, sid)
+        items = await _items(client, sid)
+        resp = await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
+        ids = resp.json()["data"]["ids"]
+    finally:
+        off()
+    assert [(e.data["op"], e.data["keys"]) for e in heard] == [("put", ids)]

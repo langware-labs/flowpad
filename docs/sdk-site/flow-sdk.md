@@ -87,14 +87,19 @@ await process.prompt("Open https://example.com and tell me the page title.")
 
 ### Chain them
 
-Any result the SDK generates is a `flow.ReturnedValue`, itself a `flow.DataSpec`, like:
+**FlowCall** is the shared contract for invoking work, receiving an outcome and value, and composing results. Participating work calls answer with a `flow.ReturnedValue`, itself a `flow.DataSpec`, for example:
 
 - `cli` — a shell command
 - `prompt` — a model call
 - `agent` — an agent turn
 - `ask` — a user input request
+- `python` — a typed `call.py` function, including whole-list processing
 
-DataSpec in, ReturnedValue out: its `value` is the DataSpec the run produced, so it can be the next step's input.
+Typed input in, ReturnedValue out: its `value` can be a DataSpec value, primitive,
+record or list held to the declared output. A required-value chain consumes
+only OK with a present value; admission and skipped operations are not completed
+data. [FlowCall blocks](../snippets/flowcall-blocks.md) shows the executable
+`call.py` convention, whole-list processing and Wizard-backed chaining.
 
 Chart: IN CVSpec (`flow.DataSpec`: cv.docx | pdf | md) -> CV reviewer (`flow.AgenticProcess`, prompt: “Review and improve the CV, save it with _reviewed”) -> OUT cv_reviewed (`flow.ReturnedValue`, itself a `flow.DataSpec`; exit_code = OK, value = the reviewed CVSpec, text = the agent's message) -> value can be chained next: the next step takes input=cv_reviewed.value.
 
@@ -293,7 +298,7 @@ async with await issues.open() as live:
 Serial. Arrivals come one at a time in order, and each has a reply that goes back the same way.
 
 ```python
-from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
 async with workflow("channel-helper"):
@@ -303,7 +308,7 @@ async with workflow("channel-helper"):
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
-            await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
+            await m.reply(await m.reply_spec(body=out.text))   # into the thread
 ```
 
 ## `flow.Agent`
@@ -376,7 +381,7 @@ assert chat.subkind == "agent"                  # what it is for: talking to the
 1. **Shapes you can trust** (`flow.DataSpec`): Every value is typed, frozen and file-friendly.
 2. **Files are the database** (`flow.SourceItem`): Disk is the truth; the index rebuilds from it.
 3. **Agents** (`flow.Agent`, `flow.AgenticProcess`): A folder defines it; a process runs it, on any harness.
-4. **Orchestration is Python** (`flow.ComputeOp`, `flow.ReturnedValue`): Your loop is the engine. Every call answers the same way.
+4. **Orchestration is Python** (`flow.ComputeOp`, `flow.ReturnedValue`): Your loop is the engine. FlowCall gives participating work calls a shared answer contract.
 5. **Data in** (`flow.DataDriver`, `flow.DataSource`): A driver talks to a system; a source is one stream on it.
 6. **Every channel** (`flow.StreamInbox`): One loop body answers email, Slack, Telegram and WhatsApp.
 7. **Accounts, not tokens** (`flow.Connection`): Sign in once; code asks for the account by name.
@@ -612,9 +617,14 @@ answer = await llm.create_completion("You answer in one word.", "Capital of Fran
 
 ## Chapter 4: Orchestration is Python
 
-`flow.ComputeOp` · `flow.ReturnedValue` — Your loop is the engine. Every call answers the same way.
+`flow.ComputeOp` · `flow.ReturnedValue` — FlowCall gives participating work calls
+a shared answer contract. A Python block exposes `call(input, *, context)` in
+its asset's `call.py`; its manifest declares input/output schemas. `chain`
+uses Wizard for ordered value composition, while `map_calls` explicitly calls
+once per item and retains partial outcomes. Ordinary control flow can remain Python.
 
-Chart: Check (`flow.ComputeOp`) -> Run (`flow.ComputeOp`) -> Re-check (`flow.ComputeOp`) -> Answer (`flow.ReturnedValue`)
+Chart: Validate input → optional check → call → validate output → ReturnedValue.
+A pure transformation needs no completion check, agent or persisted run entity.
 
 ### Control flow is Python
 

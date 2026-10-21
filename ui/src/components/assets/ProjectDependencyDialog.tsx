@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isValidUUIDv4, type Project } from '@sdk';
+import { normalizeEntityId, type Project, ENTITY_UUID_SOURCE } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -12,17 +12,19 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { useProjectListSource } from '@src/components/open-project-component/use-project-list-source';
+import { ProjectSelector } from '@src/components/project-selector/ProjectSelector';
+import { projectListToSelectorItems } from '@src/components/project-selector/project-items';
+import { canonicalPath } from '@src/components/project-selector/use-ensure-project';
 import { useProjects } from '@src/hooks/use-projects';
 
-const UUID_IN_TEXT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const ENTITY_ID_IN_TEXT = new RegExp(ENTITY_UUID_SOURCE);
 
 /** The hub project id a pasted value names — a bare id, a `hub:<id>` source,
  *  or a hub link carrying one — or null. */
 export function hubProjectIdFrom(text: string): string | null {
   const raw = text.trim().replace(/^hub:/i, '');
-  if (isValidUUIDv4(raw)) return raw.toLowerCase();
-  const found = raw.match(UUID_IN_TEXT)?.[0];
-  return found && isValidUUIDv4(found) ? found.toLowerCase() : null;
+  return normalizeEntityId(raw) ?? normalizeEntityId(raw.toLowerCase().match(ENTITY_ID_IN_TEXT)?.[0]);
 }
 
 /** What a picked project is saved as: its hub id when it is published (fetched wherever this
@@ -44,9 +46,10 @@ interface ProjectDependencyDialogProps {
 }
 
 /**
- * Pick the projects to depend on, from ONE list: every project this desk knows
- * (the ones on the hub marked), plus a box for a hub project that is not on
- * this machine yet (a bare id, a `hub:<id>` source or a hub link).
+ * Pick the project to depend on from the same list (and `ProjectSelector`) the
+ * Open project screen uses — every project on this machine, or on a hub-only
+ * server the hub's list — plus a box for a hub project not listed (a bare id,
+ * a `hub:<id>` source or a hub link).
  */
 export function ProjectDependencyDialog({
   open,
@@ -56,32 +59,48 @@ export function ProjectDependencyDialog({
 }: ProjectDependencyDialogProps): React.ReactElement {
   const { t } = useLingui();
   const [value, setValue] = useState('');
-  const [picked, setPicked] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { projects } = useProjects({ enabled: open });
-  const offered = useMemo(
-    () => (projects ?? []).filter((p) => !p.hidden && p.id !== excludeProjectId && dependencySourceFor(p)),
-    [projects, excludeProjectId],
-  );
+  const { projects: listed, isLoading, hub } = useProjectListSource({ enabled: open });
+  const { projects: entities } = useProjects({ enabled: open && !hub });
+
+  // Rows are the shared project list; each maps to the source it is saved as.
+  // On a hub every row is a hub project; on a desk a row is its folder, unless
+  // the entity on that folder is published — then it is its hub id.
+  const { items, sourceById } = useMemo(() => {
+    const sourceById = new Map<string, string>();
+    if (hub) {
+      const rows = listed.filter((p) => p.id !== excludeProjectId);
+      for (const p of rows) sourceById.set(p.id, `hub:${p.id}`);
+      return {
+        items: rows.map((p) => ({ id: p.id, name: p.name || p.id, modifiedAt: p.modified_at ?? null })),
+        sourceById,
+      };
+    }
+    const entityByPath = new Map(
+      (entities ?? []).filter((p) => p.fs_storage_mount_path).map((p) => [canonicalPath(p.fs_storage_mount_path!), p]),
+    );
+    const items = projectListToSelectorItems(listed).filter((item) => entityByPath.get(item.id)?.id !== excludeProjectId);
+    for (const item of items) {
+      const entity = entityByPath.get(item.id);
+      sourceById.set(item.id, (entity && dependencySourceFor(entity)) || item.path!);
+    }
+    return { items, sourceById };
+  }, [hub, listed, entities, excludeProjectId]);
 
   useEffect(() => {
     if (!open) {
       setValue('');
-      setPicked([]);
+      setPicked(null);
       setError(null);
       setBusy(false);
     }
   }, [open]);
 
   const pastedId = hubProjectIdFrom(value);
-  const sources = useMemo(() => {
-    const out = offered.filter((p) => picked.includes(p.id)).map((p) => dependencySourceFor(p)!);
-    if (pastedId && !out.includes(`hub:${pastedId}`)) out.push(`hub:${pastedId}`);
-    return out;
-  }, [offered, picked, pastedId]);
-
-  const toggle = (id: string) => setPicked((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const pickedSource = picked ? sourceById.get(picked) : undefined;
+  const sources = [...new Set([pickedSource, pastedId && `hub:${pastedId}`].filter((x): x is string => !!x))];
 
   const submit = async () => {
     setBusy(true);
@@ -107,32 +126,14 @@ export function ProjectDependencyDialog({
             <Trans>A project on the hub is fetched wherever this project opens; any other is used from its folder on this computer.</Trans>
           </DialogDescription>
         </DialogHeader>
-        {offered.length > 0 && (
-          <div className="flex max-h-64 flex-col gap-1 overflow-y-auto" data-testid="project-dependency-projects">
-            {offered.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                disabled={busy}
-                aria-pressed={picked.includes(p.id)}
-                onClick={() => toggle(p.id)}
-                data-testid="project-dependency-project"
-                className={`flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-sm transition-colors ${
-                  picked.includes(p.id)
-                    ? 'border-primary bg-primary/10 text-foreground'
-                    : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
-                }`}
-              >
-                <span className="truncate">{p.name || p.id}</span>
-                {p.hub_published_at && (
-                  <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-foreground">
-                    <Trans>On hub</Trans>
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="h-72 min-w-0 overflow-hidden" data-testid="project-dependency-projects">
+          <ProjectSelector
+            projects={items}
+            selectedId={picked}
+            onSelect={setPicked}
+            isLoading={isLoading}
+          />
+        </div>
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}

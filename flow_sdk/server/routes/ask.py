@@ -26,6 +26,7 @@ from flow_sdk.core.compute_op.ask import (
     held_items,
     open_questions,
     pending,
+    seen,
     serve_here,
 )
 from flow_sdk.core.compute_op.ask import answer as deliver_answer
@@ -172,6 +173,33 @@ async def cancel_question(question_id: str):
     if not decline(question_id):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"cancelled": question_id})
+
+
+@router.post("/{question_id}/skip")
+async def skip_question(question_id: str):
+    """Skip the setup step asking (``skippable``): marked skipped on this machine, its question withdrawn, the
+    setup goes on. 409 when no setup asked it."""
+    from flow_sdk.builtin.project_setup import SkipRefused, skip_asking  # noqa: PLC0415
+    from flow_sdk.request_context.json_body import current_user_id  # noqa: PLC0415
+
+    question = pending(question_id)
+    if question is None:
+        return _fail("that question is no longer waiting", 404)
+    try:
+        skipped = await skip_asking(question.run, question.step, by=current_user_id())
+    except SkipRefused as exc:
+        return _fail(str(exc), 409)
+    if not skipped:
+        return _fail("no setup is asking this question", 409)
+    return ApiSuccessResponse(data={"skipped": question_id})
+
+
+@router.post("/{question_id}/seen")
+async def question_seen(question_id: str):
+    """A screen is showing the question: it waits as long as someone has it open (``ask.seen``)."""
+    if not seen(question_id):
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data={"seen": question_id})
 
 
 @router.post("/{question_id}/assist")

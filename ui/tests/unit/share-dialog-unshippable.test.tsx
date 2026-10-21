@@ -26,6 +26,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => s
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => stable.ctx }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
   ...(await importOriginal<object>()),
+  useInstancePreferences: () => ({ preferences: { isLoaded: true, version: 0, get: () => 'ask', set: vi.fn() } }),
   useAuth: () => stable.auth,
   useOAuthFlowComplete: () => undefined,
 }));
@@ -50,6 +51,9 @@ vi.mock('@src/hooks/entity-hooks', async (importOriginal) => ({
   useEntity: () => stable.entity,
 }));
 vi.mock('@src/services/privacy-guard', () => ({ guardCloudAction: () => true }));
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: (files: File[]) => Promise.resolve({ files, caption: '' }),
+}));
 vi.mock('@src/components/conversation/SendProgressNotice', () => ({ SendProgressNotice: () => null }));
 
 const SESSION = 'claude_session-aaaaaaaa-aaaa-4aaa-8aaa-000000000001';
@@ -59,6 +63,7 @@ const GAP = { type_id: SESSION, reason: 'its file is not on this machine' };
 const source: ShareSource = {
   label: 'Session aaaaaaaa',
   typeLabel: 'SESSION',
+  isProcess: true,
   prepare: () => Promise.resolve({ assetReferences: [SESSION], sharedContextEntities: [SESSION, PROCESS] }),
 };
 
@@ -155,5 +160,38 @@ describe('share dialog — an attachment that would arrive empty', () => {
 
     await waitFor(() => expect(commit).toHaveBeenCalledTimes(1));
     expect(commit.mock.calls[0][1].assetReferences).toEqual([SESSION]);
+  });
+});
+
+describe('share dialog — pasting an image into the note', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it('attaches the pasted clipboard image to the shared message', async () => {
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [] });
+    const commit = vi.fn<Commit>(() => Promise.resolve('conv-1'));
+    const prepare = vi.fn((...args: Parameters<ShareSource['prepare']>) => source.prepare(...args));
+    render(
+      <ShareToConversationDialog
+        open
+        onClose={() => undefined}
+        source={{ ...source, supportsFiles: true, prepare }}
+        defaultNote="look at this"
+        initialParticipants={PARTICIPANTS}
+        commit={commit}
+      />,
+    );
+    const image = new File(['png'], 'shot.png', { type: 'image/png' });
+
+    fireEvent.paste(screen.getByTestId('share-note-input'), {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }], getData: () => '' },
+    });
+    await waitFor(() => expect(screen.getByText(/screenshot-.*\.png|shot\.png/)).toBeTruthy());
+    share();
+
+    await waitFor(() => expect(commit).toHaveBeenCalledTimes(1));
+    expect(prepare.mock.calls[0][0].files).toHaveLength(1);
   });
 });

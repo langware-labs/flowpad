@@ -25,6 +25,11 @@ in this grammar. It is the ONLY copy in the assistant's skills; the others link 
   `"?string"` whose description names the values you know: a closed set there turns the system's
   next value into a problem row on every sync (the mirror keeps the record, but hides it from `rows()`).
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## Kind names and namespaces
 
 - Inside a `data_schema.json`, write sibling kinds BARE (`"crm.note"`): the loader

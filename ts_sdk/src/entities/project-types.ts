@@ -26,6 +26,8 @@ export interface ProjectContextDirInfo {
   dependency?: string;
   /** False for an `optionalDependencies` entry. */
   required?: boolean;
+  /** A local package: used on this device only, recorded in no project file. */
+  local?: boolean;
   /** The dependency that declared this one, for a transitive dependency; else empty. */
   via?: string;
 }
@@ -92,6 +94,8 @@ export interface ProjectLoadResult {
   setup_available?: boolean;
   /** What the check found, for a `setup_required` load: the tree as it stands before anything runs. */
   tree?: SetupTreeResult | null;
+  /** What a `running` load is doing: `load` only starts what is set up, `setup` sets up first. */
+  phase?: 'load' | 'setup' | null;
 }
 
 /** Where a declared dependency stands on THIS machine. */
@@ -109,6 +113,8 @@ export interface DependencyState {
   source: string;
   /** False for an `optionalDependencies` entry — fetched only on install. */
   required: boolean;
+  /** A local package: used on this device only, recorded in no project file. */
+  local?: boolean;
   /** The sub-folder of the source the dependency points at; "." for its root. */
   path: string;
   state: DependencyStateName;

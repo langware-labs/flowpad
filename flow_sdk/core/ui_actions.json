@@ -30,7 +30,7 @@
     "quick-create-dynamic-workflow": "Create a new workflow (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
     "quick-create-task": "Create a new task (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
     "quick-create-markdown": "Create a new markdown document (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
-    "quick-create-whiteboard": "Create a new whiteboard (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
+    "quick-create-chart": "Create a new chart — a sequence diagram, an Excalidraw drawing or a mermaid diagram (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
     "quick-create-mcp": "Add an MCP server (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
     "quick-create-credential": "Add a credential / an API key (an empty one, to fill in; a request that also says what it should contain goes to the assistant)",
     "quick-create-modal": "Open the quick create menu: create anything new",

@@ -37,7 +37,7 @@ export interface AssetCounterGroup<T> {
   columns: AssetColumn<T>[];
   itemKey: (item: T) => string;
   /** Where a row click navigates. */
-  itemPointer: (item: T) => IDockPointer;
+  itemPointer: (item: T) => IDockPointer | null;
   /** What the table's quick search matches against. */
   searchText: (item: T) => string;
 }
