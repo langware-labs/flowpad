@@ -81,7 +81,7 @@ class _Drive:
 
     def _mint(self, meta: dict, data: bytes = b"") -> dict:
         self._next += 1
-        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}", "version": "1"}
+        meta = {"modifiedTime": "2026-01-01T00:00:00Z", **meta, "id": f"n{self._next}", "version": "1", "headRevisionId": f"r{self._next}.1"}
         if meta.get("mimeType") != self.FOLDER:
             meta.setdefault("mimeType", "application/octet-stream")
             meta["size"] = str(len(data))
@@ -168,6 +168,7 @@ class _Drive:
             self.content[file_id] = raw
             found["size"] = str(len(raw))
             found["version"] = str(int(found.get("version") or 0) + 1)
+            found["headRevisionId"] = f"{file_id}.{found['version']}"   # content only: Drive's version also moves on metadata
             return 200, json.dumps(found).encode(), {}
         return 404, b"{}", {}
 
