@@ -100,6 +100,12 @@ def my_drive(config: Mapping[str, Any]) -> Optional[Path]:
     return next((p for p in _candidates(str(config.get("account") or "")) if p.is_dir()), None)
 
 
+def _folder(config: Mapping[str, Any]) -> Optional[Path]:
+    """The source's folder: My Drive's ``path`` on this computer, or None while My Drive is not here."""
+    root = my_drive(config)
+    return root.joinpath(*_segments(config.get("path") or "")) if root is not None else None
+
+
 class MountedDriveSource(FolderSource):
     """The folder ``path`` of My Drive, as the files Drive for desktop keeps on this computer."""
 
@@ -115,19 +121,17 @@ class MountedDriveSource(FolderSource):
     @classmethod
     def rows_folder(cls, config: Mapping[str, Any], path: str) -> Path:
         """The folder on this computer that holds a dataset's ``rows/``."""
-        root = my_drive(config)
-        if root is None:
+        folder = _folder(config)
+        if folder is None:
             raise ValueError("Google Drive for desktop is not set up on this computer")
-        return root.joinpath(*_segments(config.get("path") or ""), *_segments(path))
+        return folder.joinpath(*_segments(path))
 
     @classmethod
     def configure(cls, row: Any) -> Mapping[str, Any]:
         """The folder this source watches: My Drive's ``path`` here (a placeholder until it is mounted, so
         the source still builds and its setup can say what is missing)."""
         config = dict(getattr(row, "config", None) or {})
-        root = my_drive(config)
-        target = root.joinpath(*_segments(config.get("path") or "")) if root else Path(NOT_MOUNTED).expanduser()
-        return {"root": str(target)}
+        return {"root": str(_folder(config) or Path(NOT_MOUNTED).expanduser())}
 
     # ── setup: install, sign in, the folder, and the check ────────────────────
     async def verify(self) -> Verdict:
@@ -137,18 +141,18 @@ class MountedDriveSource(FolderSource):
         config = self.binding.config
         if not installed():
             return Verdict(ready=False, detail="Google Drive for desktop is not installed on this computer.")
-        root = my_drive(config)
-        if root is None:
+        folder = _folder(config)
+        if folder is None:
             who = f" as {config.get('account')}" if config.get("account") else ""
             return Verdict(ready=False, detail=f"Sign in to Google Drive for desktop{who}: My Drive is not on this computer yet.")
-        folder = root.joinpath(*_segments(config.get("path") or ""))
         if not folder.is_dir():
             if not self.binding.holds_rows or self.binding.read_only:
                 return Verdict(ready=False, detail=f"My Drive has no folder {config.get('path')!r}.")
             folder.mkdir(parents=True, exist_ok=True)   # a source holding rows makes its folder
         probe = folder / f".flowpad-check-{uuid.uuid4().hex[:8]}"
         try:
-            os.listdir(folder)               # reading is what macOS guards first: a write can pass while a list fails
+            with os.scandir(folder) as entries:   # reading is what macOS guards first: a write can pass while a list fails
+                next(entries, None)
             probe.write_bytes(b"ok")
             probe.unlink()
         except PermissionError:
@@ -170,7 +174,7 @@ class MountedDriveSource(FolderSource):
     @setup_step("sign-in")
     async def _sign_in(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
         """Drive for desktop running, signed in and starting with the computer; done once My Drive is here."""
-        root = my_drive(self.binding.config)
+        root = await asyncio.to_thread(my_drive, self.binding.config)   # a glob, a subprocess and stats on the mount
         if root is not None:
             return ReturnedValue.satisfied(f"My Drive is at {root}")
         if check:
@@ -181,14 +185,13 @@ class MountedDriveSource(FolderSource):
     @setup_step("folder")
     async def _make_folder(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
         """The source's folder in My Drive (made when missing)."""
-        root = my_drive(self.binding.config)
-        if root is None:
+        folder = await asyncio.to_thread(_folder, self.binding.config)
+        if folder is None:
             return ReturnedValue.not_yet("My Drive is not on this computer yet")
-        folder = root.joinpath(*_segments(self.binding.config.get("path") or ""))
-        if not folder.is_dir():
+        if not await asyncio.to_thread(folder.is_dir):
             if check:
                 return ReturnedValue.not_yet(f"My Drive has no folder {self.binding.config.get('path')!r} yet")
-            folder.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
         return ReturnedValue.satisfied(str(folder))
 
 

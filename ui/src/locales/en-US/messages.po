@@ -5054,8 +5054,11 @@ msgstr "Channel id (data source id there)"
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/types/ViewType.ts
 msgid "Channels"
 msgstr "Channels"
 
@@ -13612,8 +13615,8 @@ msgstr "inactive copy"
 #: src/components/inbound/InboundView.tsx
 #: src/pages/hub-home/HubSummaryLine.tsx
 #: src/types/ViewType.ts
-msgid "Inbound"
-msgstr "Inbound"
+#~ msgid "Inbound"
+#~ msgstr "Inbound"
 
 #: src/components/connections-manager.tsx
 msgid "Inbound routing"

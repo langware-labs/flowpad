@@ -197,7 +197,7 @@ export enum MachineSubview {
   METRICS = 'metrics', // E2B only - CPU/Memory charts
   LOGS = 'logs', // E2B only - sandbox logs
   SECRETS = 'secrets', // Which project secrets this node may see. NOT E2B-gated
-                       // — the local desktop node needs it just as much.
+  // — the local desktop node needs it just as much.
 }
 
 /**
