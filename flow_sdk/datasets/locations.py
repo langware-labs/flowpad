@@ -81,10 +81,10 @@ class Location:
         """How the location reads to a person (and in a log)."""
         if self.kind == LOCAL:
             return LOCAL
-        if self.kind == FOLDER:
-            return f"file:{self.target}"
         if self.source:
             return f"{self.source} · {self.path}" if self.path else self.source
+        if self.kind == FOLDER:
+            return f"file:{self.target}"
         return f"{self.driver}:{self.target}" if self.target else self.driver
 
 
@@ -103,6 +103,9 @@ def parse(value: Any) -> Location:
             raise ValueError(f"location: {value!r} is not local, file:<folder> or <driver>:<target>")
         return Location(FILES, driver=found.group(1), target=found.group(2).strip(), raw=value)
     if isinstance(value, dict):
+        if isinstance(value.get("folder"), str) and value["folder"]:   # a data source whose rows are a local folder
+            return Location(FOLDER, target=str(Path(value["folder"]).expanduser()), raw=value,
+                            source=str(value.get("source") or ""), path=str(value.get("path") or "").strip("/"))
         unknown = set(value) - {"driver", "target", "config", "map", "by", "read_only", "source", "path"}
         if unknown or not isinstance(value.get("driver"), str) or not _DRIVER.match(f"{value['driver']}:"):
             raise ValueError('location: {"driver", "target"?, "config"?, "map"?, "by"?, "read_only"?} is required')
@@ -167,7 +170,21 @@ def declared(folder: Path | str, source: Any, path: Any, location: Any) -> Any:
             value[key] = own[key]
     if own.get("map") is None:
         value["path"] = str(path or own.get("target") or Path(folder).name).strip("/")
+        # A driver whose store is a folder ON THIS MACHINE (a mounted drive) says where; its rows are then
+        # read and written there in place -- no working copy, nothing to pull or push.
+        local = _rows_folder_of(found["provider"], value["config"], value["path"])
+        if local is not None:
+            return {"folder": str(local), "source": str(source), "path": value["path"]}
     return value
+
+
+def _rows_folder_of(provider: str, config: dict, path: str) -> Optional[Path]:
+    """The local folder a driver keeps a dataset's rows in (its ``rows_folder``), or None for a remote one."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    driver = DRIVERS.get_or_none(provider)
+    rows_folder = getattr(driver.cls, "rows_folder", None) if driver is not None else None
+    return Path(rows_folder(config, path)) if rows_folder is not None else None
 
 
 #: What a named source answered for a dataset in this process: ``{(dataset folder, source): why}``, ``""``
