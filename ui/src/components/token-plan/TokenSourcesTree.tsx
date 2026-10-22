@@ -6,8 +6,8 @@
  */
 import type { LLMEndpoint } from '@sdk';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { ArrowUpRight, Plus, Settings } from 'lucide-react';
-import { useMemo } from 'react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Plus, Settings } from 'lucide-react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 
 import { FlowIcon } from '@sdk/react/FlowIcon';
 
@@ -22,6 +22,7 @@ import { childrenOf, costLeft, sourceRows } from './source-tree';
 const PROVIDER_NAME: Record<string, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI' };
 
 const CHIP = 'rounded-full border px-2 py-0.5 text-xs font-medium';
+const ALLOCATION_TONE = 'border-foreground/25 bg-foreground/5 text-foreground/80';
 const ACTION_CHIP = 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20';
 
 export function TokenSourcesTree({
@@ -46,7 +47,134 @@ export function TokenSourcesTree({
 }) {
   const { t } = useLingui();
   const rows = useMemo(() => sourceRows(endpoints), [endpoints]);
-  const allocated = (e: LLMEndpoint) => childrenOf(e, endpoints).filter((k) => k.enabled !== false).length;
+
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const kidsOf = (e: LLMEndpoint) => childrenOf(e, endpoints).filter((k) => k.enabled !== false);
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /** One row, then -- when its allocations are open -- the next level beneath it, indented. */
+  const renderRow = (
+    e: LLMEndpoint,
+    depth: number,
+    o: { chip: { label: string; tone: string }; mark: string | null; name: string; canAllocate: boolean },
+  ): ReactNode => {
+    const left = costLeft(e);
+    const selected = e.id === selectedId;
+    const kids = kidsOf(e);
+    const isOpen = open.has(e.id);
+    return (
+      <Fragment key={e.id}>
+        <tr
+          data-testid={`source-row-${e.id}`}
+          className={cn(
+            'border-b last:border-0 hover:bg-accent/40',
+            selected && 'bg-accent/30',
+            depth > 0 && 'bg-muted/20',
+          )}
+        >
+          <td className="w-full max-w-0 px-2 py-2" title={e.name}>
+            <div className="flex min-w-0 items-center" style={{ paddingInlineStart: depth * 20 }}>
+              {depth > 0 && <span className="me-1.5 text-muted-foreground">└</span>}
+              {o.mark && (o.mark === 'flowpad' || PROVIDER_NAME[o.mark]) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="me-1.5 inline-flex shrink-0" data-testid={`provider-mark-${e.id}`}>
+                      <FlowIcon icon={o.mark === 'flowpad' ? 'flowpad.flowpad' : `brands.${o.mark}`} size={16} />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {o.mark === 'flowpad' ? (
+                      <Trans>Paid by your Flowpad account</Trans>
+                    ) : (
+                      <Trans>Your {PROVIDER_NAME[o.mark]} API key</Trans>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <button
+                type="button"
+                className={cn('truncate text-left', selected && 'font-medium')}
+                onClick={() => onSelect(e)}
+              >
+                {o.name}
+              </button>
+              {kids.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggle(e.id)}
+                  aria-expanded={isOpen}
+                  className={cn(
+                    CHIP,
+                    'ms-2 inline-flex shrink-0 items-center gap-1 whitespace-nowrap border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                    isOpen && 'bg-accent text-foreground',
+                  )}
+                  data-testid={`allocated-count-${e.id}`}
+                >
+                  {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  <Plural value={kids.length} one="# allocation" other="# allocations" />
+                </button>
+              )}
+            </div>
+          </td>
+          <td className="whitespace-nowrap px-2 py-2">
+            <span className={cn(CHIP, o.chip.tone)} data-testid={`source-type-${e.id}`}>
+              {o.chip.label}
+            </span>
+          </td>
+          <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">
+            {left ? (
+              <>
+                {formatUsd(Math.max(0, left.remaining))}
+                <span className="text-muted-foreground"> / {formatUsd(left.limit)}</span>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                <Trans>no limit</Trans>
+              </span>
+            )}
+          </td>
+          <td className="whitespace-nowrap px-2 py-2">
+            <div className="flex items-center justify-end gap-2">
+              {o.canAllocate && (
+                <button
+                  type="button"
+                  className={cn(CHIP, ACTION_CHIP)}
+                  onClick={() => onAllocate(e)}
+                  data-testid={`allocate-${e.id}`}
+                >
+                  <Trans>+ Allocate</Trans>
+                </button>
+              )}
+              <button
+                type="button"
+                title={t`Configure`}
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => onConfigure(e)}
+                data-testid={`configure-${e.id}`}
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </td>
+        </tr>
+        {isOpen &&
+          kids.map((k) =>
+            renderRow(k, depth + 1, {
+              chip: { label: t`Allocation`, tone: ALLOCATION_TONE },
+              mark: null,
+              name: k.name || t`Unnamed`,
+              canAllocate: k.canAllocate,
+            }),
+          )}
+      </Fragment>
+    );
+  };
 
   return (
     <section className="flex min-h-0 flex-col gap-3" data-testid="token-sources">
@@ -92,8 +220,6 @@ export function TokenSourcesTree({
             )}
             {rows.map((row) => {
               const e = row.endpoint;
-              const left = costLeft(e);
-              const selected = e.id === selectedId;
               const chip =
                 row.type === 'key'
                   ? { label: t`API key ${e.credential_hint.replace(/^\*+/, '••')}`, tone: TONE.emerald }
@@ -103,89 +229,12 @@ export function TokenSourcesTree({
                       ? { label: t`Flowpad account`, tone: TONE.violet }
                       : { label: t`Received`, tone: TONE.sky };
               const mark = row.flowpadAccount ? 'flowpad' : row.type === 'key' ? e.provider : null;
-              return (
-                <tr
-                  key={e.id}
-                  data-testid={`source-row-${e.id}`}
-                  className={cn('border-b last:border-0 hover:bg-accent/40', selected && 'bg-accent/30')}
-                >
-                  <td className="w-full max-w-0 px-2 py-2" title={e.name}>
-                    <div className="flex min-w-0 items-center">
-                      {mark && (mark === 'flowpad' || PROVIDER_NAME[mark]) && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="me-1.5 inline-flex shrink-0" data-testid={`provider-mark-${e.id}`}>
-                              <FlowIcon icon={mark === 'flowpad' ? 'flowpad.flowpad' : `brands.${mark}`} size={16} />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {mark === 'flowpad' ? (
-                              <Trans>Paid by your Flowpad account</Trans>
-                            ) : (
-                              <Trans>Your {PROVIDER_NAME[mark]} API key</Trans>
-                            )}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                      <button
-                        type="button"
-                        className={cn('truncate text-left', selected && 'font-medium')}
-                        onClick={() => onSelect(e)}
-                      >
-                        {row.flowpadAccount ? t`Flowpad account` : e.name || t`Unnamed`}
-                      </button>
-                      {allocated(e) > 0 && (
-                        <span
-                          className="ms-1.5 whitespace-nowrap text-xs text-muted-foreground"
-                          data-testid={`allocated-count-${e.id}`}
-                        >
-                          <Plural value={allocated(e)} one="· # allocation" other="· # allocations" />
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-2">
-                    <span className={cn(CHIP, chip.tone)} data-testid={`source-type-${e.id}`}>
-                      {chip.label}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">
-                    {left ? (
-                      <>
-                        {formatUsd(Math.max(0, left.remaining))}
-                        <span className="text-muted-foreground"> / {formatUsd(left.limit)}</span>
-                      </>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        <Trans>no limit</Trans>
-                      </span>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-2">
-                    <div className="flex items-center justify-end gap-2">
-                      {e.canAllocate && row.type !== 'unfunded' && (
-                        <button
-                          type="button"
-                          className={cn(CHIP, ACTION_CHIP)}
-                          onClick={() => onAllocate(e)}
-                          data-testid={`allocate-${e.id}`}
-                        >
-                          <Trans>+ Allocate</Trans>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        title={t`Configure`}
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={() => onConfigure(e)}
-                        data-testid={`configure-${e.id}`}
-                      >
-                        <Settings className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
+              return renderRow(e, 0, {
+                chip,
+                mark,
+                name: row.flowpadAccount ? t`Flowpad account` : e.name || t`Unnamed`,
+                canAllocate: e.canAllocate && row.type !== 'unfunded',
+              });
             })}
           </tbody>
         </table>

@@ -237,3 +237,124 @@ def test_set_runtime_accepts_the_end_of_options_separator():
 
     assert result.exit_code == 0
     assign.assert_called_once_with("sandbox")
+
+
+# ── configure-box: the four hub steps in one process ─────────────────────────
+
+
+def _configure(*extra: str):
+    import json
+
+    result = runner.invoke(app, ["auth", "configure-box", "--cookie-gate=-9tNyP6uJ6GaI", "--runtime=sandbox", *extra])
+    report = json.loads(result.output.strip().splitlines()[-1])
+    return result, report
+
+
+def test_configure_box_runs_every_step_in_order_and_reports_each():
+    calls = []
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie", side_effect=lambda v: calls.append(("gate", v))),
+        patch(
+            "flow_sdk.instance_settings.runtime.set_assigned_runtime",
+            side_effect=lambda v: calls.append(("runtime", v)),
+        ),
+        patch(
+            "flow_sdk.instance_settings.runtime.set_assigned_compute_node",
+            side_effect=lambda v: calls.append(("node", v)),
+        ),
+    ):
+        result, report = _configure("--compute-node=compute_node-1")
+
+    assert result.exit_code == 0
+    # The `=` form carries a dash-leading secret intact -- the risk `--` covers for set-cookie-gate.
+    assert calls == [("gate", "-9tNyP6uJ6GaI"), ("runtime", "sandbox"), ("node", "compute_node-1")]
+    assert report == {"cookie_gate": "ok", "runtime": "ok", "compute_node": "ok", "login_status": None}
+
+
+def test_configure_box_stops_at_a_gate_it_could_not_arm():
+    """Fatal, like the separate step: nothing after an unarmed gate may run -- above all not the login."""
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie", side_effect=ValueError("empty")),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime") as runtime,
+    ):
+        result, report = _configure("--login-port=1", "--api-key=k")
+
+    assert result.exit_code == 1
+    runtime.assert_not_called()
+    assert report["cookie_gate"].startswith("error") and report["login_status"] is None
+
+
+def test_configure_box_stops_at_a_runtime_it_could_not_record():
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime", side_effect=ValueError("desktop")),
+    ):
+        result, report = _configure("--login-port=1", "--api-key=k")
+
+    assert result.exit_code == 1
+    assert report["runtime"].startswith("error") and report["login_status"] is None
+
+
+def test_configure_box_a_bad_compute_node_is_reported_not_fatal():
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_compute_node", side_effect=ValueError("bad id")),
+    ):
+        result, report = _configure("--compute-node=nope")
+
+    assert result.exit_code == 0
+    assert report["compute_node"].startswith("error")
+
+
+def test_configure_box_signs_in_through_the_apps_route_presenting_the_gate():
+    """A real loopback server: the login must reach /auth/login_callback with the key and the
+    armed gate, and a 302 (the route's success answer) must be reported, not followed."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["path"] = urlparse(self.path).path
+            seen["key"] = parse_qs(urlparse(self.path).query).get("flowpad-api-key")
+            seen["gate"] = self.headers.get("X-Cookie-Gate")
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    try:
+        with (
+            patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+            patch("flow_sdk.instance_settings.runtime.set_assigned_runtime"),
+        ):
+            result, report = _configure(f"--login-port={server.server_port}", "--api-key=fp_live_x")
+    finally:
+        server.server_close()
+
+    assert result.exit_code == 0
+    assert report["login_status"] == 302
+    assert seen == {"path": "/auth/login_callback", "key": ["fp_live_x"], "gate": "-9tNyP6uJ6GaI"}
+
+
+def test_configure_box_reports_0_when_nothing_answers_the_login():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    with (
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie"),
+        patch("flow_sdk.instance_settings.runtime.set_assigned_runtime"),
+    ):
+        result, report = _configure(f"--login-port={port}", "--api-key=k", "--login-timeout=2")
+
+    assert result.exit_code == 0
+    assert report["login_status"] == 0

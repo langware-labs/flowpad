@@ -192,7 +192,13 @@ describe('TokenPlanView', () => {
     renderView(undefined);
     const tree = await screen.findByTestId('token-sources');
     expect(within(tree).queryByTestId(`source-row-${TEAM_EP}`)).toBeNull();
-    expect(within(tree).getByTestId(`allocated-count-${ORG_EP}`).textContent).toBe('· 1 allocation');
+    const count = within(tree).getByTestId(`allocated-count-${ORG_EP}`);
+    expect(count.textContent).toBe('1 allocation');
+    await userEvent.click(count);
+    expect(within(tree).getByTestId(`source-row-${TEAM_EP}`).textContent).toContain('claude budget');
+    expect(within(tree).getByTestId(`source-type-${TEAM_EP}`).textContent).toBe('Allocation');
+    await userEvent.click(count);
+    expect(within(tree).queryByTestId(`source-row-${TEAM_EP}`)).toBeNull();
     expect(within(tree).getByTestId(`source-type-${ME_EP}`).textContent).toBe('Flowpad account');
     expect(within(tree).getByTestId(`source-row-${ME_EP}`).textContent).toContain('Flowpad account');
     expect(within(tree).getByTestId(`source-type-${ORG_EP}`).textContent).toBe('API key ••e2da');
