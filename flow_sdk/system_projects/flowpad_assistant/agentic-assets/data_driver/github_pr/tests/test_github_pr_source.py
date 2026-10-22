@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote_plus
 
@@ -378,6 +378,16 @@ async def test_the_assigned_filter_lists_only_prs_assigned_to_me(github):
     gh.comment(PR, "mine", user="dana")
     items, _, _ = await _all(_source(github.base, filter="assigned"))
     assert {i.data.conversation.key for i in items} == {PR}
+
+
+async def test_the_first_pass_lists_an_open_pr_quiet_for_longer_than_the_window(github):
+    gh = github.gh
+    gh.comment(PR, "months ago", user="dana")
+    later = datetime.strptime(gh.prs[PR]["updated_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) + timedelta(days=30)
+    async with _source(github.base) as s:
+        page = await s.fetch(None, narrow={"since": later})
+    assert [i.data.text for i in page.items if i.data.text == "months ago"] == ["months ago"]
+    assert not any("updated:>=" in p for _, p in gh.calls if p.startswith("/search/issues"))
 
 
 # ── writing ──────────────────────────────────────────────────────────────────

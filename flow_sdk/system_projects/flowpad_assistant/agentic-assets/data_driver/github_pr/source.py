@@ -7,6 +7,9 @@ head commit. The conversation is ``(github_pr, <account>, <owner>/<repo>#<n>)``;
 (``comment-`` an issue comment, ``review-comment-`` a review comment, ``review-``, ``event-``,
 ``commit-<sha>``, ``check-<head sha>``) — ids GitHub never reuses, so a key is unique across PRs.
 
+**The first pass ignores the window.** Every open PR the filter names is read whole, however old its
+last update; the window only fits sources whose past is unbounded, and the open PRs are a small, current set.
+
 **The cursor is a high-water mark on ``updated``.** The searches (``is:pr is:open author:@me`` and ``review-requested:@me`` by default, merged)
 is read sorted by ``updated`` ascending, a search page at a time; the resume cursor carries the
 newest ``updated`` seen and the next pass narrows to ``updated:>=<mark>``. A PR seen again yields
@@ -245,7 +248,9 @@ class GithubPrSource(MessageSource):
             return ChangePage(items=await self._older(query.before, limit))
         state: dict = {"page": 1, "skip": 0}
         if cursor is None:
-            since = query.since if query is not None else None
+            # An open PR is a live conversation however long it has been quiet: the first pass lists
+            # every one the filter names, whole, and ignores the window a mailbox would apply.
+            since = None
         else:
             state = {"page": 1, "skip": 0, **_decode(cursor)}
             since = _stamp(state.get("mark"))
