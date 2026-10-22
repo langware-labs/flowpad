@@ -14,7 +14,7 @@ import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitC
 import type { GitCheck } from '@src/components/project-home/ProjectGitChip';
 
 vi.mock('@src/journey/SetupJourneyButton', () => ({
-  SETUP_GITHUB_JOURNEY_ID: 'journey-id',
+  SETUP_GITHUB_JOURNEY: 'journey-id',
   // Renders its label so a test can tell WHICH step's button it is.
   SetupJourneyButton: ({ children }: { children?: React.ReactNode }) => (
     <button data-testid="setup-github">{children}</button>
@@ -44,9 +44,7 @@ const checks = (over: Partial<Record<GitCheck['id'], boolean | null>> = {}): Git
   }));
 
 function show(list: GitCheck[], onSetupRepo = vi.fn().mockResolvedValue(undefined)) {
-  render(
-    <ProjectGitChecksDialog open onOpenChange={() => {}} checks={list} onSetupRepo={onSetupRepo} />,
-  );
+  render(<ProjectGitChecksDialog open onOpenChange={() => {}} checks={list} onSetupRepo={onSetupRepo} />);
   return onSetupRepo;
 }
 

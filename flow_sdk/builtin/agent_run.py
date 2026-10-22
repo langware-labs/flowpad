@@ -28,6 +28,7 @@ node-addressed events alongside it. A future in-sandbox handler subscribes to
 ``agent.run.requested`` with ``target=compute_node:<its own id>`` and needs no
 change to the tags or the addressing — only (2) has to land.
 """
+
 from __future__ import annotations
 
 import logging
@@ -77,6 +78,7 @@ async def dispatch_agent_run(
     lie, and it would be invisible in the answer.
     """
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
     # An agent placement is always node-backed, so this resolves; the fallback
     # keeps the lifecycle emission addressable rather than crashing the run if a
     # row ever arrives with a provider that is not.
@@ -157,16 +159,17 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
     context_data = {**(options.pop("context_data", None) or {})}
     if agent.system_prompt:
         existing = str(context_data.get("instructions") or "").strip()
-        context_data["instructions"] = "\n\n".join(
-            p for p in (agent.system_prompt.strip(), existing) if p
-        )
+        context_data["instructions"] = "\n\n".join(p for p in (agent.system_prompt.strip(), existing) if p)
     context_data.setdefault("launched_by_agent", agent.name)
     # Chief of Staff mode — CoS.md, the skill, the native staff roster. Off: nothing changes.
     from flow_sdk.tasks.cos import apply_to_launch, staff_dir  # noqa: PLC0415
 
     cli_config = opts.to_json()
     cos_options = apply_to_launch(
-        agent, context_data=context_data, cli_config=cli_config, worker_type=worker_override or agent.worker_type,
+        agent,
+        context_data=context_data,
+        cli_config=cli_config,
+        worker_type=worker_override or agent.worker_type,
         project_dir=await staff_dir(agent) if getattr(agent, "chief_of_staff", False) else None,
     )
 
@@ -192,7 +195,11 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
         if source_project is not None:
             dependencies = await source_project.dependencies(asset=str(agent.typeid), fetch=True)
             for dependency in dependencies:
-                if dependency.state == "ready" and dependency.local_path and dependency.local_path not in additional_dirs:
+                if (
+                    dependency.state == "ready"
+                    and dependency.local_path
+                    and dependency.local_path not in additional_dirs
+                ):
                     additional_dirs.append(dependency.local_path)
     home = await _foreign_home(agent, acting_project_id)
     if home:
@@ -214,6 +221,7 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
         worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
         project_id=acting_project_id,
         load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
+        assistant_skills=cos_options.get("assistant_skills", agent.assistant_skills),
         additional_dirs=additional_dirs,
         # The agent's MCP assets, resolved from its folder. Set on the
         # constructor rather than via ``process.add_mcp`` because this verb

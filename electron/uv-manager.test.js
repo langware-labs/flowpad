@@ -1865,6 +1865,11 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   }
 
   // ── Desktop <-> engine compatibility (engine-compat.js wiring) ──────────────
+  // The fixtures below are engines 0.2.10-0.2.223, so the desktop's engine floor is pinned
+  // here instead of read from the shipped engine-compat.json, which rises with real releases.
+  const engineCompatForFixtures = require('./engine-compat');
+  const shippedDesktopFloor = engineCompatForFixtures.desktopMinBackendVersion;
+  engineCompatForFixtures.desktopMinBackendVersion = () => '0.2.0';
   {
     const fs = require('fs');
     const path = require('path');
@@ -2285,6 +2290,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       fs.rmSync(venv, { recursive: true, force: true });
     }
   }
+  engineCompatForFixtures.desktopMinBackendVersion = shippedDesktopFloor;
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

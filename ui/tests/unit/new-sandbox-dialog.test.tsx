@@ -211,7 +211,32 @@ describe('new desktop: project + asset packages', () => {
 
     await userEvent.click(screen.getByTestId('create-sandbox'));
 
-    expect(launched()).toEqual({ name: 'Sandbox 3' });
+    expect(launched()).toEqual({ name: 'Sandbox 3', size: 'lg' });
+  });
+
+  it('creates the box at the size picked, each size showing its hourly price', async () => {
+    renderDialog({ currentProject: null, projects: [] });
+
+    expect(screen.getByTestId('sandbox-size-sm')).toHaveTextContent('$0.226/hr');
+    expect(screen.getByTestId('sandbox-size-lg')).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByTestId('sandbox-size-md'));
+    await userEvent.click(screen.getByTestId('create-sandbox'));
+
+    expect(launched().size).toBe('md');
+  });
+
+  it('folds the size list to the picked size, and reopens it to pick another', async () => {
+    renderDialog({ currentProject: null, projects: [] });
+
+    await userEvent.click(screen.getByTestId('sandbox-size-md'));
+    expect(screen.queryByTestId('sandbox-size-sm')).toBeNull();
+    expect(screen.queryByTestId('sandbox-size-lg')).toBeNull();
+
+    await userEvent.click(screen.getByTestId('sandbox-size-md'));
+    await userEvent.click(screen.getByTestId('sandbox-size-sm'));
+    await userEvent.click(screen.getByTestId('create-sandbox'));
+
+    expect(launched().size).toBe('sm');
   });
 
   it('offers the connection from the GitHub chip, once for the whole dialog', async () => {

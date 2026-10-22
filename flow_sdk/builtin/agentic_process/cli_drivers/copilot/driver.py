@@ -182,6 +182,8 @@ class CopilotDriver:
         assets: "AssetDir",
         process_id: str,
         events: Sequence["HookEventType"],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         normalized = normalize_process_hook_events(events, provider=self.name)
         if not is_valid_entity_id(process_id):

@@ -18,7 +18,7 @@ import { cn } from '@src/lib/utils';
 import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
-import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
@@ -484,7 +484,7 @@ function IntentSection({
               <span className="text-xs text-muted-foreground">
                 <Trans>Connect GitHub and the gh CLI with a guided setup.</Trans>
               </span>
-              <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+              <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY}>
                 <Trans>Set up GitHub</Trans>
               </SetupJourneyButton>
             </div>
