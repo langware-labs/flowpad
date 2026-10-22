@@ -6,6 +6,7 @@ import { DisplayToolbar } from '@src/components/display-toolbar';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
@@ -24,7 +25,11 @@ import { ContentPanel } from './content-panel/content-panel';
 import { DisplayChrome } from './display-chrome';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
-import { type VibeWorkspaceSession, useSessionShowState, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
+import {
+  type VibeWorkspaceSession,
+  useSessionShowState,
+  useVibeWorkspaceSessionHost,
+} from './use-vibe-workspace-session';
 import { VibeChatPane } from './vibe-chat-pane';
 import {
   displayAnnotationContextForDock,
@@ -97,6 +102,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Memoized for the same reason the chrome does it: a fresh `[]` fallback each
   // render would invalidate every memo that reads the stack.
   const displayStack = useMemo(() => persistedProcess?.displayStack ?? [], [persistedProcess]);
+  // A session opened as an Agent shows that agent's own starters; any other session the
+  // generic ones. Resolved to strings once: each is the chip's label, key and prompt alike.
+  const launchingAgent = useLaunchingAgent(persistedProcess?.deployment_id);
+  const starterPrompts = useMemo(
+    () =>
+      launchingAgent?.starter_prompts?.length
+        ? launchingAgent.starter_prompts
+        : VIBE_STARTER_PROMPTS.map((descriptor) => t(descriptor)),
+    [launchingAgent, t],
+  );
   // Bumped on every `flow show` — even a re-show of the SAME target, which is a
   // no-op navigation (same URL) yet may sit behind a rebuild. It is the display
   // body's content epoch, which is what reloads it.
@@ -125,7 +140,15 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       // target still lands in the display history, and the pane stays as it is.
       if (committed) hasPushedDisplayRef.current = true;
     });
-  }, [activeProcess, navigation, session.processDock.pointer, projectId, currentDock, setLatestShown, hasPushedDisplayRef]);
+  }, [
+    activeProcess,
+    navigation,
+    session.processDock.pointer,
+    projectId,
+    currentDock,
+    setLatestShown,
+    hasPushedDisplayRef,
+  ]);
 
   // Open a past display as its OWN standard tab (the reusable behavior): convert
   // the stored target to its dock pointer and navigate.
@@ -260,26 +283,22 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           <Trans>Nothing to display yet — try one to get started</Trans>
         </p>
         <div className="flex max-w-md flex-wrap justify-center gap-2">
-          {VIBE_STARTER_PROMPTS.map((descriptor) => {
-            // One resolution per chip: label, key and submitted prompt alike.
-            const p = t(descriptor);
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => void submitStarterPrompt(p)}
-                // Held shut while `New` is creating the next session: until
-                // that lands, this display is still bound to the PREVIOUS
-                // process and a click here would prompt it instead
-                // (FLOWPAD-2045).
-                disabled={newSessionPending}
-                data-testid="display-starter-chip"
-                className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {p}
-              </button>
-            );
-          })}
+          {starterPrompts.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => void submitStarterPrompt(p)}
+              // Held shut while `New` is creating the next session: until
+              // that lands, this display is still bound to the PREVIOUS
+              // process and a click here would prompt it instead
+              // (FLOWPAD-2045).
+              disabled={newSessionPending}
+              data-testid="display-starter-chip"
+              className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {p}
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -337,9 +356,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   }, [
     historySlot,
     displayStack,
+    starterPrompts,
     focus.viewType,
     focus.path,
-    t,
     navigation,
     handleAnnotateDisplay,
     submitStarterPrompt,
@@ -363,10 +382,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
         {/* Tagged so a journey can point at the half of the workspace that
             disappears the moment Vibe is left — the display and its tab strip. */}
         <div className="flex h-full flex-col" {...tagAttrs('VibeDisplay', 'label')}>
-          <WorkspaceChildStrip
-            processTab={session.processTab}
-            processDock={session.processDock}
-          />
+          <WorkspaceChildStrip processTab={session.processTab} processDock={session.processDock} />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
                 child's ContentPanel (chrome-less). */}
