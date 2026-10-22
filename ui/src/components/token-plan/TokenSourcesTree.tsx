@@ -6,22 +6,34 @@
  */
 import type { LLMEndpoint } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ArrowUpRight, ChevronDown, Plus, Settings } from 'lucide-react';
-import { useMemo } from 'react';
+import { ArrowUpRight, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Plus, Settings } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { FlowIcon } from '@sdk/react/FlowIcon';
 
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { TONE } from '@src/components/llm-endpoints/tone';
 import { formatUsd } from '@src/components/llm-endpoints/usage-math';
 import { cn } from '@src/lib/utils';
 
-import { buildSourceTree, costLeft, sponsorOf, type Sponsor, type SponsorFilter } from './source-tree';
+import { buildSourceTree, visibleRows, costLeft, sponsorOf, type Sponsor, type SponsorFilter } from './source-tree';
 
 /** A root talks to a provider with its own key: its row wears that provider's mark (`brands.<provider>`). */
 const PROVIDER_NAME: Record<string, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI' };
 
-const CHIP = 'rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs font-medium text-foreground';
+const CHIP = 'rounded-full border px-2 py-0.5 text-xs font-medium';
+
+/** One tone per sponsor (the endpoint screens' `TONE`), so the column reads at a glance. */
+const SPONSOR_TONE: Record<Sponsor, string> = {
+  key: TONE.emerald,
+  team: TONE.sky,
+  org: TONE.violet,
+  shared: 'border-foreground/25 bg-foreground/5 text-foreground/80',
+};
+
+/** The row's action, in the primary colour rather than another grey chip. */
+const ACTION_CHIP = 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20';
 
 export function TokenSourcesTree({
   endpoints,
@@ -48,7 +60,17 @@ export function TokenSourcesTree({
   onAllEndpoints: () => void;
 }) {
   const { t } = useLingui();
-  const rows = useMemo(() => buildSourceTree(endpoints, filter), [endpoints, filter]);
+  const tree = useMemo(() => buildSourceTree(endpoints, filter), [endpoints, filter]);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const rows = useMemo(() => visibleRows(tree, collapsed), [tree, collapsed]);
+  const parents = tree.filter((r) => r.hasChildren).map((r) => r.endpoint.id);
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const sponsorLabel: Record<Sponsor, string> = { key: t`Key`, team: t`Team`, org: t`Org`, shared: t`Shared` };
   const tabs: { id: SponsorFilter; label: string }[] = [
     { id: 'all', label: t`All` },
@@ -75,24 +97,50 @@ export function TokenSourcesTree({
         </div>
       </div>
 
-      <div className="flex rounded-lg bg-muted p-0.5" role="tablist" data-testid="scope-bar">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={filter === tab.id}
-            onClick={() => onFilter(tab.id)}
-            className={cn(
-              'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-all',
-              filter === tab.id
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 rounded-lg bg-muted p-0.5" role="tablist" data-testid="scope-bar">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === tab.id}
+              onClick={() => onFilter(tab.id)}
+              className={cn(
+                'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-all',
+                filter === tab.id
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          title={t`Expand all`}
+          aria-label={t`Expand all`}
+          disabled={collapsed.size === 0}
+          onClick={() => setCollapsed(new Set())}
+          data-testid="expand-all"
+        >
+          <ChevronsUpDown className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          title={t`Collapse all`}
+          aria-label={t`Collapse all`}
+          disabled={parents.length === 0 || collapsed.size === parents.length}
+          onClick={() => setCollapsed(new Set(parents))}
+          data-testid="collapse-all"
+        >
+          <ChevronsDownUp className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="min-h-0 overflow-y-auto rounded-lg border">
@@ -105,7 +153,7 @@ export function TokenSourcesTree({
               <th className="px-2 py-2 text-left font-medium">
                 <Trans>Sponsor</Trans>
               </th>
-              <th className="px-2 py-2 text-right font-medium">
+              <th className="whitespace-nowrap px-2 py-2 text-right font-medium">
                 <Trans>Left / limit</Trans>
               </th>
               <th className="px-2 py-2" />
@@ -132,7 +180,22 @@ export function TokenSourcesTree({
                   <td className="w-full max-w-0 px-2 py-2" title={e.name}>
                     <div className="flex min-w-0 items-center" style={{ paddingInlineStart: depth * 16 }}>
                       <span className="me-1 inline-flex w-3.5 shrink-0 text-muted-foreground">
-                        {hasChildren && <ChevronDown className="h-3.5 w-3.5" />}
+                        {hasChildren && (
+                          <button
+                            type="button"
+                            aria-label={collapsed.has(e.id) ? t`Expand ${e.name}` : t`Collapse ${e.name}`}
+                            aria-expanded={!collapsed.has(e.id)}
+                            onClick={() => toggle(e.id)}
+                            className="hover:text-foreground"
+                            data-testid={`toggle-${e.id}`}
+                          >
+                            {collapsed.has(e.id) ? (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
                       </span>
                       {e.kind === 'root' && PROVIDER_NAME[e.provider] && (
                         <Tooltip>
@@ -161,7 +224,7 @@ export function TokenSourcesTree({
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-2 py-2">
-                    <span className={CHIP}>{sponsorLabel[sponsorOf(e)]}</span>
+                    <span className={cn(CHIP, SPONSOR_TONE[sponsorOf(e)])}>{sponsorLabel[sponsorOf(e)]}</span>
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">
                     {left ? (
@@ -180,7 +243,7 @@ export function TokenSourcesTree({
                       {e.canAllocate && (
                         <button
                           type="button"
-                          className={cn(CHIP, 'hover:bg-accent')}
+                          className={cn(CHIP, ACTION_CHIP)}
                           onClick={() => onAllocate(e)}
                           data-testid={`allocate-${e.id}`}
                         >
