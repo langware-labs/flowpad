@@ -164,25 +164,62 @@ export function FirstAgentCard() {
     setStep('live');
   };
 
-  // Flowpad bot: a pending code claim pointed at the agent's sandbox; proven when the person sends the code.
+  // Flowpad bot: the person connects while the machine boots. The claim is made at once with no place, proven by the
+  // install (or the code), and pointed at the agent's machine when it is up — the hub hands it over then.
   const startLink = () =>
     run(async () => {
-      const d = await sandbox();
-      setClaim(await InboundWebhooks.chain(linkChainBody(channel, target(d))));
+      setClaim(await InboundWebhooks.chain(linkChainBody(channel)));
     });
+  const [pointed, setPointed] = useState(false);
+  useEffect(() => {
+    if (!claim || !deployed || pointed) return;
+    setPointed(true);
+    InboundWebhooks.setTarget(claim.id, target(deployed)).catch((e) => {
+      setPointed(false);
+      setError(errorMessage(e, 'failed'));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claim, deployed, pointed]);
+
+  // Flowpad bot: one click goes to the vendor. The tab opens on that click (a browser only allows it there) and
+  // moves to the install link once the agent's code exists.
+  const vendorTab = useRef<Window | null>(null);
+  const openVendorTab = () => {
+    const tab = window.open('', '_blank');
+    tab?.document.write('<p style="font:16px system-ui;margin:2rem">Opening Slack…</p>');
+    vendorTab.current = tab;
+  };
+  useEffect(() => {
+    const tab = vendorTab.current;
+    if (!claim?.deep_link || !tab) return;
+    vendorTab.current = null;
+    if (!tab.closed) tab.location.href = claim.deep_link;
+  }, [claim]);
+
+  // Flowpad bot: ask for the code as soon as the connect step opens — nothing for the person to press.
+  const askedCode = useRef(false);
+  useEffect(() => {
+    if (step !== 'connect' || option?.method !== 'flowpad' || claim || askedCode.current) return;
+    askedCode.current = true;
+    void startLink();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, option, claim]);
 
   useEffect(() => {
-    if (!claim || claim.status === 'active' || step !== 'connect') return;
+    if (!claim || step !== 'connect') return;
+    if (claim.status === 'active') {
+      if (pointed) linked();
+      return;
+    }
     const id = setInterval(() => {
       void InboundWebhooks.mine().then((all) => {
         const fresh = all.find((c) => c.id === claim.id);
         if (fresh) setClaim(fresh);
-        if (fresh?.status === 'active') linked();
       });
     }, POLL_MS);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claim, step]);
+  }, [claim, step, pointed]);
 
   const connectOwnNumber = () =>
     run(async () => {
@@ -306,18 +343,6 @@ export function FirstAgentCard() {
     return () => clearInterval(id);
   }, [step, deployed, made, phases.linked]);
 
-  const reset = () => {
-    setLive([]);
-    setStep('channel');
-    setOption(null);
-    setMade(null);
-    setDeployed(null);
-    setClaim(null);
-    setStarted(0);
-    setError(null);
-    deploying.current = null;
-  };
-
   const at = WIZARD.indexOf(step as WizardStep);
   const inWizard = at >= 0;
   const elapsed = started ? ((step === 'live' ? (phases.linked ?? now) : now) - started) / 1000 : 0;
@@ -360,7 +385,9 @@ export function FirstAgentCard() {
         </h2>
         {inWizard && (
           <span className="text-xs text-muted-foreground">
-            <Trans>Step {at + 1} of {WIZARD.length}</Trans>
+            <Trans>
+              Step {at + 1} of {WIZARD.length}
+            </Trans>
           </span>
         )}
         {started > 0 && (
@@ -475,10 +502,17 @@ export function FirstAgentCard() {
             <Button
               data-testid="first-agent-create"
               disabled={!prompt.trim() || !option || busy}
-              onClick={() => void create()}
+              onClick={() => {
+                if (option?.method === 'flowpad') openVendorTab();
+                void create();
+              }}
             >
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <Trans>Try it</Trans>
+              {option?.method === 'flowpad' ? (
+                <Trans>Connect Flow to {CHANNEL_TITLE[channel]}</Trans>
+              ) : (
+                <Trans>Try it</Trans>
+              )}
             </Button>
           </div>
         </div>
@@ -507,49 +541,53 @@ export function FirstAgentCard() {
         <div className="flex flex-col gap-3 text-sm">
           {option.method === 'flowpad' && (
             <>
-              {!claim ? (
-                <div>
-                  <Button data-testid="first-agent-get-code" disabled={busy} onClick={() => void startLink()}>
-                    {busy && deployed && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {busy && !deployed ? (
-                      <Trans>Your code comes once the machine is ready</Trans>
-                    ) : (
-                      <Trans>Get my link code</Trans>
+              <div className="flex flex-col gap-2">
+                {error && !claim ? (
+                  <div>
+                    <Button variant="outline" size="sm" disabled={busy} onClick={() => void startLink()}>
+                      <Trans>Try again</Trans>
+                    </Button>
+                  </div>
+                ) : (
+                  <div>
+                    <Button
+                      data-testid="first-agent-deep-link"
+                      disabled={!claim?.deep_link}
+                      onClick={() => claim?.deep_link && window.open(claim.deep_link, '_blank', 'noopener')}
+                    >
+                      {!claim && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      <Trans>Connect Flow to {CHANNEL_TITLE[channel]}</Trans>
+                      {claim && <ExternalLink className="ml-2 h-3 w-3" />}
+                    </Button>
+                    {!claim && (
+                      <p className="mt-1 text-xs text-muted-foreground" data-testid="first-agent-get-code">
+                        <Trans>Getting your Slack link…</Trans>
+                      </p>
                     )}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <ol className="list-decimal pl-5">
-                    <li>
-                      {claim.deep_link ? (
-                        <a
-                          data-testid="first-agent-deep-link"
-                          className="text-primary underline"
-                          href={claim.deep_link}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <Trans>Open {CHANNEL_TITLE[channel]}</Trans> <ExternalLink className="inline h-3 w-3" />
-                        </a>
-                      ) : (
-                        <Trans>Open Flowpad on {CHANNEL_TITLE[channel]}</Trans>
-                      )}
-                    </li>
-                    <li>
-                      <Trans>Send</Trans>{' '}
+                  </div>
+                )}
+                {claim?.status === 'active' && (
+                  <p className="text-muted-foreground" data-testid="first-agent-proven">
+                    <CheckCircle2 className="mr-1 inline h-3 w-3 text-green-600" />
+                    <Trans>Slack is linked. Your agent goes live as soon as its machine is ready.</Trans>
+                  </p>
+                )}
+                {claim && claim.status !== 'active' && (
+                  <>
+                    <p className="flex flex-wrap items-center gap-1 text-muted-foreground">
+                      <Trans>Then send this to the Flowpad bot:</Trans>{' '}
                       <code data-testid="first-agent-code" className="rounded bg-muted px-1">
                         link {claim.code}
                       </code>{' '}
                       <CopyButton value={`link ${claim.code}`} />
-                    </li>
-                  </ol>
-                  <p className="text-xs text-muted-foreground">
-                    <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-                    <Trans>Waiting for your message…</Trans>
-                  </p>
-                </div>
-              )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                      <Trans>Waiting for your message…</Trans>
+                    </p>
+                  </>
+                )}
+              </div>
             </>
           )}
 
@@ -791,7 +829,7 @@ export function FirstAgentCard() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <Trans>Open admin</Trans>
+                  <Trans>Customize response</Trans>
                 </a>
               </Button>
             )}
@@ -802,9 +840,6 @@ export function FirstAgentCard() {
                 </a>
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={reset}>
-              <Trans>Make another</Trans>
-            </Button>
           </div>
         </div>
       )}
