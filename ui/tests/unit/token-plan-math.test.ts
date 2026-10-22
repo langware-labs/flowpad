@@ -14,7 +14,6 @@ import {
   formatResetsIn,
   headlineFor,
   headlineText,
-  scopeLabel,
   windowLabel,
 } from '@src/components/token-plan/token-plan-math';
 
@@ -103,12 +102,6 @@ describe('capsMessage / windows / labels', () => {
     expect(render(windowLabel('day'))).toBe('today');
     expect(render(windowLabel('month'))).toBe('this month');
     expect(render(windowLabel('total'))).toBe('in total');
-  });
-
-  it('labels scopes: me is "Me", others by name', () => {
-    expect(render(scopeLabel({ kind: 'me', name: 'Alice' }) as never)).toBe('Me');
-    expect(scopeLabel({ kind: 'team', name: 'Team A' })).toBe('Team A');
-    expect(render(scopeLabel({ kind: 'org', name: '' }) as never)).toBe('Organization');
   });
 });
 

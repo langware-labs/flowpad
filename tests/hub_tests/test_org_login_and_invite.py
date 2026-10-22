@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from tests.hub_tests._assignment import assert_auto_assigned
+from tests.hub_tests.conftest import _delete_entity
 from tests.hub_tests.test_members_basic_operations import _alice_and_bob
 
 
@@ -151,6 +152,13 @@ async def test_team_invitation_auto_assigns_member(hub_base_url, hub_login_paylo
     bob_email = actors["bob_email"]
 
     team_id = await _create_membership_entity(hub_base_url, alice_token, "team", f"invite-team-{int(time.time())}")
+    try:
+        await _assert_team_invite_assigns(hub_base_url, alice_token, bob_token, bob_id, bob_email, team_id)
+    finally:
+        _delete_entity(hub_base_url, "team", team_id, [alice_token])
+
+
+async def _assert_team_invite_assigns(hub_base_url, alice_token, bob_token, bob_id, bob_email, team_id):
     await _invite(hub_base_url, alice_token, "team", team_id, bob_email, role="member")
 
     await assert_auto_assigned(

@@ -60,6 +60,24 @@ export interface EntityExpansion {
   auth_scopes?: string[][] | null;
   is_private?: boolean;
   expansions?: ExpansionType[] | null;
+  /** Is this row the caller's own (llm_endpoint: an allowance they hold)? Rides `permissions`. */
+  mine?: boolean | null;
+  /** What this row draws from, in fallback order (llm_endpoint). Rides `permissions`. */
+  source_ids?: string[] | null;
+  /** Who sponsors the row (llm_endpoint: `global` | `organization` | `team` | `user`). */
+  scope_kind?: string | null;
+  /** The row's own limits with used / remaining / resets_at (llm_endpoint). */
+  remaining?: RemainingEntry[] | null;
+}
+
+/** One limit of a row with what is used of it, as the hub reports it. */
+export interface RemainingEntry {
+  key: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  window: string;
+  resets_at: number | null;
 }
 
 interface PendingPromise<T> {
@@ -2415,7 +2433,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   private mergeExpansions(exp1?: EntityExpansion, exp2?: EntityExpansion): EntityExpansion {
     // TODO [FLOWPAD-891] Delete mergeExpansions and don't use entity.expand.expansions array
+    // Per-row facts a type adds to its permissions expansion (`mine`, an llm_endpoint's tree facts)
+    // are kept, newest first: rebuilding from the generic fields alone dropped them whenever the
+    // entity was already cached, so a re-read lost its own answers.
     return {
+      ...exp1,
+      ...exp2,
       roles: this.mergeArrays(exp1?.roles, exp2?.roles),
       allowed_actions: this.mergeArrays(exp1?.allowed_actions, exp2?.allowed_actions),
       auth_scopes: this.mergeArrays(exp1?.auth_scopes, exp2?.auth_scopes),
