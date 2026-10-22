@@ -946,6 +946,11 @@ class AgenticProcess(Entity):
             "Resolve via the assistant_enabled property; the driver reads that."
         ),
     )
+    assistant_skills: list[str] | None = APIField(
+        default=None,
+        description="Which of the Flowpad Assistant's skills a mounted assistant carries, by folder "
+        "name. None = all of them; a list mounts a view holding only those (assistant_view.py).",
+    )
     embedded_subagent_ids: list[str] = APIField(
         default_factory=list, description="Embedded sub-agent names materialized into process instruction assets"
     )
@@ -7180,9 +7185,9 @@ class AgenticProcess(Entity):
             dirs.append(str(input_folder))
         if not self.assistant_enabled:
             return dirs
-        from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.assistant_view import assistant_mount  # noqa: PLC0415
 
-        core_dir = str(flowpad_assistant_project_root())
+        core_dir = str(assistant_mount(self.assistant_skills))
         return [core_dir] + [d for d in dirs if d != core_dir]
 
     def enable_assistant(self) -> "AgenticProcess":
