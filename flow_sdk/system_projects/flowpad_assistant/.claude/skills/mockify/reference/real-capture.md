@@ -10,10 +10,10 @@ Flowpad: `scripts/instance_ctl.sh launch mock-1` from the repo (own ports, own D
 to reach a state (a test source, a fake task) goes there — and is named in your reply. The user's own app:
 its dev server.
 
-## 2. Drive it to each base screen, in a real browser
+## 2. Drive it to EVERY screen of the journey, in a real browser
 
 Chrome tools (or the `real-browser` skill), in **your own tab** — others may share the browser. Reach the real
-states the journey starts from (e.g. add a test source to get its genuine "Setup required" strip). **Write
+state of each step whose `source` is `capture` (a dialog open, a menu dropped, a toast showing) (e.g. add a test source to get its genuine "Setup required" strip). **Write
 down what the real app does on the way** (a dialog that never opens, a "completed" that is not): the user
 wants that feedback too. After every reload take a NEW screenshot (or `find` a ref) before clicking — a
 stale screenshot after the layout and webfont settle is the usual reason a click "does nothing".
@@ -57,8 +57,10 @@ window.__info = () => fetch('http://127.0.0.1:PORT/info.json', { method: 'POST',
   stylesheets: [...document.querySelectorAll('link[rel=stylesheet]')].map((l) => l.href),
   fonts: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => `${f.family} ${f.weight}`),
 }) });
-await __info(); await __cap('home.html');
+await __info(); await __cap('home.html');   // then drive to the next step and __cap('<step id>.html'), every step
 ```
+
+One capture per step, named by its step id. A step you skip has no screen, and the build stops on it.
 
 `info.json` tells you what the `<html>` carries and where the font comes from — both change the look and
 neither is in the body. Flowpad today: `data-view="vibe"`, `class="dark"`, an inline `--primary`, and the
@@ -76,39 +78,38 @@ missing (step 5), the build is older than the source; say so instead of guessing
 `/icons`); anything else absolute (an `/api/...` image) stays pointing at the app — avoid cloning it.
 The builder strips the app's own `<script>` tags from captures so its theme switcher cannot flip the mock.
 
-## 5. Build new screens from real parts
+## 5. Screens the live app cannot reach (`source: built`), and assembling
 
-The states script draws one step per load from `location.hash` (`mockGo` sets the hash and reloads):
-
+- **Start from the nearest capture**, copy it to `capture/<step id>.html`, and edit that file per the step's
+  scenario — the whole screen stays (top bar, rail, status bar), only the discussed part changes.
 - **Clone, don't draw.** A new tile = a real tile cloned with icon and label swapped; a new strip = the
-  captured strip with its text changed; new list rows = a real row cloned (pick one without extras such
-  as a count you would have to clear).
-- **Mark the way forward** (`data-next`, SKILL.md §4) on the real controls — the cloned tile, the dialog's
-  primary button, Cancel / Finish later — AFTER cloning: a clone carries no listeners.
-- **Dialogs:** select `[role=dialog][data-state=open]` (a capture also holds hidden dialogs — a floating
-  chat, menus). Take its overlay from the ORIGINAL node's `previousElementSibling` before cloning — a
-  clone is detached and has no siblings. Append both to `body`.
-- **New UI uses the component's own classes**, copied from its source file (a setup tree row, a question
-  box, a button variant). Check them before use — the CSS is minified and escapes `. / : [`, so grep lies:
-  `python3 -I <skill>/scripts/check_classes.py app.css "mt-0.5 bg-red-500/15 …"`.
-- **A state the live app cannot reach** (a component that never rendered for you): build it from the
-  component source and say "built from source, not compared live" for that step in your reply.
-- Decisions: `build_mock.py` outlines `[data-decision]` on screen; in real mode only the current step's DOM
-  exists, so also write each open decision into its step's `note`.
+  captured strip with its text changed; new rows = a real row cloned.
+- **Dialogs:** take `[role=dialog][data-state=open]` and its overlay (the ORIGINAL node's
+  `previousElementSibling`) from a capture where it is open; a capture also holds hidden dialogs.
+- **New UI uses the component's own classes**, copied from its source file. Check them — the CSS is minified
+  and escapes `. / : [`, so grep lies: `python3 -I <skill>/scripts/check_classes.py app.css "mt-0.5 …"`.
+- Say "built from source, not compared live" for such a step in your reply.
+- **Mark the way forward** (`data-next`) on the planned controls in each capture file.
+- A tiny per-screen tweak (one label) may go in `--states`: `window.mockStates = {<id>: (screen, need) => {
+  need('[data-testid=x]').textContent = '…'; }}`. `need` throws when the element is missing and the screen
+  shows a red banner — never a silently unchanged screen. Anything bigger is its own edited capture.
 
-Assemble. The command is long and you will rerun it — keep it in `<mock-dir>/build.sh`:
+Assemble. Keep the command in `<mock-dir>/build.sh` — you will rerun it:
 
 ```bash
-python3 -I <skill>/scripts/build_mock.py <mock-dir> --base capture/home.html \
-  --template t-dialog=capture/dialog.html --states states.js --key <mock slug> --project <mock project id> \
+python3 -I <skill>/scripts/build_mock.py <mock-dir> --row row.json --key <mock slug> --project <mock project id> \
+  --step home=capture/home.html --step pick=capture/pick.html --step denied=capture/denied.html \
   --origin http://localhost:<app port> --html-attrs '<htmlAttrs from info.json>' \
   --head '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=…">'
 ```
 
+A file a screen shows that is not in `<mock-dir>` stays a link and the validator reports it missing — copy
+it in (under its app path, e.g. `assets/x.png`) and rebuild.
+
 ## 6. Compare side by side
 
 The mock folder is a Flowpad web app (`build_mock.py` writes its `webapp.json`): `flow app serve` it, as
-SKILL.md §5 says — the journey bar needs the SDK to read the mock row and save feedback. Open it next to the
+SKILL.md Phase 3 says — the journey bar needs the SDK to read the mock row and save feedback. Open it next to the
 live app; check font,
 spacing, colours, icons, every step. For a quick look before it is served, a bare static server still
 navigates (feedback off):
@@ -120,11 +121,14 @@ python3 -m http.server "$PORT" --bind 127.0.0.1 --directory <mock-dir> &   # kee
 | symptom | cause |
 |---|---|
 | right layout, wrong font / square checkboxes | `<html>` attributes or the webfont not copied (`info.json`) |
-| change not visible after rebuild | hash-only navigation does not reload — load `?v=<n>#<id>` |
+| validator: "same screen as …" | that step has no capture of its own — capture it (or edit a copy per its scenario) |
+| change not visible after rebuild | the browser cached the page — load `?v=<n>#<id>` |
+| a click shows "Not part of this mock" | the control has no `data-next` — add it if the plan says it moves on |
 | a click "does nothing" | stale screenshot — re-screenshot after each reload, or click a `find` ref |
 | a dialog step is blank | overlay taken from a clone, or the wrong `[role=dialog]` |
+| a red banner on a screen | a `--states` tweak's `need(...)` missed — fix the selector or edit the capture |
 | a section lost its header row | you replaced the parent; remove only the rows |
-| icons blank | served from `file://`, or a URL still points at the app's origin |
+| icons blank | not copied into `<mock-dir>` under their app path (the validator lists them) |
 | a class has no effect | not in the built CSS — `check_classes.py` |
 | two mocks answer on one port | servers not bound to 127.0.0.1; always open `127.0.0.1:<port>` |
 

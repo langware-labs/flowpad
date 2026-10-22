@@ -1,19 +1,18 @@
 """Assemble a real-mode mock into ONE self-contained HTML file — one captured screen per step.
 
 Usage:
-  python -I build_mock.py <mock-dir> --step <id>=<capture.html> [--step ...] --key <mock slug>
-                          --project <mock project id> [--row <mock-row.json>] [--template id=<capture.html> ...]
+  python -I build_mock.py <mock-dir> --row <mock-row.json> --step <id>=<capture.html> [--step ...]
+                          --key <mock slug> --project <mock project id> [--template id=<capture.html> ...]
                           [--states <states.js>] [--title '<page title>'] [--origin http://localhost:6003]
                           [--html-attrs '<attrs>'] [--head '<extra head html>']
 
-Each capture is a file written by capture_recv.py: "<!--styles-->…<!--body-->…". Every --step becomes a
-<section data-step="<id>"> holding that capture's body; the journey bar shows one at a time. --row (the mock
-row's value, `{"journey": [...]}` or the row with `input`) makes a journey step with no --step an error —
-there is no base screen to fall back to.
+Each capture is a file written by capture_recv.py: "<!--styles-->…<!--body-->…". The --step ids must be the
+row's journey, in order — a step with no screen stops the build; there is no base screen to fall back to.
+Every --step becomes a <section data-step="<id>"> with that capture's body; the journey bar shows one at a
+time. The page also carries the journey (MOCKIFY.journey), so it walks with no Flowpad behind it.
 
-Self-contained: <mock-dir>/app.css is inlined as a <style>; every relative url(...) / src / href that names a
-file in <mock-dir> (icons, PNGs, fonts) becomes a data: URI; the app's own <script> tags are stripped. What
-stays outside the file is printed (an /api/ image, a font link) so you can decide.
+Self-contained: <mock-dir>/app.css is inlined; every url(...) / src / href naming a file in <mock-dir> (after
+--origin is stripped) becomes a data: URI; the app's own <script> tags are stripped.
 
 --states (optional, small tweaks only) defines `window.mockStates = {<step id>: (screen, need) => {...}}`;
 each runs once on its own section. `need(selector)` returns the element or throws; a throw shows a red banner
@@ -31,7 +30,7 @@ import re
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-SKIP = ("http:", "https:", "data:", "blob:", "#", "/", "about:", "mailto:", "javascript:")
+SKIP = ("http:", "https:", "data:", "blob:", "#", "%23", "//", "/sdk/", "about:", "mailto:", "javascript:")
 
 
 def fail(msg: str) -> None:
@@ -39,19 +38,22 @@ def fail(msg: str) -> None:
 
 
 class Inliner:
-    """Turns relative file references into data: URIs; remembers what it could not."""
+    """Turns file references into data: URIs. The one path rule: with the app's origin stripped, a path is
+    looked up under the mock dir (an app-root `/assets/x.png` as `assets/x.png`). What is not there stays as is;
+    validate_mock.py reports any such file a screen actually loads."""
 
-    def __init__(self, root: pathlib.Path):
-        self.root, self.cache, self.missing = root, {}, set()
+    def __init__(self, root: pathlib.Path, origin: str):
+        self.root, self.origin, self.cache = root, origin.rstrip("/") + "/" if origin else "", {}
 
     def uri(self, ref: str) -> str | None:
-        clean = ref.split("#")[0].split("?")[0]
+        if self.origin and ref.startswith(self.origin):
+            ref = ref[len(self.origin):]
+        clean = ref.split("#")[0].split("?")[0].lstrip("/")
         if not clean or ref.startswith(SKIP):
             return None
         if clean not in self.cache:
             path = (self.root / clean).resolve()
             if not path.is_file() or self.root.resolve() not in path.parents:
-                self.missing.add(clean)
                 self.cache[clean] = None
             else:
                 kind = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -71,14 +73,10 @@ class Inliner:
         return re.sub(r"""\b(src|href|xlink:href)=(["'])([^"']+)\2""", attr, text)
 
 
-def load(path: pathlib.Path, origin: str) -> tuple[list[str], str]:
+def load(path: pathlib.Path) -> tuple[list[str], str]:
     if not path.is_file():
         fail(f"no capture at {path}")
-    text = path.read_text()
-    if origin:
-        text = text.replace(origin.rstrip("/") + "/", "")
-    text = re.sub(r'(["(])/(assets|icons)/', r"\1\2/", text)
-    styles, _, body = text.partition("<!--body-->")
+    styles, _, body = path.read_text().partition("<!--body-->")
     # The app's own scripts (theme switchers, analytics) must not run inside the mock.
     body = re.sub(r"<script\b[^>]*>.*?</script>", "", body, flags=re.S | re.I)
     if not body.strip():
@@ -87,12 +85,14 @@ def load(path: pathlib.Path, origin: str) -> tuple[list[str], str]:
     return blocks, body
 
 
-def journey_ids(row_path: str) -> list[str]:
+def load_row(row_path: str) -> dict:
+    """The mock row's value from a file: the value itself, a row with `input`, or `DM ds-rows` output."""
     row = json.loads(pathlib.Path(row_path).read_text())
-    if isinstance(row, list):          # DM ds-rows prints a list of rows
+    if isinstance(row, dict) and "rows" in row:
+        row = row["rows"]
+    if isinstance(row, list):
         row = row[0] if row else {}
-    row = row.get("input", row)
-    return [s["id"] for s in row.get("journey", [])]
+    return row.get("input", row)
 
 
 STATES_RUNNER = """
@@ -121,7 +121,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("mock_dir")
     ap.add_argument("--step", action="append", default=[], help="<step id>=<capture.html>, once per step, in journey order")
-    ap.add_argument("--row", help="the mock row value as JSON; every journey step must then have a --step")
+    ap.add_argument("--row", required=True, help="the mock row as JSON: every journey step needs a --step, and the page carries the journey")
     ap.add_argument("--template", action="append", default=[])
     ap.add_argument("--states", help="optional per-screen tweaks (window.mockStates)")
     ap.add_argument("--key", required=True, help="the mock row key in the mocks dataset")
@@ -143,28 +143,30 @@ def main() -> None:
         if any(s[0] == sid for s in steps):
             fail(f"step {sid!r} given twice")
         steps.append((sid, src))
-    if a.row:
-        missing = [i for i in journey_ids(a.row) if i not in {s[0] for s in steps}]
-        if missing:
-            fail(f"journey steps with no screen: {', '.join(missing)} — capture or build each one")
+    journey = load_row(a.row).get("journey", [])
+    planned, given = [j["id"] for j in journey], [s[0] for s in steps]
+    if planned != given:
+        fail(f"--step ids {given} must be the journey's steps in order: {planned}")
 
-    inline = Inliner(mock)
-    style_blocks, sections = [], []
+    inline = Inliner(mock, a.origin)
+    styles: dict[str, None] = {}   # captures share most of their styles: each block once, in order
+    parts = []
     for n, (sid, src) in enumerate(steps):
-        blocks, body = load(pathlib.Path(src), a.origin)
-        style_blocks += [b for b in blocks if b not in style_blocks]   # captures share most of their styles
-        hidden = "" if n == 0 else " hidden"
-        sections.append(f'<section data-step="{sid}"{hidden}>\n{body}\n</section>')
-    templates = [f'<template id="{tid}">{load(pathlib.Path(src), a.origin)[1]}</template>'
-                 for tid, _, src in (t.partition("=") for t in a.template)]
+        blocks, body = load(pathlib.Path(src))
+        styles.update(dict.fromkeys(blocks))
+        parts.append(f'<section data-step="{sid}"{"" if n == 0 else " hidden"}>\n{body}\n</section>')
+    for tid, _, src in (t.partition("=") for t in a.template):
+        blocks, body = load(pathlib.Path(src))
+        styles.update(dict.fromkeys(blocks))
+        parts.append(f'<template id="{tid}">{body}</template>')
 
     app_css = mock / "app.css"
-    css = f"<style>{re.sub(r'(["(])/(assets|icons)/', r'\1\2/', app_css.read_text())}</style>" if app_css.is_file() else ""
+    css = f"<style>{app_css.read_text()}</style>" if app_css.is_file() else ""
     states = pathlib.Path(a.states).read_text() + STATES_RUNNER if a.states else ""
     bar = (HERE.parent / "assets" / "journey-bar.js").read_text()
 
-    page_head = inline(css + "\n" + "\n".join(style_blocks))
-    page_body = inline("\n".join(sections) + "".join(templates))
+    page_head = inline(css + "\n" + "\n".join(styles))
+    page_body = inline("\n".join(parts))
     html = f"""<!doctype html>
 <html {a.html_attrs}>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -175,7 +177,7 @@ def main() -> None:
 </head>
 <body>
 {page_body}
-<script>window.MOCKIFY = {{key: {json.dumps(a.key)}, project: {json.dumps(a.project)}}}; window.MOCK_BAR_AT = "bottom";</script>
+<script>window.MOCKIFY = {{key: {json.dumps(a.key)}, project: {json.dumps(a.project)}, journey: {json.dumps(journey)}}}; window.MOCK_BAR_AT = "bottom";</script>
 {f"<script>{states}</script>" if states else ""}
 <script>{bar}</script>
 </body></html>"""
@@ -184,8 +186,7 @@ def main() -> None:
     if not manifest.exists():
         manifest.write_text(json.dumps({"name": mock.name, "title": a.title, "build": ".",
                                         "description": "A clickable journey mock (mockify, real mode)."}, indent=2) + "\n")
-    print(json.dumps({"wrote": str(mock / "index.html"), "bytes": len(html), "screens": [s[0] for s in steps],
-                      "not_inlined": sorted(inline.missing)}, indent=2))
+    print(json.dumps({"wrote": str(mock / "index.html"), "bytes": len(html), "screens": given}, indent=2))
 
 
 if __name__ == "__main__":

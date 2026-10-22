@@ -177,7 +177,13 @@
   }
   // data-next works on its own: a click on such a control moves the journey (no onclick needed).
   // Any other control on a screen is not part of the mock: say so where it was clicked, never a silent no-op.
-  const CONTROL = 'button, a[href], [role=button], [role=tab], [role=menuitem], [role=checkbox], [role=switch], select, summary, [data-dead]';
+  // Every app script is stripped, so nothing on a screen is live: anything that LOOKS clickable is inert.
+  const inert = (t, screen) => {
+    for (let el = t; el && el !== screen; el = el.parentElement) {
+      if (el.matches('input, select, textarea, label, [data-dead]') || getComputedStyle(el).cursor === 'pointer') return el;
+    }
+    return null;
+  };
   let tip = null;
   const deadTip = (el) => {
     tip?.remove();
@@ -194,8 +200,9 @@
     if (e.target.closest('[data-mockify]') || picking) return;
     const el = e.target.closest('[data-next]');
     if (el) { e.preventDefault(); window.mockifyGo(el.dataset.next); return; }
-    const dead = e.target.closest(CONTROL);
-    if (dead && dead.closest('[data-step]') && !dead.closest('[data-live]')) { e.preventDefault(); deadTip(dead); }
+    const screen = e.target.closest('[data-step]');
+    const dead = screen && !e.target.closest('[data-live]') && inert(e.target, screen);
+    if (dead) { e.preventDefault(); deadTip(dead); }
   });
   let open = '';
   let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
@@ -721,7 +728,7 @@
   });
   panel.addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) readImage(f); });
 
-  // Drag by the grip; the position survives reloads and stays on screen.
+  // Drag by the grip; the position is kept for the session and stays on screen.
   $('.grip').addEventListener('pointerdown', (e) => {
     const r = host.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
     e.target.setPointerCapture(e.pointerId);
