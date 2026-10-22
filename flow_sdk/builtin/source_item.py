@@ -371,7 +371,7 @@ class SourceItem(ProjectedFields, Entity):
         if item.external_id:
             rows = await cls.get_all({"data_source_id": str(source.id), "reply_to_external_id": item.external_id})
             for row in rows:
-                if row.is_ours(source):
+                if row.is_echo(source):
                     return row
         if item.thread_key:
             operands = [
@@ -385,7 +385,7 @@ class SourceItem(ProjectedFields, Entity):
                 order_by=[{"created_date": "asc"}, {"id": "asc"}],
             ))
             for row in rows:
-                if row.is_ours(source) and str(row.id) != str(getattr(item, "id", "")):
+                if row.is_echo(source) and str(row.id) != str(getattr(item, "id", "")):
                     return row
         return None
 
