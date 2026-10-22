@@ -1,4 +1,4 @@
-"""A system of record: its records become typed rows (``Dataset.mirror``, what a record location's
+"""A system of record: its records become typed rows (``Dataset.mirror``, what a system of record's
 pull runs), and a source's write-back goes through its driver (``DataSource.update_item`` /
 ``delete_item``) -- with the credential the source holds, never the app."""
 
@@ -29,8 +29,8 @@ def deals(tmp_path):
 
     root, ns = tmp_path / "proj", "unittestmir" + uuid.uuid4().hex[:8]
     f = lambda shape, **more: {"shape": shape, "description": "x", **more}   # noqa: E731
-    _schema(root, ns, "crm.deal", {"name": f("string", owned_by="crm"), "stage": f("enum:open|won|lost", owned_by="crm"),
-                                   "crm_id": f("string", owned_by="crm"), "owner": f("?string", owned_by="crm"),
+    _schema(root, ns, "crm.deal", {"name": f("string"), "stage": f("enum:open|won|lost"),
+                                   "crm_id": f("string"), "owner": f("?string"),
                                    "source": f("?string"), "notes": f("?string")})
     assert not any(load_root(root).values())
     return _dataset(root, "deals", f"--{ns}--.crm.deal")
@@ -62,9 +62,6 @@ async def test_mirroring_again_is_a_sync_and_keeps_what_the_app_owns(deals):
 async def test_a_mirror_refuses_what_is_the_callers_mistake(deals):
     from flow_sdk.builtin.dataset import LinkError
 
-    with pytest.raises(LinkError) as refused:                                  # without `by`: the CRM's fields are not ours to set
-        await deals.mirror(ITEMS, MAP)
-    assert {d["code"] for d in refused.value.details} == {"owned"} and deals.read_rows() == []
     with pytest.raises(ValueError, match="two items map to the row key 'opp-1'"):
         await deals.mirror([ITEMS[0], dict(ITEMS[0], external_id="opp 1")], MAP, by="crm")
     for wrong in ({}, {"key": "external_id"}, {"key": 3, "input": {}}):
@@ -130,7 +127,7 @@ async def test_a_required_list_the_map_does_not_name_starts_empty_on_a_mirrored_
 
     root, ns = tmp_path / "proj", "unittestreq" + uuid.uuid4().hex[:8]
     f = lambda shape, **more: {"shape": shape, "description": "x", **more}   # noqa: E731
-    _schema(root, ns, "crm.deal", {"name": f("string", owned_by="crm"), "crm_id": f("string", owned_by="crm"),
+    _schema(root, ns, "crm.deal", {"name": f("string"), "crm_id": f("string"),
                                    "objections": f(["string"]), "dates": f({"won": "?string"}), "notes": f("?string")})
     assert not any(load_root(root).values())
     deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
@@ -282,43 +279,6 @@ def test_the_write_back_and_mirror_actions_are_routable():
         assert not set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
 
 
-async def test_a_record_location_over_http(deals, monkeypatch):
-    """A dataset whose rows live in a record system: ``pull`` brings the records in as rows."""
-    import contextlib
-
-    from flow_sdk.builtin.dataset import Dataset
-    from flow_sdk.datasets import locations
-    from tests.unit._graph_client import call_local
-
-    records = [RecordItem(origin=CloudOrigin(kind="record", namespace="crm.example", key=key),
-                          data=RecordData(title=title)) for key, title in (("OPP-1", "Acme renewal"), ("OPP-2", "Bolt pilot"))]
-
-    class Source:
-        async def iterate(self, **kw):
-            for item in records:
-                yield item
-
-    @contextlib.asynccontextmanager
-    async def opener(where):
-        yield Source()
-
-    monkeypatch.setattr(locations, "OPENER", opener)
-    shape = {"key": "external_id", "input": {"name": "name", "stage": {"value": "open"}, "crm_id": "external_id"}}
-    served = Dataset(id=str(uuid.uuid4()), name="deals-http", asset_ref=str(deals._folder().parent / "deals-http"),
-                     data_layout="io_folder", spec={"rows": [{"input": deals.row_kind}]},
-                     location={"driver": "crm", "map": shape, "by": "crm"})
-    await served.save()
-    done = await call_local("POST", f"dataset/{served.id}/pull", {})
-    assert done.status_code == 200, done.text
-    assert done.json()["data"] == {"moved": ["opp-1", "opp-2"], "num_rows": 2}
-    assert (await call_local("POST", f"dataset/{served.id}/pull", {})).json()["data"]["moved"] == []
-    records.pop()                                                       # deleted in the CRM
-    assert (await call_local("POST", f"dataset/{served.id}/pull", {})).json()["data"] == {"moved": ["opp-2"], "num_rows": 1}
-
-
-# ── the map: lists, and links made from the outside system's ids ─────────────
-
-
 @pytest.fixture
 def tasks(tmp_path):
     """Deals keyed by the CRM's id (``unique``), and tasks that link to any number of them -- or none."""
@@ -332,9 +292,9 @@ def tasks(tmp_path):
     rules = root / "agentic-assets/data_schema/crm.deal/data_schema.json"
     rules.write_text(json.dumps({**json.loads(rules.read_text()), "rules": [{"unique": ["crm_id"]}]}))
     _schema(root, ns, "crm.note", {"name": f("string"), "crm_id": f("string")})                 # nothing unique
-    _schema(root, ns, "crm.task", {"title": f("string", owned_by="crm"), "crm_id": f("string", owned_by="crm"),
-                                   "labels": f(["string"], owned_by="crm"), "deals": f(["crm.deal"], owned_by="crm"),
-                                   "main": f("?crm.deal", owned_by="crm"), "notes": f("?string")})
+    _schema(root, ns, "crm.task", {"title": f("string"), "crm_id": f("string"),
+                                   "labels": f(["string"]), "deals": f(["crm.deal"]),
+                                   "main": f("?crm.deal"), "notes": f("?string")})
     assert not any(load_root(root).values())
     deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
     _dataset(root, "notes", f"--{ns}--.crm.note")
@@ -350,6 +310,7 @@ TASK_MAP = {"key": "external_id", "input": {
     "title": "name", "crm_id": "external_id", "labels": "data.labels.*.name",
     "deals": {"link": "crm.deal", "by": "crm_id", "path": "data.targets.*.deal"},
     "main": {"link": "crm.deal", "by": "crm_id", "path": "data.targets.0.deal"}}}
+
 
 
 async def test_a_path_through_a_list_gives_a_list_and_ids_become_links(tasks):

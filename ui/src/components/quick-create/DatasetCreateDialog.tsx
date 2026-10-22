@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { dataManager, Dataset, DataSource, LOCAL_SOURCE, Project, projectSchemas, QueryRequest, TypeId } from '@sdk';
+import { dataManager, Dataset, DataSource, Project, projectSchemas, QueryRequest, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -24,7 +24,7 @@ export const DatasetCreateDialog: React.FC<{
   const { navigation } = useDockNavigation();
   const [name, setName] = useState('');
   const [kind, setKind] = useState('');
-  const [source, setSource] = useState(LOCAL_SOURCE);
+  const [source, setSource] = useState('');
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
   const [kinds, setKinds] = useState<{ kind: string; name: string }[]>([]);
@@ -65,7 +65,7 @@ export const DatasetCreateDialog: React.FC<{
         data_layout: 'io_folder',
         // Each row's input is a value of the chosen kind (the shape every GTM dataset declares).
         spec: { rows: [{ input: kind }] },
-        data_source: source === LOCAL_SOURCE ? null : source,
+        data_source: source || null,
         path: folder.trim() || null,
       }).save(scope);
       onOpenChange(false);
@@ -113,7 +113,7 @@ export const DatasetCreateDialog: React.FC<{
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted-foreground">{t`Data source`}</span>
             <select className={SELECT} value={source} onChange={(e) => setSource(e.target.value)} data-testid="dataset-create-source">
-              <option value={LOCAL_SOURCE}>{`${LOCAL_SOURCE} · ${t`file system`}`}</option>
+              <option value="">{t`Project data store`}</option>
               {sources.map((s) => (
                 <option key={s.name} value={s.name}>{s.provider ? `${s.name} · ${s.provider}` : s.name}</option>
               ))}

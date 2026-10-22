@@ -45,7 +45,6 @@ export function HostedDatasets({ datasets }: { datasets: Dataset[] }) {
             <span className="text-xs text-muted-foreground">
               <Plural value={d.num_rows ?? 0} one="# row" other="# rows" />
             </span>
-            {d.rows_note ? <span className="ms-auto truncate text-xs text-muted-foreground">{d.rows_note}</span> : null}
           </li>
         ))}
       </ul>

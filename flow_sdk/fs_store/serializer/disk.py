@@ -134,7 +134,7 @@ class DiskSerializer:
 
                 # Rows are ARTIFACTS (paths, folders, cells) — never contents.
                 layout = coerce_dataset_enum(header_raw.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
-                from flow_sdk.datasets.locations import rows_root_of  # noqa: PLC0415
+                from flow_sdk.datasets.stores import rows_root_of  # noqa: PLC0415
 
                 data[name] = dataset_layout_for(layout).read(
                     rows_root_of(root, header_raw, entity_id or ""), DEFAULT_DATASET_SPEC.row_type(), dataset_id=entity_id or "",

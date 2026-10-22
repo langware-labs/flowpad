@@ -158,9 +158,9 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
           <DialogTitle>{isEdit ? t`Edit endpoint` : t`New endpoint`}</DialogTitle>
           <DialogDescription>
             {draft.kind === 'root' ? (
-              <Trans>A root talks to a provider with its own key.</Trans>
+              <Trans>Funded by a provider API key you supply.</Trans>
             ) : (
-              <Trans>A chain draws on another endpoint and can only narrow what passes.</Trans>
+              <Trans>Funded by an existing source; it can only narrow what that source allows.</Trans>
             )}
           </DialogDescription>
         </DialogHeader>
@@ -169,7 +169,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
           {!isEdit && (
             <div className="space-y-1">
               <Label>
-                <Trans>Kind</Trans>
+                <Trans>Funding source</Trans>
               </Label>
               <div className="grid grid-cols-2 gap-2">
                 {(['root', 'chain'] as const).map((kind) => (
@@ -182,9 +182,9 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
                       draft.kind === kind ? 'border-primary bg-primary/5' : 'border-border'
                     }`}
                   >
-                    <span className="block font-medium">{kind === 'root' ? t`Root` : t`Chain`}</span>
+                    <span className="block font-medium">{kind === 'root' ? t`API key` : t`Existing source`}</span>
                     <span className="block text-muted-foreground">
-                      {kind === 'root' ? t`Provider + credential` : t`Sources + filters + limits`}
+                      {kind === 'root' ? t`Your own provider key` : t`Draw from a source you can use`}
                     </span>
                   </button>
                 ))}
@@ -199,6 +199,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
             </Label>
             <Input
               id="llm-name"
+              autoComplete="off"
               value={draft.name}
               disabled={readOnly}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
@@ -241,6 +242,8 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
                 </Label>
                 <Input
                   id="llm-base-url"
+                  type="url"
+                  autoComplete="url"
                   value={draft.base_url}
                   disabled={isEdit}
                   placeholder={spec?.defaultBaseUrl}

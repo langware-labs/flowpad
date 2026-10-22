@@ -75,12 +75,12 @@
       "size_bytes": 15907
     },
     {
-      "name": "dataset-locations.md",
-      "rel_path": "dataset-locations.md",
-      "title": "Dataset locations — where a dataset's rows live",
-      "summary": "Dataset locations: the five forms of the location field (local, file, gdrive, s3, record-system driver), the working copy, and where a dataset's rows live.",
-      "content_hash": "c3f66cb5236cb938cf4191a155adb78c5db6a573b322be6fd9adf6c85662dfeb",
-      "size_bytes": 7548
+      "name": "dataset-stores.md",
+      "rel_path": "dataset-stores.md",
+      "title": "Dataset stores — where a dataset's rows live",
+      "summary": "Dataset stores: dataset → data source → data store; the project's data store, object stores, systems of record and field truth, the working copy, pull and move.",
+      "content_hash": "c4b258e5a706aece90922713074c9ffc9f2c92f5aa5ffd0c01b4a71c6320b7f2",
+      "size_bytes": 8603
     },
     {
       "name": "datasets.md",

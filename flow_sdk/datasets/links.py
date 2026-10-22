@@ -160,7 +160,7 @@ def _row_ids(dataset_folder: Path) -> dict[str, str]:
     from flow_sdk.schema.data_spec.io.identity import FolderCapsule  # noqa: PLC0415
     from flow_sdk.schema.data_spec.layout import _row_dirs, row_id  # noqa: PLC0415
 
-    from flow_sdk.datasets.locations import rows_root_of  # noqa: PLC0415
+    from flow_sdk.datasets.stores import rows_root_of  # noqa: PLC0415
 
     dataset_id = FolderCapsule().read(dataset_folder) or ""
     root = rows_root_of(dataset_folder, dataset_id=dataset_id)

@@ -42,23 +42,7 @@ export function AppButton({ project }: { project?: Project | null }) {
   const open = (entry: ProjectApp) =>
     navigation.openDock(projectAppDock(entry, projectId), undefined, { topLevel: true });
 
-  const tooltipContent = (
-    <div className="space-y-1">
-      <div className="font-medium">{t`Apps and agents`}</div>
-      {[
-        ...apps.map(({ app }) => ({ id: app.id, type: app.type, name: app.displayName })),
-        ...agents.map((agent) => ({ id: agent.id, type: agent.type, name: agent.displayName })),
-      ].map((entry) => {
-        const Icon = iconForType(entry.type);
-        return (
-          <div key={`${entry.type}-${entry.id}`} className="flex items-center gap-2">
-            <Icon className="size-4 shrink-0" aria-hidden />
-            <span>{entry.name}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  const label = t`Apps and agents`;
 
   if (apps.length === 1 && !agents.length) {
     const [only] = apps;
@@ -66,10 +50,9 @@ export function AppButton({ project }: { project?: Project | null }) {
     return (
       <NavIconButton
         icon={iconForType(only.app.type)}
-        label={t`Apps and agents`}
+        label={label}
         onClick={() => open(only)}
         disabled={showing}
-        tooltipContent={tooltipContent}
         tooltipDelay={1500}
         testId="top-nav-app"
       />
@@ -86,7 +69,7 @@ export function AppButton({ project }: { project?: Project | null }) {
               variant="ghost"
               size="icon"
               className={chromeEntityActionClassName}
-              aria-label={t`Apps and agents`}
+              aria-label={label}
               data-testid="top-nav-apps"
             >
               <LayoutGrid />
@@ -94,7 +77,7 @@ export function AppButton({ project }: { project?: Project | null }) {
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          {tooltipContent}
+          {label}
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="min-w-56">

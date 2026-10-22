@@ -127,8 +127,6 @@ async def test_no_keys_is_said_in_words():
         assert (await _source(base).verify()).ready
 
 
-async def test_a_location_names_the_bucket_and_the_prefix():
-    assert S3Source.row_files_target("acme-data/gtm/leads") == {"bucket": "acme-data", "prefix": "gtm/leads"}
-    assert S3Source.row_files_target("s3://acme-data") == {"bucket": "acme-data", "prefix": ""}
-    with pytest.raises(ValueError):
-        S3Source.row_files_target("")
+async def test_a_dataset_keeps_its_rows_under_the_source_prefix():
+    assert S3Source.rows_within({"bucket": "acme-data", "prefix": "gtm"}, "leads") == {"bucket": "acme-data", "prefix": "gtm/leads"}
+    assert S3Source.rows_within({"bucket": "acme-data"}, "leads") == {"bucket": "acme-data", "prefix": "leads"}

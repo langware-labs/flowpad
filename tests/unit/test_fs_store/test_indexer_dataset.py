@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.datasets.stores import rows_root_of
 from flow_sdk.assets.types.dataset import dataset_asset_hash
 from tests.unit._dataset_read import iter_rows
 from flow_sdk.builtin.dataset import DataLayoutEnum, RowKind
@@ -71,7 +72,8 @@ def _seed_csv_dataset(
     ds = project / "agentic-assets" / "dataset" / slug
     ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(_doc(metadata=manifest), encoding="utf-8")
-    (ds / "data.csv").write_text(csv_text, encoding="utf-8")
+    rows_root_of(ds).mkdir(parents=True, exist_ok=True)
+    (rows_root_of(ds) / "data.csv").write_text(csv_text, encoding="utf-8")
     return ds
 
 
@@ -93,13 +95,14 @@ def _seed_io_dataset(
       - ``dirs`` — ``{dirname: {fname: str | bytes}}`` for folder artifacts
     """
     ds = project / "agentic-assets" / "dataset" / slug
-    (ds / "rows").mkdir(parents=True)
+    ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(
         _doc(metadata=manifest or {"data_layout": "io_folder"}, data=manifest_data),
         encoding="utf-8",
     )
+    (rows_root_of(ds) / "rows").mkdir(parents=True, exist_ok=True)
     for name, spec in rows.items():
-        ex = ds / "rows" / name
+        ex = rows_root_of(ds) / "rows" / name
         ex.mkdir()
         if "input" in spec:
             (ex / "input.txt").write_text(spec["input"], encoding="utf-8")
@@ -163,7 +166,7 @@ def test_csv_field_spec_maps_columns(tmp_path: Path) -> None:
         ),
     )
     rows = iter_rows(
-        ds,
+        rows_root_of(ds),
         DataLayoutEnum.CSV,
         {"input": "question", "expected": "answer"},
         ",",
@@ -193,7 +196,7 @@ def test_io_folder_happy_path(tmp_path: Path) -> None:
     assert meta["num_rows"] == 2
     assert meta["kind_counts"] == {"eval": 1, "train": 1}
 
-    rows = iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-io")
+    rows = iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-io")
     by_name = {r.metadata.get("kind", "train"): r for r in rows}
     assert _node(by_name["eval"], "input") == "input.txt"
     assert _node(by_name["eval"], "ground_truth") == "expected.txt"
@@ -206,7 +209,7 @@ def test_io_folder_missing_expected_is_none(tmp_path: Path) -> None:
         "unlabeled",
         rows={"0001": {"input": "prompt only"}},
     )
-    rows = iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-u")
+    rows = iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-u")
     assert len(rows) == 1
     assert _node(rows[0], "input") == "input.txt"
     assert not _keys(rows[0], "ground_truth")
@@ -265,12 +268,12 @@ def test_asset_hash_tracks_inner_file_edits(tmp_path: Path) -> None:
     )
     before = dataset_asset_hash(FSRef(csv_ds))
     import os
-    os.utime(csv_ds / "data.csv", ns=(before + 100 * 10**9, before + 100 * 10**9))
+    os.utime(rows_root_of(csv_ds) / "data.csv", ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert dataset_asset_hash(FSRef(csv_ds)) > before
 
     io_ds = _seed_io_dataset(tmp_path, "io", rows={"0001": {"input": "a", "expected": "b"}})
     before_io = dataset_asset_hash(FSRef(io_ds))
-    os.utime(io_ds / "rows" / "0001" / "input.txt", (before_io + 100, before_io + 100))
+    os.utime(rows_root_of(io_ds) / "rows" / "0001" / "input.txt", (before_io + 100, before_io + 100))
     assert dataset_asset_hash(FSRef(io_ds)) > before_io
 
 
@@ -278,8 +281,8 @@ def test_row_id_is_deterministic(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(
         tmp_path, "det", manifest={"data_layout": "csv"}, csv_text="input\na\nb\n"
     )
-    rows1 = iter_rows(ds, DataLayoutEnum.CSV, {}, ",", dataset_id="ds-X")
-    rows2 = iter_rows(ds, DataLayoutEnum.CSV, {}, ",", dataset_id="ds-X")
+    rows1 = iter_rows(rows_root_of(ds), DataLayoutEnum.CSV, {}, ",", dataset_id="ds-X")
+    rows2 = iter_rows(rows_root_of(ds), DataLayoutEnum.CSV, {}, ",", dataset_id="ds-X")
     assert [r.id for r in rows1] == [r.id for r in rows2]
     assert rows1[0].id == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-X:0"))
 
@@ -288,7 +291,7 @@ def test_row_id_is_deterministic(tmp_path: Path) -> None:
 
 
 def _one(ds: Path):
-    rows = iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    rows = iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
     assert len(rows) == 1
     return rows[0]
 
@@ -341,7 +344,7 @@ def test_input_layout_hint(tmp_path: Path) -> None:
 
 def test_missing_input_skips_row(tmp_path: Path) -> None:
     ds = _seed_io_dataset(tmp_path, "noin", rows={"0001": {"files": {"output.txt": "o"}}})
-    assert iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x") == []
+    assert iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x") == []
 
 
 # ── Rule 2: output file/folder + numbered multiples ──
@@ -501,7 +504,7 @@ def test_sidecar_only_input_skips_row(tmp_path: Path) -> None:
         tmp_path, "soi",
         rows={"0001": {"files": {"input.json": _doc(metadata={"pages": 1})}}},
     )
-    assert iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x") == []
+    assert iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x") == []
 
 
 def test_occurrence_order_rides_on_key_order(tmp_path: Path) -> None:
@@ -565,7 +568,7 @@ def test_row_id_is_the_one_the_row_stores_when_valid(tmp_path: Path) -> None:
         rows={"0001": {"input": "i", "files": {"row.json": _doc(metadata={"id": stored})}},
                   "0002": {"input": "i", "files": {"row.json": _doc(metadata={"id": "not-an-entity-id"})}}},
     )
-    rows = iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    rows = iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
     assert [r.id for r in rows] == [stored, str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0002"))]
 
 
@@ -605,7 +608,7 @@ def test_asset_hash_tracks_nested_new_forms(tmp_path: Path) -> None:
         rows={"0001": {"input": "i", "dirs": {"output-2": {"a.txt": "x"}}}},
     )
     before = dataset_asset_hash(FSRef(ds))
-    nested = ds / "rows" / "0001" / "output-2" / "a.txt"
+    nested = rows_root_of(ds) / "rows" / "0001" / "output-2" / "a.txt"
     os.utime(nested, ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert dataset_asset_hash(FSRef(ds)) > before
 
@@ -631,7 +634,7 @@ def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
             },
         },
     )
-    rows = iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    rows = iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
     legacy, rich = rows[0], rows[1]
 
     # legacy example: scalars intact

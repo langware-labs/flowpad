@@ -126,6 +126,12 @@ class SlackSource(MessageSource):
     pages_per_pass = 1
     #: A Slack source is ABOUT its channel: a caller reuses the row that names it.
     identity_config_key = "channel"
+    # Signed in as a person, the account is shared: what that person types is answered, only the
+    # agent's own replies (``sent_by_us``) are not. See ``agent_serve.answer``.
+    answers_its_account = True
+    #: While someone waits on the channel (an agent serving it, a viewer), poll it this often. Slack's
+    #: ``conversations.history`` allows ~50 calls a minute; 5s is 12.
+    attention_poll_seconds = 5
     connection = "slack"
     #: Every kind goes up as a plain file; up to ten, and the text, in one message. No per-file caption.
     files = FileSupport(kinds=frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.DOCUMENT}), per_message=10)
@@ -364,11 +370,11 @@ class SlackSource(MessageSource):
         key, label = self.channel
         if not key:
             return Verdict(ready=False, detail="No channel selected yet — pick one for this source to read.")
-        if self.credentials.token is None:
-            return Verdict(ready=False, detail="No Slack credential is available on this machine yet. Connect Slack first.")
+        if not self._token():
+            return Verdict(ready=False, detail="No Slack credential is available on this machine yet. Add a bot token or sign in with Slack.")
         error = str((await self._api("conversations.history", {"channel": key, "limit": 1})).get("error") or "")
         if error in NOT_A_MEMBER | NO_SUCH_CHANNEL:
-            return Verdict(ready=False, detail=f"Invite the Flowpad bot to #{label}, then press Verify again.", pending=(key,))
+            return Verdict(ready=False, detail=f"Invite the bot to #{label} (`/invite @<bot>`), then press Verify again.", pending=(key,))
         if error == "missing_scope":
             return Verdict(
                 ready=False,
@@ -502,10 +508,20 @@ class SlackSource(MessageSource):
         async with http.client() as client:
             return await http.request_json(client, verb, f"{self.base_url}/{method}", headers=headers, **shape)
 
+    def _token(self) -> str:
+        """The bot token when the credential is set up as a bot (``SLACK_BOT_TOKEN``), else the Slack sign-in's
+        token (the ``signin`` way, or a row on the older ``connector`` auth): who the source acts as."""
+        bot = self.credentials.values.get("SLACK_BOT_TOKEN")
+        bot_token = bot.get_secret_value().strip() if bot is not None else ""
+        if bot_token and self.credentials.choice != "signin":
+            return bot_token
+        return self.credentials.token.get_secret_value() if self.credentials.token is not None else ""
+
     def _auth(self) -> dict:
-        if self.credentials.token is None:
-            raise AccessDenied("No Slack credential on this machine. Connect Slack, then verify the source.")
-        return {"Authorization": f"Bearer {self.credentials.token.get_secret_value()}"}
+        token = self._token()
+        if not token:
+            raise AccessDenied("No Slack credential on this machine. Add a bot token or sign in with Slack, then verify the source.")
+        return {"Authorization": f"Bearer {token}"}
 
     async def _call(self, method: str, *, verb: str = "GET", **payload: Any) -> dict:
         body = await self._api(method, payload, verb=verb)

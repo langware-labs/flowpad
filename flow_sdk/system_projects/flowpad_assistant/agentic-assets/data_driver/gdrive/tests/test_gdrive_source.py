@@ -638,8 +638,8 @@ async def test_rows_in_a_read_only_drive_source_are_never_written():
                 await source.write_file("rows/a/row.json", b"{}")
 
 
-async def test_a_drive_location_names_the_folder():
-    assert DriveSource.row_files_target("GTM/Rows/leads") == {"path": "GTM/Rows/leads"}
+async def test_a_dataset_keeps_its_rows_in_a_folder_of_the_source():
+    assert DriveSource.rows_within({"path": "GTM/Rows"}, "leads") == {"path": "GTM/Rows/leads"}
 
 
 async def test_a_source_holding_datasets_makes_its_missing_folder_later(driver, tmp_path):

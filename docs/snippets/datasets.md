@@ -186,10 +186,10 @@ kind: `GET /api/v1/kinds/<kind>/datasets?project=<id>` (TypeScript `Dataset.forK
 
 ## 9. Hold an outside system's rows, and read only what you show
 
-A dataset's rows can live in a system of record: its `dataset.json` `location` names the driver
-and a `map` (`{"driver": "twenty", "config": {...}, "map": {"key": "external_id", "input": {...}}, "by": "crm"}`).
-Every read pulls the records into rows, and a row's outside-owned fields write back through the
-driver. See [dataset locations](../data-management/dataset-locations.md). What follows is the same
+A dataset's data source can be a system of record: its `dataset.json` says `"data_source": "gtm-crm"`
+and the kind marks the fields the system holds `"truth"` (`"soc"`, `"soc.data.title"`, exactly one
+`"soc.external_id"`). Every read pulls the records into rows, and a row's truth fields write back
+through the driver. See [dataset stores](../data-management/dataset-stores.md). What follows is the same
 idea done by hand, from rows your own code builds.
 
 An app that keeps real records — a copy of a CRM, a log of outreach — writes many rows per run and
@@ -258,28 +258,27 @@ values `path` takes in the rows that match". TypeScript `bucketOf(day, 'week', '
 
 ## 11. Change a field the outside system owns
 
-In a dataset whose rows live in a record system (§9, a `location` with a `map`), every field the map
-names is the outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
-change is sent to that system first, through the location's driver, and the row is then written as
-the system answered. Every field of such a row lives in the system: one the map does not hold is
-refused (`not_stored`) -- kept, it would live only in this machine's working copy. There is no merge
-to write and no client of your own to keep.
+In a dataset whose data source is a system of record (§9), every field the kind marks `truth` is the
+system's. You still edit it like any field — the change is sent to that system first, through the
+source's driver, and the row is then written as the system answered. A field without `truth` is yours,
+kept in the project's data store with the row; one row key joins both. There is no merge to write and
+no client of your own to keep.
 
 ```python
 from flow_sdk.datasets import LinkError
 
-row = tasks.query({"key": "t-1"})["rows"][0]                   # status and label are the CRM's
+row = tasks.query({"key": "t-1"})["rows"][0]                   # status and label: truth fields
 await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "label": "hot"}}, expected=row["version"])
 now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE', label 'hot', as the CRM answered
 try:
-    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mapped from a path nothing can write
+    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # truth from a path nothing can write
 except LinkError as refused:
     code = refused.details[0]["code"]                        # 'not_writable' -- nothing was sent
 ```
 
-The refusals, by `details[].code`: `not_writable` (the map reads the field from a path it cannot
-write), `not_stored` (the map holds no such field), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
-ids no row here resolves yet), `owned` (the location is read-only, or this process holds no driver). A
+The refusals, by `details[].code`: `not_writable` (the field's truth is a path that cannot be
+written), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
+ids no row here resolves yet), `owned` (the data source is read-only, or this process holds no driver). A
 record the system made but could not finish is written, with `warnings: [{error_code:
 "source_partial", message, key}]` in the answer — show them.
 
@@ -287,6 +286,4 @@ Only the server holds a driver. Over HTTP — what an app and a script use — i
 `POST dataset/<id>/put-row {key, row, expected?}`, `put-rows`, `append`, and `delete-row` /
 `delete-rows` to delete the record outside too. TypeScript: `dataset.put(key, {input}, {expected})`.
 A script calls the action (`flow_sdk.local_client.graph_post(f"dataset/{ds.id}/put-row", {...})`);
-`Dataset.put` in a script is refused `owned`. A map that names a field the schema does not mark
-`owned_by` its `by` is refused at the pull (`not_owned`): such a field would take an edit and lose it
-at the next pull.
+`Dataset.put` in a script is refused `owned`.

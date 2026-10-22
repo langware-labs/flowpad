@@ -111,3 +111,4 @@ export * from './wiki';
 export * from './rag-index';
 // The composer's two sends: into a conversation, and back out its channel.
 export { sendReply, sendToChannel } from './notifications';
+export * from './onboarding';

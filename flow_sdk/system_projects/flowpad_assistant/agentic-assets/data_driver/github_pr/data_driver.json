@@ -3,7 +3,7 @@
   "name": "github_pr",
   "title": "GitHub PRs",
   "icon_name": "GitHub",
-  "description": "Each pull request assigned to you is a conversation; its comments, reviews, pushes and checks are the messages.",
+  "description": "Each open pull request you opened or whose review is requested from you is a conversation; its comments, reviews, pushes and checks are the messages.",
   "kind": "datasource.api.github_pr",
   "auth": {
     "connector": "github",
@@ -27,7 +27,7 @@
       "type": "text",
       "choices": true,
       "label": "Start a conversation when a PR is",
-      "hint": "assigned (assigned to you) or review_requested (your review is requested)."
+      "hint": "mine (opened by you or awaiting your review — the default), assigned (assigned to you) or review_requested (your review is requested)."
     },
     "repos": {
       "type": "lines",

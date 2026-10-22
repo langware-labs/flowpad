@@ -34,9 +34,11 @@ import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { animateGlow } from '@src/lib/animate-glow';
+import { chipSizing } from '@src/components/tabs/close-freeze';
+import { useCloseFreeze } from '@src/components/tabs/use-close-freeze';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
 import { ExternalLink, X, type LucideIcon } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
@@ -205,6 +207,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const highlights = useTabHighlights();
+  // Close-in-place: a mouse close holds every tab's width until the pointer leaves.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const keyList = items.map((i) => i.key).join('\n');
+  const keys = useMemo(() => (keyList ? keyList.split('\n') : []), [keyList]);
+  const { frozenPx, leadPad, closeByMouse, onPointerLeave, onPointerEnter } = useCloseFreeze(keys, stripRef);
 
   useEffect(() => {
     for (const [key, token] of highlights) {
@@ -232,14 +239,15 @@ export const TabStrip: React.FC<TabStripProps> = ({
       // stay at 'normal' rather than degrading on a bogus measurement.
       const width = container.clientWidth;
       if (!width) return;
-      const per = Math.min(width / (items.length || 1), CHIP_MAX_PX);
+      // While frozen every tab keeps its width, so its density must not change either.
+      const per = frozenPx ?? Math.min(width / (items.length || 1), CHIP_MAX_PX);
       setDensity(per >= COMPACT_BELOW_PX ? 'normal' : per >= ICON_ONLY_BELOW_PX ? 'compact' : 'icon');
     };
     compute();
     const observer = new ResizeObserver(compute);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [items.length]);
+  }, [items.length, frozenPx]);
 
   // Keep the ACTIVE chip on screen.
   //
@@ -452,6 +460,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
         <button
           onClick={(e) => {
             e.stopPropagation();
+            const chip = tabRefs.current[key];
+            if (chip) closeByMouse(key, chip);
             onClose(key);
           }}
           disabled={isDisabled}
@@ -483,9 +493,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // literals) so the widths come from the same constants the density math
     // uses. An editing chip is temporarily pinned to the full preferred width
     // so the rename input is usable; neighbors re-equalize around it.
-    const sizing: React.CSSProperties = isEditing
-      ? { width: CHIP_MAX_PX, flex: 'none' }
-      : { flex: `1 1 ${CHIP_MAX_PX}px`, minWidth: CHIP_MIN_PX, maxWidth: CHIP_MAX_PX };
+    // While frozen (close-in-place) every chip keeps one fixed width.
+    const sizing = chipSizing(frozenPx, isEditing, { maxPx: CHIP_MAX_PX, minPx: CHIP_MIN_PX });
 
     const tabContent = (
       <div
@@ -499,7 +508,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         // clipped into a straight chord across the corner curve — the ends came
         // out visibly pointed. Uniform on all states so activation never changes
         // a chip's metrics.
-        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border border-t-2 py-1.5 transition-colors ${
+        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border border-t-2 py-1.5 transition-colors motion-safe:transition-[color,background-color,border-color,flex-basis,min-width,max-width] ${
           iconOnly ? 'justify-center gap-0 px-1' : 'gap-2 px-3'
         } ${
           isDisabled
@@ -691,15 +700,31 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // One tooltip provider for the whole strip: the first tip waits, and sliding
     // on to the next chip shows its tip at once.
     <TooltipProvider delayDuration={600}>
-      <div className={`flex min-w-0 max-w-full items-end bg-muted ${TAB_LINE_HEIGHT_CLASS}`} data-testid={testId}>
+      <div
+        className={`flex min-w-0 max-w-full items-end bg-muted ${TAB_LINE_HEIGHT_CLASS}`}
+        ref={stripRef}
+        data-testid={testId}
+        onPointerLeave={onPointerLeave}
+        onPointerEnter={onPointerEnter}
+      >
         {/* Tab row — chips share this width equally and are ALL always visible
             (Chrome model). overflow-hidden only matters past the 40px/chip floor
             (~25+ tabs at 1000px), where the row clips instead of scrolling. */}
         <div
           ref={tabContainerRef}
           data-testid="terminal-tabs-row"
+          data-frozen={frozenPx !== null ? 'true' : undefined}
           className="flex min-w-0 flex-1 items-end overflow-hidden pe-1"
         >
+          {/* Closing tabs from the end grows this spacer, so the tabs shift toward the cursor. */}
+          {leadPad > 0 && (
+            <div
+              aria-hidden
+              data-testid="tab-strip-lead-pad"
+              className="shrink-0"
+              style={{ flex: `0 0 ${leadPad}px` }}
+            />
+          )}
           {items.map((item, index) => renderChip(item, index, items))}
         </div>
 

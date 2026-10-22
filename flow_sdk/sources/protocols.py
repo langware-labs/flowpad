@@ -45,12 +45,10 @@ class Mutable(Protocol):
 @runtime_checkable
 class RowFiles(Protocol):
     """A flat store of small files addressed by a relative path (``rows/acme/row.json``), each with a
-    version that moves on every write -- what a dataset's rows can live in (``dataset.json``
-    ``location``). ``expected`` makes a write or delete conditional: the version the caller read, or
+    version that moves on every write -- what a dataset's rows can live in (an object-store data source,
+    ``datasets/stores.py``). ``expected`` makes a write or delete conditional: the version the caller read, or
     ``""`` for "must not exist"; a mismatch is ``Conflict`` and nothing changes. A store that cannot
-    condition a write atomically checks right before it and says so in its docs.
-
-    ``row_files_target`` maps the location's text after ``<driver>:`` onto the driver's config."""
+    condition a write atomically checks right before it and says so in its docs."""
 
     async def list_files(self) -> dict[str, str]: ...
     async def read_file(self, path: str) -> bytes: ...

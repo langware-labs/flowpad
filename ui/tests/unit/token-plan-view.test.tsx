@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   setupTeam: vi.fn(() => Promise.resolve({ endpoint_id: 'new' })),
   setupOrg: vi.fn(() => Promise.resolve({ endpoint_id: 'new' })),
   getUsage: vi.fn<(id: string, q: { by?: string; granularity: string }) => Promise<unknown>>(),
+  endpoints: [] as unknown[],
 }));
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -32,17 +33,26 @@ vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn(
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openPage: h.openPage }, currentDock: { page: 'hub' } }),
 }));
+vi.mock('@src/components/llm-endpoints/LlmEndpointDialog', () => ({
+  LlmEndpointDialog: () => <div data-testid="endpoint-dialog" />,
+}));
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useLlmEndpoints: () => ({ endpoints: h.endpoints, refetch: vi.fn() }),
+}));
 vi.mock('@src/components/token-plan/SetBudgetSheet', () => ({
   SetBudgetSheet: ({ open }: { open: boolean }) => (open ? <div data-testid="sheet-open" /> : null),
 }));
 
-import { PageId, ViewType } from '@sdk';
+import { LLMEndpoint, PageId, ViewType } from '@sdk';
 
 import { TokenPlanView } from '@src/components/token-plan/TokenPlanView';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const ME_EP = '11111111-0000-4000-8000-000000000000';
 const TEAM_EP = '22222222-0000-4000-8000-000000000000';
 const ORG_EP = '33333333-0000-4000-8000-000000000000';
+const FLOWPAD = '7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0';
 const OTHER_EP = '44444444-0000-4000-8000-000000000000';
 const TEAM_ID = 'aaaaaaaa-0000-4000-8000-000000000000';
 const c = (over: Partial<LLMUsageCounters>): LLMUsageCounters => ({ ...ZERO_COUNTERS, ...over });
@@ -100,6 +110,37 @@ const teamScope = scope({
 });
 const orgScope = scope({ kind: 'org', id: 'o', name: 'Langware', endpoint_id: null, can_configure: false, path: [] });
 
+function ep(
+  id: string,
+  name: string,
+  parents: string[],
+  scopeKind: string,
+  o: { allocate?: boolean; mine?: boolean; left?: [number, number]; owner?: boolean; key?: boolean } = {},
+): LLMEndpoint {
+  const e = new LLMEndpoint({ id, name, credential_hint: o.key ? '****e2da' : '' } as never);
+  e.expand = {
+    roles: (o.owner ? ['owner'] : ['reader']) as never,
+    allowed_actions: (o.allocate ? ['read', 'allocate'] : ['read']) as never,
+    expansions: ['permissions'] as never,
+    mine: o.mine ?? false,
+    source_ids: parents.map((p) => `llm_endpoint-${p}`),
+    scope_kind: scopeKind,
+    remaining: o.left
+      ? [
+          {
+            key: 'cost_usd_per_month',
+            limit: o.left[1],
+            used: o.left[1] - o.left[0],
+            remaining: o.left[0],
+            window: 'month',
+            resets_at: now + 86400,
+          },
+        ]
+      : [],
+  };
+  return e;
+}
+
 function plan(scopes: TokenPlanScope[]): TokenPlan {
   return { as_of: now, scopes };
 }
@@ -108,7 +149,9 @@ function renderView(pointer?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <TokenPlanView pointer={pointer} />
+      <TooltipProvider>
+        <TokenPlanView pointer={pointer} />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -116,6 +159,7 @@ function renderView(pointer?: string) {
 describe('TokenPlanView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    h.endpoints = [];
     h.me.mockResolvedValue(plan([meScope, teamScope, orgScope]));
     h.getUsage.mockResolvedValue({ series: [], totals: c({}), breakdown: {}, names: {} });
   });
@@ -128,18 +172,8 @@ describe('TokenPlanView', () => {
     expect(within(hero).getByTestId('budget-resets').textContent).toMatch(/resets in 4 h|resets in 3 h 59 m/);
     expect(within(hero).getByTestId('budget-bar-cost_usd_per_day')).toBeTruthy();
     expect(within(hero).queryByTestId('set-budget')).toBeNull();
-    const path = screen.getByTestId('scope-path');
-    expect(path.textContent).toContain('default-alice');
-    expect(path.textContent).toContain('Team A');
-    expect(path.textContent).toContain('Langware');
+    expect(screen.queryByTestId('scope-path')).toBeNull();
     expect(screen.queryByTestId('members-table')).toBeNull();
-  });
-
-  it('a path chip opens that hop on the expert page', async () => {
-    renderView(undefined);
-    await screen.findByTestId('scope-path');
-    await userEvent.click(screen.getByTestId(`path-chip-${TEAM_EP}`));
-    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, TEAM_EP);
   });
 
   it('the expert link opens the scope endpoint usage tab', async () => {
@@ -148,15 +182,66 @@ describe('TokenPlanView', () => {
     expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, `${ME_EP}/usage`);
   });
 
-  it('switching scope navigates by pointer (team/<id>, org, back to me = no pointer)', async () => {
+  it('lists only root token sources: your keys and what you received; allocations stay out', async () => {
+    h.endpoints = [
+      ep(ORG_EP, 'worker root', [], 'user', { owner: true, key: true, allocate: true }),
+      ep(TEAM_EP, 'claude budget', [ORG_EP], 'user', { owner: true, allocate: true, left: [1, 1] }),
+      ep(ME_EP, 'default-alice', [FLOWPAD], 'user', { mine: true, left: [1.8, 5] }),
+      ep(OTHER_EP, 'dead root', [], 'user', { owner: true }),
+    ];
     renderView(undefined);
-    const bar = await screen.findByTestId('scope-bar');
-    await userEvent.click(within(bar).getByRole('button', { name: 'Team A' }));
-    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, `team/${TEAM_ID}`);
-    await userEvent.click(within(bar).getByRole('button', { name: 'Langware' }));
-    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, 'org');
-    await userEvent.click(within(bar).getByRole('button', { name: 'Me' }));
-    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, undefined);
+    const tree = await screen.findByTestId('token-sources');
+    expect(within(tree).queryByTestId(`source-row-${TEAM_EP}`)).toBeNull();
+    const count = within(tree).getByTestId(`allocated-count-${ORG_EP}`);
+    expect(count.textContent).toBe('1 allocation');
+    await userEvent.click(count);
+    expect(within(tree).getByTestId(`source-row-${TEAM_EP}`).textContent).toContain('claude budget');
+    expect(within(tree).getByTestId(`source-type-${TEAM_EP}`).textContent).toBe('Allocation');
+    await userEvent.click(count);
+    expect(within(tree).queryByTestId(`source-row-${TEAM_EP}`)).toBeNull();
+    expect(within(tree).getByTestId(`source-type-${ME_EP}`).textContent).toBe('Flowpad account');
+    expect(within(tree).getByTestId(`source-row-${ME_EP}`).textContent).toContain('Flowpad account');
+    expect(within(tree).getByTestId(`source-type-${ORG_EP}`).textContent).toBe('API key ••e2da');
+    expect(within(tree).getByTestId(`source-type-${OTHER_EP}`).textContent).toBe('No key');
+    expect(within(tree).queryByTestId(`allocate-${OTHER_EP}`)).toBeNull();
+    expect(within(tree).getByTestId(`allocate-${ORG_EP}`)).toBeTruthy();
+    expect(within(tree).queryByTestId(`allocate-${ME_EP}`)).toBeNull();
+
+    await userEvent.click(within(tree).getByRole('button', { name: 'worker root' }));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, `llm_endpoint-${ORG_EP}`);
+    await userEvent.click(within(tree).getByTestId(`configure-${ORG_EP}`));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, ORG_EP);
+  });
+
+  it('teams without a budget are not sources: they are only counted', async () => {
+    h.me.mockResolvedValue(plan([meScope, scope({ kind: 'team', id: 't9', name: 'Empty', endpoint_id: null })]));
+    renderView(undefined);
+    expect((await screen.findByTestId('hidden-teams')).textContent).toContain('1 teams without a budget');
+    expect(screen.queryByText('Empty')).toBeNull();
+  });
+
+  it('a selected source lists what was allocated from it, with what is unallocated', async () => {
+    h.endpoints = [
+      ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] }),
+      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { owner: true, left: [1.8, 5] }),
+    ];
+    renderView(`llm_endpoint-${TEAM_EP}`);
+    expect((await screen.findByTestId('budget-headline')).textContent).toBe('$58.00 left this month');
+    const list = screen.getByTestId('allocations');
+    expect(list.textContent).toContain('default-alice');
+    expect(screen.getByTestId('pool-split').textContent).toContain('unallocated');
+  });
+
+  it('Allocate opens the allocate dialog; Add new token source opens the endpoint dialog', async () => {
+    h.endpoints = [ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] })];
+    renderView(undefined);
+    await userEvent.click(await screen.findByTestId(`allocate-${TEAM_EP}`));
+    expect(await screen.findByTestId('allocate-dialog')).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByTestId('add-token-source'));
+    expect(await screen.findByTestId('endpoint-dialog')).toBeTruthy();
+    await userEvent.click(screen.getByTestId('all-endpoints'));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS);
   });
 
   it('team scope for an admin: Set budget opens the sheet and the members table drills down, sorted by spend', async () => {
@@ -235,7 +320,6 @@ describe('TokenPlanView', () => {
     expect(empty.textContent).toContain('No budget set');
     expect(empty.textContent).toContain('Ask your team admin');
     expect(within(empty).queryByTestId('set-budget')).toBeNull();
-    expect(screen.queryByTestId('scope-bar')).toBeNull();
     cleanup();
 
     h.me.mockResolvedValue(plan([scope({ can_configure: true })]));

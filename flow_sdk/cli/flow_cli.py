@@ -839,6 +839,83 @@ def auth_set_compute_node(
     typer.echo(f"✓ Compute node set to {typeid}")
 
 
+@auth_app.command("configure-box")
+def auth_configure_box(
+    cookie_gate: Annotated[str, typer.Option("--cookie-gate", help="The gate secret, minted by the hub")],
+    runtime: Annotated[str, typer.Option("--runtime", help="sandbox | agent")],
+    compute_node: Annotated[str | None, typer.Option("--compute-node", help="compute_node-<uuid>")] = None,
+    login_port: Annotated[int | None, typer.Option("--login-port", help="The app's port, to sign in on")] = None,
+    api_key: Annotated[str | None, typer.Option("--api-key", help="The node-bound key to sign in with")] = None,
+    login_timeout: Annotated[float, typer.Option("--login-timeout")] = 30.0,
+):
+    """
+    Everything the hub hands a box, in one process. Hub-driven; not for interactive use.
+
+    Same steps, same order and same failure rules as running `set-cookie-gate`,
+    `set-runtime`, `set-compute-node` and then the loopback `/auth/login_callback`
+    one by one -- only without a process start and a hub round trip per step.
+
+    The gate and the runtime are fatal (exit 1, later steps skipped). The compute
+    node is not: a box that cannot record it only loses its keep-alive. The login
+    runs only with both `--login-port` and `--api-key`, through the app's own route
+    (it owns the live state a login changes), presenting the gate armed above.
+
+    Prints one JSON line: {"cookie_gate", "runtime", "compute_node", "login_status"}.
+    """
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    from flow_sdk.instance_settings.cookie_gate import set_cookie
+    from flow_sdk.instance_settings.runtime import set_assigned_compute_node, set_assigned_runtime
+
+    report: dict = {"cookie_gate": None, "runtime": None, "compute_node": None, "login_status": None}
+
+    def _done(code: int = 0):
+        typer.echo(json.dumps(report))
+        raise typer.Exit(code)
+
+    try:
+        set_cookie(cookie_gate)
+        report["cookie_gate"] = "ok"
+    except ValueError as e:
+        report["cookie_gate"] = f"error: {e}"
+        _done(1)
+    try:
+        set_assigned_runtime(runtime)
+        report["runtime"] = "ok"
+    except ValueError as e:
+        report["runtime"] = f"error: {e}"
+        _done(1)
+    if compute_node:
+        try:
+            set_assigned_compute_node(compute_node)
+            report["compute_node"] = "ok"
+        except ValueError as e:
+            report["compute_node"] = f"error: {e}"
+
+    if login_port and api_key:
+        query = urllib.parse.urlencode({"flowpad-api-key": api_key, "next": "/"})
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{login_port}/auth/login_callback?{query}",
+            headers={"X-Cookie-Gate": cookie_gate},
+        )
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):  # a 302 IS the success answer; do not follow it
+                return None
+
+        try:
+            with urllib.request.build_opener(_NoRedirect).open(request, timeout=login_timeout) as resp:
+                report["login_status"] = resp.status
+        except urllib.error.HTTPError as e:
+            report["login_status"] = e.code
+        except Exception:  # noqa: BLE001 -- nothing answered; 0 is the "no response" sentinel
+            report["login_status"] = 0
+    _done(0)
+
+
 @auth_app.command("test")
 def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before allowing login")] = 5):
     """

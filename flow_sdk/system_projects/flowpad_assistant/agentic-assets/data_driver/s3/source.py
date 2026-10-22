@@ -87,14 +87,6 @@ class S3Source(ObjectSource):
         prefix = "/".join(p for p in (str(config.get("prefix") or "").strip("/"), path.strip("/")) if p)
         return {**config, "prefix": prefix}
 
-    @classmethod
-    def row_files_target(cls, target: str) -> dict:
-        """``s3:<bucket>/<prefix>`` → the bucket and the prefix rows live under."""
-        bucket, _, prefix = str(target).strip().removeprefix("s3://").strip("/").partition("/")
-        if not bucket:
-            raise ValueError("location: s3:<bucket>/<prefix> names a bucket")
-        return {"bucket": bucket, "prefix": prefix.strip("/")}
-
     @property
     def bucket(self) -> str:
         name = _bucket_name(self.config)

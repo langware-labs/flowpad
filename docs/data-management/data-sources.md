@@ -305,10 +305,14 @@ so "does it send" (`DataDriver.sends`) is the family itself.
 `ingest_items` stays the single chokepoint for `SourceItem` writes; reflection is
 a second destination *beside* it rather than a branch inside it.
 
-A driver can also hold a dataset's ROWS — that is the dataset's `location`, not a source's: a
-`RowFiles` driver (Drive, S3) keeps row files, and a `Mutable` record driver that lists its records
-(Twenty) keeps one record per row, read and written through the driver itself. A data source is
-not involved. See [dataset locations](dataset-locations.md).
+A source can also hold a dataset's ROWS — a dataset names it as its `data_source` (at most one; none =
+the project's data store, `flow.json` `"data_store"`). The driver's family is the source's type: an
+**object store** (`RowFiles` placing a dataset inside it — `flow_storage`, S3, GCS, Drive — or a folder on
+this machine, `gdrive_mount`; `DataDriver.holds_rows`) keeps whole rows as files; a **system of record**
+(a `Mutable` record driver that lists its records, Twenty; `DataDriver.is_system_of_record`) keeps the
+fields the kind marks `truth`, the rest of each row staying in the project's data store; a **message
+channel** holds messages, not rows. A source not set up holds nothing (`NotSetUp`, 503). See
+[dataset stores](dataset-stores.md).
 
 | Mode | Bytes | Notes |
 |---|---|---|

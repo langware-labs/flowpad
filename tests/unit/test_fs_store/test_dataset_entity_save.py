@@ -16,6 +16,7 @@ import pytest
 from flow_sdk.builtin.dataset import ARTIFACT_ROW, Dataset
 from flow_sdk.capsules import AssetCapsule
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.datasets.stores import rows_root_of
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum, RowKind, FileRef, TextSpec
@@ -48,7 +49,7 @@ async def test_dataset_save_writes_manifest_rows_and_capsule(sync_db, tmp_record
     manifest = json.loads((folder / "dataset.json").read_text())
     assert manifest["metadata"]["title"] == "T" and manifest["metadata"]["data_layout"] == "csv"
     assert "num_rows" not in manifest["metadata"]        # counts are the indexer's, never authored
-    assert (folder / "data.csv").read_text().splitlines()[1].endswith("q,a")
+    assert (rows_root_of(folder) / "data.csv").read_text().splitlines()[1].endswith("q,a")
     assert AssetCapsule.from_path(folder).read("identity").data["id"] == ds.id
 
     back = Dataset.from_fs_ref(FSRef(folder))
@@ -70,10 +71,11 @@ async def test_dataset_save_io_folder_writes_row_dirs(sync_db, tmp_records_root,
                                output=[FileRef(path="output-1.txt"), FileRef(path="output-2.txt")])],
     )
     await ds.save(notify=False)
-    ex = scope / "agentic-assets" / "dataset" / "io" / "rows" / "0001"
+    folder = scope / "agentic-assets" / "dataset" / "io"
+    ex = rows_root_of(folder) / "rows" / "0001"
     assert (ex / "input.txt").exists() and (ex / "output-2.txt").exists()
     assert json.loads((ex / "row.json").read_text())["metadata"]["kind"] == "eval"
-    assert Dataset.from_fs_ref(FSRef(ex.parent.parent)).num_rows == 1
+    assert Dataset.from_fs_ref(FSRef(folder)).num_rows == 1
 
 
 @pytest.mark.asyncio

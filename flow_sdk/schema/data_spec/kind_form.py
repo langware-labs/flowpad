@@ -5,7 +5,7 @@ from __future__ import annotations
 
 
 def kind_form(kind: str) -> dict | None:
-    """``{kind, fields: {name: {shape, description, required, owned_by?}}, rules: [{same | unique,
+    """``{kind, fields: {name: {shape, description, required, truth?}}, rules: [{same | unique,
     description}]}`` (a record's included fields and rules among them) -- or,
     for a dataset kind, its example ``slots``. None when nothing registers ``kind``."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -27,7 +27,7 @@ def kind_form(kind: str) -> dict | None:
         }
     # A schema a data schema FOLDER defines keeps the forms its author wrote (``enum:``, ``?``).
     authored = getattr(shape, "__authoring__", None) or {}
-    owned = getattr(shape, "__owned__", None) or {}
+    truths = getattr(shape, "__truth__", None) or {}
     fields = {}
     for name, field in shape.model_fields.items():
         form = authored.get(name)
@@ -37,8 +37,8 @@ def kind_form(kind: str) -> dict | None:
             except NoAuthoringForm:
                 form = None
         fields[name] = {"shape": form, "description": field.description or "", "required": field.is_required()}
-        if name in owned:   # a copy of an outside system's value: read-only to everyone but that owner
-            fields[name]["owned_by"] = owned[name]
+        if name in truths:   # held by the dataset's system of record (``datasets.truth``)
+            fields[name]["truth"] = truths[name]
     from flow_sdk.datasets.rules import rules_of  # noqa: PLC0415
 
     rules = [rule.model_dump(mode="json", exclude_none=True) for rule in rules_of(shape)]

@@ -846,7 +846,8 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     author = str(getattr(message, "author_external_id", "") or "")
     body = str(getattr(message, "body", "") or "").strip()
     # The loop guard first: pure string work, and every reply the agent sends comes back.
-    if is_own_outgoing(source, author):
+    row = getattr(message, "_row", None)
+    if row.is_echo(source) if row is not None else is_own_outgoing(source, author):
         return await skip_message(message)
     channel = source.channel or source.provider
     if not admits(source, author):
