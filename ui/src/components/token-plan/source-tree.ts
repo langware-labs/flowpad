@@ -13,6 +13,19 @@ import { isCostKey } from '@src/components/llm-endpoints/usage-math';
 /** Who pays: the sponsor filter's vocabulary. */
 export type Sponsor = 'key' | 'team' | 'org' | 'shared';
 
+export function sponsorOf(endpoint: Pick<LLMEndpoint, 'sponsorKind'>): Sponsor {
+  switch (endpoint.sponsorKind) {
+    case 'user':
+      return 'key';
+    case 'team':
+      return 'team';
+    case 'organization':
+      return 'org';
+    default:
+      return 'shared';
+  }
+}
+
 /** The seeded system endpoint Flowpad pays for (the hub's `GLOBAL_LLM_ENDPOINT_ID`). */
 export const FLOWPAD_ACCOUNT_ID = '7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0';
 
@@ -44,13 +57,14 @@ function owns(e: LLMEndpoint): boolean {
  */
 export function sourceRows(endpoints: readonly LLMEndpoint[]): SourceRow[] {
   const live = endpoints.filter((e) => e.expand?.allowed_actions && e.enabled !== false);
-  const mine = new Set(live.filter(owns).map((e) => e.id));
+  // A received row whose source is itself on this list is an allocation of that source, not a source.
+  const listed = new Set(live.map((e) => e.id));
   const rows: SourceRow[] = [];
   for (const e of live) {
     const parents = e.parentIds;
     if (owns(e) && parents.length === 0) {
       rows.push({ endpoint: e, type: e.hasCredential ? 'key' : 'unfunded', flowpadAccount: false });
-    } else if (!owns(e) && !parents.some((id) => mine.has(id) || live.some((x) => x.id === id && !owns(x) ))) {
+    } else if (!owns(e) && !parents.some((id) => listed.has(id))) {
       rows.push({ endpoint: e, type: 'received', flowpadAccount: parents.includes(FLOWPAD_ACCOUNT_ID) });
     }
   }
@@ -77,4 +91,3 @@ export function scopeForEndpoint(scopes: readonly TokenPlanScope[], endpointId: 
   if (!endpointId) return undefined;
   return scopes.find((s) => !!s.endpoint_id && endpointIdFromTypeId(s.endpoint_id) === endpointId);
 }
-

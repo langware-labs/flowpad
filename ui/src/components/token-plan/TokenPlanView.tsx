@@ -9,7 +9,7 @@
  */
 import { PageId, ViewType, type LLMEndpoint, type LLMEndpointLimits, type TokenPlanScope } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ArrowUpRight, Gauge } from 'lucide-react';
+import { ArrowUpRight, Gauge, Settings } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { LlmEndpointDialog } from '@src/components/llm-endpoints/LlmEndpointDialog';
@@ -32,7 +32,7 @@ import { ConsumptionPanel } from './ConsumptionPanel';
 import { MembersTable } from './MembersTable';
 import { AllocateDialog } from './AllocateDialog';
 import { TokenSourcesTree } from './TokenSourcesTree';
-import { childrenOf, costLeft, scopeForEndpoint, type SponsorFilter } from './source-tree';
+import { childrenOf, costLeft, scopeForEndpoint } from './source-tree';
 import { SetBudgetSheet } from './SetBudgetSheet';
 import { parseTokenPlanPointer, selectScope } from './token-plan-pointer';
 import { useInvalidateTokenPlan, useSetupScope, useTokenPlan } from './use-token-plan';
@@ -75,23 +75,67 @@ function ScopeSetup({ scope }: { scope: TokenPlanScope }) {
   );
 }
 
-/** "Allocated: A $x · B $y · unallocated $z" — how a pool's money is split among what draws on it. */
-function PoolSplit({ pool, endpoints }: { pool: LLMEndpoint; endpoints: readonly LLMEndpoint[] }) {
-  const own = costLeft(pool);
-  const kids = childrenOf(pool, endpoints);
-  if (!own || kids.length === 0) return null;
-  const parts = kids.map((k) => ({
-    name: k.name,
-    limit: k.limits[own.key as keyof LLMEndpointLimits] ?? null,
-  }));
-  const given = parts.reduce((sum, p) => sum + (p.limit ?? 0), 0);
+/** What was allocated FROM the selected source: each with its own left / limit. Not sources. */
+function Allocations({
+  source,
+  endpoints,
+  onOpen,
+  onConfigure,
+}: {
+  source: LLMEndpoint;
+  endpoints: readonly LLMEndpoint[];
+  onOpen: (e: LLMEndpoint) => void;
+  onConfigure: (e: LLMEndpoint) => void;
+}) {
+  const kids = childrenOf(source, endpoints).filter((k) => k.enabled !== false);
+  if (kids.length === 0) return null;
+  const own = costLeft(source);
+  const given = own ? kids.reduce((sum, k) => sum + (k.limits[own.key as keyof LLMEndpointLimits] ?? 0), 0) : 0;
   return (
-    <p className="text-sm text-muted-foreground" data-testid="pool-split">
-      <Trans>Allocated:</Trans>{' '}
-      {parts.map((p) => `${p.name} ${p.limit == null ? '∞' : formatUsd(p.limit)}`).join(' · ')}
-      {' · '}
-      <Trans>unallocated {formatUsd(Math.max(0, own.limit - given))}</Trans>
-    </p>
+    <section className="space-y-2" data-testid="allocations">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-medium">
+          <Trans>Allocated from this source</Trans>
+        </h2>
+        {own && (
+          <span className="text-xs text-muted-foreground" data-testid="pool-split">
+            <Trans>unallocated {formatUsd(Math.max(0, own.limit - given))}</Trans>
+          </span>
+        )}
+      </div>
+      <div className="rounded-lg border">
+        {kids.map((k) => {
+          const left = costLeft(k);
+          return (
+            <div key={k.id} className="flex items-center gap-2 border-b px-3 py-2 text-sm last:border-0">
+              <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => onOpen(k)}>
+                {k.name}
+              </button>
+              <span className="whitespace-nowrap tabular-nums">
+                {left ? (
+                  <>
+                    {formatUsd(Math.max(0, left.remaining))}
+                    <span className="text-muted-foreground"> / {formatUsd(left.limit)}</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    <Trans>no limit</Trans>
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => onConfigure(k)}
+                aria-label={k.name}
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -108,7 +152,6 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [allocating, setAllocating] = useState<LLMEndpoint | null>(null);
-  const [filter, setFilter] = useState<SponsorFilter>('all');
 
   const scopes = useMemo(() => data?.scopes ?? [], [data]);
   const me = scopes.find((s) => s.kind === 'me');
@@ -176,8 +219,6 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
           <TokenSourcesTree
             endpoints={endpoints}
             selectedId={selected?.id ?? null}
-            filter={filter}
-            onFilter={setFilter}
             hiddenTeams={hiddenTeams}
             onSelect={(e) => go(endpointTypeId(e.id))}
             onAllocate={setAllocating}
@@ -193,7 +234,14 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
                 onSetBudget={scope?.endpoint_id && scope.can_configure ? () => setSheetOpen(true) : undefined}
               />
             )}
-            {selected && <PoolSplit pool={selected} endpoints={endpoints} />}
+            {selected && (
+              <Allocations
+                source={selected}
+                endpoints={endpoints}
+                onOpen={(e) => go(endpointTypeId(e.id))}
+                onConfigure={(e) => openLlmEndpoint(navigation, e.id)}
+              />
+            )}
             {!selected && !scope && !setupScope && (
               <p className="text-sm text-muted-foreground" data-testid="nothing-selected">
                 <Trans>Select a token source to see its budget and consumption.</Trans>
