@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LLMEndpoint } from '@sdk';
 
-import { buildSourceTree, childrenOf, costLeft, sponsorOf, visibleRows } from '@src/components/token-plan/source-tree';
+import { FLOWPAD_ACCOUNT_ID, childrenOf, costLeft, sourceRows } from '@src/components/token-plan/source-tree';
 
 function ep(id: string, parents: string[], scopeKind: string | null, name = id): LLMEndpoint {
   const e = new LLMEndpoint({ id, name } as never);
@@ -28,44 +28,36 @@ const root = ep(ID['root'], [], 'global', 'OpenRouter');
 const org = ep(ID['org'], [ID['root']], 'organization', 'Org pool');
 const team = ep(ID['team'], [ID['org']], 'team', 'Team');
 const key = ep(ID['key'], [ID['team']], 'user', 'My key');
-const loose = ep(ID['loose'], [ID['not-visible']], 'user', 'Another key');
 
-describe('buildSourceTree', () => {
-  it('lays rows depth-first under their parent; an unseen parent makes a top-level row', () => {
-    const rows = buildSourceTree([key, team, loose, org, root]);
-    expect(rows.map((r) => [r.endpoint.id, r.depth])).toEqual([
-      [ID['root'], 0],
-      [ID['org'], 1],
-      [ID['team'], 2],
-      [ID['key'], 3],
-      [ID['loose'], 0],
+describe('sourceRows', () => {
+  it('keeps your keyed roots, received budgets and unfunded roots; drops allocations and disabled rows', () => {
+    const own = (e: LLMEndpoint, key = true) => {
+      e.expand = { ...e.expand, roles: ['owner'] as never, allowed_actions: ['allocate'] as never };
+      (e as { credential_hint: string }).credential_hint = key ? '****e2da' : '';
+      return e;
+    };
+    const received = (e: LLMEndpoint) => {
+      e.expand = { ...e.expand, roles: ['reader'] as never, allowed_actions: ['read'] as never };
+      return e;
+    };
+    const keyRoot = own(ep(ID['root'], [], null, 'worker root'));
+    const alloc = own(ep(ID['org'], [ID['root']], 'user', 'claude budget'), false);
+    const mine = received(ep(ID['key'], [FLOWPAD_ACCOUNT_ID], 'user', 'my default'));
+    const dead = own(ep(ID['team'], [], null, 'dead root'), false);
+    const off = received(ep(ID['loose'], [FLOWPAD_ACCOUNT_ID], 'user', 'old default'));
+    off.enabled = false;
+    const rows = sourceRows([keyRoot, alloc, mine, dead, off]);
+    expect(rows.map((r) => [r.endpoint.name, r.type, r.flowpadAccount])).toEqual([
+      ['my default', 'received', true],
+      ['worker root', 'key', false],
+      ['dead root', 'unfunded', false],
     ]);
-    expect(rows.find((r) => r.endpoint.id === ID['team'])?.hasChildren).toBe(true);
-  });
-
-  it('a sponsor filter keeps the matches and their ancestors, dimmed', () => {
-    const rows = buildSourceTree([root, org, team, key], 'team');
-    expect(rows.map((r) => [r.endpoint.id, r.dimmed])).toEqual([
-      [ID['root'], true],
-      [ID['org'], true],
-      [ID['team'], false],
-    ]);
-  });
-
-  it('sponsor, cost left and children read the hub facts', () => {
-    expect([root, org, team, key].map(sponsorOf)).toEqual(['shared', 'org', 'team', 'key']);
-    expect(costLeft(key)).toMatchObject({ remaining: 6, limit: 10 });
-    expect(childrenOf(org, [root, org, team, key]).map((e) => e.id)).toEqual([ID['team']]);
   });
 });
 
-describe('visibleRows', () => {
-  it('a collapsed row hides everything under it, and only that', () => {
-    const rows = buildSourceTree([root, org, team, key, loose]);
-    const ids = (c: string[]) => visibleRows(rows, new Set(c)).map((r) => r.endpoint.id);
-    expect(ids([])).toHaveLength(5);
-    expect(ids([ID['org']])).toEqual([ID['root'], ID['org'], ID['loose']]);
-    expect(ids([ID['team']])).toEqual([ID['root'], ID['org'], ID['team'], ID['loose']]);
-    expect(ids([ID['root'], ID['team']])).toEqual([ID['root'], ID['loose']]);
+describe('costLeft / childrenOf', () => {
+  it('read the hub facts', () => {
+    expect(costLeft(key)).toMatchObject({ remaining: 6, limit: 10 });
+    expect(childrenOf(org, [root, org, team, key]).map((e) => e.id)).toEqual([ID['team']]);
   });
 });

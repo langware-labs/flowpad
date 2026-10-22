@@ -52,6 +52,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 const ME_EP = '11111111-0000-4000-8000-000000000000';
 const TEAM_EP = '22222222-0000-4000-8000-000000000000';
 const ORG_EP = '33333333-0000-4000-8000-000000000000';
+const FLOWPAD = '7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0';
 const OTHER_EP = '44444444-0000-4000-8000-000000000000';
 const TEAM_ID = 'aaaaaaaa-0000-4000-8000-000000000000';
 const c = (over: Partial<LLMUsageCounters>): LLMUsageCounters => ({ ...ZERO_COUNTERS, ...over });
@@ -114,10 +115,11 @@ function ep(
   name: string,
   parents: string[],
   scopeKind: string,
-  o: { allocate?: boolean; mine?: boolean; left?: [number, number] } = {},
+  o: { allocate?: boolean; mine?: boolean; left?: [number, number]; owner?: boolean; key?: boolean } = {},
 ): LLMEndpoint {
-  const e = new LLMEndpoint({ id, name } as never);
+  const e = new LLMEndpoint({ id, name, credential_hint: o.key ? '****e2da' : '' } as never);
   e.expand = {
+    roles: (o.owner ? ['owner'] : ['reader']) as never,
     allowed_actions: (o.allocate ? ['read', 'allocate'] : ['read']) as never,
     expansions: ['permissions'] as never,
     mine: o.mine ?? false,
@@ -180,32 +182,29 @@ describe('TokenPlanView', () => {
     expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, `${ME_EP}/usage`);
   });
 
-  it('the tree lays sources under their parent with sponsor, left / limit, Allocate and Configure', async () => {
+  it('lists only root token sources: your keys and what you received; allocations stay out', async () => {
     h.endpoints = [
-      ep(ORG_EP, 'Langware pool', [], 'organization', { allocate: true, left: [400, 500] }),
-      ep(TEAM_EP, 'Team A', [ORG_EP], 'team', { allocate: true, left: [58, 100] }),
-      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { mine: true, left: [1.8, 5] }),
+      ep(ORG_EP, 'worker root', [], 'user', { owner: true, key: true, allocate: true }),
+      ep(TEAM_EP, 'claude budget', [ORG_EP], 'user', { owner: true, allocate: true, left: [1, 1] }),
+      ep(ME_EP, 'default-alice', [FLOWPAD], 'user', { mine: true, left: [1.8, 5] }),
+      ep(OTHER_EP, 'dead root', [], 'user', { owner: true }),
     ];
     renderView(undefined);
     const tree = await screen.findByTestId('token-sources');
-    const names = within(tree)
-      .getAllByRole('row')
-      .slice(1)
-      .map((r) => r.textContent ?? '');
-    expect(names[0]).toContain('Langware pool');
-    expect(names[1]).toContain('Team A');
-    expect(names[2]).toContain('default-alice');
-    expect(names[2]).toContain('yours');
-    expect(names[1]).toContain('Team');
-    expect(names[1]).toContain('$58.00');
+    expect(within(tree).queryByTestId(`source-row-${TEAM_EP}`)).toBeNull();
+    expect(within(tree).getByTestId(`allocated-count-${ORG_EP}`).textContent).toBe('· 1 allocation');
+    expect(within(tree).getByTestId(`source-type-${ME_EP}`).textContent).toBe('Flowpad account');
+    expect(within(tree).getByTestId(`source-row-${ME_EP}`).textContent).toContain('Flowpad account');
+    expect(within(tree).getByTestId(`source-type-${ORG_EP}`).textContent).toBe('API key ••e2da');
+    expect(within(tree).getByTestId(`source-type-${OTHER_EP}`).textContent).toBe('No key');
+    expect(within(tree).queryByTestId(`allocate-${OTHER_EP}`)).toBeNull();
+    expect(within(tree).getByTestId(`allocate-${ORG_EP}`)).toBeTruthy();
     expect(within(tree).queryByTestId(`allocate-${ME_EP}`)).toBeNull();
-    expect(within(tree).getByTestId(`allocate-${TEAM_EP}`)).toBeTruthy();
-    expect(screen.queryByTestId('hidden-teams')).toBeNull();
 
-    await userEvent.click(within(tree).getByRole('button', { name: 'Team A' }));
-    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, `llm_endpoint-${TEAM_EP}`);
-    await userEvent.click(within(tree).getByTestId(`configure-${TEAM_EP}`));
-    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, TEAM_EP);
+    await userEvent.click(within(tree).getByRole('button', { name: 'worker root' }));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, `llm_endpoint-${ORG_EP}`);
+    await userEvent.click(within(tree).getByTestId(`configure-${ORG_EP}`));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, ORG_EP);
   });
 
   it('teams without a budget are not sources: they are only counted', async () => {
@@ -215,54 +214,23 @@ describe('TokenPlanView', () => {
     expect(screen.queryByText('Empty')).toBeNull();
   });
 
-  it('collapse all hides children, expand all brings them back, a chevron toggles one', async () => {
+  it('a selected source lists what was allocated from it, with what is unallocated', async () => {
     h.endpoints = [
-      ep(ORG_EP, 'Langware pool', [], 'organization'),
-      ep(TEAM_EP, 'Team A', [ORG_EP], 'team'),
-      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { mine: true }),
-    ];
-    renderView(undefined);
-    const tree = await screen.findByTestId('token-sources');
-    expect(within(tree).getAllByRole('row')).toHaveLength(4);
-    await userEvent.click(screen.getByTestId('collapse-all'));
-    expect(within(tree).getAllByRole('row')).toHaveLength(2);
-    await userEvent.click(screen.getByTestId('expand-all'));
-    expect(within(tree).getAllByRole('row')).toHaveLength(4);
-    await userEvent.click(within(tree).getByTestId(`toggle-${TEAM_EP}`));
-    expect(within(tree).queryByTestId(`source-row-${ME_EP}`)).toBeNull();
-    expect(within(tree).getByTestId(`source-row-${TEAM_EP}`)).toBeTruthy();
-  });
-
-  it('the sponsor filter keeps matching rows and dims their ancestors', async () => {
-    h.endpoints = [
-      ep(ORG_EP, 'Langware pool', [], 'organization'),
-      ep(TEAM_EP, 'Team A', [ORG_EP], 'team'),
-      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { mine: true }),
-    ];
-    renderView(undefined);
-    const tree = await screen.findByTestId('token-sources');
-    await userEvent.click(within(screen.getByTestId('scope-bar')).getByRole('tab', { name: 'Team' }));
-    expect(within(tree).getAllByRole('row')).toHaveLength(3);
-    expect(within(tree).getByTestId(`source-row-${ORG_EP}`).style.opacity).toBe('0.45');
-    expect(within(tree).queryByTestId(`source-row-${ME_EP}`)).toBeNull();
-  });
-
-  it('a tree pointer selects that source and shows its pool split', async () => {
-    h.endpoints = [
-      ep(TEAM_EP, 'Team A', [], 'team', { allocate: true, left: [58, 100] }),
-      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { mine: true, left: [1.8, 5] }),
+      ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] }),
+      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { owner: true, left: [1.8, 5] }),
     ];
     renderView(`llm_endpoint-${TEAM_EP}`);
     expect((await screen.findByTestId('budget-headline')).textContent).toBe('$58.00 left this month');
-    expect(screen.getByTestId('pool-split').textContent).toContain('default-alice');
+    const list = screen.getByTestId('allocations');
+    expect(list.textContent).toContain('default-alice');
+    expect(screen.getByTestId('pool-split').textContent).toContain('unallocated');
   });
 
   it('Allocate opens the allocate dialog; Add new token source opens the endpoint dialog', async () => {
-    h.endpoints = [ep(TEAM_EP, 'Team A', [], 'team', { allocate: true, left: [58, 100] })];
+    h.endpoints = [ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] })];
     renderView(undefined);
     await userEvent.click(await screen.findByTestId(`allocate-${TEAM_EP}`));
     expect(await screen.findByTestId('allocate-dialog')).toBeTruthy();
-    expect(screen.getByTestId('allocate-target-member')).toBeTruthy();
     await userEvent.keyboard('{Escape}');
     await userEvent.click(screen.getByTestId('add-token-source'));
     expect(await screen.findByTestId('endpoint-dialog')).toBeTruthy();
