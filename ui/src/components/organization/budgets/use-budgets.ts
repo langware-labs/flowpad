@@ -37,9 +37,18 @@ export function useOrgBudgets(orgId: string | null | undefined) {
     enabled: !!orgId,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
-    // A non-admin gets a flat refusal from the hub; retrying it just repeats the 401.
-    retry: false,
+    // A non-admin gets a flat refusal from the hub; retrying it just repeats the 401. A 409 is the
+    // desktop's "not linked to the hub yet" answer — true for a moment right after an org is
+    // created, before its local mirror is marked remote — so that one is worth a few retries.
+    retry: (count, error) => statusOf(error) === 409 && count < 4,
+    retryDelay: 1000,
   });
+}
+
+/** The HTTP status a failed budgets read carried, when it carried one. */
+function statusOf(error: unknown): number | null {
+  const status = (error as { response?: { status?: unknown } } | null)?.response?.status;
+  return typeof status === 'number' ? status : null;
 }
 
 export function useTeamBudgets(teamId: string | null | undefined) {
