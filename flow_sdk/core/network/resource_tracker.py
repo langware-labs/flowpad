@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from itertools import count
-from typing import Any
+from typing import Any, Iterable
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
@@ -249,13 +249,16 @@ async def handle_entity_op(op_message: Any):
     _sync_handle_entity_op(op_message)
 
 
-async def send_flow_data_to_entity(entity_typeid, flow_data: dict):
+async def send_flow_data_to_entity(entity_typeid, flow_data: dict, *, also: Iterable[str] = ()) -> set[str]:
     """
-    Send FlowData to all connections watching this entity.
+    Send FlowData to all connections watching this entity, plus the connections in ``also``.
 
     Args:
         entity_typeid: The TypeId of the entity (or string in "type-id" format)
         flow_data: Dictionary containing FlowData fields (element_type, content, attributes, etc.)
+        also: Connection ids to reach even when they no longer watch the entity.
+
+    Returns the connection ids it reached (empty when it reached none).
     """
     from flow_sdk.core.network.connections import get_all_connections
 
@@ -265,7 +268,7 @@ async def send_flow_data_to_entity(entity_typeid, flow_data: dict):
         active_connections = get_all_connections()
 
         if not active_connections:
-            return
+            return set()
 
         # Build the flow_data message
         timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -286,18 +289,23 @@ async def send_flow_data_to_entity(entity_typeid, flow_data: dict):
         from flow_sdk.app.actions.watch_registry import get_watched_by
 
         watched = get_watched_by(f"{entity_type}:{entity_id}")
-        recipients = {conn_id for conn_id in watched if conn_id in active_connections}
+        recipients = {conn_id for conn_id in (*watched, *also) if conn_id in active_connections}
 
+        payload = json.dumps(message)
+        reached: set[str] = set()
         for conn_id in recipients:
             ws = active_connections.get(conn_id)
             if ws:
                 try:
-                    await ws.send_text(json.dumps(message))
+                    await ws.send_text(payload)
+                    reached.add(conn_id)
                 except Exception as e:
                     logger.error(f"Failed to send flow_data to {conn_id}: {e}")
+        return reached
 
     except Exception as e:
         logger.error(f"Error sending flow_data to entity: {e}", exc_info=True)
+        return set()
 
 
 async def broadcast_progress(to_entity: str, flow_data: dict) -> None:

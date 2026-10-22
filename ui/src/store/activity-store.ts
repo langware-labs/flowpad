@@ -123,11 +123,7 @@ export function handleActivitySnapshot(spec: ActivityProgressSpec): void {
         const current = specs.get(k);
         // Only drop what is still the finished one: a new activity may have claimed the
         // address while the receipt was on screen.
-        if (current && current.activity_id === spec.activity_id) {
-          specs.delete(k);
-          sortKeys.delete(k);
-          notify();
-        }
+        if (current && current.activity_id === spec.activity_id) forget(k);
       }, RECEIPT_LINGER_MS),
     );
   }
@@ -163,6 +159,22 @@ export async function replay(): Promise<void> {
   if (isHubOnly()) return;
   const rows = await lazyAssets.refresh(LazyAsset.Activities);
   for (const row of rows) handleActivitySnapshot(row);
+}
+
+/** Forget a root the backend no longer has — a row whose end this tab never heard. */
+export function dropActivity(path: string, subject_entity?: string | null): void {
+  const k = key({ path, subject_entity: subject_entity ?? null });
+  if (specs.has(k)) forget(k);
+}
+
+/** Remove one root and its pending eviction. */
+function forget(k: string): void {
+  const timer = evictionTimers.get(k);
+  if (timer != null) clearTimeout(timer);
+  evictionTimers.delete(k);
+  specs.delete(k);
+  sortKeys.delete(k);
+  notify();
 }
 
 /** Forget the last finished root — the footer's dismiss. */

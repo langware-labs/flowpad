@@ -41,8 +41,9 @@ def sent(monkeypatch):
     async def fake_broadcast(to_entity, flow_data):
         captured.append((f"*broadcast*{to_entity}", flow_data))
 
-    async def fake_to_entity(entity_typeid, flow_data):
+    async def fake_to_entity(entity_typeid, flow_data, *, also=()):
         captured.append((entity_typeid, flow_data))
+        return set()
 
     monkeypatch.setattr(
         "flow_sdk.core.network.resource_tracker.broadcast_progress", fake_broadcast
@@ -342,3 +343,49 @@ async def test_another_entitys_activity_is_still_watcher_filtered(emitter, sent)
     await asyncio.sleep(0)
 
     assert sent[0][0] == "agentic_process-abc"
+
+
+class _Socket:
+    """A connected client's socket: records what the server writes to it."""
+
+    def __init__(self) -> None:
+        self.frames: list[str] = []
+
+    async def send_text(self, text: str) -> None:
+        self.frames.append(text)
+
+
+@pytest.fixture()
+def two_clients():
+    from flow_sdk.app.actions.watch_registry import cleanup_connection
+    from flow_sdk.core.network.connections import add_connection, remove_connection
+
+    a, b = _Socket(), _Socket()
+    add_connection("conn-a", a)
+    add_connection("conn-b", b)
+    yield a, b
+    for cid in ("conn-a", "conn-b"):
+        cleanup_connection(cid)
+        remove_connection(cid)
+
+
+async def test_a_tab_that_saw_a_scoped_root_hears_its_end_after_it_stops_watching(emitter, two_clients):
+    """The WAHA-admin ghost: a project setup's "done" went only to the project's watchers, so a tab
+    that had moved to another page kept the setup "running" forever and Terminate could not clear it."""
+    from flow_sdk.app.actions.watch_registry import add_watch, remove_watch
+
+    a, b = two_clients
+    project = "project-8750320f-c81b-43fa-807f-e4018171d0a7"
+    add_watch("conn-a", "project:8750320f-c81b-43fa-807f-e4018171d0a7")
+    act = Activity.get("setup-ghost", subject_entity=project)
+    act.resume()  # a transition: emitted now, so conn-a has been shown this root
+    await asyncio.sleep(INTERVAL * 3)
+    assert a.frames and not b.frames
+
+    remove_watch("conn-a", "project:8750320f-c81b-43fa-807f-e4018171d0a7")  # the person left the project page
+    shown = len(a.frames)
+    act.done()
+    await asyncio.sleep(INTERVAL * 3)
+
+    assert len(a.frames) > shown and '"completed"' in a.frames[-1], "the tab never heard the root end"
+    assert not b.frames, "a tab that never saw the root must not get it"

@@ -5,6 +5,7 @@ import {
   RECEIPT_LINGER_MS,
   __resetActivityStoreForTest,
   dismissActivityReceipt,
+  dropActivity,
   getActivities,
   getActivity,
   handleActivitySnapshot,
@@ -186,5 +187,16 @@ describe('activity store', () => {
     unsubscribe();
     handleActivitySnapshot(spec({ seq: 3, done: 3 }));
     expect(notifications).toBe(2);
+  });
+
+  it('drops a root the backend no longer has, and only that one', () => {
+    const subject = 'project-8750320f-c81b-43fa-807f-e4018171d0a7';
+    handleActivitySnapshot(spec({ path: 'setup-ghost', subject_entity: subject }));
+    handleActivitySnapshot(spec({ activity_id: 'a2', path: 'index' }));
+
+    dropActivity('setup-ghost', subject);
+
+    expect(getActivity('setup-ghost', subject)).toBeNull();
+    expect(getActivities().map((s) => s.path)).toEqual(['index']);
   });
 });

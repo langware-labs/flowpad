@@ -268,3 +268,17 @@ async def test_a_change_after_the_first_pull_arrives_as_news(channel, bootstrapp
     finally:
         unsubscribe()
     assert any(tag.endswith(".item.created") and ext.startswith(task.id) for tag, ext in heard), heard
+
+
+async def test_lost_row_is_adopted_from_its_file(channel):
+    """The row is gone but its data_source.json is not: the next start indexes the file and uses it,
+    instead of colliding with it on every start (prod lost "My tasks" this way)."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+
+    assert await remove_orphan_row(str(channel.id), "data_source")
+    assert await DataSource.get_one({"id": str(channel.id)}) is None
+
+    again = await ensure_user_tasks_channel()
+    assert again is not None and str(again.id) == str(channel.id)
+    assert again.status == "active"
