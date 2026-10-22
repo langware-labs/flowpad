@@ -398,43 +398,60 @@ def _resolve_contact(port: int, who: str) -> dict:
     _fail(EXIT_INVALID_ARG, "AMBIGUOUS", f"{who!r} matches {len(found)} contacts: {names}. Pass the email.")
 
 
+def split_people(who: str) -> list[str]:
+    """``who`` as the people it names: separated by ``,`` or ``;`` (the mail-client habit), trimmed,
+    blanks and repeats dropped, in order."""
+    seen: list[str] = []
+    for part in (who or "").replace(";", ",").split(","):
+        part = part.strip()
+        if part and part not in seen:
+            seen.append(part)
+    return seen
+
+
 @conversation_app.command(
     "new",
     help=(
-        "Start a conversation with someone and send the first message. <who> is an email, "
-        "a hub user id, or a name from `flow contacts find`."
+        "Start a conversation with one or more people and send the first message. <who> is an email, "
+        "a hub user id, or a name from `flow contacts find` -- several separated by `,` or `;` "
+        "(`gadi@langware.ai,Tzahi Mazuz`) start ONE group conversation with all of them."
     ),
 )
 def new_conversation(
-    who: Annotated[str, typer.Argument(help="Email, hub user id, or contact name.")],
+    who: Annotated[str, typer.Argument(help="Email, hub user id, or contact name; separate several with , or ;.")],
     message: Annotated[str, typer.Argument(help="First message text.")],
     title: Annotated[Optional[str], typer.Option("--title", help="Conversation title.")] = None,
 ) -> None:
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    wanted = split_people(who)
+    if not wanted:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "name at least one person to talk to")
     port = _discover_port()
     listing = _post_json(_graph_url(port, "conversation-list"), {})
     if listing.get("auth_required"):
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", "Not signed in to Flowpad: sign in (`flow auth login`) and retry.")
-    person = _resolve_contact(port, who)
-    invitee = person["email"] or person["user_id"]
+    # Resolved before anything is written: one unknown or ambiguous name stops the whole call.
+    people = [_resolve_contact(port, w) for w in wanted]
+    invitees = list(dict.fromkeys(p["email"] or p["user_id"] for p in people))
 
-    created = _post_json(_graph_url(port, "conversation"), {"title": title or person.get("name") or invitee,
-                                                            "members": [person]})
+    default_title = ", ".join(p.get("name") or p["email"] or p["user_id"] for p in people)
+    created = _post_json(_graph_url(port, "conversation"), {"title": title or default_title, "members": people})
     cid = str(created.get("id") or "")
     if not cid:
         _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", "conversation was not created")
     retry = f"conversation {cid} was created; retry with `flow conversation send {cid} <text>`"
+    shown = ", ".join(invitees)
     try:
-        resp = _local_post(_graph_url(port, f"conversation/{cid}/share"), json={"recipients": [invitee]}, timeout=30)
+        resp = _local_post(_graph_url(port, f"conversation/{cid}/share"), json={"recipients": invitees}, timeout=30)
         body = resp.json()
     except (requests.exceptions.RequestException, ValueError) as e:
-        _fail(EXIT_ACTION_FAILED, "SHARE_FAILED", f"inviting {invitee} failed ({e}); {retry}")
+        _fail(EXIT_ACTION_FAILED, "SHARE_FAILED", f"inviting {shown} failed ({e}); {retry}")
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
         _fail(EXIT_ACTION_FAILED, "SHARE_FAILED",
-              f"inviting {invitee} failed ({body.get('message') or resp.status_code}); {retry}")
+              f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}")
     data = _post_json(_add_message_url(port, cid), {"text": message})
-    data["invited"] = invitee
+    data["invited"] = invitees[0] if len(invitees) == 1 else invitees
     _emit_send_result(cid, data)
 
 
