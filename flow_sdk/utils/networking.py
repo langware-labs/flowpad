@@ -33,6 +33,14 @@ async def fetch_json(url) -> dict[str, Any]:
     return json.loads(await fetch_url(url))
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def is_loopback(host: str | None) -> bool:
+    """Whether ``host`` is this machine."""
+    return (host or "").strip("[]") in _LOOPBACK_HOSTS
+
+
 def is_url(maybe_url: str) -> bool:
     parsed = urlparse(maybe_url)
     return parsed.scheme in ("http", "https", "ftp") and parsed.netloc != ""

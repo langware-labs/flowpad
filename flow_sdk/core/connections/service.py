@@ -52,11 +52,13 @@ class LocalServiceClient:
     def __init__(self, port: int) -> None:
         import httpx
 
+        from flow_sdk.instance_settings.cookie_gate import CookieGateAuthHttpx
+
         self.port = port
         self.base_url = f"http://127.0.0.1:{port}"
         # The OAuth wait endpoint already owns the protocol deadline. A second
         # HTTP-client deadline would cut that standard wait short.
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=None)
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=None, auth=CookieGateAuthHttpx())
 
     async def request(
         self,
@@ -64,16 +66,8 @@ class LocalServiceClient:
         path: str,
         json: Any = None,
     ) -> LocalResponse:
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
-
-        url = f"{self.base_url}{path}"
         try:
-            response = await self._client.request(
-                method,
-                path,
-                json=json,
-                headers=gate_headers(url),
-            )
+            response = await self._client.request(method, path, json=json)
         except Exception as exc:  # noqa: BLE001 — typed local-service boundary
             raise FlowServiceError(
                 "service_lost",
