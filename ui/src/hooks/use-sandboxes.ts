@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import {
   ActionInfo,
   ComputeNode,
+  type ComputeNodeSize,
   ComputeProviderType,
   dataContext,
   dataManager,
@@ -576,7 +577,11 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
    * open with the error visible.
    */
   const createSandbox = useCallback(
-    async (opts?: { name?: string; sandboxProject?: SandboxSetup }): Promise<ComputeNode | null> => {
+    async (opts?: {
+      name?: string;
+      size?: ComputeNodeSize;
+      sandboxProject?: SandboxSetup;
+    }): Promise<ComputeNode | null> => {
       // One create at a time per hook instance: a double-clicked button must not
       // leave two boxes the user then has to find and delete.
       if (creatingRef.current) return null;
@@ -594,6 +599,7 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
       try {
         const draft = new ComputeNode({
           name: opts?.name?.trim() || nextSandboxName(sandboxesRef.current),
+          ...(opts?.size ? { node_size: opts.size } : {}),
           node_config: {
             flavor: WORKSPACE_FLAVOR,
             ...(sandboxProject ? { [PENDING_SETUP_KEY]: sandboxProject } : {}),

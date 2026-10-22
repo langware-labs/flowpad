@@ -16625,8 +16625,10 @@ msgstr "Machine denied"
 msgid "Machine secrets"
 msgstr "Machine secrets"
 
-#~ msgid "Machine size"
-#~ msgstr "Machine size"
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Machine size"
+msgstr "Machine size"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine type"
