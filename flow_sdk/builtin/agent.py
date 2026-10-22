@@ -308,6 +308,11 @@ class Agent(Entity):
         description="Sessions as this agent stay in Vibe: no tab strip, and no switch to Chat or "
         "Terminal. New and Recent open sessions in place. Presentation only.",
     )
+    starter_prompts: list[str] = APIField(
+        default_factory=list,
+        description="The starter chips an empty Vibe display shows for sessions as this agent; a chip's "
+        "text is the prompt it sends. Empty = the generic starters. Presentation only.",
+    )
     auto_open: Optional[list[AutoOpenEntry]] = APIField(
         default=None,
         description="What every new session as this agent opens with (Use, home page, auto-launch): "

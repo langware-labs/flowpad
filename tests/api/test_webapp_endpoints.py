@@ -14,6 +14,7 @@ A placement answers a browser on AT MOST two endpoints — its ``app`` proxy (en
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 import socket
 import sys
@@ -77,7 +78,9 @@ async def test_an_undeclared_webapp_is_a_route_of_the_app_proxy(client, tmp_path
     (folder / "dist" / "index.html").write_text("<title>shop</title>")
     placement = _deployment_typeid()
 
-    resp = await client.post(f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement})
+    resp = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
 
     assert resp.status_code == 200, resp.text
     [endpoint] = resp.json()["data"]["endpoints"]
@@ -109,8 +112,12 @@ async def test_exposing_twice_converges_on_the_same_rows(client, tmp_path):
     await _webapp(project, tmp_path / "a" / "shop")
     await _webapp(project, tmp_path / "a" / "docs", name="docs")
     placement = _deployment_typeid()
-    first = await client.post(f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement})
-    second = await client.post(f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement})
+    first = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
+    second = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
     assert first.json()["data"]["endpoints"] == second.json()["data"]["endpoints"]
     [proxy] = await ServiceEndpoint.of_deployment(placement)
     assert set(proxy.backend.routes) == {"shop", "docs"}, "two apps, one endpoint"
@@ -128,7 +135,9 @@ async def test_an_app_declares_its_audience_and_where_it_mounts(client, tmp_path
     await _webapp(project, back, name="backoffice", mounts=[{"audience": "admin", "path": ""}])
     placement = _deployment_typeid()
 
-    resp = await client.post(f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement})
+    resp = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
 
     by_kind = {e["subkind"]: e for e in resp.json()["data"]["endpoints"]}
     assert set(by_kind) == {"app", "admin"}
@@ -152,7 +161,9 @@ async def test_an_app_re_declared_for_the_other_audience_moves(tmp_path):
 
     assert moved.subkind == "admin" and moved.mount == "shop"
     assert [p.subkind for p in await webapp_routes(app.id)] == ["admin"], "served to one audience"
-    assert await ServiceEndpoint.audience_proxy(first.parent_type_id, "app") is None, "a proxy that routes nothing is gone"
+    assert await ServiceEndpoint.audience_proxy(first.parent_type_id, "app") is None, (
+        "a proxy that routes nothing is gone"
+    )
 
 
 async def test_two_apps_of_one_name_never_share_a_mount(tmp_path):
@@ -199,7 +210,10 @@ async def test_a_declared_dev_server_is_started_and_a_service_is_an_endpoint_of_
             {
                 "name": "api",
                 "protocol": {"spec_kind": "api.rest"},
-                "serving": {"type": "proxy", "start_cmd": f"{shlex.quote(sys.executable)} {shlex.quote(str(server))} {{port}}"},
+                "serving": {
+                    "type": "proxy",
+                    "start_cmd": f"{shlex.quote(sys.executable)} {shlex.quote(str(server))} {{port}}",
+                },
             }
         ],
     )
@@ -246,7 +260,9 @@ async def test_the_box_keys_its_placement_by_the_hubs_id_and_reports_all_it_serv
     before = await register_dev_endpoint(project, port=4801)
     placement = _deployment_typeid()
 
-    resp = await client.post(f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement})
+    resp = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
 
     assert resp.status_code == 200, resp.text
     [reported] = resp.json()["data"]["endpoints"]
@@ -293,7 +309,9 @@ async def test_a_placement_of_something_else_is_refused(client, tmp_path):
     placement = _deployment_typeid()
     await client.post(f"/api/v1/graph/project/{other.id}/expose-endpoints", json={"deployment_typeid": placement})
 
-    resp = await client.post(f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement})
+    resp = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
 
     assert resp.status_code == 409 and "not this project's placement" in resp.text
 
@@ -317,7 +335,9 @@ async def test_a_box_asks_the_hub_to_refresh_a_desktop_does_not(monkeypatch, tmp
     await asyncio.gather(*webapp_placement._TELLING)
     assert asked == []
 
-    monkeypatch.setattr(runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001")
+    monkeypatch.setattr(
+        runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
+    )
     row = await register_dev_endpoint(project, port=4804)
     await asyncio.gather(*webapp_placement._TELLING)  # sent in the background, off the caller's write lock
     assert asked == [("deployment", row.parent_type_id.split("-", 1)[1], "refresh-endpoints")]
@@ -441,13 +461,26 @@ async def test_per_app_endpoint_rows_are_dropped_and_every_webapp_is_a_route_aga
     deployment = await webapp_placement.local_web_deployment(project)
     web = {"spec_kind": "web.app"}
     stale = [
-        ServiceEndpoint(name="shop", parent_type_id=str(deployment.typeid), protocol=web, webapp_id=app.id,
-                        backend={"type": "static", "root": str(tmp_path / "apps" / "shop")}),
-        ServiceEndpoint(name="port-4850", parent_type_id=str(deployment.typeid), protocol=web,
-                        backend={"type": "proxy", "port": 4850}),
+        ServiceEndpoint(
+            name="shop",
+            parent_type_id=str(deployment.typeid),
+            protocol=web,
+            webapp_id=app.id,
+            backend={"type": "static", "root": str(tmp_path / "apps" / "shop")},
+        ),
+        ServiceEndpoint(
+            name="port-4850",
+            parent_type_id=str(deployment.typeid),
+            protocol=web,
+            backend={"type": "proxy", "port": 4850},
+        ),
     ]
-    chat = ServiceEndpoint(name="chat", parent_type_id=str(deployment.typeid),
-                           protocol={"spec_kind": "api.chat.openai"}, backend={"type": "channel", "data_source_id": "s"})
+    chat = ServiceEndpoint(
+        name="chat",
+        parent_type_id=str(deployment.typeid),
+        protocol={"spec_kind": "api.chat.openai"},
+        backend={"type": "channel", "data_source_id": "s"},
+    )
     for row in (*stale, chat):
         await row.save()
 
@@ -477,8 +510,11 @@ async def _stop(app) -> None:
 
 
 def _served(port: int) -> dict:
-    return {"type": "proxy", "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1",
-            "ports": {"local": {"port": port, "required": True}}}
+    return {
+        "type": "proxy",
+        "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1",
+        "ports": {"local": {"port": port, "required": True}},
+    }
 
 
 async def test_a_dead_local_address_starts_the_app_that_declares_its_port(client, tmp_path):
@@ -526,8 +562,12 @@ async def test_the_apps_service_starts_on_this_desktop_and_is_an_endpoint_of_its
     project = await _project(tmp_path)
     folder = tmp_path / "agentic-assets" / "webapp" / "shop"
     service = {**_served(api), "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory ."}
-    app = await _webapp(project, folder, mounts=[{"serving": _served(page)}],
-                        services=[{"name": "api", "protocol": {"spec_kind": "api.rest"}, "serving": service}])
+    app = await _webapp(
+        project,
+        folder,
+        mounts=[{"serving": _served(page)}],
+        services=[{"name": "api", "protocol": {"spec_kind": "api.rest"}, "serving": service}],
+    )
     (folder / "index.html").write_text("shop")
     try:
         started = await webapp_setup.step(str(app.id), "start", check=False)
@@ -539,13 +579,20 @@ async def test_the_apps_service_starts_on_this_desktop_and_is_an_endpoint_of_its
         assert len(endpoints) == 1 and endpoints[0].backend.port == api
 
         listed = (await client.get(f"/api/v1/graph/project/{project.id}/app-ports")).json()["data"]["ports"]
-        assert {(row["app"], row["process"], row["port"]) for row in listed} == {("shop", "api", api), ("shop", "page", page)}
+        assert {(row["app"], row["process"], row["port"]) for row in listed} == {
+            ("shop", "api", api),
+            ("shop", "page", page),
+        }
 
         stopped = (await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop"})).json()
         assert stopped["data"]["apps"][0]["ok"], stopped
         assert not webapp_setup.health_answers(page) and not webapp_setup.health_answers(api)
 
-        again = (await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop", "restart": True, "wait": True})).json()
+        again = (
+            await client.post(
+                f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop", "restart": True, "wait": True}
+            )
+        ).json()
         assert again["data"]["apps"][0]["port"] == str(page), again
         assert webapp_setup.health_answers(page) and webapp_setup.health_answers(api)
     finally:
@@ -581,3 +628,65 @@ async def test_a_route_whose_port_another_program_took_is_not_shown_as_its_app(c
         held.close()
     assert not shown.webapp_id and shown.mount == f"port-{port}"
     assert [p.mount for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"] == [owned.mount]
+
+
+async def test_an_app_copied_in_after_the_last_index_pass_is_listed_by_app_ports(client, tmp_path):
+    """The index pass runs when the person selects something, not when a folder appears. An app the agent
+    has just copied in has no row, and ``flow app open <name>`` then found "no such app" and fell back to
+    serving a folder with an ``index.html`` as a bare static site — which cannot take a POST."""
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "shop"
+    folder.mkdir(parents=True)
+    (folder / "webapp.json").write_text(
+        json.dumps({"name": "shop", "build": ".", "mounts": [{"serving": _served(port)}]}), encoding="utf-8"
+    )
+    assert not [app for app in await WebApp.get_all() if app.asset_ref == str(folder)]
+
+    listed = (await client.get(f"/api/v1/graph/project/{project.id}/app-ports")).json()["data"]["ports"]
+    assert {(row["app"], row["process"]) for row in listed} == {("shop", "page")}
+
+    second = folder.parent / "blog"
+    second.mkdir()
+    (second / "webapp.json").write_text(
+        json.dumps({"name": "blog", "build": ".", "mounts": [{"serving": _served(_unused_port())}]}), encoding="utf-8"
+    )
+    listed = (await client.get(f"/api/v1/graph/project/{project.id}/app-ports")).json()["data"]["ports"]
+    assert {row["app"] for row in listed} == {"shop", "blog"}
+
+
+async def test_a_project_is_found_from_a_folder_inside_it_over_real_http(tmp_path, monkeypatch):
+    """``flow app …`` is run by an agent from ``<project>/agentic-assets/webapp/<name>``. A project was
+    matched only by its exact folder, so from there the CLI found none ("No Flowpad project contains …"),
+    never opened the app as the project's own, and fell back to serving a folder as a bare static site."""
+    import threading
+
+    import uvicorn
+
+    from flow_sdk.cli.commands import app_cmd
+    from flow_sdk.cli.commands._common import project_for_path
+    from flow_sdk.server.app import app as backend
+
+    project = await _project(tmp_path)
+    inside = tmp_path / "agentic-assets" / "webapp" / "shop"
+    inside.mkdir(parents=True)
+
+    port = _unused_port()
+    server = uvicorn.Server(uvicorn.Config(backend, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        for _ in range(100):
+            if server.started:
+                break
+            await asyncio.sleep(0.05)
+        assert server.started
+        for cwd in (tmp_path, inside):
+            monkeypatch.chdir(cwd)
+            found = await asyncio.to_thread(app_cmd._project_containing_cwd, port, project_for_path)
+            assert found == str(project.id), cwd
+        monkeypatch.chdir(tmp_path.parent)
+        assert await asyncio.to_thread(app_cmd._project_containing_cwd, port, project_for_path) is None
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)

@@ -190,6 +190,9 @@ export class Agent extends APIEntity<Agent> {
   auto_launch_prompt?: string;
   /** Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal. */
   vibe_only: boolean;
+  /** The empty Vibe display's starter chips for sessions as this agent; a chip's text is
+   *  the prompt it sends. Empty = the generic starters. */
+  starter_prompts: string[];
   /** What every new session as this agent opens with: a place (`Tab.pointer` JSON, a
    *  file named inside the agent's project), a `navigate` compute op in the agent's
    *  project that repairs it when it cannot be used yet (`{op}`), or a wizard
@@ -239,6 +242,7 @@ export class Agent extends APIEntity<Agent> {
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
     this.vibe_only = entity.vibe_only ?? false;
+    this.starter_prompts = entity.starter_prompts ?? [];
     this.auto_open = entity.auto_open ?? null;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;

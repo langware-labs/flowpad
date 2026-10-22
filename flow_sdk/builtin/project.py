@@ -744,7 +744,9 @@ class Project(SetupSkippable, Entity):
             return None
         return asset
 
-    async def index_missing_assets(self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]") -> None:
+    async def index_missing_assets(
+        self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]", *, once: bool = True
+    ) -> None:
         """Index the repo assets an open loads by itself — those of ``types`` that
         ``wanted`` picks under this project's roots — when their rows are missing.
 
@@ -752,12 +754,13 @@ class Project(SetupSkippable, Entity):
         folder a decision that reads these rows (the home page, agent auto-launch) would
         look before they exist. This indexes only what ``wanted`` picks, and only when its
         row is missing; once one pass under ``key`` leaves nothing missing, later calls
-        return at once. It follows the walk's rules — a protected folder only on consent
+        return at once — unless ``once`` is False, for assets that keep appearing while the
+        project is open (an app the agent has just built): every call looks again. It follows the walk's rules — a protected folder only on consent
         (an open is a foreground ask), a borrowed checkout read-only — and is deliberately
         independent of the auto-index preference: the open itself needs these rows.
         Never raises: the open goes on without them.
         """
-        if (self.id, key) in _LOAD_READY:
+        if once and (self.id, key) in _LOAD_READY:
             return
         from flow_sdk.assets.scanning import scan_repo_tree  # noqa: PLC0415
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
@@ -783,7 +786,8 @@ class Project(SetupSkippable, Entity):
             borrowed = await Folder.borrowed_checkout_paths() if missing else set()
             for root, paths in missing.items():
                 await reindex_paths(paths, write=root not in borrowed)
-            _LOAD_READY.add((self.id, key))
+            if once:
+                _LOAD_READY.add((self.id, key))
         except Exception:  # noqa: BLE001 — an asset that cannot index never blocks the open
             log.warning("load-time assets %s of project %s could not be indexed", key, self.id, exc_info=True)
 
@@ -838,8 +842,12 @@ class Project(SetupSkippable, Entity):
         lifecycle = await load_project(self, asset=asset)
         if asset is None:
             return {"asset": None, "type": None, "lifecycle": lifecycle.model_dump(mode="json")}
-        answer: dict[str, Any] = {"asset": typeid, "type": asset.get_type(),
-                                  "lifecycle": lifecycle.model_dump(mode="json"), "load_run": lifecycle.run}
+        answer: dict[str, Any] = {
+            "asset": typeid,
+            "type": asset.get_type(),
+            "lifecycle": lifecycle.model_dump(mode="json"),
+            "load_run": lifecycle.run,
+        }
         return answer
 
     @action.get(action_name="home-page")
@@ -869,7 +877,9 @@ class Project(SetupSkippable, Entity):
 
             try:
                 identity = TypeId(display)
-                process = await AgenticProcess.get_by_id(identity.id) if identity.type == AgenticProcess.get_type() else None
+                process = (
+                    await AgenticProcess.get_by_id(identity.id) if identity.type == AgenticProcess.get_type() else None
+                )
             except (ValueError, TypeError, IndexError):
                 process = None
             if process is None or process.project_id != self.id:
@@ -883,8 +893,11 @@ class Project(SetupSkippable, Entity):
         a READY verdict counts only while the app still answers where it runs (else none — load it)."""
         from flow_sdk.core.setup import load as lifecycle  # noqa: PLC0415
 
-        result = (await lifecycle.validate(str(self.id), asset, display) if validate
-                  else lifecycle.load_state(str(self.id), asset=asset))
+        result = (
+            await lifecycle.validate(str(self.id), asset, display)
+            if validate
+            else lifecycle.load_state(str(self.id), asset=asset)
+        )
         return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
     # ── the project's apps: which port each process declares, and where it runs now ────────
@@ -892,8 +905,13 @@ class Project(SetupSkippable, Entity):
     async def _own_apps(self, name: str = "") -> list:
         from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
+        # The index pass runs when the person selects something, not when a folder appears: an app the
+        # agent copied in a minute ago has no row yet, and "this project has no such app" sends
+        # ``flow app open`` to the folder-guessing fallback. Index what is on disk before answering.
+        await self.index_missing_assets("webapp", {"micro_app"}, lambda _candidate: True, once=False)
         apps = [
-            app for app in await WebApp.get_all({"match": {"project_id": self.id}})
+            app
+            for app in await WebApp.get_all({"match": {"project_id": self.id}})
             if app.asset_ref and Path(app.asset_ref).is_dir()
         ]
         return [app for app in apps if not name or app.name == name]
@@ -905,7 +923,7 @@ class Project(SetupSkippable, Entity):
 
         rows: list[dict] = []
         for app in await self._own_apps():
-            rows.extend(await webapp_setup.ports(str(app.id)))
+            rows.extend({**row, "path": app.asset_ref} for row in await webapp_setup.ports(str(app.id)))
         return ApiSuccessResponse(data={"ports": rows})
 
     @action.post(action_name="app-stop")
@@ -942,8 +960,12 @@ class Project(SetupSkippable, Entity):
             if start:
                 loaded = await bring_up(self, asset=one, wait=wait)
                 page = next((p for p in await webapp_setup.ports(str(one.id)) if p["process"] == "page"), {})
-                row.update(ok=loaded.state is not LoadState.FAILED, detail=loaded.detail,
-                           port=str(page["port"]) if page.get("port") else None, load=loaded.model_dump(mode="json"))
+                row.update(
+                    ok=loaded.state is not LoadState.FAILED,
+                    detail=loaded.detail,
+                    port=str(page["port"]) if page.get("port") else None,
+                    load=loaded.model_dump(mode="json"),
+                )
             results.append(row)
         return ApiSuccessResponse(data={"apps": results})
 
@@ -2930,7 +2952,9 @@ class Project(SetupSkippable, Entity):
                 raise ValueError("a local package is a folder or a repository, not an id")
             project_dependencies.save_local_package(str(self.id), dep)
             states = await project_dependencies.resolve(self, fetch=True)
-            return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
+            return await project_dependencies.load_dependency(
+                next(s for s in states if s.name == dep.name and s.via is None)
+            )
         flow_json.write_dependency(Path(self.fs_storage_mount_path), dep)
         install = [dep.name] if optional else []
         if background:
@@ -2940,7 +2964,9 @@ class Project(SetupSkippable, Entity):
             project_dependencies.schedule_add(self, dep.name, install=install)
             return next(s for s in states if s.name == dep.name and s.via is None)
         states = await project_dependencies.resolve(self, fetch=True, install=install)
-        return await project_dependencies.load_dependency(next(s for s in states if s.name == dep.name and s.via is None))
+        return await project_dependencies.load_dependency(
+            next(s for s in states if s.name == dep.name and s.via is None)
+        )
 
     async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
         """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
@@ -3004,8 +3030,11 @@ class Project(SetupSkippable, Entity):
                 # The context the resolved dependencies give: a background add lands it, and a listing
                 # is how a caller learns it (the add itself answered before the fetch).
                 **self._context_payload(),
-                **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
-                   if declarers else {}),
+                **(
+                    {"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
+                    if declarers
+                    else {}
+                ),
             }
         )
 
@@ -3025,10 +3054,12 @@ class Project(SetupSkippable, Entity):
             states = await self.preview_dependencies(asset=asset, sources=sources or [])
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        return ApiSuccessResponse(data={
-            "dependencies": self._states(states),
-            "warnings": self._states(project_dependencies.warnings_for(str(self.id), states)),
-        })
+        return ApiSuccessResponse(
+            data={
+                "dependencies": self._states(states),
+                "warnings": self._states(project_dependencies.warnings_for(str(self.id), states)),
+            }
+        )
 
     @action.post(action_name="add-dependency")
     async def add_dependency_action(
