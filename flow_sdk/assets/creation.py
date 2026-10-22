@@ -23,7 +23,11 @@ if TYPE_CHECKING:
 
 
 class AssetPathCollisionError(ValueError):
-    """A destination is occupied by another asset or another creator."""
+    """A destination is occupied by another asset or another creator. ``path`` is the occupied target."""
+
+    def __init__(self, message: str, path: Path | None = None):
+        super().__init__(message)
+        self.path = path
 
 
 _HELD_CREATIONS: ContextVar[frozenset[tuple[object, str]]] = ContextVar("asset_creations", default=frozenset())
@@ -62,7 +66,7 @@ def assert_create_target_available(info: TypeInfo, path: Path, *, entity_type: s
                 except OSError:
                     collision = True
     if collision and not (entity_id and _carrier_identity_matches(info, path, entity_id)):
-        raise AssetPathCollisionError(f"An {entity_type} named '{name}' already exists in this scope")
+        raise AssetPathCollisionError(f"An {entity_type} named '{name}' already exists in this scope", path)
 
 
 @contextmanager

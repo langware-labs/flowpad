@@ -26,3 +26,24 @@ async def test_resume_on_an_ended_root_is_refused_and_leaves_no_live_root():
 
     assert str(resp.status).lower() == "fail" and resp.data["error_code"] == "NOT_LIVE", resp
     assert monitor.get(ROOT) is None, f"phantom root left running: {monitor.get(ROOT)}"
+
+
+async def test_cancel_on_an_ended_root_is_refused_and_mints_nothing():
+    """Terminate from a tab that missed the end: the answer is NOT_LIVE, not a fresh root cancelled."""
+    cycle = Activity.get(ROOT)
+    cycle.label("Full QA cycle")
+    await report(ROOT, "done", VerbBody())
+
+    resp = await report(ROOT, "cancel", VerbBody(message="Terminated by user"))
+
+    assert str(resp.status).lower() == "fail" and resp.data["error_code"] == "NOT_LIVE", resp
+    assert monitor.get(ROOT) is None
+
+
+async def test_cancel_on_a_live_root_ends_it():
+    Activity.get(ROOT).label("Full QA cycle")
+
+    resp = await report(ROOT, "cancel", VerbBody(message="Terminated by user"))
+
+    assert resp.data["state"] == "cancelled", resp
+    assert monitor.get(ROOT) is None

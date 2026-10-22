@@ -12,7 +12,12 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Activity, isTerminal } from '@sdk/activity';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
-import { useActivityReceipt, useActivitySpec } from '@src/store/activity-store';
+import {
+  dropActivity,
+  handleActivitySnapshot,
+  useActivityReceipt,
+  useActivitySpec,
+} from '@src/store/activity-store';
 import { useActivityDetailsStore } from '@src/store/use-activity-details-store';
 import { useElapsedMs } from '@src/hooks/useActivity';
 import { humanizeSeconds } from '@src/utils/duration';
@@ -37,8 +42,13 @@ export function ActivityDetailsModalRoot() {
   const terminate = async (node: NonNullable<typeof live>) => {
     setTerminating(true);
     try {
-      const ended = await Activity.get(node.path, node.subject_entity ?? null).cancel(t`Terminated by user`);
-      if (!ended) notify.error({ title: t`Couldn't terminate ${node.label || node.name}`, transient: true });
+      const handle = Activity.get(node.path, node.subject_entity ?? null);
+      const ended = await handle.cancel(t`Terminated by user`);
+      // Show the answer here: this tab may never get the WS frame for it (it stopped watching the subject).
+      if (ended) handleActivitySnapshot(ended);
+      // Refused: the backend has nothing live at this address, so the row is a leftover — remove it.
+      else if (!(await handle.spec())) dropActivity(node.path, node.subject_entity);
+      else notify.error({ title: t`Couldn't terminate ${node.label || node.name}`, transient: true });
     } finally {
       setTerminating(false);
     }

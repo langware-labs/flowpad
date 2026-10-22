@@ -248,6 +248,20 @@ export function ProjectSetupDialog({
   };
 
   const running = setup.running;
+
+  // Done: a Close button counting down, and the dialog closes itself after 5 seconds.
+  const done = open && !!readiness?.ready && !running;
+  const [closeIn, setCloseIn] = useState(5);
+  useEffect(() => {
+    if (!done) return;
+    setCloseIn(5);
+    const tick = setInterval(() => setCloseIn((n) => n - 1), 1000);
+    const close = setTimeout(() => onOpenChange(false), 5000);
+    return () => {
+      clearInterval(tick);
+      clearTimeout(close);
+    };
+  }, [done, onOpenChange]);
   const questionId = setup.questionId;
 
   // What can be selected is what can be skipped: a row still to do — a run going too (the run skips it live).
@@ -370,6 +384,14 @@ export function ProjectSetupDialog({
         {setup.tree && !questionId && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
+          </div>
+        )}
+
+        {done && (
+          <div className="flex justify-end">
+            <Button data-testid="project-setup-close" onClick={() => onOpenChange(false)}>
+              <Trans>Close ({closeIn})</Trans>
+            </Button>
           </div>
         )}
       </DialogContent>

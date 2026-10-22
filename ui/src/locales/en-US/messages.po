@@ -6311,6 +6311,10 @@ msgstr "Cloning…"
 msgid "Close"
 msgstr "Close"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Close ({closeIn})"
+msgstr "Close ({closeIn})"
+
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 msgid "Close (Esc)"
 msgstr "Close (Esc)"
@@ -13269,6 +13273,10 @@ msgstr "GCP region for Vertex AI"
 #: src/i18n/pref-labels.ts
 msgid "General"
 msgstr "General"
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
+msgid "Generate {keyName}"
+msgstr "Generate {keyName}"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate an API key to authenticate API requests to FlowPad"

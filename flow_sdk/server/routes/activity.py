@@ -124,10 +124,10 @@ VERB_TABLE: "dict[str, Callable[[Activity, VerbBody], None]]" = {
 }
 
 
-#: Verbs that continue a node somebody already started. A finished root is evicted, so
-#: find-or-create would answer them with a fresh, unplanned, unlabelled root that nothing
-#: will ever end — the footer then shows it running forever. They are refused instead.
-_CONTINUING_VERBS = frozenset({"resume", "rerun"})
+#: Verbs that continue (or end) a node somebody already started. A finished root is evicted, so
+#: find-or-create would answer them with a fresh, unplanned, unlabelled root — one nothing will ever
+#: end, or for ``cancel`` one minted only to be cancelled. They are refused with ``NOT_LIVE`` instead.
+_CONTINUING_VERBS = frozenset({"resume", "rerun", "cancel"})
 
 
 @router.get("/api/v1/activity")
