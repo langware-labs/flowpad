@@ -4,7 +4,7 @@ A real agent (``MockDriver`` from ``tests/utils/mock_worker.py``: a real headles
 answers "Mock reply: …", no model) served by the app's own ``AgentServer``, over the channel
 drivers' own ``Double``s:
 
-* a pull channel with no fast lane (Slack) is asked only when the heartbeat says it is due —
+* a pull channel with no fast lane (Gmail) is asked only when the heartbeat says it is due —
   the agent answers the message that poll brought in, and the loop itself asks nothing;
 * a pull channel with a fast lane (Telegram, ``attention_poll_seconds = 5``) is polled by the
   poller's attention lane while the agent serves it, so the agent answers within that cadence;
@@ -55,8 +55,8 @@ async def _replied(double, *, within: float) -> list[dict]:
 
 @pytest.mark.long  # 3.7s: one real MockWorker turn waits the transcript's 2s settle
 async def test_a_pull_channel_without_a_fast_lane_is_asked_only_when_it_is_due(worker, syncs, monkeypatch):
-    with double_for("slack") as double:
-        agent, source, server = await served("slack", double, monkeypatch, syncs)
+    with double_for("gmail") as double:
+        agent, source, server = await served("gmail", double, monkeypatch, syncs)
         try:
             double.deliver("is anyone there?", sender=double.sender)
             await asyncio.sleep(0.5)
@@ -92,8 +92,8 @@ async def test_a_fast_lane_channel_is_polled_by_the_lane_while_an_agent_serves_i
 
 
 async def test_a_parked_source_is_asked_by_nobody_however_long_it_isserved(worker, syncs, monkeypatch):
-    with double_for("slack") as double:
-        agent, source, server = await served("slack", double, monkeypatch, syncs)
+    with double_for("gmail") as double:
+        agent, source, server = await served("gmail", double, monkeypatch, syncs)
         try:
             source.health = "config_error"  # parked: needs a person
             await source.save()
