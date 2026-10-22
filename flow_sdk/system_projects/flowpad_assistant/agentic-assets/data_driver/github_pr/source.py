@@ -7,8 +7,8 @@ head commit. The conversation is ``(github_pr, <account>, <owner>/<repo>#<n>)``;
 (``comment-`` an issue comment, ``review-comment-`` a review comment, ``review-``, ``event-``,
 ``commit-<sha>``, ``check-<head sha>``) — ids GitHub never reuses, so a key is unique across PRs.
 
-**The first pass ignores the window.** Every open PR the filter names is read whole, however old its
-last update; the window only fits sources whose past is unbounded, and the open PRs are a small, current set.
+**No window** (``windowed = False``). A first read lists every open PR the filter names, whole, however
+old its last update: the open PRs are a small, live set, unlike a mailbox's unbounded past.
 
 **The cursor is a high-water mark on ``updated``.** The searches (``is:pr is:open author:@me`` and ``review-requested:@me`` by default, merged)
 is read sorted by ``updated`` ascending, a search page at a time; the resume cursor carries the
@@ -106,7 +106,7 @@ _MARKS = {
 def _merge(lists: list[list[dict]], reverse: bool = False) -> list[dict]:
     """PRs from several searches as one list: each PR once, ordered by ``updated_at``."""
     unique: dict[str, dict] = {}
-    for pr in _prs({"items": [pr for rows in lists for pr in rows]}):
+    for pr in (pr for rows in lists for pr in rows):
         unique.setdefault(_key(pr), pr)
     return sorted(unique.values(), key=lambda pr: (str(pr.get("updated_at") or ""), str(pr.get("html_url") or "")), reverse=reverse)
 
@@ -163,6 +163,8 @@ class GithubPrSource(MessageSource):
     durable_cursor = True
     #: A ``before`` narrow reads one page of the newest messages older than it (``_older``).
     pages_backward = True
+    #: The open PRs are a small, live set: a first read lists every one, however long it has been quiet.
+    windowed = False
     #: The account is the GitHub login (``account_key``), not a config field; each PR is its own
     #: conversation within it, so a reply is addressed to the PR, never to a person.
     identity_config_key = ""
@@ -246,24 +248,20 @@ class GithubPrSource(MessageSource):
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         if query is not None and query.before is not None:
             return ChangePage(items=await self._older(query.before, limit))
-        state: dict = {"page": 1, "skip": 0}
-        if cursor is None:
-            # An open PR is a live conversation however long it has been quiet: the first pass lists
-            # every one the filter names, whole, and ignores the window a mailbox would apply.
-            since = None
-        else:
-            state = {"page": 1, "skip": 0, **_decode(cursor)}
-            since = _stamp(state.get("mark"))
+        state: dict = {"page": 1, "skip": 0, **(_decode(cursor) if cursor is not None else {})}
+        since = _stamp(state.get("mark")) if cursor is not None else query.since if query is not None else None
 
         prs, more = await self._search_page(since, page=state["page"])
         items = await self._gather_messages(prs, since)
-        top = max((s for s in (_stamp(state.get("top")), *(_parse_time(pr.get("updated_at")) for pr in prs)) if s is not None), default=None)
+        top = _latest(since, _stamp(state.get("top")), *(_parse_time(pr.get("updated_at")) for pr in prs))
+        # This pass's own first page held every open PR: the open set needs no second read.
+        whole = prs if since is None and state["page"] == 1 and not more else None
 
         # A pass starting from a resume cursor first ends the PRs that left the search since.
         open_now: Optional[list[str]] = None
         ended: list[MessageItem] = []
         if state.get("seen"):
-            open_now = await self._open_keys(prs if since is None and not more else None)
+            open_now = await self._open_keys(whole)
             gone = [key for key in state["seen"] if key not in open_now]
             ended = await _bounded_flat(self._ended(key) for key in gone)
 
@@ -275,9 +273,8 @@ class GithubPrSource(MessageSource):
         if more:
             return ChangePage(items=handed, next_cursor=_encode({**onward, "page": state["page"] + 1, "skip": 0}))
         if open_now is None:  # a pass past its first page re-reads the open set at its end
-            open_now = await self._open_keys(prs if since is None and state["page"] == 1 and not more else None)
-        newest = max((s for s in (top, since) if s is not None), default=None)
-        return ChangePage(items=handed, resume_cursor=_fit(_iso(newest), open_now))
+            open_now = await self._open_keys(whole)
+        return ChangePage(items=handed, resume_cursor=_fit(_iso(top), open_now))
 
     async def _older(self, before: datetime, limit: int) -> list[MessageItem]:
         """The ``limit`` newest messages sent strictly before ``before``, newest first — one backward
@@ -304,10 +301,10 @@ class GithubPrSource(MessageSource):
 
     async def _every_open(self, query: str) -> list[dict]:
         """Every PR one search lists, up to ``SEEN_CAP``."""
-        return [pr async for pr in http.paginate(
+        return _prs({"items": [pr async for pr in http.paginate(
             self._client, f"{self.base_url}/search/issues", key="items", max_pages=SEEN_CAP // MEMBERSHIP_PAGE, **self._wire(),
             params={"q": query, "sort": "updated", "order": "asc", "per_page": MEMBERSHIP_PAGE},
-        )]
+        )]})
 
     async def _ended(self, key: str) -> list[MessageItem]:
         """The end message of PR ``key``, which left the search since the last pass: its timeline's
@@ -368,7 +365,7 @@ class GithubPrSource(MessageSource):
         ``since`` narrows the two comment lists that take it; the rest are read whole."""
         repo = _repo_of(pr)
         n = int(pr["number"])
-        key = f"{repo}#{n}"
+        key = _key(pr)
         title = str(pr.get("title") or "") or None
         base = f"/repos/{repo}"
         out: list[MessageItem] = []
@@ -698,6 +695,10 @@ def _fit(mark: Optional[str], seen: list[str]) -> Optional[str]:
 def _prs(found: dict) -> list[dict]:
     """The PRs of one search answer."""
     return [pr for pr in found.get("items") or () if isinstance(pr, dict) and pr.get("number") and pr.get("repository_url")]
+
+
+def _latest(*stamps: Optional[datetime]) -> Optional[datetime]:
+    return max((s for s in stamps if s is not None), default=None)
 
 
 def _key(pr: dict) -> str:

@@ -558,7 +558,7 @@ class DriverRuntime:
             floor = iso_to_utc(position.window_start) if position.window_start else None
             query = source.query()
             narrow = None
-            if cursor is None and floor is not None and isinstance(query, MessageQuery) and query.since is None:
+            if cursor is None and cls.windowed and floor is not None and isinstance(query, MessageQuery) and query.since is None:
                 narrow = {"since": floor}
             items, removed, moved, resume, pages = [], [], [], None, 0
             while True:
