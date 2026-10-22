@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>My list</title>
+    <!-- Relative paths everywhere (no leading "/"): the app works wherever Flowpad mounts it. -->
+    <link rel="stylesheet" href="vendor/basecoat.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="vendor/basecoat.min.js" defer></script>
+    <script src="app.js" defer></script>
+    <script src="vendor/alpine.min.js" defer></script>
+  </head>
+  <body>
+    <main class="page" x-data="itemsApp()" x-init="load()">
+      <header class="page-header">
+        <h1>My list</h1>
+        <p class="muted">Everything here is saved on the server, so it is still there after a refresh.</p>
+      </header>
+
+      <section class="card">
+        <header>
+          <h2>Add an item</h2>
+        </header>
+        <section>
+          <form class="row" @submit.prevent="add()">
+            <input class="input grow" type="text" placeholder="What to add?" x-model="title" aria-label="New item" />
+            <button class="btn" type="submit" :disabled="!title.trim()">Add</button>
+          </form>
+          <p class="error" x-show="error" x-text="error"></p>
+        </section>
+      </section>
+
+      <section class="card">
+        <header>
+          <h2>Items <span class="badge" data-variant="secondary" x-text="items.length"></span></h2>
+        </header>
+        <section>
+          <p class="muted" x-show="!loading && items.length === 0">Nothing here yet. Add the first item above.</p>
+          <ul class="list">
+            <template x-for="item in items" :key="item.id">
+              <li class="list-row">
+                <label class="row grow">
+                  <input class="input" type="checkbox" :checked="item.done" @change="toggle(item)" />
+                  <span :class="item.done && 'done'" x-text="item.title"></span>
+                </label>
+                <button class="btn" data-variant="ghost" data-size="icon-sm" type="button" @click="remove(item)" aria-label="Delete">✕</button>
+              </li>
+            </template>
+          </ul>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
