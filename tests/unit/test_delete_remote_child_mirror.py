@@ -57,3 +57,24 @@ async def test_a_plain_delete_of_a_shared_child_still_removes_it(monkeypatch):
 
     assert resp.status_code == 200, resp.text
     assert await Team.get_one({"id": team.id}) is None
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_organization_deletes_it_on_the_hub(monkeypatch):
+    """A top-level org has no parent, so the child auto-unshare never ran: the local row went
+    and the hub row stayed — the next listing brought the "deleted" org back."""
+    from flow_sdk.builtin.organization import Organization  # noqa: PLC0415
+
+    org = await materialize_remote_membership_entity(Organization, {"id": mint_uuid(), "name": "Gone"}, notify=False)
+    asked = []
+
+    async def hub_delete(self, recursive=False):
+        asked.append(self.id)
+
+    monkeypatch.setattr(Organization, "unshare", hub_delete)
+
+    resp = await call_local("DELETE", f"organization/{org.id}")
+
+    assert resp.status_code == 200, resp.text
+    assert asked == [org.id]
+    assert await Organization.get_one({"id": org.id}) is None
