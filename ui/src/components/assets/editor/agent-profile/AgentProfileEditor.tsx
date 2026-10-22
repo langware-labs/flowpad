@@ -21,6 +21,7 @@ import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroT
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
+import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
@@ -486,15 +487,24 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     </Trans>
                   </p>
                 </div>
-                <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                  <span className="text-sm">
-                    <Trans>Load Flowpad assistant</Trans>
-                  </span>
-                  <Switch
-                    checked={profile.load_flowpad_assistant}
-                    onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
-                    aria-label={t`Load Flowpad assistant`}
-                  />
+                <div className="rounded-md border border-border px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">
+                      <Trans>Load Flowpad assistant</Trans>
+                    </span>
+                    <Switch
+                      checked={profile.load_flowpad_assistant}
+                      onCheckedChange={(v) => void save({ load_flowpad_assistant: v })}
+                      aria-label={t`Load Flowpad assistant`}
+                    />
+                  </div>
+                  {profile.load_flowpad_assistant ? (
+                    <AgentAssistantSkillsField
+                      agent={agent}
+                      value={profile.assistant_skills}
+                      onCommit={(v) => void save({ assistant_skills: v })}
+                    />
+                  ) : null}
                 </div>
                 <div className="space-y-2 rounded-md border border-border px-3 py-2" data-testid="agent-chief-of-staff">
                   <div className="flex items-center justify-between">

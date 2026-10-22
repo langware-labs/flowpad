@@ -21,6 +21,13 @@ import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
+/** One entry of `GET /agent/<id>/assistant_skill_catalog`. */
+export interface AssistantSkillChoice {
+  /** The skill's folder name — what `assistant_skills` lists. */
+  name: string;
+  description: string;
+}
+
 /** `GET /agent/<id>/auto_launch_state`. */
 export interface AgentAutoLaunchState {
   /** Already auto-launched in the agent's own project; `null` when it has no project. */
@@ -147,6 +154,8 @@ export class Agent extends APIEntity<Agent> {
   subagents: string[];
   additional_dirs: string[];
   load_flowpad_assistant: boolean;
+  /** Which Flowpad Assistant skills it loads, by folder name; `null`/absent = all of them. */
+  assistant_skills?: string[] | null;
   /** Chief of Staff mode: answers fast and delegates long work to its subagents as tasks. */
   chief_of_staff: boolean;
   /** Vendor-specific launch keys the schema does not enumerate (e.g. Claude's
@@ -217,6 +226,7 @@ export class Agent extends APIEntity<Agent> {
     this.subagents = entity.subagents || [];
     this.additional_dirs = entity.additional_dirs || [];
     this.load_flowpad_assistant = entity.load_flowpad_assistant ?? false;
+    this.assistant_skills = entity.assistant_skills ?? null;
     this.chief_of_staff = entity.chief_of_staff ?? false;
     this.cli_options = entity.cli_options || {};
 
@@ -496,6 +506,11 @@ export class Agent extends APIEntity<Agent> {
   /** Make one place the only one answering this agent's email. */
   async setEmailPlace(deploymentId: string): Promise<void> {
     await this.post('set_email_place', { deployment_id: deploymentId });
+  }
+
+  /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
+  async assistantSkillCatalog(): Promise<AssistantSkillChoice[]> {
+    return (await this.get<AssistantSkillChoice[] | null>('assistant_skill_catalog')) ?? [];
   }
 
   /** Whether this agent already auto-launched in its project (the once-only mark is set). */

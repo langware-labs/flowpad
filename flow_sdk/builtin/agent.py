@@ -238,6 +238,11 @@ class Agent(Entity):
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
+    assistant_skills: Optional[list[str]] = APIField(
+        default=None,
+        description="Which of the Flowpad Assistant's skills a launch carries when "
+        "``load_flowpad_assistant`` is on, by folder name. None = all of them.",
+    )
     chief_of_staff: bool = APIField(
         default=False,
         description="Chief of Staff mode: answer fast, run quick jobs on native subagents, delegate long "
@@ -1467,6 +1472,17 @@ class Agent(Entity):
 
         launched = self.id in Agent.auto_launched_ids(self.project_id) if self.project_id else None
         return ApiSuccessResponse(data={"launched": launched})
+
+    @action.get(action_name="assistant_skill_catalog")
+    async def assistant_skill_catalog_action(self):
+        """`GET /agent/<id>/assistant_skill_catalog` — ``[{name, description}]``, the Flowpad
+        Assistant's skills this agent may pick for ``assistant_skills``."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.agentic_process.assistant_view import skill_catalog  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await asyncio.to_thread(skill_catalog))
 
     @action.post(action_name="reset_auto_launch")
     async def reset_auto_launch_action(self):

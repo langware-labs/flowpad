@@ -3312,6 +3312,8 @@ msgstr "כל הנכסים שפורסמו"
 msgid "All runs"
 msgstr "כל ההרצות"
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
 msgstr "כל היכולות"
@@ -16189,6 +16191,10 @@ msgstr "טעינת סשנים..."
 #: src/components/settings-view/SettingsView.tsx
 msgid "Loading settings..."
 msgstr "טוען הגדרות..."
+
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+msgid "Loading skills…"
+msgstr "טוען יכולות…"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Loading spec…"
