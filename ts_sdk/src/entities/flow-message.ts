@@ -212,6 +212,9 @@ export interface IFlowMessage extends IEntity {
    *  attachments require a packed body; sender flips to READY after upload.
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
+  /** Why the body is FAILED, in user-readable words (set by the hub, e.g. when
+   *  its stored copy was lost). Null otherwise. */
+  body_error?: string | null;
   /** Live-session grouping key. Stamped at send time by the guest (who mints
    *  the session id) and on PromptCompletion replies by the host; receivers
    *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
@@ -302,6 +305,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
+  body_error?: string | null;
   outbound?: boolean;
   delivery_failure?: import('./help-request').HubFailure | null;
   body_downloaded?: boolean;
@@ -351,6 +355,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
+    this.body_error = entity.body_error ?? null;
     this.outbound = entity.outbound ?? false;
     this.delivery_failure = entity.delivery_failure ?? null;
     this.body_downloaded = entity.body_downloaded ?? false;
@@ -449,7 +454,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Pack + upload this message's body via the local backend, which handles
    *  the hub fs/upload and the body_status state transitions.
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
-  async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' | 'both' } = {}): Promise<this> {
+  async uploadBody(
+    _opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' | 'both' } = {},
+  ): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
     await this.post<unknown>('upload_body', { transfer_mode: _opts.transferMode ?? 'copy' });
     this.body_status = BodyStatus.READY;

@@ -537,6 +537,9 @@ export function FlowMessageBubble({
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
+  // The hub marked a received body FAILED (e.g. its stored copy was lost): say why
+  // instead of offering a download that can only 404.
+  const bodyFailed = bodyStatus === BodyStatus.FAILED && !downloaded && !fm.outbound;
 
   // A transcript-only share renders a fully blank bubble without this note:
   // an attachment-only send has no text, and the structural TYPE_ID self-refs
@@ -684,15 +687,21 @@ export function FlowMessageBubble({
             <Trans>Download all attachments</Trans>
           </a>
         )}
-        {(missingAttachments.length > 0 || downloadError) && (
+        {(missingAttachments.length > 0 || downloadError || bodyFailed) && (
           <div
             data-testid={downloaded ? 'partial-attachments-status' : 'attachment-download-error'}
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            {downloaded ? <Trans>Downloaded</Trans> : <Trans>Could not download</Trans>}
+            {downloaded ? (
+              <Trans>Downloaded</Trans>
+            ) : bodyFailed ? (
+              fm.body_error || <Trans>The attachments of this message could not be delivered.</Trans>
+            ) : (
+              <Trans>Could not download</Trans>
+            )}
             <AttachmentDownloadWarning
               attachments={missingAttachments}
-              error={downloadError}
+              error={downloadError ?? (bodyFailed ? fm.body_error : null)}
               info={{
                 messageTime: fm?.sent_at ?? timestamp,
                 deliveredAt: fm?.delivered_at,
@@ -717,7 +726,7 @@ export function FlowMessageBubble({
         {/* Download button ONLY while bytes are still remote. Once downloaded,
             files render as staged chips above and entities as chips — nothing
             left to pull, so no project-less dead-end button (the SAPAK bug). */}
-        {hasBody && !downloaded && pendingAssetCount > 0 ? (
+        {!bodyFailed && hasBody && !downloaded && pendingAssetCount > 0 ? (
           <DownloadAttachmentsButton
             count={pendingAssetCount}
             labels={assetLabels}
@@ -819,7 +828,9 @@ export function FlowMessageBubble({
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         messageSession={
-          session ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) } : null
+          session
+            ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) }
+            : null
         }
         taskIt={
           messageTask
@@ -1061,7 +1072,7 @@ export function MessageEntityChip({
   const [reviewOpen, setReviewOpen] = useState(false);
   const { run: openGitShare } = useOpenGitShare(attachment, projectId);
   const [openOutcome, setOpenOutcome] = useState<OpenShareOutcome | null>(null);
-   
+
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
   // A project the message staged (its bundle carried it) is an ordinary
   // attachment chip below. A project reference with no staged attachment — an
