@@ -8,6 +8,8 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks/useEntitiesQuery';
 import { useMembershipAvailability } from '@src/hooks/use-membership-availability';
 import { OrgUnit } from '@src/components/organization/budgets/BudgetSection';
 import { createOrganization } from '@src/components/organization/create-organization';
+import { OrgTeamsList } from '@src/components/organization/org-teams-list';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
@@ -62,6 +64,8 @@ export function OrganizationPage() {
   };
 
   const organizations = useMemo(() => (Array.isArray(orgs) ? orgs : []), [orgs]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = organizations.find((o) => o.id === selectedId) ?? organizations[0];
 
   if (!available) {
     return (
@@ -127,6 +131,23 @@ export function OrganizationPage() {
 
   return (
     <Shell
+      picker={
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-muted-foreground" />
+          <Select value={selected.id} onValueChange={setSelectedId}>
+            <SelectTrigger className="h-9 w-72" data-testid="org-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {organizations.map((org) => (
+                <SelectItem key={org.id} value={org.id}>
+                  {org.name || org.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      }
       createOpen={createOpen}
       setCreateOpen={setCreateOpen}
       name={name}
@@ -135,9 +156,8 @@ export function OrganizationPage() {
       onCreate={() => void submitOrganization()}
     >
       <div className="flex flex-col gap-4" data-testid="org-list">
-        {organizations.map((org) => (
-          <OrgUnit key={org.id} orgId={org.id} name={org.name} onDeleted={() => void refetch()} />
-        ))}
+        <OrgTeamsList orgId={selected.id} />
+        <OrgUnit key={selected.id} orgId={selected.id} name={selected.name} onDeleted={() => void refetch()} />
       </div>
     </Shell>
   );
@@ -145,6 +165,7 @@ export function OrganizationPage() {
 
 function Shell({
   children,
+  picker,
   createOpen,
   setCreateOpen,
   name,
@@ -153,6 +174,7 @@ function Shell({
   onCreate,
 }: {
   children: React.ReactNode;
+  picker?: React.ReactNode;
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
   name: string;
@@ -174,6 +196,7 @@ function Shell({
             <Trans>Organizations, the teams inside them, and who has a budget in each.</Trans>
           </p>
         </div>
+        {picker}
         <div className="flex items-center gap-2">
           {!createOpen ? (
             <Button size="sm" data-testid="org-create-open" onClick={() => setCreateOpen(true)}>
