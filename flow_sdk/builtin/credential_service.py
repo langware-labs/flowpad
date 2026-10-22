@@ -567,8 +567,8 @@ def drop_folder() -> Path:
     return folder
 
 
-def _take_dropped(file: str) -> dict[str, str]:
-    """Read and delete a dropped values file; only a file inside the drop folder is ever read."""
+def _take_dropped(file: str, key: str = "values") -> dict[str, str]:
+    """Read and delete a dropped file's ``key`` map; only a file inside the drop folder is ever read."""
     import json  # noqa: PLC0415
 
     path = Path(file).resolve()
@@ -578,10 +578,33 @@ def _take_dropped(file: str) -> dict[str, str]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     finally:
         path.unlink(missing_ok=True)
-    values = raw.get("values") if isinstance(raw, dict) else None
+    values = raw.get(key) if isinstance(raw, dict) else None
     if not isinstance(values, dict):
-        raise CredentialError("the dropped file holds no values")
+        raise CredentialError(f"the dropped file holds no {key}")
     return {str(k): str(v) for k, v in values.items() if v}
+
+
+async def place_connections(file: str) -> dict[str, Any]:
+    """The hub pushed this deployment's authorized connections (``{"connections": {provider: access token}}``):
+    each becomes this machine's own sign-in for that provider (``record_credential``), so every reader here —
+    data sources, ``flow connections``, ``connections.require`` — finds it locally and never asks the hub for a
+    token. ``{placed, failed}`` by provider; names only."""
+    from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    tokens = _take_dropped(file, "connections")
+    user = await User.get_local()
+    placed: list[str] = []
+    failed: dict[str, str] = {}
+    for provider, token in tokens.items():
+        try:
+            if await record_credential(user, provider, token):
+                placed.append(provider)
+            else:
+                failed[provider] = "not recorded"
+        except Exception as e:  # noqa: BLE001 — reported per provider, names only
+            failed[provider] = type(e).__name__
+    return {"placed": sorted(placed), "failed": failed}
 
 
 async def declare_vars(

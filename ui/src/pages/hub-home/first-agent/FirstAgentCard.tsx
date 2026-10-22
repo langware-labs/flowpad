@@ -294,13 +294,35 @@ export function FirstAgentCard() {
     setSlackConnected(!!s.has_token);
     return !!s.has_token;
   };
+  const flowSlackBot = option?.method === 'flowpad' && channel === 'slack';
   useEffect(() => {
-    if (option?.id !== 'own_app' || slackConnected || step !== 'connect') return;
+    const readsSlack = option?.id === 'own_app' || flowSlackBot;
+    if (!readsSlack || slackConnected || (step !== 'connect' && step !== 'live')) return;
     void refreshSlack();
     const id = setInterval(() => void refreshSlack(), POLL_MS);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [option, slackConnected, step, made]);
+
+  // Flow Slack bot: the bot is the chat line; the person's Slack sign-in is how the agent READS Slack (a 24h
+  // summary). Once the machine is up and the sign-in exists, the deployment is allowed to use it — the hub then
+  // places it on the machine. Nothing to press when the person already linked Slack on the hub.
+  const [slackReadGranted, setSlackReadGranted] = useState(false);
+  useEffect(() => {
+    if (!flowSlackBot || !slackConnected || slackReadGranted) return;
+    if (!made || !deployed?.deployment?.id) return;
+    setSlackReadGranted(true);
+    const deploymentId = deployed.deployment.id;
+    void (async () => {
+      try {
+        await Onboarding.attachConnection(made.project.id, 'slack');
+        await Onboarding.authorize(deploymentId, 'slack');
+      } catch (e) {
+        setSlackReadGranted(false);
+        setError(errorMessage(e, 'failed'));
+      }
+    })();
+  }, [flowSlackBot, slackConnected, slackReadGranted, made, deployed]);
 
   const openSlackConsent = () => run(async () => void window.open(await Onboarding.startConnection('slack'), '_blank'));
 
@@ -803,6 +825,20 @@ export function FirstAgentCard() {
               Set up in {elapsed.toFixed(0)}s. Message it on {CHANNEL_TITLE[channel]} — it answers there.
             </Trans>
           </p>
+          {flowSlackBot && (
+            <p data-testid="first-agent-slack-read" className="flex items-center gap-2 text-xs text-muted-foreground">
+              {slackReadGranted ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3 text-green-600" />
+                  <Trans>It can read your Slack channels.</Trans>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => void openSlackConsent()}>
+                  <Trans>Let it read your Slack</Trans> <ExternalLink className="ml-1 h-3 w-3" />
+                </Button>
+              )}
+            </p>
+          )}
           <div data-testid="first-agent-conversation" className="flex flex-col gap-1 rounded-lg border bg-muted/30 p-3">
             {live.length === 0 ? (
               <p className="text-xs text-muted-foreground">

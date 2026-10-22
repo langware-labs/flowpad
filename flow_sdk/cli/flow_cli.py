@@ -48,6 +48,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "context": ("flow_sdk.cli.commands.context_cmd", "context_app", None),
     "llm": ("flow_sdk.cli.commands.llm_cmd", "llm_app", None),
     "connections": ("flow_sdk.cli.commands.connections_cmd", "connections_app", None),
+    "slack": ("flow_sdk.cli.commands.slack_cmd", "slack_app", None),
     "status": ("flow_sdk.cli.commands.status_cmd", "status_app", None),
     "credentials": ("flow_sdk.cli.commands.credentials_cmd", "credentials_app", None),
     "agent": ("flow_sdk.cli.commands.agent_cmd", "agent_app", None),

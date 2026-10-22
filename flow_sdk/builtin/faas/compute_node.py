@@ -1834,6 +1834,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         rows = await list_connections(project=project, include_unconnected=include_unconnected)
         return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
 
+    @action.get(action_name="slack-recent")
+    async def slack_recent_action(self, hours: str = "24") -> "ApiResponse":
+        """``GET compute_node/@local/slack-recent?hours=24`` — the channels this machine's Slack connection is a
+        member of, with their messages from the last ``hours``. Read with the machine's own connection; the answer
+        is messages, never the token."""
+        from flow_sdk.core.connections.slack_recent import SlackNotConnected, recent  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await recent(float(hours or 24)))
+        except SlackNotConnected as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+        except (RuntimeError, ValueError) as e:
+            return ApiFailResponse(message=str(e), status_code=502)
+
     @action.all(action_name="status", methods=["get", "post"])
     async def status_action(self) -> "ApiResponse":
         """The status record: harnesses (installed, login, account), stored keys, hub login.
