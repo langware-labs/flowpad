@@ -19,6 +19,7 @@ import { Button } from '@src/components/ui/button';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
 import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
+import { ConversationMembersLine } from './ConversationMembersLine';
 import { ConversationAutomationChip } from './ConversationAutomationChip';
 import { ChannelParticipants } from './ChannelParticipants';
 import {
@@ -325,6 +326,7 @@ export function ConversationRoute() {
   return (
     <div className="flex h-full flex-col">
       {header}
+      {!conversation.isChannel && convTypeId && <ConversationMembersLine typeId={convTypeId} />}
       <div className="flex min-h-0 flex-1 flex-col">
         <ConversationPanel
           task={task}
