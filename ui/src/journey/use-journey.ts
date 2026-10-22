@@ -80,7 +80,7 @@ export interface UseJourneyResult {
 }
 
 /** Every journey entity (there is normally one shipped "Getting started"). */
-function useJourneys(enabled = true) {
+export function useJourneys(enabled = true) {
   const request = useMemo(
     () => new QueryRequest({ type: Journey.type, scope: [], query: null, name: 'journeys:all' }),
     [],

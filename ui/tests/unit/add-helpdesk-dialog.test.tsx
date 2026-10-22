@@ -31,7 +31,7 @@ vi.mock('@sdk', async (importOriginal) => {
 vi.mock('@src/components/git/RepoPicker', () => ({ RepoPicker: () => null }));
 vi.mock('@src/components/git/InvitationsStrip', () => ({ InvitationsStrip: () => null }));
 vi.mock('@src/journey/SetupJourneyButton', () => ({
-  SETUP_GITHUB_JOURNEY_ID: 'j1',
+  SETUP_GITHUB_JOURNEY: 'j1',
   SetupJourneyButton: () => null,
 }));
 
@@ -179,14 +179,15 @@ describe('AddHelpdeskDialog', () => {
     const project = {
       id: 'proj-1',
       adoptHelpdeskFromGit: vi.fn(() =>
-        Promise.reject({
-          response: {
-            data: {
-              message:
-                'Repository is already materialized for branch main; requested demo/globex-agents',
+        Promise.reject(
+          Object.assign(new Error('Request failed'), {
+            response: {
+              data: {
+                message: 'Repository is already materialized for branch main; requested demo/globex-agents',
+              },
             },
-          },
-        }),
+          }),
+        ),
       ),
       removeDependency: vi.fn(),
     };

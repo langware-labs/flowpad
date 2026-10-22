@@ -8,7 +8,7 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { useGithubConnected } from '@src/lib/github-oauth-status';
-import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import { CheckCircle2, GitBranch, Github } from 'lucide-react';
 
 /** The remote a git flow will use: which repository, and which branch of it. */
@@ -167,7 +167,7 @@ export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPla
               <Github className="me-1.5 h-3 w-3" />
               <Trans>Connect</Trans>
             </Button>
-            <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID} variant="ghost">
+            <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
               <Trans>Guided setup</Trans>
             </SetupJourneyButton>
           </div>
