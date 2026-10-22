@@ -1,22 +1,20 @@
 /**
- * The org → team → person budget hierarchy — everything on one page, nothing reached by
- * selecting a node in a side tree.
+ * People & teams for ONE organization (`OrgView`): tabs Teams | Members | Billing & keys | General,
+ * and a team's own page (`TeamDetail`).
  *
- * Locked here: a team's people list is fetched lazily (only once opened or "Add people" is
- * pressed — a fifty-team org must not read every team's spend on first paint), a person who has
- * spent nothing still has a row, an over-promise that ALREADY EXISTS is shown and not blocked,
- * renaming and deleting both org and team rows work and are gated on the right permission, and the
- * org's three bring-your-own-key states (no pool / has a root / an older shared-pool chain) still
- * render correctly now that they live inside `OrgUnit` instead of a selected-node `BudgetSection`.
+ * Locked here: a team's people are fetched lazily (only on its own page — a fifty-team org must
+ * not read every team's spend on the Teams tab), a person who has spent nothing still has a row,
+ * an over-promise that ALREADY EXISTS is shown and not blocked, renaming and deleting both org
+ * (General) and team (TeamDetail) work and are gated on `can_manage`, and the org's three
+ * bring-your-own-key states (no pool / has a root / an older shared-pool chain) render on Billing.
  *
- * The default fixtures describe an OWNER — every `can_*` true — because that is who the page was
- * built for and what these tests were written against. What a SHARED organization's admin sees
- * instead is the subject of `shared-org-admin-page.test.tsx`, which flips the same flags off.
+ * The default fixtures describe an OWNER — every `can_*` true. What a SHARED organization's admin
+ * sees instead is the subject of `shared-org-admin-page.test.tsx`, which flips the same flags off.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const UUID = (n: number) => `550e8400-e29b-41d4-a716-4466554400${String(n).padStart(2, '0')}`;
 const EP = (n: number) => `llm_endpoint-${UUID(n)}`;
@@ -33,9 +31,12 @@ const h = vi.hoisted(() => ({
   getByTypeId: vi.fn(),
   invite: vi.fn(),
   copyToClipboard: vi.fn(),
+  teamBudgets: vi.fn(),
+  pool: vi.fn(() => null as unknown),
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
+  teamBudgetsKey: (teamId: string) => ['budgets', 'team', teamId],
   useOrgBudgets: (...args: unknown[]) => h.org(...args),
   useTeamBudgets: (...args: unknown[]) => h.team(...args),
   useSetLifetimeCap: () => ({ mutate: h.setCap, isPending: false }),
@@ -47,6 +48,16 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
 }));
 vi.mock('@src/hooks/entity-hooks/useEntitiesQuery', () => ({
   useEntitiesQuery: (...args: unknown[]) => h.entities(...args),
+}));
+vi.mock('@src/hooks/use-members', () => ({
+  useMembers: () => ({ members: [], refresh: vi.fn() }),
+}));
+vi.mock('@src/components/conversation/useLocalUser', () => ({
+  useLocalUser: () => ({ localUser: null, updateName: vi.fn() }),
+}));
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
+  useLlmEndpoint: () => h.pool(),
+  useLlmEndpoints: () => ({ data: [], refetch: vi.fn() }),
 }));
 vi.mock('@src/components/token-plan/use-token-plan', () => ({
   useSetupScope: () => ({ mutate: vi.fn(), isPending: false }),
@@ -72,21 +83,21 @@ vi.mock('@sdk', async (importOriginal) => {
       getByTypeId: h.getByTypeId,
       getByTypeIdFromCache: () => null,
     },
+    budgetsService: { ...(actual.budgetsService as object), teamBudgets: h.teamBudgets },
     copyToClipboard: h.copyToClipboard,
   };
 });
-// `EndpointControls` renders on every row that has a pool; it is its own dedicated suite
-// (endpoint-controls.test.tsx) — here it only needs to exist so a row can render at all.
+// `EndpointControls` has its own suite (endpoint-controls.test.tsx); here it only has to exist.
 vi.mock('@src/components/organization/budgets/EndpointControls', () => ({
   EndpointControls: () => null,
 }));
-// The invite WRITE has its own suite (invite-to-team.test.ts), which pins the target, the role and
-// the three recipient kinds. What this file owns is which addresses the two buttons hand it.
 vi.mock('@src/components/organization/budgets/invite-to-team', () => ({
   inviteToTeamByEmail: (...args: unknown[]) => h.invite(...args),
 }));
 
-import { OrgUnit } from '@src/components/organization/budgets/BudgetSection';
+import { OrgView } from '@src/components/organization/tabs/OrgView';
+import { mergeOrgMembers } from '@src/components/organization/tabs/MembersTab';
+import type { OrgTab } from '@src/components/organization/tabs/org-route';
 
 const orgScope = (over: Record<string, unknown> = {}) => ({
   id: UUID(1),
@@ -99,7 +110,6 @@ const orgScope = (over: Record<string, unknown> = {}) => ({
   is_root: false,
   provider: null,
   credential_hint: '',
-  // The hub answers these per caller; an owner gets all of them.
   can_configure: true,
   can_allocate: true,
   can_manage: true,
@@ -118,6 +128,8 @@ const teamScope = (over: Record<string, unknown> = {}) => ({
   spent_usd: 5,
   spent_tokens: 900,
   allocated_usd: null,
+  my_role: null,
+  member_count: null,
   can_configure: true,
   can_allocate: true,
   can_manage: true,
@@ -134,91 +146,149 @@ const person = (over: Record<string, unknown> = {}) => ({
   spent_usd: 0,
   spent_tokens: 0,
   can_configure: true,
-  // Per ROW, not per team: the hub answers "may I remove THIS person" (role ladder + last-owner).
   can_remove: true,
   ...over,
 });
 
-function draw(node: React.ReactNode) {
+const idle = { data: undefined, isLoading: false, error: null };
+
+function draw(
+  props: { tab?: OrgTab; teamId?: string | null; name?: string; onDeleted?: () => void; onOpenTeam?: () => void } = {},
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter>
-      <QueryClientProvider client={client}>{node}</QueryClientProvider>
+      <QueryClientProvider client={client}>
+        <OrgView
+          orgId={UUID(1)}
+          name={props.name}
+          tab={props.tab ?? 'teams'}
+          teamId={props.teamId ?? null}
+          onTab={vi.fn()}
+          onOpenTeam={props.onOpenTeam ?? vi.fn()}
+          onCloseTeam={vi.fn()}
+          onDeleted={props.onDeleted ?? vi.fn()}
+        />
+      </QueryClientProvider>
     </MemoryRouter>,
   );
 }
 
-const idle = { data: undefined, isLoading: false, error: null };
+function orgReturns(org = orgScope(), teams: unknown[] = [], people: unknown[] = []) {
+  h.org.mockReturnValue({ data: { org, teams, people }, isLoading: false, error: null, refetch: vi.fn() });
+}
+
+/** Radix menus open on pointerdown, not click. */
+function openMenu(testId: string) {
+  const trigger = screen.getByTestId(testId);
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.keyDown(trigger, { key: 'Enter' });
+}
+
+beforeEach(() => {
+  h.team.mockReturnValue(idle);
+  h.teamBudgets.mockResolvedValue({ team: teamScope(), members: [] });
+  h.pool.mockReturnValue(null);
+});
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
-describe('OrgUnit', () => {
+describe('OrgView', () => {
   it('says so, rather than white-screening or spinning, when the payload arrives without an org', () => {
-    // `OrgBudgets.org` is declared non-optional, so nothing in the types stops a hub that answers
-    // otherwise -- an older deployment, or a refusal riding an HTTP 200, which `apiClient` unwraps
-    // to a plain null with no error. It used to crash the whole page with "Cannot read properties
-    // of undefined (reading 'name')" from the parentLabel argument, which is evaluated BEFORE the
-    // loading guard it sits above; then it waited forever, on a query that had already settled.
     h.org.mockReturnValue({ data: { teams: [] }, isLoading: false, error: null, refetch: vi.fn() });
-    h.team.mockReturnValue(idle);
-
-    expect(() => draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />)).not.toThrow();
+    expect(() => draw()).not.toThrow();
     expect(screen.queryByTestId('org-unit')).toBeNull();
     expect(screen.getByTestId('org-unit-unreadable')).toBeTruthy();
   });
 
   it('a null payload is a dead end too, not a wait', () => {
-    // The exact shape a 200-with-FAIL envelope produces: `apiClient` returns `response.data.data`,
-    // so the refusal arrives as `null` in the position the budgets would have occupied.
     h.org.mockReturnValue({ data: null, isLoading: false, error: null, refetch: vi.fn() });
-    h.team.mockReturnValue(idle);
-
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    draw();
     expect(screen.getByTestId('org-unit-unreadable')).toBeTruthy();
   });
 
   it('still waits while the read is actually in flight', () => {
     h.org.mockReturnValue({ data: undefined, isLoading: true, error: null, refetch: vi.fn() });
-    h.team.mockReturnValue(idle);
-
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    draw();
     expect(screen.queryByTestId('org-unit-unreadable')).toBeNull();
   });
 
-  it('shows the org total, spent and given-out, and no team fetch until a team is opened', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
+  it('a non-permission error is "could not read", not the member card', () => {
+    h.org.mockReturnValue({ data: undefined, isLoading: false, error: new Error('boom'), refetch: vi.fn() });
+    draw();
+    expect(screen.getByTestId('org-unit-unreadable')).toBeTruthy();
+  });
 
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+  it('renders the four tabs', () => {
+    orgReturns();
+    draw();
+    for (const id of ['teams', 'members', 'billing', 'general']) {
+      expect(screen.getByTestId(`org-tab-${id}`)).toBeTruthy();
+    }
+  });
 
-    expect(screen.getByTestId('org-name').textContent).toBe('Langware');
-    expect(screen.getByTestId<HTMLInputElement>('org-total-cap').value).toBe('100');
-    expect(screen.getByText(/12\.5/)).toBeTruthy();
-    // The team is LISTED (name + total), but its people are not fetched just by being on the page.
+  it('lists the team on the Teams tab without fetching its people', () => {
+    orgReturns(orgScope(), [teamScope()]);
+    draw();
     expect(screen.getByTestId(`team-unit-${UUID(4)}`)).toBeTruthy();
+    expect(screen.getByTestId('org-spend-strip').textContent).toContain('12.5');
     expect(h.team).not.toHaveBeenCalledWith(UUID(4));
   });
 
-  it('spells out tokens as an icon with a tooltip, not as the word "tokens" in the row', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
-
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
-    const tokens = screen.getByTestId('org-spent-tokens');
-    expect(tokens.textContent).toBe('4.2K');
-    expect(tokens.title).toBe('Tokens spent');
-    expect(screen.queryByText('tokens', { exact: false })).toBeNull();
+  it('opens a team from its row', () => {
+    orgReturns(orgScope(), [teamScope()]);
+    const onOpenTeam = vi.fn();
+    draw({ onOpenTeam });
+    fireEvent.click(screen.getByTestId(`team-unit-${UUID(4)}`));
+    expect(onOpenTeam).toHaveBeenCalledWith(UUID(4));
   });
 
-  it('renames the organization in place and refreshes on commit', async () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
+  it('shows the caller’s role on a team, or a dash, and its head count', () => {
+    orgReturns(orgScope(), [
+      teamScope({ my_role: 'admin', member_count: 3 }),
+      teamScope({ id: UUID(6), name: 'Growth', my_role: null, member_count: 1 }),
+    ]);
+    draw();
+    expect(screen.getByTestId(`team-${UUID(4)}-role`).textContent).toBe('admin');
+    expect(screen.getByTestId(`team-${UUID(6)}-role`).textContent).toBe('—');
+    expect(screen.getByTestId(`team-${UUID(4)}-members`).textContent).toBe('3 members');
+    expect(screen.getByTestId(`team-${UUID(6)}-members`).textContent).toBe('1 member');
+  });
+
+  it('"Only my teams" keeps the teams the caller holds a role on', () => {
+    orgReturns(orgScope(), [
+      teamScope({ my_role: 'member' }),
+      teamScope({ id: UUID(6), name: 'Growth', my_role: null }),
+    ]);
+    draw();
+    expect(screen.getByTestId(`team-unit-${UUID(6)}`)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('org-teams-mine'));
+    expect(screen.getByTestId(`team-unit-${UUID(4)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`team-unit-${UUID(6)}`)).toBeNull();
+  });
+
+  it('shows the org total, spent and given-out on Billing', () => {
+    orgReturns();
+    draw({ tab: 'billing' });
+    expect(screen.getByTestId<HTMLInputElement>('org-total-cap').value).toBe('100');
+    expect(screen.getByTestId('org-spent').textContent).toContain('12.5');
+    expect(screen.getByTestId('org-allocated').textContent).toContain('40');
+  });
+
+  it('shows an org over-promise instead of refusing it', () => {
+    orgReturns(orgScope({ limit_usd: 10, allocated_usd: 16 }));
+    draw({ tab: 'billing' });
+    expect(screen.getByTestId('org-over-allocated')).toBeTruthy();
+    expect(screen.getByTestId<HTMLInputElement>('org-total-cap').disabled).toBe(false);
+  });
+
+  it('renames the organization in place on General', async () => {
+    orgReturns();
     h.save.mockResolvedValue(undefined);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    draw({ tab: 'general' });
 
     fireEvent.click(screen.getByTestId('org-name'));
     const input = screen.getByTestId<HTMLInputElement>('org-rename-input');
@@ -233,24 +303,25 @@ describe('OrgUnit', () => {
   });
 
   it('does not rename on a no-op commit', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
+    orgReturns();
+    draw({ tab: 'general' });
     fireEvent.click(screen.getByTestId('org-name'));
     fireEvent.blur(screen.getByTestId('org-rename-input'));
     expect(h.save).not.toHaveBeenCalled();
   });
 
-  it('deletes the organization after confirming, and reports the result upward', async () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
+  it('deletes the organization only after its name is typed, and reports upward', async () => {
+    orgReturns();
+    h.getByTypeId.mockResolvedValue({ id: UUID(1), type: 'organization' });
     h.del.mockResolvedValue(undefined);
     const onDeleted = vi.fn();
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={onDeleted} />);
+    draw({ tab: 'general', onDeleted });
 
     fireEvent.click(screen.getByTestId('org-delete'));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const confirm = screen.getByTestId<HTMLButtonElement>('org-delete-confirm');
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('org-delete-confirm-name'), { target: { value: 'Langware' } });
+    fireEvent.click(confirm);
 
     await waitFor(() =>
       expect(h.del).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(1), type: 'organization' })),
@@ -258,126 +329,91 @@ describe('OrgUnit', () => {
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
   });
 
-  it('shows an over-promise instead of refusing it', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope({ limit_usd: 10, allocated_usd: 16 }), teams: [] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    expect(screen.getByTestId('org-over-allocated')).toBeTruthy();
+  it('offers no rename and no delete of the org without can_manage', () => {
+    orgReturns(orgScope({ can_manage: false }));
+    draw({ tab: 'general' });
+    expect(screen.getByTestId('org-name').tagName).toBe('SPAN');
+    expect(screen.queryByTestId('org-delete')).toBeNull();
   });
 
-  it('offers the org and team ids as a copy icon, without printing either on the row', async () => {
-    // The id is what support and every API call ask for, and noise to whoever is reading the page.
-    // So it is one click away and no glance away -- an icon, never the uuid as text.
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
+  it('offers the org id as a copy icon, without printing it', async () => {
+    orgReturns();
+    draw({ tab: 'general' });
     expect(screen.queryByText(UUID(1))).toBeNull();
-    expect(screen.queryByText(UUID(4))).toBeNull();
-
     fireEvent.click(screen.getByTestId('org-copy-id'));
     await waitFor(() => expect(h.copyToClipboard).toHaveBeenCalledWith(UUID(1)));
-
-    fireEvent.click(screen.getByTestId(`team-${UUID(4)}-copy-id`));
-    await waitFor(() => expect(h.copyToClipboard).toHaveBeenLastCalledWith(UUID(4)));
   });
 
-  it('renders NOTHING for a caller the hub refuses, not a line about what admins may see', () => {
-    // `budgets` is admin-and-above on the hub, so a 401 here is the ORDINARY answer for somebody
-    // who accepted an invitation to a team. The screen is the money and they have none of it to
-    // see, so the row is absent -- not a box explaining whose permission they lack, which is a
-    // sentence about somebody else told to a person who wanted to know what they joined.
-    h.org.mockReturnValue({ data: undefined, isLoading: false, error: new Error('401') });
-    h.team.mockReturnValue(idle);
-    const { container } = draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
-    expect(container.textContent).toBe('');
-    expect(screen.queryByTestId('org-unit')).toBeNull();
-    expect(screen.queryByText(/only an admin/i)).toBeNull();
-  });
-
-  it('offers to set a team up when it has no budget, without touching the org level', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope({ endpoint_id: null, limit_usd: null, allocated_usd: null })] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    expect(screen.getByTestId(`budget-setup-team-${UUID(4)}`)).toBeTruthy();
-  });
-
-  /** Collapsed once a root exists — the key form is somewhere you go, not something you read on
-   *  every visit. What must NOT happen is it being unreachable, so the toggle is asserted too. */
-  it('offers the bring-your-own-key form behind a toggle once the org already has a root', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope({ is_root: true, provider: 'anthropic', credential_hint: '****wxyz' }), teams: [] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
-    expect(screen.queryByTestId('org-root-key')).toBeNull();
-    fireEvent.click(screen.getByTestId('org-settings-toggle'));
+  it('shows the key field once the org already has a root', () => {
+    orgReturns(orgScope({ is_root: true, provider: 'anthropic', credential_hint: '****wxyz' }));
+    draw({ tab: 'billing' });
     expect(screen.getByTestId('org-root-key')).toBeTruthy();
   });
 
-  it('opens the bring-your-own-key form on its own when the org has no budget yet', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope({ endpoint_id: null, limit_usd: null, allocated_usd: null }), teams: [] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+  it('opens the bring-your-own-key form when the org has no budget yet', () => {
+    orgReturns(orgScope({ endpoint_id: null, limit_usd: null, allocated_usd: null }));
+    draw({ tab: 'billing' });
     expect(screen.getByTestId('org-root-setup')).toBeTruthy();
+    expect(screen.queryByTestId('org-budget')).toBeNull();
   });
 
-  it('explains bringing a key is unavailable once the org already draws from the shared pool', () => {
-    h.org.mockReturnValue({ data: { org: orgScope({ is_root: false }), teams: [] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
-    fireEvent.click(screen.getByTestId('org-settings-toggle'));
+  it('explains bringing a key is unavailable once the org draws from the shared pool', () => {
+    orgReturns(orgScope({ is_root: false }));
+    draw({ tab: 'billing' });
     expect(screen.getByTestId('org-root-legacy-chain')).toBeTruthy();
+  });
+
+  it('shows a plain member the org name and their own teams when budgets are refused', () => {
+    h.org.mockReturnValue({ data: undefined, isLoading: false, error: { response: { status: 403 } } });
+    h.entities.mockReturnValue({ data: [{ id: UUID(4), name: 'Platform' }], isLoading: false } as never);
+    draw({ name: 'Acme' });
+
+    expect(screen.getByTestId('org-unit').getAttribute('data-readonly')).toBe('true');
+    expect(screen.getByTestId('org-name').textContent).toBe('Acme');
+    expect(screen.getByTestId(`org-member-team-${UUID(4)}`).textContent).toContain('Platform');
+    expect(screen.queryByTestId('org-tabs')).toBeNull();
+    expect(screen.queryByTestId('org-total-cap')).toBeNull();
   });
 });
 
-describe('TeamUnit (rendered inside OrgUnit)', () => {
-  it('lists a person who has spent nothing once the people section is opened', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+describe('TeamDetail (opened through OrgView)', () => {
+  it('fetches the team’s people on its own page and lists someone who has spent nothing', () => {
+    orgReturns(orgScope(), [teamScope()]);
     h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    draw({ teamId: UUID(4) });
 
-    expect(screen.queryByTestId(`member-budget-${EP(2)}`)).toBeNull();
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-
+    expect(h.team).toHaveBeenCalledWith(UUID(4));
     expect(screen.getByTestId(`member-budget-${EP(2)}`)).toBeTruthy();
     expect(screen.getByText('ada@example.com')).toBeTruthy();
+    expect(screen.getByTestId(`member-spent-${EP(2)}`).textContent).toContain('0');
     expect(screen.getByTestId<HTMLInputElement>(`member-cap-${EP(2)}`).value).toBe('50');
-    // Lazy: the per-team fetch only fires because the section above was opened.
-    expect(h.team).toHaveBeenCalledWith(UUID(4));
   });
 
-  it('fetches a team once "Add people" is pressed, even without opening the people list', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue({ data: { team: teamScope(), members: [] }, isLoading: false, error: null });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+  it('falls back to the Teams list when the team id is not in the org', () => {
+    orgReturns(orgScope(), [teamScope()]);
+    draw({ teamId: UUID(9) });
+    expect(screen.getByTestId('org-teams-tab')).toBeTruthy();
+  });
 
-    fireEvent.click(screen.getByTestId(`team-add-people-${UUID(4)}`));
-    expect(screen.getByTestId('add-people-dialog')).toBeTruthy();
+  it('shows a team-level over-promise', () => {
+    orgReturns(orgScope(), [teamScope({ limit_usd: 10, allocated_usd: 16 })]);
+    draw({ teamId: UUID(4) });
+    expect(screen.getByTestId(`team-over-allocated-${UUID(4)}`)).toBeTruthy();
+  });
+
+  it('sets a team cap', () => {
+    orgReturns(orgScope(), [teamScope()]);
+    draw({ teamId: UUID(4) });
+    const cap = screen.getByTestId<HTMLInputElement>(`team-cap-${UUID(4)}`);
+    fireEvent.change(cap, { target: { value: '55' } });
+    fireEvent.blur(cap);
+    expect(h.setCap).toHaveBeenCalledWith({ endpointId: EP(5), usd: 55 }, expect.anything());
   });
 
   it('renames a team in place', async () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
+    orgReturns(orgScope(), [teamScope()]);
     h.save.mockResolvedValue(undefined);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    draw({ teamId: UUID(4) });
 
     fireEvent.click(screen.getByTestId(`team-${UUID(4)}-name`));
     const input = screen.getByTestId<HTMLInputElement>(`team-${UUID(4)}-rename-input`);
@@ -392,15 +428,12 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
   });
 
   it('deletes a team after confirming, loading it as an entity first', async () => {
-    // The load is half the behaviour, not a detail. `dataManager.delete` is cache-first and throws
-    // before any request for an id it has not fetched as an entity — and a team row comes from the
-    // `budgets` aggregate, never from an entity read. Without the fetch the DELETE never left the
-    // browser at all: the team stayed in the database and the screen said nothing useful.
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
+    // `dataManager.delete` is cache-first; a team row comes from the budgets aggregate, so without
+    // the load the DELETE never leaves the browser.
+    orgReturns(orgScope(), [teamScope()]);
     h.getByTypeId.mockResolvedValue({ id: UUID(4), type: 'team' });
     h.del.mockResolvedValue(undefined);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    draw({ teamId: UUID(4) });
 
     fireEvent.click(screen.getByTestId(`team-${UUID(4)}-delete`));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -411,261 +444,179 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     await waitFor(() => expect(h.del).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(4), type: 'team' })));
   });
 
-  it('offers "Remove from team" only on a row the hub says this caller may remove', () => {
-    // can_manage stays TRUE and the button is still hidden: the team-wide permission is not the
-    // question. An admin may rename the team and still be refused against a peer admin, which is
-    // exactly the 403-on-press this gate exists to stop.
-    h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope()] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue({
-      data: { team: teamScope(), members: [person({ can_remove: false })] },
-      isLoading: false,
-      error: null,
-    });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-    expect(screen.queryByTestId(`member-remove-${EP(2)}`)).toBeNull();
-    expect(screen.queryByTestId(`member-delete-${EP(2)}`)).toBeNull();
+  it('offers no rename and no delete of a team without can_manage', () => {
+    orgReturns(orgScope(), [teamScope({ can_manage: false })]);
+    draw({ teamId: UUID(4) });
+    expect(screen.getByTestId(`team-${UUID(4)}-name`).tagName).toBe('SPAN');
+    expect(screen.queryByTestId(`team-${UUID(4)}-delete`)).toBeNull();
+    openMenu(`team-more-${UUID(4)}`);
+    expect(screen.queryByTestId(`team-delete-menu-${UUID(4)}`)).toBeNull();
   });
 
-  it('removes a PERSON from the team, never their allowance, and keeps Delete for an anonymous allowance', async () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+  it('offers to set a team up when it has no budget', () => {
+    orgReturns(orgScope(), [teamScope({ endpoint_id: null, limit_usd: null, allocated_usd: null })]);
+    draw({ teamId: UUID(4) });
+    expect(screen.getByTestId(`budget-setup-team-${UUID(4)}`)).toBeTruthy();
+  });
+
+  it('marks a limit equal to the team default "team default", any other "custom", and resets to the default', () => {
+    h.pool.mockReturnValue({
+      typeId: { type: 'llm_endpoint', id: UUID(5) },
+      member_default_limits: { cost_usd_total: 20 },
+    });
+    orgReturns(orgScope(), [teamScope()]);
     h.team.mockReturnValue({
-      data: { team: teamScope(), members: [person(), person({ endpoint_id: EP(5), name: 'Pending', user_id: null })] },
+      data: {
+        team: teamScope(),
+        members: [person({ limit_usd: 20 }), person({ endpoint_id: EP(6), name: 'Alan', limit_usd: 75 })],
+      },
       isLoading: false,
       error: null,
     });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
+    draw({ teamId: UUID(4) });
 
-    // The person's row: Remove from team, confirmed, is the members DELETE on the TEAM -- never
-    // the allowance's own delete, which the hub would undo on the person's next read.
-    fireEvent.click(screen.getByTestId(`member-remove-${EP(2)}`));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByTestId(`member-limit-source-${EP(2)}`).textContent).toBe('team default');
+    expect(screen.queryByTestId(`member-reset-${EP(2)}`)).toBeNull();
+    expect(screen.getByTestId(`member-limit-source-${EP(6)}`).textContent).toContain('custom');
+
+    fireEvent.click(screen.getByTestId(`member-reset-${EP(6)}`));
+    expect(h.setCap).toHaveBeenCalledWith({ endpointId: EP(6), usd: 20 }, expect.anything());
+  });
+
+  it('says neither "default" nor "custom" before the team pool has loaded', () => {
+    orgReturns(orgScope(), [teamScope()]);
+    h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
+    draw({ teamId: UUID(4) });
+    expect(screen.queryByTestId(`member-limit-source-${EP(2)}`)).toBeNull();
+  });
+
+  it('removes a PERSON from the team, never their allowance; deletes a holderless allowance', async () => {
+    orgReturns(orgScope(), [teamScope()]);
+    h.team.mockReturnValue({
+      data: { team: teamScope(), members: [person(), person({ endpoint_id: EP(7), name: 'Pending', user_id: null })] },
+      isLoading: false,
+      error: null,
+    });
+    draw({ teamId: UUID(4) });
+
+    expect(screen.getByTestId(`member-pending-${EP(7)}`)).toBeTruthy();
+    openMenu(`member-more-${EP(2)}`);
+    fireEvent.click(await screen.findByTestId(`member-remove-${EP(2)}`));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
     await waitFor(() =>
       expect(h.removeMember).toHaveBeenCalledWith({ teamId: UUID(4), userId: UUID(3) }, expect.anything()),
     );
     expect(h.removeAllowance).not.toHaveBeenCalled();
-
-    // The holderless row: Delete the allowance itself.
-    expect(screen.queryByTestId(`member-remove-${EP(5)}`)).toBeNull();
-    expect(screen.getByTestId(`member-delete-${EP(5)}`)).toBeTruthy();
   });
 
-  /**
-   * The bug this gate exists for, stated as a scenario rather than as a flag.
-   *
-   * An admin of a team may rename it, so `can_manage` is true and the old gate showed Remove on
-   * EVERY row. Pressing it beside a peer admin earned a 403, because the hub judges that request by
-   * the role ladder: a member at or above your own rank is untouchable. This file's rule is that a
-   * control it offers always works, so the answer has to come per row from the hub.
-   */
-  it('hides Remove beside a peer the caller cannot outrank, while the team stays manageable', () => {
-    const plain = person({ endpoint_id: EP(2), user_id: UUID(3), can_remove: true });
-    const peerAdmin = person({ endpoint_id: EP(6), user_id: UUID(7), name: 'Grace', can_remove: false });
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue({
-      data: { team: teamScope(), members: [plain, peerAdmin] },
-      isLoading: false,
-      error: null,
-    });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-
-    // Same team, same caller, same `can_manage` — the rows differ, and so do the buttons.
-    expect(screen.getByTestId(`member-remove-${EP(2)}`)).toBeTruthy();
-    expect(screen.queryByTestId(`member-remove-${EP(6)}`)).toBeNull();
-    // The peer's row keeps everything else: the caller may still set their cap.
-    expect(screen.getByTestId(`member-edit-${EP(6)}`)).toBeTruthy();
-  });
-
-  /**
-   * Order matters and is asserted, not assumed: Advanced, Edit, Remove — left to right, in order of
-   * consequence, with Remove keeping the isolated rightmost slot.
-   */
-  it('gives a person row Advanced, Edit and Remove, in that order', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-
-    const row = screen.getByTestId(`member-budget-${EP(2)}`);
-    const ids = Array.from(row.querySelectorAll('[data-testid]'))
-      .map((el) => el.getAttribute('data-testid') ?? '')
-      .filter((id) => /^member-(advanced|edit|remove)-/.test(id));
-    expect(ids).toEqual([`member-advanced-${EP(2)}`, `member-edit-${EP(2)}`, `member-remove-${EP(2)}`]);
-  });
-
-  it('renames a person’s budget from the Edit button, writing the ENDPOINT’s own name', async () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
-    h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-
-    fireEvent.click(screen.getByTestId(`member-edit-${EP(2)}`));
-    const input = screen.getByTestId<HTMLInputElement>(`member-rename-input-${EP(2)}`);
-    fireEvent.change(input, { target: { value: 'Ada — research' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    await waitFor(() => expect(h.save).toHaveBeenCalled());
-    // The endpoint, addressed by its own typeid — never the person's account.
-    expect(h.save.mock.calls[0][0]).toEqual(expect.objectContaining({ type: 'llm_endpoint', id: UUID(2) }));
-    expect(h.save.mock.calls[0][2]).toEqual({ name: 'Ada — research' });
-  });
-
-  it('still offers Advanced and Edit on a person row this caller may not remove', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope()] },
-      isLoading: false,
-      error: null,
-    });
+  it('offers Remove only on a row the hub says this caller may remove', async () => {
+    orgReturns(orgScope(), [teamScope()]);
     h.team.mockReturnValue({
       data: { team: teamScope(), members: [person({ can_remove: false })] },
       isLoading: false,
       error: null,
     });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-
+    draw({ teamId: UUID(4) });
+    openMenu(`member-more-${EP(2)}`);
+    expect(await screen.findByTestId(`member-advanced-${EP(2)}`)).toBeTruthy();
     expect(screen.queryByTestId(`member-remove-${EP(2)}`)).toBeNull();
-    expect(screen.getByTestId(`member-advanced-${EP(2)}`)).toBeTruthy();
-    expect(screen.getByTestId(`member-edit-${EP(2)}`)).toBeTruthy();
   });
 
-  it('shows a plain member the org name and their own teams when budgets are refused', () => {
-    h.org.mockReturnValue({ data: undefined, isLoading: false, error: { response: { status: 401 } } });
-    h.entities.mockReturnValue({ data: [{ id: UUID(4), name: 'Platform' }], isLoading: false });
-    draw(<OrgUnit orgId={UUID(1)} name="Acme" onDeleted={vi.fn()} />);
-
-    expect(screen.getByTestId('org-name').textContent).toBe('Acme');
-    expect(screen.getByTestId(`org-member-team-${UUID(4)}`).textContent).toContain('Platform');
-    expect(screen.queryByTestId(`team-people-toggle-${UUID(4)}`)).toBeNull();
-    expect(screen.queryByTestId('org-cap')).toBeNull();
-  });
-
-  it('shows a team-level over-promise', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope({ limit_usd: 10, allocated_usd: 16 })] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    expect(screen.getByTestId(`team-over-allocated-${UUID(4)}`)).toBeTruthy();
-  });
-});
-
-describe('inviting a team\u2019s people', () => {
-  /** Open Platform's people list with `members` on it. */
-  function openPeople(members: Record<string, unknown>[], team = teamScope()) {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [team] }, isLoading: false, error: null });
-    h.team.mockReturnValue({ data: { team, members }, isLoading: false, error: null });
-    h.invite.mockResolvedValue({ invited: [], already: [], failed: [] });
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
-  }
-
-  it('emails one person about the TEAM from their own row', async () => {
-    // Being given money sends nothing on purpose, so this button is the only thing that tells
-    // them. It hands over the team id and that one address — never the endpoint, which the hub
-    // would refuse for anyone who already holds it.
-    openPeople([person()]);
-
-    fireEvent.click(screen.getByTestId(`member-invite-${EP(2)}`));
-
+  it('emails one person about the TEAM from their row menu', async () => {
+    orgReturns(orgScope(), [teamScope()]);
+    h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
+    h.invite.mockResolvedValue({ invited: ['ada@example.com'], already: [], failed: [] });
+    draw({ teamId: UUID(4) });
+    openMenu(`member-more-${EP(2)}`);
+    fireEvent.click(await screen.findByTestId(`member-invite-${EP(2)}`));
     await waitFor(() => expect(h.invite).toHaveBeenCalledWith(UUID(4), ['ada@example.com']));
   });
 
-  it('emails the whole roster from one button ABOVE the list', async () => {
-    openPeople([person(), person({ endpoint_id: EP(6), name: 'Alan', email: 'alan@example.com' })]);
-
-    const all = screen.getByTestId(`team-invite-all-${UUID(4)}`);
-    const table = screen.getByTestId(`member-budget-${EP(2)}`).closest('table');
-    // Above the list, not buried under it: it acts on everything the list shows.
-    expect(all.compareDocumentPosition(table!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-    fireEvent.click(all);
-
-    await waitFor(() => expect(h.invite).toHaveBeenCalledWith(UUID(4), ['ada@example.com', 'alan@example.com']));
-  });
-
-  it('offers nothing to send to an allowance with no address', () => {
-    // The hub mints its per-user defaults from an account, so this is only ever a wallet whose
-    // invitation never resolved — and a button that cannot do anything is worse than no button.
-    openPeople([person({ email: null })]);
-
-    expect(screen.queryByTestId(`member-invite-${EP(2)}`)).toBeNull();
-    expect(screen.queryByTestId(`team-invite-all-${UUID(4)}`)).toBeNull();
-  });
-
-  it('leaves out the whole-roster button when nobody on the list has an address', () => {
-    openPeople([person({ email: null }), person({ endpoint_id: EP(6), email: null })]);
-
-    expect(screen.queryByTestId(`team-invite-all-${UUID(4)}`)).toBeNull();
-  });
-
-  it('shows neither button to someone who may not bring people into this team', () => {
-    // Same gate as "Add people" and "Share a project" — whoever runs the team is who shares it.
-    openPeople([person()], teamScope({ can_allocate: false }));
-
-    expect(screen.queryByTestId(`member-invite-${EP(2)}`)).toBeNull();
-    expect(screen.queryByTestId(`team-invite-all-${UUID(4)}`)).toBeNull();
+  it('offers no invite and no Add people to someone who may not bring people in', async () => {
+    orgReturns(orgScope(), [teamScope({ can_allocate: false })]);
+    h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
+    draw({ teamId: UUID(4) });
     expect(screen.queryByTestId(`team-add-people-${UUID(4)}`)).toBeNull();
+    openMenu(`member-more-${EP(2)}`);
+    expect(await screen.findByTestId(`member-advanced-${EP(2)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`member-invite-${EP(2)}`)).toBeNull();
+  });
+
+  it('offers Add people once the roster is loaded', () => {
+    orgReturns(orgScope(), [teamScope()]);
+    h.team.mockReturnValue({ data: { team: teamScope(), members: [] }, isLoading: false, error: null });
+    draw({ teamId: UUID(4) });
+    fireEvent.click(screen.getByTestId(`team-add-people-${UUID(4)}`));
+    expect(screen.getByTestId('add-people-dialog')).toBeTruthy();
   });
 });
 
-describe('the org’s own people', () => {
-  const person = (
-    over: Partial<{ user_id: string; name: string; email: string | null; role: string | null }> = {},
-  ) => ({
-    user_id: UUID(9),
-    name: 'Bob Example',
-    email: 'bob@example.test',
-    role: 'admin',
-    ...over,
+describe('Members tab', () => {
+  it('lists a teamless person from the org read, and the "No team" filter keeps them', async () => {
+    orgReturns(
+      orgScope(),
+      [teamScope()],
+      [{ user_id: UUID(9), name: 'Bob Example', email: 'bob@x.test', role: 'admin' }],
+    );
+    h.teamBudgets.mockResolvedValue({ team: teamScope(), members: [person()] });
+    draw({ tab: 'members' });
+
+    expect((await screen.findByTestId(`org-person-${UUID(9)}`)).textContent).toContain('Bob Example');
+    expect(await screen.findByTestId(`org-person-${UUID(3)}`)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('org-members-filter-no-team'));
+    expect(screen.getByTestId(`org-person-${UUID(9)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`org-person-${UUID(3)}`)).toBeNull();
   });
 
-  it('lists someone held by the org alone, once the section is opened', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope()], people: [person()] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-    // Collapsed like a team's roster: the names appear only once it is opened.
-    expect(screen.queryByTestId(`org-people-${UUID(1)}`)).toBeNull();
-
-    fireEvent.click(screen.getByTestId(`org-people-toggle-${UUID(1)}`));
-
-    expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('Bob Example');
-    expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('admin');
-  });
-
-  it('is not rendered at all when everybody reaches the org through a team', () => {
-    h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope()], people: [] },
-      isLoading: false,
-      error: null,
-    });
-    h.team.mockReturnValue(idle);
-
-    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
-
-    expect(screen.queryByTestId(`org-people-toggle-${UUID(1)}`)).toBeNull();
-  });
-
-  it('renders the page against a hub that does not send the field yet', () => {
-    // The app and the hub ship separately; a missing list is an absent section, not a blank org.
+  it('renders against a hub that does not send `people`', () => {
     h.org.mockReturnValue({ data: { org: orgScope(), teams: [] }, isLoading: false, error: null });
-    h.team.mockReturnValue(idle);
+    draw({ tab: 'members' });
+    expect(screen.getByTestId('org-members-tab')).toBeTruthy();
+  });
+});
 
-    expect(() => draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />)).not.toThrow();
-    expect(screen.getByTestId('org-unit')).toBeTruthy();
+describe('mergeOrgMembers', () => {
+  const m = (over: Record<string, unknown> = {}) => ({ ...person(), ...over }) as never;
+  const teams = [{ name: 'Platform' }, { name: 'Growth' }] as never;
+
+  it('merges one person across rosters by user_id, summing spend and listing each team', () => {
+    const rows = mergeOrgMembers(
+      { teams, people: [] },
+      [{ members: [m({ spent_usd: 2 })] }, { members: [m({ endpoint_id: EP(8), spent_usd: 3 })] }] as never,
+      new Map([[UUID(3), 'owner']]),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      key: UUID(3),
+      teams: ['Platform', 'Growth'],
+      spent: 5,
+      role: 'owner',
+      pending: false,
+    });
+  });
+
+  it('marks a holderless allowance pending, keyed by email', () => {
+    const rows = mergeOrgMembers(
+      { teams, people: [] },
+      [{ members: [m({ user_id: null, email: 'new@x.test' })] }, undefined] as never,
+      new Map(),
+    );
+    expect(rows[0]).toMatchObject({ key: 'new@x.test', user_id: null, pending: true, role: null });
+  });
+
+  it('adds teamless people from `people`, without duplicating someone already on a team', () => {
+    const rows = mergeOrgMembers(
+      {
+        teams,
+        people: [
+          { user_id: UUID(3), name: 'Ada Lovelace', email: 'ada@example.com', role: 'admin' },
+          { user_id: UUID(9), name: 'bob', email: null, role: 'member' },
+        ],
+      } as never,
+      [{ members: [m()] }, undefined] as never,
+      new Map(),
+    );
+    expect(rows.map((r) => r.key)).toEqual([UUID(3), UUID(9)]);
+    expect(rows[1]).toMatchObject({ teams: [], spent: 0, role: 'member', pending: false });
   });
 });
