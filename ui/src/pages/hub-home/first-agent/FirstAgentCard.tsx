@@ -55,11 +55,6 @@ const OPTIONS: Record<OnboardingChannel, Option[]> = {
 };
 
 const CHANNEL_TITLE: Record<OnboardingChannel, string> = { whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack' };
-const CHANNEL_HINT: Record<OnboardingChannel, string> = {
-  whatsapp: 'Chat with it from your phone.',
-  telegram: 'A bot you message on Telegram.',
-  slack: 'It answers in your workspace.',
-};
 /** Throws unless the channel set-up's last step (verify) reports the channel ready. */
 const assertReady = (answer: ChannelSetupResult) => {
   const last = answer.results.at(-1);
@@ -246,7 +241,7 @@ export function FirstAgentCard() {
       const answer = await Onboarding.channelSetup(d.node_typeid, {
         source: made!.data_source_id!,
         config: { channel: slackChannel.trim() },
-        credential: { name: 'slack', values: { SLACK_BOT_TOKEN: token.trim() } },
+        credential: { name: 'slack_channel', values: { SLACK_BOT_TOKEN: token.trim() } },
         access: { open_to_all: true },
         exclusive: true,
         verify: true,
@@ -391,7 +386,6 @@ export function FirstAgentCard() {
             >
               <FlowIcon icon={`brands.${c}`} className="h-7 w-7 shrink-0" />
               <span className="text-sm font-semibold text-foreground">{CHANNEL_TITLE[c]}</span>
-              <span className="text-xs text-muted-foreground">{CHANNEL_HINT[c]}</span>
             </button>
           ))}
         </div>

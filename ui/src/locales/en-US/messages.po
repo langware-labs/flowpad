@@ -187,8 +187,8 @@ msgid "· skill: {skill}"
 msgstr "· skill: {skill}"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "· yours"
-msgstr "· yours"
+#~ msgid "· yours"
+#~ msgstr "· yours"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "› Messages"
@@ -351,6 +351,11 @@ msgstr "{0, plural, one {{occurrences} occurrences across # session} other {{occ
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{0, plural, one {{occurrences}× across # session} other {{occurrences}× across # sessions}}"
 msgstr "{0, plural, one {{occurrences}× across # session} other {{occurrences}× across # sessions}}"
+
+#. placeholder {0}: kids.length
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{0, plural, one {# allocation} other {# allocations}}"
+msgstr "{0, plural, one {# allocation} other {# allocations}}"
 
 #. placeholder {0}: links.length
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
@@ -818,6 +823,12 @@ msgstr "{0} keys start with {1} — this one does not."
 msgid "{0} kinds"
 msgstr "{0} kinds"
 
+#. placeholder {0}: formatUsd(budget.left)
+#. placeholder {1}: formatUsd(budget.limit)
+#: src/components/token-plan/SourceSummary.tsx
+msgid "{0} left of {1}"
+msgstr "{0} left of {1}"
+
 #. placeholder {0}: formatUsd(left.remaining)
 #. placeholder {1}: formatUsd(left.limit)
 #: src/components/token-plan/AllocateDialog.tsx
@@ -1276,8 +1287,12 @@ msgid "{headline} usage"
 msgstr "{headline} usage"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
-msgstr "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
+#~ msgid "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
+#~ msgstr "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{hiddenTeams} teams without a budget are hidden."
+msgstr "{hiddenTeams} teams without a budget are hidden."
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "{hookCount, plural, one {# hook} other {# hooks}}"
@@ -1838,6 +1853,10 @@ msgstr "/run reclaimable "
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
+
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "← All sources"
+msgstr "← All sources"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "← Back"
@@ -3258,7 +3277,6 @@ msgstr "all"
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/components/spotlight/EntityTypePopover.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/hooks/useClaudeErrorRecords.ts
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3397,6 +3415,10 @@ msgstr "All runs"
 msgid "All skills"
 msgstr "All skills"
 
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "All sources"
+msgstr "All sources"
+
 #: src/components/assets/filters/taskFilters.tsx
 msgid "All statuses"
 msgstr "All statuses"
@@ -3426,8 +3448,16 @@ msgid "Allocated {0}"
 msgstr "Allocated {0}"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Allocated:"
-msgstr "Allocated:"
+msgid "Allocated from this source"
+msgstr "Allocated from this source"
+
+#: src/components/token-plan/TokenPlanView.tsx
+#~ msgid "Allocated:"
+#~ msgstr "Allocated:"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Allocation"
+msgstr "Allocation"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
@@ -3911,6 +3941,11 @@ msgstr "API key"
 msgid "API Key"
 msgstr "API Key"
 
+#. placeholder {0}: e.credential_hint.replace(/^\*+/, '••')
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "API key {0}"
+msgstr "API key {0}"
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "API key copied successfully"
 msgstr "API key copied successfully"
@@ -4192,8 +4227,8 @@ msgid "Ask about this analysis…"
 msgstr "Ask about this analysis…"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Ask an admin to set one up."
-msgstr "Ask an admin to set one up."
+#~ msgid "Ask an admin to set one up."
+#~ msgstr "Ask an admin to set one up."
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Ask anything — I can search the guides and walk you through them."
@@ -5057,10 +5092,9 @@ msgstr "Budget allocated from {0}"
 msgid "Budget created for {label}"
 msgstr "Budget created for {label}"
 
-#. placeholder {0}: scope.name
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Budget endpoint created for {0}"
-msgstr "Budget endpoint created for {0}"
+#~ msgid "Budget endpoint created for {0}"
+#~ msgstr "Budget endpoint created for {0}"
 
 #. placeholder {0}: member.name
 #. placeholder {0}: team.name
@@ -6663,14 +6697,11 @@ msgstr "Collaboration Room"
 msgid "Collapse"
 msgstr "Collapse"
 
-#. placeholder {0}: e.name
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Collapse {0}"
-msgstr "Collapse {0}"
+#~ msgid "Collapse {0}"
+#~ msgstr "Collapse {0}"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Collapse all"
 msgstr "Collapse all"
 
@@ -7185,6 +7216,7 @@ msgid "Console"
 msgstr "Console"
 
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 msgid "Consumption"
 msgstr "Consumption"
 
@@ -7615,6 +7647,7 @@ msgstr "cost"
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 msgid "Cost"
 msgstr "Cost"
 
@@ -8371,8 +8404,8 @@ msgid "Could not set up Git"
 msgstr "Could not set up Git"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Could not set up the budget"
-msgstr "Could not set up the budget"
+#~ msgid "Could not set up the budget"
+#~ msgstr "Could not set up the budget"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -8938,8 +8971,8 @@ msgid "Create SubAgent Hook"
 msgstr "Create SubAgent Hook"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Create the shared budget endpoint; members' defaults are then routed through it."
-msgstr "Create the shared budget endpoint; members' defaults are then routed through it."
+#~ msgid "Create the shared budget endpoint; members' defaults are then routed through it."
+#~ msgstr "Create the shared budget endpoint; members' defaults are then routed through it."
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Create Trigger"
@@ -11799,14 +11832,11 @@ msgstr "Exit local"
 msgid "Expand"
 msgstr "Expand"
 
-#. placeholder {0}: e.name
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Expand {0}"
-msgstr "Expand {0}"
+#~ msgid "Expand {0}"
+#~ msgstr "Expand {0}"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Expand all"
 msgstr "Expand all"
 
@@ -12952,6 +12982,12 @@ msgstr "Flowpad"
 #~ msgid "FlowPad"
 #~ msgstr "FlowPad"
 
+#: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Flowpad account"
+msgstr "Flowpad account"
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Flowpad agent"
 msgstr "Flowpad agent"
@@ -13367,6 +13403,10 @@ msgstr "Fullscreen"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "function (registry)"
 msgstr "function (registry)"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Funded by"
+msgstr "Funded by"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Funded by {0}"
@@ -15489,8 +15529,6 @@ msgid "Kept in the project"
 msgstr "Kept in the project"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Key"
 msgstr "Key"
 
@@ -18758,6 +18796,7 @@ msgid "no key"
 msgstr "no key"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "No key"
 msgstr "No key"
 
@@ -18787,9 +18826,14 @@ msgstr "No known fix yet — use \"Fix It\" to start a session."
 msgid "No languages found."
 msgstr "No languages found."
 
+#: src/components/token-plan/SourceSummary.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "no limit"
 msgstr "no limit"
+
+#: src/components/token-plan/SourceSummary.tsx
+msgid "No limit"
+msgstr "No limit"
 
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No limit — draws from {parent}"
@@ -18983,8 +19027,8 @@ msgid "No Operation (Trace Only)"
 msgstr "No Operation (Trace Only)"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "No organization budget yet"
-msgstr "No organization budget yet"
+#~ msgid "No organization budget yet"
+#~ msgstr "No organization budget yet"
 
 #: src/components/organization/organization-page.tsx
 msgid "No organization yet"
@@ -19423,8 +19467,8 @@ msgid "No tasks yet — \"Task it\" on a message makes one."
 msgstr "No tasks yet — \"Task it\" on a message makes one."
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "No team budget yet"
-msgstr "No team budget yet"
+#~ msgid "No team budget yet"
+#~ msgstr "No team budget yet"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -19449,8 +19493,12 @@ msgid "No todo files found (~/.claude/todos/)"
 msgstr "No todo files found (~/.claude/todos/)"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "No token sources here."
-msgstr "No token sources here."
+#~ msgid "No token sources here."
+#~ msgstr "No token sources here."
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "No token sources yet. Add an API key to start."
+msgstr "No token sources yet. Add an API key to start."
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "No tool calls before cursor in this segment"
@@ -19950,6 +19998,10 @@ msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its ag
 
 #~ msgid "Nothing — this wizard runs with no parameters."
 #~ msgstr "Nothing — this wizard runs with no parameters."
+
+#: src/components/token-plan/SourceSummary.tsx
+msgid "Nothing allocated from this source yet."
+msgstr "Nothing allocated from this source yet."
 
 #: src/components/data-sources/source-attention.ts
 msgid "Nothing arrives until {title} is connected. Press Setup — it takes a minute."
@@ -21485,8 +21537,8 @@ msgstr "Ordered list"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Org"
-msgstr "Org"
+#~ msgid "Org"
+#~ msgstr "Org"
 
 #: src/components/collapsed-sidebar/OrgTeamsButton.tsx
 msgid "Org & teams"
@@ -21720,6 +21772,10 @@ msgstr "Page {page} of {totalPages}"
 #: src/components/ui/pagination.tsx
 msgid "pagination"
 msgstr "pagination"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Paid by your Flowpad account"
+msgstr "Paid by your Flowpad account"
 
 #: src/components/graph-workflows/panels/PaletteTab.tsx
 msgid "palette"
@@ -22376,6 +22432,10 @@ msgstr "Plugin enable/disable flags"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Plugins"
 msgstr "Plugins"
+
+#: src/components/token-plan/SourceSummary.tsx
+msgid "Plus {uncapped} without a limit."
+msgstr "Plus {uncapped} without a limit."
 
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
@@ -23504,6 +23564,10 @@ msgstr "Rebuild the index from the assets page."
 msgid "Rebuilding…"
 msgstr "Rebuilding…"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Received"
+msgstr "Received"
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received attachment — review before installing."
 msgstr "Received attachment — review before installing."
@@ -24400,6 +24464,7 @@ msgstr "Requesting…"
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 msgid "Requests"
 msgstr "Requests"
 
@@ -24911,10 +24976,9 @@ msgstr "root"
 msgid "Root cause"
 msgstr "Root cause"
 
-#. placeholder {0}: PROVIDER_NAME[e.provider]
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Root source · {0} key"
-msgstr "Root source · {0} key"
+#~ msgid "Root source · {0} key"
+#~ msgstr "Root source · {0} key"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
@@ -26171,8 +26235,8 @@ msgid "Select a thread to see what happened in it."
 msgstr "Select a thread to see what happened in it."
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Select a token source to see its budget and consumption."
-msgstr "Select a token source to see its budget and consumption."
+#~ msgid "Select a token source to see its budget and consumption."
+#~ msgstr "Select a token source to see its budget and consumption."
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Select a type to browse"
@@ -26800,16 +26864,16 @@ msgid "Set up LLM"
 msgstr "Set up LLM"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Set up org budget"
-msgstr "Set up org budget"
+#~ msgid "Set up org budget"
+#~ msgstr "Set up org budget"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up project"
 msgstr "Set up project"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Set up team budget"
-msgstr "Set up team budget"
+#~ msgid "Set up team budget"
+#~ msgstr "Set up team budget"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -27064,7 +27128,6 @@ msgstr "Share without project membership"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Shared"
 msgstr "Shared"
 
@@ -28107,6 +28170,7 @@ msgstr "Source: {filePath}"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/token-plan/TokenPlanView.tsx
 msgid "Sources"
 msgstr "Sources"
 
@@ -28156,6 +28220,11 @@ msgstr "Spending now bills your own {0}."
 msgid "Spent"
 msgstr "Spent"
 
+#. placeholder {0}: formatUsd(spent)
+#: src/components/token-plan/SourceSummary.tsx
+msgid "spent {0}"
+msgstr "spent {0}"
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Spent then"
 msgstr "Spent then"
@@ -28173,8 +28242,8 @@ msgid "Spinner Verbs"
 msgstr "Spinner Verbs"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Sponsor"
-msgstr "Sponsor"
+#~ msgid "Sponsor"
+#~ msgstr "Sponsor"
 
 #: src/i18n/type-labels.ts
 msgid "Spreadsheets"
@@ -29118,8 +29187,6 @@ msgstr "Tasks {openTaskCount}"
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/AllocateDialog.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
 msgstr "Team"
@@ -31108,6 +31175,7 @@ msgstr "tokens"
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tokens"
 msgstr "Tokens"
@@ -31538,10 +31606,9 @@ msgstr "uid"
 msgid "Unable to fetch branches. Please check your repository permissions."
 msgstr "Unable to fetch branches. Please check your repository permissions."
 
-#. placeholder {0}: formatUsd(Math.max(0, own.limit - given))
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "unallocated {0}"
-msgstr "unallocated {0}"
+#~ msgid "unallocated {0}"
+#~ msgstr "unallocated {0}"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Unarchive — back to Stream Inbox"
@@ -31691,6 +31758,8 @@ msgstr "Unlimited here — {parent} caps you at {limit} {windowText}"
 msgid "Unmount Flowpad Assistant"
 msgstr "Unmount Flowpad Assistant"
 
+#: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Unnamed"
 msgstr "Unnamed"
@@ -33604,6 +33673,11 @@ msgstr "You’ve been invited"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You've been invited to a conversation"
 msgstr "You've been invited to a conversation"
+
+#. placeholder {0}: PROVIDER_NAME[o.mark]
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Your {0} API key"
+msgstr "Your {0} API key"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "your account"
