@@ -7,7 +7,7 @@
  * expansion); a source that is one of the caller's scopes keeps the token plan's full view
  * (`token_plan/me`), any other shows its own limits and the endpoint usage panel.
  */
-import { PageId, ViewType, type LLMEndpoint, type TokenPlanScope } from '@sdk';
+import { PageId, ViewType, type LLMEndpoint, type LLMEndpointLimits, type TokenPlanScope } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, Gauge } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -82,7 +82,7 @@ function PoolSplit({ pool, endpoints }: { pool: LLMEndpoint; endpoints: readonly
   if (!own || kids.length === 0) return null;
   const parts = kids.map((k) => ({
     name: k.name,
-    limit: (k.limits as Record<string, number | null>)[own.key] ?? null,
+    limit: k.limits[own.key as keyof LLMEndpointLimits] ?? null,
   }));
   const given = parts.reduce((sum, p) => sum + (p.limit ?? 0), 0);
   return (
