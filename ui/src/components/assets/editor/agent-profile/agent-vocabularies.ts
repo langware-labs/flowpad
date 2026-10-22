@@ -49,17 +49,19 @@ export const AGENT_EFFORTS = ['low', 'medium', 'high'] as const;
 export const AGENT_MACHINE_SIZES = Object.values(ComputeNodeSize);
 
 /**
- * The Deploy tab's own display text — `ComputeNodeSizeLabels` plus an
- * indicative hourly price. Owned HERE, not in the shared SDK entity: that
- * label is mirrored verbatim into the hub's own SDK copy and read by an
- * unrelated hub surface, so a price baked in there would ship stale with no
- * build step to catch it. This component is the only place that wants a
- * price at all.
+ * The hourly machines' display text — `ComputeNodeSizeLabels` plus an
+ * indicative hourly price, shown by the Deploy tab and the New sandbox dialog.
+ * Owned HERE, not in the shared SDK entity: that label is mirrored verbatim
+ * into the hub's own SDK copy and read by an unrelated hub surface, so a price
+ * baked in there would ship stale with no build step to catch it.
+ *
+ * Prices are E2B usage rates ($0.0504/vCPU-hr, $0.0162/GiB-hr) x1.7 over the
+ * hub's E2B sizes (sm 2 vCPU/2 GiB, md 2/4, lg 4/8) — change both together.
  */
 const MACHINE_SIZE_HOURLY_PRICE: Record<ComputeNodeSize, string> = {
   [ComputeNodeSize.SMALL]: '$0.226/hr',
-  [ComputeNodeSize.MEDIUM]: '$0.398/hr',
-  [ComputeNodeSize.LARGE]: '$0.796/hr',
+  [ComputeNodeSize.MEDIUM]: '$0.282/hr',
+  [ComputeNodeSize.LARGE]: '$0.563/hr',
 };
 
 export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
