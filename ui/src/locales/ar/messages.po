@@ -186,8 +186,8 @@ msgid "· skill: {skill}"
 msgstr "· المهارة: {skill}"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "· yours"
-msgstr ""
+#~ msgid "· yours"
+#~ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "› Messages"
@@ -350,6 +350,11 @@ msgstr "{0, plural, one {{occurrences} تكرار في جلسة واحدة} two 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{0, plural, one {{occurrences}× across # session} other {{occurrences}× across # sessions}}"
 msgstr "{0, plural, one {{occurrences}× عبر جلسة واحدة} two {{occurrences}× عبر جلستين} few {{occurrences}× عبر # جلسات} many {{occurrences}× عبر # جلسة} other {{occurrences}× عبر # جلسة}}"
+
+#. placeholder {0}: kids.length
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{0, plural, one {# allocation} other {# allocations}}"
+msgstr ""
 
 #. placeholder {0}: links.length
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
@@ -815,6 +820,12 @@ msgstr "تبدأ مفاتيح {0} بـ {1} — وهذا المفتاح لا يب
 msgid "{0} kinds"
 msgstr "{0} أنواع"
 
+#. placeholder {0}: formatUsd(budget.left)
+#. placeholder {1}: formatUsd(budget.limit)
+#: src/components/token-plan/SourceSummary.tsx
+msgid "{0} left of {1}"
+msgstr ""
+
 #. placeholder {0}: formatUsd(left.remaining)
 #. placeholder {1}: formatUsd(left.limit)
 #: src/components/token-plan/AllocateDialog.tsx
@@ -1272,7 +1283,11 @@ msgid "{headline} usage"
 msgstr "استخدام {headline}"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
+#~ msgid "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
+#~ msgstr ""
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{hiddenTeams} teams without a budget are hidden."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -1825,6 +1840,10 @@ msgstr "‏/run قابل للاسترجاع "
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
+
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "← All sources"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "← Back"
@@ -3229,7 +3248,6 @@ msgstr "الكل"
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/components/spotlight/EntityTypePopover.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/hooks/useClaudeErrorRecords.ts
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3367,6 +3385,10 @@ msgstr "كل عمليات التشغيل"
 msgid "All skills"
 msgstr "جميع المهارات"
 
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "All sources"
+msgstr ""
+
 #: src/components/assets/filters/taskFilters.tsx
 msgid "All statuses"
 msgstr "جميع الحالات"
@@ -3396,7 +3418,15 @@ msgid "Allocated {0}"
 msgstr "تم تخصيص {0}"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Allocated:"
+msgid "Allocated from this source"
+msgstr ""
+
+#: src/components/token-plan/TokenPlanView.tsx
+#~ msgid "Allocated:"
+#~ msgstr ""
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Allocation"
 msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
@@ -3879,6 +3909,11 @@ msgstr "مفتاح API"
 msgid "API Key"
 msgstr "مفتاح API"
 
+#. placeholder {0}: e.credential_hint.replace(/^\*+/, '••')
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "API key {0}"
+msgstr ""
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "API key copied successfully"
 msgstr "تم نسخ مفتاح API بنجاح"
@@ -4160,8 +4195,8 @@ msgid "Ask about this analysis…"
 msgstr "طرح سؤال حول هذا التحليل…"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Ask an admin to set one up."
-msgstr "اطلبوا من أحد المسؤولين إعدادها."
+#~ msgid "Ask an admin to set one up."
+#~ msgstr "اطلبوا من أحد المسؤولين إعدادها."
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Ask anything — I can search the guides and walk you through them."
@@ -5019,10 +5054,9 @@ msgstr ""
 msgid "Budget created for {label}"
 msgstr "تم إنشاء ميزانية لـ {label}"
 
-#. placeholder {0}: scope.name
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Budget endpoint created for {0}"
-msgstr "تم إنشاء نقطة نهاية للميزانية لـ{0}"
+#~ msgid "Budget endpoint created for {0}"
+#~ msgstr "تم إنشاء نقطة نهاية للميزانية لـ{0}"
 
 #. placeholder {0}: member.name
 #. placeholder {0}: team.name
@@ -6619,14 +6653,11 @@ msgstr "غرفة التعاون"
 msgid "Collapse"
 msgstr "طي"
 
-#. placeholder {0}: e.name
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Collapse {0}"
-msgstr ""
+#~ msgid "Collapse {0}"
+#~ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Collapse all"
 msgstr "طي الكل"
 
@@ -7134,6 +7165,7 @@ msgid "Console"
 msgstr "الطرفية"
 
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 msgid "Consumption"
 msgstr "الاستهلاك"
 
@@ -7563,6 +7595,7 @@ msgstr "التكلفة"
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 msgid "Cost"
 msgstr "التكلفة"
 
@@ -8312,8 +8345,8 @@ msgid "Could not set up Git"
 msgstr "تعذر إعداد Git"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Could not set up the budget"
-msgstr "تعذّر إعداد الميزانية"
+#~ msgid "Could not set up the budget"
+#~ msgstr "تعذّر إعداد الميزانية"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -8876,8 +8909,8 @@ msgid "Create SubAgent Hook"
 msgstr "إنشاء خطاف SubAgent"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Create the shared budget endpoint; members' defaults are then routed through it."
-msgstr "إنشاء نقطة نهاية مشتركة للميزانية؛ بعدها تُوجَّه الإعدادات الافتراضية للأعضاء عبرها."
+#~ msgid "Create the shared budget endpoint; members' defaults are then routed through it."
+#~ msgstr "إنشاء نقطة نهاية مشتركة للميزانية؛ بعدها تُوجَّه الإعدادات الافتراضية للأعضاء عبرها."
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Create Trigger"
@@ -11718,14 +11751,11 @@ msgstr "الخروج من العرض المحلي"
 msgid "Expand"
 msgstr "توسيع"
 
-#. placeholder {0}: e.name
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Expand {0}"
-msgstr ""
+#~ msgid "Expand {0}"
+#~ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Expand all"
 msgstr "توسيع الكل"
 
@@ -12859,6 +12889,12 @@ msgstr "Flowpad"
 #~ msgid "FlowPad"
 #~ msgstr ""
 
+#: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Flowpad account"
+msgstr ""
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Flowpad agent"
 msgstr "وكيل Flowpad"
@@ -13263,6 +13299,10 @@ msgstr "ملء الشاشة"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "function (registry)"
 msgstr "دالة (السجل)"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Funded by"
+msgstr ""
 
 #~ msgid "Funded by {0}"
 #~ msgstr "بتمويل من {0}"
@@ -15372,8 +15412,6 @@ msgid "Kept in the project"
 msgstr "تم الاحتفاظ بها في المشروع"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Key"
 msgstr "المفتاح"
 
@@ -18600,6 +18638,7 @@ msgid "no key"
 msgstr "لا مفتاح"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "No key"
 msgstr "لا يوجد مفتاح"
 
@@ -18629,8 +18668,13 @@ msgstr "لا يوجد إصلاح معروف بعد — يمكن استخدام \
 msgid "No languages found."
 msgstr "لم يتم العثور على لغات."
 
+#: src/components/token-plan/SourceSummary.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "no limit"
+msgstr ""
+
+#: src/components/token-plan/SourceSummary.tsx
+msgid "No limit"
 msgstr ""
 
 #: src/components/token-plan/TokenPlanCard.tsx
@@ -18825,8 +18869,8 @@ msgid "No Operation (Trace Only)"
 msgstr "لا إجراء (تتبع فقط)"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "No organization budget yet"
-msgstr "لا توجد ميزانية للمؤسسة بعد"
+#~ msgid "No organization budget yet"
+#~ msgstr "لا توجد ميزانية للمؤسسة بعد"
 
 #: src/components/organization/organization-page.tsx
 msgid "No organization yet"
@@ -19260,8 +19304,8 @@ msgid "No tasks yet — \"Task it\" on a message makes one."
 msgstr "لا توجد مهام بعد — يمكن إنشاء مهمة بالنقر على «Task it» في أي رسالة."
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "No team budget yet"
-msgstr "لا توجد ميزانية للفريق بعد"
+#~ msgid "No team budget yet"
+#~ msgstr "لا توجد ميزانية للفريق بعد"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -19286,7 +19330,11 @@ msgid "No todo files found (~/.claude/todos/)"
 msgstr "لم يتم العثور على ملفات المهام (~/.claude/todos/)"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "No token sources here."
+#~ msgid "No token sources here."
+#~ msgstr ""
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "No token sources yet. Add an API key to start."
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -19779,6 +19827,10 @@ msgstr "لا شيء — هذا المعالج يُشغَّل يدويًا. أض�
 
 #~ msgid "Nothing — this wizard runs with no parameters."
 #~ msgstr ""
+
+#: src/components/token-plan/SourceSummary.tsx
+msgid "Nothing allocated from this source yet."
+msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "Nothing arrives until {title} is connected. Press Setup — it takes a minute."
@@ -21304,8 +21356,8 @@ msgstr "قائمة مرقمة"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Org"
-msgstr ""
+#~ msgid "Org"
+#~ msgstr ""
 
 #: src/components/collapsed-sidebar/OrgTeamsButton.tsx
 msgid "Org & teams"
@@ -21537,6 +21589,10 @@ msgstr "الصفحة {page} من {totalPages}"
 #: src/components/ui/pagination.tsx
 msgid "pagination"
 msgstr "ترقيم الصفحات"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Paid by your Flowpad account"
+msgstr ""
 
 #: src/components/graph-workflows/panels/PaletteTab.tsx
 msgid "palette"
@@ -22187,6 +22243,10 @@ msgstr "خيارات تفعيل/تعطيل المكونات الإضافية"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Plugins"
 msgstr "الإضافات"
+
+#: src/components/token-plan/SourceSummary.tsx
+msgid "Plus {uncapped} without a limit."
+msgstr ""
 
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
@@ -23310,6 +23370,10 @@ msgstr "يمكن إعادة بناء الفهرس من صفحة الأصول."
 msgid "Rebuilding…"
 msgstr "جاري إعادة البناء…"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Received"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received attachment — review before installing."
 msgstr "تم استلام مرفق — يُرجى المراجعة قبل التثبيت."
@@ -24199,6 +24263,7 @@ msgstr "جارٍ الطلب…"
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 msgid "Requests"
 msgstr "الطلبات"
 
@@ -24707,10 +24772,9 @@ msgstr "الجذر"
 msgid "Root cause"
 msgstr "السبب الجذري"
 
-#. placeholder {0}: PROVIDER_NAME[e.provider]
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Root source · {0} key"
-msgstr ""
+#~ msgid "Root source · {0} key"
+#~ msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
@@ -25956,8 +26020,8 @@ msgid "Select a thread to see what happened in it."
 msgstr "اختاروا محادثة لعرض ما جرى فيها."
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Select a token source to see its budget and consumption."
-msgstr ""
+#~ msgid "Select a token source to see its budget and consumption."
+#~ msgstr ""
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Select a type to browse"
@@ -26580,16 +26644,16 @@ msgid "Set up LLM"
 msgstr "إعداد نموذج اللغة"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Set up org budget"
-msgstr "إعداد ميزانية المؤسسة"
+#~ msgid "Set up org budget"
+#~ msgstr "إعداد ميزانية المؤسسة"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up project"
 msgstr "إعداد المشروع"
 
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "Set up team budget"
-msgstr "إعداد ميزانية الفريق"
+#~ msgid "Set up team budget"
+#~ msgstr "إعداد ميزانية الفريق"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -26842,7 +26906,6 @@ msgstr "مشاركة دون عضوية في المشروع"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Shared"
 msgstr "مشترك"
 
@@ -27880,6 +27943,7 @@ msgstr "المصدر: {filePath}"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/token-plan/TokenPlanView.tsx
 msgid "Sources"
 msgstr "المصادر"
 
@@ -27929,6 +27993,11 @@ msgstr "يُحتسب الإنفاق الآن على {0} الشخصي."
 msgid "Spent"
 msgstr "المصروف"
 
+#. placeholder {0}: formatUsd(spent)
+#: src/components/token-plan/SourceSummary.tsx
+msgid "spent {0}"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Spent then"
 msgstr "المصروف حينها"
@@ -27946,8 +28015,8 @@ msgid "Spinner Verbs"
 msgstr "أفعال المؤشر الدوار"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
-msgid "Sponsor"
-msgstr ""
+#~ msgid "Sponsor"
+#~ msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Spreadsheets"
@@ -28880,8 +28949,6 @@ msgstr "المهام {openTaskCount}"
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/AllocateDialog.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
 msgstr "الفريق"
@@ -30854,6 +30921,7 @@ msgstr "الرموز"
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
+#: src/components/token-plan/SourceSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tokens"
 msgstr "الرموز"
@@ -31282,10 +31350,9 @@ msgstr "uid"
 msgid "Unable to fetch branches. Please check your repository permissions."
 msgstr "تعذر جلب الفروع. يُرجى التحقق من صلاحيات المستودع."
 
-#. placeholder {0}: formatUsd(Math.max(0, own.limit - given))
 #: src/components/token-plan/TokenPlanView.tsx
-msgid "unallocated {0}"
-msgstr ""
+#~ msgid "unallocated {0}"
+#~ msgstr ""
 
 #: src/components/conversation/conversation-category.ts
 msgid "Unarchive — back to Stream Inbox"
@@ -31435,6 +31502,8 @@ msgstr "لا حد هنا — يضع {parent} سقفًا قدره {limit} {window
 msgid "Unmount Flowpad Assistant"
 msgstr "فصل مساعد Flowpad"
 
+#: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Unnamed"
 msgstr ""
@@ -33331,6 +33400,11 @@ msgstr "لقد تمت دعوتك"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You've been invited to a conversation"
 msgstr "تمت دعوتكم إلى محادثة"
+
+#. placeholder {0}: PROVIDER_NAME[o.mark]
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Your {0} API key"
+msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "your account"
