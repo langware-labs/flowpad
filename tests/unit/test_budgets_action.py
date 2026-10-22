@@ -71,3 +71,24 @@ async def test_an_outage_falls_through_to_the_local_refusal(monkeypatch, org):
 
     assert resp.status_code == 409, resp.text
     assert "require Flowpad Cloud" in resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["set-paying-provider", "setup-budget"])
+async def test_an_org_budget_setup_reaches_the_hub_by_its_own_name(monkeypatch, org, action):
+    """Unregistered, the segment was dropped and the POST reached the hub as ``organization/<id>/create``
+    (400 "Post not supported") — so Activate and "Set up budget" never worked from the desktop."""
+    asked = []
+
+    async def hub(entity_type, body, entity_id=None, action=None, sub_path=None, **kwargs):
+        asked.append((str(entity_type), entity_id, action, body))
+        return {"endpoint_id": "llm_endpoint-x"}
+
+    monkeypatch.setattr(reflect_mod, "hub_post", hub)
+
+    resp = await call_local("POST", f"organization/{org.id}/{action}", json={"provider": "openrouter"}, headers=REFLECT)
+
+    assert resp.status_code == 200, resp.text
+    # A single-type action is registered under its qualified name; the hub path takes the bare one.
+    assert [(t, i, a.rsplit(".", 1)[-1]) for t, i, a, _ in asked] == [("organization", org.id, action)]
+    assert asked[0][3].get("provider") == "openrouter"

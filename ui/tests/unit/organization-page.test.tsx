@@ -8,11 +8,10 @@ import { OrganizationPage } from '@src/components/organization/organization-page
 /**
  * People & teams — the plain screen.
  *
- * One continuous, full-width list of organizations, each rendering its own budget hierarchy
- * (`OrgUnit`, tested directly in `budget-section.test.tsx`) — nothing here is reached by
- * selecting a node in a side tree any more. This file covers what belongs to the PAGE itself:
- * the list of organizations, creating a new one, and that a simple user is not dropped into the
- * graph (offered as a named alternative, never the default).
+ * One organization at a time, picked from `org-select` when the caller is in more than one, rendered
+ * by `OrgView` (tested directly in `budget-section.test.tsx`). This file covers what belongs to the
+ * PAGE itself: the picker, creating a new organization, and that a simple user is not dropped into
+ * the graph (offered as a named alternative, never the default).
  */
 
 const Providers = ({ children }: { children: React.ReactNode }) => (
@@ -48,9 +47,9 @@ vi.mock('@src/components/organization/create-organization', () => ({
 vi.mock('@src/components/organization/create-child-team', () => ({
   createChildTeam: (...args: unknown[]) => h.createChildTeam(...args),
 }));
-// `OrgUnit` is rendered for real (not mocked) so the page-level "create a team" flow is exercised
+// `OrgView` is rendered for real (not mocked) so the page-level "create a team" flow is exercised
 // end to end through the real `useCreateChildTeamForm` hook; only its OWN data dependencies are
-// stubbed, the same way `budget-section.test.tsx` does for `OrgUnit` in isolation.
+// stubbed, the same way `budget-section.test.tsx` does for `OrgView` in isolation.
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useOrgBudgets: (...args: unknown[]) => h.orgBudgets(...args),
   useTeamBudgets: () => ({ data: undefined, isLoading: false, error: null }),
@@ -98,14 +97,45 @@ describe('OrganizationPage', () => {
     orgsMock.mockReturnValue({ data: [{ id: 'org-1', name: 'Springfield High' }], isLoading: false });
   });
 
-  it('lists every organization the caller administers, with the graph offered as a named alternative', () => {
+  it('shows the one org by name when the caller is in only one, with the graph offered as a named alternative', () => {
     h.orgBudgets.mockReturnValue(orgBudgetsOf('Springfield High'));
     render(<OrganizationPage />);
 
     expect(screen.getByTestId('org-unit')).toBeTruthy();
-    expect(screen.getByTestId('org-name').textContent).toBe('Springfield High');
+    // The name follows its initial badge.
+    expect(screen.getByTestId('org-name').textContent).toMatch(/Springfield High$/);
+    expect(screen.queryByTestId('org-select')).toBeNull();
     // The graph is a button you can choose — not where you landed.
     expect(screen.getByTestId('org-open-graph')).toBeTruthy();
+  });
+
+  it('lists every organization in the picker and renders only the selected one', async () => {
+    orgsMock.mockReturnValue({
+      data: [
+        { id: 'org-1', name: 'Springfield High' },
+        { id: 'org-2', name: 'Shelbyville Elementary' },
+      ],
+      isLoading: false,
+    });
+    h.orgBudgets.mockReturnValue(orgBudgetsOf('Springfield High'));
+    render(<OrganizationPage />);
+
+    expect(screen.getAllByTestId('org-unit')).toHaveLength(1);
+    expect(h.orgBudgets).toHaveBeenCalledWith('org-1');
+    expect(h.orgBudgets).not.toHaveBeenCalledWith('org-2');
+    // Radix Select needs pointer-capture and scrollIntoView, which jsdom lacks.
+    Object.assign(Element.prototype, {
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+      scrollIntoView: () => {},
+    });
+    const trigger = screen.getByTestId('org-select');
+    expect(trigger.textContent).toContain('Springfield High');
+
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' });
+    if (!screen.queryByTestId('org-select-org-2')) fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect((await screen.findByTestId('org-select-org-1')).textContent).toContain('Springfield High');
+    expect(screen.getByTestId('org-select-org-2').textContent).toContain('Shelbyville Elementary');
   });
 
   it('subscribes to the org query once, not once per render', () => {
