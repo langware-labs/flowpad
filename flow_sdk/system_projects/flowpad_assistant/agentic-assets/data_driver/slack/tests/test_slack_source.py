@@ -80,10 +80,11 @@ class _Slack:
     """A Slack that records what it was asked and answers what it is told to."""
 
     def __init__(self, replies: list[dict]):
-        self.replies, self.requests, self.bodies = replies, [], []
+        self.replies, self.requests, self.bodies, self.auths = replies, [], [], []
 
     def __call__(self, path, headers):
         self.requests.append(path)
+        self.auths.append(str(headers.get("Authorization") or ""))
         self.bodies.append(str(headers.get("_body") or ""))
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         return 200, json.dumps(reply).encode(), {"Content-Type": "application/json"}  # 200 even for errors
@@ -452,8 +453,36 @@ async def test_no_credential_is_reported_before_any_request(serve, monkeypatch):
     monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", _credentials(None))
     with pytest.raises(Exception) as caught:
         await DataDriver.loaded("slack").traverse(_source(), _view())
-    assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "Connect Slack" in str(caught.value)
+    assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "bot token" in str(caught.value)
     assert slack.requests == []
+
+
+def _declared(choice: str, bot: str = "", signin: str = ""):
+    async def resolve(_row):
+        return ResolvedSecrets(
+            shape=AuthShape.SECRETS,
+            values={"SLACK_BOT_TOKEN": SecretStr(bot)} if bot else {},
+            token=SecretStr(signin) if signin else None,
+            choice=choice,
+        )
+
+    return resolve
+
+
+@pytest.mark.parametrize(("choice", "sent"), [("bot", "xoxb-own-bot"), ("signin", "xoxp-person")])
+async def test_the_credential_way_decides_who_the_source_acts_as(serve, monkeypatch, choice, sent):
+    slack = serve([{"ok": True, "messages": []}])
+    resolve = _declared(choice, bot="xoxb-own-bot", signin="xoxp-person")
+    monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", resolve)
+    await DataDriver.loaded("slack").traverse(_source(), _view())
+    assert slack.auths and all(a == f"Bearer {sent}" for a in slack.auths)
+
+
+async def test_a_bot_token_alone_is_enough(serve, monkeypatch):
+    slack = serve([{"ok": True, "messages": []}])
+    monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", _declared("bot", bot="xoxb-own-bot"))
+    await DataDriver.loaded("slack").traverse(_source(), _view())
+    assert slack.auths == ["Bearer xoxb-own-bot"] * len(slack.requests)
 
 
 # ── verify ───────────────────────────────────────────────────────────────────
