@@ -3361,6 +3361,8 @@ msgstr "جميع الأصول المنشورة"
 msgid "All runs"
 msgstr "كل عمليات التشغيل"
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
 msgstr "جميع المهارات"
@@ -5517,6 +5519,7 @@ msgstr "السلسلة"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Change"
 msgstr "تغيير"
 
@@ -16394,6 +16397,10 @@ msgstr "جاري تحميل الجلسات..."
 msgid "Loading settings..."
 msgstr "جاري تحميل الإعدادات..."
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+msgid "Loading skills…"
+msgstr "جارٍ تحميل المهارات…"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Loading spec…"
 msgstr "جارٍ تحميل المواصفات…"
@@ -16682,8 +16689,10 @@ msgstr "تم رفض الجهاز"
 msgid "Machine secrets"
 msgstr "أسرار الجهاز"
 
-#~ msgid "Machine size"
-#~ msgstr ""
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Machine size"
+msgstr "حجم الجهاز"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine type"

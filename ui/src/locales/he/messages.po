@@ -3361,6 +3361,8 @@ msgstr "כל הנכסים שפורסמו"
 msgid "All runs"
 msgstr "כל ההרצות"
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
 msgstr "כל היכולות"
@@ -5517,6 +5519,7 @@ msgstr "שרשרת"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Change"
 msgstr "שנו"
 
@@ -16394,6 +16397,10 @@ msgstr "טעינת סשנים..."
 msgid "Loading settings..."
 msgstr "טוען הגדרות..."
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+msgid "Loading skills…"
+msgstr "טוען יכולות…"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Loading spec…"
 msgstr "טוען spec…"
@@ -16682,8 +16689,10 @@ msgstr "המכונה נדחתה"
 msgid "Machine secrets"
 msgstr "סודות המכונה"
 
-#~ msgid "Machine size"
-#~ msgstr ""
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Machine size"
+msgstr "גודל המכונה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine type"

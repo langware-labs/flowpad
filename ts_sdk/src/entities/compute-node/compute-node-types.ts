@@ -14,6 +14,7 @@
  * Enforced by `ui/tests/unit/sdk-module-layering.test.ts`.
  */
 import { IEntity } from '../../IEntity';
+import type { ComputeNodeSize } from './machine-status';
 
 /**
  * Available compute provider types.
@@ -210,6 +211,8 @@ export interface IComputeNode extends Omit<IEntity, 'status'> {
   node_provider_type?: ComputeProviderType;
   node_provider_id?: string;
   node_config?: Record<string, unknown>;
+  /** The box's size. Set at create; the hub's default applies when absent. */
+  node_size?: ComputeNodeSize;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
   /** Whether the box belongs to a single person. Owner-only to change, and only

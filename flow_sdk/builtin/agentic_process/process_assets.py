@@ -419,6 +419,8 @@ class ProcessAssets:
         hook_runtime = ProcessHookRuntime()
         supports_hooks = bool(getattr(self.process.driver, "supports_process_hooks", False))
         if self.process.process_hook_events or supports_hooks:
+            from flow_sdk.builtin.agentic_process.system_prompt import is_app_launch  # noqa: PLC0415
+
             prepare = getattr(self.process.driver, "prepare_process_hooks", None)
             if prepare is None:
                 raise ValueError("process hooks are unsupported by this worker")
@@ -429,6 +431,7 @@ class ProcessAssets:
                 assets,
                 str(self.process.id),
                 tuple(self.process.process_hook_events),
+                app_launch=is_app_launch(self.process.context_data),
             )
         mcp_runtime = ProcessMcpRuntime()
         prepare_mcp = getattr(self.process.driver, "prepare_process_mcp", None)
