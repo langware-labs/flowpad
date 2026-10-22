@@ -12,66 +12,52 @@ import { isCostKey } from '@src/components/llm-endpoints/usage-math';
 
 /** Who pays: the sponsor filter's vocabulary. */
 export type Sponsor = 'key' | 'team' | 'org' | 'shared';
-export type SponsorFilter = 'all' | Exclude<Sponsor, 'shared'>;
+
+/** The seeded system endpoint Flowpad pays for (the hub's `GLOBAL_LLM_ENDPOINT_ID`). */
+export const FLOWPAD_ACCOUNT_ID = '7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0';
+
+/** Where a source's money comes from, from the caller's side. */
+export type SourceType = 'key' | 'received' | 'unfunded';
 
 export interface SourceRow {
   endpoint: LLMEndpoint;
-  depth: number;
-  hasChildren: boolean;
-  /** Shown only as context for a filtered-in descendant. */
-  dimmed: boolean;
+  type: SourceType;
+  /** A received source drawn from the Flowpad account. */
+  flowpadAccount: boolean;
 }
 
-export function sponsorOf(endpoint: Pick<LLMEndpoint, 'sponsorKind'>): Sponsor {
-  switch (endpoint.sponsorKind) {
-    case 'user':
-      return 'key';
-    case 'team':
-      return 'team';
-    case 'organization':
-      return 'org';
-    default:
-      return 'shared';
-  }
+function owns(e: LLMEndpoint): boolean {
+  return (e.expand?.roles ?? []).includes('owner' as never);
 }
 
 /**
- * Depth-first rows. Siblings: budgets with children first, then by name. An endpoint with several
- * parents (a fallback chain) hangs under its FIRST visible one — it appears once.
+ * The caller's root token sources -- and nothing else:
+ *
+ * * `key` -- a root the caller owns, funded by the provider key they stored;
+ * * `unfunded` -- a root the caller owns with no key: it cannot pay for anything;
+ * * `received` -- a budget given to the caller (their allowance, a share, a pool they run) whose
+ *   source is not one of their own: the money is someone else's.
+ *
+ * Allocations the caller carved out of their own sources are not sources and are left out (the
+ * centre lists them under the source they draw from), as are disabled rows and the catalog's
+ * shared roots (no permission expansion: the caller holds no role on them).
  */
-export function buildSourceTree(endpoints: readonly LLMEndpoint[], filter: SponsorFilter = 'all'): SourceRow[] {
-  const byId = new Map(endpoints.map((e) => [e.id, e]));
-  const children = new Map<string, LLMEndpoint[]>();
-  const roots: LLMEndpoint[] = [];
-  for (const e of endpoints) {
-    const parent = e.parentIds.find((id) => byId.has(id) && id !== e.id);
-    if (!parent) roots.push(e);
-    else if (children.has(parent)) children.get(parent)!.push(e);
-    else children.set(parent, [e]);
+export function sourceRows(endpoints: readonly LLMEndpoint[]): SourceRow[] {
+  const live = endpoints.filter((e) => e.expand?.allowed_actions && e.enabled !== false);
+  const mine = new Set(live.filter(owns).map((e) => e.id));
+  const rows: SourceRow[] = [];
+  for (const e of live) {
+    const parents = e.parentIds;
+    if (owns(e) && parents.length === 0) {
+      rows.push({ endpoint: e, type: e.hasCredential ? 'key' : 'unfunded', flowpadAccount: false });
+    } else if (!owns(e) && !parents.some((id) => mine.has(id) || live.some((x) => x.id === id && !owns(x) ))) {
+      rows.push({ endpoint: e, type: 'received', flowpadAccount: parents.includes(FLOWPAD_ACCOUNT_ID) });
+    }
   }
-  const order = (list: LLMEndpoint[]) =>
-    [...list].sort(
-      (a, b) => Number(!children.has(a.id)) - Number(!children.has(b.id)) || (a.name || '').localeCompare(b.name || ''),
-    );
-  const matches = (e: LLMEndpoint) => filter === 'all' || sponsorOf(e) === filter;
-
-  const out: SourceRow[] = [];
-  const seen = new Set<string>();
-  // Returns whether anything in this subtree matched, so a non-matching ancestor is kept dimmed.
-  const walk = (e: LLMEndpoint, depth: number): boolean => {
-    if (seen.has(e.id)) return false;
-    seen.add(e.id);
-    const at = out.length;
-    out.push({ endpoint: e, depth, hasChildren: children.has(e.id), dimmed: false });
-    let below = false;
-    for (const c of order(children.get(e.id) ?? [])) below = walk(c, depth + 1) || below;
-    const self = matches(e);
-    if (!self && !below) out.splice(at, out.length - at);
-    else out[at].dimmed = !self;
-    return self || below;
-  };
-  for (const r of order(roots)) walk(r, 0);
-  return out;
+  const order: Record<SourceType, number> = { received: 0, key: 1, unfunded: 2 };
+  return rows.sort(
+    (a, b) => order[a.type] - order[b.type] || (a.endpoint.name || '').localeCompare(b.endpoint.name || ''),
+  );
 }
 
 /** The cost limit a row is judged by: its tightest USD window, or null when it has none. */
@@ -92,14 +78,3 @@ export function scopeForEndpoint(scopes: readonly TokenPlanScope[], endpointId: 
   return scopes.find((s) => !!s.endpoint_id && endpointIdFromTypeId(s.endpoint_id) === endpointId);
 }
 
-/** The rows still shown when some parents are collapsed: everything under a collapsed row hides. */
-export function visibleRows(rows: readonly SourceRow[], collapsed: ReadonlySet<string>): SourceRow[] {
-  const out: SourceRow[] = [];
-  let hideBelow: number | null = null;
-  for (const row of rows) {
-    if (hideBelow !== null && row.depth > hideBelow) continue;
-    hideBelow = collapsed.has(row.endpoint.id) ? row.depth : null;
-    out.push(row);
-  }
-  return out;
-}

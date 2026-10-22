@@ -537,6 +537,23 @@ def is_own_outgoing(source, author: str) -> bool:
     return is_self_address(source, author or "")
 
 
+async def _sent_from_here(message) -> bool:
+    """Is this our own reply? The send path marks it ``sent_by_us``. Read fresh, and once more after a beat:
+    a poll can hand the row over between Slack accepting the reply and the send path recording it."""
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    row_id = str(getattr(message, "id", "") or "")
+    for wait in (0, OWN_REPLY_SETTLE_SECONDS):
+        await asyncio.sleep(wait)
+        row = await SourceItem.get_by_id(row_id) if row_id else None
+        if getattr(row if row is not None else message, "sent_by_us", False):
+            return True
+    return False
+
+
+OWN_REPLY_SETTLE_SECONDS = 3
+
+
 # ── where a source is answered ──────────────────────────────────────────────
 
 
@@ -846,7 +863,9 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     author = str(getattr(message, "author_external_id", "") or "")
     body = str(getattr(message, "body", "") or "").strip()
     # The loop guard first: pure string work, and every reply the agent sends comes back.
-    if is_own_outgoing(source, author):
+    if is_own_outgoing(source, author) and not (
+        getattr(_driver_cls(source), "answers_its_account", False) and not await _sent_from_here(message)
+    ):
         return await skip_message(message)
     channel = source.channel or source.provider
     if not admits(source, author):
