@@ -1,6 +1,5 @@
 import { msg } from '@lingui/core/macro';
 import { i18n, type MessageDescriptor } from '@lingui/core';
-import { locationLabel, type DatasetLocation } from '@sdk';
 import { channelLabel } from '@src/components/conversation/channel-attribution';
 import { participantLabel } from '@src/components/conversation/participant-display';
 import { PRIORITY_CONFIG, statusLabel } from '@src/components/task-bar/constants';
@@ -162,7 +161,7 @@ const ROWS: Record<string, RowSpec[]> = {
     [msg`Rows`, (e) => count(e.num_rows)],
     [msg`Annotated`, (e) => count(e.num_annotated)],
     // The backend's own label of where the rows are; old rows carry only the legacy `location`.
-    [msg`Rows at`, (e) => text(e.rows_at) || locationLabel(e.location as DatasetLocation | null | undefined)],
+    [msg`Rows at`, (e) => text(e.rows_at)],
     UPDATED,
   ],
   llm_endpoint: [

@@ -2197,14 +2197,14 @@ class DataSource(SetupSkippable, Entity):
         return ApiSuccessResponse(data=verdict)
 
     async def verify(self, hosted: Optional[list] = None) -> Optional[dict]:
-        """``_verify`` -- then the datasets this source hosts re-read where their rows are, so their
-        "kept locally" line follows the source's setup the moment it changes. ``hosted``: those datasets,
+        """``_verify`` -- then the datasets this source hosts take its answer (``stores.refresh_hosted``), so
+        they read and write the moment its setup is done. ``hosted``: those datasets,
         when the caller already has them."""
         hosted = await self.datasets() if hosted is None else hosted
         self.holds_rows = bool(hosted)
         verdict = await self._verify()
         if hosted:
-            from flow_sdk.datasets.locations import refresh_hosted  # noqa: PLC0415
+            from flow_sdk.datasets.stores import refresh_hosted  # noqa: PLC0415
 
             await refresh_hosted(self, hosted)
         return verdict

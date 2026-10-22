@@ -599,18 +599,13 @@ class DriveSource(ObjectSource):
         return response.json()
 
     # ── rows (``RowFiles``): a dataset's rows kept in a Drive folder ────────
-    # ``dataset.json`` ``"location": "gdrive:GTM/Rows/leads"`` (or a data source's folder). The folder holds
+    # A data source of this driver, holding datasets: each in a folder of its own. The folder holds
     # the rows exactly as on disk -- real folders, ``rows/acme/row.json`` -- so Drive (or a mounted Drive
     # folder) reads like the dataset's own ``rows/``. A listing walks the folders, one request per folder,
-    # side by side. A file NAMED by a whole relative path (``rows/acme/row.json``, how rows were kept
-    # before) is still read and updated where it is. A file's version is its ``headRevisionId``: Drive's ``version`` also moves on
+    # side by side. A file's version is its ``headRevisionId``: Drive's ``version`` also moves on
     # metadata and on Drive's own work after an upload, so it reads as a change nobody made. Drive has no conditional write, so ``expected`` is checked right before
     # the write -- a second writer inside that gap is not caught; the working copy's pull before every
     # write keeps the gap to one request.
-
-    @classmethod
-    def row_files_target(cls, target: str) -> dict:
-        return {"path": target}
 
     @classmethod
     def rows_within(cls, config: dict, path: str) -> dict:

@@ -147,7 +147,9 @@ def test_a_malformed_spec_on_disk_degrades_the_slot_not_the_dataset(tmp_path) ->
     from flow_sdk.builtin.dataset import Dataset
     (tmp_path / "dataset.json").write_text(json.dumps({
         "metadata": {"data_layout": "csv", "spec": {"rows": [{"input": "Not A Kind!"}]}}, "data": {}}))
-    (tmp_path / "data.csv").write_text("input,expected\n2+2,4\n")
+    from flow_sdk.datasets.stores import rows_root_of
+    rows_root_of(tmp_path).mkdir(parents=True, exist_ok=True)
+    (rows_root_of(tmp_path) / "data.csv").write_text("input,expected\n2+2,4\n")
     from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 

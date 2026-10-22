@@ -1,7 +1,7 @@
 """``RowFiles`` -- the in-memory double and the checks every implementation must pass.
 
 ``MemoryRowFiles`` is the authoritative double for code that keeps rows in a store (``datasets/
-locations.py``). ``check_row_files(store)`` is the contract, run against each driver that says it is
+stores.py``). ``check_row_files(store)`` is the contract, run against each driver that says it is
 ``RowFiles`` (Drive, S3) over its own transport double -- the same assertions for all of them.
 """
 

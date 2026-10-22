@@ -60,19 +60,23 @@ def dataset_asset_hash(ref: FSRef) -> int:
     ``rows/`` tree) instead — otherwise edits to ``data.csv`` would never
     re-index. Mirrors ``chart_asset_hash``.
     """
+    from flow_sdk.datasets.stores import rows_root_of  # noqa: PLC0415
+
     base = ref._path
+    try:
+        store = rows_root_of(base)
+    except ValueError:   # a data source the project does not declare: the manifest alone says it changed
+        store = base
     ts = 0
-    # Manifest + CSV are exact, single-file signals.
-    for child in (base / MANIFEST, base / CSV_FILE):
+    # Manifest + CSV are exact, single-file signals (the CSV lives in the dataset's store).
+    for child in (base / MANIFEST, store / CSV_FILE):
         try:
             ts = max(ts, child.stat().st_mtime_ns)
         except OSError:
             pass
     # IO_FOLDER content lives in nested files; a folder's own mtime doesn't move
     # when a child's content is edited, so walk the row files for freshness.
-    from flow_sdk.datasets.locations import rows_root_of  # noqa: PLC0415
-
-    rows_dir = rows_root_of(base) / ROWS_DIR
+    rows_dir = store / ROWS_DIR
     if rows_dir.is_dir():
         for inner in rows_dir.rglob("*"):
             try:

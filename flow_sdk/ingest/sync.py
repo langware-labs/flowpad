@@ -65,7 +65,7 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
         return report
 
     # A source that hosts datasets holds their rows, not a feed: the datasets read and write it themselves
-    # (datasets/locations.py), so a poll only proves it is still set up -- nothing is fetched or ingested.
+    # (datasets/stores.py), so a poll only proves it is still set up -- nothing is fetched or ingested.
     if hosted := await source.datasets():
         return await _verify_only(source, stype, report, now, hosted)
 

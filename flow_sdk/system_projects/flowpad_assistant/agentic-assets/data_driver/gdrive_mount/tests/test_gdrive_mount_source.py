@@ -79,10 +79,10 @@ async def test_rows_written_in_the_mounted_folder_and_the_api_layout_agree(tmp_p
     """The same dataset in a mounted source keeps its rows as ``<folder>/<dataset>/rows/<key>/row.json`` --
     the layout the API driver keeps in Drive, so moving a source between the two moves no data."""
     from flow_sdk.builtin.dataset import Dataset
-    from flow_sdk.datasets import locations
+    from flow_sdk.datasets import stores
     from flow_sdk.schema.data_spec.declared import load_root
     from tests.unit._graph_client import call_local
-    from tests.unit.test_data_spec.test_file_location import _schema
+    from tests.unit.test_data_spec.test_row_links import _schema
 
     root, ns = tmp_path / "proj", "unittestmount" + uuid.uuid4().hex[:8]
     _schema(root, ns, "crm.person", {"name": {"shape": "string", "description": "x"}})
@@ -97,8 +97,8 @@ async def test_rows_written_in_the_mounted_folder_and_the_api_layout_agree(tmp_p
     async def ready(name, project_id=""):
         return ""
 
-    monkeypatch.setattr(locations, "source_refusal", ready)
-    locations._checked.clear()
+    monkeypatch.setattr(stores, "source_refusal", ready)
+    stores._checked.clear()
     people = Dataset(id=str(uuid.uuid4()), name="people", asset_ref=str(root / "agentic-assets/dataset/people"),
                      data_layout="io_folder", spec={"rows": [{"input": f"--{ns}--.crm.person"}]}, data_source="drive")
     Path(people.asset_ref).mkdir(parents=True)
@@ -108,4 +108,4 @@ async def test_rows_written_in_the_mounted_folder_and_the_api_layout_agree(tmp_p
     assert put.status_code == 200, put.text
     assert (my_drive / "Sales Desk" / "people" / "rows" / "ada" / "row.json").is_file()   # in place, in Drive's folder
     assert not list(Path(people.asset_ref).rglob("row.json"))                              # no row kept locally
-    assert people._location().kind == "folder" and people.rows_at == "drive · people"
+    assert people._rows_store().kind == "folder" and people.rows_at == "drive · people"

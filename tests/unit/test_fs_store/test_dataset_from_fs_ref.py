@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.datasets.stores import rows_root_of
 from tests.unit._dataset_read import iter_rows
 from flow_sdk.builtin.dataset import (
     DataLayoutEnum,
@@ -70,7 +71,8 @@ def _seed_csv_dataset(project: Path, slug: str, *, manifest: dict, csv_text: str
     ds = project / "assets" / "datasets" / slug
     ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(_doc(metadata=manifest), encoding="utf-8")
-    (ds / "data.csv").write_text(csv_text, encoding="utf-8")
+    rows_root_of(ds).mkdir(parents=True, exist_ok=True)
+    (rows_root_of(ds) / "data.csv").write_text(csv_text, encoding="utf-8")
     return ds
 
 
@@ -91,13 +93,15 @@ def _seed_io_dataset(
       - ``dirs``  — ``{dirname: {fname: str | bytes}}`` for folder artifacts
     """
     ds = project / "assets" / "datasets" / slug
-    (ds / "rows").mkdir(parents=True)
+    ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(
         _doc(metadata=manifest or {"data_layout": "io_folder"}, data=manifest_data),
         encoding="utf-8",
     )
+    rows_dir = rows_root_of(ds) / "rows"
+    rows_dir.mkdir(parents=True, exist_ok=True)
     for name, spec in rows.items():
-        ex = ds / "rows" / name
+        ex = rows_dir / name
         ex.mkdir()
         if "input" in spec:
             (ex / "input.txt").write_text(spec["input"], encoding="utf-8")
@@ -144,7 +148,7 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
 
     # examples(): full list equality vs the indexer parser (pydantic __eq__)
     ref_rows = iter_rows(
-        str(ds_path),
+        rows_root_of(ds_path),
         DataLayoutEnum(loaded.data_layout),
         loaded.field_spec or {},
         loaded.delimiter or ",",
@@ -404,10 +408,12 @@ def test_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
 def test_flat_json_ignored(tmp_path: Path) -> None:
     # A FLAT row.json (no metadata/data sections) is malformed → ignored.
     ds = tmp_path / "assets" / "datasets" / "io"
-    (ds / "rows" / "0001").mkdir(parents=True)
+    ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(_doc(metadata={"data_layout": "io_folder"}), encoding="utf-8")
-    (ds / "rows" / "0001" / "input.txt").write_text("q", encoding="utf-8")
-    (ds / "rows" / "0001" / "row.json").write_text(
+    row = rows_root_of(ds) / "rows" / "0001"
+    row.mkdir(parents=True)
+    (row / "input.txt").write_text("q", encoding="utf-8")
+    (row / "row.json").write_text(
         json.dumps({"kind": "eval"}), encoding="utf-8"  # flat — no metadata/data
     )
     loaded = _assert_indexer_compatible(ds)
@@ -510,7 +516,7 @@ def test_rows_kind_filter(tmp_path: Path) -> None:
     # matches the indexer parser filtered the same way
     ref_rows = [
         e
-        for e in iter_rows(str(ds), DataLayoutEnum.CSV, {}, ",", dataset_id=loaded.id)
+        for e in iter_rows(rows_root_of(ds), DataLayoutEnum.CSV, {}, ",", dataset_id=loaded.id)
         if e.kind == RowKind.EVAL
     ]
     assert evals == ref_rows

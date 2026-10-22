@@ -1,7 +1,7 @@
 /**
  * The data model — what data a project holds, top to bottom: its kinds (a kind is the NAME,
  * its schema the definition), the datasets that keep rows of them, and the data sources that
- * host those datasets (every project has the implicit `local` one: its own file system).
+ * host those datasets (a dataset naming none keeps its rows in the project's data store).
  *
  * On the left a tree whose roots are projects: the kinds each one defines, every schema unfolding
  * to the kinds its fields name (`uses` a row another dataset keeps, or holds the value `inside`),
@@ -14,7 +14,7 @@
  * `currentDock`. Unfolding is the only local state.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DataSource, enumValues, LOCAL_SOURCE, linkTargets, Project, unwrap, type SchemaNode, type SchemaUse, type Shape } from '@sdk';
+import { DataSource, enumValues, linkTargets, Project, unwrap, type SchemaNode, type SchemaUse, type Shape } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { i18n, type MessageDescriptor } from '@lingui/core';
@@ -28,7 +28,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useContext } from '@src/hooks/useContext';
 import { cn } from '@src/lib/utils';
 import {
-  bareKind, DATA_SCHEMA_TYPE, datasetsOf, homeOf, hostedBy, loadSchemaRoots, nodeOf, pathAfterLink, usedBy,
+  bareKind, DATA_SCHEMA_TYPE, datasetsOf, homeOf, hostedBy, loadSchemaRoots, nodeOf, pathAfterLink, PROJECT_DATA_STORE, usedBy,
   type DatasetLine, type SchemaRoot,
 } from './schema-tree-model';
 import { parseSchemaTreePointer, SOURCE_SEGMENT } from './schema-tree-pointer';
@@ -249,7 +249,7 @@ function SchemaCard({
 
   if (!node) {
     const rows = root.datasets.reduce((n, d) => n + d.rows, 0);
-    const local = hostedBy(root, LOCAL_SOURCE);
+    const local = hostedBy(root, PROJECT_DATA_STORE);
     const hosts = (n: number) => (n === 1 ? t`hosts 1 dataset` : t`hosts ${n} datasets`);
     const cell = 'py-1.5 pr-3';
     return (
@@ -259,8 +259,7 @@ function SchemaCard({
           [t`Folder`, root.folder],
           [t`Holds`, [
             t`${root.schemas.length} kinds`, t`${root.datasets.length} datasets`, t`${rows} rows`,
-            // + the implicit local source
-            t`${root.sources.length + 1} data sources`,
+            t`${root.sources.length} data sources`,
           ].join(' · ')],
         ]} />
         <Section>{t`Kinds`}</Section>
@@ -282,10 +281,7 @@ function SchemaCard({
                 <tr key={d.id} data-dataset={d.id} className="border-t border-border align-top">
                   <td className={cell}>{datasetLink(d)}</td>
                   <td className={cell}>{d.kind ? kindLink(d.kind) : <span className="text-muted-foreground">{t`inline`}</span>}</td>
-                  <td className={cell}>
-                    {d.rowsAt}
-                    {d.rowsNote && <div className="text-xs text-muted-foreground">{d.rowsNote}</div>}
-                  </td>
+                  <td className={cell}>{d.rowsAt}</td>
                   <td className="py-1.5">{rowCount(d.rows)}</td>
                 </tr>
               ))}
@@ -297,9 +293,9 @@ function SchemaCard({
 
         <Section>{t`Data sources`}</Section>
         <ul className="flex flex-col gap-1" data-testid="data-model-sources">
-          <li data-source={LOCAL_SOURCE} className="flex flex-wrap gap-x-2">
-            <span className="font-medium">{LOCAL_SOURCE}</span>
-            <span className="text-muted-foreground">· {t`file system`} · {hosts(local.length)}</span>
+          <li data-source="project-data-store" className="flex flex-wrap gap-x-2">
+            <span className="font-medium">{t`Project data store`}</span>
+            <span className="text-muted-foreground">· {hosts(local.length)}</span>
           </li>
           {root.sources.map((s) => (
             <li key={s.id} data-source={s.name} className="flex flex-wrap gap-x-2">
@@ -326,7 +322,7 @@ function SchemaCard({
     return s ? (
       <button key={name} type="button" data-open={`data_source-${s.id}`} className={LINK} onClick={() => openSource(navigation, s.id)}>{name}</button>
     ) : (
-      <span key={name}>{name === LOCAL_SOURCE ? `${LOCAL_SOURCE} · ${t`file system`}` : name}</span>
+      <span key={name}>{name === PROJECT_DATA_STORE ? t`Project data store` : name}</span>
     );
   };
   return (

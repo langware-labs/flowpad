@@ -20,8 +20,7 @@ The definition's VARIANT (its subkind) is optional:
 
 from __future__ import annotations
 
-import re
-from typing import ClassVar, Literal, Optional
+from typing import Any, ClassVar, Literal, Optional, Union
 
 from pydantic import field_validator, model_validator
 
@@ -35,10 +34,6 @@ Subkind = Literal["record", "dataset"]
 DATASET_SLOTS = ("input", "output", "context")
 
 
-#: An owner's name -- a schema field's ``owned_by``, a mirror's ``by``: one word.
-OWNER_WORD = re.compile(r"[a-z0-9][a-z0-9_-]*")
-
-
 class DataSchemaField(DataSpec):
     """One field of a ``record``: its shape and what it means."""
 
@@ -46,16 +41,19 @@ class DataSchemaField(DataSpec):
 
     shape: ShapeForm
     description: str = ""
-    #: Who owns the field's value when it is a copy of an outside system's (``"crm"``): only a
-    #: writer that says it writes as that owner (``put(..., by="crm")``) may set or change it.
-    owned_by: Optional[str] = None
+    #: Where the value comes from when the dataset's data source is a system of record (a CRM):
+    #: ``"soc"``, ``"soc.<path>"`` or ``{"link", "by", "path"}`` / ``{"value"}`` (``datasets.truth``).
+    #: No truth: the field is ours, kept in the project's data store.
+    truth: Optional[Union[str, dict]] = None
 
-    @field_validator("owned_by")
+    @field_validator("truth")
     @classmethod
-    def _an_owner_is_a_word(cls, owner: Optional[str]) -> Optional[str]:
-        if owner is not None and not OWNER_WORD.fullmatch(owner):
-            raise ValueError("owned_by names the owner in a word: a-z 0-9 _ - (\"crm\")")
-        return owner
+    def _truth_reads_the_record(cls, truth: Any) -> Any:
+        if truth is not None:
+            from flow_sdk.datasets.truth import entry  # noqa: PLC0415
+
+            entry("field", truth)
+        return truth
 
 
 class DataSchemaRule(DataSpec):

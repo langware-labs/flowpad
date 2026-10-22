@@ -90,7 +90,7 @@ in [connect-data-source's configurable-driver recipe](../connect-data-source/ref
 | the shape grammar — primitives, `?`, `enum:`, lists, maps, kinds by name | `references/shape-forms.md` |
 | a complete schema folder, a grouping folder, a dataset, a row on disk | `references/examples.md` |
 | the probe, step by step, and what each failure means | `references/probe.md` |
-| where a dataset's rows live (`location`: local, a folder, Drive, S3, a record system), the laws, what a write and a pull answer | `references/locations.md` |
+| where a dataset's rows live (dataset → data source → data store: the project's data store, an object store, a system of record and field `truth`), the laws, what a write and a pull answer | `references/stores.md` |
 | run any mechanic — probes, kinds, values, dataset rows | `scripts/dm_ctl.py` |
 | how the SDK models schemas (repo checkout only) | `docs/data-management/data-spec.md`, `docs/snippets/data-spec.md` |
 | the dataset layout and row verbs (repo checkout only) | `docs/data-management/datasets.md`, `docs/snippets/datasets.md` |
@@ -136,8 +136,8 @@ SDK refuses a reference to a missing row and a delete that would leave one dangl
 (`references/shape-forms.md`). Never STORE a link as a `{type, key}` kind, and never link a
 dataset in git to rows kept out of git (their ids differ per machine).
 
-A field an outside system owns IS marked in the schema (`"owned_by": "crm"`: only a writer with
-`by="crm"` sets it; an edit by anyone else is sent to that system first — `references/locations.md`), a natural key IS a rule (`{"unique": ["crm_id"]}`), and shared fields ARE
+A field a system of record holds IS marked in the schema (`"truth": "soc.data.stage"`: only the system
+(`by="soc"`) sets it; an edit by anyone else is sent to that system first — `references/stores.md`), a natural key IS a rule (`{"unique": ["crm_id"]}`), and shared fields ARE
 defined once (`"include": ["crm.synced"]`) — `references/shape-forms.md`.
 
 Rules across rows ARE supported when they say "these two link paths name the same row" (a tag

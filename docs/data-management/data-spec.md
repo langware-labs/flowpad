@@ -98,10 +98,12 @@ the value (several fields: the combination; a row leaving one empty is not judge
 refused with `code: "unique"`, a batch is checked against itself, and a duplicate that reached the
 disk is reported in `problems` (`rules.UniqueIndex`).
 
-A field may say an outside system owns its value — `"owned_by": "crm"` — and then only a writer
-that passes `by="crm"` sets or changes it (`code: "owned"` otherwise); `GET /kinds/<kind>` carries
-`owned_by` per field. A record may `"include": ["crm.synced"]` other records: their fields, rules
-and owners are its own (a field named twice is refused; a change to an included schema rebuilds the
+A field may say a system of record holds its value — `"truth": "soc"` / `"soc.<path>"` /
+`{link, by, path}` / `{value}` (`flow_sdk/datasets/truth.py`; exactly one field `"soc.external_id"`) —
+and then, in a dataset whose data source is that system, only the system (`by="soc"`) sets it directly;
+any other change goes to the system first ([dataset stores](dataset-stores.md)), or is refused
+(`code: "owned"`). `GET /kinds/<kind>` carries `truth` per field. A record may
+`"include": ["crm.synced"]` other records: their fields, rules and truth are its own (a field named twice is refused; a change to an included schema rebuilds the
 kinds that include it on the next `load_root` / apply of the group).
 
 The marks (`?`, `enum:`, `{"*": …}`) are **input only**: `to_authoring_form`

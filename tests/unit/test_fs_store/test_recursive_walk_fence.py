@@ -18,7 +18,7 @@ PATTERN = re.compile(r"os\.walk\(|\.rglob\(|\.walk\(\)")
 
 #: file → why a raw recursive walk is acceptable there.
 ALLOWED: dict[str, str] = {
-    "flow_sdk/datasets/locations.py": "walks ONE dataset's rows/ folder (its working copy or local rows), never a project tree",
+    "flow_sdk/datasets/stores.py": "walks ONE dataset's rows/ folder (its store folder or working copy), never a project tree",
     "flow_sdk/fs_store/operations/markdown_dirs.py": "prunes with is_ignored on every level",
     "flow_sdk/schema/data_spec/layout.py": "row_version walks ONE example folder (a dataset row's own files)",
     "flow_sdk/core/compute_op/python.py": "hashes ONE Python compute op's own folder (its .py files) to key its module",

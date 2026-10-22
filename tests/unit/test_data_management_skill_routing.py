@@ -275,7 +275,7 @@ def test_dm_ctl_asks_who_uses_rows(monkeypatch):
 
 def test_dm_ctl_pulls_and_moves_rows(monkeypatch):
     assert _dm_calls(monkeypatch, ["ds-pull", "deals"]) == [("POST", "/graph/dataset/ds1/pull", {})]
-    assert _dm_calls(monkeypatch, ["ds-move", "deals", "s3:acme/deals"]) == [("POST", "/graph/dataset/ds1/move-rows", {"location": "s3:acme/deals"})]
-    crm = '{"driver": "twenty", "config": {"resource": "opportunities"}}'
-    assert _dm_calls(monkeypatch, ["ds-move", "deals", crm]) == [
-        ("POST", "/graph/dataset/ds1/move-rows", {"location": {"driver": "twenty", "config": {"resource": "opportunities"}}})]
+    assert _dm_calls(monkeypatch, ["ds-move", "deals", "hub"]) == [("POST", "/graph/dataset/ds1/move-rows", {"data_source": "hub"})]
+    assert _dm_calls(monkeypatch, ["ds-move", "deals", "drive", "--path", "gtm/deals"]) == [
+        ("POST", "/graph/dataset/ds1/move-rows", {"data_source": "drive", "path": "gtm/deals"})]
+    assert _dm_calls(monkeypatch, ["ds-move", "deals"]) == [("POST", "/graph/dataset/ds1/move-rows", {})]   # the project's data store

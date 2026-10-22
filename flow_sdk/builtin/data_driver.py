@@ -197,14 +197,23 @@ class DataDriver(DriverRuntime, Entity):
     @computed_field
     @property
     def holds_rows(self) -> bool:
-        """Whether a dataset's rows can live in a store of this driver (``"location": "<name>:<target>"``):
-        its source is ``RowFiles`` and maps a location's target onto its config. What a location picker
-        offers, without naming a provider."""
+        """Whether a source of this driver can be a DATA STORE -- hold a dataset's rows whole: its source is
+        ``RowFiles`` and places a dataset's folder inside its own (``rows_within``), or keeps the rows in a
+        folder on this machine (``rows_folder``). What a store picker offers, without naming a provider."""
         from flow_sdk.sources.protocols import RowFiles  # noqa: PLC0415
 
         driver = self._loaded()
         cls = driver.cls if driver is not None else None
-        return bool(cls is not None and callable(getattr(cls, "row_files_target", None)) and issubclass(cls, RowFiles))
+        if cls is None:
+            return False
+        return callable(getattr(cls, "rows_folder", None)) or (callable(getattr(cls, "rows_within", None)) and issubclass(cls, RowFiles))
+
+    @computed_field
+    @property
+    def is_system_of_record(self) -> bool:
+        """Whether a source of this driver is a SYSTEM OF RECORD: its records are a dataset's ``truth``
+        fields (a record driver: a CRM); the rest of each row lives in the project's data store."""
+        return self.family == "record"
 
     @computed_field
     @property

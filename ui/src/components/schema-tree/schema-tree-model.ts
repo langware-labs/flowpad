@@ -3,7 +3,7 @@
  * following a link lands. No React here.
  */
 import {
-  dataManager, Dataset, datasetSourceName, DataSource, LOCAL_SOURCE, Project, projectSchemas, QueryRequest, splitNamespace,
+  dataManager, Dataset, DataSource, Project, projectSchemas, QueryRequest, splitNamespace,
   TypeId, type SchemaNode,
 } from '@sdk';
 
@@ -13,11 +13,10 @@ export interface DatasetLine {
   name: string;
   /** The kind each row is (the dataset's `spec` when it names one), '' when inline. */
   kind: string;
-  /** The hosting data source's name — `local` for the project's own file system. */
+  /** The hosting data source's name — '' (`PROJECT_DATA_STORE`) for the project's data store. */
   source: string;
   rows: number;
   rowsAt: string;
-  rowsNote: string;
 }
 
 /** One project in the data model: its kinds, its datasets and its data sources. */
@@ -30,11 +29,15 @@ export interface SchemaRoot {
   datasets: DatasetLine[];
 }
 
-/** The datasets a data source hosts (`local`: those naming none, or a source the project does not list). */
+/** Where a dataset naming no data source keeps its rows: the project's data store (out of the
+ *  project, never in git). */
+export const PROJECT_DATA_STORE = '';
+
+/** The datasets a data source hosts (`PROJECT_DATA_STORE`: those naming none, or a source the project does not list). */
 export function hostedBy(root: SchemaRoot, source: string): DatasetLine[] {
-  if (source !== LOCAL_SOURCE) return root.datasets.filter((d) => d.source === source);
+  if (source !== PROJECT_DATA_STORE) return root.datasets.filter((d) => d.source === source);
   const listed = new Set(root.sources.map((s) => s.name));
-  return root.datasets.filter((d) => d.source === LOCAL_SOURCE || !listed.has(d.source));
+  return root.datasets.filter((d) => d.source === PROJECT_DATA_STORE || !listed.has(d.source));
 }
 
 /** The datasets, in any shown project, whose rows are `kind`. */
@@ -47,10 +50,9 @@ const datasetLine = (d: Dataset): DatasetLine => ({
   id: d.id,
   name: d.title || d.name || d.id,
   kind: typeof d.spec === 'string' ? d.spec : (d.row_kind ?? ''),
-  source: datasetSourceName(d),
+  source: d.data_source || PROJECT_DATA_STORE,
   rows: d.num_rows ?? 0,
-  rowsAt: d.rows_at || datasetSourceName(d),
-  rowsNote: d.rows_note ?? '',
+  rowsAt: d.rows_at || d.data_source || '',
 });
 
 export const homeOf = (model: SchemaRoot[], kind: string) =>

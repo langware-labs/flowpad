@@ -79,8 +79,6 @@ export interface CheckDetail {
   /** `code: "rule"` / `"unique"`: the rule broken — both ends (`same`) or the fields no two rows
    *  share (`unique`), and why. */
   rule?: { same?: [string, string]; unique?: string[]; description: string };
-  /** `code: "owned"`: the outside system that owns the field (the schema's `owned_by`). */
-  owned_by?: string;
 }
 
 /** A row that does not fit: by key, with everything wrong, its version (to repair it with `put`
@@ -219,7 +217,8 @@ export interface DatasetRowsChange {
 }
 
 /** Who a write is made for, as the row actions read it. `by` names the outside system the writer
- *  writes as (`"crm"`): only that writer sets a field the schema marks `owned_by` it — anyone else
+ *  writes as: `"soc"` writes as the dataset's system of record — only that writer sets a field
+ *  the schema holds there (its `truth`, when the data source is a system of record); anyone else
  *  changing one is refused (400, `details[].code === 'owned'`). An app editing its own fields
  *  leaves it out. A guard against mistakes between cooperating writers, not a permission. */
 function writer(options: { by?: string }): { by?: string } {
@@ -259,45 +258,14 @@ export interface IDataset extends IEntity {
   asset_ref?: string;
   /** The kind each row is, resolved by the backend (`Dataset.row_kind`) — named specs too. */
   row_kind?: string;
-  /** Where the rows live (`dataset.json` `location`): `local` (the default), `file:<folder>`,
-   *  `<driver>:<target>` (`gdrive:GTM/Rows`, `s3:bucket/prefix`), or a record system. */
-  location?: DatasetLocation | null;
-  /** The data source the rows live in, by name — null/absent/`local` is the project's own file system. */
+  /** The data source the rows live in, by name — null/absent is the project's data store (out of
+   *  the project, never in git). */
   data_source?: string | null;
   /** The folder inside that source. */
   path?: string | null;
-  /** Where the rows are, as a person reads it (`local`, `gtm-drive · Sales Desk/gtm-personas`). */
+  /** Where the rows are, as a person reads it (`project data store`, `gtm-drive · Sales Desk/gtm-personas`,
+   *  or just the source name for a system of record). */
   rows_at?: string;
-  /** Why the rows are not where asked ("kept locally: Google Drive is not connected"), else "". */
-  rows_note?: string;
-}
-
-/** The name of the implicit data source every project has: its own file system. */
-export const LOCAL_SOURCE = 'local';
-
-/** The data source a dataset's rows live in — `local` when it names none. */
-export function datasetSourceName(dataset: { data_source?: string | null }): string {
-  return dataset.data_source || LOCAL_SOURCE;
-}
-
-/** A record system the rows live in: one record per row, shaped by `map`. */
-export interface RecordLocation {
-  driver: string;
-  target?: string;
-  config?: Record<string, unknown>;
-  map?: { key: string; input: Record<string, unknown> };
-  by?: string;
-  read_only?: boolean;
-}
-
-export type DatasetLocation = string | RecordLocation;
-
-/** How a location reads to a person: `local`, `file:~/rows`, `s3:bucket/prefix`, `twenty: companies`. */
-export function locationLabel(location: DatasetLocation | null | undefined): string {
-  if (!location) return 'local';
-  if (typeof location === 'string') return location;
-  const target = location.target || Object.values(location.config ?? {}).filter((v) => typeof v === 'string').join('/');
-  return target ? `${location.driver}: ${target}` : location.driver;
 }
 
 // `implements IDataset` only checks the class; it contributes no members, so every
@@ -317,7 +285,6 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   field_spec: Record<string, string> = {};
   delimiter: string = ',';
   spec: DatasetSpecForm | null = null;
-  location: DatasetLocation | null = null;
   num_rows: number = 0;
   kind_counts: Record<string, number> = {};
   num_annotated: number = 0;
@@ -332,7 +299,6 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     this.field_spec = entity.field_spec ?? this.field_spec;
     this.delimiter = entity.delimiter ?? this.delimiter;
     this.spec = entity.spec ?? this.spec;
-    this.location = entity.location ?? this.location;
     this.num_rows = entity.num_rows ?? this.num_rows;
     this.kind_counts = entity.kind_counts ?? this.kind_counts;
     this.num_annotated = entity.num_annotated ?? this.num_annotated;
@@ -593,20 +559,17 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('rename-row', { key: keyOrId, new_key: newKey, ...(options.expected ? { expected: options.expected } : {}) });
   }
 
-  /** Bring the rows of a remote location (Drive, S3, a record system) up to date now — what every
-   *  read does first. `moved` names the rows that changed. */
-  async pull(): Promise<{ moved: string[]; num_rows: number }> {
+  /** Bring the rows of a data source (Drive, S3, a system of record) up to date now — what every
+   *  read does first. `moved` names the rows that changed, `gone` the rows no longer there. */
+  async pull(): Promise<{ moved: string[]; gone: string[]; num_rows: number }> {
     return this.post('pull', {});
   }
 
-  /** Copy every row to `location`, check it holds them all, then make it this dataset's location
-   *  (`dataset.json`). The old location keeps its rows. Refused (400) when the new location already
-   *  holds rows or is a record system. */
-  /** Move the rows to a location, or into a data source (`{ data_source, path? }`); rows already there are kept. */
-  async moveRows(
-    location: DatasetLocation | { data_source: string; path?: string },
-  ): Promise<{ from: string; to: string; rows: number; adopted?: number; conflicts?: string[] }> {
-    return this.post('move-rows', { location });
+  /** Copy every row into a data source (`{ data_source, path? }`), or back to the project's data
+   *  store (`{}`), then make it where this dataset's rows live. 503 when the source is not set up
+   *  here, 400 for a system of record. */
+  async moveRows(target: { data_source?: string; path?: string } = {}): Promise<{ from: string; to: string; rows: number }> {
+    return this.post('move-rows', target);
   }
 
   /** Would this row fit — its shape, its links, its schema's rules across rows (a `unique` value
