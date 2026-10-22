@@ -62,9 +62,9 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
     openSandbox: h.openSandbox,
     renameSandbox: vi.fn(),
     deleteSandbox: vi.fn(),
-    deletingId: null,
+    deletingIds: new Set<string>(),
     upgradeSandbox: vi.fn(),
-    upgradingId: null,
+    upgradingIds: new Set<string>(),
     details: h.details,
   }),
   // The real rule, not a stub: which button a card shows is exactly this
