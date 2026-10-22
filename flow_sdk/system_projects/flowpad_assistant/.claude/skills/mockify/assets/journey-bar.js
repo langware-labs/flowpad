@@ -611,7 +611,8 @@
     const file = new File([feedbackMarkdown(rows)], name, { type: 'text/markdown' });
     const uploads = await sdk.fsStore.getState().uploadFiles(new sdk.TypeId(dir.compute_node_id), dir.abs_path, [file]);
     await Promise.all(uploads.map((u) => u.waitForCompletion()));
-    await proc.enqueue(noteFor(rows, name, `${dir.abs_path}/${name}`), 'mockify');
+    // submit = type the line, then a discrete Enter: a queued line can land in a terminal's input box unsent.
+    await proc.submit(noteFor(rows, name, `${dir.abs_path}/${name}`));
   }
 
   async function submitAll() {
@@ -663,7 +664,7 @@
       const b = t.closest('.save-now'); b.disabled = true;
       sessionOf().then((proc) => {
         if (!proc) throw new Error('the mock row names no session');
-        return proc.enqueue(`Save mock "${CFG.key}" to the repo: the person pressed Save — run the mockify skill's scripts/mock_project.py save ${data.mock.input.repo} ${CFG.key} (SKILL.md "Save to repo").`, 'mockify');
+        return proc.submit(`Save mock "${CFG.key}" to the repo: the person pressed Save — run the mockify skill's scripts/mock_project.py save ${data.mock.input.repo} ${CFG.key} (SKILL.md "Save to repo").`);
       }).then(() => { b.textContent = `✓ Asked ${target.name} to save it`; })
         .catch((err) => { b.disabled = false; panel.insertAdjacentHTML('beforeend', `<div class="msg">Not asked: ${esc(err?.message || err)}</div>`); });
       return;
