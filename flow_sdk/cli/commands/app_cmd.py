@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -59,23 +60,36 @@ def discover_app(
 
 @app_app.command("open", help="Find, start, register, and show the best matching web app.")
 def open_app(
-    query: Annotated[Optional[str], typer.Argument(help="Words like 'dashboard', 'admin', or empty for best app.")] = None,
-    root: Annotated[Optional[str], typer.Option("--root", help="Directory to scan/start from (defaults to cwd).")] = None,
+    query: Annotated[
+        Optional[str], typer.Argument(help="Words like 'dashboard', 'admin', or empty for best app.")
+    ] = None,
+    root: Annotated[
+        Optional[str], typer.Option("--root", help="Directory to scan/start from (defaults to cwd).")
+    ] = None,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
     port: Annotated[Optional[int], typer.Option("--port", help="Override the app port.")] = None,
     no_start: Annotated[bool, typer.Option("--no-start", help="Register/show only; do not launch a server.")] = False,
-    dist: Annotated[Optional[str], typer.Option("--dist", help="Build-output dir (relative to the app) to serve as the app's delivery.")] = None,
-    install: Annotated[bool, typer.Option("--install/--no-install", help="Install JS dependencies if node_modules is missing.")] = True,
+    dist: Annotated[
+        Optional[str],
+        typer.Option("--dist", help="Build-output dir (relative to the app) to serve as the app's delivery."),
+    ] = None,
+    install: Annotated[
+        bool, typer.Option("--install/--no-install", help="Install JS dependencies if node_modules is missing.")
+    ] = True,
     timeout: Annotated[float, typer.Option("--timeout", help="Seconds to wait for the port after starting.")] = 75.0,
     max_depth: Annotated[int, typer.Option("--max-depth", help="Maximum directory depth to scan.")] = 6,
 ) -> None:
     scan_root = _resolve_root(root)
     process_id = _resolve_process_id(process)
     request = query or ""
-    placed = port is None and not no_start and (declared := _start_declared(request)) is not None
+    page = None if port is not None or no_start else _start_declared_page(request)
+    placed = page is not None
     if placed:
         # The project's own app: the backend started it (or found it) on its port, by the one rule.
-        port, no_start = declared, True
+        port, no_start = page["port"], True
+        if page.get("path"):
+            _ok(_open_declared(page, process_id=process_id))
+            return
 
     artifacts = _list_webapp_artifacts(process_id, request)
     artifact = _select_artifact(artifacts, request, scan_root)
@@ -95,7 +109,12 @@ def open_app(
 
     candidates = discover_webapps(scan_root, request, max_depth=max_depth)
     if not candidates:
-        _fail(EXIT_NOT_FOUND, "NO_WEBAPP", f"No web app found under {scan_root}")
+        _fail(
+            EXIT_NOT_FOUND,
+            "NO_WEBAPP",
+            f"No web app found under {scan_root}. An app with a webapp.json belongs to its project and is opened by "
+            "its name (`flow app open <name>`, run from inside the project); it is not found by looking for an index.html.",
+        )
 
     candidate = candidates[0]
     opened = _open_candidate(
@@ -114,11 +133,18 @@ def open_app(
 
 @app_app.command("serve", help="Register an app's built output so Flowpad serves it, and show it.")
 def serve_app(
-    name: Annotated[Optional[str], typer.Argument(help="Display name for the app (defaults to the folder name).")] = None,
+    name: Annotated[
+        Optional[str], typer.Argument(help="Display name for the app (defaults to the folder name).")
+    ] = None,
     root: Annotated[Optional[str], typer.Option("--root", help="The app directory (defaults to cwd).")] = None,
-    dist: Annotated[Optional[str], typer.Option("--dist", help="Build output within the app to serve. Omit when the folder IS the output.")] = None,
+    dist: Annotated[
+        Optional[str],
+        typer.Option("--dist", help="Build output within the app to serve. Omit when the folder IS the output."),
+    ] = None,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
-    no_show: Annotated[bool, typer.Option("--no-show", help="Register only; do not present it in the display.")] = False,
+    no_show: Annotated[
+        bool, typer.Option("--no-show", help="Register only; do not present it in the display.")
+    ] = False,
 ) -> None:
     """Serve the app from Flowpad's own origin — no dev server, no port.
 
@@ -142,9 +168,7 @@ def serve_app(
         },
     )
     # What serves the build output: the placement's `static` endpoint.
-    endpoint = next(
-        (e for e in data.get("endpoints") or [] if (e.get("backend") or {}).get("type") == "static"), None
-    )
+    endpoint = next((e for e in data.get("endpoints") or [] if (e.get("backend") or {}).get("type") == "static"), None)
     if endpoint is None:
         _fail(
             EXIT_NOT_FOUND,
@@ -188,8 +212,24 @@ def _project_action_url(action: str, *, required: bool = True) -> str | None:
     server_port = _discover_port() if required else discover_port(required=False)
     if not server_port:
         return None
-    project_id = project_for_path(server_port, os.getcwd(), create=False)
+    project_id = _project_containing_cwd(server_port, project_for_path)
     return graph_url(server_port, f"project/{project_id}/{action}") if project_id else None
+
+
+def _project_containing_cwd(server_port: int, project_for_path) -> str | None:
+    """The project the caller stands in — its folder, or any folder below it. An agent builds an app in
+    ``<project>/agentic-assets/webapp/<name>`` and runs ``flow app …`` from there: ``project_for_path`` matches
+    a project by its exact folder, so asking from the app folder found none and the app was never opened as
+    the project's own."""
+    from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
+
+    here = Path(os.getcwd()).resolve()
+    for folder in (here, *here.parents):
+        if is_valid_project_cwd(str(folder), include_temp=True):
+            project_id = project_for_path(server_port, str(folder), create=False)
+            if project_id:
+                return project_id
+    return None
 
 
 def _project_action(action: str, body: dict | None = None) -> dict:
@@ -202,7 +242,11 @@ def _project_action(action: str, body: dict | None = None) -> dict:
 
     def _on_error(status_code: int, rbody: dict) -> None:
         message = str(rbody.get("message") or f"HTTP {status_code}")
-        _fail(EXIT_NOT_FOUND if status_code == 404 else EXIT_CONNECTION_ERROR, "NOT_FOUND" if status_code == 404 else "SERVER_ERROR", message)
+        _fail(
+            EXIT_NOT_FOUND if status_code == 404 else EXIT_CONNECTION_ERROR,
+            "NOT_FOUND" if status_code == 404 else "SERVER_ERROR",
+            message,
+        )
 
     if body is None:
         return get_graph_json(url, timeout=15, on_error=_on_error) or {}
@@ -210,10 +254,16 @@ def _project_action(action: str, body: dict | None = None) -> dict:
 
 
 def _start_declared(request: str) -> int | None:
-    """The port of the project app ``request`` names (or of its only app), brought up the one way —
-    validate → load → setup → fix (``bring_up``, behind ``app-start``); None when the caller is in no
-    project or no ``webapp.json`` app here matches. A load that does not come up is the answer: its
-    reason, and the fixer's verdict on it."""
+    """The port of the project app ``request`` names — see :func:`_start_declared_page`."""
+    page = _start_declared_page(request)
+    return page["port"] if page else None
+
+
+def _start_declared_page(request: str) -> dict | None:
+    """The page of the project app ``request`` names (or of its only app), brought up the one way —
+    validate → load → setup → fix (``bring_up``, behind ``app-start``): ``{"app", "path", "port"}``; None
+    when the caller is in no project or no ``webapp.json`` app here matches. A load that does not come up
+    is the answer: its reason, and the fixer's verdict on it."""
     if _project_action_url("app-start", required=False) is None:
         return None
     names = sorted({row["app"] for row in _project_action("app-ports").get("ports") or []})
@@ -227,10 +277,47 @@ def _start_declared(request: str) -> int | None:
         load = _follow(row.get("load") or {}, str(row.get("asset") or ""))
     if load.get("state") != "ready":
         _fail(EXIT_START_FAILED, "APP_NOT_STARTED", f"{name}: {load.get('detail') or load.get('state') or 'failed'}")
-    page = next((r for r in _project_action("app-ports").get("ports") or []
-                 if r["app"] == name and r["process"] == "page"), None)
+    page = next(
+        (r for r in _project_action("app-ports").get("ports") or [] if r["app"] == name and r["process"] == "page"),
+        None,
+    )
     port = (page or {}).get("port") or (page or {}).get("declared")
-    return int(port) if port else None
+    return {"app": name, "path": (page or {}).get("path"), "port": int(port)} if port else None
+
+
+def _open_declared(page: dict, *, process_id: str) -> dict:
+    """Show the project app the backend has just brought up — by its own folder and the port it answers on.
+    Nothing is searched for: an app with a ``webapp.json`` says what it is, and a folder inside it
+    (its ``static/``) is a part of it, not another app."""
+    folder = Path(page["path"])
+    try:
+        manifest = json.loads((folder / "webapp.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        manifest = {}
+    serving = next((m.get("serving") or {} for m in manifest.get("mounts") or [] if isinstance(m, dict)), {})
+    port = page["port"]
+    data = _register_webapp(
+        process_id,
+        {
+            "name": page["app"],
+            "path": str(folder),
+            "port": str(port),
+            "start_cmd": str(serving.get("start_cmd") or ""),
+            "health": str(serving.get("health") or "/"),
+            "description": manifest.get("description") or f"Web app at {folder}",
+            "show": True,
+        },
+    )
+    return {
+        "source": "project",
+        "app": page["app"],
+        "artifact": data.get("artifact"),
+        "deployment": data.get("deployment"),
+        "shown": data.get("shown"),
+        "port": port,
+        "url": f"http://127.0.0.1:{port}",
+        "started": False,
+    }
 
 
 def _follow(load: dict, asset: str) -> dict:
@@ -246,7 +333,9 @@ def _follow(load: dict, asset: str) -> dict:
 
 @app_app.command("ports", help="The port each app of this project declares, and where it runs now.")
 def app_ports_cmd(
-    bare: Annotated[Optional[str], typer.Option("--bare", help="Print only the live (else declared) port of APP or APP/SERVICE.")] = None,
+    bare: Annotated[
+        Optional[str], typer.Option("--bare", help="Print only the live (else declared) port of APP or APP/SERVICE.")
+    ] = None,
 ) -> None:
     """The one place an agent, a wizard step or a person reads an app's port — never a guess, never a
     number copied into a prompt. ``--bare shop`` or ``--bare shop/api`` prints one number for ``$(...)``."""
@@ -485,10 +574,7 @@ def _select_artifact(artifacts: list[dict], query: str, root: Path) -> dict | No
 
 def _artifact_score(artifact: dict, query: str, root: Path) -> int:
     terms = _query_terms(query)
-    fields = " ".join(
-        str(artifact.get(k) or "")
-        for k in ("name", "description", "kind")
-    ).lower()
+    fields = " ".join(str(artifact.get(k) or "") for k in ("name", "description", "kind")).lower()
     score = 25
     path = _artifact_path(artifact, root)
     if path:
