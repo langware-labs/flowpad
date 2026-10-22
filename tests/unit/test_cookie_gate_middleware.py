@@ -10,7 +10,7 @@ import pytest
 from starlette.requests import HTTPConnection
 
 from flow_sdk.server import grants
-from flow_sdk.server.middleware.cookie_gate_middleware import _presents
+from flow_sdk.server.middleware.sandbox_cookiegate_middleware import _presents
 from tests.utils.gate import ENDPOINT, SECRET, armed, grant_cookie, ticket
 
 COOKIE_NAME = grants.COOKIE_NAME

@@ -49,7 +49,8 @@ Process:
    - Projects: first delete the entity graph via the local API —
      `PORT=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser(f'~/.flow/instances/{os.environ.get(\"FLOW_INSTANCE\",\"prod\")}/server.json')))['port'])")`
      then
-     `curl -s -X POST http://localhost:$PORT/api/v1/graph/project/<entity_id>/delete-with-children`.
+     `curl -s -X POST -H "X-Cookie-Gate: $(flow auth get-cookie-gate)" http://localhost:$PORT/api/v1/graph/project/<entity_id>/delete-with-children`
+     (the header carries the backend's cookie-gate token; without it the call gets 403).
      Then remove the project folder with `rm -rf` ONLY if it is under
      `~/Flowpad workspace/` — for folders outside the workspace, delete the
      entity but leave the folder and say so.

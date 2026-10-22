@@ -1,161 +1,89 @@
-"""Per-instance cookie-gate secret — the pre-shared key that locks this
-instance to callers who can prove they were sent here.
+"""Per-instance cookie-gate secret — the one token this machine's backend is
+locked with, and everything about how it is carried.
 
-Unset (the default, and every desktop install) the instance behaves exactly as
-it always has. Set, ``CookieGateMiddleware`` answers nothing without it — not
-the UI, not static, not the API, not a WebSocket.
+It lives in ``<instance_dir>/.cookie_gate`` (FLOWPAD-2233), created on first use
+and read by the CLI and Electron. On a hub box ``flow auth set-cookie-gate`` (or
+``/auth/login_callback?cookie-gate=``) overwrites it with the hub-minted secret, so
+the hub, the box's own browser and its CLI all present one value.
 
-The secret arrives on ``/auth/login_callback``, which the hub curls over sandbox
-loopback to deliver the api-key. That request is invisible to the sandbox's
-public URL, which is what makes it a usable provisioning channel. Persisting it
-arms the gate; there is no other writer.
+The token's file and its wire format (header, query and cookie names and
+attributes) stay in this module. Callers use:
 
-Stored in the per-instance sod (0600, Fernet, atomic locked writes) next to the
-api-key it ships with — not ``config.json``, which is plaintext and whose writes
-are neither atomic nor locked. Written through ``instance.sod`` directly rather
-than ``cli.auth.secrets.write_secret`` so it stays out of the app_secret record
-list: this is an internal gate value, not a user-managed secret.
+* ``verify_cookie``     — does a request (or a presented string) carry the token
+* ``get_header``        — the ``GateHeader(name, value)`` a machine caller sends
+* ``add_query_param``   — a URL that carries the token once (``/auth/gate``)
+* ``verify_query_param`` — does a request's URL itself carry the token
+* ``set_cookie_header`` — the ``Set-Cookie`` value that hands a browser its cookie
+* ``set_cookie`` / ``clear_cookie_gate`` — write / delete the token
+* ``install_gate_opener`` — every urllib request in this process presents it
+* ``CookieGateAuthHttpx`` — every request an httpx client sends presents it
+* ``get_cookie_gate``   — the raw token, for the hub-signed caller check only
 
-Read on every request, so the parsed value is memoized per instance_dir — the
-same discipline as ``privacy_mode`` (and for the same reason: an uncached read
-here is a full file decrypt).
-
-**An armed marker file guards the sod read, and it is load-bearing.** Decrypting
-the sod fetches the Fernet key, which on a normal install means an OS keychain
-prompt (``file_sod._cipher`` — "the single point that actually fetches the key").
-``sod.read`` only short-circuits when the sodot file is *absent*, and a logged-in
-instance always has one. So consulting the sod to discover we are ungated would
-prompt the keychain on the first HTTP request after every restart — on desktop
-installs that are never gated at all. The marker answers "is this instance armed"
-from a stat() alone, which is the same trick ``hub_login.is_logged_in`` uses to
-stay "safe to call at startup without triggering a keychain access prompt", and
-the same shape as the ``.secrets_enabled`` consent marker. It holds no secret:
-that an instance is gated is something an attacker learns from the Forbidden page
-anyway.
+Keeping the token on this machine is the caller's job:
+``flow_sdk.utils.networking.is_loopback`` tells it whether a host is this machine.
 """
 
 from __future__ import annotations
 
+import http.cookiejar
+import logging
+import os
+import secrets
+import urllib.request
 from pathlib import Path
+from typing import NamedTuple
+from urllib.parse import urlsplit
+
+import httpx
+from starlette.datastructures import URL
+from starlette.requests import HTTPConnection
 
 from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.instance_settings.base_settings import SecretsNotEnabledError
+from flow_sdk.utils.networking import is_loopback
 
-_SECRET_NAME = "cookie_gate"
+logger = logging.getLogger(__name__)
+
+# Machine callers present the token in this header.
+_HEADER_NAME = "x-cookie-gate"
+# A browser's first, cookie-less contact presents it in this query param.
+_QUERY_NAME = "cookie-gate"
+_TOKEN_FILENAME = ".cookie_gate"
+# Per port: cookies ignore the port, so one name would let two local instances in
+# the same browser overwrite each other's cookie.
+_LOCAL_COOKIE_PREFIX = "cookie-gate-"
+_LOCAL_COOKIE_MAX_AGE = 365 * 24 * 3600
+# Through a hub box's public (https) URL.
+_SANDBOX_COOKIE_NAME = "__Host-cookie-gate"
+
+
+class GateHeader(NamedTuple):
+    """The header a machine caller sends to this machine's backend."""
+
+    name: str
+    value: str
 
 
 class DesktopGateRefused(ValueError):
-    """Raised when arming is attempted on a desktop-managed instance.
-
-    A ``ValueError`` subclass so the CLI's existing handler reports it like any
-    other bad argument, while ``/auth/login_callback`` can catch this case
-    specifically and drop it without failing the login.
-    """
-
-
-# In-process cache of the secret. The gate check runs on EVERY request and an
-# uncached ``sod.read`` is a file read + Fernet decrypt + json.loads, so this is
-# mandatory rather than nice-to-have.
-#
-# Keyed by instance_name so a process that switches FLOW_INSTANCE mid-run can't
-# read another instance's secret — the same per-instance discipline privacy_mode
-# keeps, but on a str rather than instance_dir.
-#
-# The value is ``(marker mtime_ns, secret)``, and the mtime is what makes the
-# entry falsifiable. This used to cache the answer outright, absence included,
-# on the reasoning that ``None`` is the common case and re-checking would cost a
-# decrypt per request. True as far as it went — but it also meant a gate armed by
-# ANOTHER process was invisible: the file changed and the server kept serving a
-# memoized ``None``, enforcing nothing until it restarted. That is not
-# theoretical now that the hub arms the gate with `flow auth set-cookie-gate`
-# rather than a call into this process. Comparing an mtime keeps the decrypt
-# rare (only when the marker actually moves) without letting the cache outlive
-# the truth.
-_cache: dict[str, tuple[int, str | None]] = {}
-
-# Memoized marker paths, per the ~34% measurement noted above.
-_marker_paths: dict[str, Path] = {}
-
-
-def _read() -> str | None:
-    if not get_instance_settings().cookie_gate_marker_path.exists():
-        # Unarmed — the default, and every desktop install. Returning here on a
-        # stat() is what keeps the sod, and therefore the keychain, untouched.
-        return None
-    try:
-        return get_instance_settings().sod.read(_SECRET_NAME)
-    except SecretsNotEnabledError:
-        # Under FLOWPAD_DESKTOP=1 the sod key must be seeded by Electron before
-        # it can be read. Resolve to "not gated" rather than failing closed —
-        # desktop is the case that is never gated in the first place, and
-        # bricking every request over a keychain handoff is the worse failure.
-        return None
-    except Exception:
-        # A corrupt or unreadable sod resolves to "not gated" for the same
-        # reason. Documented in docs/cookie-gate.md; revisit if the gate ever
-        # protects something other than a public sandbox URL.
-        return None
+    """Arming refused on a desktop-managed instance; a ``ValueError`` so the CLI reports it as a bad argument."""
 
 
 def get_cookie_gate() -> str | None:
-    """The secret this instance is gated on, or ``None`` when it is not gated.
-
-    Re-checks the marker on EVERY call and re-reads only when its mtime moved.
-    The plain "cache the answer forever" version could not see a gate armed by
-    another process, which is what a `flow auth set-cookie-gate` from the hub
-    is: the file changed and this server kept serving a memoized ``None``,
-    enforcing nothing until it restarted. The window that opens is exactly the
-    one the gate exists to close, so the stat is worth it.
-
-    The cost is one ``stat`` per request, which is what the unarmed path already
-    paid inside ``_read``; what is new is paying it when armed too. Nothing else
-    changed: the sod is still opened only when the marker's mtime actually
-    moves, so a steady-state gated instance decrypts once, and an ungated one
-    (every desktop install) still never touches the keychain.
-    """
-    settings = get_instance_settings()
-    key = settings.instance_name
+    """The raw token, or ``None`` when there is none (yet). For the hub-signed
+    caller check (``service_endpoint``); everything else goes through the functions
+    below. A plain-file read, so nothing is cached. Never raises."""
     try:
-        # Memoized per instance: `cookie_gate_marker_path` derives from
-        # `instance_dir`, a @property that builds a fresh Path per access and
-        # measured ~34% of this function's cost. Statting a cached Path keeps
-        # the per-request work to the syscall itself.
-        marker = _marker_paths.get(key)
-        if marker is None:
-            marker = settings.cookie_gate_marker_path
-            _marker_paths[key] = marker
-        mtime = marker.stat().st_mtime_ns
-    except OSError:
-        # No marker (or unreadable) — unarmed, the common case. Drop any cached
-        # secret so a cleared gate stops being enforced without a restart.
-        _cache.pop(key, None)
+        value = _token_path().read_text(encoding="utf-8").strip()
+    except OSError as e:
+        logger.warning("cookie-gate: cannot read token at %s: %s", _token_path(), e)
         return None
-
-    cached = _cache.get(key)
-    if cached is not None and cached[0] == mtime:
-        return cached[1]
-    value = _read() or None
-    _cache[key] = (mtime, value)
-    return value
+    return value or None
 
 
-def set_cookie_gate(value: str) -> None:
-    """Persist the secret and arm the gate. The single writer.
+def set_cookie(value: str) -> None:
+    """Write the token, replacing any token there.
 
-    Raises ``ValueError`` on an empty value — arming on ``""`` would store a
-    secret that ``is_gated()`` reads as unset, leaving the instance open while
-    looking locked.
-
-    Raises ``DesktopGateRefused`` on a desktop-managed instance. The gate exempts
-    no path, so arming one is indistinguishable from bricking the app: the
-    Electron shell's own ``/health/status`` poll gets the 403 like everyone else,
-    never sees the backend it just spawned come up, and kills it after 120s. The
-    gate exists to protect a sandbox's public URL; a desktop install has no
-    public URL to protect, so there is no case where arming one is correct.
-
-    The check lives here, in the single writer, rather than in either caller —
-    the CLI command and ``/auth/login_callback`` are both writers today and a
-    rule enforced in one of them is a rule the other can still break.
+    Raises ``ValueError`` on an empty value, and ``DesktopGateRefused`` on a
+    desktop-managed instance: its token is its own, never the hub's.
     """
     if not value:
         raise ValueError("cookie-gate secret must be non-empty")
@@ -163,127 +91,176 @@ def set_cookie_gate(value: str) -> None:
     if settings.desktop_marker_path.exists():
         raise DesktopGateRefused(
             f"Refusing to arm the cookie-gate on desktop-managed instance "
-            f"{settings.instance_name!r}: the gate exempts no path, so it would "
-            f"reject the desktop app's own health check and prevent it from "
-            f"launching. The gate is for sandboxes reachable at a public URL."
+            f"{settings.instance_name!r}: a desktop keeps its own local token."
         )
-    # sod.write has no mkdir of its own, and its FileLock needs the dir to exist.
-    # It does today only because _finalize_login runs enable_secrets() first —
-    # not something a public setter should depend on. Same shape as
-    # base_settings' own marker write.
-    settings.instance_dir.mkdir(parents=True, exist_ok=True)
-    settings.sod.write(_SECRET_NAME, value)
-    # Marker last: it is what makes the secret discoverable, so writing it before
-    # the sod would open a window where the gate reads as armed but has nothing
-    # to compare against — which fails open, silently.
-    #
-    # 0600 to match every other artifact in instance_dir. It holds no secret, but
-    # a lone 0644 file among 0600 siblings is the kind of exception that needs a
-    # reason, and there isn't one.
-    settings.cookie_gate_marker_path.touch(mode=0o600)
-    # Stamp the cache with the marker we just wrote, so this process does not
-    # re-read the sod it already knows the contents of. Read the mtime back
-    # rather than assuming: it is the value every other reader will compare.
-    try:
-        _cache[settings.instance_name] = (settings.cookie_gate_marker_path.stat().st_mtime_ns, value)
-    except OSError:
-        _cache.pop(settings.instance_name, None)
+    _write_token(value, os.O_TRUNC)
 
 
 def clear_cookie_gate() -> bool:
-    """Disarm the gate. The single deleter, mirroring ``set_cookie_gate``.
-
-    Returns whether anything was armed to begin with, so a caller can report
-    "already open" instead of implying it changed something.
-
-    Order is the EXACT REVERSE of arming, and for the same reason. Arming writes
-    the secret first and the marker last, so the gate is never discoverable
-    before there is something to compare against. Disarming therefore removes
-    the MARKER first: from that instant ``_read`` short-circuits on the stat and
-    the instance is open, with the now-unreferenced secret cleaned up after.
-    Deleting the secret first would leave a window where the marker still says
-    "armed" while the comparison value is gone — and ``_read`` resolves an
-    unreadable store to ``None``, i.e. it fails OPEN. Same end state, but
-    reached through a moment that silently looks locked and is not.
-    """
-    settings = get_instance_settings()
-    was_armed = settings.cookie_gate_marker_path.exists()
-
-    settings.cookie_gate_marker_path.unlink(missing_ok=True)
+    """Delete the token file. Returns whether there was one."""
     try:
-        settings.sod.delete(_SECRET_NAME)
-    except Exception:
-        # The marker is gone, so the instance is already open — which is the
-        # whole point of the call. A secret left behind in the store is inert:
-        # nothing reads it without the marker, and re-arming overwrites it.
+        _token_path().unlink()
+    except FileNotFoundError:
+        logger.debug("Cookie gate file deletion failed, file doesnt exists: %s", _token_path())
+        return False
+    return True
+
+
+def verify_cookie(presented: HTTPConnection | str) -> bool:
+    """Whether ``presented`` carries the token: a string compared as-is, or a request
+    checked for the gate cookie, the ``X-Cookie-Gate`` header and the ``?cookie-gate=``
+    query, each on its own so a stale cookie cannot veto a valid header or query."""
+    token = _token()
+    if not token:
+        return False
+    if isinstance(presented, str):
+        candidates = (presented,)
+    else:
+        candidates = (
+            presented.cookies.get(_cookie_name(presented.url.hostname, _request_port(presented))),
+            presented.headers.get(_HEADER_NAME),
+            presented.query_params.get(_QUERY_NAME),
+        )
+    return any(c and secrets.compare_digest(c, token) for c in candidates)
+
+
+def get_header() -> GateHeader | None:
+    """The header a machine caller sends to this machine's backend, or ``None``
+    without a token. Send it to a loopback host only (``is_loopback``)."""
+    token = _token()
+    return GateHeader(_HEADER_NAME, token) if token else None
+
+
+def add_query_param(url: URL) -> URL:
+    """``url`` carrying the token as its query param — a browser's one cookie-less
+    contact, which ``/auth/gate`` trades for the cookie. ``url`` unchanged without a token."""
+    token = _token()
+    return url.include_query_params(**{_QUERY_NAME: token}) if token else url
+
+
+def verify_query_param(conn: HTTPConnection) -> bool:
+    """Whether ``conn``'s URL itself carries the token as its query param, as only a URL
+    built by ``add_query_param`` does. Unlike ``verify_cookie``, the cookie a browser
+    attaches on its own does not count: the token in the URL is what shows the link was
+    made by someone who holds it."""
+    return verify_cookie(conn.query_params.get(_QUERY_NAME) or "")
+
+
+def set_cookie_header(conn: HTTPConnection) -> str | None:
+    """The ``Set-Cookie`` value that hands the browser behind ``conn`` the gate cookie
+    for the host it addressed, or ``None`` without a token.
+
+    On this machine: no ``Secure`` / ``__Host-`` (they add nothing on loopback, and
+    Safari drops ``Secure`` cookies on ``http://localhost``), and ``SameSite=Lax`` —
+    another site's fetch, form POST, iframe or subresource does not carry it, a
+    top-level GET navigation does; the hub/provider redirects back to
+    ``/auth/login_callback`` and ``/auth/oauth/*`` are cross-site, and ``Strict``
+    refused them. Through a hub box's public URL: ``__Host-``, ``Secure``.
+    """
+    token = _token()
+    if not token:
+        return None
+    host = conn.url.hostname
+    name = _cookie_name(host, _request_port(conn))
+    if is_loopback(host):
+        return f"{name}={token}; Max-Age={_LOCAL_COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax"
+    return f"{name}={token}; Path=/; Secure; HttpOnly; SameSite=Lax"
+
+
+class _GateCookieJar(http.cookiejar.CookieJar):
+    """Presents this instance's token, as the gate cookie, on every urllib request
+    to this machine's loopback hosts and nowhere else. Holds no cookies: the header
+    is built per request (threads probing different ports cannot cross), and
+    responses' ``Set-Cookie`` are not collected."""
+
+    def add_cookie_header(self, request: urllib.request.Request) -> None:
+        parts = urlsplit(request.full_url)
+        token = _token() if is_loopback(parts.hostname) else None
+        if token:
+            request.add_unredirected_header("Cookie", f"{_cookie_name(parts.hostname, parts.port)}={token}")
+
+    def extract_cookies(self, response, request) -> None:
         pass
 
-    # The running server memoizes per instance_name; without this it would keep
-    # enforcing a gate whose marker no longer exists until the process restarts.
-    _cache.pop(settings.instance_name, None)
-    return was_armed
+
+def install_gate_opener() -> None:
+    """Make every ``urllib.request.urlopen`` in this process present the token to this
+    machine. Called once at startup by the processes that call the backend: the
+    ``flow`` CLI, the function runner, the server monitor, and the backend itself (for code
+    running in it, such as the in-app diagnose). The machine is not the boundary the gate
+    guards -- anything running here can read the token file -- the browser is."""
+    urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_GateCookieJar())))
 
 
-# Loopback hostnames. The secret is presented to these and nothing else: a
-# caller can be pointed at a configured remote host, and a credential for THIS
-# machine must never ride a request that leaves it.
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+class CookieGateAuthHttpx(httpx.Auth):
+    """Presents this instance's token, as the ``X-Cookie-Gate`` header, on every request
+    an httpx client sends to this machine's loopback hosts and nowhere else. Set once
+    where the client is built: ``httpx.AsyncClient(auth=CookieGateAuthHttpx())``.
+
+    It runs once per request, before httpx follows any redirect, and httpx strips only
+    ``Authorization`` on a cross-origin redirect -- so a client that turns
+    ``follow_redirects`` on would carry the token to wherever it is sent next. Leave
+    redirects off on a client that uses this."""
+
+    def auth_flow(self, request: httpx.Request):
+        token = _token() if is_loopback(request.url.host) else None
+        if token:
+            request.headers[_HEADER_NAME] = token
+        yield request
 
 
-def gate_headers(url: str) -> dict[str, str]:
-    """The header a same-machine caller presents to get past its own gate.
+# ---------------------------------------------------------------------------
+# Internals.
+# ---------------------------------------------------------------------------
 
-    Empty for an unarmed instance (which is every desktop install) and for any
-    non-loopback URL.
 
-    This is the *machine* transport the middleware documents, and it lives here
-    — beside the secret — rather than in any one caller, because there are
-    several: the ``flow`` CLI (what an agent inside a gated sandbox runs), the
-    discovery health probe, and the supervisor's. Each of them spelling it out
-    separately is how the CLI came to have none at all, answering every command
-    inside a gated sandbox with the gate's 403 HTML page.
+def _token_path() -> Path:
+    """This instance's token file — the one the CLI and Electron read."""
+    return get_instance_settings().instance_dir / _TOKEN_FILENAME
 
-    The header rather than ``?cookie-gate=``: a secret in a URL lands in access
-    logs.
 
-    Free when unarmed — ``get_cookie_gate`` answers from a ``stat()`` of the
-    marker file and never opens the encrypted store, which is what keeps desktop
-    installs away from a keychain prompt. Starlette is imported only on the
-    armed path, so an ordinary call does not pay for it. Any failure to resolve
-    the secret degrades to no header, never to an exception: being unable to
-    read the gate is a reason to call without it, never a reason to fail.
+def _token() -> str | None:
+    """The token, created on first use. ``None`` (and an error logged) when it can
+    neither be read nor created: a gate then refuses rather than passing everything."""
+    token = get_cookie_gate() or _create_token()
+    if not token:
+        logger.error("cookie-gate: no token at %s; refusing every request", _token_path())
+    return token
+
+
+def _create_token() -> str | None:
+    """Write a fresh token unless one already exists, then return whatever is there.
+
+    ``O_EXCL`` refuses an existing file, so when two processes race on first boot
+    exactly one token is written and both read it back. ``None`` when the token
+    cannot be created; never raises.
     """
     try:
-        from urllib.parse import urlsplit
-
-        if (urlsplit(url).hostname or "") not in _LOOPBACK_HOSTS:
-            return {}
-        secret = get_cookie_gate()
-        if not secret:
-            return {}
-        # Imported from the middleware that READS the header so the two cannot
-        # drift; deferred so the ungated path never pulls in starlette.
-        from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
-
-        return {HEADER_NAME: secret}
-    except Exception:
-        return {}
+        _write_token(secrets.token_urlsafe(32), os.O_EXCL)
+    except FileExistsError:
+        pass  # a racing creator won; read its token below
+    except OSError as e:
+        logger.warning("cookie-gate: could not create local token at %s: %s", _token_path(), e)
+        return None
+    logger.info("cookie-gate: created local token at %s", _token_path())
+    return get_cookie_gate()
 
 
-def is_gated() -> bool:
-    """The single predicate the middleware calls. ``True`` when this instance
-    answers nothing without the secret."""
-    return get_cookie_gate() is not None
+def _write_token(value: str, mode: int) -> None:
+    """Write ``value`` to the token file (0600 on posix; on Windows it inherits the
+    profile directory's ACL). ``mode``: ``os.O_TRUNC`` to replace, ``os.O_EXCL`` to
+    create only."""
+    path = _token_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with os.fdopen(os.open(path, os.O_CREAT | os.O_WRONLY | mode, 0o600), "w", encoding="utf-8") as f:
+        f.write(value)
 
 
-def reset_cache() -> None:
-    """Drop the memoized secret. For tests, and for any caller that rotates the
-    sod out of band.
+def _cookie_name(host: str, port: int) -> str:
+    """The gate cookie's name for a request to ``host:port``."""
+    return f"{_LOCAL_COOKIE_PREFIX}{port}" if is_loopback(host) else _SANDBOX_COOKIE_NAME
 
-    Clears the marker paths too: they are keyed by instance NAME, so a caller
-    that repoints the same name at a different ``FLOW_HOME`` (which is what a
-    test fixture does) would otherwise keep statting the old directory and read
-    a gate that no longer applies.
-    """
-    _cache.clear()
-    _marker_paths.clear()
+
+def _request_port(conn: HTTPConnection) -> int | None:
+    """The port as the client addressed it (Host), else the socket's."""
+    return conn.url.port or (conn.scope.get("server") or (None, None))[1]
