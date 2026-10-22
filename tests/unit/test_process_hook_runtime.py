@@ -226,7 +226,10 @@ def test_claude_removing_one_event_keeps_the_others_projected(tmp_path, isolated
     driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_START, HookEventType.SESSION_END])
     driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_END])
 
-    assert sorted(json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]) == ["PostToolUse", "SessionEnd"]
+    assert sorted(json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]) == [
+        "PostToolUse",
+        "SessionEnd",
+    ]
     assert driver.prepare_process_hooks(assets, process_id, []).plugin_dirs == ()
     assert not plugin.exists()
 
@@ -286,3 +289,29 @@ def test_claude_pre_tool_use_hook_fires_only_for_the_user_input_tools(tmp_path, 
     groups = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
     assert [group["matcher"] for group in groups] == ["AskUserQuestion|ExitPlanMode"]
     assert "--wait-for-response" not in groups[0]["hooks"][0]["args"]
+
+
+def test_claude_app_launch_repeats_the_reply_language_rule_beside_each_message(tmp_path, isolated_wrapper):
+    """An app launch gets a local ``UserPromptSubmit`` hook that prints the reply-language
+    reminder — even with no configured events — and a terminal launch does not."""
+    import subprocess
+    import sys
+
+    from flow_sdk.i18n.reply_language_hook import REMINDER
+
+    assets = AssetDir(tmp_path / "assets")
+    driver = ClaudeDriver()
+    runtime = driver.prepare_process_hooks(assets, str(mint_uuid()), [], app_launch=True)
+
+    plugin = assets.os_path / ".flowpad/plugins/claude/flowpad-process-hooks"
+    assert runtime.plugin_dirs == (str(plugin),)
+    hooks = json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    [group] = hooks["UserPromptSubmit"]
+    [hook] = group["hooks"]
+    out = subprocess.run([hook["command"], *hook["args"]], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == REMINDER
+    assert hook["command"] == sys.executable
+
+    assert driver.prepare_process_hooks(assets, str(mint_uuid()), []).plugin_dirs == ()
+    driver.prepare_process_hooks(assets, str(mint_uuid()), [HookEventType.PRE_TOOL_USE])
+    assert "UserPromptSubmit" not in json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]

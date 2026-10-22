@@ -135,6 +135,23 @@ _BUILTIN_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
     ),
 )
 
+#: Added for an app launch only — the surface that gets ``common_ui.md``'s language
+#: rule. Repeats that rule beside each user message (``reply_language_hook.py``).
+_APP_LAUNCH_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
+    (
+        HookEventType.USER_PROMPT_SUBMIT,
+        {
+            "hooks": [
+                {
+                    "args": ["-m", "flow_sdk.i18n.reply_language_hook"],
+                    "command": sys.executable,
+                    "type": "command",
+                }
+            ],
+        },
+    ),
+)
+
 _HOOK_CAPABILITIES: "HookCapabilities" = {
     **settings_file_scopes(),
     HookScope.PROCESS: HookCapability(events=_PROCESS_EVENTS, response_events=_RESPONSE_EVENTS),
@@ -271,9 +288,11 @@ class ClaudeDriver:
         assets: AssetDir,
         process_id: str,
         events: Sequence[HookEventType],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         normalized = normalize_process_hook_events(events, provider=self.name, supported=_PROCESS_EVENTS)
-        if not normalized:
+        if not normalized and not app_launch:
             assets.remove(_PROCESS_HOOK_PLUGIN)
             return ProcessHookRuntime()
         if not is_valid_entity_id(process_id):
@@ -304,7 +323,7 @@ class ClaudeDriver:
                 for event in normalized
             },
         }
-        for event, entry in _BUILTIN_HOOKS:
+        for event, entry in (*_BUILTIN_HOOKS, *(_APP_LAUNCH_HOOKS if app_launch else ())):
             hooks["hooks"].setdefault(event.value, []).append(entry)
         manifest = {
             "author": {"name": "Flowpad"},

@@ -16478,8 +16478,10 @@ msgstr "המכונה נדחתה"
 msgid "Machine secrets"
 msgstr "סודות המכונה"
 
-#~ msgid "Machine size"
-#~ msgstr ""
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Machine size"
+msgstr "גודל המכונה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine type"

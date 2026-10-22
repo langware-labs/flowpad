@@ -16478,8 +16478,10 @@ msgstr "تم رفض الجهاز"
 msgid "Machine secrets"
 msgstr "أسرار الجهاز"
 
-#~ msgid "Machine size"
-#~ msgstr ""
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Machine size"
+msgstr "حجم الجهاز"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine type"

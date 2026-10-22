@@ -1738,8 +1738,13 @@ class WorkerDriver(Protocol):
         assets: "AssetDir",
         process_id: str,
         events: Sequence["HookEventType"],
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
-        """Materialize launch artifacts once and return their runtime inputs."""
+        """Materialize launch artifacts once and return their runtime inputs.
+
+        ``app_launch`` marks a launch from the Flowpad app, which may add hooks of its own.
+        """
         ...
 
     def prepare_process_mcp(self, specs: Sequence["McpSpec"]) -> ProcessMcpRuntime:

@@ -17,7 +17,11 @@ import { projectEntitiesToSelectorItems } from '@src/components/project-selector
 import { cn } from '@src/lib/utils';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { RepoPicker } from '@src/components/git/RepoPicker';
-import type { ComputeNode } from '@sdk';
+import { ComputeNodeSize, type ComputeNode } from '@sdk';
+import {
+  AGENT_MACHINE_SIZE_LABELS,
+  AGENT_MACHINE_SIZES,
+} from '@src/components/assets/editor/agent-profile/agent-vocabularies';
 import {
   DEFAULT_LOGIN_ACCESS,
   type ContextProject,
@@ -75,7 +79,11 @@ interface NewSandboxDialogProps {
    * fire-and-forget: the dialog stays open across the call so it can report what
    * happened, which means it has to be able to await the outcome.
    */
-  onCreate: (opts: { name: string; sandboxProject?: SandboxSetup }) => Promise<ComputeNode | null>;
+  onCreate: (opts: {
+    name: string;
+    size: ComputeNodeSize;
+    sandboxProject?: SandboxSetup;
+  }) => Promise<ComputeNode | null>;
   /**
    * Boot the created box and set it up. Resolves when it is ready, or rejects.
    *
@@ -150,6 +158,8 @@ export function NewSandboxDialog({
 }: NewSandboxDialogProps) {
   const { t } = useLingui();
   const [name, setName] = useState(defaultName);
+  // The hub's own default size. Fixed at create: the box is provisioned at it.
+  const [size, setSize] = useState<ComputeNodeSize>(ComputeNodeSize.LARGE);
   const [loadedProject, setLoadedProject] = useState<Source | null>(null);
   const [assets, setAssets] = useState<Source[]>([]);
   const [githubConnected, setGithubConnected] = useState(false);
@@ -173,6 +183,7 @@ export function NewSandboxDialog({
   useEffect(() => {
     if (!open) return;
     setName(defaultName);
+    setSize(ComputeNodeSize.LARGE);
     const fromUrl = initialGitUrl ? gitOriginFromUrl(initialGitUrl) : null;
     setLoadedProject(
       fromUrl ? { name: fromUrl.name, gitOrigin: fromUrl } : currentProject ? sourceFromProject(currentProject) : null,
@@ -284,6 +295,7 @@ export function NewSandboxDialog({
     const opts = loadedProject
       ? {
           name: sandboxName,
+          size,
           sandboxProject: {
             name: loadedProject.name,
             ...(loadedProject.gitOrigin ? { gitOrigin: loadedProject.gitOrigin } : {}),
@@ -291,7 +303,7 @@ export function NewSandboxDialog({
             ...(contextProjects.length ? { contextProjects } : {}),
           },
         }
-      : { name: sandboxName }; // nothing to load → a plain sandbox
+      : { name: sandboxName, size }; // nothing to load → a plain sandbox
 
     setPhase('creating');
     setError('');
@@ -315,7 +327,7 @@ export function NewSandboxDialog({
       setError(e instanceof Error ? e.message : String(e));
       setPhase('idle');
     }
-  }, [phase, name, defaultName, loadedProject, assets, onCreate, lendRepoAccessToRecipients]);
+  }, [phase, name, size, defaultName, loadedProject, assets, onCreate, lendRepoAccessToRecipients]);
 
   const handleLaunch = useCallback(async () => {
     if (!created || phase !== 'created') return;
@@ -377,6 +389,29 @@ export function NewSandboxDialog({
           className="mb-4 text-sm"
           autoFocus
         />
+
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          <Trans>Machine size</Trans>
+        </label>
+        <div className="mb-4 flex flex-col gap-1.5" role="radiogroup" aria-label={t`Machine size`}>
+          {AGENT_MACHINE_SIZES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={size === value}
+              disabled={phase !== 'idle'}
+              onClick={() => setSize(value)}
+              className={cn(
+                'rounded-md border px-3 py-2 text-start text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                size === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
+              )}
+              data-testid={`sandbox-size-${value}`}
+            >
+              {AGENT_MACHINE_SIZE_LABELS[value]}
+            </button>
+          ))}
+        </div>
 
         <SourceField
           label={t`Project to load`}
