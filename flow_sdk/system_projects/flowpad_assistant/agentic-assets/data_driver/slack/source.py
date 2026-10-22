@@ -126,6 +126,9 @@ class SlackSource(MessageSource):
     pages_per_pass = 1
     #: A Slack source is ABOUT its channel: a caller reuses the row that names it.
     identity_config_key = "channel"
+    # Signed in as a person, the account is shared: what that person types is answered, only the
+    # agent's own replies (``sent_by_us``) are not. See ``agent_serve.answer``.
+    answers_its_account = True
     #: While someone waits on the channel (an agent serving it, a viewer), poll it this often. Slack's
     #: ``conversations.history`` allows ~50 calls a minute; 5s is 12.
     attention_poll_seconds = 5
