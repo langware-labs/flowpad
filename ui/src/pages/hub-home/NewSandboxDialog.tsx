@@ -160,6 +160,8 @@ export function NewSandboxDialog({
   const [name, setName] = useState(defaultName);
   // The hub's own default size. Fixed at create: the box is provisioned at it.
   const [size, setSize] = useState<ComputeNodeSize>(ComputeNodeSize.LARGE);
+  // Once picked, the size list folds to the chosen row so the dialog's footer stays in view.
+  const [sizesOpen, setSizesOpen] = useState(true);
   const [loadedProject, setLoadedProject] = useState<Source | null>(null);
   const [assets, setAssets] = useState<Source[]>([]);
   const [githubConnected, setGithubConnected] = useState(false);
@@ -184,6 +186,7 @@ export function NewSandboxDialog({
     if (!open) return;
     setName(defaultName);
     setSize(ComputeNodeSize.LARGE);
+    setSizesOpen(true);
     const fromUrl = initialGitUrl ? gitOriginFromUrl(initialGitUrl) : null;
     setLoadedProject(
       fromUrl ? { name: fromUrl.name, gitOrigin: fromUrl } : currentProject ? sourceFromProject(currentProject) : null,
@@ -394,21 +397,31 @@ export function NewSandboxDialog({
           <Trans>Machine size</Trans>
         </label>
         <div className="mb-4 flex flex-col gap-1.5" role="radiogroup" aria-label={t`Machine size`}>
-          {AGENT_MACHINE_SIZES.map((value) => (
+          {(sizesOpen ? AGENT_MACHINE_SIZES : [size]).map((value) => (
             <button
               key={value}
               type="button"
               role="radio"
               aria-checked={size === value}
+              aria-expanded={sizesOpen}
               disabled={phase !== 'idle'}
-              onClick={() => setSize(value)}
+              onClick={() => {
+                if (!sizesOpen) return setSizesOpen(true);
+                setSize(value);
+                setSizesOpen(false);
+              }}
               className={cn(
-                'rounded-md border px-3 py-2 text-start text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                'flex items-center justify-between rounded-md border px-3 py-2 text-start text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                 size === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
               )}
               data-testid={`sandbox-size-${value}`}
             >
               {AGENT_MACHINE_SIZE_LABELS[value]}
+              {!sizesOpen && (
+                <span className="text-xs text-muted-foreground">
+                  <Trans>Change</Trans>
+                </span>
+              )}
             </button>
           ))}
         </div>

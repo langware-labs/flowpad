@@ -84,6 +84,8 @@ class AgentSpec(AssetDocumentSpec):
     auto_launch_prompt: Optional[str] = None
     #: Sessions as this agent stay in Vibe: no tab strip, no switch to Chat or Terminal.
     vibe_only: Optional[bool] = None
+    #: The Vibe display's starter chips for sessions as this agent; each chip's text is the prompt it sends.
+    starter_prompts: Optional[list[str]] = None
     #: What every new session as this agent opens with: a place, a ``navigate`` op that can repair
     #: it (``{"op": name}``) or a wizard (``{"wizard": name}``); the first place is the active one.
     auto_open: Optional[list[AutoOpenEntry]] = None
