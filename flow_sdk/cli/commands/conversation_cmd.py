@@ -26,6 +26,7 @@ Every command emits the standard parseable envelope (``ok``/``fail`` from
 from __future__ import annotations
 
 import os
+import re
 from typing import Optional
 
 import requests
@@ -379,14 +380,14 @@ def send_message(
     _emit_send_result(cid, data)
 
 
-def _resolve_contact(port: int, who: str) -> dict:
+def _resolve_contact(contacts: list, who: str) -> dict:
     """``who`` (an email, a hub user id or a name) as one participant
     ``{name, email, user_id}`` — through the address book, so a name works.
     An email nobody knows yet is still a valid recipient (the hub invites them)."""
     from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
-    from flow_sdk.cli.commands.contacts_cmd import load_contacts, match  # noqa: PLC0415
+    from flow_sdk.cli.commands.contacts_cmd import match  # noqa: PLC0415
 
-    found = match(load_contacts(port), who)
+    found = match(contacts, who)
     if len(found) == 1:
         c = found[0]
         return {"name": c.get("name"), "email": c.get("email"), "user_id": c.get("user_id")}
@@ -400,13 +401,13 @@ def _resolve_contact(port: int, who: str) -> dict:
 
 def split_people(who: str) -> list[str]:
     """``who`` as the people it names: separated by ``,`` or ``;`` (the mail-client habit), trimmed,
-    blanks and repeats dropped, in order."""
-    seen: list[str] = []
-    for part in (who or "").replace(";", ",").split(","):
-        part = part.strip()
-        if part and part not in seen:
-            seen.append(part)
-    return seen
+    blanks and repeated spellings dropped, in order."""
+    return list(dict.fromkeys(part.strip() for part in re.split(r"[,;]", who or "") if part.strip()))
+
+
+def _handle(person: dict) -> str:
+    """How the hub is told who a person is: their email, else their hub user id."""
+    return person["email"] or person["user_id"]
 
 
 @conversation_app.command(
@@ -431,11 +432,15 @@ def new_conversation(
     listing = _post_json(_graph_url(port, "conversation-list"), {})
     if listing.get("auth_required"):
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", "Not signed in to Flowpad: sign in (`flow auth login`) and retry.")
-    # Resolved before anything is written: one unknown or ambiguous name stops the whole call.
-    people = [_resolve_contact(port, w) for w in wanted]
-    invitees = list(dict.fromkeys(p["email"] or p["user_id"] for p in people))
+    from flow_sdk.cli.commands.contacts_cmd import load_contacts  # noqa: PLC0415
 
-    default_title = ", ".join(p.get("name") or p["email"] or p["user_id"] for p in people)
+    # Resolved before anything is written: one unknown or ambiguous name stops the whole call. Two
+    # spellings of one person ("Gadi", "gadi@...") collapse to one member.
+    contacts = load_contacts(port)
+    people = list({_handle(p): p for p in (_resolve_contact(contacts, w) for w in wanted)}.values())
+    invitees = [_handle(p) for p in people]
+
+    default_title = ", ".join(p.get("name") or _handle(p) for p in people)
     created = _post_json(_graph_url(port, "conversation"), {"title": title or default_title, "members": people})
     cid = str(created.get("id") or "")
     if not cid:
@@ -451,7 +456,7 @@ def new_conversation(
         _fail(EXIT_ACTION_FAILED, "SHARE_FAILED",
               f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}")
     data = _post_json(_add_message_url(port, cid), {"text": message})
-    data["invited"] = invitees[0] if len(invitees) == 1 else invitees
+    data["invited"] = invitees
     _emit_send_result(cid, data)
 
 
