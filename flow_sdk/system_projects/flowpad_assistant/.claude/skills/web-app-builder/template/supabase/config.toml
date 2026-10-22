@@ -1,13 +1,3 @@
 # Minimal Supabase CLI config — all other settings use CLI defaults
 # (API 54321, Postgres 54322, Studio 54323).
 project_id = "webapp"
-
-# Off by default: together ~5 GB of RAM (logflare ~2.6 GB, realtime ~2.3 GB) that
-# the template's app never uses, enough to exhaust a sandbox box. Turn realtime on
-# only for an app whose users must see each other's changes live (chat, a
-# multiplayer game).
-[analytics]
-enabled = false
-
-[realtime]
-enabled = false
