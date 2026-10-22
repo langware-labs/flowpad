@@ -1024,16 +1024,22 @@ async def credential_for(
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
-    # An explicit name skips the hub tier: that tier resolves the provider's
-    # USER-token name, which by definition is not the one being asked for.
-    if not hub or name:
+    if not hub:
         return None
     try:
         from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
+            hub_app_credentials_name_for,
             hub_credential_value,
             hub_credentials_name_for,
         )
 
+        if name:
+            # The provider's APP (bot) token is the one non-default name the hub holds too (Slack's bot beside
+            # the user's grant). The hub does not advertise it, so it is read without the held pre-check. Any
+            # other explicit name is local-only.
+            if name != app_credentials_name(provider):
+                return None
+            return await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
         return await hub_credential_value(hub_credentials_name_for(provider))
     except Exception:  # noqa: BLE001
         logger.debug("%s: no hub credential", provider, exc_info=True)

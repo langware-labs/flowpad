@@ -126,6 +126,9 @@ class SlackSource(MessageSource):
     pages_per_pass = 1
     #: A Slack source is ABOUT its channel: a caller reuses the row that names it.
     identity_config_key = "channel"
+    #: While someone waits on the channel (an agent serving it, a viewer), poll it this often. Slack's
+    #: ``conversations.history`` allows ~50 calls a minute; 5s is 12.
+    attention_poll_seconds = 5
     connection = "slack"
     #: Every kind goes up as a plain file; up to ten, and the text, in one message. No per-file caption.
     files = FileSupport(kinds=frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.DOCUMENT}), per_message=10)
