@@ -149,7 +149,8 @@
       "aliases": [
         "openrouter-key"
       ],
-      "source": "OpenRouter brand mark"
+      "source": "OpenRouter brand mark",
+      "color": "#6467F2"
     },
     {
       "kind": "anthropic",
@@ -157,7 +158,8 @@
       "aliases": [
         "anthropic-key"
       ],
-      "source": "Anthropic brand mark"
+      "source": "Anthropic brand mark",
+      "color": "#D97757"
     },
     {
       "kind": "openai",
@@ -165,7 +167,8 @@
       "aliases": [
         "openai-key"
       ],
-      "source": "OpenAI brand mark"
+      "source": "OpenAI brand mark",
+      "color": "#10A37F"
     },
     {
       "kind": "twilio",
