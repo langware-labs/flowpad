@@ -90,11 +90,6 @@ export function budgetText(headline: TokenPlanRemaining, windowText: string): Me
   return msg`${used} of ${limit} ${windowText}`;
 }
 
-export function scopeLabel(scope: Pick<TokenPlanScope, 'kind' | 'name'>): MessageDescriptor | string {
-  if (scope.kind === 'me') return msg`Me`;
-  return scope.name || (scope.kind === 'team' ? msg`Team` : msg`Organization`);
-}
-
 /** For "Unlimited here — <parent> caps you at $200 today": non-null when this
  *  scope's own endpoint has no limits but something up the path does. */
 export function capsMessage(
