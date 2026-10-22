@@ -81,8 +81,11 @@ class TestResolution:
         same identity, or the tag is not an identity."""
         for alias in ("Slack", "slack"):
             assert icons.resolve(alias).tag == "brands.slack"
-        for alias in ("ClaudeCode", "Claude", "anthropic", "anthropic-key"):
+        for alias in ("ClaudeCode", "Claude"):
             assert icons.resolve(alias).tag == "brands.claude"
+        # The provider is its own mark, not its product's: an Anthropic key is not Claude Code.
+        for alias, tag in (("anthropic-key", "brands.anthropic"), ("openai-key", "brands.openai")):
+            assert icons.resolve(alias).tag == tag
 
     def test_bare_name_is_a_lookup_not_a_downgrade(self):
         """`Rss` naming no pack is answered by whichever pack has it. The caller

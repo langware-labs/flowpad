@@ -9,25 +9,17 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, ChevronDown, Plus, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 
+import { FlowIcon } from '@sdk/react/FlowIcon';
+
 import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { formatUsd } from '@src/components/llm-endpoints/usage-math';
 import { cn } from '@src/lib/utils';
 
-import anthropicMark from '../../../../flow_sdk/server/icons/brands/assets/claude.svg';
-import openaiMark from '../../../../flow_sdk/server/icons/brands/assets/codex.svg';
-import openrouterMark from '../../../../flow_sdk/server/icons/brands/assets/openrouter.svg';
-
 import { buildSourceTree, costLeft, sponsorOf, type Sponsor, type SponsorFilter } from './source-tree';
 
-/** A root talks to a provider with its own key: its row wears that provider's mark. */
-const PROVIDER_MARK: Record<string, string> = {
-  openrouter: openrouterMark,
-  anthropic: anthropicMark,
-  openai: openaiMark,
-};
-
-/** Marks drawn in black: inverted in dark mode so they stay visible. */
-const MONO_MARKS = new Set(['openrouter', 'anthropic', 'openai']);
+/** A root talks to a provider with its own key: its row wears that provider's mark (`brands.<provider>`). */
+const PROVIDER_NAME: Record<string, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI' };
 
 const CHIP = 'rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs font-medium text-foreground';
 
@@ -142,14 +134,17 @@ export function TokenSourcesTree({
                       <span className="me-1 inline-flex w-3.5 shrink-0 text-muted-foreground">
                         {hasChildren && <ChevronDown className="h-3.5 w-3.5" />}
                       </span>
-                      {e.kind === 'root' && PROVIDER_MARK[e.provider] && (
-                        <img
-                          src={PROVIDER_MARK[e.provider]}
-                          alt={e.provider}
-                          title={e.provider}
-                          className={cn('me-1.5 h-4 w-4 shrink-0', MONO_MARKS.has(e.provider) && 'dark:invert')}
-                          data-testid={`provider-mark-${e.id}`}
-                        />
+                      {e.kind === 'root' && PROVIDER_NAME[e.provider] && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="me-1.5 inline-flex shrink-0" data-testid={`provider-mark-${e.id}`}>
+                              <FlowIcon icon={`brands.${e.provider}`} size={16} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <Trans>Root source · {PROVIDER_NAME[e.provider]} key</Trans>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       <button
                         type="button"

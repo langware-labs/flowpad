@@ -47,6 +47,7 @@ vi.mock('@src/components/token-plan/SetBudgetSheet', () => ({
 import { LLMEndpoint, PageId, ViewType } from '@sdk';
 
 import { TokenPlanView } from '@src/components/token-plan/TokenPlanView';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const ME_EP = '11111111-0000-4000-8000-000000000000';
 const TEAM_EP = '22222222-0000-4000-8000-000000000000';
@@ -146,7 +147,9 @@ function renderView(pointer?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <TokenPlanView pointer={pointer} />
+      <TooltipProvider>
+        <TokenPlanView pointer={pointer} />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
