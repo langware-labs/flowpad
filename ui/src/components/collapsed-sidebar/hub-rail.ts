@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { ViewType } from '@sdk';
-import { Building2, Gauge, KeyRound, Mail, Waypoints } from 'lucide-react';
+import { Building2, Gauge, KeyRound, Mail } from 'lucide-react';
 import type React from 'react';
 
 import type { HubRailItemId } from './rail-visibility';
@@ -73,7 +73,6 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     { id: 'token-plan', title: t`Token plan`, icon: Gauge, viewType: ViewType.TOKEN_PLAN },
     // Pointer-less for the same reason: the pointer is the selected endpoint +
     // tab, and the icon must stay lit while the user drills into one.
-    { id: 'llm-endpoints', title: t`LLM Endpoints`, icon: Waypoints, viewType: ViewType.LLM_ENDPOINTS },
     { id: 'credentials', title: t`Credentials`, icon: KeyRound, viewType: ViewType.CREDENTIALS },
   ];
 }
