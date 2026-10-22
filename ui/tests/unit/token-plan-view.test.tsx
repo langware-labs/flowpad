@@ -215,6 +215,24 @@ describe('TokenPlanView', () => {
     expect(screen.queryByText('Empty')).toBeNull();
   });
 
+  it('collapse all hides children, expand all brings them back, a chevron toggles one', async () => {
+    h.endpoints = [
+      ep(ORG_EP, 'Langware pool', [], 'organization'),
+      ep(TEAM_EP, 'Team A', [ORG_EP], 'team'),
+      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { mine: true }),
+    ];
+    renderView(undefined);
+    const tree = await screen.findByTestId('token-sources');
+    expect(within(tree).getAllByRole('row')).toHaveLength(4);
+    await userEvent.click(screen.getByTestId('collapse-all'));
+    expect(within(tree).getAllByRole('row')).toHaveLength(2);
+    await userEvent.click(screen.getByTestId('expand-all'));
+    expect(within(tree).getAllByRole('row')).toHaveLength(4);
+    await userEvent.click(within(tree).getByTestId(`toggle-${TEAM_EP}`));
+    expect(within(tree).queryByTestId(`source-row-${ME_EP}`)).toBeNull();
+    expect(within(tree).getByTestId(`source-row-${TEAM_EP}`)).toBeTruthy();
+  });
+
   it('the sponsor filter keeps matching rows and dims their ancestors', async () => {
     h.endpoints = [
       ep(ORG_EP, 'Langware pool', [], 'organization'),

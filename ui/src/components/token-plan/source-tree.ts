@@ -91,3 +91,15 @@ export function scopeForEndpoint(scopes: readonly TokenPlanScope[], endpointId: 
   if (!endpointId) return undefined;
   return scopes.find((s) => !!s.endpoint_id && endpointIdFromTypeId(s.endpoint_id) === endpointId);
 }
+
+/** The rows still shown when some parents are collapsed: everything under a collapsed row hides. */
+export function visibleRows(rows: readonly SourceRow[], collapsed: ReadonlySet<string>): SourceRow[] {
+  const out: SourceRow[] = [];
+  let hideBelow: number | null = null;
+  for (const row of rows) {
+    if (hideBelow !== null && row.depth > hideBelow) continue;
+    hideBelow = collapsed.has(row.endpoint.id) ? row.depth : null;
+    out.push(row);
+  }
+  return out;
+}

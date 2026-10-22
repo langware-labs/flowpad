@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LLMEndpoint } from '@sdk';
 
-import { buildSourceTree, childrenOf, costLeft, sponsorOf } from '@src/components/token-plan/source-tree';
+import { buildSourceTree, childrenOf, costLeft, sponsorOf, visibleRows } from '@src/components/token-plan/source-tree';
 
 function ep(id: string, parents: string[], scopeKind: string | null, name = id): LLMEndpoint {
   const e = new LLMEndpoint({ id, name } as never);
@@ -56,5 +56,16 @@ describe('buildSourceTree', () => {
     expect([root, org, team, key].map(sponsorOf)).toEqual(['shared', 'org', 'team', 'key']);
     expect(costLeft(key)).toMatchObject({ remaining: 6, limit: 10 });
     expect(childrenOf(org, [root, org, team, key]).map((e) => e.id)).toEqual([ID['team']]);
+  });
+});
+
+describe('visibleRows', () => {
+  it('a collapsed row hides everything under it, and only that', () => {
+    const rows = buildSourceTree([root, org, team, key, loose]);
+    const ids = (c: string[]) => visibleRows(rows, new Set(c)).map((r) => r.endpoint.id);
+    expect(ids([])).toHaveLength(5);
+    expect(ids([ID['org']])).toEqual([ID['root'], ID['org'], ID['loose']]);
+    expect(ids([ID['team']])).toEqual([ID['root'], ID['org'], ID['team'], ID['loose']]);
+    expect(ids([ID['root'], ID['team']])).toEqual([ID['root'], ID['loose']]);
   });
 });
