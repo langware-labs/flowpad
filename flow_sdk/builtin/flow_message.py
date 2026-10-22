@@ -674,6 +674,9 @@ class FlowMessage(Entity):
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
     body_status: BodyStatus = APIField(default=BodyStatus.NA, sharing=Sharing.HUB_WRITE)
+    # Why the body is FAILED, in user-readable words. The hub sets it (e.g. when
+    # its stored copy of a READY body was lost) and clears it on a re-upload.
+    body_error: Optional[str] = APIField(default=None, sharing=Sharing.HUB_WRITE)
     # Local-only: set once the host has CONSUMED this message as a session
     # turn — see ``process_inbound_prompt``.
     # Set before the run so a re-delivered op can't double-run; survives every
