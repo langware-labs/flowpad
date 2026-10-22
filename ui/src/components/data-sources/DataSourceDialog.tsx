@@ -282,6 +282,8 @@ export function DataSourceDialog({
           open_to_all: draft.open_to_all,
         });
         await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
+        // Sync now rather than on the next heartbeat; a source still in setup has nothing to read yet.
+        if (source.status === 'active') void source.requestPoll().catch(() => {});
         notify.success({ title: t`Added ${source.name}` });
         if (byWizard) {
           setSettingUp(source); // the form gives way to the setup wizard; closing that closes both
@@ -396,8 +398,8 @@ export function DataSourceDialog({
               <Trans>Where people reach this agent — one number, mailbox or chat per channel.</Trans>
             ) : (
               <Trans>
-                A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the
-                heartbeat.
+                A source is one remote stream — one feed, channel, drive or mailbox. It syncs as soon as it is added,
+                then on the heartbeat.
               </Trans>
             )
           ) : undefined
@@ -553,7 +555,9 @@ export function DataSourceDialog({
                       checked={draft.open_to_all}
                       onCheckedChange={(checked) => setDraft((d) => ({ ...d, open_to_all: checked === true }))}
                     />
-                    <Label htmlFor="ds-open-to-all"><Trans>Open to all</Trans></Label>
+                    <Label htmlFor="ds-open-to-all">
+                      <Trans>Open to all</Trans>
+                    </Label>
                   </div>
                 )}
 
