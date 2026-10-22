@@ -188,7 +188,8 @@ forward are to wait or to end it. `SurfaceSwitchWaitNotice` offers **Switch anyw
 (only when `background_work` is true), behind a confirmation that says the work
 ends; confirming calls `stop-background`, and `useProcessSurface` retries the switch
 when `background_work` clears — `busy` never flips for it, so that field is its own
-retry trigger.
+retry trigger. A scheduled job (`CronCreate`) parks the worker too; stopping it ends the process, and the
+terminal's `--resume` restores the job.
 
 A different trap on the way back: after such a switch, a session resumed in the
 terminal finds the stopped work and the CLI writes a `<task-notification>` row with
