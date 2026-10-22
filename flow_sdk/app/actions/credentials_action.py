@@ -112,6 +112,10 @@ async def credentials_action() -> ApiResponse:
                     payload.get("deployment_id") or "", payload.get("project_id") or "", payload.get("file") or "",
                     payload.get("environment") or "",
                 ))
+            if sub_path == "connections":
+                from flow_sdk.builtin.credential_service import place_connections  # noqa: PLC0415
+
+                return ApiSuccessResponse(data=await place_connections(payload.get("file") or ""))
             if sub_path == "unplace":
                 from flow_sdk.builtin.credential_service import unplace_values  # noqa: PLC0415
 

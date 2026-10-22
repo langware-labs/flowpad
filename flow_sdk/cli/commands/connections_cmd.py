@@ -108,6 +108,8 @@ def list_connections_cmd(
         # The state word, not the boolean: "unknown" is a real answer for a
         # harness login and "not connected" would be a false one.
         typer.echo(f"{row.provider}\t{row.kind}\t{row.state}\t{row.display_name}")
+    if any(row.provider == "slack" and row.state == "connected" for row in specs):
+        typer.echo("\nRead Slack: `flow connections slack-recent --hours 24` (channels you are in, who said what).")
 
 
 @connections_app.command("connect")
@@ -169,3 +171,37 @@ def test_connection(
         typer.echo(f"{provider}: {verdict}" + (f" ({result.identity})" if ok and result.identity else ""))
     if not ok:
         raise typer.Exit(EXIT_NOT_CONNECTED)
+
+
+@connections_app.command("slack-recent")
+def slack_recent_cmd(
+    hours: Annotated[float, typer.Option("--hours", help="How far back to read.")] = 24.0,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit one JSON object.")] = False,
+) -> None:
+    """What happened on Slack in the last HOURS, read with this machine's Slack connection.
+
+    Every channel the connected account is a member of, newest first, one block per channel with
+    who said what — the input for "summarize the last 24 hours on Slack". The token stays with the
+    machine's server; this prints messages only.
+    """
+    from flow_sdk.cli.commands._common import discover_port, local_get  # noqa: PLC0415
+
+    url = f"http://127.0.0.1:{discover_port()}/api/v1/graph/compute_node/@local/slack-recent"
+    resp = local_get(url, params={"hours": str(hours)}, timeout=120)
+    body = resp.json() if resp.content else {}
+    if body.get("status") != "SUCCESS":
+        typer.echo(f"Error: {body.get('message') or resp.status_code}", err=True)
+        raise typer.Exit(1)
+    data = body.get("data") or {}
+    if json_output:
+        typer.echo(json.dumps(data))
+        return
+    users = data.get("users") or {}
+    channels = data.get("channels") or []
+    if not channels:
+        typer.echo(f"No messages in the last {hours:g} hours.")
+        return
+    for channel in channels:
+        typer.echo(f"#{channel['name']}")
+        for m in channel["messages"]:
+            typer.echo(f"  {users.get(m['user'], m['user'])}: {m['text']}")

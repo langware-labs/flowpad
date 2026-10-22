@@ -34,6 +34,20 @@
         "mockify.decision"
       ],
       "description": "Open questions this screen asks."
+    },
+    "scenario": {
+      "shape": "?string",
+      "description": "Phase 1: what the user sees and does on this screen, in a sentence or two \u2014 the brief the screen is built from."
+    },
+    "source": {
+      "shape": "?string",
+      "description": "'capture' (a live-app state the builder reaches and captures) or 'built: <why>' (drawn from the component source because the live app cannot reach it)."
+    },
+    "controls": {
+      "shape": [
+        "mockify.control"
+      ],
+      "description": "Every clickable thing on the screen and its outcome; those with next become data-next, the rest data-dead."
     }
   }
 }
