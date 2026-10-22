@@ -11,14 +11,13 @@ Every popup (☰ screens, feedback, review, save) opens with the same toolbar: *
 ```js
 window.MOCKIFY = { key: 'github-prs',   // the mock's row key in the mock project's `mocks` dataset
                    project: '<id>' };    // the mock project's id (mock_project.py ensure → project_id)
-window.mockGo = (id) => { location.hash = id; location.reload(); };   // real mode only
 window.MOCK_BAR_AT = 'bottom';            // real mode: start bottom-right (build_mock.py sets it)
 ```
 
 Everything else comes from the **mock row** (`mockify.mock`, `schema/`): `journey` — the steps in order —
 and on each step `id`, `app`, `title`, `note`, `branch_of` + `when` for a branch, `next`, `decisions` (`id`, `question`,
-`shown`). Screens are `<section data-step="<id>">` (fast mode; the bar shows/hides them) or drawn on load by
-the page's own script (real mode, via `mockGo`). A decision shown on a screen is `data-decision="D2"`.
+`shown`). Screens are `<section data-step="<id>">`, one per step, in both modes; the bar shows one and hides the
+rest (no reloads). A decision shown on a screen is `data-decision="D2"`.
 
 A control that moves the journey says where it leads: **`data-next="<step id>"`** — and nothing else (no
 `onclick`): a click on it moves the journey. Where a screen goes ON is its step's `next`, else the next
@@ -26,7 +25,9 @@ main-path screen; Next and the hints follow that one rule. On every screen the b
 the page: the one going on gets `.mk-next` (a soft glow in the bar's accent, a few gentle pulses unless the
 reviewer prefers reduced motion), every other one `.mk-path` (a faint ring); with no control going on,
 the bar's own Next glows. Both use `box-shadow`, so a screen's own outlines (an open decision) stay. A
-`data-next` naming no step warns once in the console. The reviewer can switch hints off at the bottom of
+`data-next` naming no step warns once in the console. Anything else on a screen that looks clickable (a pointer cursor,
+a form field) is not part of the mock: a click on it shows "Not part of this mock" beside it instead of
+silently doing nothing; `data-dead` also dims it, and `data-live` exempts a part the page handles itself. The reviewer can switch hints off at the bottom of
 the screens list (remembered for the session).
 
 `MOCKIFY.journey` (same step shape) is an optional OFFLINE copy, used only when the page is not served by
@@ -62,7 +63,7 @@ browser Back/Forward walk the screens visited; arrows are ignored while typing. 
 the comment typed so far stays until Save, and a successful Save closes the panel
 back to the clean bar (the comment shows as its bubble and in ▶ Execute (n)). Drag by ⋮⋮ (kept on
 screen, panels open upward when the bar sits low); – minimises to `🎯 · n of N` (+ restores). Position
-and minimised state survive reloads (sessionStorage, guarded). The bar **contrasts with the screen behind
+and minimised state are kept for the session (sessionStorage, guarded). The bar **contrasts with the screen behind
 it** (it samples the real background: light bar on a dark screen, dark on a light one), re-checked on
 every step, drag and resize. Hidden `[data-step]` sections stay hidden even if styled `display:flex`.
 `mockifyGo('<id>')` moves the journey from an in-screen button (an unknown id warns, stays put). Under
