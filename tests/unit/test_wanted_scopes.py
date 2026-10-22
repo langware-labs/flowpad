@@ -40,25 +40,41 @@ async def test_a_drive_source_that_writes_back_asks_for_drive_and_a_read_only_on
     assert DRIVE in writer.connections.scopes("google") and DRIVE not in reader.connections.scopes("google")
 
 
-async def test_a_dataset_whose_rows_live_in_drive_asks_for_drive(monkeypatch):
-    """Keeping a dataset's rows in Drive (``"location": "gdrive:..."``) writes there: the connect asks for it."""
+def _in_source(tmp_path, name, driver, config):
+    """A dataset of a project whose data source ``name`` (driver ``driver``) holds its rows."""
+    import json
+
     from flow_sdk.builtin.dataset import Dataset
 
+    folder = tmp_path / "proj" / "agentic-assets" / "data_source" / name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "data_source.json").write_text(json.dumps({"type": "data_source", "name": name, "data_driver_name": driver,
+                                                         "data_driver_config": config}))
+    return Dataset(name="leads", asset_ref=str(tmp_path / "proj" / "agentic-assets" / "dataset" / "leads"), data_source=name)
+
+
+async def test_a_dataset_whose_rows_live_in_drive_asks_for_drive(monkeypatch, tmp_path):
+    """Keeping a dataset's rows in a Drive data source writes there: the connect asks for it."""
+    from flow_sdk.builtin.dataset import Dataset
+
+    leads = _in_source(tmp_path, "drive", "gdrive", {"path": "GTM/Rows"})
+
     async def datasets(*a, **k):
-        return [Dataset(name="leads", location="gdrive:GTM/Rows"), Dataset(name="notes")]
+        return [leads, Dataset(name="notes")]
 
     monkeypatch.setattr(Dataset, "get_all", datasets)
     assert await wanted_extra_scopes("google") == [DRIVE]
 
 
-async def test_a_dataset_whose_rows_live_in_a_bucket_asks_for_storage_writes_and_a_gcs_source_never_does(monkeypatch):
+async def test_a_dataset_whose_rows_live_in_a_bucket_asks_for_storage_writes_and_a_gcs_source_never_does(monkeypatch, tmp_path):
     from flow_sdk.builtin.dataset import Dataset
 
     storage = "https://www.googleapis.com/auth/devstorage.read_write"
     assert storage not in make_data_source("gcs", config={"bucket": "acme"}).connections.scopes("google")
+    leads = _in_source(tmp_path, "bucket", "gcs", {"bucket": "acme"})
 
     async def datasets(*a, **k):
-        return [Dataset(name="leads", location="gcs:acme/leads")]
+        return [leads]
 
     monkeypatch.setattr(Dataset, "get_all", datasets)
     assert await wanted_extra_scopes("google") == [storage]

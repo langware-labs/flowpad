@@ -64,14 +64,6 @@ class FlowStorageSource(ObjectSource):
         """A dataset's rows in the folder ``path`` inside this source's folder."""
         return {**config, "prefix": _joined(config.get("prefix") or "", path)}
 
-    @classmethod
-    def row_files_target(cls, target: str) -> dict:
-        """``flow_storage:<store id>/<folder>`` → the store and the folder rows live under."""
-        store_id, _, prefix = str(target).strip().strip("/").partition("/")
-        if not store_id:
-            raise ValueError("location: flow_storage:<store id>/<folder> names a store")
-        return {"store_id": store_id, "prefix": _joined(prefix)}
-
     @property
     def store_id(self) -> str:
         return str(self.config.get("store_id") or "")

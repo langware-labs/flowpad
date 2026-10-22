@@ -394,7 +394,7 @@ async def _app_ready_signal() -> None:
         # beside the ready signal, never ahead of it.
         import asyncio as _asyncio_hosted
 
-        from flow_sdk.datasets.locations import refresh_all_hosted  # noqa: PLC0415
+        from flow_sdk.datasets.stores import refresh_all_hosted  # noqa: PLC0415
 
         _HOSTED_REFRESH.add(task := _asyncio_hosted.create_task(refresh_all_hosted(), name="hosted-datasets-refresh"))
         task.add_done_callback(_HOSTED_REFRESH.discard)

@@ -47,6 +47,7 @@ from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sh
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.datasets.projection import ROW_KEY, delete_through, is_link, key_field, write_through
+from flow_sdk.datasets.stores import NotSetUp
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
@@ -109,28 +110,8 @@ def _raw_input(shape: Any, ex_dir: Path) -> Any:
         return None
 
 
-_IGNORED: set[str] = set()
-
-
-def _keep_out_of_git(rows: Path) -> None:
-    """A local dataset's rows are data, not the project's code: on its first write here, its ``rows/``
-    goes into the ``.gitignore`` beside it (``utils.git_ignore.ensure_ignored``) -- once per process.
-    Rows git already tracks stay tracked: untracking someone's data is theirs to decide."""
-    key = str(rows)
-    if key in _IGNORED:
-        return
-    _IGNORED.add(key)
-    from flow_sdk.utils.git_ignore import ensure_ignored  # noqa: PLC0415
-
-    try:
-        rows.mkdir(parents=True, exist_ok=True)
-        ensure_ignored(rows)
-    except Exception:  # noqa: BLE001 -- keeping rows out of git never fails a write
-        logger.debug("dataset rows %s: could not keep out of git", rows, exc_info=True)
-
-
 def _reads_rows(fn: Any) -> Any:
-    """A sync read of the rows: from a script, a remote location is pulled first (``_sync_rows``)."""
+    """A sync read of the rows: from a script, a remote store is pulled first (``_sync_rows``)."""
     @functools.wraps(fn)
     def inner(self: "Dataset", *args: Any, **kwargs: Any) -> Any:
         if not self.asset_ref:
@@ -142,7 +123,7 @@ def _reads_rows(fn: Any) -> Any:
 
 def _on_rows(*, write: bool) -> Any:
     """An async method or row action that reads (or writes) the rows: run inside ``rows_session``. A
-    row action answers what the location refused (another writer got there first: 409; the location
+    row action answers what the store refused (another writer got there first: 409; the store
     could not be reached: 502); a method raises it."""
     def wrap(fn: Any) -> Any:
         answers = fn.__name__.endswith("_action")
@@ -158,10 +139,14 @@ def _on_rows(*, write: bool) -> Any:
                 if not answers:
                     raise
                 return _refused(exc, 409)
+            except NotSetUp as exc:
+                if not answers:
+                    raise
+                return ApiFailResponse(message=str(exc), status_code=503)
             except (ConnectionError, PermissionError, LookupError) as exc:
                 if not answers:
                     raise
-                return ApiFailResponse(message=f"rows at {self._location().label()}: {exc}", status_code=502)
+                return ApiFailResponse(message=f"rows in {self._rows_store().label()}: {exc}", status_code=502)
         return inner
     return wrap
 
@@ -249,18 +234,12 @@ class Dataset(ProjectedFields, Entity):
     # and validates rows against DEFAULT_DATASET_SPEC. See datasets.md.
     spec: Optional[ShapeForm] = APIField(None)
 
-    # Where the rows live (``datasets/locations.py``): ``local`` (the default, ``<dataset>/rows/``,
-    # kept out of git), ``file:<folder>``, ``<driver>:<target>`` (Drive, S3) or a record system
-    # (``{"driver", "config", "map", "by"}``). ``dataset.json`` stays in the project either way.
-    location: Optional[Union[str, Dict[str, Any]]] = APIField(None)
     # The data source the rows are in (``agentic-assets/data_source/<name>/``) and their folder inside
-    # it (the dataset's folder name by default). None / ``local``: the default source, ``<dataset>/rows/``.
+    # it (the dataset's folder name by default). None: the project's data store (``datasets/stores.py``).
     data_source: Optional[str] = APIField(None)
     path: Optional[str] = APIField(None)
-    # Where the rows are, as a person reads it, and why they are local when the source is not set up
-    # here ("" when they are where the dataset says). Derived by ``_location``; never in dataset.json.
+    # Where the rows are, as a person reads it. Derived by ``_store``; never in dataset.json.
     rows_at: str = APIField("", persist=Persist.FALSE)
-    rows_note: str = APIField("", persist=Persist.FALSE)
 
     # The rows. EAGER — `from_fs` reads them all — but DB-excluded: the record
     # file and `from_fs_ref` carry them, the SQLite row does not.
@@ -303,14 +282,13 @@ class Dataset(ProjectedFields, Entity):
 
     @model_validator(mode="after")
     def _says_where_the_rows_are(self) -> "Dataset":
-        """``rows_at`` / ``rows_note`` follow ``location`` / ``data_source`` -- derived on every value
-        (an index read included), so a list never shows a stale or empty place."""
+        """``rows_at`` follows ``data_source`` -- derived on every value (an index read included), so a list
+        never shows a stale or empty place."""
         if self.asset_ref:
             try:
-                self._location()
+                self._rows_store()
             except ValueError as exc:   # a source the project does not declare: said, never raised here
-                object.__setattr__(self, "rows_at", "local")
-                self._set_rows_note(str(exc))
+                object.__setattr__(self, "rows_at", str(exc))
         return self
 
     def of_kind(self, kind: RowKind) -> List[RowSpec]:
@@ -347,80 +325,61 @@ class Dataset(ProjectedFields, Entity):
             raise ValueError("dataset has no folder on disk yet")
         return Path(self.asset_ref)
 
-    def _location(self) -> Any:
-        """Where the rows are now (``locations.effective``): the declared place, or the default local one
-        while its source has not said it can hold them -- parsed once per value (every row access asks)."""
-        from flow_sdk.datasets.locations import effective, held_back, parse  # noqa: PLC0415
+    def _rows_store(self) -> Any:
+        """Where the rows live (``stores.resolve``) -- resolved once per value (every row access asks)."""
+        from flow_sdk.datasets.stores import resolve  # noqa: PLC0415
 
-        why = held_back(self.asset_ref, self.data_source) if self.asset_ref else ""
-        key = (self.location, self.data_source, self.path, self.asset_ref, why)
-        held = getattr(self, "_parsed_location", None)
+        if not self.asset_ref:
+            raise ValueError("dataset has no folder on disk yet")
+        key = (self.data_source, self.path, self.asset_ref)
+        held = getattr(self, "_resolved_store", None)
         if held is None or held[0] != key:
-            location = effective(self.asset_ref, self.data_source, self.path, self.location) if self.asset_ref else \
-                parse(None if self.data_source else self.location)
-            object.__setattr__(self, "_parsed_location", held := (key, location))
-            if why is not None:   # not asked yet in this process: the row's last answer stands
-                self._set_rows_note(why)
-            object.__setattr__(self, "rows_at", location.label())
+            object.__setattr__(self, "_resolved_store", held := (key, resolve(self.asset_ref, self.data_source, self.path)))
+            object.__setattr__(self, "rows_at", held[1].label())
         return held[1]
 
-    def _set_rows_note(self, why: str) -> None:
-        object.__setattr__(self, "rows_note", f"kept locally: {why}" if why else "")
-
-    async def note_where_rows_are(self) -> None:
-        """Re-derive ``rows_at`` / ``rows_note`` from the source's latest answer; save the row when they
-        moved (the lists read them)."""
-        before = (self.rows_at, self.rows_note)
-        self._location()
-        if (self.rows_at, self.rows_note) != before:
-            await self.save()
-
     def _rows_root(self) -> Path:
-        """The local folder whose ``rows/`` holds this dataset's rows: the dataset's own, the folder
-        ``file:`` names, or the working copy of a remote location (``datasets/locations.py``)."""
-        from flow_sdk.datasets.locations import rows_folder  # noqa: PLC0415
+        """The local folder whose ``rows/`` holds this dataset's rows: the store's own folder, or the working
+        copy of a remote store (``datasets/stores.py``)."""
+        from flow_sdk.datasets.stores import rows_folder  # noqa: PLC0415
 
         self._folder()
-        return rows_folder(self, self._location())
+        return rows_folder(self, self._rows_store())
 
     @contextlib.asynccontextmanager
     async def rows_session(self, *, write: bool = False) -> Any:
-        """``async with dataset.rows_session(write=...)``: the rows of a remote location pulled first,
-        and a write's changes pushed after -- what every async read and write here runs in. A no-op for
-        rows on this machine, and inside another session of the same dataset. A named source is asked
-        first whether it can hold the rows now; while it cannot, they are read and written locally."""
-        from flow_sdk.datasets.locations import inside, readiness, session  # noqa: PLC0415
+        """``async with dataset.rows_session(write=...)``: the rows brought up to date first (a remote store
+        pulled, a system of record mirrored in) and a write's changes pushed after -- what every async read
+        and write here runs in. Inside another session of the same dataset it adds nothing. ``NotSetUp``
+        while the dataset's data source cannot hold its rows here."""
+        from flow_sdk.datasets.stores import inside, require_ready, session  # noqa: PLC0415
 
         self._folder()
-        if self.data_source and not inside(self._rows_root()):
-            await readiness(self, cached=True)   # a source's verify refreshes the answer (refresh_hosted)
-            await self.note_where_rows_are()
-        async with session(self, self._location(), write=write) as root:
+        store = self._rows_store()
+        if not inside(self._rows_root()):
+            await require_ready(self)
+        async with session(self, store, write=write) as root:
             yield root
 
-    async def pull(self) -> list[str]:
-        """Bring a remote location's working copy up to date now; the keys of the rows that moved."""
-        from flow_sdk.datasets.locations import pull, readiness  # noqa: PLC0415
+    async def pull(self) -> dict:
+        """Bring the rows up to date now: ``{"moved": [...], "gone": [...]}`` (``stores.pull``)."""
+        from flow_sdk.datasets.stores import pull, require_ready  # noqa: PLC0415
 
-        await readiness(self)
-        return await pull(self, self._location())
+        await require_ready(self, cached=False)
+        return await pull(self, self._rows_store())
 
     @contextlib.contextmanager
     def _sync_rows(self, *, write: bool) -> Any:
-        """A sync read or write of a remote location. From a script (no running loop) it pulls and
-        pushes itself; inside the server a write must come through a session (an action, the async
-        API) and a read reads the working copy as last pulled."""
-        from flow_sdk.datasets.locations import inside, readiness  # noqa: PLC0415
+        """A sync read or write. From a script (no running loop) it checks the data source, pulls and pushes
+        itself; inside the server a write to a remote store must come through a session (an action, the
+        async API) and a read reads the working copy as last pulled."""
+        from flow_sdk.datasets.stores import RECORDS, NotSetUp, entered, inside, pull, push, readiness  # noqa: PLC0415
 
-        if self.data_source and self.asset_ref:
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:   # a script: ask the source itself (the server's sessions ask for it)
-                asyncio.run(readiness(self))
-        location = self._location()
-        if write and location.kind == "local" and self.asset_ref:
-            _keep_out_of_git(Path(self.asset_ref) / ROWS_DIR)
-        if not location.remote or not self.asset_ref or inside(self._rows_root()):
+        if not self.asset_ref:
+            yield
+            return
+        store = self._rows_store()
+        if (not store.remote and store.kind != RECORDS) or inside(self._rows_root()):
             yield
             return
         try:
@@ -428,23 +387,25 @@ class Dataset(ProjectedFields, Entity):
         except RuntimeError:
             pass
         else:
-            if write:
-                raise RuntimeError(f"rows at {location.label()} are written through a row action or the async API "
+            if write and store.remote:
+                raise RuntimeError(f"rows in {store.label()} are written through a row action or the async API "
                                    f"(put, put_many, sync), not a sync call inside the server")
             yield
             return
-        from flow_sdk.datasets.locations import entered, pull, push  # noqa: PLC0415
-
-        asyncio.run(pull(self, location))
+        if why := asyncio.run(readiness(self)):
+            raise NotSetUp(why)
+        asyncio.run(pull(self, store))
         with entered(self._rows_root()):
             try:
                 yield
                 if write:
-                    asyncio.run(push(self, location))
+                    asyncio.run(push(self, store))
             except BaseException:
-                if write:
+                if write and store.remote:
+                    from flow_sdk.datasets.stores import pull_files_of  # noqa: PLC0415
+
                     with contextlib.suppress(Exception):
-                        asyncio.run(pull(self, location))
+                        asyncio.run(pull_files_of(self, store))
                 raise
 
     def _index(self) -> List[Dict[str, Any]]:
@@ -615,22 +576,6 @@ class Dataset(ProjectedFields, Entity):
         with locked(self._owner() / ".flow" / "dataset-rows.lock"), self._sync_rows(write=True):
             yield
 
-    def store_ids(self) -> int:
-        """Store each row's id in its ``row.json`` where it still has only the legacy derived one
-        (which follows the dataset's .flow id -- not in git -- and so changes on a fresh clone). Run
-        once on a dataset that predates stored ids; returns how many rows it stamped."""
-        from flow_sdk.schema.data_spec.layout import FolderLayout, _row_dirs, _load_row_meta, row_id, stored_row_id  # noqa: PLC0415
-
-        self._typed_rows_or_raise()
-        stamped = 0
-        with self._lock():
-            for ex_dir in _row_dirs(self._rows_root()):
-                metadata, data = _load_row_meta(ex_dir)
-                if not stored_row_id(metadata):
-                    FolderLayout().write_row_meta(ex_dir, {**metadata, "id": row_id(ex_dir, self.id, metadata)}, data)
-                    stamped += 1
-        return stamped
-
     def _stores(self) -> tuple:
         from flow_sdk.values import store_of  # noqa: PLC0415
 
@@ -749,45 +694,26 @@ class Dataset(ProjectedFields, Entity):
         return [{**d, "path": f"input.{d['path']}"} for d in seen["unique"].take(key, row.input)]
 
     def _owned_details(self, row: Any, before: Any, by: Optional[str]) -> list[dict]:
-        """The fields an outside system owns (``owned_by`` in the schema) that this write would set or
-        change without being that owner (``by``). ``before`` is the row's input as it is (a value, or
-        the stored dict of a row that no longer fits), None for a new row -- which may leave an owned
-        field empty, never fill it. Rows that live in a record system also refuse a field its map does
-        not hold (``not_stored``): kept only in this machine's working copy, it would be lost."""
-        out = self._unstored_details(row)
-        owned = getattr(type(row.input), "__owned__", None) or {}
+        """The fields the dataset's system of record holds (``truth``) that this write would set or change
+        without being that system (``by="soc"``). ``before`` is the row's input as it is (a value, or the
+        stored dict of a row that no longer fits), None for a new row -- which may leave a truth field
+        empty, never fill it. A dataset whose source is no system of record owns every field."""
+        from flow_sdk.datasets.projection import _owned  # noqa: PLC0415
+
+        owned = _owned(self) if self.asset_ref else {}
         if not owned:
-            return out
+            return []
         now = row.input.model_dump(mode="json")
         was = before if isinstance(before, dict) else before.model_dump(mode="json") if before is not None else {}
+        out = []
         for name, owner in owned.items():
             if owner == by or now.get(name) == was.get(name):
                 continue
             if before is None and now.get(name) in (None, "", [], {}):
                 continue
-            out.append({"path": f"input.{name}", "code": "owned", "owned_by": owner,
-                        "message": f"{name} is owned by {owner}: only a writer that writes as {owner!r} (by={owner!r}) sets it"})
+            out.append({"path": f"input.{name}", "code": "owned",
+                        "message": f"{name} is held by {self.data_source}: a change to it goes to {self.data_source} first"})
         return out
-
-    def _unstored_details(self, row: Any) -> list[dict]:
-        """A record location's rows hold only what its map reads from the record: a value in any other
-        field has nowhere to live but this machine's working copy, so no writer sets one."""
-        from flow_sdk.datasets.locations import RECORDS  # noqa: PLC0415
-
-        if not self.asset_ref:
-            return []
-        try:
-            location = self._location()
-        except ValueError:
-            return []
-        if location.kind != RECORDS:
-            return []
-        mapped = set((location.map or {}).get("input") or {})
-        now = row.input.model_dump(mode="json")
-        return [{"path": f"input.{name}", "code": "not_stored",
-                 "message": f"{name} has no field in {location.driver}: add one and map it in the dataset's location, "
-                            f"or keep it in a dataset of its own"}
-                for name, value in now.items() if name not in mapped and value not in (None, "", [], {})]
 
     def _row_in(self, raw: Any, n: int, *, keyed: bool = False, cache: Optional[dict] = None) -> Any:
         """One incoming row as the declared row type -- ``ValueError`` for a malformed row,
@@ -999,15 +925,15 @@ class Dataset(ProjectedFields, Entity):
         ``context``) and the row's metadata (kind, annotations, source) are kept from the row it
         replaces, so editing an input never drops its gold. ``expected`` is the ``version`` the
         caller read: a row that changed since is ``ConflictError``, nothing written. ``by`` names
-        the outside system this writer writes for (``"crm"``): only it sets a field the schema marks
-        ``owned_by`` that system -- anyone else changing one is refused (``LinkError``, code
+        ``"soc"`` when the writer is the dataset's system of record itself: only it sets a field the
+        data model marks ``truth`` -- anyone else changing one is refused (``LinkError``, code
         ``owned``). A ``unique`` rule another row already satisfies with the same value refuses the
         write too (code ``unique``). Returns the id.
 
-        In a dataset a data source mirrors, a change to a field that source's system owns is SENT TO
+        In a dataset whose data source is a system of record, a change to a truth field is SENT TO
         THAT SYSTEM FIRST, through the source's driver, and the row is then written as the system
         answered (the app's own fields as given) -- one way in, for the row actions and for this call
-        alike. Refusals: ``not_writable`` (the map cannot write that field), ``source_refused`` (the
+        alike. Refusals: ``not_writable`` (the field's truth cannot be written back), ``source_refused`` (the
         system said no), ``unlinked``, ``misfit``. Only the server reaches a driver: in any other
         process (a script) the change is refused ``owned`` -- send it with the ``put-row`` action."""
         return (await self._put_through(key, row, expected=expected, by=by))[0]
@@ -1207,7 +1133,7 @@ class Dataset(ProjectedFields, Entity):
         return self.delete_rows([key_or_id], expected=None if expected is None else {key_or_id: expected})[0]
 
     @_on_rows(write=True)
-    async def mirror(self, items: Any, map: dict, *, by: Optional[str] = None, prune: bool = True,   # noqa: A002 -- the word
+    async def mirror(self, items: Any, map: dict, *, by: Optional[str] = None, prune: Any = True,   # noqa: A002 -- the word
                      match: Any = None) -> dict:
         """Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
         row of this dataset's kind, and the dataset is made to hold exactly those (``sync``: created /
@@ -1228,9 +1154,10 @@ class Dataset(ProjectedFields, Entity):
         fields the map names and no others: a field the app keeps on a mirrored row stays as it is.
         An item whose ``key`` path is empty is skipped; a key is made a row key (lowercased, other
         characters ``-``).
-        ``by`` names the outside system these rows are written as (the owner of the schema's
-        ``owned_by`` fields). ``match`` narrows what ``prune``
-        may remove, as in ``sync``."""
+        ``by`` names who these rows are written as (``"soc"``: the dataset's system of record, the writer
+        of its ``truth`` fields). ``match`` narrows what ``prune`` may remove, as in ``sync``.
+        ``prune="own"`` (a system of record's pull): a row whose record is gone stays when it holds fields
+        of its own -- named in the answer's ``gone`` -- and goes when it held only the system's."""
         import re  # noqa: PLC0415
 
         from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
@@ -1301,10 +1228,6 @@ class Dataset(ProjectedFields, Entity):
         key_field_ = key_field(map)
         keyed_by_natural = {str(fields[key_field_]): key for key, fields in held.items()
                             if key_field_ and fields.get(key_field_) not in (None, "")} if key_field_ else {}
-        # Rows that live in a record system hold only what the map reads: nothing of the app's is kept.
-        from flow_sdk.datasets.locations import RECORDS  # noqa: PLC0415
-
-        keeps_own = not (self.asset_ref and self._location().kind == RECORDS)
         rows, taken = [], set()
         for item in items:
             named = field_of(item, map["key"])
@@ -1314,12 +1237,25 @@ class Dataset(ProjectedFields, Entity):
             if not key or key in taken:
                 raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
             taken.add(key)
-            own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]} if keeps_own else {}
+            own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
             rows.append({"key": key, "input": {**empties, **own, **shaped(map["input"], item, key, "")}})
+        gone: list[str] = []
+        if prune == "own":
+            # A row the system no longer has keeps what is ours on it (its notes, its analysis); one that
+            # held only the system's fields goes with the record.
+            for key, fields in held.items():
+                if key not in taken and any(v not in (None, "", [], {}) for n, v in fields.items() if n not in map["input"]):
+                    rows.append({"key": key, "input": fields})
+                    if key_field_ and fields.get(key_field_) not in (None, ""):
+                        gone.append(key)
+            prune = True
         done = await self.sync(rows, prune=prune, match=match, by=by, lenient=True)
-        if not keeps_own and key_field_:
+        from flow_sdk.datasets.stores import RECORDS  # noqa: PLC0415
+
+        if key_field_ and self.asset_ref and self._rows_store().kind == RECORDS:
             self._adopt_record_ids(key_field_)
-        return {**done, "unlinked": unlinked} if unlinked else done
+        done = {**done, "unlinked": unlinked} if unlinked else done
+        return {**done, "gone": sorted(gone)} if gone else done
 
     def _adopt_record_ids(self, key_field_: str) -> int:
         """Rows that live in a record system take the record's own id when it is an entity id (a uuid):
@@ -1784,7 +1720,7 @@ class Dataset(ProjectedFields, Entity):
     @action.get(action_name="rows-version")
     async def rows_version_action(self):
         """``{"version"}`` -- ``rows_version``, off the loop: every reconnecting listener asks. Rows at a
-        remote location answer as last pulled -- a poll never costs a whole listing of the store."""
+        remote store answer as last pulled -- a poll never costs a whole listing of the store."""
         return ApiSuccessResponse(data={"version": await asyncio.to_thread(self.rows_version)})
 
     async def _records_asked(self, asked: dict) -> dict:
@@ -2007,16 +1943,21 @@ class Dataset(ProjectedFields, Entity):
 
     @action.post(action_name="move-rows")
     async def move_rows_action(self):
-        """``{"location"}`` → ``{from, to, rows}``: copy every row to that location, check it holds them
-        all, then make it this dataset's ``location``. The old location keeps its rows. 400 when the new
-        location already holds rows or is a record system; 502 when a location could not be reached."""
-        from flow_sdk.datasets.locations import move_rows  # noqa: PLC0415
+        """``{"data_source"?, "path"?}`` → ``{from, to, rows}``: copy every row into that data source (none:
+        the project's data store), check it holds them all, then make it this dataset's. The old store
+        keeps its rows. 400 for a system of record; 503 while the source is not set up; 502 when a store
+        could not be reached."""
+        from flow_sdk.datasets.stores import move_rows  # noqa: PLC0415
 
-        body = await self._row_body("location")
+        body = await read_json_body(get_current_request_info())
         if isinstance(body, ApiFailResponse):
             return body
+        if set(body) - {"data_source", "path"}:
+            return ApiFailResponse(message='{"data_source"?, "path"?} is required', status_code=400)
         try:
-            done = await move_rows(self, body["location"])
+            done = await move_rows(self, body.get("data_source"), body.get("path"))
+        except NotSetUp as exc:
+            return ApiFailResponse(message=str(exc), status_code=503)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         except (ConnectionError, PermissionError, LookupError, RuntimeError) as exc:
@@ -2026,14 +1967,17 @@ class Dataset(ProjectedFields, Entity):
 
     @action.post(action_name="pull")
     async def pull_action(self):
-        """``{}`` → ``{moved, num_rows}``: bring the rows of a remote location (Drive, S3, a record
-        system) up to date now -- what every read does first; the keys of the rows that moved."""
+        """``{}`` → ``{moved, gone, num_rows}``: bring the rows up to date now (a remote store, a system of
+        record) -- what every read does first. ``gone``: rows whose record left the system (kept for their
+        own fields)."""
         try:
-            moved = await self.pull()
-        except Exception as exc:  # noqa: BLE001 -- the location's own words, to the caller
-            return ApiFailResponse(message=f"pull from {self._location().label()} failed: {exc}", status_code=502)
+            done = await self.pull()
+        except NotSetUp as exc:
+            return ApiFailResponse(message=str(exc), status_code=503)
+        except Exception as exc:  # noqa: BLE001 -- the store's own words, to the caller
+            return ApiFailResponse(message=f"pull from {self._rows_store().label()} failed: {exc}", status_code=502)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"moved": moved, "num_rows": fresh.num_rows})
+        return ApiSuccessResponse(data={**done, "num_rows": fresh.num_rows})
 
     @action.post(action_name="rows-changed")
     async def rows_changed_action(self):
@@ -2065,15 +2009,6 @@ class Dataset(ProjectedFields, Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"row_id": eid, "key": body["new_key"]})
-
-    @action.post(action_name="store-ids")
-    @_on_rows(write=True)
-    async def store_ids_action(self):
-        """``{"stamped"}``: store each row's id where it still has only the legacy derived one."""
-        try:
-            return ApiSuccessResponse(data={"stamped": self.store_ids()})
-        except ValueError as exc:
-            return ApiFailResponse(message=str(exc), status_code=400)
 
     @action.post(action_name="check-row")
     @_on_rows(write=False)

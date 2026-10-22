@@ -51,10 +51,10 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | rename / delete | `ds.rename(key, newKey, {expected: row.version})` (id and links stay) / `ds.deleteRow(key, {expected: row.version})` (409 while referenced or changed) | `ds.rename_row(key, new, expected=v)` / `ds.delete_row(key, expected=v)` |
 | save MANY, as one step | `ds.putMany([{key, input}], {expected: {key: version}})` — one row that does not fit (400, `details` under `<key>.<path>`) or changed since (409) writes nothing | `await ds.put_many([...], expected={...})` |
 | delete MANY, as one step | `ds.deleteRows(keys, {expected})` — all or none; rows deleted together do not hold each other back | `ds.delete_rows(keys, expected={...})` |
-| keep rows in an outside system (a CRM, a tracker) — THE way | no code: `dataset.json` `"location": {"driver", "config", "map", "by"}` (`references/locations.md` — read it before writing anything that touches such a row); every read pulls the records, writes to `owned_by` fields go to the system first. A record that does not fit the kind is a `problems` row, not a stopped pull | the same file; a driver for the system when none is installed: `connect-data-source author <system>` |
-| keep rows in Drive, S3 or a folder | `dataset.json` `"location": "gdrive:<folder>"` / `"s3:<bucket>/<prefix>"` / `"file:<folder>"`; move existing rows with `ds.moveRows(location)` → `{from, to, rows}`; bring them up to date now with `ds.pull()` | a 409 on a write = another writer got there first: re-read and retry |
-| load rows you computed yourself (joined from two streams, a one-off import) | `ds.sync(rows, {prune, match})` → `{created, updated, unchanged, deleted}` — all or nothing | `await ds.sync(rows, prune=True, match=None)` in a script wrapped in `single_run(...)`: unchanged rows are not rewritten, rows not listed are removed (only those `match` selects, when given). Rows that are an outside system's records belong in a record `location`, not this |
-| a field your users edit that the outside system must ALSO have | make it the system's: add it to the location's `map` and mark it `owned_by`; then `ds.put(key, {input}, {expected})` as for any row — Flowpad sends the change to the system first and answers `warnings` when a part was not set (show them). Never `updateItem` from your own code, a client, a state file or a merge | a script is not served: `local_client.graph_post(f"dataset/{ds.id}/put-row", {"key": k, "row": {"input": {...}}, "expected": v})`; `Dataset.put` there is refused `owned` |
+| keep rows in an outside system (a CRM, a tracker) — THE way | no code: `dataset.json` `"data_source": "<a system-of-record source>"` and `truth` on the kind's fields, exactly one `"soc.external_id"` (`references/stores.md` — read it before writing anything that touches such a row); every read pulls the records, writes to `truth` fields go to the system first. A record that does not fit the kind is a `problems` row, not a stopped pull | the same file; a driver for the system when none is installed: `connect-data-source author <system>` |
+| keep rows in Flowpad storage, Drive, S3, GCS or a mounted folder | `dataset.json` `"data_source": "<an object-store source>"` (`"path"` optional); none = the project's data store (`flow.json` `"data_store"`); move existing rows with `ds.moveRows({data_source, path})` → `{from, to, rows}`; bring them up to date now with `ds.pull()` | a 409 on a write = another writer got there first: re-read and retry |
+| load rows you computed yourself (joined from two streams, a one-off import) | `ds.sync(rows, {prune, match})` → `{created, updated, unchanged, deleted}` — all or nothing | `await ds.sync(rows, prune=True, match=None)` in a script wrapped in `single_run(...)`: unchanged rows are not rewritten, rows not listed are removed (only those `match` selects, when given). Rows that are an outside system's records belong in a system-of-record data source, not this |
+| a field your users edit that the outside system must ALSO have | make it the system's: add it there and mark it `truth` (`"soc.data.<field>"`); then `ds.put(key, {input}, {expected})` as for any row — Flowpad sends the change to the system first and answers `warnings` when a part was not set (show them). Never `updateItem` from your own code, a client, a state file or a merge | a script is not served: `local_client.graph_post(f"dataset/{ds.id}/put-row", {"key": k, "row": {"input": {...}}, "expected": v})`; `Dataset.put` there is refused `owned` |
 | a rule that runs a script when rows change | `trigger.json`: `"tag": {"on": "dataset.rows.changed", "scope": ["kind:<full kind>"]}`, `"then": {"run_script": "agentic-assets/trigger/<name>/run.sh"}`, and `"runs_on"` when only one machine should run it. "Run now": `const started = await Trigger.runOnce(id)`, then `Trigger.run(started.run_id)` until it is not `running` | the script: `single_run` around the run, `$FLOWPAD_PYTHON`, exit non-zero on failure (a failed step is a failed run) |
 | one run of a script at a time (a trigger's run and a "Sync now") | — (a script's concern) | `with single_run(project_root, "crm-sync"):` around the WHOLE run (`flow_sdk.datasets.run`) — a second run waits, or `wait=False` raises `RunBusy`; never a lock file of your own |
 | hear that rows changed | `const off = ds.onRowsChanged(({op, keys, count}) => reload())` — one call per write, by this app, another, or a script; keys, never values | a script's writes tell the running Flowpad by themselves (`ds.announce(op, keys)` to say it by hand) |
@@ -111,7 +111,7 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 - **A query reads the rows from disk each time** (there is no index over row fields), and each
   dataset a link path leads into once more: fine for thousands of rows, not for millions. Ask for
   what the page shows (`match`, `limit`), never every row on a timer.
-- **No row history.** A date you will ask about is a field (`stage_dates`, `owned_by` its source);
+- **No row history.** A date you will ask about is a field (`stage_dates`, `truth` from its system of record);
   a write log would miss every writer that bypasses the SDK. A dataset in git has its commits.
 - **A link to a record is not checked on a write from disk** (records live in the instance's
   store), and a path continues into a record only where they can be read: over REST always; in a
@@ -119,12 +119,11 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 - **A rule across rows that counts, orders or sums** is not in the schema: write it into the
   kinds' `description.md` and check it in every writer. "The same row" (a tag chain) and "no two
   rows share this value" (`unique`: a natural key) ARE schema `rules` — never app code.
-- **`owned_by` is a guard, not a permission.** A field the schema marks as an outside system's is
-  refused to every writer that does not say `by: "<owner>"`, so the app and Claude cannot change
-  it by mistake — but a writer that claims `by` is believed. Show such a field read-only
-  (`kindForm(kind).fields[name].owned_by`) unless the location's driver can write it — then edit it as any
-  field (it goes to the system first). Send `by` only from the writer that IS the owner: the
-  location's pull, or the one script that computes a field it owns (`"owned_by": "board"`, `by="board"`).
+- **`truth` is a guard, not a permission.** A field the data model marks `truth` is refused to every
+  writer that neither says `by: "soc"` nor goes through the system first, so the app and Claude cannot
+  change it by mistake — but a writer that claims `by` is believed. Show such a field read-only
+  (`kindForm(kind).fields[name].truth`) unless the system's driver can write it — then edit it as any
+  field (it goes to the system first). Never send `by: "soc"` yourself: it is the pull's.
 - **The delete protection is per checkout.** A row kept out of git that links to a row in git
   can lose its target to a `git pull` (a teammate deleted it): that row then shows in
   `problems` (`no <kind> row <uuid>`) — every reader must keep going and report it.

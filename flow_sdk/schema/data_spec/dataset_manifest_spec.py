@@ -62,11 +62,9 @@ class DatasetManifestSpec(FrontMatter):
     field_spec: Optional[Dict[str, str]] = None
     delimiter: Optional[str] = None
     spec: Optional[ShapeForm] = None
-    #: Where the rows live: ``local`` (default), ``file:<folder>``, ``<driver>:<target>``, or a
-    #: record system ``{"driver", "config", "map", "by"}`` -- ``flow_sdk/datasets/locations.py``.
-    location: Optional[Union[str, Dict[str, Any]]] = None
-    #: The data source the rows are in (``agentic-assets/data_source/<name>/``; absent = the default
-    #: local one), and their folder inside it (default: the dataset's folder name).
+    #: The data source the rows are in (``agentic-assets/data_source/<name>/``; absent = the project's
+    #: data store), and their folder inside it (default: the dataset's folder name) --
+    #: ``flow_sdk/datasets/stores.py``.
     data_source: Optional[str] = None
     path: Optional[str] = None
     #: The free ``data`` section of ``dataset.json`` — the document's second half.

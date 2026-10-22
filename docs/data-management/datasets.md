@@ -69,7 +69,6 @@ configuration + metadata, in the two-section form:
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
     "field_spec": { "input": "question" },          // CSV column remap only (§2)
     "delimiter": ",",                               // CSV only
-    "location": "local",                            // where the rows live (default "local")
     "spec": {                                       // a DatasetSpec authoring form (§ Spec)
       "rows": [ { "input":  { "question": "string" },
                       "output": { "category": "string" } } ]
@@ -85,10 +84,11 @@ Computed fields you **do not** write — the indexer fills them in:
 `num_rows`, `kind_counts`, `num_annotated`, `num_multi_output`,
 `num_binary_inputs`.
 
-`location` says where the rows live: `"local"` (`<dataset>/rows/`, kept out of git), `"file:<folder>"`,
-`"<driver>:<target>"` (`gdrive:GTM/Rows/leads`, `s3:my-bucket/gtm/leads`), or a record system
-(`{"driver", "config", "map", "by"?}`). The dataset folder holds the shape; the rows go where the
-person puts them — see [dataset locations](dataset-locations.md).
+Where the rows live is `dataset.json`'s top-level `"data_source"` (+ optional `"path"`): one of the
+project's data sources — an object store holds whole rows, a system of record holds the fields the
+kind marks `truth`. None = the project's data store (`flow.json` `"data_store"`, else this instance's
+`data_stores/` folder). The dataset folder holds the shape; rows are never inside the project — see
+[dataset stores](dataset-stores.md). The row layouts below are what a store holds.
 
 ### The `spec`
 
@@ -176,6 +176,8 @@ by the `io_folder` layout.
 ```
 agentic-assets/dataset/<slug>/
   dataset.json        # { "metadata": { "data_layout": "io_folder" }, "data": {} }
+
+<the dataset's data store>/   # never in the project — see dataset-stores.md
   rows/
     0001/             # one folder per row (the folder name is the row key)
     0002/
@@ -394,7 +396,7 @@ agent.
 ## Typed rows — a `spec` that NAMES a kind
 
 **The model, on one page.** Five nouns: a **kind** is a name (`--acme--.crm.lead`); a **schema** is
-the definition under it (fields, `rules`, `owned_by`, `include`); a **dataset** is the folder that
+the definition under it (fields, `rules`, `truth`, `include`); a **dataset** is the folder that
 keeps the rows of one kind; a **row** is one value of it, with a `key` (its name, yours to choose),
 an `id` (stored in the row — computed only for a CSV row, which has nowhere to store one), a `ref` (`<kind>.id.<id>` — what a link holds) and a
 `version` (pass it back as `expected`); a **problem** is a row that does not fit, reported beside
@@ -416,11 +418,11 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl` (the full REST li
 (`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
 verbs carry `_row`. Async (awaited): `append`, `put`, `put_many`, `sync`, `mirror`, `pull`, `promote`,
 `annotate`. Synchronous: `delete_row`, `delete_rows`, `rename_row`, `set_data` (replace one row's
-free `data`, Python only), `store_ids`, and every read.)
+free `data`, Python only), and every read.)
 
-Four laws. (1) Every write is checked first and is all or nothing — except the pull of a record
-system (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
-writes the rest (see [dataset locations](dataset-locations.md)). (2) A refusal is read by
+Four laws. (1) Every write is checked first and is all or nothing — except the pull of a system
+of record (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
+writes the rest (see [dataset stores](dataset-stores.md)). (2) A refusal is read by
 `details[].code` — `[{path, code, message}]` on every refusal, with `errors` as its lines: **400** the
 row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`,
 and in a record-system location `not_writable`, `source_refused`, `unlinked`),
@@ -464,9 +466,8 @@ chooses is `a-z 0-9 _ -`, starts with a letter or digit, at most 120 chars; `app
 | `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
-| `POST pull` | `{moved, num_rows}`: bring a remote location's working copy up to date now (`Dataset.pull`, TS `pull()`); see [dataset locations](dataset-locations.md) |
-| `POST move-rows {location}` | `{from, to, rows}`: copy every row to another location, check the count, rewrite `dataset.json`; the old location keeps its rows. Refused into a non-empty location or a record system (TS `moveRows(location)`) |
-| `POST store-ids` | `{stamped}`: store each row's id in `row.json` where it still has only the legacy derived one (`Dataset.store_ids`; run once on an old dataset) |
+| `POST pull` | `{moved, gone, num_rows}`: bring the rows up to date now — a remote store's working copy, a system of record's fields (`Dataset.pull`, TS `pull()`); see [dataset stores](dataset-stores.md) |
+| `POST move-rows {data_source?, path?}` | `{from, to, rows}`: copy every row into that data source (none: the project's data store), check the count, rewrite `dataset.json`; a key already there keeps its copy, the old store keeps its rows. 400 into a system of record, 503 while the source is not set up (TS `moveRows({data_source, path})`) |
 | `GET evals` · `GET eval/<run>[/<row>]` · `POST run-eval {eval?, kinds?}` | eval runs: the list, one run with its rows (or one row's `trace`), a new run — TS `evalRuns` / `evalRun` / `evalTrace` / `runEval`; see [evals](evals.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
 | `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `row_id`), with its slot (`ground_truth.route`) |
@@ -475,11 +476,11 @@ chooses is `a-z 0-9 _ -`, starts with a letter or digit, at most 120 chars; `app
 Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
 those, not the lines. Three numbers are not the same: `num_rows` counts every row folder,
 `count().total` and `query().total` count the rows that FIT (the rest are `problems`).
-A field that must live both here and in an outside system is THAT SYSTEM'S field: the rows live in
-that system (`location`), the field is mapped and marked `owned_by`, and an edit here is sent there
-first ([dataset locations](dataset-locations.md)) — never kept in step by hand.
+A field that must live both here and in an outside system is THAT SYSTEM'S field: the dataset's data
+source is that system of record, the field is marked `truth`, and an edit here is sent there
+first ([dataset stores](dataset-stores.md)) — never kept in step by hand.
 `flow_sdk.datasets.merge.three_way(here, there, agreed)` → `(decision, value)`, decision `"same"` / `"here"` / `"there"` / `"hold"`,
-is for two stores with no source between them (a file copied to a drive), not for a row in a record system.
+is for two stores with no source between them (a file copied to a drive), not for a row in a system of record.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
 `ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;
@@ -537,7 +538,7 @@ Record ids are per machine: keep the provider's `external_id` beside the link in
 
 **When did it change?** There is no row history, on purpose: rows have writers that bypass the SDK,
 so a write log would look complete and not be. A date you will ask about is a FIELD
-(`"stage_dates": {"won": "?date", …}`, `owned_by` its source — then `input.stage_dates.won` is
+(`"stage_dates": {"won": "?date", …}`, `truth` from its system of record — then `input.stage_dates.won` is
 queryable); a dataset kept in git has `GitWorkdir.fileRevisions`; a label carries who and when in
 `metadata.annotations`.
 

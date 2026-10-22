@@ -114,10 +114,10 @@ async def test_setup_makes_the_store_once_and_checks_it(driver, hub):
 async def test_a_dataset_in_a_hub_store_round_trips_its_rows(tmp_path, monkeypatch, hub):
     """dataset → data source (flow_storage, store_id) → the hub store: a row written here is a file there."""
     from flow_sdk.builtin.dataset import Dataset
-    from flow_sdk.datasets import locations
+    from flow_sdk.datasets import stores
     from flow_sdk.schema.data_spec.declared import load_root
     from tests.unit._graph_client import call_local
-    from tests.unit.test_data_spec.test_file_location import _schema
+    from tests.unit.test_data_spec.test_row_links import _schema
 
     root, ns = tmp_path / "proj", "unittesthub" + uuid.uuid4().hex[:8]
     _schema(root, ns, "crm.person", {"name": {"shape": "string", "description": "x"}})
@@ -131,8 +131,8 @@ async def test_a_dataset_in_a_hub_store_round_trips_its_rows(tmp_path, monkeypat
     async def ready(name, project_id=""):
         return ""
 
-    monkeypatch.setattr(locations, "source_refusal", ready)
-    locations._checked.clear()
+    monkeypatch.setattr(stores, "source_refusal", ready)
+    stores._checked.clear()
     people = Dataset(id=str(uuid.uuid4()), name="people", asset_ref=str(root / "agentic-assets/dataset/people"),
                      data_layout="io_folder", spec={"rows": [{"input": f"--{ns}--.crm.person"}]}, data_source="store")
     Path(people.asset_ref).mkdir(parents=True)
@@ -143,4 +143,4 @@ async def test_a_dataset_in_a_hub_store_round_trips_its_rows(tmp_path, monkeypat
     assert "people/rows/ada/row.json" in hub.stores[store_id]                      # on the hub, under the dataset
     rows = (await call_local("POST", f"dataset/{people.id}/rows", {})).json()["data"]["rows"]
     assert [r["key"] for r in rows] == ["ada"]
-    assert people._location().kind == "files" and people.rows_at == "store · people"
+    assert people._rows_store().kind == "files" and people.rows_at == "store · people"

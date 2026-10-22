@@ -290,11 +290,13 @@ def _build(folder: Path) -> Optional[type]:
     record = doc.resolved_subkind == "record"
     raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.rows or {})
     forms = {name: _qualify(_normalize_form(form), read.ns, tag) for name, form in raw.items()}
-    # What this record INCLUDES: other records' fields, rules and owners, as if written here. Each is
+    # What this record INCLUDES: other records' fields, rules and truth, as if written here. Each is
     # built first; a field named on both sides is refused (an include never silently overrides).
     included: list[tuple[str, type]] = []
     inherited: dict[str, tuple[Any, str]] = {}   # field -> (form, description)
-    owners: dict[str, str] = {name: f.owned_by for name, f in (doc.fields or {}).items() if f.owned_by} if record else {}
+    from flow_sdk.datasets.truth import entry  # noqa: PLC0415
+
+    truths: dict[str, Any] = {name: entry(name, f.truth) for name, f in (doc.fields or {}).items() if f.truth is not None} if record else {}
     rules = list(doc.rules or ())
     for name in (doc.include or ()) if record else ():
         kind = _qualify(name, read.ns, tag)
@@ -310,7 +312,7 @@ def _build(folder: Path) -> Optional[type]:
             if field_name in forms or field_name in inherited:
                 raise DeclareError(f"field {field_name!r} is defined here and by the included {name!r}: keep one")
             inherited[field_name] = (form, base.model_fields[field_name].description or "")
-        owners.update(getattr(base, "__owned__", None) or {})
+        truths.update(getattr(base, "__truth__", None) or {})
         rules = list(getattr(base, "__rules__", None) or ()) + rules
     described = {name: (f.description or None) for name, f in (doc.fields or {}).items()} if record else {}
     described.update({name: (text or None) for name, (_, text) in inherited.items()})
@@ -354,8 +356,8 @@ def _build(folder: Path) -> Optional[type]:
                 __authoring__=(ClassVar[Any], forms),
                 # Rules across rows (``flow_sdk.datasets.rules``), their paths checked below.
                 __rules__=(ClassVar[Any], tuple(rules)),
-                # Fields that are a copy of an outside system's: {field: owner} (``owned_by``).
-                __owned__=(ClassVar[Any], dict(owners)),
+                # Fields a system of record holds: {field: path / link} (``datasets.truth``).
+                __truth__=(ClassVar[Any], dict(truths)),
                 **members,
             )
         for rule in rules:

@@ -97,9 +97,9 @@ VALID: dict[str, dict] = {
     },
     # a poll interval below 60s is refused
     "data_source": {"poll_interval_seconds": 300},
-    # a dataset's rows live at a location: here a record system, whose map's key path is also a field
-    "dataset": {"location": {"driver": "twenty", "config": {"resource": "tasks"},
-                             "map": {"key": "external_id", "input": {"crm_id": "external_id"}}, "by": "crm"}},
+    # a named `data_source` must be a data source asset of the dataset's project, which this bare
+    # folder has none of -- so the rows go to the project's data store (no source, no path)
+    "dataset": {"data_source": None, "path": None},
     # `location_type` is a closed enum, and entity-only (not in the spec)
     "micro_app": {"location_type": "Asset"},
     # only a publishable type may appear in an entry; the schema is THIS build's;
