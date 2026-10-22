@@ -64,13 +64,13 @@ class _FakeGithub:
         self.next_id += 1
         return self.next_id
 
-    def pr(self, key: str, title: str = "Fix the thing", assignee: str = ME) -> dict:
+    def pr(self, key: str, title: str = "Fix the thing", assignee: str = ME, reviewers: tuple = (ME,)) -> dict:
         repo, n = key.split("#")
         if key in self.prs:
             return self.prs[key]
         created = self.tick()
         entry = self.prs[key] = {
-            "repo": repo, "number": int(n), "title": title, "assignee": assignee, "created_at": created, "updated_at": created,
+            "repo": repo, "number": int(n), "title": title, "assignee": assignee, "reviewers": list(reviewers), "created_at": created, "updated_at": created,
             "sha": f"sha{n}", "state": "open", "merged": False, "author": "dana", "mergeable": True, "comments": [], "review_comments": [], "reviews": [], "timeline": [], "checks": [],
         }
         return entry
@@ -180,9 +180,10 @@ class _FakeGithub:
         repos = [t[5:] for t in terms if t.startswith("repo:")]
         since = next((t[len("updated:>="):] for t in terms if t.startswith("updated:>=")), None)
         created_before = next((t[len("created:<"):] for t in terms if t.startswith("created:<")), None)
-        who = "review" if "review-requested:@me" in terms else "assignee"
+        who = "review-requested" if "review-requested:@me" in terms else "author" if "author:@me" in terms else "assignee"
+        matches = {"review-requested": lambda p: self.me in p["reviewers"], "author": lambda p: p["author"] == self.me, "assignee": lambda p: p["assignee"] == self.me}[who]
         rows = [p for p in self.prs.values() if p["state"] == "open" and (not repos or p["repo"] in repos) and (since is None or p["updated_at"] >= since)
-                and (created_before is None or p["created_at"] < created_before) and (who == "review" or p["assignee"] == self.me)]
+                and (created_before is None or p["created_at"] < created_before) and matches(p)]
         rows.sort(key=lambda p: (p["updated_at"], p["repo"], p["number"]), reverse=params.get("order") == "desc")
         per, page = int(params.get("per_page") or 30), int(params.get("page") or 1)
         chunk = rows[(page - 1) * per: page * per]
@@ -302,8 +303,8 @@ async def test_the_resume_cursor_narrows_to_updated_since_the_mark(github):
     gh.calls.clear()
     gh.comment("octo/app#8", "new", user="dana")
     items, again, _ = await _all(_source(github.base), cursor=resume)
-    search = next(p for m, p in gh.calls if p.startswith("/search/issues"))
-    assert f"updated:>={mark}" in search and "assignee:@me" in search
+    narrowed = [p for m, p in gh.calls if p.startswith("/search/issues") and f"updated:>={mark}" in p]
+    assert any("author:@me" in p for p in narrowed) and any("review-requested:@me" in p for p in narrowed)
     assert {i.data.conversation.key for i in items} == {PR, "octo/app#8"}, "the mark is inclusive: PR seen again, new PR read"
     assert again != resume
 
@@ -349,8 +350,43 @@ async def test_repos_and_the_review_filter_shape_the_search(github):
     gh = github.gh
     gh.comment(PR, "hi", user="dana")
     await _all(_source(github.base, repos=["octo/app", "octo/lib"], filter="review_requested"))
-    search = next(p for m, p in gh.calls if p.startswith("/search/issues"))
+    searches = [p for m, p in gh.calls if p.startswith("/search/issues")]
+    assert all("author:@me" not in q for q in searches)
+    search = searches[0]
     assert "review-requested:@me" in search and "repo:octo/app" in search and "repo:octo/lib" in search
+
+
+async def test_by_default_my_prs_and_my_review_requests_are_listed_once_each(github):
+    gh = github.gh
+    gh.pr("octo/app#20", reviewers=())["author"] = ME  # opened by me, nobody's review asked
+    gh.pr("octo/app#21", reviewers=(ME,))  # someone else's, my review requested
+    gh.pr("octo/app#22", reviewers=(ME,))["author"] = ME  # both: listed once
+    gh.pr("octo/app#23", reviewers=("lee",), assignee="lee")  # neither
+    for n in (20, 21, 22, 23):
+        gh.comment(f"octo/app#{n}", f"c{n}", user="dana")
+    items, resume, _ = await _all(_source(github.base))
+    convs = [i.data.conversation.key for i in items if i.data.text.startswith("c2")]
+    assert sorted(convs) == ["octo/app#20", "octo/app#21", "octo/app#22"]
+    searches = [p for m, p in gh.calls if p.startswith("/search/issues")]
+    assert any("author:@me" in q for q in searches) and any("review-requested:@me" in q for q in searches)
+
+
+async def test_the_assigned_filter_lists_only_prs_assigned_to_me(github):
+    gh = github.gh
+    gh.pr("octo/app#30", assignee="lee")
+    gh.comment("octo/app#30", "not mine", user="dana")
+    gh.comment(PR, "mine", user="dana")
+    items, _, _ = await _all(_source(github.base, filter="assigned"))
+    assert {i.data.conversation.key for i in items} == {PR}
+
+
+async def test_the_first_pass_lists_an_open_pr_quiet_for_longer_than_the_window(github):
+    assert GithubPrSource.windowed is False, "the application must not floor a first read at the window"
+    gh = github.gh
+    gh.comment(PR, "months ago", user="dana")
+    items, _, _ = await _all(_source(github.base))
+    assert [i.data.text for i in items if i.data.text == "months ago"] == ["months ago"]
+    assert not any("updated:>=" in p for _, p in gh.calls if p.startswith("/search/issues"))
 
 
 # ── writing ──────────────────────────────────────────────────────────────────

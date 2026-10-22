@@ -181,10 +181,22 @@ mechanism: [`ontology.md`](ontology.md).
 - **Data model** — the project's SHAPE: its kinds and their schemas. The product word for what the
   Schema view (`/dock/schema-tree`) navigates; one entry is a **kind**.
 - **Data source** — a CONTAINER: a configured `DataSource` that hosts datasets → rows (`"data_source":
-  <name>` in `dataset.json`, `DataSource.datasets()`). `local` (`<dataset>/rows/`) is every project's
-  default one. See [dataset locations](data-management/dataset-locations.md).
+  <name>` in `dataset.json`, `DataSource.datasets()`). A dataset names at most one. See
+  [dataset stores](data-management/dataset-stores.md).
 - **Data driver** — the synchronizer: the code that reads and writes a system, declares what it needs
-  and runs its setup check (`DataDriver`).
+  and runs its setup check (`DataDriver`). Its family is the source's TYPE:
+  - **object store** (`DataDriver.holds_rows`) — holds whole rows as files: `flow_storage` (the Flowpad
+    hub), S3, GCS, Drive, or a folder on this machine (`gdrive_mount`).
+  - **system of record** (`DataDriver.is_system_of_record`, family `record`: a CRM) — holds the fields
+    the data model marks `truth`; the rest of each row stays in the project's data store.
+  - **message channel** (family `message`) — mail and chat; holds messages, not rows.
+- **Data store** — where a dataset's rows physically are: dataset → data source → data store.
+- **Project data store** — where a dataset that names no data source keeps its rows: the source
+  `flow.json` names as `"data_store"`, else `<instance>/data_stores/<project ns>/<dataset folder>/`.
+  Never inside the project, never in git.
+- **truth** — a field's `"truth"` in `data_schema.json` (`"soc"`, `"soc.<path>"`, `{link, by, path}`,
+  `{value}`): the system of record holds that field. Exactly one field reads `"soc.external_id"`.
+  Writer `by="soc"` is the system itself.
 
 ## row · record · item (2026-10-11, one word since 2026-10-15)
 
@@ -200,10 +212,6 @@ Three words were used for neighbours. Say which:
   unrelated use: "a schema with fields".)
 - **item** — a `SourceItem`: one record a data source ingested. A row links to one with
   `ingest.source_item.id.<id>`.
-- **location** — where a dataset's rows live: `dataset.json` `location` — `local` (default),
-  `file:<folder>`, `<driver>:<target>` (`gdrive:`, `s3:`) or a record system. The dataset folder
-  holds the shape; the rows go where the person puts them
-  ([dataset locations](data-management/dataset-locations.md)). Not a workspace's folder.
 - **version** means the row's digest here (`expected=`); an asset's `v<n>` and a git revision are
   other things.
 

@@ -110,9 +110,7 @@
       },
       "aliases": [
         "ClaudeCode",
-        "Claude",
-        "anthropic",
-        "anthropic-key"
+        "Claude"
       ]
     },
     {
@@ -122,9 +120,7 @@
         "restore": "lucide.history"
       },
       "aliases": [
-        "Codex",
-        "openai",
-        "openai-key"
+        "Codex"
       ]
     },
     {
@@ -150,11 +146,29 @@
     {
       "kind": "openrouter",
       "asset": "openrouter.svg",
-      "color": "#94A3B8",
       "aliases": [
         "openrouter-key"
       ],
-      "source": "lucide `waypoints` (ISC)"
+      "source": "OpenRouter brand mark",
+      "color": "#6467F2"
+    },
+    {
+      "kind": "anthropic",
+      "asset": "anthropic.svg",
+      "aliases": [
+        "anthropic-key"
+      ],
+      "source": "Anthropic brand mark",
+      "color": "#D97757"
+    },
+    {
+      "kind": "openai",
+      "asset": "openai.svg",
+      "aliases": [
+        "openai-key"
+      ],
+      "source": "OpenAI brand mark",
+      "color": "#10A37F"
     },
     {
       "kind": "twilio",

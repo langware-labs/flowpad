@@ -40,7 +40,7 @@ Choose the keys: short, stable slugs of what the row is (`dana_levi`, `icp_ai_or
 to the row use its stored id, so a `ds-rename` breaks nothing inside Flowpad. A key copied
 OUTSIDE (a CRM field, a URL, a doc) does not follow — store the row's `ref` there instead
 of its key. A value that must live BOTH here and in an outside system is that system's field:
-the rows live in that system (`location`), marked `owned_by`, and an edit here is sent there first (`references/locations.md`).
+the dataset's data source is that system of record, the field is marked `truth`, and an edit here is sent there first (`references/stores.md`).
 Never keep it in step yourself — no state file, no merge, no "agreed value".
 A key that names no row in YOUR checkout may be a row another machine added that you have not
 pulled — report it, never overwrite it.

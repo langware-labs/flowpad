@@ -571,7 +571,7 @@ class StreamInbox:
                         except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
                             logger.exception("blocks: projection failed for %s", item.id)
                         sender = str(item.author_external_id or "").strip().lower()
-                        if own or (
+                        if item.is_echo(source) or (
                             self.senders and sender not in self.senders
                         ):
                             # Acked now while nothing in this page has been handed over — an ack is an

@@ -9,6 +9,7 @@
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import type { RemainingEntry } from '../FlowSync/store';
 
 export type LLMEndpointProvider = 'openrouter' | 'anthropic' | 'openai';
 export const LLM_ENDPOINT_PROVIDERS: readonly LLMEndpointProvider[] = ['openrouter', 'anthropic', 'openai'];
@@ -125,9 +126,38 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.public = entity.public ?? this.public;
   }
 
+  /** What this endpoint draws from, as bare ids (the form `id` takes): the hub's answer on a
+   *  permissions read (its `partof` edges, typeids), else the local `sources` field. */
+  get parentIds(): string[] {
+    const prefix = `${LLMEndpoint.type}-`;
+    return (this.expand?.source_ids ?? this.sources).map((ref) =>
+      ref.startsWith(prefix) ? ref.slice(prefix.length) : ref,
+    );
+  }
+
   /** Root ⇔ no sources. Derived, never stored. */
   get kind(): LLMEndpointKind {
-    return this.sources.length ? 'chain' : 'root';
+    return this.parentIds.length ? 'chain' : 'root';
+  }
+
+  /** Who sponsors this budget: `global` | `organization` | `team` | `user`; null when unknown. */
+  get sponsorKind(): string | null {
+    return this.expand?.scope_kind ?? null;
+  }
+
+  /** This endpoint's own limits with what is used of them (permissions read only). */
+  get ownRemaining(): RemainingEntry[] {
+    return this.expand?.remaining ?? [];
+  }
+
+  /** The hub lets this caller carve a budget out of this one. */
+  get canAllocate(): boolean {
+    return !!this.expand?.allowed_actions && this.isAllowedAction('allocate' as never);
+  }
+
+  /** The caller's own budget (an allowance they hold), as the hub answers it. */
+  get isMine(): boolean {
+    return this.expand?.mine === true;
   }
 
   get hasCredential(): boolean {

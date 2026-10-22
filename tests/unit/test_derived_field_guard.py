@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.datasets.stores import rows_root_of
 from flow_sdk.assets.types.dataset import derive_counts, derive_dataset
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.dataset import Dataset
@@ -83,7 +84,7 @@ def test_inbound_bodies_drop_derived_fields():
 # ── counters: one deriver, same answer on the row-write path and a reindex ──
 
 def _row(ds: Path, name: str, files: dict[str, str]) -> None:
-    ex = ds / "rows" / name
+    ex = rows_root_of(ds) / "rows" / name
     ex.mkdir(parents=True)
     for rel, body in files.items():
         (ex / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +93,7 @@ def _row(ds: Path, name: str, files: dict[str, str]) -> None:
 
 def _seed(root: Path) -> Path:
     ds = root / "ds"
-    (ds / "rows").mkdir(parents=True)
+    ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(json.dumps({"metadata": {"data_layout": "io_folder"}, "data": {}}))
     _row(ds, "0001", {"input.txt": "a", "output-1.txt": "x", "output-2.txt": "y"})       # multi output
     _row(ds, "0002", {"input.png": "png", "ground_truth.txt": "g"})                      # binary input
@@ -102,7 +103,7 @@ def _seed(root: Path) -> Path:
 
 
 def _reindex(ds: Path) -> dict:
-    data = {"data_layout": "io_folder", "rows": iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="d")}
+    data = {"data_layout": "io_folder", "rows": iter_rows(rows_root_of(ds), DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="d")}
     derive_dataset(data, ds, {})
     return {k: data[k] for k in DATASET_COUNTERS}
 
@@ -127,7 +128,7 @@ async def test_refresh_counts_matches_a_reindex_through_row_writes(tmp_path, mon
     assert await _refreshed(ds, monkeypatch) == _reindex(ds)
     assert _reindex(ds)["num_multi_output"] == 2
 
-    shutil.rmtree(ds / "rows" / "0002")                                                # delete
+    shutil.rmtree(rows_root_of(ds) / "rows" / "0002")                                                # delete
     after = _reindex(ds)
     assert await _refreshed(ds, monkeypatch) == after
     assert (after["num_rows"], after["num_binary_inputs"]) == (4, 2)
@@ -135,7 +136,7 @@ async def test_refresh_counts_matches_a_reindex_through_row_writes(tmp_path, mon
 
 def test_the_index_and_the_parsed_rows_give_the_same_facts(tmp_path):
     ds = _seed(tmp_path)
-    index = dataset_layout_for(DataLayoutEnum.IO_FOLDER).index(ds, dataset_id="d")
+    index = dataset_layout_for(DataLayoutEnum.IO_FOLDER).index(rows_root_of(ds), dataset_id="d")
     assert derive_counts(index) == _reindex(ds)
 
 

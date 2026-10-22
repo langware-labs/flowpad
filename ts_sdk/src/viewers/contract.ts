@@ -28,9 +28,10 @@ export interface FieldDef {
   shape: Shape;
   description?: string;
   required?: boolean;
-  /** The outside system this field's value is a copy of (`"crm"`), when the schema says so
-   *  (`owned_by`): show it read-only — only a writer that writes as that owner (`{by}`) sets it. */
-  owned_by?: string;
+  /** Where the field's value is true (`"data.title"`, `"external_id"`, `{link, by, path}`, `{value}`):
+   *  when the dataset's data source is a system of record, the field is held there — show it
+   *  read-only; only a writer that writes as the system of record (`{by: "soc"}`) sets it. */
+  truth?: unknown;
 }
 
 /** A rule across rows a record declares — Flowpad enforces it on every write and read; an app may

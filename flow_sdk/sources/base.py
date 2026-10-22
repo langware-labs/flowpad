@@ -82,6 +82,9 @@ class Source:
     #: False for a source that lists a window (a feed's recent entries, a mailbox since last week),
     #: where absence proves nothing.
     lists_everything: ClassVar[bool] = False
+    #: A first read (no cursor) starts at the row's window floor (``window_days`` back). False for a
+    #: source whose whole current set is small and live however old (open pull requests): it lists all of it.
+    windowed: ClassVar[bool] = True
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
     #: allows one request per interval declares 1.
     pages_per_pass: ClassVar[Optional[int]] = None

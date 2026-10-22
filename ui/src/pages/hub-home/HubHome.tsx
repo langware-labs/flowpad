@@ -1,3 +1,4 @@
+import { SEGMENTED_BUTTON, SEGMENTED_GROUP } from '@src/components/ui/segmented';
 import { type ComputeNode, CredentialsSubview, dataContext, ExecutionEnvironmentStatus, PageId, ViewType } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -23,6 +24,7 @@ import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { HubSummaryLine } from './HubSummaryLine';
+import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
@@ -188,9 +190,9 @@ function SandboxStatus({
     [ExecutionEnvironmentStatus.NEW]: t`New`,
     [ExecutionEnvironmentStatus.DISCONNECTED]: t`Disconnected`,
   };
+  const startedAt = info.started_at ? new Date(info.started_at).getTime() : null;
   const parts: string[] = [];
   if (status === ExecutionEnvironmentStatus.READY) {
-    if (info.started_at) parts.push(`${fmtDur(now - new Date(info.started_at).getTime())} used`);
     if (info.end_at) parts.push(`pauses in ${fmtDur(new Date(info.end_at).getTime() - now)}`);
   }
   const size = fmtSize(info.cpu_count, info.memory_mb);
@@ -207,6 +209,12 @@ function SandboxStatus({
         </span>
         {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
       </span>
+      {startedAt !== null && (
+        <span className="truncate ps-7 text-[11px] text-muted-foreground/70" data-testid="sandbox-started">
+          {t`started ${new Date(startedAt).toLocaleString()}`}
+          {status === ExecutionEnvironmentStatus.READY && ` · ${t`running ${fmtDur(now - startedAt)}`}`}
+        </span>
+      )}
       {login}
     </div>
   );
@@ -303,6 +311,10 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
   // Deleting a project. Held as the whole entity, not an id, so the confirm can
   // name what it is about to destroy.
 
+  // Active hides machines the provider no longer has (Not found).
+  const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
+  const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
+  const shownSandboxes = machineFilter === 'all' ? sandboxes : activeSandboxes;
   // Inline rename: single-click a sandbox name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -384,6 +396,9 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
               </p>
               <HubSummaryLine />
             </div>
+
+            {/* First agent: describe → its own sandbox + a channel → it answers. */}
+            <FirstAgentCard />
 
             {/* Projects other people gave you — the way from here to FlowPad. */}
             <SharedProjectsBanner projects={sharedProjects} />
@@ -482,8 +497,26 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                 </DialogContent>
               </Dialog>
 
+              <div role="radiogroup" className={`${SEGMENTED_GROUP} h-9 w-fit`} data-testid="machine-filter">
+                {(['active', 'all'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    role="radio"
+                    aria-checked={machineFilter === f}
+                    onClick={() => setMachineFilter(f)}
+                    className={`${SEGMENTED_BUTTON} h-7 w-auto px-4 text-sm ${machineFilter === f ? 'bg-primary font-medium text-primary-foreground' : 'text-foreground/80 hover:bg-accent hover:text-foreground'}`}
+                    data-testid={`machine-filter-${f}`}
+                  >
+                    {f === 'active' ? t`Active` : t`All`}{' '}
+                    <span className="ms-1.5 opacity-70">
+                      ({f === 'all' ? sandboxes.length : activeSandboxes.length})
+                    </span>
+                  </button>
+                ))}
+              </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {sandboxes.map((d) => (
+                {shownSandboxes.map((d) => (
                   <div
                     key={d.id}
                     data-testid="sandbox-card"

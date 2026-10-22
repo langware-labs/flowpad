@@ -1,10 +1,9 @@
-"""A dataset whose rows live in a RECORD SYSTEM (``dataset.json`` ``location`` with a ``map``) --
-how a row becomes a record and back.
+"""A dataset whose data source is a SYSTEM OF RECORD -- how a row becomes a record and back.
 
-The location's ``map`` says how a record becomes a row (``Dataset.mirror``, run on every pull of the
-location: ``datasets/locations.py``); this module reads it backwards: a change to a field the record
-system owns (the schema's ``owned_by``) is SENT TO THE SYSTEM FIRST (``write_through``), and a delete
-removes the record first (``delete_through``) -- one way in, for the row actions and the async API.
+The row kind's ``truth`` fields (``datasets.truth``) say how a record becomes a row (``Dataset.mirror``, run
+on every pull: ``datasets/stores.py``); this module reads them backwards: a change to a truth field is SENT
+TO THE SYSTEM FIRST (``write_through``), and a delete removes the record first (``delete_through``) -- one
+way in, for the row actions and the async API. Every other field is the row's own, kept in the data store.
 """
 
 from __future__ import annotations
@@ -14,33 +13,14 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+from flow_sdk.datasets.stores import SYSTEM, record_system
+
 logger = logging.getLogger(__name__)
-
-
-def check_map(shape: Any) -> dict:
-    """A record location's ``map`` as declared, or ``ValueError`` saying what is wrong with it:
-    ``{"key": <path>, "input": {...}}`` whose key path is also mapped to a field -- how a row finds
-    its record again."""
-    if not isinstance(shape, dict) or not isinstance(shape.get("key"), str) or not isinstance(shape.get("input"), dict):
-        raise ValueError('location.map: {"key": <path>, "input": {<field>: <path>}} is required')
-    if key_field(shape) is None:
-        raise ValueError(f"location.map: map the key path {shape['key']!r} to a field too: it is how a row finds its record again")
-    return shape
 
 
 def key_field(shape: dict) -> Optional[str]:
     """The row field the map's key path is mapped to (``crm_id`` for ``"crm_id": "external_id"``)."""
     return next((name for name, path in shape["input"].items() if path == shape["key"]), None)
-
-
-def record_system(dataset: Any) -> Any:
-    """The record system ``dataset``'s rows live in, or None (its rows are files)."""
-    from flow_sdk.datasets.locations import RECORDS, RecordSystem  # noqa: PLC0415
-
-    if not getattr(dataset, "asset_ref", None):
-        return None
-    location = dataset._location()
-    return RecordSystem(location, dataset=dataset) if location.kind == RECORDS else None
 
 
 # ── write-through: a change to an outside-owned field goes to the outside system ──────────────────
@@ -62,7 +42,12 @@ def is_link(spec: Any) -> bool:
 
 
 def _owned(dataset: Any) -> dict:
-    return getattr(dataset.row_type.input_type(), "__owned__", None) or {}
+    """``{field: "soc"}`` for the fields the dataset's system of record holds; ``{}`` when it has none."""
+    from flow_sdk.datasets.truth import truth_of  # noqa: PLC0415
+
+    if record_system(dataset) is None:
+        return {}
+    return {name: SYSTEM for name in truth_of(dataset.row_type.input_type())}
 
 
 def _refused(code: str, message: str, path: str = "") -> Exception:

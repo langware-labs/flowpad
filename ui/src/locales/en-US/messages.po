@@ -186,6 +186,10 @@ msgstr "· remote"
 msgid "· skill: {skill}"
 msgstr "· skill: {skill}"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "· yours"
+msgstr "· yours"
+
 #: src/pages/entry/MessageLanding.tsx
 msgid "› Messages"
 msgstr "› Messages"
@@ -592,6 +596,11 @@ msgstr "{0} comment(s) saved as submitted — the chart has no session, so nothi
 msgid "{0} comment(s) sent to the session that builds this chart."
 msgstr "{0} comment(s) sent to the session that builds this chart."
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "{0} connected"
+msgstr "{0} connected"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "{0} connection failed"
@@ -615,7 +624,7 @@ msgstr "{0} could not be updated for this project."
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
 
-#. placeholder {0}: root.sources.length + 1
+#. placeholder {0}: root.sources.length
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{0} data sources"
 msgstr "{0} data sources"
@@ -808,6 +817,12 @@ msgstr "{0} keys start with {1} — this one does not."
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{0} kinds"
 msgstr "{0} kinds"
+
+#. placeholder {0}: formatUsd(left.remaining)
+#. placeholder {1}: formatUsd(left.limit)
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "{0} left of {1}."
+msgstr "{0} left of {1}."
 
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -1259,6 +1274,10 @@ msgstr "{harnessCount, plural, one {Clear harness history for # project?} other 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "{headline} usage"
 msgstr "{headline} usage"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
+msgstr "{hiddenTeams} teams without a budget are hidden — Allocate on the org pool gives one a budget."
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "{hookCount, plural, one {# hook} other {# hooks}}"
@@ -1844,6 +1863,10 @@ msgstr "↻ re-run"
 msgid "+ Add rule"
 msgstr "+ Add rule"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "+ Allocate"
+msgstr "+ Allocate"
+
 #: src/components/account/database-section.tsx
 msgid "+ Enter path..."
 msgstr "+ Enter path..."
@@ -2149,9 +2172,13 @@ msgstr "a {label} OAuth login on this machine"
 msgid "A call here spends"
 msgstr "A call here spends"
 
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "A capped sub-budget of yours, for an agent or app."
+msgstr "A capped sub-budget of yours, for an agent or app."
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "A chain draws on another endpoint and can only narrow what passes."
-msgstr "A chain draws on another endpoint and can only narrow what passes."
+#~ msgid "A chain draws on another endpoint and can only narrow what passes."
+#~ msgstr "A chain draws on another endpoint and can only narrow what passes."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "A cron expression has five parts."
@@ -2270,8 +2297,8 @@ msgid "A restart of the worker is required."
 msgstr "A restart of the worker is required."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "A root talks to a provider with its own key."
-msgstr "A root talks to a provider with its own key."
+#~ msgid "A root talks to a provider with its own key."
+#~ msgstr "A root talks to a provider with its own key."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "A sandbox of your own, ready in about a minute."
@@ -2301,8 +2328,12 @@ msgstr "A sign-in is in progress"
 #~ msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
-msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgid "A source is one remote stream — one feed, channel, drive or mailbox. It syncs as soon as it is added, then on the heartbeat."
+msgstr "A source is one remote stream — one feed, channel, drive or mailbox. It syncs as soon as it is added, then on the heartbeat."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+#~ msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+#~ msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "a source this project does not list"
@@ -2315,6 +2346,10 @@ msgstr "A subject such as task:* or data_source:<id>. Empty = any."
 #: src/components/automations/KindGallery.tsx
 msgid "A task is assigned, the app opens, an agent finishes."
 msgstr "A task is assigned, the app opens, an agent finishes."
+
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "A team without a budget gets its own pool, drawn from this one."
+msgstr "A team without a budget gets its own pool, drawn from this one."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
@@ -2430,6 +2465,7 @@ msgid "Access requested"
 msgstr "Access requested"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Access token"
 msgstr "Access token"
 
@@ -2498,6 +2534,7 @@ msgstr "active"
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/tabs/provider-meta.tsx
 msgid "Active"
@@ -2816,6 +2853,10 @@ msgstr "Add machine"
 msgid "Add New Hook"
 msgstr "Add New Hook"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Add new token source"
+msgstr "Add new token source"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add note"
 msgstr "Add note"
@@ -3042,6 +3083,7 @@ msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "agent"
 msgstr "agent"
 
@@ -3086,6 +3128,10 @@ msgstr "Agent Hook"
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
 msgstr "Agent is public"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Agent machine ready"
+msgstr "Agent machine ready"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Agent mailbox"
@@ -3212,7 +3258,9 @@ msgstr "all"
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/components/spotlight/EntityTypePopover.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/hooks/useClaudeErrorRecords.ts
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
 msgstr "All"
@@ -3256,6 +3304,7 @@ msgid "All data cleared. Redirecting..."
 msgstr "All data cleared. Redirecting..."
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "All endpoints"
 msgstr "All endpoints"
 
@@ -3362,10 +3411,23 @@ msgstr "All tasks"
 msgid "All types"
 msgstr "All types"
 
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Allocate"
+msgstr "Allocate"
+
+#. placeholder {0}: source.name
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Allocate from {0}"
+msgstr "Allocate from {0}"
+
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Allocated {0}"
 msgstr "Allocated {0}"
+
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "Allocated:"
+msgstr "Allocated:"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
@@ -3839,6 +3901,8 @@ msgstr "Api Key"
 
 #: src/components/connections-manager/sign-in-method.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "API key"
 msgstr "API key"
@@ -3896,11 +3960,19 @@ msgstr "API keys stored on this machine"
 msgid "API Timeout"
 msgstr "API Timeout"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "API URL"
+msgstr "API URL"
+
 #: src/components/asset-counters/app-counters.tsx
 #: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "App"
 msgstr "App"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "App ID"
+msgstr "App ID"
 
 #: src/navigation/record-type-nav.ts
 msgid "App not found"
@@ -3915,6 +3987,7 @@ msgid "App runtime"
 msgstr "App runtime"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App secret"
 msgstr "App secret"
 
@@ -3995,8 +4068,6 @@ msgstr "Approving lets this machine act as you on FlowPad. Only approve a code y
 msgid "Apps"
 msgstr "Apps"
 
-#: src/components/top-nav-bar/AppButton.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Apps and agents"
 msgstr "Apps and agents"
@@ -4111,6 +4182,10 @@ msgstr "Ask"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Ask {managers} — who manages the budget you were given — to make you its admin, or to give you a budget of your own."
 msgstr "Ask {managers} — who manages the budget you were given — to make you its admin, or to give you a budget of your own."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Ask a teammate to join it and write there. The agent answers as you."
+msgstr "Ask a teammate to join it and write there. The agent answers as you."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -4347,6 +4422,15 @@ msgstr "Assistants & keys"
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
 msgstr "At"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "At <0>api.slack.com/apps</0> create an app from scratch."
+msgstr "At <0>api.slack.com/apps</0> create an app from scratch."
+
+#. placeholder {0}: formatUsd(left.remaining)
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "At most {0} — what this source has left."
+msgstr "At most {0} — what this source has left."
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Atlas controls"
@@ -4691,6 +4775,8 @@ msgstr "AWS region for Bedrock"
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/journey/JourneyTray.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Back"
 msgstr "Back"
 
@@ -4881,6 +4967,14 @@ msgstr "Bookmarked view"
 msgid "Bookmarks"
 msgstr "Bookmarks"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Bot token"
+msgstr "Bot token"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Bot token (xoxb-…)"
+msgstr "Bot token (xoxb-…)"
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Boundary"
 msgstr "Boundary"
@@ -4953,6 +5047,11 @@ msgstr "Browse…"
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Budget"
 msgstr "Budget"
+
+#. placeholder {0}: source.name
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Budget allocated from {0}"
+msgstr "Budget allocated from {0}"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Budget created for {label}"
@@ -5309,6 +5408,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+#: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -5446,13 +5546,11 @@ msgstr "Catch"
 msgid "Caught by"
 msgstr "Caught by"
 
-#: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
 msgstr "chain"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Chain"
 msgstr "Chain"
 
@@ -5530,6 +5628,7 @@ msgstr "Changes need merging — let the assistant finish it"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Channel"
 msgstr "Channel"
 
@@ -5540,6 +5639,10 @@ msgstr "channel {name}"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
 msgstr "Channel details"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Channel ID (C0123456789)"
+msgstr "Channel ID (C0123456789)"
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "Channel id (data source id there)"
@@ -6560,7 +6663,14 @@ msgstr "Collaboration Room"
 msgid "Collapse"
 msgstr "Collapse"
 
+#. placeholder {0}: e.name
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Collapse {0}"
+msgstr "Collapse {0}"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Collapse all"
 msgstr "Collapse all"
 
@@ -6818,6 +6928,7 @@ msgid "Config fields"
 msgstr "Config fields"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Configure"
 msgstr "Configure"
 
@@ -6865,13 +6976,19 @@ msgstr "Confirm: {0}"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "Connect"
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Connect {0}"
 msgstr "Connect {0}"
 
@@ -6947,6 +7064,10 @@ msgstr "Connect GitHub to share a project whose files live in a GitHub repositor
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Connect new source"
 msgstr "Connect new source"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Connect Slack"
+msgstr "Connect Slack"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Connect this machine"
@@ -7526,6 +7647,10 @@ msgstr "Could not activate the organization"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Could not add the help desk."
 msgstr "Could not add the help desk."
+
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Could not allocate"
+msgstr "Could not allocate"
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Could not allocate a mailbox"
@@ -10552,6 +10677,10 @@ msgstr "Drag to pan · scroll to zoom · click a node to read"
 msgid "Drag to resize"
 msgstr "Drag to resize"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Draw from a source you can use"
+msgstr "Draw from a source you can use"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
@@ -10846,6 +10975,7 @@ msgstr "Effort"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/token-plan/AllocateDialog.tsx
 msgid "Email"
 msgstr "Email"
 
@@ -11468,6 +11598,10 @@ msgstr "Every selection"
 msgid "Every team and budget inside {0} is deleted with it. This cannot be undone."
 msgstr "Every team and budget inside {0} is deleted with it. This cannot be undone."
 
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Every team you manage already has a budget."
+msgstr "Every team you manage already has a budget."
+
 #~ msgid "Every value is already on this machine — nothing to type."
 #~ msgstr "Every value is already on this machine — nothing to type."
 
@@ -11627,6 +11761,14 @@ msgstr "existing"
 msgid "Existing repo"
 msgstr "Existing repo"
 
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+msgid "existing source"
+msgstr "existing source"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Existing source"
+msgstr "Existing source"
+
 #. placeholder {0}: call.exit_code
 #. placeholder {0}: entry.toolResult!.exitCode
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -11657,7 +11799,14 @@ msgstr "Exit local"
 msgid "Expand"
 msgstr "Expand"
 
+#. placeholder {0}: e.name
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Expand {0}"
+msgstr "Expand {0}"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Expand all"
 msgstr "Expand all"
 
@@ -12386,8 +12535,8 @@ msgstr "File suggestion configuration"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
-msgid "file system"
-msgstr "file system"
+#~ msgid "file system"
+#~ msgstr "file system"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "File…"
@@ -13227,9 +13376,17 @@ msgstr "function (registry)"
 msgid "Funded by a hub endpoint"
 msgstr "Funded by a hub endpoint"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Funded by a provider API key you supply."
+msgstr "Funded by a provider API key you supply."
+
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a stored API key"
 msgstr "Funded by a stored API key"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Funded by an existing source; it can only narrow what that source allows."
+msgstr "Funded by an existing source; it can only narrow what that source allows."
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by your vendor subscription"
@@ -13237,6 +13394,10 @@ msgstr "Funded by your vendor subscription"
 
 #~ msgid "Funding for"
 #~ msgstr "Funding for"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Funding source"
+msgstr "Funding source"
 
 #. placeholder {0}: funds.join(', ')
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -13326,6 +13487,10 @@ msgstr "Get FlowPad at flowpad.ai →"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "Get it at flowpad.ai"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Get my link code"
+msgstr "Get my link code"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your {label} messages here, and answer them from Flowpad."
@@ -14177,6 +14342,11 @@ msgstr "How many lines of terminal output to retain in the scrollback buffer."
 msgid "How privacy modes work"
 msgstr "How privacy modes work"
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "How should it connect to {0}?"
+msgstr "How should it connect to {0}?"
+
 #: src/components/data-sources/source-parts.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "How to finish setup"
@@ -14486,6 +14656,14 @@ msgstr "In Progress"
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "In progress..."
 msgstr "In progress..."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "In Slack, create a private channel named"
+msgstr "In Slack, create a private channel named"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "In Telegram, message @BotFather and send /newbot."
+msgstr "In Telegram, message @BotFather and send /newbot."
 
 #: src/components/conversation/task-it.tsx
 msgid "In this conversation"
@@ -14896,6 +15074,7 @@ msgid "instruction ref"
 msgstr "instruction ref"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Instructions"
 msgstr "Instructions"
 
@@ -15070,6 +15249,10 @@ msgstr "Invite members"
 #: src/components/organization/org-detail-panel.tsx
 msgid "Invite people"
 msgstr "Invite people"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Invite the bot to a private channel with /invite @your-bot."
+msgstr "Invite the bot to a private channel with /invite @your-bot."
 
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
@@ -15306,6 +15489,8 @@ msgid "Kept in the project"
 msgstr "Kept in the project"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Key"
 msgstr "Key"
 
@@ -15380,7 +15565,6 @@ msgstr "kind"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -15629,6 +15813,10 @@ msgstr "Launch {name}"
 msgid "Launch a session first"
 msgstr "Launch a session first"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Launch bot"
+msgstr "Launch bot"
+
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
 msgstr "Launch failed."
@@ -15704,6 +15892,10 @@ msgstr "Leave it running. This card turns Running by itself once the machine con
 msgid "Leave this conversation?"
 msgstr "Leave this conversation?"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Left / limit"
+msgstr "Left / limit"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "Left conversation"
@@ -15765,6 +15957,14 @@ msgstr "Light up the {messageCount} messages this is attached to"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Limit"
 msgstr "Limit"
+
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Limit (USD per month)"
+msgstr "Limit (USD per month)"
+
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Limit (USD, total)"
+msgstr "Limit (USD, total)"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
@@ -15975,6 +16175,10 @@ msgstr "Live copy: {basisLabel}."
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "Live on {host}'s machine"
 #~ msgstr "Live on {host}'s machine"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Live only — this page does not store the conversation."
+msgstr "Live only — this page does not store the conversation."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -16665,6 +16869,14 @@ msgstr "Mailbox settings saved"
 msgid "Make a todo app"
 msgstr "Make a todo app"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Make an agent in 60 seconds — where will you talk to it?"
+msgstr "Make an agent in 60 seconds — where will you talk to it?"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Make another"
+msgstr "Make another"
+
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Make the two the same — edit either one — and the next sync carries on."
 #~ msgstr "Make the two the same — edit either one — and the next sync carries on."
@@ -16931,7 +17143,6 @@ msgstr "MCP tools"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/conversation/task-it.tsx
-#: src/components/token-plan/token-plan-math.ts
 msgid "Me"
 msgstr "Me"
 
@@ -17323,6 +17534,10 @@ msgstr "Models allowed"
 msgid "Models allowed (globs)"
 msgstr "Models allowed (globs)"
 
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "Models and filters are inherited from the source and can only be narrowed."
+msgstr "Models and filters are inherited from the source and can only be narrowed."
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Models denied"
 msgstr "Models denied"
@@ -17498,6 +17713,7 @@ msgstr "name"
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/token-plan/AllocateDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -17975,6 +18191,7 @@ msgstr "Newest first"
 
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Next"
 msgstr "Next"
 
@@ -18569,6 +18786,10 @@ msgstr "No known fix yet — use \"Fix It\" to start a session."
 #: src/components/locale/LocalePicker.tsx
 msgid "No languages found."
 msgstr "No languages found."
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "no limit"
+msgstr "no limit"
 
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No limit — draws from {parent}"
@@ -19226,6 +19447,10 @@ msgstr "No timeline data in this trace."
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No todo files found (~/.claude/todos/)"
 msgstr "No todo files found (~/.claude/todos/)"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "No token sources here."
+msgstr "No token sources here."
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "No tool calls before cursor in this segment"
@@ -20231,6 +20456,10 @@ msgstr "One per remote feed or account. The poller syncs each on the heartbeat a
 msgid "One person owns this task"
 msgstr "One person owns this task"
 
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "One person's allowance on this team."
+msgstr "One person's allowance on this team."
+
 #: src/components/inbound/AddRuleDialog.tsx
 msgid "One sender"
 msgstr "One sender"
@@ -20314,13 +20543,14 @@ msgstr "Oops! Page not found"
 msgid "Open"
 msgstr "Open"
 
+#. placeholder {0}: CHANNEL_TITLE[channel]
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
-#. placeholder {0}: item.label
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
 
@@ -20328,6 +20558,11 @@ msgstr "Open {0}"
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Open {0} in editor"
 msgstr "Open {0} in editor"
+
+#. placeholder {0}: slackName.trim()
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Open {0} in Slack"
+msgstr "Open {0} in Slack"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open {displayName}"
@@ -20422,6 +20657,10 @@ msgstr "Open a terminal on this machine"
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
 msgstr "Open address book"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Open admin"
+msgstr "Open admin"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Open again"
@@ -20527,6 +20766,11 @@ msgstr "Open file"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
 msgstr "Open Flowpad Cloud"
+
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Open Flowpad on {0}"
+msgstr "Open Flowpad on {0}"
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -21239,6 +21483,11 @@ msgstr "Or start from one of these"
 msgid "Ordered list"
 msgstr "Ordered list"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Org"
+msgstr "Org"
+
 #: src/components/collapsed-sidebar/OrgTeamsButton.tsx
 msgid "Org & teams"
 msgstr "Org & teams"
@@ -21246,7 +21495,6 @@ msgstr "Org & teams"
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/token-plan/token-plan-math.ts
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -21604,6 +21852,10 @@ msgstr "Paste into a terminal on a machine running Flowpad and signed in. Or use
 msgid "Paste it again below."
 msgstr "Paste it again below."
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Paste its Bot User OAuth Token (xoxb-…) and the channel ID here."
+msgstr "Paste its Bot User OAuth Token (xoxb-…) and the channel ID here."
+
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Paste Mermaid syntax to replace the current board."
 msgstr "Paste Mermaid syntax to replace the current board."
@@ -21624,6 +21876,10 @@ msgstr "Paste path at cursor"
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste path of {0}"
 msgstr "Paste path of {0}"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Paste the token it gives you here."
+msgstr "Paste the token it gives you here."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "path"
@@ -21797,6 +22053,7 @@ msgid "Phone number — recorded on the agent's card, not yet used to route mess
 msgstr "Phone number — recorded on the agent's card, not yet used to route messages"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Phone number ID"
 msgstr "Phone number ID"
 
@@ -22200,6 +22457,10 @@ msgstr "Prefers Reduced Motion"
 msgid "Prepare — before its steps"
 msgstr "Prepare — before its steps"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Preparing the agent machine"
+msgstr "Preparing the agent machine"
+
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Preparing this project for use."
 msgstr "Preparing this project for use."
@@ -22451,6 +22712,12 @@ msgstr "Project create"
 #: src/i18n/pref-labels.ts
 msgid "Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees."
 msgstr "Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees."
+
+#: src/components/quick-create/DatasetCreateDialog.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/schema-tree/SchemaTreeView.tsx
+msgid "Project data store"
+msgstr "Project data store"
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Project deleted"
@@ -22749,8 +23016,8 @@ msgid "Provider"
 msgstr "Provider"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "Provider + credential"
-msgstr "Provider + credential"
+#~ msgid "Provider + credential"
+#~ msgstr "Provider + credential"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Provider and base URL are fixed once created."
@@ -24579,6 +24846,10 @@ msgstr "Revisions v{0}"
 msgid "Revoke"
 msgstr "Revoke"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Right-click the channel → Copy → Copy link, and paste it here:"
+msgstr "Right-click the channel → Copy → Copy link, and paste it here:"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Right-to-left paragraph"
 msgstr "Right-to-left paragraph"
@@ -24628,18 +24899,22 @@ msgid "Room unavailable"
 msgstr "Room unavailable"
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
-#: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "root"
 msgstr "root"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "Root"
-msgstr "Root"
+#~ msgid "Root"
+#~ msgstr "Root"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
 msgstr "Root cause"
+
+#. placeholder {0}: PROVIDER_NAME[e.provider]
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Root source · {0} key"
+msgstr "Root source · {0} key"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
@@ -24959,6 +25234,11 @@ msgstr "Running · needs you"
 msgid "Running · pid {0}"
 msgstr "Running · pid {0}"
 
+#. placeholder {0}: fmtDur(now - startedAt)
+#: src/pages/hub-home/HubHome.tsx
+msgid "running {0}"
+msgstr "running {0}"
+
 #. placeholder {0}: a.name
 #: src/components/automations/AutomationsList.tsx
 msgid "Running {0}"
@@ -25270,6 +25550,10 @@ msgstr "Saved as"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Saved Contexts"
 msgstr "Saved Contexts"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Saved to My project"
+msgstr "Saved to My project"
 
 #~ msgid "Saved to this machine's encrypted store. Available to every project here, and never written to a file or sent anywhere."
 #~ msgstr "Saved to this machine's encrypted store. Available to every project here, and never written to a file or sent anywhere."
@@ -25886,6 +26170,10 @@ msgstr "Select a task"
 msgid "Select a thread to see what happened in it."
 msgstr "Select a thread to see what happened in it."
 
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "Select a token source to see its budget and consumption."
+msgstr "Select a token source to see its budget and consumption."
+
 #: src/components/assets/AssetsPage.tsx
 msgid "Select a type to browse"
 msgstr "Select a type to browse"
@@ -26000,6 +26288,7 @@ msgstr "Self-Summary"
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/organization/invite-row.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Send"
 msgstr "Send"
 
@@ -26500,6 +26789,12 @@ msgstr "Set up Git for sharing"
 msgid "Set up GitHub"
 msgstr "Set up GitHub"
 
+#. placeholder {0}: elapsed.toFixed(0)
+#. placeholder {1}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Set up in {0}s. Message it on {1} — it answers there."
+msgstr "Set up in {0}s. Message it on {1} — it answers there."
+
 #: src/types/ViewType.ts
 msgid "Set up LLM"
 msgstr "Set up LLM"
@@ -26769,6 +27064,7 @@ msgstr "Share without project membership"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Shared"
 msgstr "Shared"
 
@@ -27783,6 +28079,7 @@ msgstr "Sound"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
 msgstr "Source"
@@ -27814,8 +28111,8 @@ msgid "Sources"
 msgstr "Sources"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
-msgid "Sources + filters + limits"
-msgstr "Sources + filters + limits"
+#~ msgid "Sources + filters + limits"
+#~ msgstr "Sources + filters + limits"
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Sources using this driver"
@@ -27874,6 +28171,10 @@ msgstr "Spinner Tips Override"
 #: src/components/settings-view/settings-utils.ts
 msgid "Spinner Verbs"
 msgstr "Spinner Verbs"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Sponsor"
+msgstr "Sponsor"
 
 #: src/i18n/type-labels.ts
 msgid "Spreadsheets"
@@ -28073,6 +28374,11 @@ msgstr "started"
 msgid "Started"
 msgstr "Started"
 
+#. placeholder {0}: new Date(startedAt).toLocaleString()
+#: src/pages/hub-home/HubHome.tsx
+msgid "started {0}"
+msgstr "started {0}"
+
 #: src/components/automations/RunDetail.tsx
 msgid "Started again as a test run."
 msgstr "Started again as a test run."
@@ -28193,6 +28499,12 @@ msgstr "status: {0}"
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
 #~ msgstr "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+
+#. placeholder {0}: at + 1
+#. placeholder {1}: WIZARD.length
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Step {0} of {1}"
+msgstr "Step {0} of {1}"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "step: {0}ms · debounce: {1}ms"
@@ -28805,7 +29117,9 @@ msgstr "Tasks {openTaskCount}"
 #: src/components/contact-picker/ContactPicker.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/token-plan/token-plan-math.ts
+#: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
 msgstr "Team"
@@ -29113,6 +29427,10 @@ msgstr "The assistant's CLI is not installed on this machine"
 #~ msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
 #~ msgstr "The assistant's own CLI sign-in, kept by the vendor on this machine"
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "The attachments of this message could not be delivered."
+msgstr "The attachments of this message could not be delivered."
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The backend may have restarted. Click to reattach."
 msgstr "The backend may have restarted. Click to reattach."
@@ -29311,6 +29629,10 @@ msgstr "the host"
 #: src/components/install/InstallButton.tsx
 msgid "The hub did not accept the request."
 msgstr "The hub did not accept the request."
+
+#: src/components/conversation/AttachmentDownloadWarning.tsx
+msgid "the hub has no usable copy; only the sender can upload it again"
+msgstr "the hub has no usable copy; only the sender can upload it again"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
@@ -30408,6 +30730,10 @@ msgstr "This skill has uncommitted changes — improve runs only on a clean skil
 msgid "This source did not work"
 msgstr "This source did not work"
 
+#: src/components/token-plan/AllocateDialog.tsx
+msgid "This source has no cost limit of its own."
+msgstr "This source has no cost limit of its own."
+
 #: src/components/data-sources/SourceFiles.tsx
 msgid "This source has no folder on this machine yet."
 msgstr "This source has no folder on this machine yet."
@@ -30763,6 +31089,10 @@ msgstr "Token plan"
 msgid "Token source"
 msgstr "Token source"
 
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Token sources"
+msgstr "Token sources"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Token Usage Breakdown"
 msgstr "Token Usage Breakdown"
@@ -31088,9 +31418,17 @@ msgstr "Try auto install"
 msgid "Try auto install (types the command in a terminal)"
 msgstr "Try auto install (types the command in a terminal)"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Try it"
+msgstr "Try it"
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Try it on recent messages"
 msgstr "Try it on recent messages"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Try:"
+msgstr "Try:"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
@@ -31200,6 +31538,11 @@ msgstr "uid"
 msgid "Unable to fetch branches. Please check your repository permissions."
 msgstr "Unable to fetch branches. Please check your repository permissions."
 
+#. placeholder {0}: formatUsd(Math.max(0, own.limit - given))
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "unallocated {0}"
+msgstr "unallocated {0}"
+
 #: src/components/conversation/conversation-category.ts
 msgid "Unarchive — back to Stream Inbox"
 msgstr "Unarchive — back to Stream Inbox"
@@ -31229,6 +31572,10 @@ msgstr "uncommitted changes"
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "Under eval"
 msgstr "Under eval"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Under OAuth & Permissions add the bot scopes channels:history, groups:history, channels:read, chat:write and channels:join, then install it to your workspace."
+msgstr "Under OAuth & Permissions add the bot scopes channels:history, groups:history, channels:read, chat:write and channels:join, then install it to your workspace."
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
@@ -31343,6 +31690,10 @@ msgstr "Unlimited here — {parent} caps you at {limit} {windowText}"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Unmount Flowpad Assistant"
 msgstr "Unmount Flowpad Assistant"
+
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "Unnamed"
+msgstr "Unnamed"
 
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Unpin"
@@ -32219,6 +32570,10 @@ msgstr "Waiting for sign-in"
 msgid "waiting for the code"
 msgstr "waiting for the code"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Waiting for the first message…"
+msgstr "Waiting for the first message…"
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "waiting for the first signed delivery…"
 msgstr "waiting for the first signed delivery…"
@@ -32251,6 +32606,10 @@ msgstr "waiting for you to choose an LLM source"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "waiting for your message…"
 msgstr "waiting for your message…"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Waiting for your message…"
+msgstr "Waiting for your message…"
 
 #: src/components/inbound/InboundView.tsx
 msgid "waiting to be proven"
@@ -32518,6 +32877,7 @@ msgid "What should issue your LLM calls?"
 msgstr "What should issue your LLM calls?"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "What should it do?"
 msgstr "What should it do?"
 
@@ -32536,6 +32896,10 @@ msgstr "What should the worker do with this message?"
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "What should they know?"
 msgstr "What should they know?"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "What should your agent do? One line is enough."
+msgstr "What should your agent do? One line is enough."
 
 #. placeholder {0}: readiness.environment
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -32595,6 +32959,10 @@ msgstr "What would you like to work on?"
 
 #~ msgid "What's in the box."
 #~ msgstr "What's in the box."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "WhatsApp Business account ID"
+msgstr "WhatsApp Business account ID"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -33195,8 +33563,8 @@ msgid "You received a new task from <0>{senderName}</0>."
 msgstr "You received a new task from <0>{senderName}</0>."
 
 #: src/components/token-plan/ScopePath.tsx
-msgid "You spend through"
-msgstr "You spend through"
+#~ msgid "You spend through"
+#~ msgstr "You spend through"
 
 #: src/components/connections-manager.tsx
 msgid "You type a short code into the provider's site"
@@ -33240,6 +33608,10 @@ msgstr "You've been invited to a conversation"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "your account"
 msgstr "your account"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Your agent is live"
+msgstr "Your agent is live"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
@@ -33309,6 +33681,10 @@ msgstr "Your business number in your own Meta app. Meta calls the hub's webhook 
 msgid "your Claude Code"
 msgstr "your Claude Code"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Your code comes once the machine is ready"
+msgstr "Your code comes once the machine is ready"
+
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
 msgstr "Your diagnosis request came back"
@@ -33358,6 +33734,10 @@ msgstr "Your own assets, shared by every project"
 msgid "Your own number"
 msgstr "Your own number"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Your own provider key"
+msgstr "Your own provider key"
+
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
 msgstr "Your Projects"
@@ -33388,6 +33768,10 @@ msgstr "Your session has expired. Sign in again to launch."
 #: src/pages/entry/AgentLaunchLanding.tsx
 #~ msgid "Your session has expired. Sign in again to open this agent."
 #~ msgstr "Your session has expired. Sign in again to open this agent."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Your Slack account is linked. The agent will post as you."
+msgstr "Your Slack account is linked. The agent will post as you."
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Your status report is ready"

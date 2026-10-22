@@ -328,6 +328,20 @@ class SourceItem(ProjectedFields, Entity):
 
         return self.sent_by_us or is_self_address(source, self.author_external_id or "")
 
+    def is_echo(self, source) -> bool:
+        """Our own reply coming back — never handed to whoever answers the source. Usually the same as
+        ``is_ours``. A driver that declares ``answers_its_account`` reads an account a person shares
+        with the agent (Slack signed in as that person): what the person types there is answered, so
+        only what was sent from here (``sent_by_us``) is an echo."""
+        if self.sent_by_us:
+            return True
+        if not self.is_ours(source):
+            return False
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        driver = DataDriver.loaded(str(getattr(source, "provider", "") or ""))
+        return not getattr(driver.cls if driver is not None else None, "answers_its_account", False)
+
     @classmethod
     async def newest_for(cls, data_source_id: str, *, at_or_before: Optional[datetime] = None) -> Optional["SourceItem"]:
         """The last row ingested for a source (as of *at_or_before*, when given) — a listener's baseline."""
@@ -357,7 +371,7 @@ class SourceItem(ProjectedFields, Entity):
         if item.external_id:
             rows = await cls.get_all({"data_source_id": str(source.id), "reply_to_external_id": item.external_id})
             for row in rows:
-                if row.is_ours(source):
+                if row.is_echo(source):
                     return row
         if item.thread_key:
             operands = [
@@ -371,7 +385,7 @@ class SourceItem(ProjectedFields, Entity):
                 order_by=[{"created_date": "asc"}, {"id": "asc"}],
             ))
             for row in rows:
-                if row.is_ours(source) and str(row.id) != str(getattr(item, "id", "")):
+                if row.is_echo(source) and str(row.id) != str(getattr(item, "id", "")):
                     return row
         return None
 

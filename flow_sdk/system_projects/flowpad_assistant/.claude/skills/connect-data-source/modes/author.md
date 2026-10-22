@@ -109,11 +109,11 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
 
     # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
     # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A driver
-    # that is `Mutable` AND lists its records (`iterate`) can then hold a dataset's rows: the dataset's
-    # `dataset.json` says `"location": {"driver": "<name>", "config": {...}, "map": {...}, "by": "<owner>"}`,
-    # every read pulls the records, and the app's row writes reach the system through these (the
-    # data-management skill's `references/locations.md`; in a repo checkout also
-    # docs/data-management/dataset-locations.md)
+    # of the `record` family that is `Mutable` AND lists its records (`iterate`) is a SYSTEM OF RECORD: a
+    # dataset whose `data_source` is one of its sources holds the fields its kind marks `truth` there
+    # (exactly one `"truth": "soc.external_id"`), every read pulls the records, and the app's writes to
+    # truth fields reach the system through these (the data-management skill's `references/stores.md`;
+    # in a repo checkout also docs/data-management/dataset-stores.md)
     async def create(self, data: WikiPageData) -> SourceItemSpec: ...
     async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
     async def delete(self, origin) -> None: ...
@@ -129,9 +129,10 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     # A FILE STORE (a drive, a bucket) can hold a dataset's rows as files: implement `RowFiles`
     # (flow_sdk.sources.protocols) -- list_files / read_file / write_file / delete_file, each write and delete
     # conditional on `expected` (the version read, or "" for "must not exist"; a mismatch raises
-    # `sources.Conflict` and changes nothing) -- plus the classmethod `row_files_target(target) -> dict`, which
-    # maps the text after `<driver>:` in `"location": "<driver>:<target>"` onto this driver's config. The
-    # driver then shows in the dataset editor's Move… picker (`DataDriver.holds_rows`). Prove it with
+    # `sources.Conflict` and changes nothing) -- plus the classmethod `rows_within(config, path) -> dict`, which
+    # places a dataset's folder (`path`) inside a source's config (join a folder path, a prefix). Its sources
+    # are then OBJECT STORES: a dataset's `data_source` or a project's `flow.json` `data_store`, and they show
+    # in the dataset editor's Move… picker (`DataDriver.holds_rows`). Prove it with
     # `sources.testing.check_row_files`; `MemoryRowFiles` is the in-memory double. The shipped `s3` and
     # `gdrive` drivers are the templates.
 

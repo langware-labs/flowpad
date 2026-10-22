@@ -143,9 +143,11 @@ export function AttachmentDownloadWarning({
         ? t`no bundle was ever uploaded`
         : status === BodyStatus.UPLOADING
           ? t`the sender is still staging it`
-          : info.downloaded
-            ? t`pulled, but arrived short`
-            : t`available to pull`;
+          : status === BodyStatus.FAILED
+            ? t`the hub has no usable copy; only the sender can upload it again`
+            : info.downloaded
+              ? t`pulled, but arrived short`
+              : t`available to pull`;
     push(t`Body status`, `${status} — ${why}`);
   }
   if (errorInfo?.statusCode) {

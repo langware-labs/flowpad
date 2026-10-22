@@ -1,7 +1,8 @@
-"""Rows that live in a RECORD SYSTEM: a dataset whose ``location`` names a driver and a ``map``
-(``flow_sdk.datasets.locations``). Every read pulls the records into the dataset's working copy
-(``Dataset.mirror``); a change to a field the system owns goes to it first
-(``flow_sdk.datasets.projection.write_through``), a delete removes the record first."""
+"""A dataset whose data source is a SYSTEM OF RECORD (a CRM): the row kind's ``truth`` fields come from
+the system (``flow_sdk.datasets.truth``) and every other field is the row's own, kept in the project's
+data store (``flow_sdk.datasets.stores``). Every read pulls the records in (``Dataset.mirror``); a change
+to a truth field goes to the system first (``flow_sdk.datasets.projection.write_through``), a delete
+removes the record first."""
 
 import asyncio
 import contextlib
@@ -15,7 +16,6 @@ from tests.unit.test_data_spec.test_row_links import _dataset, _schema
 
 pytestmark = pytest.mark.timeout(5)
 
-MAP = {"key": "external_id", "input": {"title": "data.title", "status": "data.status", "crm_id": "external_id"}}
 
 
 class _Crm:
@@ -87,12 +87,19 @@ class _Crm:
         return Source()
 
 
+def _crm_source(root, **more):
+    folder = root / "agentic-assets" / "data_source" / "crm"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "data_source.json").write_text(json.dumps({"type": "data_source", "name": "crm", "data_driver_name": "crm", **more}))
+
+
 @pytest.fixture
 def served(tmp_path, monkeypatch):
-    """A tasks dataset whose rows live in a CRM; the CRM can write."""
+    """A tasks dataset whose data source is a CRM; the CRM can write."""
     from flow_sdk.builtin.dataset import Dataset
-    from flow_sdk.datasets import locations
+    from flow_sdk.datasets import stores
     from flow_sdk.schema.data_spec.declared import load_root
+    from flow_sdk.sources.base import Family
     from flow_sdk.sources.values.items import RecordData
 
     root, ns = tmp_path / "proj", "unittestthru" + uuid.uuid4().hex[:8]
@@ -100,9 +107,10 @@ def served(tmp_path, monkeypatch):
     _schema(root, ns, "crm.deal", {"name": f("string"), "crm_id": f("string")})
     rules = root / "agentic-assets/data_schema/crm.deal/data_schema.json"
     rules.write_text(json.dumps({**json.loads(rules.read_text()), "rules": [{"unique": ["crm_id"]}]}))
-    _schema(root, ns, "crm.task", {"title": f("string", owned_by="crm"), "status": f("string", owned_by="crm"),
-                                   "crm_id": f("?string", owned_by="crm"), "deals": f(["crm.deal"], owned_by="crm"),
-                                   "seen": f("?string", owned_by="crm"), "label": f("?string", owned_by="crm"),
+    _schema(root, ns, "crm.task", {"title": f("string", truth="soc.data.title"), "status": f("string", truth="soc"),
+                                   "crm_id": f("?string", truth="soc.external_id"),
+                                   "deals": f(["crm.deal"], truth={"link": "crm.deal", "by": "crm_id", "path": "soc.data.deal_ids.*"}),
+                                   "seen": f("?string", truth="soc.occurred_at"), "label": f("?string", truth="soc"),
                                    "notes": f("?string")})
     assert not any(load_root(root).values())
     deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
@@ -113,18 +121,27 @@ def served(tmp_path, monkeypatch):
         deal_ids: list[str] = []
 
     crm = _Crm(TaskData)
-    location = {"driver": "crm", "map": {"key": "external_id", "input": {
-        "title": "data.title", "status": "data.status", "crm_id": "external_id", "seen": "occurred_at",
-        "label": "data.label", "deals": {"link": "crm.deal", "by": "crm_id", "path": "data.deal_ids.*"}}}, "by": "crm"}
+    _crm_source(root)
     tasks = Dataset(id=str(uuid.uuid4()), name="tasks", asset_ref=str(root / "agentic-assets/dataset/tasks"),
-                    data_layout="io_folder", spec={"rows": [{"input": f"--{ns}--.crm.task"}]}, location=location)
+                    data_layout="io_folder", spec={"rows": [{"input": f"--{ns}--.crm.task"}]}, data_source="crm")
+
+    class CrmDriver:
+        family = Family.RECORD
+
+    real = stores._driver_class
+    monkeypatch.setattr(stores, "_driver_class", lambda provider, folder="": CrmDriver if provider == "crm" else real(provider, folder))
 
     @contextlib.asynccontextmanager
     async def opener(where):
         assert where.driver == "crm"
         yield crm.source()
 
-    monkeypatch.setattr(locations, "OPENER", opener)
+    async def ready(name, project_id=""):
+        return ""
+
+    monkeypatch.setattr(stores, "OPENER", opener)
+    monkeypatch.setattr(stores, "source_refusal", ready)
+    stores._checked.clear()
     return SimpleNamespace(tasks=tasks, deals=deals, crm=crm, TaskData=TaskData, root=root, ns=ns)
 
 
@@ -151,39 +168,38 @@ def _rows(tasks) -> dict:
 # ── the declaration ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("location, says", [
-    ({"driver": "crm", "map": {"key": "external_id"}}, "location.map"),
-    ({"driver": "crm", "map": {"key": "external_id", "input": {"title": "name"}}}, "map the key path 'external_id' to a field"),
-    ({"driver": "crm", "map": MAP, "into": "x"}, "location:"),
-    ({"driver": "Bad Name", "map": MAP}, "location:"),
-    ({"driver": "crm", "map": MAP, "config": []}, "location.config"),
-    ("not a location", "not local, file:<folder> or <driver>:<target>"),
-    ("file:", "file: needs a folder"),
+@pytest.mark.parametrize("truth, says", [
+    ("crm.title", "truth:"),
+    ("soc.", "truth:"),
+    ({"link": "crm.deal", "path": "soc.data.x"}, "truth:"),
+    ({"link": "crm.deal", "by": "key", "path": "data.x"}, "truth:"),
 ])
-def test_a_location_is_checked_where_it_is_declared(location, says):
-    from flow_sdk.datasets.locations import parse
+def test_a_truth_is_checked_where_it_is_declared(truth, says):
+    from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaField
 
     with pytest.raises(ValueError, match=says):
-        parse(location)
+        DataSchemaField(shape="string", truth=truth)
 
 
-def test_the_location_kinds():
-    from pathlib import Path
+def test_the_map_a_system_of_record_is_read_by_comes_from_the_truth_fields(served):
+    from flow_sdk.datasets.truth import mirror_map
 
-    from flow_sdk.datasets.locations import FILES, FOLDER, LOCAL, RECORDS, parse
-
-    assert parse(None).kind == parse("local").kind == LOCAL
-    assert (parse("file:~/rows").kind, parse("file:~/rows").target) == (FOLDER, str(Path("~/rows").expanduser()))
-    assert (parse("s3:bucket/gtm").kind, parse("s3:bucket/gtm").driver, parse("s3:bucket/gtm").target) == (FILES, "s3", "bucket/gtm")
-    held = parse({"driver": "crm", "map": MAP, "by": "crm"})
-    assert (held.kind, held.by, held.remote) == (RECORDS, "crm", True)
+    shape = served.tasks.row_type.input_type()
+    assert mirror_map(shape) == {"key": "external_id", "input": {
+        "title": "data.title", "status": "data.status", "crm_id": "external_id",
+        "deals": {"link": "crm.deal", "by": "crm_id", "path": "data.deal_ids.*"}, "seen": "occurred_at", "label": "data.label"}}
 
 
-def test_the_location_is_part_of_the_dataset_file():
-    from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
+async def test_a_kind_without_a_field_for_the_records_id_is_refused(tmp_path):
+    from flow_sdk.datasets.truth import mirror_map
+    from flow_sdk.schema.data_spec.declared import load_root
+    from flow_sdk.schema.data_spec.spec import DataSpec
 
-    read = DatasetManifestSpec.model_validate({"location": {"driver": "crm", "map": MAP}})
-    assert read.location == {"driver": "crm", "map": MAP}
+    root, ns = tmp_path / "proj", "unittestthru" + uuid.uuid4().hex[:8]
+    _schema(root, ns, "crm.loose", {"title": {"shape": "string", "description": "x", "truth": "soc.data.title"}})
+    assert not any(load_root(root).values())
+    with pytest.raises(ValueError, match="soc.external_id"):
+        mirror_map(DataSpec.parse(f"--{ns}--.crm.loose"))
 
 
 # ── every read pulls ─────────────────────────────────────────────────────────
@@ -202,7 +218,7 @@ async def test_a_read_brings_the_records_in(served):
 
 
 async def test_the_rows_are_out_of_the_project(served):
-    """A record location's rows are a working copy under this instance, never in the project."""
+    """A system of record's rows are kept whole in the project's data store, never in the project."""
     await _seed(served)
     assert not (served.root / "agentic-assets/dataset/tasks/rows").exists()
     assert (served.tasks._rows_root() / "rows" / "t-1" / "row.json").is_file()
@@ -216,27 +232,12 @@ async def test_a_record_that_does_not_fit_is_a_problem_row_not_a_lost_one(served
     assert [r.key for r in kept] == ["t-1"] and [p["key"] for p in problems] == ["t-2"]
 
 
-async def test_a_map_may_only_write_fields_the_schema_says_are_the_systems(served):
-    """A mapped field the app may write too would take an edit and lose it at the next pull: refused,
-    by name -- not left to eat edits."""
-    from flow_sdk.builtin.dataset import Dataset, LinkError
-
-    await _seed(served)
-    loose = {**served.tasks.location, "map": {**served.tasks.location["map"],
-                                              "input": {**served.tasks.location["map"]["input"], "notes": "data.text"}}}
-    tasks = Dataset(id=str(uuid.uuid4()), name="tasks2", asset_ref=served.tasks.asset_ref, data_layout="io_folder",
-                    spec=served.tasks.spec, location=loose)
-    with pytest.raises(LinkError) as refused:
-        await tasks.pull()
-    assert refused.value.details[0]["code"] == "not_owned" and "notes" in str(refused.value)
-
-
 async def test_the_pull_action_answers_what_moved(served):
     await _seed(served)
     served.crm.put("T-2", title="Write the plan", status="DONE")
     done = await _call(served, "pull", {})
     assert done.status_code == 200, done.text
-    assert done.json()["data"] == {"moved": ["t-2"], "num_rows": 2}
+    assert done.json()["data"] == {"moved": ["t-2"], "gone": [], "num_rows": 2}
 
 
 # ── write-through: a row's system-owned fields go to the system ──────────────
@@ -340,10 +341,9 @@ async def test_a_field_that_cannot_go_back_is_refused_before_any_io(served):
     assert served.crm.calls == []
 
 
-async def test_a_read_only_location_keeps_its_fields_the_systems(served):
+async def test_a_read_only_source_keeps_its_fields_the_systems(served):
     await _seed(served)
-    served.tasks.location = {**served.tasks.location, "read_only": True}
-    await served.tasks.save()
+    _crm_source(served.root, read_only=True)
     done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {"title": "Call Acme back", "status": "DONE", "crm_id": "T-1", "deals": []}}})
     assert done.status_code == 400 and {(d["path"], d["code"]) for d in done.json()["data"]["details"]} == {("input.status", "owned"), ("input.deals", "owned")}
     assert served.crm.calls == []
@@ -351,19 +351,33 @@ async def test_a_read_only_location_keeps_its_fields_the_systems(served):
 
 async def test_the_system_itself_writes_as_the_system_and_nothing_goes_out(served):
     await _seed(served)
-    done = await _call(served, "put-row", {"key": "t-1", "by": "crm", "row": {"input": {"title": "Call Acme back", "status": "DONE", "crm_id": "T-1", "deals": []}}})
+    done = await _call(served, "put-row", {"key": "t-1", "by": "soc", "row": {"input": {"title": "Call Acme back", "status": "DONE", "crm_id": "T-1", "deals": []}}})
     assert done.status_code == 200 and served.crm.calls == []
 
 
-async def test_a_field_the_system_does_not_hold_is_refused_not_kept_on_one_machine(served):
-    """``notes`` is no field of the CRM's record: kept, it would live only in this machine's working
-    copy. Refused before any I/O -- the kind's field is mapped onto one the system has, or kept in a
-    dataset of its own."""
+async def test_a_field_of_our_own_is_kept_in_the_data_store_beside_the_systems(served):
+    """``notes`` is no field of the CRM's: it is the row's own. It is written here (nothing goes out) and
+    stays through every pull of the system's fields."""
     await _seed(served)
     row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
-    done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "status": "DONE", "notes": "ours"}}})
-    assert done.status_code == 400 and [(d["code"], d["path"]) for d in done.json()["data"]["details"]] == [("not_stored", "input.notes")]
-    assert served.crm.calls == [] and "notes" not in _rows(served.tasks)["t-1"]
+    done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "notes": "ours"}}})
+    assert done.status_code == 200, done.text
+    assert served.crm.calls == []
+    served.crm.put("T-1", title="Call Acme back", status="DONE", deal_ids=["OPP-1"])
+    await served.tasks.pull()
+    assert (_rows(served.tasks)["t-1"]["notes"], _rows(served.tasks)["t-1"]["status"]) == ("ours", "DONE")
+
+
+async def test_a_record_gone_from_the_system_keeps_a_row_that_holds_our_own_fields(served):
+    await _seed(served)
+    served.crm.put("T-2", title="Write the plan", status="TODO")
+    await served.tasks.pull()
+    row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
+    await served.tasks.put("t-1", {"input": {**row["input"], "notes": "met them twice"}})
+    served.crm.records.clear()
+    done = await served.tasks.pull()
+    assert done["gone"] == ["t-1"]
+    assert set(_rows(served.tasks)) == {"t-1"} and _rows(served.tasks)["t-1"]["notes"] == "met them twice"
 
 
 async def test_the_same_write_from_python_goes_out_too_but_only_the_server_sends_it(served, monkeypatch):
@@ -411,7 +425,7 @@ async def test_a_row_takes_its_records_id_so_links_hold_on_every_machine(served)
     row = next(r for r in served.tasks.query()["rows"] if r["input"]["crm_id"] == crm_id)
     assert row["id"] == crm_id and row["ref"].endswith(f".id.{crm_id}")
     other = Dataset(id=str(uuid.uuid4()), name="tasks-elsewhere", asset_ref=served.tasks.asset_ref, data_layout="io_folder",
-                    spec=served.tasks.spec, location=served.tasks.location)
+                    spec=served.tasks.spec, data_source="crm")
     await other.pull()
     assert next(r for r in other.query()["rows"] if r["input"]["crm_id"] == crm_id)["id"] == crm_id
     assert next(r for r in other.query()["rows"] if r["key"] == "t-1")["id"] != crm_id      # "T-1" is no uuid: minted
@@ -428,3 +442,18 @@ async def test_a_write_reads_the_whole_system_once_and_never_after(served):
     assert done.status_code == 200, done.text
     assert served.crm.listed == before + 1 and served.crm.calls == [("update", "T-1", {"status": "DONE"})]
     assert _rows(served.tasks)["t-1"]["status"] == "DONE"
+
+
+async def test_a_script_write_of_truth_fields_is_refused_in_bulk_too(served):
+    """Outside the server no write reaches the system: a bulk write that changes a truth field is refused
+    whole (``owned``); one that touches only the row's own fields is written."""
+    from flow_sdk.builtin.dataset import LinkError
+
+    await _seed(served)
+    row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
+    for write in (served.tasks.put_many, served.tasks.sync):
+        with pytest.raises(LinkError) as refused:
+            await write([{"key": "t-1", "input": {**row["input"], "status": "DONE"}}])
+        assert {d["code"] for d in refused.value.details} == {"owned"}
+    await served.tasks.put_many([{"key": "t-1", "input": {**row["input"], "notes": "ours"}}])
+    assert _rows(served.tasks)["t-1"]["notes"] == "ours" and served.crm.calls == []

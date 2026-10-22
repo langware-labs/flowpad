@@ -88,7 +88,7 @@ async def test_relabelling_a_typed_gold_replaces_it(tmp_path):
     (eid,) = await d.append([{"input": {"utterance": "open it"}, "ground_truth": {"route": "quick", "target": "a"}}])
     await d.annotate(eid, {"route": "quick", "target": "b"})
     assert d.row(eid)["ground_truth"] == {"route": "quick", "target": "b"}
-    assert sorted(p.name for p in (tmp_path / "rows/0001/ground_truth").iterdir()) == ["verdict.json"]
+    assert sorted(p.name for p in (d._rows_root() / "rows/0001/ground_truth").iterdir()) == ["verdict.json"]
 
 
 async def test_relabelling_with_several_answers_replaces_a_single_gold(tmp_path):
@@ -96,4 +96,4 @@ async def test_relabelling_with_several_answers_replaces_a_single_gold(tmp_path)
     (eid,) = await d.append([{"input": {"utterance": "open it"}, "ground_truth": {"route": "agentic"}}])
     await d.annotate(eid, [{"route": "quick", "target": "a"}, {"route": "quick", "target": "b"}])
     assert d.row(eid)["ground_truth"] == [{"route": "quick", "target": "a"}, {"route": "quick", "target": "b"}]
-    assert not (tmp_path / "rows/0001/ground_truth").exists()
+    assert not (d._rows_root() / "rows/0001/ground_truth").exists()

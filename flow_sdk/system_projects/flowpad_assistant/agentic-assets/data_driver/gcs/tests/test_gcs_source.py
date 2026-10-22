@@ -315,6 +315,5 @@ async def test_rows_under_a_prefix_keep_the_row_files_contract():
     assert set(bucket.objects) == {"elsewhere/x"}                                # nothing outside the prefix moved
 
 
-async def test_a_gcs_location_names_the_bucket_and_the_prefix():
-    assert GcsSource.row_files_target("acme-docs/gtm/leads") == {"bucket": "acme-docs", "prefix": "gtm/leads"}
-    assert GcsSource.row_files_target("gs://acme-docs") == {"bucket": "acme-docs", "prefix": ""}
+async def test_a_dataset_keeps_its_rows_under_the_source_prefix():
+    assert GcsSource.rows_within({"bucket": "acme-docs", "prefix": "gtm"}, "leads") == {"bucket": "acme-docs", "prefix": "gtm/leads"}

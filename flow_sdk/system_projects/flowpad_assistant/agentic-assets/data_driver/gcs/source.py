@@ -183,14 +183,6 @@ class GcsSource(ObjectSource):
         prefix = "/".join(p for p in (str(config.get("prefix") or "").strip("/"), path.strip("/")) if p)
         return {**config, "prefix": prefix}
 
-    @classmethod
-    def row_files_target(cls, target: str) -> dict:
-        """``gcs:<bucket>/<prefix>`` → the bucket and the prefix rows live under."""
-        bucket, _, prefix = str(target).strip().removeprefix("gs://").strip("/").partition("/")
-        if not bucket:
-            raise ValueError("location: gcs:<bucket>/<prefix> names a bucket")
-        return {"bucket": bucket, "prefix": prefix.strip("/")}
-
     def _row_name(self, path: str) -> str:
         prefix = str(self.config.get("prefix") or "").strip("/")
         return f"{prefix}/{path}" if prefix else path
