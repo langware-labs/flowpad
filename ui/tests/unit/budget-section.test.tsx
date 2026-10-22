@@ -152,16 +152,13 @@ const person = (over: Record<string, unknown> = {}) => ({
 
 const idle = { data: undefined, isLoading: false, error: null };
 
-function draw(
-  props: { tab?: OrgTab; teamId?: string | null; name?: string; onDeleted?: () => void; onOpenTeam?: () => void } = {},
-) {
+function draw(props: { tab?: OrgTab; teamId?: string | null; onDeleted?: () => void; onOpenTeam?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter>
       <QueryClientProvider client={client}>
         <OrgView
           orgId={UUID(1)}
-          name={props.name}
           tab={props.tab ?? 'teams'}
           teamId={props.teamId ?? null}
           onTab={vi.fn()}
@@ -366,10 +363,10 @@ describe('OrgView', () => {
   it('shows a plain member the org name and their own teams when budgets are refused', () => {
     h.org.mockReturnValue({ data: undefined, isLoading: false, error: { response: { status: 403 } } });
     h.entities.mockReturnValue({ data: [{ id: UUID(4), name: 'Platform' }], isLoading: false } as never);
-    draw({ name: 'Acme' });
+    draw();
 
     expect(screen.getByTestId('org-unit').getAttribute('data-readonly')).toBe('true');
-    expect(screen.getByTestId('org-name').textContent).toBe('Acme');
+    expect(screen.getByTestId('org-member-heading').textContent).toBe('Your teams');
     expect(screen.getByTestId(`org-member-team-${UUID(4)}`).textContent).toContain('Platform');
     expect(screen.queryByTestId('org-tabs')).toBeNull();
     expect(screen.queryByTestId('org-total-cap')).toBeNull();

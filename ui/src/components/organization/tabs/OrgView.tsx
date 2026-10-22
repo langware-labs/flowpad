@@ -3,7 +3,7 @@
  *
  * Every control is gated on what the hub says the caller may press (`can_*` on the budgets read),
  * never on a role read here. A caller the budgets read refuses (a plain member, 401/403) gets
- * `MemberOrgCard`: the org's name and the teams they are on, no money and no tabs.
+ * `MemberOrgCard`: the teams they are on, no money and no tabs (the page header names the org).
  */
 import { QueryRequest, Team } from '@sdk';
 import { Users } from 'lucide-react';
@@ -30,7 +30,6 @@ function statusOf(error: unknown): number | null {
 
 export function OrgView({
   orgId,
-  name,
   tab,
   teamId,
   onTab,
@@ -39,7 +38,6 @@ export function OrgView({
   onDeleted,
 }: {
   orgId: string;
-  name?: string;
   tab: OrgTab;
   teamId: string | null;
   onTab: (tab: OrgTab) => void;
@@ -54,11 +52,7 @@ export function OrgView({
 
   if (error) {
     const status = statusOf(error);
-    return status === 401 || status === 403 ? (
-      <MemberOrgCard name={name} />
-    ) : (
-      <Unreadable onRetry={() => void refetch()} />
-    );
+    return status === 401 || status === 403 ? <MemberOrgCard /> : <Unreadable onRetry={() => void refetch()} />;
   }
   if (isLoading) return <Loading label={<Trans>Loading budgets…</Trans>} />;
   if (!data?.org) return <Unreadable onRetry={() => void refetch()} />;
@@ -110,20 +104,18 @@ export function OrgView({
 }
 
 /**
- * What a plain MEMBER sees: the org's name and the teams they are on. The team query is scoped to
+ * What a plain MEMBER sees: the teams they are on. The team query is scoped to
  * the caller by the hub, so it answers with THEIR teams. No money, no controls.
  */
-function MemberOrgCard({ name }: { name?: string }) {
-  const { t } = useLingui();
+function MemberOrgCard() {
   const teamsQuery = useMemo(() => new QueryRequest({ type: Team.type, query: {} }), []);
   const { data: teams, isLoading } = useEntitiesQuery<Team>(teamsQuery);
   const mine = Array.isArray(teams) ? teams : [];
   return (
     <section className="rounded-lg border border-border" data-testid="org-unit" data-readonly="true">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-lg font-semibold" data-testid="org-name">
-          {name || t`Organization`}
-        </h2>
+      {/* The page header already names the organization; the card says what this is. */}
+      <div className="border-b border-border px-4 py-3 text-sm font-semibold" data-testid="org-member-heading">
+        <Trans>Your teams</Trans>
       </div>
       <div className="px-4 py-3" data-testid="org-member-teams">
         {isLoading ? (
