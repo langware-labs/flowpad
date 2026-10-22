@@ -2,9 +2,15 @@ import * as React from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronRight, Circle } from 'lucide-react';
 
+import { useIframeDismissibleOpen } from '@src/hooks/use-close-on-iframe-focus';
 import { cn } from '../../lib/utils';
 
-const DropdownMenu = DropdownMenuPrimitive.Root;
+/** Closes on a press inside a web app tab's iframe too, which Radix's own
+ *  outside-press dismissal never sees. */
+function DropdownMenu(props: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  const state = useIframeDismissibleOpen(props);
+  return <DropdownMenuPrimitive.Root {...props} {...state} />;
+}
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 

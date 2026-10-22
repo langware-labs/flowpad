@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * Close an open overlay when focus moves into an iframe (a web app tab's
@@ -16,4 +16,31 @@ export function useCloseOnIframeFocus(open: boolean, close: () => void): void {
     window.addEventListener('blur', onWindowBlur);
     return () => window.removeEventListener('blur', onWindowBlur);
   }, [open, close]);
+}
+
+/**
+ * Open state for an overlay root that also closes on a press inside an iframe.
+ * Honours a caller's controlled `open`/`onOpenChange`; owns the state otherwise.
+ */
+export function useIframeDismissibleOpen({
+  open: controlled,
+  defaultOpen = false,
+  onOpenChange,
+}: {
+  open?: boolean;
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [own, setOwn] = useState(defaultOpen);
+  const open = controlled ?? own;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      setOwn(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange],
+  );
+  const close = useCallback(() => setOpen(false), [setOpen]);
+  useCloseOnIframeFocus(open, close);
+  return { open, onOpenChange: setOpen };
 }
