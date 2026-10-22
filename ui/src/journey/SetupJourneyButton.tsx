@@ -4,10 +4,12 @@ import { Trans } from '@lingui/react/macro';
 import { Journey } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useJourneys } from './use-journey';
 
-/** The shipped "Set up GitHub" journey (graph.json id — a stable v5 of
- *  "flowpad:journey:setup-github", minted backend-side). */
-export const SETUP_GITHUB_JOURNEY_ID = 'e485cbde-7d23-5a7f-aaf0-852ecdf754bb';
+/** The shipped "Set up GitHub" journey, named by its asset folder. A journey's id
+ *  is minted per install (its identity capsule is not shipped), so it is looked up
+ *  by this name, never hardcoded. */
+export const SETUP_GITHUB_JOURNEY = 'setup-github';
 
 /**
  * Launch-and-show for a capability-gated journey: POST launch (the backend
@@ -18,19 +20,22 @@ export const SETUP_GITHUB_JOURNEY_ID = 'e485cbde-7d23-5a7f-aaf0-852ecdf754bb';
  * error the user needs to see.
  */
 export function SetupJourneyButton({
-  journeyId,
+  journey,
   size = 'sm',
   variant = 'outline',
   children,
 }: {
-  journeyId: string;
+  journey: string;
   size?: 'sm' | 'default';
   variant?: 'outline' | 'default' | 'ghost';
   children?: React.ReactNode;
 }) {
   const { navigation } = useDockNavigation();
   const [busy, setBusy] = useState(false);
+  const { data: journeys } = useJourneys();
+  const journeyId = journeys?.find((j) => j.asset_ref?.split(/[\\/]/).pop() === journey)?.id;
   const launch = useCallback(async () => {
+    if (!journeyId) return;
     setBusy(true);
     try {
       const journal = await new Journey({ id: journeyId }).launch();
@@ -44,10 +49,10 @@ export function SetupJourneyButton({
       type="button"
       size={size}
       variant={variant}
-      disabled={busy}
+      disabled={busy || !journeyId}
       onClick={() => void launch()}
       className="h-7 gap-1.5 px-2.5 text-xs"
-      data-testid={`setup-journey-${journeyId}`}
+      data-testid={`setup-journey-${journey}`}
     >
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Compass className="h-3 w-3" />}
       {children ?? <Trans>Set up</Trans>}
