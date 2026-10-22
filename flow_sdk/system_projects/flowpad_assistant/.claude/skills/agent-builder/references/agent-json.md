@@ -40,6 +40,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `mcp_servers` | MCP servers to attach, copied into the agent's folder at launch | yes | all |
 | `additional_dirs` | Extra folders the worker may read (`--add-dir`) | yes | all |
 | `load_flowpad_assistant` | Give the worker the Flowpad Assistant's skills | yes | all |
+| `assistant_skills` | Which of those skills it gets, by folder name (`["web-app-builder", "web-tester"]`). Leave it out for all of them | yes | all |
 | `cli_options` | Vendor CLI keys passed through as-is | yes | all |
 | `intro` | Welcome text shown at the top of the chat — **the model never sees it** | yes | chat |
 | `intro_translations` | `intro` in other languages, keyed by locale code (`he`, `ar`, `en-US`); the chat shows the active locale's entry, else `intro` | yes | chat |

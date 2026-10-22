@@ -3312,6 +3312,8 @@ msgstr "جميع الأصول المنشورة"
 msgid "All runs"
 msgstr "كل عمليات التشغيل"
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
 msgstr "جميع المهارات"
@@ -16189,6 +16191,10 @@ msgstr "جاري تحميل الجلسات..."
 #: src/components/settings-view/SettingsView.tsx
 msgid "Loading settings..."
 msgstr "جاري تحميل الإعدادات..."
+
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+msgid "Loading skills…"
+msgstr "جارٍ تحميل المهارات…"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Loading spec…"

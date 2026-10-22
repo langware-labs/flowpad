@@ -72,6 +72,8 @@ class AgentSpec(AssetDocumentSpec):
     subagents: Optional[list[str]] = None
     additional_dirs: Optional[list[str]] = None
     load_flowpad_assistant: Optional[bool] = None
+    #: Which of the assistant's skills to load, by folder name. Unset = all of them.
+    assistant_skills: Optional[list[str]] = None
     chief_of_staff: Optional[bool] = None
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
