@@ -131,7 +131,6 @@ export function OrganizationPage() {
       <OrgView
         key={selected.id}
         orgId={selected.id}
-        name={selected.name}
         tab={route.tab}
         teamId={route.teamId}
         onTab={route.setTab}
