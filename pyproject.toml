@@ -115,6 +115,10 @@ include = ["flow_sdk*"]
 "flow_sdk" = [
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
+    # A skill's template is copied verbatim into a user's project, dotfiles too (`.env.example`,
+    # `.gitignore`, `.github/`) — and glob's `*` never matches a name that starts with a dot.
+    "system_projects/**/.claude/skills/*/template*/**/.*",
+    "system_projects/**/.claude/skills/*/template*/**/.*/**/*",
     "server/static/**/*",
     # Builtin asset editors (SDK apps declared through TypeMetadata.editors).
     "assets/editors/**/*",

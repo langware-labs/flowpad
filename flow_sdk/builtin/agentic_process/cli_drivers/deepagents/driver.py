@@ -162,6 +162,8 @@ class DeepAgentsDriver:
         assets: "AssetDir",
         process_id: str,
         events: "Sequence[HookEventType]",
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         if events:
             raise NotImplementedError("the deepagents worker has no process hook channel")

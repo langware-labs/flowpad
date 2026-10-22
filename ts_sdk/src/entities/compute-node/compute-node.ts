@@ -36,7 +36,7 @@ import {
   type WorkspaceReady,
   IComputeNode,
 } from './compute-node-types';
-import type { MachineStatus, ProcessInfo } from './machine-status';
+import type { ComputeNodeSize, MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
 import type { NodeHealth } from '../service-endpoint';
@@ -101,6 +101,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   node_provider_type?: ComputeProviderType;
   node_provider_id?: string;
   node_config?: Record<string, unknown>;
+  node_size?: ComputeNodeSize;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
   auto_login?: boolean;
@@ -130,6 +131,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.node_provider_type = entity.node_provider_type;
     this.node_provider_id = entity.node_provider_id;
     this.node_config = entity.node_config;
+    this.node_size = entity.node_size;
     this.fs_storage_mount_path = entity.fs_storage_mount_path ?? undefined;
     this.home_dir = entity.home_dir ?? undefined;
     // Declaring these as class fields is NOT enough to carry them. Under the
