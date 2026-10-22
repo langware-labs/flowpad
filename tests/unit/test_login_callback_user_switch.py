@@ -118,3 +118,65 @@ def test_a_refused_next_still_lands_in_the_app(client, finalize_login):
 
     assert (refused.status_code, refused.headers["location"]) == (302, "/")
     assert (followed.status_code, followed.headers["location"]) == (302, "/dock/home?action=launch&target=p1")
+
+
+# ── the owner guard: only the gate-secret holder (the hub) may switch/re-arm ──
+# A door-passer (ticket/grant) reaches login_callback with a valid key but NOT the
+# raw secret. Switching the logged-in identity or re-arming the gate for such a
+# caller is a full box takeover, so both are refused unless the box is clean or the
+# caller presents the current secret as the machine header.
+
+
+def _armed(secret: str | None):
+    return patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value=secret)
+
+
+@pytest.fixture
+def set_cookie_gate():
+    with patch("flow_sdk.instance_settings.cookie_gate.set_cookie", new=lambda *_a, **_k: None) as spy:
+        yield spy
+
+
+def test_switch_without_the_gate_secret_is_refused(client, finalize_login, clear_user_data):
+    """user-2 reaches an Alice-owned, armed box with a valid key but no secret → 403, nothing mutated."""
+    with _validate_returns("user-2"), _current_user("user-1"), _armed("alice-secret"):
+        resp = _callback(client)
+
+    assert resp.status_code == 403
+    clear_user_data.assert_not_awaited()
+    finalize_login.assert_not_awaited()
+
+
+def test_switch_with_the_gate_secret_is_allowed(client, finalize_login, clear_user_data):
+    """The hub drives the same switch carrying the secret header → it proceeds (purge+finalize)."""
+    with _validate_returns("user-2"), _current_user("user-1"), _armed("alice-secret"):
+        resp = client.get(
+            "/auth/login_callback",
+            params={"flowpad-api-key": "k"},
+            headers={"x-cookie-gate": "alice-secret"},
+            follow_redirects=False,
+        )
+
+    assert resp.status_code != 403
+    clear_user_data.assert_awaited_once()
+    finalize_login.assert_awaited_once()
+
+
+def test_rearm_to_a_different_secret_without_the_current_one_is_refused(
+    client, finalize_login, set_cookie_gate
+):
+    """Same user, but re-pointing the gate to a new secret without proving the current one → 403."""
+    with _validate_returns("user-1"), _current_user("user-1"), _armed("alice-secret"):
+        resp = _callback(client, **{"cookie-gate": "attacker-secret"})
+
+    assert resp.status_code == 403
+    finalize_login.assert_not_awaited()
+
+
+def test_clean_box_first_login_needs_no_secret(client, finalize_login, set_cookie_gate):
+    """A clean box (no user, no gate) takes a first login and arms its gate with no secret — the real open."""
+    with _validate_returns("user-1"), _current_user(None), _armed(None):
+        resp = _callback(client, **{"cookie-gate": "fresh-secret"})
+
+    assert resp.status_code != 403
+    finalize_login.assert_awaited_once()

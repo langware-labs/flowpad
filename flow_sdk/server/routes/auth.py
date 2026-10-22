@@ -31,6 +31,20 @@ router = APIRouter(prefix="/auth")
 logger = logging.getLogger(__name__)
 
 
+def _carries_gate_secret(request: Request, secret: str | None) -> bool:
+    """Whether the request presents the box's current gate SECRET as the machine header.
+
+    HEADER ONLY, on purpose: a grant cookie or a ticket query also passes the gate
+    middleware, but neither is the raw secret, so neither may authorize a hub-hop
+    mutation (revoke, or an identity switch / gate re-arm in ``login_callback``). The
+    secret is read by the caller so an "is it armed" test can share the one read.
+    """
+    from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+
+    presented = request.headers.get(HEADER_NAME) or ""
+    return bool(secret) and compare_digest(presented, secret)
+
+
 @router.get("/oauth/complete", response_class=HTMLResponse)
 async def oauth_complete(state: str = Query(""), provider: str = Query("")):
     """Where the hub returns the browser after it stored a grant — the default flow's end.
@@ -147,12 +161,9 @@ async def revoke(request: Request):
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
     from flow_sdk.responses.response import ApiSuccessResponse
     from flow_sdk.server import grants
-    from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
     from flow_sdk.server.service_serving import fail
 
-    secret = get_cookie_gate()
-    presented = request.headers.get(HEADER_NAME) or ""
-    if not secret or not compare_digest(presented, secret):
+    if not _carries_gate_secret(request, get_cookie_gate()):
         return fail(403, "the hub's hop only")
     body = await request.json()
     caller = body.get("caller") if isinstance(body, dict) else None
@@ -174,6 +185,7 @@ def _gate_next(candidate: str | None, linked_with_token: bool) -> str:
 
 @router.get("/login_callback", response_class=HTMLResponse)
 async def login_callback(
+    request: Request,
     flowpad_api_key: str = Query(None, alias="flowpad-api-key"),
     next: str = Query(None),
     cookie_gate: str = Query(None, alias="cookie-gate"),
@@ -237,6 +249,37 @@ async def login_callback(
             return RedirectResponse(url=f"/electron/keychain-approval?{qs}", status_code=302)
 
         user_info = await validate_api_key_async(flowpad_api_key)
+
+        # Only the hub may turn an ALREADY-OWNED box over. Switching the logged-in
+        # identity or re-arming the gate is a hub-driven act — the hub reaches this
+        # route over loopback carrying the gate SECRET as the machine header (see
+        # `_configure_box`), exactly as `/auth/revoke` requires. A browser that merely
+        # passed the door holds a ticket or grant, NOT the raw secret. A CLEAN box (no
+        # user, no gate) still takes a first login with no secret — the real open. Only
+        # an ARMED box needs protecting: an unarmed box has no public gate (the sandbox
+        # middleware refuses every outside caller when no secret is set), so a switch
+        # there is the local/first-login/shared-reclaim path. Without this a second
+        # principal who reached the public URL could log the owner out and re-arm the
+        # gate to their own secret — a full takeover.
+        from flow_sdk.cli.app_config import get_user
+        from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+
+        armed = get_cookie_gate()
+        current = get_user()
+        incoming_id = user_info["id"]
+        switching = current and current.get("id") != incoming_id
+        rearming = cookie_gate and cookie_gate != armed
+        if armed and (switching or rearming) and not _carries_gate_secret(request, armed):
+            logger.warning("login_callback: refused switch/re-arm without the gate secret")
+            return _render_result_page(
+                title="Login Failed",
+                heading="Not permitted",
+                subheading="This box is already in use.",
+                detail_html="",
+                color="#ef4444",
+                icon="✗",
+                status_code=403,
+            )
 
         # A shared sandbox has exactly one logged-in identity for the whole
         # instance — see `purge_outgoing_user_if_switching` for the shared
