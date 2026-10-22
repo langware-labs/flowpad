@@ -23,6 +23,7 @@ import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { HubSummaryLine } from './HubSummaryLine';
+import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
@@ -384,6 +385,9 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
               </p>
               <HubSummaryLine />
             </div>
+
+            {/* First agent: describe → its own sandbox + a channel → it answers. */}
+            <FirstAgentCard />
 
             {/* Projects other people gave you — the way from here to FlowPad. */}
             <SharedProjectsBanner projects={sharedProjects} />
