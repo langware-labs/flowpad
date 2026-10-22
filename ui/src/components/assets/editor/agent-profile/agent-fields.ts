@@ -20,6 +20,7 @@ export type AgentDocumentPatch = Partial<
     | 'subagents'
     | 'additional_dirs'
     | 'load_flowpad_assistant'
+    | 'assistant_skills'
     | 'chief_of_staff'
     | 'cli_options'
     | 'enabled'

@@ -28,7 +28,7 @@ import { Input } from '@src/components/ui/input';
 import type { DependencyKind } from '@src/hooks/use-project-dependencies';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { errorMessage } from '@src/lib/error-message';
-import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
@@ -246,7 +246,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
                     <Github className="me-1.5 h-3 w-3" />
                     <Trans>Connect</Trans>
                   </Button>
-                  <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID} variant="ghost">
+                  <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
                     <Trans>Guided setup</Trans>
                   </SetupJourneyButton>
                 </div>
@@ -337,11 +337,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
               <Trans>Cancel</Trans>
             </Button>
-            <Button
-              onClick={() => void submit()}
-              disabled={!url.trim() || busy}
-              data-testid="add-helpdesk-submit"
-            >
+            <Button onClick={() => void submit()} disabled={!url.trim() || busy} data-testid="add-helpdesk-submit">
               {busy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
               <Trans>Add help desk</Trans>
             </Button>
@@ -427,8 +423,8 @@ function HelpdeskResult({
               </span>
               <span className="text-xs text-muted-foreground">
                 <Trans>
-                  It was added as an ordinary package instead, so agents can still read it. Remove it if
-                  that is not what you wanted.
+                  It was added as an ordinary package instead, so agents can still read it. Remove it if that is not
+                  what you wanted.
                 </Trans>
               </span>
             </>
@@ -441,8 +437,8 @@ function HelpdeskResult({
               </span>
               <span className="text-xs text-muted-foreground">
                 <Trans>
-                  Its manifest has no usable desk id, so requests would go to the default desk rather than to
-                  this one. The repository's publisher needs to fix it.
+                  Its manifest has no usable desk id, so requests would go to the default desk rather than to this one.
+                  The repository's publisher needs to fix it.
                 </Trans>
               </span>
             </>

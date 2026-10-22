@@ -10,7 +10,7 @@ import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { hasGitHubRepoAccess } from '@src/utils/gitUtils';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -262,7 +262,7 @@ export function NewProjectFromGitDialog({
                   <Github className="me-1.5 h-3 w-3" />
                   <Trans>Connect</Trans>
                 </Button>
-                <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID} variant="ghost">
+                <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
                   <Trans>Guided setup</Trans>
                 </SetupJourneyButton>
               </div>

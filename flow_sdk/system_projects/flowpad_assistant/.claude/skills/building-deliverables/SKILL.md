@@ -49,6 +49,12 @@ which proves every change in a throwaway probe project before it touches theirs.
 server is up: `flow show webapp --port <port>` — the port the dev server actually
 reported, never an assumed one.
 
+**A small app that saves its own data, wanted working fast** — a learner or classroom
+project, a quick prototype, a list / quiz / poll / guestbook / scoreboard → the
+**light-web-app-builder** skill: one Python server, SQLite, plain pages, up in seconds with
+no Node or database server. Reach for `web-app-builder` instead only when the app needs real
+sign-ups, Postgres or a Vercel deploy.
+
 **Mock of a user journey / UX flow** ("mock this flow", "show me the UX", "prototype the
 journey", "clickable mock" — screens to react to before anything is built) → the **mockify**
 skill. It owns the journey bar, the fast and real (captured from the running app) modes, and

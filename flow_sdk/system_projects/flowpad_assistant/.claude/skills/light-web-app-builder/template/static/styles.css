@@ -1,0 +1,66 @@
+/* The app's own styles, on top of Basecoat (vendor/basecoat.min.css).
+   Basecoat styles the components (.btn, .card, .input, .badge …) and defines the shadcn
+   design tokens. Use the tokens here instead of fixed colours, so a theme change or dark
+   mode (class="dark" on <html>) restyles everything at once:
+   var(--background) var(--foreground) var(--primary) var(--muted) var(--muted-foreground)
+   var(--border) var(--destructive) var(--radius) */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* ── layout ── */
+.page {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+  display: grid;
+  gap: 1.5rem;
+}
+.page-header h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── text ── */
+.muted {
+  color: var(--muted-foreground);
+}
+.error {
+  color: var(--destructive);
+  margin-top: 0.5rem;
+}
+.done {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+/* ── a list of rows ── */
+.list {
+  display: grid;
+}
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.list-row:last-child {
+  border-bottom: 0;
+}
+
+[x-cloak] {
+  display: none !important;
+}

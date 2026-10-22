@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import type { GitCheck } from '@src/components/project-home/ProjectGitChip';
 
 interface ProjectGitChecksDialogProps {
@@ -68,13 +68,13 @@ function RowFix({
   switch (check.id) {
     case 'installed':
       return (
-        <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+        <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY}>
           <Trans>Install gh</Trans>
         </SetupJourneyButton>
       );
     case 'logged-in':
       return (
-        <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+        <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY}>
           <Trans>Sign in</Trans>
         </SetupJourneyButton>
       );
@@ -110,12 +110,7 @@ function CheckMark({ ok }: { ok: boolean | null }) {
 
 /** Git readiness for this project as a checklist, each failing row carrying the
  *  fix for its own step. */
-export function ProjectGitChecksDialog({
-  open,
-  onOpenChange,
-  checks,
-  onSetupRepo,
-}: ProjectGitChecksDialogProps) {
+export function ProjectGitChecksDialog({ open, onOpenChange, checks, onSetupRepo }: ProjectGitChecksDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg" data-testid="project-git-checks-dialog">
@@ -130,11 +125,7 @@ export function ProjectGitChecksDialog({
 
         <ul className="flex flex-col gap-3 py-1" data-testid="project-git-checks-list">
           {checks.map((check) => (
-            <li
-              key={check.id}
-              className="flex items-start justify-between gap-3"
-              data-testid={`git-check-${check.id}`}
-            >
+            <li key={check.id} className="flex items-start justify-between gap-3" data-testid={`git-check-${check.id}`}>
               <span className="flex min-w-0 items-start gap-2.5">
                 <span className="mt-0.5">
                   <CheckMark ok={check.ok} />
@@ -143,9 +134,7 @@ export function ProjectGitChecksDialog({
                   <span className={check.ok === false ? 'text-foreground' : 'text-muted-foreground'}>
                     {check.label}
                   </span>
-                  {check.detail && (
-                    <span className="block text-xs text-muted-foreground/80">{check.detail}</span>
-                  )}
+                  {check.detail && <span className="block text-xs text-muted-foreground/80">{check.detail}</span>}
                 </span>
               </span>
               <RowFix check={check} onSetupRepo={onSetupRepo} onDone={() => onOpenChange(false)} />

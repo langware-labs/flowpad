@@ -3342,6 +3342,8 @@ msgstr "All published assets"
 msgid "All runs"
 msgstr "All runs"
 
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
 #: src/navigation/record-type-nav.ts
 msgid "All skills"
 msgstr "All skills"
@@ -16327,6 +16329,10 @@ msgstr "Loading sessions..."
 #: src/components/settings-view/SettingsView.tsx
 msgid "Loading settings..."
 msgstr "Loading settings..."
+
+#: src/components/assets/editor/agent-profile/AgentAssistantSkillsField.tsx
+msgid "Loading skills…"
+msgstr "Loading skills…"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Loading spec…"
