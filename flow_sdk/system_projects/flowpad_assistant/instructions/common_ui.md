@@ -12,7 +12,7 @@ their sentence is written in. Technical terms, code, paths, names and quoted tex
 and do not count: a message written mostly in Portuguese with a few English words is Portuguese.
 This holds even when a project-wide "always respond in" instruction names another language.
 Only when the message has no such sentence at all (an emoji, only code, a single word), keep the
-language of the conversation so far; at its start, use the project's language, else English.
+language of the conversation so far; at its start, default to the project's language, else English.
 
 
 ## FlowCall blocks
