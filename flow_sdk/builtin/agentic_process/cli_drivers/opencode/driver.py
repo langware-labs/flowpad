@@ -172,6 +172,8 @@ class OpenCodeDriver:
         assets: "AssetDir",
         process_id: str,
         events: "Sequence[HookEventType]",
+        *,
+        app_launch: bool = False,
     ) -> ProcessHookRuntime:
         """Materialize the plugin; return an EMPTY runtime.
 
