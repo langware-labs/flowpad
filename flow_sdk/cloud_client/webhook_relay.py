@@ -15,14 +15,17 @@ import base64
 import logging
 from collections import OrderedDict
 
+from flow_sdk.instance_settings import cookie_gate
+
 logger = logging.getLogger(__name__)
 
 #: Delivery ids handled here → the status this app answered. Bounded: the hub re-pushes only what it has not
 #: had acked, which is a handful at a time.
 _HANDLED: "OrderedDict[str, int]" = OrderedDict()
 _HANDLED_CAP = 512
-#: Hop-by-hop headers the local request makes for itself.
-_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection"})
+#: Hop-by-hop headers the local request makes for itself, plus any cookie on the delivery. A gate header on
+#: it is replaced by this app's own token (``CookieGateAuthHttpx``).
+_DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie"})
 #: Replays in flight, held so the loop never collects one mid-flight (and a test can await).
 _tasks: "set[asyncio.Task]" = set()
 
@@ -55,14 +58,13 @@ async def _replay(message: dict) -> int:
     import httpx  # noqa: PLC0415
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-
     path = "/" + str(message.get("path") or "").lstrip("/")
     query = str(message.get("query") or "")
     url = f"http://127.0.0.1:{get_instance_settings().port}{path}" + (f"?{query}" if query else "")
     headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in _DROP]
     try:
         body = base64.b64decode(str(message.get("body_b64") or ""))
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0), auth=cookie_gate.CookieGateAuthHttpx()) as client:
             resp = await client.request(str(message.get("method") or "POST"), url, headers=headers, content=body)
         return resp.status_code
     except Exception as exc:  # noqa: BLE001 — an unreachable route is a status, the hub keeps the delivery

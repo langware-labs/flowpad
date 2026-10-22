@@ -26,6 +26,8 @@ export default mergeConfig(
   resolvedViteConfig,
   defineConfig({
     test: {
+      // Every backend a test spawns inherits this: the tests' requests carry no cookie-gate token.
+      env: { FLOWPAD_COOKIE_GATE: 'off' },
       testTimeout: 240000, // 4 min — real Claude subprocess tests
       hookTimeout: 15000,
       include: ['tests/long_tests/**/*.test.{ts,tsx}', 'tests/api/**/*.test.{ts,tsx}'],

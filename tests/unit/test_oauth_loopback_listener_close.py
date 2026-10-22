@@ -73,7 +73,9 @@ async def test_the_listener_forwards_to_the_one_completion_and_closes():
     await asyncio.wait_for(asyncio.shield(session.callback_server), timeout=5)
 
     assert response.status_code == 302
-    assert response.headers["location"].endswith("/auth/oauth/callback?code=c1&state=fwd")
+    location = httpx.URL(response.headers["location"])
+    assert location.path == "/auth/oauth/callback"
+    assert (location.params["code"], location.params["state"]) == ("c1", "fwd")
     assert not _listening(port)
 
 
