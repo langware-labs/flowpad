@@ -100,7 +100,7 @@ describe('SEED_BY_SCOPE', () => {
   it('mirrors the hub: a ceiling on the org, the cheap tier below it', () => {
     expect(SEED_BY_SCOPE.org).toEqual(['anthropic/claude-*', 'openai/*']);
     expect(SEED_BY_SCOPE.person).toEqual([
-      'anthropic/claude-haiku-4.5',
+      'anthropic/claude-haiku-5.5',
       'openai/gpt-5-mini',
       'openai/text-embedding-3-small',
     ]);
@@ -125,7 +125,7 @@ describe('SEED_BY_SCOPE', () => {
     // `CLAUDE_API_AUTH_SPEC` asks for anthropic/claude-*, `CODEX_API_AUTH_SPEC` for openai/gpt-5*.
     // A pin nothing requests is a wallet that refuses every call it was created to serve — which is
     // exactly what `openai/codex-mini-latest` would have been: no slug in this repo names it.
-    expect(SEED_BY_SCOPE.person).toContain('anthropic/claude-haiku-4.5');
+    expect(SEED_BY_SCOPE.person).toContain('anthropic/claude-haiku-5.5');
     expect(SEED_BY_SCOPE.person).toContain('openai/gpt-5-mini');
   });
 });
@@ -200,15 +200,15 @@ describe('DEFAULT_MODELS', () => {
     // The embedding model is there so a person's wallet can fund a RAG index; it is its own
     // family (`openai/text-*`), so it never captures a chat request.
     expect(DEFAULT_MODELS).toEqual([
-      'anthropic/claude-haiku-4.5',
+      'anthropic/claude-haiku-5.5',
       'openai/gpt-5-mini',
       'openai/text-embedding-3-small',
     ]);
     // The narrowness is only safe BECAUSE the other tiers redirect onto it — and a redirect never
     // crosses vendors, so Claude Code and codex each land on the model of their own family.
     expect(aliasesForPinnedModel(DEFAULT_MODELS)).toEqual({
-      'anthropic/claude-*': 'anthropic/claude-haiku-4.5',
-      'claude-*': 'anthropic/claude-haiku-4.5',
+      'anthropic/claude-*': 'anthropic/claude-haiku-5.5',
+      'claude-*': 'anthropic/claude-haiku-5.5',
       'openai/gpt-*': 'openai/gpt-5-mini',
       'gpt-*': 'openai/gpt-5-mini',
       'openai/text-*': 'openai/text-embedding-3-small',
