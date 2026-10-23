@@ -237,7 +237,7 @@ async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, updat
     if not fetch:
         raise _NotReady("missing", "not on this machine yet — sync to fetch it")
     try:
-        row = await HubProxy.get_or_raise(BuiltinEntityType.PROJECT, project_id)
+        row = await HubProxy.call("GET", BuiltinEntityType.PROJECT, project_id)
     except HubError as exc:
         from flow_sdk.dependencies.resolve import hub_reason  # noqa: PLC0415
 

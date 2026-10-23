@@ -50,7 +50,7 @@ def _fake_fm(*, is_complete: bool) -> MagicMock:
 @pytest.mark.parametrize("status", [BodyStatus.NA, BodyStatus.UPLOADING, "na", "uploading"])
 async def test_skips_hub_get_when_not_ready(status) -> None:
     """NA / UPLOADING (enum or raw hub string) → no hub GET, returns False."""
-    with patch.object(HubProxy, "get", AsyncMock()) as mock_get:
+    with patch.object(HubProxy, "download", AsyncMock()) as mock_get:
         result = await _download_and_unpack_bundle(
             FM_ID,
             "conversation-deadbeef.flowmsg",
@@ -66,7 +66,7 @@ async def test_proceeds_when_ready() -> None:
     """READY → the hub GET fires (then returns no bytes → False, but it tried)."""
     with patch.object(
         HubProxy,
-        "get",
+        "download",
         AsyncMock(return_value=b""),
     ) as mock_get:
         result = await _download_and_unpack_bundle(
@@ -84,7 +84,7 @@ async def test_proceeds_when_status_omitted() -> None:
     """No body_status supplied → back-compat: proceed (gate is opt-in per caller)."""
     with patch.object(
         HubProxy,
-        "get",
+        "download",
         AsyncMock(return_value=b""),
     ) as mock_get:
         await _download_and_unpack_bundle(FM_ID, "body.flowmsg", hub_updated=None)
@@ -113,12 +113,12 @@ async def test_same_message_downloads_are_serialized() -> None:
         finally:
             active -= 1
 
-    with patch.object(HubProxy, "get", controlled_get):
+    with patch.object(HubProxy, "download", controlled_get):
         first = asyncio.create_task(_download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY))
         await first_entered.wait()
         second = asyncio.create_task(_download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY))
         await asyncio.sleep(0)
-        assert calls == 1, "the second pull must wait outside hub_get/unpack"
+        assert calls == 1, "the second pull must wait outside HubProxy.download/unpack"
         release_first.set()
         assert await asyncio.gather(first, second) == [False, False]
 
@@ -139,7 +139,7 @@ async def test_complete_bundle_is_not_pulled_again() -> None:
     """
     complete = _fake_fm(is_complete=True)
     with (
-        patch.object(HubProxy, "get", AsyncMock()) as mock_get,
+        patch.object(HubProxy, "download", AsyncMock()) as mock_get,
         patch.object(FlowMessage, "get_one", AsyncMock(return_value=complete)),
     ):
         result = await _download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY)
@@ -154,7 +154,7 @@ async def test_short_bundle_is_pulled_again() -> None:
     true there, so gating on it would strand a genuinely incomplete message."""
     short = _fake_fm(is_complete=False)
     with (
-        patch.object(HubProxy, "get", AsyncMock(return_value=b"")) as mock_get,
+        patch.object(HubProxy, "download", AsyncMock(return_value=b"")) as mock_get,
         patch.object(FlowMessage, "get_one", AsyncMock(return_value=short)),
     ):
         await _download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY)
@@ -174,7 +174,7 @@ async def test_settled_update_fans_out_on_every_exit(bundle_bytes) -> None:
     """
     fm = _fake_fm(is_complete=False)
     with (
-        patch.object(HubProxy, "get", AsyncMock(return_value=bundle_bytes)),
+        patch.object(HubProxy, "download", AsyncMock(return_value=bundle_bytes)),
         patch.object(FlowMessage, "get_one", AsyncMock(return_value=fm)),
     ):
         result = await _download_and_unpack_bundle(FM_ID, "body.flowmsg", body_status=BodyStatus.READY)
@@ -188,7 +188,7 @@ async def test_settled_update_fans_out_when_the_unpack_raises() -> None:
     """A conflict propagates to the caller AND still leaves the client settled."""
     fm = _fake_fm(is_complete=False)
     with (
-        patch.object(HubProxy, "get", AsyncMock(return_value=b"zip-bytes")),
+        patch.object(HubProxy, "download", AsyncMock(return_value=b"zip-bytes")),
         patch.object(FlowMessage, "get_one", AsyncMock(return_value=fm)),
         patch(
             "flow_sdk.builtin.flow_message_bundle.unpack_bundle",

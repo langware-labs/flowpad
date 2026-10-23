@@ -241,7 +241,7 @@ async def handle_request(
     # off). Every other hub-bound request never reaches this function (``route_to_hub``).
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
     from flow_sdk.server.routes._hub_reflect import REFLECT_CONTINUE_LOCAL, _reflect_fs_to_hub, should_reflect_to_hub
-    from flow_sdk.utils.hub import HubError
+    from flow_sdk.cloud_client.shared.errors import HubError
 
     entity_for_reflect = kwargs.get("self")
     if entity_for_reflect is None and request_info.auth_result is not None:

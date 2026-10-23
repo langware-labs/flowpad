@@ -1,4 +1,4 @@
-import { PageId, QueryRequest, ViewType } from '@sdk';
+import { PageId, QueryFilter, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -44,8 +44,19 @@ const RAIL_HEADING: Record<string, string> = {
 export function HubRecordsView({ type }: { type?: string }) {
   const { navigation } = useDockNavigation();
 
+  // A conversation its owner deleted stays readable to that owner on the hub (``deleted_at``
+  // set, kept for audit) — it is gone from the Stream Inbox, so the list asks for live rows only.
   const request = useMemo(
-    () => (type ? new QueryRequest({ type, query: null, scope: [], name: `hub-records-${type}` }) : null),
+    () =>
+      type
+        ? new QueryRequest({
+            type,
+            query:
+              type === 'conversation' ? new QueryFilter({ match: { op: '$IS_NULL', operands: ['deleted_at'] } }) : null,
+            scope: [],
+            name: `hub-records-${type}`,
+          })
+        : null,
     [type],
   );
   // Generic list — the concrete entity type is data-driven; we only read `id`
@@ -62,6 +73,9 @@ export function HubRecordsView({ type }: { type?: string }) {
     // type opens in the generic HubEntityView (title + entity-field content).
     if (type === 'conversation') {
       navigation.openPage(PageId.HUB, ViewType.CONVERSATION, row.id);
+    } else if (type === 'organization') {
+      // The Organization screen renders an org; the generic entity view only shows "No content.".
+      navigation.openPage(PageId.HUB, ViewType.ORGANIZATION, `organization/${row.id}`);
     } else {
       navigation.openDock(hubEntityDock(type, row.id));
     }

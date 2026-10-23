@@ -28,6 +28,7 @@ import {
   persistRemoteToLocalMapping,
 } from './apply-project-choice';
 import { useConversation } from './useConversation';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 function conversationHasPrivateProject(conversation: Conversation | null | undefined): boolean {
   if (!conversation) return false;
@@ -137,6 +138,7 @@ export function ConversationRoute() {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const { cloudUser } = useAuth();
+  const hub = isHubOnly();
 
   // Hidden tabs are kept mounted by Radix Tabs (data-[state=inactive]:hidden),
   // so when the URL points at a different view this component still re-renders
@@ -270,14 +272,15 @@ export function ConversationRoute() {
         />
       </div>
       <div className="flex justify-center">
-        {conversation && !conversationHasPrivateProject(conversation) && (
+        {/* A local project and a local worker are the desktop's; the hub page offers neither. */}
+        {!hub && conversation && !conversationHasPrivateProject(conversation) && (
           <ConversationSetProjectButton conversation={conversation} task={task} />
         )}
       </div>
       <div className="flex min-w-0 items-center justify-end gap-2">
         {/* Open-the-session / launch-a-worker — the conversation always shows
             exactly one of the two (never neither). Logged-out skips it. */}
-        {cloudUser && conversation && (
+        {!hub && cloudUser && conversation && (
           <ConversationHeaderSession conversation={conversation} task={task} />
         )}
         {conversation?.id && <ConversationAutomationChip conversationId={String(conversation.id)} />}

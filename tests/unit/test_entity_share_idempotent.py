@@ -46,7 +46,7 @@ def hub_response(monkeypatch):
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}),
+        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}, is_expired=lambda *_a: False),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))

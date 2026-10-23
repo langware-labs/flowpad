@@ -9,25 +9,17 @@ the hub). Used on three paths:
   * invitation accept — the accepted org/team becomes a local membership.
   * live assignment — the Hub pushes the granted container to the recipient.
 
-This mirrors ``_upsert_hub_conversation_metadata`` (the Conversation precedent)
-but keeps container-specific expansion here: organizations and teams need only
-flat metadata, while projects additionally materialize their shared Folder
-references.
+Every path lands the row through the one hub mirror (``Entity.mirror_from_hub``), the same one
+conversations use: the type's declarations say which fields come from the hub.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any, Optional, Type
 
-from pydantic import TypeAdapter
-
-from flow_sdk._compat import UTC
 from flow_sdk.builtin.organization import Organization
-from flow_sdk.core.entity.entity_model import Entity, remote_reflection
-from flow_sdk.db.load_context import lenient_entity_load
-from flow_sdk.fs_store.serializer.hub import HubSerializer
+from flow_sdk.core.entity.entity_model import Entity, mirror_delete
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
 
 logger = logging.getLogger(__name__)
@@ -38,52 +30,6 @@ logger = logging.getLogger(__name__)
 # newly supported container cannot silently work on only one receive path.
 MEMBERSHIP_MIRROR_TYPES: frozenset[str] = MEMBERSHIP_CONTAINER_TYPES
 
-# Flat metadata fields we mirror from the hub payload, when present on the type.
-# ``name`` AND ``title`` both ride: every entity carries both slots on both
-# sides now, so whichever one the type authors arrives verbatim. There is no
-# title→name coercion here — a project's label is ``name`` on the hub too.
-_MIRRORED_FIELDS = (
-    "name",
-    "title",
-    "origin",
-    "helpdesk",
-    "account",
-    "domain",
-    "icon",
-    # The language a project is worked in: a property of the WORK, so a
-    # recipient — a person accepting an invitation, or the box behind a sandbox
-    # handover — opens it in the language its author chose instead of falling
-    # back to English. (Per-device UI state like ``last_mode`` deliberately does
-    # not travel and must not be added here.)
-    "locale",
-    "members",
-    "shared_context_entities",
-)
-
-
-_FIELD_ADAPTERS: dict[tuple[type, str], Any] = {}
-
-
-def _validated_field(cls: Type[Entity], name: str, value: Any) -> Any:
-    """Coerce a raw hub value into the target field's declared type.
-
-    The create path gets this free from ``cls.model_validate``; the update path
-    used to ``setattr`` raw JSON, so a typed field (e.g. ``Project.origin``)
-    ended up holding a dict and every consumer had to re-check. Validate here,
-    at the mirror boundary, and fall back to the raw value if it doesn't fit.
-    """
-    if value is None:
-        return None
-    key = (cls, name)
-    adapter = _FIELD_ADAPTERS.get(key)
-    if adapter is None:
-        adapter = _FIELD_ADAPTERS[key] = TypeAdapter(cls.model_fields[name].annotation)
-    try:
-        return adapter.validate_python(value)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("[membership-sync] %s.%s did not validate: %s", cls.__name__, name, exc)
-        return value
-
 
 async def materialize_remote_membership_entity(
     cls: Type[Entity],
@@ -92,53 +38,15 @@ async def materialize_remote_membership_entity(
     *,
     notify: bool = True,
 ) -> Optional[Entity]:
-    """Upsert a Hub membership-container dict locally (``remote=True``).
+    """Land a hub membership container (organization, team, linked project) here as ``remote``.
 
-    Idempotent: re-running with the same payload is a no-op when nothing
-    changed. Returns the local row, or ``None`` when the payload has no id.
+    The one mirror (``Entity.mirror_from_hub``): the fields the type takes from the hub, by its
+    declarations. Organizations and teams exist only on the hub; a project is local until it is
+    linked, and only then does the hub's row reach it. Idempotent; ``None`` when the row has no id.
     """
     if not isinstance(data, dict):
         return None
-    ent_id = (str(data.get("id") or "")).strip()
-    if not ent_id:
-        return None
-
-    data = HubSerializer.unwire(cls, data)  # the hub's wire names → field names
-    fields = tuple(k for k in _MIRRORED_FIELDS if k in cls.model_fields)
-    existing = await cls.get_one({"id": ent_id})
-    if existing is None:
-        payload: dict[str, Any] = {"id": ent_id, "remote": True}
-        for k in fields:
-            if data.get(k) is not None:
-                payload[k] = data[k]
-        if data.get("created_date") is not None:
-            payload["created_date"] = data["created_date"]
-        if data.get("updated_date") is not None:
-            payload["updated_date"] = data["updated_date"]
-        payload["fetched_at"] = datetime.now(UTC)
-        with lenient_entity_load():
-            ent = cls.model_validate(payload)
-        ent.id = ent_id
-        # Pure reflection of the hub row — preserve created_by/dates verbatim,
-        # never stamp the local sync user.
-        with remote_reflection():
-            ent = await ent.save(someone_typeid, notify=notify)
-        return ent
-
-    changed = False
-    for k in fields:
-        v = _validated_field(cls, k, data.get(k))
-        if v is not None and getattr(existing, k, None) != v:
-            setattr(existing, k, v)
-            changed = True
-    if not existing.remote:
-        existing.remote = True
-        changed = True
-    if changed:
-        existing.fetched_at = datetime.now(UTC)
-        with remote_reflection():
-            await existing.save(someone_typeid, notify=notify)
-    return existing
+    return await cls.mirror_from_hub(data, someone_typeid, notify=notify)
 
 
 async def materialize_remote_organization(
@@ -148,23 +56,33 @@ async def materialize_remote_organization(
 
 
 async def sync_remote_memberships(someone_typeid: str | None = None) -> int:
-    """Mirror every hub organization and team the signed-in user is in, as ``remote=True`` rows.
+    """Bring this box's organizations and teams in line with the hub's list for the signed-in user.
 
-    A container otherwise reaches the desk only through a live membership push (or,
-    for one organization, the login payload), and the hub never replays one — an
-    organization or team created on the web, on another machine, or while this box
-    was offline never arrives, so the surfaces that read local rows only (the share
-    pickers, People & teams) never show it. The catch-up transitions call this to
-    close that hole. Upsert only: a hub delete still arrives as its own push. Returns
-    the number of rows mirrored; ``0`` when the hub is unreachable.
+    A container otherwise reaches the desk only through a live membership push (or, for one
+    organization, the login payload), and the hub never replays one — an organization created on the
+    web or while this box was offline never arrives. Removal is pushed by no one either, so a row the
+    hub no longer lists (the user was removed, or it was deleted) is dropped here. Only when the hub
+    answered: an unreachable hub keeps every row. The catch-up transitions call this. Returns the
+    number of rows mirrored.
     """
     from flow_sdk.builtin.team import Team  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import rows_of  # noqa: PLC0415
 
     mirrored = 0
     for cls in (Organization, Team):
-        for row in rows_of(await HubProxy.get(cls.get_type())):
+        try:
+            rows = rows_of(await HubProxy.call("GET", cls.get_type(), params={"limit": 1000}))
+        except HubError as exc:
+            logger.info("[membership-sync] %s list unavailable, keeping local rows: %s", cls.get_type(), exc)
+            continue
+        listed = {str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id")}
+        for row in rows:
             if await materialize_remote_membership_entity(cls, row, someone_typeid, notify=True) is not None:
                 mirrored += 1
+        for local in await cls.get_all({"remote": True}):
+            if local.id and str(local.id) not in listed:
+                with mirror_delete():  # only this box's copy — the hub row is not ours to delete
+                    await cls.delete_by_id(local.id)
     return mirrored

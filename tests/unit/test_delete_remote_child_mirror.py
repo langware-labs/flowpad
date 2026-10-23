@@ -68,10 +68,10 @@ async def test_deleting_an_organization_deletes_it_on_the_hub(monkeypatch):
     org = await materialize_remote_membership_entity(Organization, {"id": mint_uuid(), "name": "Gone"}, notify=False)
     asked = []
 
-    async def hub_delete(self, recursive=False):
+    async def fake_unshare(self, recursive=False):
         asked.append(self.id)
 
-    monkeypatch.setattr(Organization, "unshare", hub_delete)
+    monkeypatch.setattr(Organization, "unshare", fake_unshare)
 
     resp = await call_local("DELETE", f"organization/{org.id}")
 

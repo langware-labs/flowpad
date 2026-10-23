@@ -27,7 +27,8 @@ class _HubCalls:
     def __init__(self):
         self.posts: list[tuple[str, str | None, str | None, dict]] = []
 
-    async def post(self, entity_type, payload, entity_id=None, action=None, **kwargs):
+    async def call(self, method, entity_type, entity_id=None, action=None, *a, payload=None, **kwargs):
+        assert method == "POST"
         self.posts.append((entity_type, entity_id, action, payload))
         return {}
 
@@ -35,7 +36,7 @@ class _HubCalls:
 @pytest.fixture()
 def hub_calls(monkeypatch):
     calls = _HubCalls()
-    monkeypatch.setattr(HubProxy, "post", staticmethod(calls.post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(calls.call))
     return calls
 
 

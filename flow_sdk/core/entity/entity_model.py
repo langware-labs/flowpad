@@ -149,6 +149,21 @@ def store_suppressed() -> bool:
     return _SUPPRESS_STORE.get()
 
 
+_UNSET_ROW: Any = object()
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    """Equal, or equal once serialized (``TypeId`` vs its string, an enum vs its value)."""
+    if a == b:
+        return True
+    import json  # noqa: PLC0415
+
+    try:
+        return json.dumps(a, default=str, sort_keys=True) == json.dumps(b, default=str, sort_keys=True)
+    except (TypeError, ValueError):
+        return False
+
+
 @contextmanager
 def remote_reflection():
     """Mark the enclosed save(s) as a verbatim reflection of hub-origin rows.
@@ -2227,8 +2242,6 @@ class Entity(DBEntity):
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_public_url  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         creds = load_credentials()
         if not creds or not creds.api_key:
@@ -2262,9 +2275,8 @@ class Entity(DBEntity):
             self.add_shared_context_entities(parent_tid)
         body = self._hub_body()
 
-        url = hub_public_url(build_hub_url(self.get_type()))
         try:
-            await HubProxy.call_url("POST", url, json=body, strict=True)
+            await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
         except HubError as e:
             # Idempotent: a 409 ("already exist") means this entity is already on
             # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
@@ -2381,8 +2393,6 @@ class Entity(DBEntity):
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_public_url  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         creds = load_credentials()
         if not creds or not creds.api_key:
@@ -2390,8 +2400,7 @@ class Entity(DBEntity):
         body = child._hub_body()
         # build_hub_url(self) → /graph/<ptype>/<pid>; action=<childtype> appends
         # the trailing bare child type the hub parses as direct_resource_type.
-        url = hub_public_url(build_hub_url(self, action=child.get_type()))
-        await HubProxy.call_url("POST", url, json=body, strict=True)
+        await HubProxy.call("POST", self.type, self.id, child.get_type(), payload=body, strict=True)
         if "remote" in type(child).model_fields:
             child.remote = True
             # Direct and recursive child creation use the same byte-transport
@@ -2522,6 +2531,88 @@ class Entity(DBEntity):
         child keeps its true ``parent_type_id`` (the doc) in its own payload.
         """
         return await self.nearest_ancestor(lambda e: getattr(e, "remote", False))
+
+    @classmethod
+    def accepted_from_hub(cls, hub_row: dict, *, nulls_clear: bool = False) -> dict:
+        """A hub row as this type's own fields: wire names lifted (``hub_name``), only the fields the
+        type takes from the hub (``Sharing``). A hub ``null`` clears the local value only with
+        ``nulls_clear`` (the hub's answer to an edit); a synced row's ``null`` is "the hub has none"."""
+        from flow_sdk.fs_store.serializer.hub import HubSerializer  # noqa: PLC0415
+
+        lifted = HubSerializer.unwire(cls, dict(hub_row or {}))
+        refused = cls.fields_not_accepted_from_hub()
+        return {
+            k: v
+            for k, v in lifted.items()
+            if (nulls_clear or v is not None) and k not in refused and cls.is_api_field(k)
+        }
+
+    @classmethod
+    async def mirror_from_hub(
+        cls,
+        hub_row: dict,
+        someone_typeid: Optional[str] = None,
+        *,
+        notify: bool = True,
+        existing: Any = _UNSET_ROW,
+        nulls_clear: bool = False,
+    ) -> Optional["Entity"]:
+        """Land one hub row here — the one mirror every path uses (list sync, WS frame, an answer).
+
+        A row the hub has deleted (``deleted_at``) is dropped (``drop_hub_deleted``). Otherwise the
+        fields the type accepts from the hub are copied over (``accepted_from_hub``), the row is marked
+        ``remote``, the type adds what it derives (``on_hub_mirror``), and it is saved as a reflection —
+        only when something changed. Pass ``existing`` (``None`` = known absent) to skip the read.
+        """
+        row_id = str((hub_row or {}).get("id") or "").strip()
+        if not row_id:
+            return None
+        if hub_row.get("deleted_at"):
+            await cls.drop_hub_deleted(row_id)
+            return None
+        incoming = cls.accepted_from_hub(hub_row, nulls_clear=nulls_clear)
+        incoming["id"] = row_id
+        if existing is _UNSET_ROW:
+            existing = await cls.get_one({"id": row_id})
+        now = datetime.now(timezone.utc)
+        if existing is None:
+            fresh = dict(incoming)
+            for field, value in (("remote", True), ("fetched_at", now)):
+                if field in cls.model_fields:
+                    fresh[field] = value
+            with lenient_entity_load():  # a hub row lacks this box's local-only required fields
+                entity = cls.model_validate(fresh)
+            await entity.on_hub_mirror(hub_row, created=True, changed=set(incoming))
+            with remote_reflection():
+                return await entity.save(someone_typeid, notify=notify)
+        changed: set[str] = set()
+        for field, value in incoming.items():
+            if field == "id":
+                continue
+            before = getattr(existing, field, None)
+            existing.__pydantic_validator__.validate_assignment(existing, field, value)
+            if not _same_value(before, getattr(existing, field, None)):
+                changed.add(field)
+        if await existing.on_hub_mirror(hub_row, created=False, changed=changed):
+            changed.add("derived")
+        if "remote" in cls.model_fields and existing.remote is not True:
+            existing.remote = True
+            changed.add("remote")
+        if not changed:
+            return existing
+        if "fetched_at" in cls.model_fields:
+            existing.fetched_at = now
+        with remote_reflection():
+            return await existing.save(someone_typeid, notify=notify)
+
+    async def on_hub_mirror(self, hub_row: dict, *, created: bool, changed: set[str]) -> bool:
+        """What a type derives from a hub row beyond its accepted fields. True when it changed this row."""
+        return False
+
+    @classmethod
+    async def drop_hub_deleted(cls, row_id: str) -> None:
+        """The hub deleted this row: drop the local copy."""
+        await cls.delete_by_id(row_id)
 
     @classmethod
     async def upsert_from_hub_child(

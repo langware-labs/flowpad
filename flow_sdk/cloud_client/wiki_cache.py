@@ -88,12 +88,13 @@ async def resolve_hub_wiki(
     resolver result.
     """
 
-    hub_wiki = await HubProxy.get(BuiltinEntityType.WIKI, wiki_ref)
+    hub_wiki = await HubProxy.try_call("GET", BuiltinEntityType.WIKI, wiki_ref)
     if not isinstance(hub_wiki, dict) or not hub_wiki.get("id"):
         raise HubWikiCacheError(f"Hub Wiki not found or unavailable: {wiki_ref}")
     wiki = await materialize_hub_entity(hub_wiki, owner=owner)
 
-    result = await HubProxy.get(
+    result = await HubProxy.try_call(
+        "GET",
         BuiltinEntityType.WIKI,
         str(wiki.id),
         action="resolve",
@@ -114,7 +115,7 @@ async def resolve_hub_wiki(
     except (KeyError, TypeError, ValueError) as exc:
         raise HubWikiCacheError("Invalid Hub Wiki target identity") from exc
 
-    hub_target = await HubProxy.get(target_type, target.id)
+    hub_target = await HubProxy.try_call("GET", target_type, target.id)
     if not isinstance(hub_target, dict) or not hub_target.get("id"):
         raise HubWikiCacheError(f"Hub Wiki target not found or unavailable: {target}")
     await materialize_hub_entity(hub_target, owner=owner)

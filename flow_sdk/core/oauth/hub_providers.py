@@ -156,7 +156,7 @@ async def hub_provider_rows() -> EntityEnvVars:
     try:
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        payload = await HubProxy.get(BuiltinEntityType.USER, user_id, action="env-var", sub_path="table")
+        payload = await HubProxy.try_call("GET", BuiltinEntityType.USER, user_id, "env-var", "table")
     except Exception as e:  # noqa: BLE001
         logger.debug("[oauth] hub provider fetch failed: %s", e)
         return _serve_stale(user_id, stale)

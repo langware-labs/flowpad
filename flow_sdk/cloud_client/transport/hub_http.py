@@ -74,7 +74,7 @@ async def _hub_client():
         if other_loop:
             # Built on another event loop (each ``asyncio.run``, each pytest test):
             # its pool is bound to that loop, and every call would fail with "bound
-            # to a different event loop" — which ``hub_get`` swallows as "hub
+            # to a different event loop" — which ``try_call`` swallows as "hub
             # unreachable". It cannot be closed from here (its loop may be gone);
             # drop it. A detached task that outlives a ``close_hub_client()`` on a
             # dying loop rebuilds the client THERE, so a close alone never covers this.
@@ -220,7 +220,9 @@ def hub_graph_url(
     """
     # A plain string is a TYPELESS hub action (``machine-enroll``): the hub's graph
     # router matches those the same way, and the desktop has no entity to name.
-    entity_type_str = getattr(entity_type, "value", entity_type)
+    from flow_sdk.core.urls.service_urls import hub_wire_type  # noqa: PLC0415
+
+    entity_type_str = hub_wire_type(getattr(entity_type, "value", entity_type))
     if sub_path and not action:
         raise ValueError(
             f"sub_path '{sub_path}' requires an action "

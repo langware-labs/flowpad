@@ -193,6 +193,18 @@ export interface IConversation extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Conversation extends EntityMerge<IConversation> {}
 
+/** A hub row names two fields the way the hub does — the roster ``participants`` and the owner
+ *  ``initiated_by`` — where a row kept here says ``members`` / ``created_by`` (the desktop declares the
+ *  same pairs as ``hub_name``). Lift them at hydration so either row reads the same. */
+function liftHubWireNames(conv: Conversation, wire: Record<string, unknown>): void {
+  if (!('members' in wire) && Array.isArray(wire.participants)) {
+    conv.members = wire.participants.map((p) => ({ ...(p as EntityMember) }));
+  }
+  if (!conv.created_by && typeof wire.initiated_by === 'string' && wire.initiated_by) {
+    conv.created_by = wire.initiated_by;
+  }
+}
+
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   kind?: ConversationKind;
@@ -245,6 +257,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.is_unread = entity.is_unread;
     this.unread_count = entity.unread_count;
     this.archived = entity.archived;
+    liftHubWireNames(this, entity as Record<string, unknown>);
   }
 
   /**
@@ -277,6 +290,10 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * @internal
    */
   protected onEntityUpdate(data: Partial<IConversation> & { participants?: unknown }): void {
+    const wire = data as Record<string, unknown>;
+    if (typeof wire.initiated_by === 'string' && wire.initiated_by && !wire.created_by) {
+      this.created_by = wire.initiated_by;
+    }
     const key = 'members' in data ? 'members' : 'participants' in data ? 'participants' : null;
     if (key) {
       const roster = (data as Record<string, unknown>)[key];
@@ -529,14 +546,13 @@ export async function createProjectConversation(
   return res!;
 }
 
-/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its
- *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
- *  conversation locally. */
+/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its messages and can reply
+ *  — the hub's ``conversation/<id>/pickup``; the desktop answers it too and lands the ticket. */
 export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
-  const action = new ActionInfo('conversation-pickup', null, null, 'POST');
-  action.bodyParameters = { conversation_id: conversationId };
-  const res = await dataManager.callAction<{ conversation_id: string }, { conversation_id: string }>(action);
-  return res!;
+  const action = new ActionInfo('pickup', Conversation.type, conversationId, 'POST');
+  action.bodyParameters = {};
+  await dataManager.callAction(action);
+  return { conversation_id: conversationId };
 }
 
 /** Close or reopen a helpdesk ticket — the hub's own ``conversation/<id>/close|reopen``
@@ -772,21 +788,29 @@ export interface DeleteConversationResult {
   mode: DeleteConversationMode;
 }
 
-/** Per-row conversation delete. The server calls the matching hub action
- *  for non-``local`` modes and hard-deletes the local row on success. */
-export async function deleteConversation(
-  params: DeleteConversationParams,
-): Promise<DeleteConversationResult> {
-  const action = new ActionInfo('conversation-delete', null, null, 'POST');
-  action.bodyParameters = params;
-  const res = await dataManager.callAction<DeleteConversationParams, DeleteConversationResult>(action);
-  return res!;
+/** Per-row conversation removal, through the hub's own conversation actions:
+ *  ``leave`` → ``POST conversation/<id>/leave``; otherwise ``DELETE conversation/<id>/delete``
+ *  (the owner's delete for everyone; on a desktop, a conversation that never reached the hub is
+ *  deleted locally). The desktop answers both itself and drops its local copy. */
+export async function deleteConversation(params: DeleteConversationParams): Promise<DeleteConversationResult> {
+  const action =
+    params.mode === 'leave'
+      ? new ActionInfo('leave', 'conversation', params.conversation_id, 'POST')
+      : new ActionInfo('delete', 'conversation', params.conversation_id, 'DELETE');
+  const body: Record<string, string> = params.agent_id ? { agent_id: params.agent_id } : {};
+  // "Remove here only" is said out loud: the desktop never widens it to a delete for everyone,
+  // whatever its row's ``remote`` says. The owner's delete keeps the hub's own body.
+  if (params.mode === 'local') body.mode = 'local';
+  action.bodyParameters = body;
+  await dataManager.callAction(action);
+  return { id: params.conversation_id, mode: params.mode };
 }
 
 /** Thin alias: leave a shared conversation you don't own. */
-export async function leaveConversation(
-  params: { conversation_id: string; agent_id?: string },
-): Promise<DeleteConversationResult> {
+export async function leaveConversation(params: {
+  conversation_id: string;
+  agent_id?: string;
+}): Promise<DeleteConversationResult> {
   return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave', agent_id: params.agent_id });
 }
 

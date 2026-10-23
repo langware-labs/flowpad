@@ -3,7 +3,7 @@
 Its owner opens it here (``open``): a local row, pushed to the hub at the same id with the generic
 ``Entity.share``, optionally funded with a public, capped, expiring LLM budget (the hub's ``fund``).
 They send ``flow diagnose <id>`` to the person they support; that person's machine -- signed in or
-not -- reads the hub's ``brief`` and ``submit``\\ s each run there, by id (``HubProxy.anonymous_request``).
+not -- reads the hub's ``brief`` and ``submit``\\ s each run there, by id (``HubProxy.call(..., anonymous=True)``).
 Only the owner reads the runs back (``runs``), and whoever they share the request with.
 
 The diagnosis fields it inherits show the LATEST run; every run is kept whole on the hub.
@@ -117,11 +117,11 @@ class DiagnosisRequest(FlowpadDiagnosis):
             body: dict[str, Any] = {"instructions": spec.instructions, "name": name}
             if not self.run_count:  # once a run came back, the title is the latest run's
                 body["title"] = name
-            await HubProxy.put(EntityType.DIAGNOSIS_REQUEST.value, self.id, body)
+            await HubProxy.call("PUT", EntityType.DIAGNOSIS_REQUEST.value, self.id, payload=body)
             self.instructions, self.name = spec.instructions, name
             await self.save()
         if spec.ask_permission is not None:
-            await HubProxy.put(EntityType.DIAGNOSIS_REQUEST.value, self.id, {"ask_permission": spec.ask_permission})
+            await HubProxy.call("PUT", EntityType.DIAGNOSIS_REQUEST.value, self.id, payload={"ask_permission": spec.ask_permission})
             self.ask_permission = spec.ask_permission
             await self.save()
         limits: dict[str, Any] = {}
@@ -130,7 +130,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
         if spec.max_run_mb is not None:
             limits["max_run_bytes"] = spec.max_run_mb * 1024 * 1024
         if limits:
-            await HubProxy.post(EntityType.DIAGNOSIS_REQUEST.value, limits, self.id, "limits")
+            await HubProxy.call("POST", EntityType.DIAGNOSIS_REQUEST.value, self.id, "limits", payload=limits)
         if spec.funding is not None:
             await self.fund(spec.funding)
         return await self.pull()
@@ -152,7 +152,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
         }
         if funding.model:
             body["model"] = funding.model
-        await HubProxy.post(EntityType.DIAGNOSIS_REQUEST.value, body, self.id, "fund")
+        await HubProxy.call("POST", EntityType.DIAGNOSIS_REQUEST.value, self.id, "fund", payload=body)
 
     async def attach(self, attachment: DiagnosisAttachmentSpec) -> dict[str, str]:
         """Send the runner a file or an asset: uploaded to the request's hub storage, where
@@ -165,8 +165,12 @@ class DiagnosisRequest(FlowpadDiagnosis):
             import base64  # noqa: PLC0415
 
             kind, name, content = "files", attachment.file_name, base64.b64decode(attachment.content_b64)
-        await HubProxy.upload_entity_file(
-            EntityType.DIAGNOSIS_REQUEST.value, self.id, name, content, sub_path=f"upload/attachments/{kind}"
+        await HubProxy.upload(
+            EntityType.DIAGNOSIS_REQUEST.value,
+            self.id,
+            "fs",
+            f"upload/attachments/{kind}",
+            files={"uploaded_file": (name, content, "application/octet-stream")},
         )
         return {"kind": kind, "name": name}
 
@@ -174,14 +178,14 @@ class DiagnosisRequest(FlowpadDiagnosis):
         """What the runner will receive, as the hub lists it in the brief."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        brief = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "brief")
+        brief = await HubProxy.call("GET", EntityType.DIAGNOSIS_REQUEST.value, self.id, "brief")
         return list(brief.get("attachments") or [])
 
     async def pull(self) -> "DiagnosisRequest":
         """Refresh the hub-owned fields (the latest run, the tally, the budget) into the local row."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        row = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id)
+        row = await HubProxy.call("GET", EntityType.DIAGNOSIS_REQUEST.value, self.id)
         changed = False
         for field in _HUB_FIELDS:
             if field in row and getattr(self, field) != row[field]:
@@ -221,8 +225,8 @@ class DiagnosisRequest(FlowpadDiagnosis):
 
         await self.pull()
         if number is not None:
-            return await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs", str(number))
-        listed = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs")
+            return await HubProxy.call("GET", EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs", str(number))
+        listed = await HubProxy.call("GET", EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs")
         return listed if isinstance(listed, list) else []  # an empty list arrives as ``{}``
 
 
@@ -250,7 +254,7 @@ async def mine() -> list[dict[str, Any]]:
     # hub is this user's to read, so the sidebar's count is zero -- not a 401 on every asset page.
     if not hub_auth_available():
         return []
-    rows = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value)
+    rows = await HubProxy.call("GET", EntityType.DIAGNOSIS_REQUEST.value)
     listed = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict) or not row.get("id"):
@@ -266,7 +270,7 @@ async def funding_sources() -> dict[str, Any]:
     from flow_sdk.cli.auth.lm_api_keys import list_lm_api  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-    hub = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, None, "funding_sources")
+    hub = await HubProxy.call("GET", EntityType.DIAGNOSIS_REQUEST.value, None, "funding_sources")
     keys = [
         {"provider": row["provider"], "uploads_to_hub": True}
         for row in list_lm_api()
@@ -322,14 +326,14 @@ async def _hub_root_for_local_key(provider: str) -> str:
     # so it cannot be forged. Matching on the name alone would pick up an endpoint someone else
     # named the same and shared here -- and its base_url would carry the runner's traffic.
     me = str((get_user() or {}).get("id") or "")
-    existing = await HubProxy.get(EntityType.LLM_ENDPOINT.value) or []
+    existing = await HubProxy.try_call("GET", EntityType.LLM_ENDPOINT.value) or []
     for row in existing if isinstance(existing, list) else []:
         mine = bool(me) and str(row.get("created_by") or "") == me
         if mine and row.get("name") == name and row.get("provider") == provider:
             return f"{EntityType.LLM_ENDPOINT.value}-{row['id']}"
-    created = await HubProxy.post(EntityType.LLM_ENDPOINT.value, {"name": name, "provider": provider})
+    created = await HubProxy.call("POST", EntityType.LLM_ENDPOINT.value, payload={"name": name, "provider": provider})
     endpoint_id = str((created or {}).get("id") or "")
     if not endpoint_id:
         raise ValueError("the hub did not create the endpoint")
-    await HubProxy.post(EntityType.LLM_ENDPOINT.value, {"key": key}, endpoint_id, "credential")
+    await HubProxy.call("POST", EntityType.LLM_ENDPOINT.value, endpoint_id, "credential", payload={"key": key})
     return f"{EntityType.LLM_ENDPOINT.value}-{endpoint_id}"

@@ -70,7 +70,7 @@ async def _sync_from_hub(children: list[dict]) -> None:
     """One real children-list reconcile; only the HTTP response is stubbed."""
     with patch.object(
         HubProxy,
-        "get",
+        "try_call",
         new=AsyncMock(return_value=children),
     ):
         assert await _fetch_conversation_messages(_CONV_ID, someone_typeid=None) is True

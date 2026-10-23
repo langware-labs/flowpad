@@ -9,7 +9,7 @@ projection re-read afterwards so the local WS ``data_op`` fires for the chat
 panel. Verbs that only make sense next to the worker refuse with 409.
 
 The hub is faked at the two seams the relay uses: the shared hub verbs
-(``HubProxy.get/post/delete``) and the request proxy (``HubProxy.forward``). No network.
+(``HubProxy.call/try_call``) and the request proxy (``HubProxy.forward``). No network.
 """
 
 import uuid
@@ -50,6 +50,20 @@ class _FakeHub:
         self.fail = False
         self.streams_open = 0
         self.stream_status = 200
+
+    async def call(self, method, etype, eid=None, action=None, sub=None, *, payload=None, **kw):
+        if method == "GET":
+            data = await self.get(etype, eid, action)
+            if data is None:
+                raise HubError(503, "hub unreachable")
+            return data
+        if method == "DELETE":
+            return await self.delete(etype, eid, action)
+        return await self.post(etype, payload, eid, action)
+
+    async def try_call(self, method, etype, eid=None, action=None, sub=None, **kw):
+        assert method == "GET"
+        return await self.get(etype, eid, action)
 
     async def post(self, etype, payload, eid=None, action=None, **_):
         self.calls.append(("POST", etype, eid, action, payload))
@@ -93,9 +107,8 @@ class _FakeHub:
 @pytest.fixture
 def hub(monkeypatch):
     fake = _FakeHub()
-    monkeypatch.setattr(HubProxy, "post", staticmethod(fake.post))
-    monkeypatch.setattr(HubProxy, "get", staticmethod(fake.get))
-    monkeypatch.setattr(HubProxy, "delete", staticmethod(fake.delete))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake.try_call))
     monkeypatch.setattr(HubProxy, "forward", staticmethod(fake.proxy))
     return fake
 
@@ -236,7 +249,7 @@ async def test_status_relay_is_itself_the_projection(hub, monkeypatch):
     route = await _route(hub)
     monkeypatch.setattr(
         HubProxy,
-        "get",
+        "try_call",
         AsyncMock(return_value={"status": "running", "busy": True, "worker_status": "working"}),
     )
     result = await route.get_status()

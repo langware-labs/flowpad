@@ -38,7 +38,8 @@ def message_hub(monkeypatch):
 
     fid, cid = str(uuid4()), str(uuid4())
 
-    async def _hub_get(entity_type, entity_id=None, *args, scope=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, *args, scope=None, **kwargs):
+        assert method == "GET"
         et = getattr(entity_type, "value", entity_type)
         if et == BuiltinEntityType.FLOW_MESSAGE.value and entity_id == fid:
             return {
@@ -51,11 +52,12 @@ def message_hub(monkeypatch):
             return {"id": cid, "title": "thread"}
         return [] if scope else None
 
-    async def _hub_post(*args, **kwargs):
+    async def _hub_call(method, *args, **kwargs):
+        assert method != "GET", "a read goes through try_call here"
         return {}
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
-    monkeypatch.setattr(HubProxy, "post", staticmethod(_hub_post))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_call))
     return fid, cid
 
 
@@ -79,10 +81,11 @@ async def test_a_notification_link_redirects_with_its_task(monkeypatch):
 
     nid = str(uuid4())
 
-    async def _hub_get(entity_type, entity_id=None, *args, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         return {"metadata": {"task_id": "t-1", "sender_name": "Dana", "task_title": "Fix it"}}
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
 
     params = _redirect_params(await _call_local("GET", f"notification/{nid}/open"))
 
@@ -123,18 +126,19 @@ def project_hub(monkeypatch):
 
     rows: dict[str, object] = {}
 
-    async def _get_or_raise(entity_type, entity_id=None, *args, **kwargs):
+    async def _get_or_raise(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         row = rows.get(entity_id, 404)
         if isinstance(row, int):
             raise HubError(row, f"hub said {row}")
         return row
 
-    async def _roster(entity_type, entity_id=None, action=None, *args, **kwargs):
-        assert action == "members"
+    async def _roster(method, entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert method == "GET" and action == "members"
         return _ROSTER
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(_get_or_raise))
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_roster))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_get_or_raise))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_roster))
     return rows
 
 
@@ -214,14 +218,15 @@ def project_list_hub(monkeypatch):
 
     rows: list[dict] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, *args, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert method == "GET"
         assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value
         if action == "members":
             return _ROSTER
         assert entity_id is None
         return rows
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     monkeypatch.setattr(hub_login, "hub_auth_available", lambda: True)
     return rows
 

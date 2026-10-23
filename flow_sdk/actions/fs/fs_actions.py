@@ -266,7 +266,10 @@ async def push_entity_files_to_hub(entity) -> int:
             if source is None or not source.is_file() or not canonical_main:
                 return 0
             try:
-                await HubProxy.upload_entity_file(et, entity.id, canonical_main, source.read_bytes())
+                await HubProxy.upload(
+                    et, entity.id, "fs", "upload",
+                    files={"uploaded_file": (canonical_main, source.read_bytes(), "application/octet-stream")},
+                )  # fmt: skip
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"share: file push failed for {entity.typeid}/{canonical_main}: {e}")
                 return 0
@@ -319,7 +322,9 @@ async def push_entity_files_to_hub(entity) -> int:
             if is_under(local, ignored):
                 continue  # kept out of git, so it stays on this machine (see _push_folder_to_hub)
             content = local.read_bytes()
-            await HubProxy.upload_entity_file(et, entity.id, name, content)
+            await HubProxy.upload(
+                et, entity.id, "fs", "upload", files={"uploaded_file": (name, content, "application/octet-stream")}
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
             continue
@@ -351,7 +356,10 @@ async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = fr
             continue
         sub_path = "upload" if parent == "." else f"upload/{parent}"
         try:
-            await HubProxy.upload_entity_file(et, entity.id, rel.name, source.read_bytes(), sub_path=sub_path)
+            await HubProxy.upload(
+                et, entity.id, "fs", sub_path,
+                files={"uploaded_file": (rel.name, source.read_bytes(), "application/octet-stream")},
+            )  # fmt: skip
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
             continue
@@ -381,9 +389,9 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
 
         from flow_sdk.builtin.flow_message import BODY_FILENAME
         from flow_sdk.cloud_client.hub_proxy import HubProxy
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.utils.hub import hub_base_url
     except Exception:
         return False
     if not hub_base_url():
@@ -407,7 +415,7 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
         return False
     if entity is None or not getattr(entity, "remote", False):
         return False
-    bytes_ = await HubProxy.get(et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
+    bytes_ = await HubProxy.try_call("GET", et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
     if not bytes_:
         return False
     await storage.upload(BytesIO(bytes_), vfs_path)

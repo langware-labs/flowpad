@@ -81,7 +81,7 @@ export async function sendReply(
   const sharedCtxEntities = (extras?.sharedContextEntities ?? []).filter(Boolean);
   if (hasFiles) {
     const form = new FormData();
-    form.append('message', message);
+    form.append('text', message);
     if (extras?.promptText) form.append('prompt_text', extras.promptText);
     if (extras?.callPrompt) form.append('call_prompt', extras.callPrompt);
     for (const file of files ?? []) {
@@ -109,7 +109,9 @@ export async function sendReply(
     // File sends are multipart — binary bodies only travel over REST.
     return sentReply(await dataManager.callAction(action));
   } else {
-    const body: Record<string, unknown> = { message };
+    // A FlowMessage body, the hub's `add_message` shape; the local server reads the same `text`
+    // (handle_add_message) and takes the desktop's extra fields, which only desktop controls set.
+    const body: Record<string, unknown> = { type: 'flow_message', text: message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
     if (extras?.callPrompt) body.call_prompt = extras.callPrompt;
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
@@ -119,9 +121,8 @@ export async function sendReply(
     if (extras?.replyToId) body.reply_to_id = extras.replyToId;
     if (extras?.threadRootId) body.thread_root_id = extras.threadRootId;
     action.bodyParameters = body;
-    // Text-only send: prefer the WebSocket hop when the socket is open
-    // (skips an HTTP round-trip), fall back to REST otherwise.
-    return sentReply(await dataManager.callActionPreferWS(action));
+    // REST, not the socket: only the local server answers REST frames over its WebSocket.
+    return sentReply(await dataManager.callAction(action));
   }
 }
 

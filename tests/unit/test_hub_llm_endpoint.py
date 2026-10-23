@@ -438,7 +438,7 @@ async def test_fetch_is_empty_when_logged_out(env, monkeypatch) -> None:
     async def _boom(*args, **kwargs):
         raise AssertionError("the hub must not be asked while logged out")
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_boom))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_boom))
 
     assert await fetch_hub_llm_endpoints() == []
 
@@ -471,14 +471,14 @@ async def test_the_hub_initiated_paths_answer_from_the_memo(env, monkeypatch) ->
     opened: list[int] = []
 
     async def _no_network(*args, **kwargs):
-        # ``hub_get`` swallows its own transport errors and answers ``None``; a stub that
+        # ``try_call`` swallows its own transport errors and answers ``None``; a stub that
         # raised would be testing a failure mode the real chokepoint cannot produce.
         opened.append(1)
         return None
 
-    # ``hub_get`` is the chokepoint the fetch actually goes through; patching a hand-built
+    # ``try_call`` is the chokepoint the fetch actually goes through; patching a hand-built
     # client would silently stop counting anything.
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_no_network))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_no_network))
 
     assert [e.name for e in await settings.fetch_hub_llm_endpoints(cached_only=True)] == ["memo"]
     assert opened == [], "cached_only must not call out"
@@ -502,7 +502,7 @@ async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env,
     globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
     asked: list[str | None] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         # THE SHAPES ARE NOT THE SAME, and that is the point of this test. Verified against a
         # live hub: the type listing answers an envelope dict, the ``catalog`` ACTION answers a
         # BARE LIST. A stub that returned dicts for both passed while the real union silently
@@ -512,7 +512,7 @@ async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env,
             return {"data": [mine]}
         return [globalroot, mine]  # the catalog repeats rows the caller has a role on
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     names = [e.name for e in await fetch_hub_llm_endpoints()]
 
     assert asked == [None, "catalog"], "the two listings, and nothing else -- `mine` rides the first"
@@ -525,12 +525,12 @@ async def test_a_failed_catalog_read_still_offers_the_scoped_rows(env, monkeypat
 
     _login()
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         return (
             None if action == "catalog" else {"data": [{"id": "1" * 8 + "-2222-4333-8444-" + "5" * 12, "name": "mine"}]}
         )
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     assert [e.name for e in await fetch_hub_llm_endpoints()] == ["mine"]
 
 
@@ -546,15 +546,15 @@ async def test_an_empty_scoped_listing_still_reads_the_catalog(env, monkeypatch)
     _login()
     globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         return {} if action is None else [globalroot]
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     assert [e.name for e in await fetch_hub_llm_endpoints()] == ["global"]
 
 
 async def test_a_failed_scoped_listing_keeps_the_last_good_list(env, monkeypatch) -> None:
-    """``hub_get`` answers ``None`` on failure -- the ONE shape that means "do not trust this"."""
+    """``HubProxy.try_call`` answers ``None`` on failure -- the ONE shape that means "do not trust this"."""
     import flow_sdk.instance_settings.llm_endpoint as settings
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
     from flow_sdk.instance_settings import get_instance_settings
@@ -565,10 +565,10 @@ async def test_a_failed_scoped_listing_keeps_the_last_good_list(env, monkeypatch
         [LLMEndpoint(id="11111111-2222-4333-8444-555555555555", name="memo")],
     )
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         return None
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["memo"]
 
 
@@ -680,13 +680,13 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
     globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
     params_seen: list[dict | None] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         params_seen.append(kwargs.get("params"))
         if action is None:
             return {"data": [given, administered]}
         return [globalroot]
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     by_name = {e.name: e for e in await fetch_hub_llm_endpoints()}
 
     assert params_seen[0] == {"expand": "permissions"}, "the scoped listing must ask for permissions"
@@ -726,13 +726,13 @@ async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_e
     }
     calls: list[tuple] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         calls.append((entity_type, action))
         if action is None:
             return {"data": [mine, theirs]}
         return []
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     by_name = {e.name: e for e in await fetch_hub_llm_endpoints()}
 
     assert by_name["mine"].is_mine is True
@@ -744,10 +744,10 @@ async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_e
 
 
 async def test_the_callers_own_allowance_survives_the_real_hub_envelope(env, monkeypatch) -> None:
-    """The same promise as above, read through the REAL ``hub_get`` against a hub speaking HTTP.
+    """The same promise as above, read through the REAL ``HubProxy.try_call`` against a hub speaking HTTP.
 
     Kept pointed at a real socket after the answer moved onto the listing's own expansion, because
-    the lesson that earned this test still holds: the fake ``hub_get`` above returns whatever shape
+    the lesson that earned this test still holds: the fake ``HubProxy.try_call`` above returns whatever shape
     the test author imagined, and the envelope the real one strips is exactly where a reader goes
     wrong. If ``expand.mine`` ever stopped surviving the round trip, every row would lose its
     attribution and an admin -- who administers every row -- would be shown none of them.
@@ -818,12 +818,12 @@ async def test_a_hub_that_sends_no_expansion_leaves_the_answer_unknown(env, monk
 
     _login()
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         if action is None:
             return {"data": [{"id": "11111111-2222-4333-8444-555555555555", "name": "no expansion"}]}
         return []
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     assert (await fetch_hub_llm_endpoints())[0].can_administer is None
 
 

@@ -1205,7 +1205,7 @@ class Agent(Entity):
         }
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
-        data = await HubProxy.post(self.type, body, self.id, "plan_deployment") or {}
+        data = await HubProxy.call("POST", self.type, self.id, "plan_deployment", payload=body) or {}
         deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
         if deployment is None:
             raise RuntimeError("the hub returned no deployment to plan")
@@ -1425,6 +1425,7 @@ class Agent(Entity):
         from flow_sdk.builtin import agent_places  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
         body = await self._body()
 
@@ -1440,11 +1441,11 @@ class Agent(Entity):
                 "trigger_id": str(body.get("trigger_id") or ""),
             }
             try:
-                data = await HubProxy.post(self.get_type(), payload, self.id, "place_action")
+                data = await HubProxy.call("POST", self.get_type(), self.id, "place_action", payload=payload)
             except HubError as exc:
+                if exc.kind is HubFailureKind.NOT_CONFIGURED:
+                    raise agent_places.PlaceError("cloud login required to reach a cloud machine", status_code=401) from exc
                 raise agent_places.PlaceError(f"the hub refused: {exc}", status_code=502) from exc
-            if data is None:
-                raise agent_places.PlaceError("cloud login required to reach a cloud machine", status_code=401)
             return data
 
         return await self._place_answer(relay)

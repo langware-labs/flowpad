@@ -326,7 +326,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     if not hub_auth_available():
         return stale
 
-    # ``HubProxy.get`` rather than a hand-built client: it is the one chokepoint that honours Local
+    # ``HubProxy.try_call`` rather than a hand-built client: it is the one chokepoint that honours Local
     # privacy mode (nothing may leave the box) and it reuses the pooled client. It answers None on
     # any failure, including logged-out.
     # TWO reads, unioned, because the hub answers "what may I spend" in two places and neither is
@@ -338,11 +338,11 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # fallback and one that tells a logged-in user they have nothing. ``use-llm-endpoints.ts``
     # already unions both; this is the box catching up.
     def _rows(body) -> list | None:
-        """Rows out of a ``HubProxy.get`` answer, or ``None`` when the CALL failed.
+        """Rows out of a ``HubProxy.try_call`` answer, or ``None`` when the CALL failed.
 
         Three shapes, all real, all observed against a live hub: the type listing answers
         the envelope dict; the ``catalog`` ACTION answers a bare list; and a successful but
-        EMPTY listing answers ``{}`` with no ``data`` key at all. Only ``HubProxy.get``'s own
+        EMPTY listing answers ``{}`` with no ``data`` key at all. Only ``HubProxy.try_call``'s own
         ``None`` means failure -- an empty answer means zero rows, and conflating the two
         made the union return early and never read the catalog, which is exactly the row
         this function exists to add."""
@@ -359,13 +359,13 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # catalog is deliberately asked WITHOUT it: those rows reach every signed-in user through a
     # stamp rather than a role edge, and a "cannot change it" there would read as "it was given to
     # me", turning the shared pool into everybody's personal wallet.
-    rows = _rows(await HubProxy.get("llm_endpoint", params={"expand": "permissions"}))
+    rows = _rows(await HubProxy.try_call("GET", "llm_endpoint", params={"expand": "permissions"}))
     if rows is None:
         return stale
     held = {str(row.get("id") or "") for row in rows if isinstance(row, dict)}
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
-    rows = list(rows) + list(_rows(await HubProxy.get("llm_endpoint", action="catalog")) or [])
+    rows = list(rows) + list(_rows(await HubProxy.try_call("GET", "llm_endpoint", action="catalog")) or [])
     fields = set(LLMEndpoint.model_fields)
     endpoints: list[LLMEndpoint] = []
     seen: set[str] = set()

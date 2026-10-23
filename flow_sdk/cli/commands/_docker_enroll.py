@@ -232,6 +232,8 @@ async def approve_container_code(user_code: str, node_name: str) -> dict[str, An
     """
     from flow_sdk.cloud_client.hub_proxy import HubProxy
 
-    machine = await HubProxy.post("machine-enroll", {"user_code": user_code}, action="lookup")
-    approved = await HubProxy.post("machine-enroll", {"user_code": user_code, "node_name": node_name}, action="approve")
+    machine = await HubProxy.call("POST", "machine-enroll", None, "lookup", payload={"user_code": user_code})
+    approved = await HubProxy.call(
+        "POST", "machine-enroll", None, "approve", payload={"user_code": user_code, "node_name": node_name}
+    )
     return {"machine": machine or {}, **(approved or {})}

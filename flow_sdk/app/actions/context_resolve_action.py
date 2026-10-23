@@ -95,7 +95,7 @@ async def reconcile_context() -> ApiResponse:
         if local is None or local is True:
             # Unknown type / query error → leave it; present locally → not dangling.
             continue
-        state, _data = await HubProxy.resolve_by_typeid(t)
+        state, _data = await HubProxy.exists(t)
         if state == "present":
             remote_present.append(str(t))
             continue

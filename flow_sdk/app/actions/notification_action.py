@@ -1634,7 +1634,7 @@ async def open_notification_params(notification_id: str) -> "OpenLinkSpec":
     fetch it from the hub and return the ``action=open`` params for its task."""
     from flow_sdk.server.routes.notify import message_deep_link_params
 
-    data = await HubProxy.get(BuiltinEntityType.NOTIFICATION, notification_id)
+    data = await HubProxy.try_call("GET", BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     # Notification.id is the same as the hub FlowMessage id (set in

@@ -207,7 +207,7 @@ async def _answer_route_probe(row, nonce: str, claim_id: str) -> dict:
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     text = f"{await _answerer_of(row)} @ {await _place_of(row)}"
-    await HubProxy.post("webhook", {"event_id": nonce, "text": text}, str(claim_id), "reply")
+    await HubProxy.call("POST", "webhook", str(claim_id), "reply", payload={"event_id": nonce, "text": text})
     return {"probe": nonce, "text": text}
 
 

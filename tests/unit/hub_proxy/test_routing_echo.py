@@ -149,7 +149,6 @@ async def test_an_update_of_only_local_fields_never_leaves(desktop, echo_hub):
     assert echo_hub.received == []
 
 
-@pytest.mark.xfail(strict=True, reason="phase 2: archived_at is per-user state but declared SHARED, so it travels")
 async def test_archive_is_per_user_and_never_leaves(desktop, echo_hub):
     conv = await _conversation(remote=True)
     await _http(desktop, "PUT", f"conversation/{conv.id}", json={"archived_at": "2026-10-01T00:00:00Z"}, headers=REFLECT)

@@ -162,10 +162,11 @@ async def test_the_hub_push_of_an_entity_folder_leaves_excluded_files(tmp_path, 
     root = _asset_folder(tmp_path)
     sent: list[str] = []
 
-    async def _upload(et, eid, name, content, sub_path="upload"):
+    async def _upload(et, eid, action, sub_path=None, *, files, **_kw):
+        name = files["uploaded_file"][0]
         sent.append(f"{sub_path}/{name}")
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_upload))
 
     class _Ent:
         id, typeid = "e1", "skill-e1"

@@ -46,11 +46,12 @@ def acks(monkeypatch):
 
     sent: list = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def hub_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         sent.append((entity_type, entity_id, action, payload))
         return {"acked": True}
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     return sent
 
 

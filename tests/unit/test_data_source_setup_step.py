@@ -194,11 +194,12 @@ async def test_public_webhook_asks_the_hub_for_this_desktops_url_with_a_fresh_ve
     name, kept = stub
     asked: list = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         asked.append((entity_type, action, payload))
         return {"id": "w-1", "url": "https://hub.example/api/v1/webhook/w-1"}
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     source = DataSource(provider=name, name="bot", config={})
 
     answer = await source.step("public-webhook")
@@ -224,7 +225,8 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     driver = DataDriver.loaded(name)
     asked: list = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         asked.append((entity_type, action, payload))
         return {"id": "c-1", "url": "https://hub.example/api/v1/webhook/c-1"}
 
@@ -234,7 +236,7 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     def hub_claim(cls, config, secrets):
         return {"provider": "vendor", "key": config["app_id"], "proof": {"credential": secrets["secret"]}}
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
     monkeypatch.setattr(driver, "credentials_for", credentials_for)
     monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
@@ -266,7 +268,8 @@ async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_cla
     asked: list = []
     claims: list = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         asked.append((entity_type, action, payload))
         return {"id": "g-1"}
 
@@ -277,7 +280,7 @@ async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_cla
         return {"provider": "vendor", "kind": "group", "key": config["group"],
                 "under": {"kind": "account", "key": config["app_id"]}}
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(ds, "_hub_claims", hub_claims)
     monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
     monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
@@ -376,7 +379,7 @@ async def test_direct_callback_needs_no_hub_and_redacts_only_secrets(stub, monke
         pytest.fail("direct setup must not contact the hub")
 
     monkeypatch.setattr(webhook_listener, "callback_base_url", callback_base_url)
-    monkeypatch.setattr(HubProxy, "post", staticmethod(forbidden))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(forbidden))
     answer = await source.step("public-webhook", values={"delivery": "direct"})
     assert answer.ok
     assert answer.value["secrets"] == {}

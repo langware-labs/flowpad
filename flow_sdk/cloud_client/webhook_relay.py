@@ -77,7 +77,7 @@ async def _ack(webhook_id: str, delivery_id: str, status: int) -> None:
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
     try:
-        await HubProxy.post("webhook", {"delivery_id": delivery_id, "status": status}, webhook_id, "ack")
+        await HubProxy.call("POST", "webhook", webhook_id, "ack", payload={"delivery_id": delivery_id, "status": status})
     except HubError as exc:
         # Not acked: the hub pushes it again on the next event, and it is acked from _HANDLED then.
         logger.warning("[webhook-relay] ack of %s refused: %s", delivery_id, exc)
@@ -89,6 +89,6 @@ async def catch_up() -> None:
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
     try:
-        await HubProxy.post("webhook", {}, None, "catch_up")
+        await HubProxy.call("POST", "webhook", None, "catch_up", payload={})
     except HubError as exc:
         logger.debug("[webhook-relay] catch-up refused: %s", exc)

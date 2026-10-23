@@ -394,14 +394,15 @@ async def test_direct_url_on_a_box_the_hub_placed_is_the_hubs_answer(client, mon
 
     asked = []
 
-    async def hub_get(entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+    async def fake_try_call(method, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        assert method == "GET"
         asked.append((str(entity_type), entity_id, action, kwargs.get("params")))
         return {"url": "https://app--d.flowpad.app/shop/"}
 
     monkeypatch.setattr(
         runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
     )
-    monkeypatch.setattr(HubProxy, "get", staticmethod(hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
     users = await _app_proxy()
     resp = await client.get(_direct(users, "?route=shop"))
     assert resp.status_code == 200, resp.text
@@ -414,13 +415,13 @@ async def test_direct_url_of_a_placement_the_hub_never_made_is_answered_on_the_b
     them, so the box answers as it did before instead of failing the display."""
     import flow_sdk.instance_settings.runtime as runtime
 
-    async def hub_get(*args, **kwargs):
+    async def fake_try_call(*args, **kwargs):
         return None
 
     monkeypatch.setattr(
         runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
     )
-    monkeypatch.setattr(HubProxy, "get", staticmethod(hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
     resp = await client.get(_direct(await _app_proxy()))
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["url"] == "http://localhost:8765"

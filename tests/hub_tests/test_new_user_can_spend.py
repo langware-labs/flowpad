@@ -81,7 +81,7 @@ async def _booked(endpoint_id: str) -> float:
 
     # The report's ``totals`` over its window: the requests booked and what they cost. It includes turns still
     # in the ledger's buffer, so the call just made shows at once.
-    totals = (await HubProxy.get("llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
+    totals = (await HubProxy.try_call("GET", "llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
     return float(totals.get("requests") or 0) + float(totals.get("cost_micro_usd") or 0) / 1e6
 
 

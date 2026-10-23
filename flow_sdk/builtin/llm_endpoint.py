@@ -326,15 +326,16 @@ class LLMEndpoint(Entity):
             # match, so a mixed-case address is an invitation the recipient never sees.
             if not (address := normalize_email(email)):
                 continue
-            await HubProxy.post(
+            await HubProxy.call(
+                "POST",
                 "llm_endpoint",
-                {
+                self.id,
+                "members",
+                payload={
                     "recipient_email": address,
                     "invitation_targets": [{"typeid": str(self.typeid), "role": SHARE_ROLE}],
                     "callback_override": endpoint_share_landing_path(self.id),
                 },
-                self.id,
-                "members",
             )
 
     @property

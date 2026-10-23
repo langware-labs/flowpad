@@ -6802,7 +6802,7 @@ class AgenticProcess(Entity):
     async def _read_remote_projection(self) -> dict | None:
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        descriptor = await HubProxy.get(self.get_type(), self.id)
+        descriptor = await HubProxy.try_call("GET", self.get_type(), self.id)
         return descriptor if isinstance(descriptor, dict) else None
 
     async def _refresh_remote_projection(self) -> None:
@@ -6824,13 +6824,13 @@ class AgenticProcess(Entity):
         etype, eid = self.get_type(), self.id
         try:
             if method == "GET":
-                data = await HubProxy.get(etype, eid, action)
+                data = await HubProxy.try_call("GET", etype, eid, action)
                 if data is None:
                     raise HubError(503, "hub unreachable or refused")
             elif method == "DELETE":
-                data = await HubProxy.delete(etype, eid, action)
+                data = await HubProxy.call("DELETE", etype, eid, action)
             else:
-                data = await HubProxy.post(etype, body or {}, eid, action)
+                data = await HubProxy.call("POST", etype, eid, action, payload=body or {})
         except HubError as exc:
             status = exc.status_code if 400 <= (exc.status_code or 0) < 600 else 503
             return ApiFailResponse(message=f"deployed agent process: {exc.reason}", status_code=status)

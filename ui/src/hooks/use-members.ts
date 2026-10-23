@@ -170,8 +170,19 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
         return result;
       }
       if (teams.length) throw new Error('useMembers: only a project can be shared with a team');
-      await entity.share(users);
-      await refresh();
+      // One hub MembershipRequest per invitee; the desktop publishes the entity first when needed.
+      // Every invitee is tried even when one fails, and the roster refreshes either way.
+      try {
+        const results = await Promise.allSettled(users.map((user) => entity.inviteMember(user.idOrEmail, user.role)));
+        const failed = users.filter((_, i) => results[i].status === 'rejected');
+        if (failed.length) {
+          const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason;
+          const detail = reason instanceof Error ? reason.message : String(reason);
+          throw new Error(`Could not invite ${failed.map((u) => u.idOrEmail).join(', ')}: ${detail}`);
+        }
+      } finally {
+        await refresh();
+      }
       return null;
     },
     [entity, refresh],

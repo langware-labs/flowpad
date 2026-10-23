@@ -276,7 +276,7 @@ async def resolve_published_row(typeid: str) -> dict:
         split_typeid(typeid)
     except ValueError as exc:
         raise PublishRefused("bad_request", str(exc)) from exc
-    data = await HubProxy.get("project", None, action="published_asset", params={"typeid": typeid})
+    data = await HubProxy.try_call("GET", "project", None, action="published_asset", params={"typeid": typeid})
     if not isinstance(data, dict) or not data.get("typeid"):
         raise PublishRefused(
             "not_published",
@@ -385,7 +385,7 @@ async def reflect_manifest_to_hub(project) -> bool:
         return False
     document = spec.to_document() if spec is not None else None
     try:
-        result = await HubProxy.post("project", {"manifest": document}, str(project.id), action="publish_manifest")
+        result = await HubProxy.call("POST", "project", str(project.id), "publish_manifest", payload={"manifest": document})
     except Exception as exc:  # noqa: BLE001 — logged, never raised into the toggle
         logger.info("[project_manifest] hub reflection skipped for %s: %s", project.id, exc)
         return False

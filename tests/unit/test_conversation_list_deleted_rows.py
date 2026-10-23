@@ -35,13 +35,13 @@ async def test_deleted_hub_audit_row_is_removed_without_background_fetch():
         nonlocal local_present
         local_present = False
 
-    async def hub_get(entity_type, **_kwargs):
+    async def fake_try_call(_method, entity_type, **_kwargs):
         return [hub_row] if str(entity_type) == "conversation" else []
 
     dispatch = MagicMock()
     with (
         patch.object(Conversation, "get_all", new=AsyncMock(side_effect=get_all)),
-        patch.object(HubProxy, "get", new=AsyncMock(side_effect=hub_get)),
+        patch.object(HubProxy, "try_call", new=AsyncMock(side_effect=fake_try_call)),
         patch.object(fma, "hub_base_url", return_value="https://hub.test"),
         patch(
             "flow_sdk.cli.auth.hub_login.hub_auth_available",

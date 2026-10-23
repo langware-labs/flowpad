@@ -10,7 +10,7 @@ rule here is its rule, for the same reason:
 * ``[]`` when signed out, without asking (an idle box must not collect 401 toasts).
 * A 30-second memo; ``cached_only`` answers from it and never calls out; a failed refresh
   keeps the last good list rather than emptying it.
-* Through ``HubProxy.get``: the one chokepoint that honours Local privacy mode.
+* Through ``HubProxy.try_call``: the one chokepoint that honours Local privacy mode.
 
 Finding a DECISION endpoint is then a filter on ``kinds``, not a hub query: the hub stores
 the tag, the caller keeps the kinds it needs.
@@ -38,7 +38,7 @@ def invalidate_api_endpoint_listing() -> None:
 
 
 def _rows(body) -> list | None:
-    """Rows out of a ``HubProxy.get`` answer; ``None`` only when the CALL failed (see the LLM twin)."""
+    """Rows out of a ``HubProxy.try_call`` answer; ``None`` only when the CALL failed (see the LLM twin)."""
     if body is None:
         return None
     if isinstance(body, list):
@@ -70,10 +70,10 @@ async def fetch_hub_api_endpoints(*, cached_only: bool = False) -> list[APIEndpo
     if cached_only or not hub_auth_available():
         return stale
 
-    rows = _rows(await HubProxy.get("api_endpoint"))
+    rows = _rows(await HubProxy.try_call("GET", "api_endpoint"))
     if rows is None:
         return stale
-    rows = list(rows) + list(_rows(await HubProxy.get("api_endpoint", action="catalog")) or [])
+    rows = list(rows) + list(_rows(await HubProxy.try_call("GET", "api_endpoint", action="catalog")) or [])
 
     offers: list[APIEndpointOffer] = []
     seen: set[str] = set()

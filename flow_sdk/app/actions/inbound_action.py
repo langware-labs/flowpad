@@ -75,7 +75,7 @@ async def inbound_action() -> ApiResponse:
     if payload is not None and not isinstance(payload, dict):
         return ApiFailResponse(message="expected a JSON object", status_code=400)
     try:
-        data = await HubProxy.request(call.method, "webhook", call.entity_id, call.action, payload=payload)
+        data = await HubProxy.call(call.method, "webhook", call.entity_id, call.action, payload=payload, strict=True)
     except HubError as e:
         status = e.status_code if e.status_code >= 400 else 502
         return ApiFailResponse(message=e.reason, status_code=status)

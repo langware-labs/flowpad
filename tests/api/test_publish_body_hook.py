@@ -46,8 +46,8 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
         entity.origin = HubRepoOrigin(repo=REPO, rel_path=".claude/skills/rca", head_commit="a" * 40, tree="b" * 40)
         return {"asset": {}}
 
-    async def fake_post(entity_type, payload, entity_id=None, action=None, sub_path=None, **kw):
-        if action == "publish_manifest":
+    async def fake_post(method, entity_type, entity_id=None, action=None, sub_path=None, *, payload=None, **kw):
+        if method == "POST" and action == "publish_manifest":
             calls["manifest"].append(payload["manifest"])
             seq.append("manifest:start")
             await asyncio.sleep(0)  # a real round-trip yields: let a concurrent writer in
@@ -55,7 +55,7 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
         return {}
 
     monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", fake_publish)
-    monkeypatch.setattr(HubProxy, "post", staticmethod(fake_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_post))
 
     pid = await project(bootstrapped_client, tmp_path)
     write_skill(tmp_path, "rca")

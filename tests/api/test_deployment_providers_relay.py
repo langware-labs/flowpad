@@ -12,12 +12,13 @@ URL = "/api/v1/graph/deployment/providers"
 async def test_relays_the_hubs_providers(client, monkeypatch):
     asked = []
 
-    async def hub(entity_type, entity_id=None, action=None, *_, **__):
+    async def hub(method, entity_type, entity_id=None, action=None, *_, **__):
+        assert method == "GET"
         asked.append((entity_type, entity_id, action))
         return ["e2b", "gcp_vm"]
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.test")
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub))
     resp = await client.get(URL)
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"] == ["e2b", "gcp_vm"]
@@ -36,6 +37,6 @@ async def test_a_hub_refusal_keeps_its_status(client, monkeypatch):
         raise HubError(401, "auth expired")
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.test")
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub))
     resp = await client.get(URL)
     assert resp.status_code == 401, resp.text

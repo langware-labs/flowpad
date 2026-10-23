@@ -33,8 +33,13 @@ import { useProjectMapping } from './useProjectMapping';
  * mapped conversation is a navigation shortcut, not a re-mapping. Re-mapping
  * is reserved for the explicit gate flow on a still-unmapped subject.
  */
-export function useProjectMappingGate(task: ITask | null | undefined, conversation?: IConversation | null) {
-  const { mapping, loaded: mappingLoaded } = useProjectMapping();
+export function useProjectMappingGate(
+  task: ITask | null | undefined,
+  conversation?: IConversation | null,
+  /** False where no local project can be mapped (the hub page): the mapping is never read. */
+  { enabled = true }: { enabled?: boolean } = {},
+) {
+  const { mapping, loaded: mappingLoaded } = useProjectMapping({ enabled });
   const ctx = useContext();
   const { navigation, currentDock } = useDockNavigation();
   // Router transition state. `currentDock` is derived from the *committed*

@@ -2,7 +2,7 @@
 
 Verifies the three-step state machine: PUT body_status=UPLOADING → POST
 fs/upload (multipart, BODY_FILENAME) → PUT body_status=READY +
-attachment_filename. The hub calls are mocked at flow_sdk.utils.hub so no
+attachment_filename. The hub calls are mocked at HubProxy so no
 network is touched.
 
 # do not increase timeout without approval
@@ -45,8 +45,8 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
-        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "call", AsyncMock(return_value={})) as mock_call,
+        patch.object(HubProxy, "upload", AsyncMock(return_value={})) as mock_upload,
     ):
         await fm.upload_body(transfer_mode="git")
 
@@ -55,12 +55,13 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     # No PUT: the hub auto-stamps body_status=UPLOADING server-side
     # (_attachments_require_body during message-header creation), so the
     # client doesn't announce it. See flow_message.upload_body docstring.
-    assert mock_put.await_count == 0
+    assert not [c for c in mock_call.await_args_list if c.args[0] == "PUT"]
 
-    # Two POSTs: multipart fs/upload, then the set_body_status action that
+    # Multipart fs/upload, then the set_body_status action POST that
     # flips READY (the action fans the UPDATE to receivers; a PUT would not).
-    assert mock_post.await_count == 2
-    post_kwargs = mock_post.await_args_list[0].kwargs
+    assert mock_upload.await_count == 1
+    assert mock_call.await_count == 1 and mock_call.await_args_list[0].args[0] == "POST"
+    post_kwargs = mock_upload.await_args_list[0].kwargs
     files = post_kwargs["files"]
     assert "uploaded_file" in files
     filename, content, content_type = files["uploaded_file"]
@@ -68,8 +69,8 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     assert content == b"PK\x03\x04 pretend zip"
     assert content_type == "application/zip"
 
-    set_status_payload = mock_post.await_args_list[1].args[1]
-    assert mock_post.await_args_list[1].kwargs["action"] == "set_body_status"
+    set_status_payload = mock_call.await_args_list[0].kwargs["payload"]
+    assert mock_call.await_args_list[0].kwargs["action"] == "set_body_status"
     assert set_status_payload == {
         "flow_message_id": fm.id,
         "body_status": BodyStatus.READY.value,
@@ -96,15 +97,15 @@ async def test_upload_body_pack_failure_leaves_uploading(tmp_path: Path) -> None
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(side_effect=RuntimeError("pack boom"))),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
-        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "call", AsyncMock(return_value={})) as mock_call,
+        patch.object(HubProxy, "upload", AsyncMock(return_value={})) as mock_upload,
     ):
         with pytest.raises(RuntimeError, match="pack boom"):
             await fm.upload_body()
 
     # No client-side hub traffic at all — pack failed before to_file returned.
-    assert mock_put.await_count == 0
-    assert mock_post.await_count == 0
+    assert mock_call.await_count == 0
+    assert mock_upload.await_count == 0
     # Local mirror never flipped to READY.
     assert fm.body_status != BodyStatus.READY
 
@@ -118,15 +119,15 @@ async def test_upload_body_upload_failure_leaves_uploading(tmp_path: Path) -> No
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(return_value=fake_zip)),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
-        patch.object(HubProxy, "post", AsyncMock(side_effect=RuntimeError("upload boom"))) as mock_post,
+        patch.object(HubProxy, "call", AsyncMock(return_value={})) as mock_call,
+        patch.object(HubProxy, "upload", AsyncMock(side_effect=RuntimeError("upload boom"))) as mock_upload,
     ):
         with pytest.raises(RuntimeError, match="upload boom"):
             await fm.upload_body()
 
     # No PUT (client doesn't announce UPLOADING); upload POST was attempted.
-    assert mock_put.await_count == 0
-    assert mock_post.await_count == 1
+    assert mock_call.await_count == 0
+    assert mock_upload.await_count == 1
     assert fm.body_status != BodyStatus.READY
     # Temp zip is still cleaned up in finally.
     assert not fake_zip.exists()
@@ -175,17 +176,17 @@ async def test_concurrent_upload_body_fires_single_fs_upload(tmp_path: Path) -> 
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})),
-        patch.object(HubProxy, "post", AsyncMock(side_effect=_fake_post)) as mock_post,
+        patch.object(HubProxy, "call", AsyncMock(return_value={})) as mock_call,
+        patch.object(HubProxy, "upload", AsyncMock(side_effect=_fake_post)) as mock_upload,
     ):
         await asyncio.gather(fm_auto.upload_body(), fm_explicit.upload_body())
 
     # Exactly one real upload path ran: one packing, one fs/upload POST, one
     # set_body_status POST (2 total). The second caller fired neither.
     assert to_file_calls == 1
-    fs_upload_posts = [c for c in mock_post.await_args_list if "files" in c.kwargs]
+    fs_upload_posts = [c for c in mock_upload.await_args_list if "files" in c.kwargs]
     set_status_posts = [
-        c for c in mock_post.await_args_list if c.kwargs.get("action") == "set_body_status"
+        c for c in mock_call.await_args_list if c.kwargs.get("action") == "set_body_status"
     ]
     assert len(fs_upload_posts) == 1, "double fs/upload race not coalesced"
     assert len(set_status_posts) == 1
@@ -210,14 +211,14 @@ async def test_sequential_upload_body_reuploads(tmp_path: Path) -> None:
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})),
-        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "call", AsyncMock(return_value={})),
+        patch.object(HubProxy, "upload", AsyncMock(return_value={})) as mock_upload,
     ):
         await fm.upload_body()
         await fm.upload_body()
 
     # Two sequential calls → two fs/upload POSTs (one each), guard cleared between.
-    fs_upload_posts = [c for c in mock_post.await_args_list if "files" in c.kwargs]
+    fs_upload_posts = [c for c in mock_upload.await_args_list if "files" in c.kwargs]
     assert len(fs_upload_posts) == 2
 
 
@@ -245,8 +246,8 @@ async def test_concurrent_upload_body_failure_propagates_to_both(tmp_path: Path)
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})),
-        patch.object(HubProxy, "post", AsyncMock(side_effect=_boom)),
+        patch.object(HubProxy, "call", AsyncMock(return_value={})),
+        patch.object(HubProxy, "upload", AsyncMock(side_effect=_boom)),
     ):
         results = await asyncio.gather(
             fm_a.upload_body(), fm_b.upload_body(), return_exceptions=True

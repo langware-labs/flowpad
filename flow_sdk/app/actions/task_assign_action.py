@@ -96,10 +96,11 @@ async def push_hub_fields(task: Task, fields: Iterable[str]) -> None:
     if not names:
         return
     try:
-        await HubProxy.put(
+        await HubProxy.call(
+            "PUT",
             BuiltinEntityType.TASK,
             str(task.id),
-            {name: getattr(task, name, None) for name in names},
+            payload={name: getattr(task, name, None) for name in names},
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("[task-assign] hub field push %s failed (non-fatal): %s", names, e)
@@ -196,7 +197,7 @@ async def revoke_on_hub(task: Task, email: str) -> None:
     comment on the task, while they could still read it), so their thread ends with it. Non-fatal: the
     new assignee has the task either way."""
     try:
-        await HubProxy.delete(BuiltinEntityType.TASK, str(task.id), "members", payload={"user_email": email})
+        await HubProxy.call("DELETE", BuiltinEntityType.TASK, str(task.id), "members", payload={"user_email": email})
     except Exception as e:  # noqa: BLE001
         logger.warning("[task-assign] could not revoke %s on task %s (non-fatal): %s", email, task.id, e)
 
@@ -213,12 +214,13 @@ async def assign_on_hub(
     if not await ensure_task_on_hub(task, someone_typeid):
         await task.save(someone_typeid)
         await push_hub_fields(task, ("assignee", "reporter"))
-    await HubProxy.request(
+    await HubProxy.call(
         "POST",
         BuiltinEntityType.TASK,
         task.id,
         "members",
         payload=assignee_invite_body(email, task, message, user_id=user_id),
+        strict=True,
     )
 
 

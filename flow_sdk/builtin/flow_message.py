@@ -1216,20 +1216,26 @@ class FlowMessage(Entity):
         does not stamp ``self`` (each caller stamps its own instance on success).
         """
         from flow_sdk.cloud_client.hub_proxy import HubProxy
+        from flow_sdk.cloud_client.shared.errors import HubError
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 
         zip_path = await self.to_file(transfer_mode=transfer_mode, create_bookmark=create_bookmark)
         try:
             content = zip_path.read_bytes()
-            await HubProxy.post(
-                BuiltinEntityType.FLOW_MESSAGE,
-                {},
-                self.id,
-                "fs",
-                "upload",
-                files={"uploaded_file": (BODY_FILENAME, content, "application/zip")},
-                on_progress=on_progress,
-            )
+            try:
+                await HubProxy.upload(
+                    BuiltinEntityType.FLOW_MESSAGE,
+                    self.id,
+                    "fs",
+                    "upload",
+                    files={"uploaded_file": (BODY_FILENAME, content, "application/zip")},
+                    on_progress=on_progress,
+                )
+            except HubError as e:
+                if e.kind is not HubFailureKind.NOT_CONFIGURED:
+                    raise
+                return  # no hub configured: nothing to upload to, as before
         finally:
             zip_path.unlink(missing_ok=True)
 
@@ -1237,14 +1243,15 @@ class FlowMessage(Entity):
         # the action fans the UPDATE to conversation participants so receivers
         # learn the body is downloadable. A plain entity PUT only notifies the
         # sender + owners, leaving receivers stuck on UPLOADING.
-        await HubProxy.post(
+        await HubProxy.call(
+            "POST",
             BuiltinEntityType.FLOW_MESSAGE,
-            {
+            action="set_body_status",
+            payload={
                 "flow_message_id": self.id,
                 "body_status": BodyStatus.READY.value,
                 "attachment_filename": BODY_FILENAME,
             },
-            action="set_body_status",
         )
 
     async def save(self, owner=None, notify: bool = True):

@@ -12,6 +12,16 @@ from flow_sdk.fs_store.fs_record import FSRecord
 pytestmark = pytest.mark.asyncio
 
 
+def _get_only(fake_get):
+    """``HubProxy.try_call`` answering GETs from ``fake_get(entity_type, ...)``."""
+
+    async def try_call(method, *args, **kwargs):
+        assert method == "GET", method
+        return await fake_get(*args, **kwargs)
+
+    return try_call
+
+
 async def test_hub_wiki_bridge_uses_canonical_graph_calls_and_caches_metadata(
     bootstrapped_client,
     monkeypatch,
@@ -58,7 +68,7 @@ async def test_hub_wiki_bridge_uses_canonical_graph_calls_and_caches_metadata(
             }
         raise AssertionError((entity_type, entity_id, action, params))
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_get_only(fake_hub_get)))
 
     response = await bootstrapped_client.get(
         f"/api/v1/cloud/wiki/{wiki_id}/resolve",
@@ -125,7 +135,7 @@ async def test_hub_wiki_bridge_preserves_existing_local_placement(
             "created_by": creator_id,
         }
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_get_only(fake_hub_get)))
 
     response = await bootstrapped_client.get(
         f"/api/v1/cloud/wiki/{wiki_id}/resolve",

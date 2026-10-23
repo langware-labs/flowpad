@@ -1,7 +1,7 @@
 """``docs/snippets/decisions.md``: every Python fence, run as written.
 
-The hub is doubled at its two seams -- ``hub_get`` (the endpoint listing + catalog) and
-``hub_invoke_raw`` (the call) -- by the shared double (``tests/utils/decision_double.py``), which
+The hub is doubled at its two seams -- ``HubProxy.call``/``try_call`` (the endpoint listing + catalog) and
+``HubProxy.send`` (the invoke passthrough) -- by the shared double (``tests/utils/decision_double.py``), which
 answers in Jev's real wire shape, so the dialect's translation runs for real. The live leg is ``tests/long_tests/test_decision_live.py``.
 """
 

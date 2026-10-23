@@ -236,11 +236,12 @@ def hub_test_call(monkeypatch):
     """Capture the hub call the sub-action makes, and answer it with a verdict."""
     calls: list[tuple] = []
 
-    async def _hub_post(entity_type, payload, entity_id=None, action=None, **kwargs):
+    async def _hub_post(method, entity_type, entity_id=None, action=None, *a, payload=None, **kwargs):
+        assert method == "POST"
         calls.append((entity_type, entity_id, action))
         return VERDICT
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(_hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_post))
     return calls
 
 
@@ -294,11 +295,11 @@ def hub_chain_call(monkeypatch):
     """Capture the hub GET the sub-action makes, and answer it with a chain report."""
     calls: list[tuple] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
         calls.append((entity_type, entity_id, action))
         return {"status": "SUCCESS", "data": CHAIN}
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     return calls
 
 

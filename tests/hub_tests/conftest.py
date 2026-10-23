@@ -121,8 +121,8 @@ async def _reset_shared_hub_client():
     connections + TLS context), correct for the server's single lifelong loop.
     Under ``asyncio_mode = auto`` each test gets its OWN loop, so the pooled
     client outlives the loop that built it and every later hub call raises
-    ``RuntimeError: Event loop is closed`` — which ``hub_get``/``hub_post``
-    swallow, returning ``None``. The failure is therefore SILENT (a bare
+    ``RuntimeError: Event loop is closed`` — which ``HubProxy.try_call``
+    swallows, returning ``None``. The failure is therefore SILENT (a bare
     ``assert (None)`` / "row never arrived"), not an error, and lands on
     whichever test follows the last client rebuild. Closing it here, while its
     loop is still alive, forces each test to build its own.
@@ -338,9 +338,9 @@ async def _close_shared_hub_client():
     ``hub_http._shared_client`` is a module global deliberately kept alive across
     calls so the TLS context and connection pool survive (see ``_hub_client``).
     Inside one pytest process that global outlives the test that created it, and
-    its internals end up bound to that test's loop — the next test's ``hub_get``
+    its internals end up bound to that test's loop — the next test's ``HubProxy.try_call``
     then dies with ``<asyncio.locks.Event ...> is bound to a different event
-    loop``, which ``hub_get`` swallows as a non-fatal warning. The caller sees
+    loop``, which ``try_call`` swallows as a non-fatal warning. The caller sees
     ``hub_reachable=False``, degrades to local-only, and asserts against a hub it
     never actually reached: a green-or-red outcome decided by test ORDER.
 

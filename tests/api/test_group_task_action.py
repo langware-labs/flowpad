@@ -4,8 +4,8 @@ Groups only — single-assignee assignment is ``test_task_assign_action.py``.
 
 Exercises the real action handlers over the in-process ASGI app: parent task +
 contacts group are created through the normal graph routes, then the group
-fan-out runs with `share`/`create_child`/`hub_post`/`hub_put`/`hub_get` faked
-at their source modules. Asserts the plan's contract: title-only clone, deduped
+fan-out runs with `share`/`create_child` and ``HubProxy.call``/``try_call``
+faked. Asserts the plan's contract: title-only clone, deduped
 member rows keyed (parent_id, assignee), child-first invitation targets with
 editor/guest roles, idempotent re-run, and owner-side member-field sync (LWW).
 """
@@ -112,12 +112,12 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
         }
     }
 
-    async def fake_hub_get(entity_type, entity_id=None, *a, **k):
+    async def fake_hub_get(_method, entity_type, entity_id=None, *a, **k):
         return hub_rows.get(entity_id)
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_hub_get))
     # The owner-side sync ALSO pulls each child's comments via
-    # ``_sync_remote_children`` (a separate ``hub_get``); stub it to no children
+    # ``_sync_remote_children`` (a separate ``HubProxy.try_call``); stub it to no children
     # so this test stays focused on the member-owned field merge.
     import flow_sdk.app.actions.flow_message_action as fma
 

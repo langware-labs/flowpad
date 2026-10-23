@@ -194,7 +194,7 @@ async def test_sync_group_member_pulls_parent_artifacts(monkeypatch):
         saved["artifacts"] = self.artifacts
         return self
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_hub_get))
     monkeypatch.setattr(Task, "get_one", classmethod(fake_get_one))
     monkeypatch.setattr(Task, "is_stale", staticmethod(lambda existing, data: True))
     monkeypatch.setattr(Task, "save", fake_save)

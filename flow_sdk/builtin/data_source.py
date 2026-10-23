@@ -1818,7 +1818,7 @@ class DataSource(SetupSkippable, Entity):
             target = self._node_target(place, await self.route_places())
             if target is None:
                 return ApiFailResponse(message="no such place for this channel", status_code=404)
-        moved = await HubProxy.post("webhook", {"target": target}, str(claim.get("id")), "set_target")
+        moved = await HubProxy.call("POST", "webhook", str(claim.get("id")), "set_target", payload={"target": target})
         if not moved:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": moved, "current": place})
@@ -1833,7 +1833,7 @@ class DataSource(SetupSkippable, Entity):
         claim = await self._hub_route()
         if claim is None:
             return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
-        answer = await HubProxy.post("webhook", {"phase": "reach"}, str(claim.get("id")), "probe")
+        answer = await HubProxy.call("POST", "webhook", str(claim.get("id")), "probe", payload={"phase": "reach"})
         if not answer:
             return ApiFailResponse(message="the hub did not answer the reach probe", status_code=502)
         return ApiSuccessResponse(data=answer)
@@ -1859,7 +1859,7 @@ class DataSource(SetupSkippable, Entity):
         # The same kind as the proven claim: a linked person (user) or a number of one's own (account).
         kind = str((claim.get("claim") or {}).get("kind") or "user")
         body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": kind, "key": key}, "target": target}
-        added = await HubProxy.post("webhook", body, None, "chain")
+        added = await HubProxy.call("POST", "webhook", None, "chain", payload=body)
         if not added:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": added, "place": place})
@@ -2058,7 +2058,6 @@ class DataSource(SetupSkippable, Entity):
         is empty) lets the hub answer the provider's handshake itself."""
         import secrets  # noqa: PLC0415
 
-        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
         from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE  # noqa: PLC0415
         from flow_sdk.sources.setup_steps import SourceUpdateSpec  # noqa: PLC0415
@@ -2114,7 +2113,7 @@ class DataSource(SetupSkippable, Entity):
         if claim is not None and claim["claim"]["kind"] != "account":
             # A part of an account (a group) rides the account's URL: the hub routes it here by its claim, so
             # there is no URL of its own to keep — the account's stays where it is.
-            data = await HubProxy.post("webhook", claim, None, "chain")
+            data = await _post_unless_unconfigured("webhook", "chain", claim)
             if not data or not data.get("id"):
                 return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
             kind, key = claim["claim"]["kind"], claim["claim"]["key"]
@@ -2123,7 +2122,7 @@ class DataSource(SetupSkippable, Entity):
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
             # instance -- never to every desktop of the person.
-            data = await HubProxy.post("webhook", claim, None, "chain")
+            data = await _post_unless_unconfigured("webhook", "chain", claim)
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
             update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
@@ -2134,7 +2133,7 @@ class DataSource(SetupSkippable, Entity):
             "filters": {"methods": list(hook.methods), "required_headers": list(hook.required_headers)},
             **({"verify_token": token} if token else {}),
         }
-        data = await HubProxy.post("webhook", body, None, "create_for_desktop")
+        data = await _post_unless_unconfigured("webhook", "create_for_desktop", body)
         if not data or not data.get("url"):
             return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
         update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
@@ -2366,7 +2365,7 @@ class DataSource(SetupSkippable, Entity):
 
         try:
             for claim in _claims_for(await _hub_claims(), str(self.id)):
-                await HubProxy.delete("webhook", str(claim.get("id")))
+                await HubProxy.call("DELETE", "webhook", str(claim.get("id")))
             return ""
         except Exception as exc:  # noqa: BLE001 — reported, never raised
             return f"hub claim not released: {type(exc).__name__}"
@@ -2519,9 +2518,24 @@ async def _hub_claims() -> list[dict]:
     """Every hub webhook claim of the signed-in person (``webhook/mine``) — empty when the hub is unreachable."""
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-    mine = await HubProxy.get("webhook", None, "mine") or {}
+    mine = await HubProxy.try_call("GET", "webhook", None, "mine") or {}
     rows = mine.get("webhooks") if isinstance(mine, dict) else None
     return [r for r in rows or [] if isinstance(r, dict)]
+
+
+async def _post_unless_unconfigured(entity_type: str, action: str, payload: dict) -> Any:
+    """POST to the hub; None when this box has no hub configured (Local mode) — the caller's
+    "sign in to Flowpad cloud first" path. Every other hub failure raises."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+    try:
+        return await HubProxy.call("POST", entity_type, None, action, payload=payload)
+    except HubError as e:
+        if e.kind is not HubFailureKind.NOT_CONFIGURED:
+            raise
+        return None
 
 
 def _claims_for(claims: list[dict], source_id: str) -> list[dict]:

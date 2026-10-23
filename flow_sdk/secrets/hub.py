@@ -45,7 +45,7 @@ class HubStore(SecretStore):
 
         # Raises on an unreachable hub: an outage must not read as "holds nothing" (a save would then
         # create instead of update, a forget would report success).
-        rows = await HubProxy.get_or_raise(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var")
+        rows = await HubProxy.call("GET", BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, "env-var")
         return [r for r in rows or [] if isinstance(r, dict) and r.get("var_type") in _CONFIDENTIAL]
 
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
@@ -62,12 +62,13 @@ class HubStore(SecretStore):
         held = set(await self.names())
         for name, value in plain_values(values).items():
             if name in held:
-                await HubProxy.put(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, {"value": value},
-                              action="env-var", sub_path=name)
+                await HubProxy.call("PUT", BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, "env-var", name,
+                                    payload={"value": value})
             else:
-                await HubProxy.post(BuiltinEntityType.DEPLOYMENT,
-                               {"name": name, "var_type": "api_key", "value": value, "description": description or name},
-                               self.config.deployment_id, action="env-var")
+                await HubProxy.call(
+                    "POST", BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, "env-var",
+                    payload={"name": name, "var_type": "api_key", "value": value, "description": description or name},
+                )  # fmt: skip
 
     async def forget(self, names: Iterable[str]) -> tuple[list[str], list[str]]:
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
@@ -81,7 +82,7 @@ class HubStore(SecretStore):
             if name not in held:
                 continue
             try:
-                await HubProxy.delete(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var", sub_path=name)
+                await HubProxy.call("DELETE", BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, "env-var", name)
                 deleted.append(name)
             except HubError as e:
                 logger.warning("[secrets] the hub kept %s: %s", name, e.status_code)

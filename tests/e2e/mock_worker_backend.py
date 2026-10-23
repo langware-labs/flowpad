@@ -48,7 +48,9 @@ def main() -> None:
         from tests.utils.decision_double import seams  # noqa: PLC0415
 
         state = {"status": 200, "invoked": [], "answers": {}}
-        HubProxy.get, HubProxy.invoke_raw = (staticmethod(f) for f in seams(state))
+        _call, _send = seams(state)
+        HubProxy.call = HubProxy.try_call = staticmethod(_call)
+        HubProxy.send = staticmethod(_send)
         print("[mock-decision] the Decision API answers from the double (yes 0.9, first option, mid score)", flush=True)
     run.main()
 

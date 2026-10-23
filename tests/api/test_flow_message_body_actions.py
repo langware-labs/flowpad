@@ -6,7 +6,7 @@ Covers the local-backend routes that expose the header/body interface:
   POST /api/v1/graph/flow_message/<id>/upload_body
   POST /api/v1/graph/flow_message/<id>/download_body
 
-All hub I/O is mocked at ``flow_sdk.utils.hub`` so the tests run hermetically
+All hub I/O is mocked at ``HubProxy`` so the tests run hermetically
 against the FastAPI app via ``bootstrapped_client`` (the same ASGI client
 ``tests/api/test_flow_message_actions.py`` uses) — no live hub required.
 
@@ -42,7 +42,7 @@ async def _save_local_fm(*, text: str, attachments: list[Attachment] | None = No
     """Persist a FlowMessage to the same DB the FastAPI app reads, return its id.
 
     Bypasses the hub completely — the body actions resolve the FM locally
-    first; only on miss do they fall back to ``hub_get``. For the API tests
+    first; only on miss do they fall back to the hub (``HubProxy.try_call``). For the API tests
     we always want the local path so we exercise the route handler shape,
     not the hub fallback.
     """
@@ -105,8 +105,8 @@ async def test_upload_body_happy_path(bootstrapped_client, tmp_path: Path) -> No
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(return_value=fake_zip)),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
-        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "call", AsyncMock(return_value={})) as mock_call,
+        patch.object(HubProxy, "upload", AsyncMock(return_value={})) as mock_upload,
     ):
         r = await bootstrapped_client.post(f"/api/v1/graph/flow_message/{fm_id}/upload_body", json={})
 
@@ -121,9 +121,10 @@ async def test_upload_body_happy_path(bootstrapped_client, tmp_path: Path) -> No
     # _attachments_require_body when the message header is created), so
     # the client never needs to PUT it. See flow_message.upload_body
     # docstring for the rationale.
-    assert mock_put.await_count == 0
-    assert mock_post.await_count == 2
-    upload_files = mock_post.await_args_list[0].kwargs["files"]
+    assert not [c for c in mock_call.await_args_list if c.args[0] == "PUT"]
+    assert mock_upload.await_count == 1
+    assert [c.kwargs.get("action") for c in mock_call.await_args_list] == ["set_body_status"]
+    upload_files = mock_upload.await_args_list[0].kwargs["files"]
     filename, _content, ctype = upload_files["uploaded_file"]
     assert filename == BODY_FILENAME
     assert ctype == "application/zip"
@@ -142,8 +143,8 @@ async def test_upload_body_accepts_git_transfer_mode(bootstrapped_client, tmp_pa
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
-        patch.object(HubProxy, "put", AsyncMock(return_value={})),
-        patch.object(HubProxy, "post", AsyncMock(return_value={})),
+        patch.object(HubProxy, "call", AsyncMock(return_value={})),
+        patch.object(HubProxy, "upload", AsyncMock(return_value={})),
     ):
         r = await bootstrapped_client.post(
             f"/api/v1/graph/flow_message/{fm_id}/upload_body",

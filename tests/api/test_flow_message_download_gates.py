@@ -58,8 +58,8 @@ def _hub_fm(body_status: str) -> dict[str, Any]:
 
 
 def _download_gets(mock_get) -> list:
-    """Sub-list of hub_get calls that hit the bundle download endpoint
-    (``hub_get(FLOW_MESSAGE, id, "fs", "download/<file>", ...)``)."""
+    """Sub-list of hub calls that hit the bundle download endpoint
+    (``HubProxy.download(FLOW_MESSAGE, id, "fs", "download/<file>", ...)``)."""
     hits = []
     for call in mock_get.await_args_list:
         args = call.args
@@ -80,11 +80,8 @@ def _download_gets(mock_get) -> list:
 @pytest.mark.asyncio
 async def test_open_dangling_pointer_issues_no_download(bootstrapped_client) -> None:
     """body_status='na' (dangling) → the gate skips; no fs/download GET fires."""
-    with patch.object(
-        HubProxy,
-        "get",
-        AsyncMock(return_value=_hub_fm("na")),
-    ) as mock_get:
+    mock_get = AsyncMock(return_value=_hub_fm("na"))
+    with patch.object(HubProxy, "try_call", mock_get), patch.object(HubProxy, "download", mock_get):
         r = await bootstrapped_client.get(f"/api/v1/graph/flow_message/{FM_ID}/open")
 
     assert r.status_code == 200, r.text
@@ -104,11 +101,8 @@ async def test_open_ready_pointer_issues_download(bootstrapped_client) -> None:
             return b""
         return _hub_fm("ready")
 
-    with patch.object(
-        HubProxy,
-        "get",
-        AsyncMock(side_effect=_fake_get),
-    ) as mock_get:
+    mock_get = AsyncMock(side_effect=_fake_get)
+    with patch.object(HubProxy, "try_call", mock_get), patch.object(HubProxy, "download", mock_get):
         r = await bootstrapped_client.get(f"/api/v1/graph/flow_message/{FM_ID}/open")
 
     assert r.status_code == 200, r.text
@@ -184,7 +178,7 @@ async def test_download_body_no_project_stages_assets_without_materializing(
     prompt_id = str(uuid.uuid4())
 
     # Local hub-delivered FM whose body is READY on the hub. Saved locally so
-    # the route resolves it without a metadata hub_get — the only hub call is
+    # the route resolves it without a metadata HubProxy.try_call — the only hub call is
     # the bundle download, which we stub with real bundle bytes.
     fm = FlowMessage(
         text="see the shared prompt",
@@ -202,11 +196,8 @@ async def test_download_body_no_project_stages_assets_without_materializing(
             return bundle
         return None
 
-    with patch.object(
-        HubProxy,
-        "get",
-        AsyncMock(side_effect=_fake_get),
-    ):
+    hub = AsyncMock(side_effect=_fake_get)
+    with patch.object(HubProxy, "try_call", hub), patch.object(HubProxy, "download", hub):
         r = await bootstrapped_client.post(
             f"/api/v1/graph/flow_message/{fm_id}/download_body", json={},
         )

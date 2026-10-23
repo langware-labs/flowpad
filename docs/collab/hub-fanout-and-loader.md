@@ -229,8 +229,8 @@ query-equivalent to the sender's original:
    rows and served only under `expand=blobs`. The live op usually embeds the
    in-memory entity (blobs included); when a blob-declaring type arrives with
    all blob fields empty, the bridge does one follow-up
-   `hub_get(child, expand=blobs)` and merges before materializing
-   (`hub_bridge.py::_handle_child_op`).
+   `HubProxy.try_call("GET", child, params={"expand": "blobs"})` and merges before
+   materializing (`hub_bridge.py::_fill_empty_blobs`).
 
 A child whose parent hasn't materialized yet (a layer-1-gated shared doc, not
 yet installed) saves row-only; the **orphan rebind** pass of the catch-up sync

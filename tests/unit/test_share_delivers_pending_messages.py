@@ -62,7 +62,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
     # Neutralize all hub I/O so the test is a pure unit on share()'s ordering:
     #   - super().share() (Entity.share) → no-op
     #   - credentials present
-    #   - HubProxy.call_url (join + members POST) → no-op
+    #   - HubProxy.call (join + members POST) → no-op
     #   - the normal-send hub create is the observation point
     creds = MagicMock(api_key="k", user={})
 
@@ -71,7 +71,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
     with (
         patch.object(Entity, "share", new=AsyncMock(return_value=None)),
         patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
-        patch.object(HubProxy, "call_url", new=AsyncMock(return_value={})),
+        patch.object(HubProxy, "call", new=AsyncMock(return_value={})),
         patch(
             "flow_sdk.app.actions.notification_action._send_conversation_message_header",
             header,
@@ -101,8 +101,8 @@ async def test_share_joins_before_any_fallible_post_create_work():
 
     hub_api = f"https://hub.test{APIRequest.api_prefix}"
 
-    async def _call_url(_method, url, **_kw):
-        events.append(url.removeprefix(hub_api))
+    async def _call(_method, entity_type, entity_id=None, action=None, sub_path=None, **_kw):
+        events.append("/graph/" + "/".join(str(p) for p in (entity_type, entity_id, action) if p))
         return {}
 
     async def _link():
@@ -119,7 +119,7 @@ async def test_share_joins_before_any_fallible_post_create_work():
         patch.object(Conversation, "_share_hostable_assets", new=AsyncMock(return_value=[])),
         patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
         patch("flow_sdk.cloud_client.transport.hub_http.hub_base_url", return_value="https://hub.test"),
-        patch.object(HubProxy, "call_url", new=AsyncMock(side_effect=_call_url)),
+        patch.object(HubProxy, "call", new=AsyncMock(side_effect=_call)),
     ):
         await conv.share(recipients=["alice@example.com"])
 
