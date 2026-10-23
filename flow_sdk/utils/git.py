@@ -174,12 +174,32 @@ def _url_matches(path: str, clone_url: str) -> bool:
         return False
 
 
+def _in_another_instance(path: str) -> bool:
+    """Is ``path`` inside ANOTHER Flowpad instance's own folder (``<flow_home>/instances/<other>/``)?
+    Such a checkout is that instance's (its workspace), never one to adopt here."""
+    from pathlib import Path as _Path
+
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    try:
+        settings = get_instance_settings()
+        resolved = _Path(path).resolve()
+        if not resolved.is_relative_to(settings.instances_root.resolve()):
+            return False
+        return not resolved.is_relative_to(settings.instance_dir.resolve())
+    except Exception:  # noqa: BLE001 — no settings: nothing is known to be foreign
+        return False
+
+
 def find_local_repo_for_url(clone_url: str) -> Optional[str]:
     """Find a local repo whose origin URL matches clone_url.
 
     Pass 1: Claude-registered projects (fast, authoritative).
     Pass 2: Immediate siblings of those projects — covers repos that exist
             on disk but were never opened in Claude.
+
+    ``~/.claude/projects`` is machine-wide, so a checkout inside another Flowpad
+    instance's folder is listed too; it is that instance's and is skipped.
     """
     if not clone_url:
         return None
@@ -188,7 +208,7 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
 
     from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
-    claude_paths = list(iter_claude_project_paths())
+    claude_paths = [p for p in iter_claude_project_paths() if not _in_another_instance(str(p))]
 
     # Pass 1: Claude-registered projects
     for project_root in claude_paths:
@@ -207,6 +227,8 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
                 if not sibling.is_dir() or sibling == _Path(project_root):
                     continue
                 if (sibling / ".git").exists() and _url_matches(str(sibling), clone_url):
+                    if _in_another_instance(str(sibling)):
+                        continue
                     return str(sibling)
         except OSError:
             continue
