@@ -6,20 +6,17 @@
 from __future__ import annotations
 
 import subprocess
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.driver_runtime import Pass
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.utils import git_ignore
-from tests.unit.test_ingest_sync import _FakeType
 
 NOW = datetime(2026, 10, 9, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -95,10 +92,18 @@ def test_the_file_says_only_what_differs_from_the_defaults():
 # ── the guard in the sync loop ────────────────────────────────────────────────
 
 
-async def _copy_source(target: Path, **kw) -> DataSource:
-    src = DataSource(
-        provider="faketest", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"fake {uuid.uuid4().hex[:8]}",
-        reflect="copy", reflect_into=str(target), **kw,
+def _watched(tmp_path: Path) -> Path:
+    """A real folder outside the repo, holding one file: what the shipped ``folder`` driver copies in."""
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    (watched / "note.md").write_text("hello")
+    return watched
+
+
+async def _copy_source(tmp_path: Path, target: Path, **kw) -> DataSource:
+    """A ``folder`` source copying a real watched folder (outside the repo) into ``target``."""
+    src = make_data_source(
+        "folder", config={"root": str(_watched(tmp_path))}, reflect="copy", reflect_into=str(target), **kw
     )
     await src.save()
     return src
@@ -111,8 +116,7 @@ async def _reread(src) -> DataSource:
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_copy_source_keeps_its_target_out_of_git_before_placing(tmp_path):
     repo = _repo(tmp_path)
-    src = await _copy_source(repo / "ds" / "rows")
-    DataDriver.register(_FakeType(Pass(cursor="c1"), is_object=True))
+    src = await _copy_source(tmp_path, repo / "ds" / "rows")
 
     await sync_source(src, now=NOW)
 
@@ -128,13 +132,11 @@ async def test_a_tracked_target_refuses_the_pass_before_traversing(tmp_path):
     (target / "row.json").write_text("{}")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "rows")
-    src = await _copy_source(target)
-    fake = _FakeType(Pass(cursor="c1"), is_object=True)
-    DataDriver.register(fake)
+    src = await _copy_source(tmp_path, target)
 
     await sync_source(src, now=NOW)
 
-    assert fake.positions == [], "nothing is fetched while the target would be committed"
+    assert sorted(p.name for p in target.iterdir()) == ["row.json"], "nothing is placed while the target would be committed"
     row = await _reread(src)
     assert (row.health, row.error_code, row.cursor) == (SourceHealth.CONFIG_ERROR.value, "reflect_target_tracked", None)
     assert "git rm -r --cached" in row.error_detail
@@ -143,8 +145,7 @@ async def test_a_tracked_target_refuses_the_pass_before_traversing(tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_source_that_opts_out_leaves_gitignore_alone(tmp_path):
     repo = _repo(tmp_path)
-    src = await _copy_source(repo / "ds" / "rows", gitignored=False)
-    DataDriver.register(_FakeType(Pass(cursor="c1"), is_object=True))
+    src = await _copy_source(tmp_path, repo / "ds" / "rows", gitignored=False)
 
     await sync_source(src, now=NOW)
 
