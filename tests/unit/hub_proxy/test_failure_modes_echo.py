@@ -56,7 +56,7 @@ def _hub_conversations(n: int) -> list[dict]:
         stamp = (base + timedelta(seconds=i)).isoformat()
         rows.append(
             {"id": str(uuid.uuid4()), "type": "conversation", "title": f"hub conv {i}", "kind": "direct",
-             "created_date": stamp, "updated_date": stamp}  # fmt: skip
+             "created_date": stamp, "updated_date": stamp, "message_count": 0}  # fmt: skip
         )
     return rows
 
@@ -130,3 +130,25 @@ async def test_a_hub_too_slow_for_the_conversation_list_answers_local_and_prunes
     assert data["pruned_ids"] == []
     assert held.id in {c["id"] for c in data["conversations"]}
     assert await Conversation.get_by_id(held.id) is not None
+
+
+async def test_a_list_too_long_for_the_request_finishes_and_prunes_after_the_answer(
+    desktop, no_invitations, monkeypatch
+):
+    """Past the foreground budget the sync answers at once; the rest of the rows, and the prune that
+    needs all of them, follow in one background task."""
+    from flow_sdk.app.actions import flow_message_action
+    from flow_sdk.builtin.conversation import Conversation
+
+    echo_hub = no_invitations
+    held = await _held_remote_conversation()
+    echo_hub.paged[CONVERSATIONS] = _hub_conversations(30)
+    monkeypatch.setattr(flow_message_action, "FOREGROUND_RECONCILE_S", 0.0)
+
+    data = await _conversation_list()
+    assert data["pruned_ids"] == [], "pruned before every hub row was in"
+    assert await Conversation.get_by_id(held.id) is not None
+    await flow_message_action._deferred_reconcile
+    assert await Conversation.get_by_id(held.id) is None, "the background finish did not prune"
+    for row in echo_hub.paged[CONVERSATIONS]:
+        assert await Conversation.get_by_id(row["id"]) is not None

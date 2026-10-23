@@ -187,8 +187,8 @@ def recent_cmd(
     """
     from flow_sdk.cli.commands._common import discover_port, local_get  # noqa: PLC0415
 
-    url = f"http://127.0.0.1:{discover_port()}/api/v1/graph/data_driver/{driver}/recent"
-    resp = local_get(url, params={"hours": str(hours)}, timeout=120)
+    url = f"http://127.0.0.1:{discover_port()}/api/v1/graph/data_driver/recent"
+    resp = local_get(url, params={"driver": driver, "hours": str(hours)}, timeout=120)
     body = resp.json() if resp.content else {}
     if body.get("status") != "SUCCESS":
         typer.echo(f"Error: {body.get('message') or resp.status_code}", err=True)

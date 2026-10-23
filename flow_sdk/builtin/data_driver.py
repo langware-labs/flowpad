@@ -166,16 +166,17 @@ class DataDriver(DriverRuntime, Entity):
             return ApiSuccessResponse(data={"available": False, "detail": f"unavailable: {exc}"})
 
     @core_action.get(action_name="recent")
-    async def recent_action(self, hours: str = "24"):
-        """GET /api/v1/graph/data_driver/{id}/recent?hours=24 — what happened lately, read with this
-        machine's own connection (``Source.recent(hours)``); the answer is content, never a token.
-        404 for a driver that declares none, 409 when it is not connected here, 502 when its service fails."""
+    async def recent_action(cls, driver: str = "", hours: str = "24"):
+        """GET /api/v1/graph/data_driver/recent?driver=slack&hours=24 — what happened lately on the driver named,
+        read with this machine's own connection (``Source.recent(hours)``); the answer is content, never a token.
+        Named, not addressed by id: the agent asking knows "slack", not a row id. 404 for a driver that declares
+        none, 409 when it is not connected here, 502 when its service fails."""
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
-        driver = await DataDriver.get(self.name or "")
-        recent = getattr(getattr(driver, "cls", None), "recent", None)
+        found = await DataDriver.get(driver)
+        recent = getattr(getattr(found, "cls", None), "recent", None)
         if recent is None:
-            return ApiFailResponse(message=f"{self.name} has no recent read", status_code=404)
+            return ApiFailResponse(message=f"{driver} has no recent read", status_code=404)
         try:
             return ApiSuccessResponse(data=await recent(float(hours or 24)))
         except LookupError as e:

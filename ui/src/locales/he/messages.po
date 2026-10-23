@@ -1622,6 +1622,10 @@ msgstr "{projectName} שותף"
 #~ msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
 #~ msgstr ""
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "{provider} connection"
+msgstr ""
+
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
 msgid "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
@@ -3132,6 +3136,7 @@ msgstr "סוכן"
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Agent"
 msgstr "סוכן"
@@ -15499,8 +15504,12 @@ msgid "Join existing"
 msgstr "הצטרפות לקיים"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Join this support ticket so you can reply"
-msgstr "הצטרפו לכרטיס תמיכה זה כדי שתוכלו להשיב"
+#~ msgid "Join this support ticket so you can reply"
+#~ msgstr "הצטרפו לכרטיס תמיכה זה כדי שתוכלו להשיב"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Join this support ticket. Replying picks it up too."
+msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Joining…"
@@ -15722,6 +15731,10 @@ msgstr "שפה"
 #: src/components/inbound/InboundView.tsx
 msgid "lapsed"
 msgstr "פג תוקף"
+
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Lapsed"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -16173,6 +16186,10 @@ msgstr "קשרו לענן"
 msgid "linked"
 msgstr "מקושר"
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Linked"
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -16365,8 +16382,13 @@ msgid "Load Flowpad assistant"
 msgstr "טעינת עוזר Flowpad"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Load more"
 msgstr "טענו עוד"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Load older messages"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Loaded"
@@ -16708,6 +16730,7 @@ msgstr "טוען..."
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
+#: src/components/conversation/ConversationView.tsx
 #: src/components/data-sources/ChoiceField.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -16732,6 +16755,7 @@ msgstr "טוען..."
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
+#: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
 msgid "Loading…"
@@ -18498,6 +18522,10 @@ msgstr "אין שינויים בגוף הסקיל."
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "No channel is attached yet."
 msgstr "אין עדיין ערוץ מחובר."
+
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "No channel links to this agent yet"
+msgstr ""
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No channel reaches this Agent yet. Give it an email address to start."
@@ -21249,6 +21277,10 @@ msgstr "פתיחה:"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "פתחו את דף {PRIVACY_WIKI_PAGE}"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open the agent"
+msgstr ""
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the agent run"
@@ -29567,6 +29599,10 @@ msgstr "הסוכן השאיר עבודה שרצה ברקע. אפשר להמשי�
 msgid "The agent this link names isn't in the project's files."
 msgstr "הסוכן שהקישור מציין לא נמצא בקבצי הפרויקט."
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "The agent's machine may use it"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent's plan is ready — approve it in the terminal."
 msgstr "התוכנית של הסוכן מוכנה — יש לאשר אותה בטרמינל."
@@ -32777,6 +32813,10 @@ msgstr ""
 msgid "waiting for the first signed delivery…"
 msgstr "בהמתנה למסירה החתומה הראשונה…"
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Waiting for the link"
+msgstr ""
+
 #: src/components/ask/AskChoiceBlock.tsx
 #~ msgid "Waiting for the sign-in…"
 #~ msgstr "ממתין להתחברות…"
@@ -32904,6 +32944,10 @@ msgstr "Webhook"
 #: src/components/inbound/InboundView.tsx
 msgid "Webhook URL"
 msgstr "כתובת Webhook"
+
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Webhooks & connections"
+msgstr ""
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"

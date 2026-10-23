@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
@@ -1642,8 +1643,6 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
-
-
 @action.post(action_name="helpdesk-tickets-list", types=None)
 async def helpdesk_tickets_list() -> ApiResponse:
     """Staff triage queue: list the helpdesk project's tickets (members-only on
@@ -2307,7 +2306,9 @@ async def stream_inbox_search() -> ApiResponse:
         return ApiFailResponse(message=f"Search failed: {str(e)}")
 
 
-async def load_older(*, before: datetime, page_size: int, agent_id: Optional[str] = None, source_id: Optional[str] = None) -> dict:
+async def load_older(
+    *, before: datetime, page_size: int, agent_id: Optional[str] = None, source_id: Optional[str] = None
+) -> dict:
     """Ask a stream inbox's sources for their page of messages older than ``before`` — the step a paged
     list takes past its oldest held row. ``source_id`` asks that one source; ``agent_id`` the Agent's
     (its resolved scope); else the local user's. Only a source that reads backwards is asked.
@@ -2324,7 +2325,8 @@ async def load_older(*, before: datetime, page_size: int, agent_id: Optional[str
     else:
         mine = str(await default_owner() or "")
         rows = [
-            row for row in await DataSource.get_all({"status": SourceStatus.ACTIVE.value}) or []
+            row
+            for row in await DataSource.get_all({"status": SourceStatus.ACTIVE.value}) or []
             if str(await owner_of(row) or "") == mine
         ]
     backward = {}
@@ -2362,10 +2364,14 @@ async def stream_inbox_load_older() -> ApiResponse:
         if before is None:
             return ApiFailResponse(message="'before' (an ISO time) is required", status_code=400)
         page_size = min(max(int(body.get("page_size") or DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE)
-        return ApiSuccessResponse(data=await load_older(
-            before=before, page_size=page_size, agent_id=body.get("agent_id") or None,
-            source_id=body.get("source_id") or None,
-        ))
+        return ApiSuccessResponse(
+            data=await load_older(
+                before=before,
+                page_size=page_size,
+                agent_id=body.get("agent_id") or None,
+                source_id=body.get("source_id") or None,
+            )
+        )
     except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
@@ -2887,10 +2893,13 @@ async def _materialize_invitation(
         # natural key -- the invitation message in this conversation carrying
         # this invitation -- and upserted, never minted twice.
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
         prior = await FlowMessage.get_all(
             {"match": {"conversation_id": conv_id, "kind": FlowMessageKind.INVITATION.value}}, hydrate=False
         )
-        same = next((m for m in prior if invitation_typeid in [str(c) for c in (m.shared_context_entities or [])]), None)
+        same = next(
+            (m for m in prior if invitation_typeid in [str(c) for c in (m.shared_context_entities or [])]), None
+        )
         synth_fm_id = str(same.id) if same is not None else mint_uuid()
         message_text = (local_inv.message or "").strip()
         # The invite logically precedes every message in the conversation, but
@@ -3753,7 +3762,8 @@ def _should_fetch_messages(
     if hub_conv.get("deleted_at"):
         return False
     if local_conv is None:
-        return True
+        # Never synced: fetch, unless the hub says there is nothing to fetch.
+        return hub_conv.get("message_count") != 0
     if clock_moved is None:
         clock_moved = Conversation.hub_clock_moved(local_conv, Conversation._as_datetime(hub_conv.get("updated_date")))
     if clock_moved:
@@ -3885,10 +3895,11 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # A per-batch memo so a hub account's many conversations (mostly one
     # shared roster) learn their contacts once, not once per conversation.
     learned_rosters: set[str] = set()
-    for hub_conv in hub_convs:
+
+    async def reconcile(hub_conv: dict) -> None:
         conv_id = (hub_conv.get("id") or "").strip()
         if not conv_id:
-            continue
+            return
         # Owner-deleted conversations remain on the hub as audit rows. They
         # are not live sync inputs: deciding message drift before checking
         # deleted_at queued a detached child fetch which recreated the bare
@@ -3900,7 +3911,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
                     await _hard_delete_local_conversation(existing)
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[conv-list] deleted audit cleanup %s failed: %s", conv_id[:8], e)
-            continue
+            return
         # ``existing`` is the PRE-upsert local copy from the bulk cache — the
         # correct comparison baseline. Capture the fetch decision BEFORE the
         # upsert mutates ``existing.updated_date``.
@@ -3929,11 +3940,23 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-list] upsert conv=%s failed: %s", conv_id[:8], e)
-                continue
+                return
         if should_fetch:
             # Collect now; dispatch the whole batch off-path at the end so these
             # fetches don't steal event-loop time from the reconcile above.
             bg_fetch_pending[conv_id] = _hub_updated
+
+    # Newest first, inside a time budget: a first sync of thousands of hub conversations writes each
+    # one locally, and the caller is waiting. What the budget leaves is reconciled right after the
+    # response, in one background task, and reaches the UI over WS like the message catch-up.
+    ordered = sorted(hub_convs, key=lambda c: str(c.get("updated_date") or ""), reverse=True)
+    deadline = time.monotonic() + FOREGROUND_RECONCILE_S
+    deferred: list[dict] = []
+    for index, hub_conv in enumerate(ordered):
+        if time.monotonic() > deadline:
+            deferred = ordered[index:]
+            break
+        await reconcile(hub_conv)
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
@@ -3964,20 +3987,25 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # a pending invitation) means it was deleted hub-side (or the local
     # user lost access). Reconcile by hard-deleting locally so the next
     # render reflects reality.
-    pruned_ids: list[str] = []
-    if hub_reachable and hub_list_complete:
+    async def prune() -> list[str]:
+        pruned: list[str] = []
         seen_ids = {c.get("id") for c in hub_convs if c.get("id") and not c.get("deleted_at")}
         seen_ids.update(invitation_conv_ids)
         # Re-read local state because the upsert + invitation steps may have
         # added rows that didn't exist when we snapshotted earlier.
-        refreshed_local = await Conversation.get_all({})
-        for c in refreshed_local:
+        for c in await Conversation.get_all({}):
             if c.remote and c.id and c.id not in seen_ids:
                 try:
                     await _hard_delete_local_conversation(c)
-                    pruned_ids.append(c.id)
+                    pruned.append(c.id)
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[conv-list] prune %s failed: %s", (c.id or "?")[:8], e)
+        return pruned
+
+    pruned_ids: list[str] = []
+    can_prune = hub_reachable and hub_list_complete
+    if can_prune and not deferred:
+        pruned_ids = await prune()
 
     # (f) one unread reconcile for the whole batch — invitations materialized
     # in (d) and conversations pruned in (e) both change the projection.
@@ -4000,8 +4028,43 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # fetches start as the response is sent (never contending with the loop above)
     # and only a few run at once. Their writes heal through the authoritative
     # reconcile in _fetch_conversation_messages and stream in via WS data_op.
-    _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
+    if deferred:
+        _dispatch_deferred_reconcile(
+            deferred, reconcile, prune if can_prune else None, bg_fetch_pending, someone_typeid
+        )
+    else:
+        _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
     return response
+
+
+#: Seconds the conversation-list request spends mirroring hub rows before it answers; the rest
+#: continues in the background (``_dispatch_deferred_reconcile``).
+FOREGROUND_RECONCILE_S = 3.0
+_deferred_reconcile: Optional[asyncio.Task] = None
+
+
+def _dispatch_deferred_reconcile(deferred, reconcile, prune, bg_fetch_pending, someone_typeid) -> None:
+    """Finish a conversation-list sync after its response: mirror the rows the foreground budget left,
+    prune only now that every row is in (``prune`` is None when the walk was incomplete), then start
+    the message catch-up. One at a time — a sync that finds one running leaves the rest to it and to
+    the next sync."""
+    global _deferred_reconcile
+    if _deferred_reconcile is not None and not _deferred_reconcile.done():
+        _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
+        return
+
+    async def finish() -> None:
+        for hub_conv in deferred:
+            await reconcile(hub_conv)
+        if prune is not None:
+            await prune()
+        stream_inbox.touch("conversation-list")
+        _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
+
+    try:
+        _deferred_reconcile = asyncio.create_task(finish(), name=f"conv-list-reconcile-{len(deferred)}")
+    except RuntimeError:
+        pass
 
 
 @action.post(action_name="conversation-list", types=None)
