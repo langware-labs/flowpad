@@ -129,6 +129,10 @@ export interface Browseable {
    *  PREVIEW: hovering a row shows it without opening anything. */
   tooltip?: ReactNode;
 
+  /** The entity this row names. Hover shows the same `EntityCard` the tab
+   *  strip shows for it; wins over `tooltip`. */
+  entity?: { type: string; id: string };
+
   /** Optional stable alternate identity for *selection* matching, used when the
    *  active pointer addresses this row by a different serialization than its
    *  `pointer` (e.g. an `editor/<t>/typeid/<id>` URL vs a vfs-path leaf). The

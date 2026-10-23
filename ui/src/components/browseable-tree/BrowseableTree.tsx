@@ -1,3 +1,4 @@
+import { EntityCard } from '@src/components/entity-card/EntityCard';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -619,7 +620,7 @@ function BrowseableRow({
           ) : (
             <>
               {node.icon}
-              <span className="min-w-0 flex-1 truncate" title={node.tooltip ? undefined : node.label}>
+              <span className="min-w-0 flex-1 truncate" title={node.tooltip || node.entity ? undefined : node.label}>
                 {node.label}
               </span>
               {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
@@ -654,7 +655,7 @@ function BrowseableRow({
       data-selection-key={node.selectionKey}
       data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
     >
-      {node.tooltip ? (
+      {node.tooltip || node.entity ? (
         <Tooltip>
           <TooltipTrigger asChild>{rowEl}</TooltipTrigger>
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
@@ -665,9 +666,15 @@ function BrowseableRow({
               OUTSIDE the panel — without this, moving onto it fires the panel's
               pointerleave and closes a menu the user never left. The preview is
               read-only, so there is nothing in it to click. */}
-          <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
-            {node.tooltip}
-          </TooltipContent>
+          {node.entity ? (
+            <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none p-0">
+              <EntityCard type={node.entity.type} id={node.entity.id} fallbackName={node.label} />
+            </TooltipContent>
+          ) : (
+            <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
+              {node.tooltip}
+            </TooltipContent>
+          )}
         </Tooltip>
       ) : (
         rowEl
