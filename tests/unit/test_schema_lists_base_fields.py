@@ -9,6 +9,12 @@ from flow_sdk.core.schema import build_all_type_payloads
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
+def _shipped(type_name: str) -> bool:
+    """A type the SDK ships — not one an earlier test registered."""
+    cls = SchemaRegistry.get(type_name).entity_cls
+    return cls is not None and cls.__module__.startswith("flow_sdk.")
+
+
 def test_every_entity_schema_lists_the_base_fields():
     import flow_sdk.builtin.flow_message  # noqa: F401  the type that lost its fields
 
@@ -16,7 +22,7 @@ def test_every_entity_schema_lists_the_base_fields():
     missing = {
         p["type_name"]: sorted({"id", "created_date", "updated_date"} - set(p["schema"]["properties"]))
         for p in build_all_type_payloads()
-        if p.get("schema")
+        if p.get("schema") and _shipped(p["type_name"])
     }
     assert {t: m for t, m in missing.items() if m} == {}
     assert "flow_message" in missing
