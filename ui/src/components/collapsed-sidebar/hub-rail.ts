@@ -30,7 +30,7 @@ export type HubItem = {
  * `t` is passed in so the caller's `useLingui` owns re-translation on locale change.
  *
  * Glyphs are lucide icons: every entry is a PLACE rather than a type. Stream Inbox
- * opens a `conversation` list but keeps the desk slot's `Mail` (see `navMeta` in
+ * opens the Stream Inbox but keeps the desk slot's `Mail` (see `navMeta` in
  * `collapsed-sidebar.tsx`) rather than the type's glyph.
  */
 export function buildHubRailItems(t: (s: TemplateStringsArray) => string): readonly HubItem[] {
@@ -40,17 +40,14 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     // Home button keeps hub navigation under `page=hub`, and the project is the
     // leading breadcrumb). Two buttons for one destination is the thing the
     // rail has always avoided.
-    // Stream Inbox, matching the desk's Stream Inbox slot (same `Mail` glyph). It lists the
-    // hub's `conversation` entities over `graph/conversation`; the desk
-    // `StreamInboxView` is NOT reusable here, because everything it reads is desk-only
-    // (`conversation-list` action → 404 on the hub, `stream_inbox_manager` → 422), so it
-    // would render an empty shell. That also means no unread badge on the hub.
+    // Stream Inbox, the desk's own view (same `Mail` glyph) over the hub's conversations. Unread,
+    // archive and search are per-machine state, so the hub page shows no badge and none of those
+    // controls. Pointer-less, so the icon stays lit while `?conversation=` selects a row.
     {
       id: 'stream_inbox',
       title: t`Stream Inbox`,
       icon: Mail,
-      viewType: ViewType.HUB_RECORDS,
-      pointer: 'conversation',
+      viewType: ViewType.STREAM_INBOX,
     },
     // Tasks and Docs are hidden for now (ids stay in HubRailItemId to bring them back).
     {

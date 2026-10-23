@@ -65,9 +65,13 @@ describe('buildHubRailItems', () => {
         .map((i) => [i.id, i.pointer]),
     );
 
-    expect(pointers).toEqual({
-      stream_inbox: 'conversation',
-    });
+    expect(pointers).toEqual({});
+  });
+
+  it('opens the stream inbox itself, pointer-less so it stays lit while a row is selected', () => {
+    const streamInbox = buildHubRailItems(t).find((i) => i.id === 'stream_inbox');
+    expect(streamInbox?.viewType).toBe(ViewType.STREAM_INBOX);
+    expect(streamInbox?.pointer).toBeUndefined();
   });
 
   it('sends Organization to the plain screen, not to a graph projection', () => {

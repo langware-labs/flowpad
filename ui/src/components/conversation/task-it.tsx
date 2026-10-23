@@ -14,7 +14,13 @@ import {
   type TaskableMessage,
 } from '@sdk';
 import { STATUS_FAMILY_CHIP, statusLabel } from '@src/components/task-bar/constants';
-import { isDelegatedTask, STATUS_FAMILIES, statusFamily, taskOwner, TaskStatus } from '@src/components/task-bar/task-utils';
+import {
+  isDelegatedTask,
+  STATUS_FAMILIES,
+  statusFamily,
+  taskOwner,
+  TaskStatus,
+} from '@src/components/task-bar/task-utils';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
 import {
@@ -58,6 +64,9 @@ export function TaskItIcon({ className }: { className?: string }) {
   return <Glyph className={className} />;
 }
 
+/** The request a conversation-less caller holds (its query never runs). */
+const NO_CONVERSATION_MESSAGES = new QueryRequest({ type: FlowMessage.type, name: 'task-it:no-conversation' });
+
 /** The tasks linked to this conversation (`origin_conversation`): made from its messages ("Task it")
  *  or asked in it (the Vibe help button). One query, shared by every reader. */
 function useLinkedTasks(conversationId: string | null | undefined): Task[] {
@@ -70,7 +79,10 @@ function useLinkedTasks(conversationId: string | null | undefined): Task[] {
       }),
     [conversationId],
   );
-  const { data: tasks = NO_TASKS } = useEntitiesQuery<Task>(request, { enabled: !!conversationId });
+  // `origin_conversation` is this machine's link; a server that does not keep it has no such tasks.
+  const { data: tasks = NO_TASKS } = useEntitiesQuery<Task>(request, {
+    enabled: !!conversationId && dataManager.servesField(Task.type, 'origin_conversation'),
+  });
   return tasks;
 }
 
@@ -92,7 +104,10 @@ export function useMessageTasks(conversationId: string | null | undefined): Map<
  */
 export function useConversationTasks(conversationId: string | null | undefined, ownTaskId?: string | null): Task[] {
   const linked = useLinkedTasks(conversationId);
-  const messagesRequest = useMemo(() => conversationMessagesRequest(conversationId || '__none__'), [conversationId]);
+  const messagesRequest = useMemo(
+    () => (conversationId ? conversationMessagesRequest(conversationId) : NO_CONVERSATION_MESSAGES),
+    [conversationId],
+  );
   const { data: messages = NO_MESSAGES } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
@@ -290,7 +305,9 @@ export function TaskOwnerMenu({ task, people }: { task: Task; people?: TaskPeopl
           title={locationTip(task, owner)}
           data-testid="task-owner-chip"
         >
-          {owner ? <OwnerFace task={task} me={people?.me} /> : (
+          {owner ? (
+            <OwnerFace task={task} me={people?.me} />
+          ) : (
             <>
               <UserPlus className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span>{t`Assign`}</span>
