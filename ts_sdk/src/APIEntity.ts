@@ -96,6 +96,7 @@ export interface AssetOccurrence {
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
 import type { HttpMethod } from './models/ApiUrl';
+import { deepEqual } from './utils/deep-equal';
 
 /**
  * True when ``v`` is a string with at least one non-whitespace character.
@@ -126,6 +127,23 @@ export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: s
   return recipients;
 }
 
+/**
+ * While an entity is being constructed (the rest of the current task), the cached instance it replaced
+ * under the same id — so its field writes notify only what really changed. See `getProxy`'s `set`.
+ */
+const replacedByConstruction = new WeakMap<object, Record<PropertyKey, unknown>>();
+
+/** The write repeats the replaced instance's value. Entity-valued fields compare by reference, never by walking the graph. */
+function sameAsReplaced(target: object, property: PropertyKey, value: unknown): boolean {
+  const replaced = replacedByConstruction.get(target);
+  if (replaced === undefined) return false;
+  const old = replaced[property];
+  if (old === value) return true;
+  const isEntity = (v: unknown) => typeof v === 'object' && v !== null && 'typeId' in v;
+  if (isEntity(old) || isEntity(value)) return false;
+  return deepEqual(old, value);
+}
+
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
   return new Proxy(target, {
     get(target, property, receiver) {
@@ -146,7 +164,10 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
         // mutated `_flowDataStream` during a sibling component's render and
         // synchronously dispatched setState across all subscribers.
         const isInternal = typeof property === 'string' && property.startsWith('_');
-        if (!isInternal && property !== 'dirty') {
+        // A constructor writing the same data the replaced cached instance already held is not a change:
+        // re-notifying it re-rendered every subscriber, and a component that built an entity while
+        // rendering re-rendered itself forever (the 2026-10-23 freeze). Real changes still notify.
+        if (!isInternal && property !== 'dirty' && !sameAsReplaced(target, property, value)) {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
         }
@@ -643,6 +664,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     delete (this as any).private_context_entity_data;
 
     const proxy = getProxy(this);
+    const replaced = dataManager.getByTypeIdFromCache(this.typeId) as Record<PropertyKey, unknown> | null;
+    if (replaced && replaced !== proxy) {
+      replacedByConstruction.set(this, replaced);
+      queueMicrotask(() => replacedByConstruction.delete(this));
+    }
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
   }

@@ -6,6 +6,8 @@ const { uploadSupportBundle } = require('./support-upload');
 const { redactUrl, installLogRedaction } = require('./log-redact');
 const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
+const { createRendererWatchdog } = require('./renderer-watchdog');
+const { bounded, collectFailureReport, writeFailureReport } = require('./hang-report');
 const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const updateTest = require('./update-test');
 const { createRestartApplier } = require('./update-restart');
@@ -42,6 +44,10 @@ const isMac = process.platform === 'darwin';
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
 app.setAsDefaultProtocolClient('flowpad');
+
+// Lets the hang watchdog read a busy renderer's JS call stack for its report (hang-report.js);
+// pages opt in with the Document-Policy header added in `createWindow`.
+app.commandLine.appendSwitch('enable-features', 'DocumentPolicyIncludeJSCallStacksInCrashReports');
 
 // Enforce single-instance so Windows/Linux deep links reach the running app
 // via the 'second-instance' event rather than spawning a second process.
@@ -1025,6 +1031,89 @@ function navStateFor(win) {
   }
 }
 
+// ---- Hung renderer: detect, then restart the window clean (renderer-watchdog.js) ----
+// A busy renderer main thread (a render loop froze the app on 2026-10-23) stops the page's heartbeat.
+// Recovery kills that renderer and opens Home with `?safeStart=1`: the UI then neither restores the
+// last tab nor runs launch redirects, and the window's history is cleared — the page that hung must
+// not come back by itself.
+const SAFE_START_URL = `${BACKEND_URL}/?safeStart=1`;
+let recoveringFromHang = false;
+const rendererWatchdog = createRendererWatchdog({
+  onScreen: () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized(),
+  probe: (ms) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve(true);
+    return bounded(() => mainWindow.webContents.executeJavaScript('1', true).then(() => true, () => false), ms, false);
+  },
+  onHang: async ({ silentMs, source }) => {
+    const url = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getURL() : '';
+    log.error(`[hang] renderer hung (${source}, silent ${Math.round(silentMs / 1000)}s) url=${redactUrl(url)} — restarting the window clean`);
+    await recordRendererFailure('hang', { source, silentMs }); // before the kill: the stack lives in the hung renderer
+    cleanRestartWindow({ hung: true, url });
+  },
+});
+
+const RENDERER_FAILURES_DIR = path.join(MAIN_DESKTOP_LOG_DIR, 'renderer-failures');
+/** One JSON report per hang / crash, for later analysis (hang-report.js). Never throws. */
+async function recordRendererFailure(kind, detail) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const report = await collectFailureReport({
+      kind, detail, webContents: mainWindow.webContents, app, redactUrl,
+      backendHealth: async () => {
+        const t0 = Date.now();
+        const res = await fetch(`${BACKEND_URL}/api/v1/health`);
+        return { status: res.status, ms: Date.now() - t0 };
+      },
+    });
+    const file = writeFailureReport(RENDERER_FAILURES_DIR, report);
+    log.error(`[hang] ${kind} report ${file || '(could not be written)'}${typeof report.jsCallStack === 'string' ? ` — top of stack: ${report.jsCallStack.split('\n').slice(0, 3).join(' | ')}` : ''}`);
+  } catch (err) {
+    log.warn(`[hang] ${kind} report failed: ${err.message}`);
+  }
+}
+ipcMain.on('renderer-heartbeat', () => rendererWatchdog.beat());
+
+/** Load the clean start; `hung` also kills the stuck renderer first and tells the user which page was dropped. */
+function cleanRestartWindow({ hung, url: hungUrl }) {
+  if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
+  rendererWatchdog.disarm();
+  recoveringFromHang = true;
+  const wc = mainWindow.webContents;
+  wc.once('did-finish-load', () => {
+    recoveringFromHang = false;
+    try { wc.navigationHistory.clear(); } catch (err) { log.info(`[hang] could not clear history: ${err.message}`); }
+    log.info(`[hang] clean restart done (${hung ? 'renderer hung' : 'renderer crashed'}) ${navStateFor(mainWindow)}`);
+    rendererWatchdog.arm();
+    if (hung) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        message: 'Flowpad stopped responding and was restarted.',
+        detail: `The page that stopped responding was not reopened:\n${redactUrl(hungUrl || '(unknown)')}`,
+        buttons: ['OK'],
+      }).catch(() => {});
+    }
+  });
+  if (!hung) { wc.loadURL(SAFE_START_URL); return; }
+  // A hung renderer cannot run an unload, and a load issued while it is still alive is dropped: kill it,
+  // and load once Electron reports it gone (a fresh renderer process serves the load).
+  const loadWhenGone = () => {
+    log.info('[hang] renderer gone — loading the clean start');
+    // Out of the gone callback: a load issued inside it races the dead process's teardown.
+    setTimeout(() => wc.loadURL(SAFE_START_URL).then(
+      () => log.info('[hang] clean start loaded'),
+      (err) => log.error(`[hang] clean start load failed: ${err.message}`),
+    ), 100);
+  };
+  wc.once('render-process-gone', loadWhenGone);
+  try {
+    wc.forcefullyCrashRenderer();
+  } catch (err) {
+    wc.removeListener('render-process-gone', loadWhenGone);
+    log.warn(`[hang] crash renderer failed: ${err.message} — loading the clean start in place`);
+    wc.loadURL(SAFE_START_URL);
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -1147,10 +1236,23 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Opt the app's own pages in to JS call stacks in hang reports (see the enable-features switch).
+  mainWindow.webContents.session.webRequest.onHeadersReceived({ urls: [`${BACKEND_ORIGIN}/*`] }, (details, callback) => {
+    if (details.resourceType !== 'mainFrame') return callback({});
+    callback({ responseHeaders: { ...details.responseHeaders, 'Document-Policy': ['include-js-call-stacks-in-crash-reports'] } });
+  });
+
+  // Chromium's own hang monitor: the page stopped answering input.
+  mainWindow.on('unresponsive', () => {
+    log.warn(`[hang] window unresponsive url=${redactUrl(mainWindow.webContents.getURL())}`);
+    rendererWatchdog.hang('unresponsive');
+  });
+
   // A crashed or failed renderer is a blank window: say so, with a way to reach us, then reload.
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     log.error(`[renderer] process gone: ${details && details.reason} (exit ${details && details.exitCode})`);
-    if (isQuitting || (details && details.reason === 'clean-exit')) return;
+    if (isQuitting || recoveringFromHang || (details && details.reason === 'clean-exit')) return;
+    void recordRendererFailure('crash', { reason: details && details.reason, exitCode: details && details.exitCode });
     showFailureDialog({
       dialog,
       parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
@@ -1159,7 +1261,8 @@ function createWindow() {
       detail: `Reason: ${(details && details.reason) || 'unknown'}. Flowpad will reload the window.`,
       share: (text) => shareDiagnostics(text, 'window crashed'),
       log,
-    }).then(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); });
+      // Not reload(): the page that crashed would come straight back. A clean start opens Home.
+    }).then(() => cleanRestartWindow({ hung: false }));
   });
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     if (!isMainFrame || code === -3 /* aborted by a newer navigation */ || !isBackendUrl(url)) return;
@@ -2202,7 +2305,10 @@ async function startApp() {
       log.info(`[nav] could not clear startup history: ${err.message}`);
     }
   });
-  mainWindow.webContents.once('did-finish-load', () => offerPostponedRestartPrompt()); // the app is on screen: a held-back "Restart now" can show
+  mainWindow.webContents.once('did-finish-load', () => {
+    offerPostponedRestartPrompt(); // the app is on screen: a held-back "Restart now" can show
+    rendererWatchdog.arm(); // the app UI is up: from now on, silence means hung
+  });
   mainWindow.loadURL(startUrl);
 
   // Open DevTools in development
@@ -2297,6 +2403,7 @@ app.on('before-quit', (event) => {
     return;
   }
   isQuitting = true;
+  rendererWatchdog.stop();
   markPhase('clean-exit');
 
   log.info('Quitting — stopping backend...');
