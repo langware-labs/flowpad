@@ -37,15 +37,31 @@ export function channelsOwnerFor(agentId: string | undefined, localUserId: strin
  *  cache key, which is what makes opening the stream inbox a warm remount instead of a loading
  *  flash. */
 export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
-  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: allOf(ownerClauses(owner)) }) });
+  // The stream inbox's own latest page (newest first, one page) — so a strip showing its top rows
+  // asks the server for a page, not for every conversation.
+  return conversationsPageRequest({ owner }, 'all', null);
+}
+
+/** The conversations matching `clauses`, newest first (`updated_date`), at most `limit` — a list that
+ *  shows only its most recent rows asks the server for just those. */
+export function recentConversationsRequest(clauses: ExpressionNode[], limit?: number, name?: string): QueryRequest {
+  return new QueryRequest({
+    type: Conversation.type,
+    name,
+    query: new QueryFilter({
+      match: allOf(clauses) ?? new ExpressionNode({ op: '$IS_NOT_NULL', operands: ['id'] }),
+      order_by: [{ updated_date: 'desc' }, { id: 'asc' }],
+      ...(limit ? { limit } : {}),
+    }),
+  });
 }
 
 /** ``node`` where the server keeps the conversation ``field`` (``servesField``); nothing (match all) where it does not. */
-const whereKept = (field: string, node: ExpressionNode): ExpressionNode[] =>
+export const whereKept = (field: string, node: ExpressionNode): ExpressionNode[] =>
   dataManager.servesField(Conversation.type, field) ? [node] : [];
 
 /** The clauses AND-ed; no clause matches every row. */
-const allOf = (clauses: ExpressionNode[]): ExpressionNode | undefined =>
+export const allOf = (clauses: ExpressionNode[]): ExpressionNode | undefined =>
   clauses.length ? new ExpressionNode({ op: '$AND', operands: clauses }) : undefined;
 
 /** Whose conversations: the owner clause, where the server keeps an ``owner``. */

@@ -8,6 +8,7 @@ import {
   type IDockPointer,
   Layout,
   PageId,
+  QueryFilter,
   QueryRequest,
   Shell,
   tabManager,
@@ -1140,8 +1141,13 @@ export class NavigationActions {
    * Use this when you have a shellId but don't know if it's a plain shell or a Claude session.
    */
   async openSession(shellId: string, options?: { skipPermissions?: boolean }): Promise<void> {
+    // The server finds the shell's process — not every process brought here to look through.
     const processes = await AgenticProcess.query<AgenticProcess>(
-      new QueryRequest({ type: AgenticProcess.type, scope: [] }),
+      new QueryRequest({
+        type: AgenticProcess.type,
+        scope: [],
+        query: new QueryFilter({ match: { shell_id: shellId }, limit: 1 }),
+      }),
     );
     const linkedProcess = processes.find((p) => p.shell_id === shellId);
     if (linkedProcess) {

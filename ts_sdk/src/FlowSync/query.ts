@@ -159,7 +159,17 @@ function compareValues(a: any, b: any): number {
   if (a == null && b == null) return 0;
   if (a == null) return -1;
   if (b == null) return 1;
+  if (a instanceof Date) a = a.getTime();
+  if (b instanceof Date) b = b.getTime();
   if (typeof a === 'number' && typeof b === 'number') return a - b;
+  // A date held as a Date on one row and as its ISO string on another (or as ISO strings written
+  // differently) still compares as a time.
+  const isoish = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
+  if (typeof a !== typeof b || (isoish(a) && isoish(b))) {
+    const ta = typeof a === 'number' ? a : Date.parse(String(a));
+    const tb = typeof b === 'number' ? b : Date.parse(String(b));
+    if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta - tb;
+  }
   const sa = String(a);
   const sb = String(b);
   return sa < sb ? -1 : sa > sb ? 1 : 0;

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Conversation, QueryRequest } from '@sdk';
+import { Conversation, ExpressionNode, QueryRequest } from '@sdk';
+import { recentConversationsRequest, whereKept } from '@src/components/stream-inbox-view/channel-owner';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 
@@ -9,10 +10,16 @@ export interface ProjectCollaboration {
   conversationId: string | null;
 }
 
-// Module-const query — a fresh QueryRequest per render makes useEntitiesQuery
-// infinite-loop (see project_useentitiesquery_memoize_request). Fetch all
-// conversations; we filter by project client-side.
-const conversationsQuery = new QueryRequest({ type: Conversation.type });
+/** The project's newest open conversation, asked of the server where it keeps `project_id` (one row);
+ *  where it does not, every conversation, newest first, matched here. */
+function collaborationQuery(projectId: string): QueryRequest {
+  const ofProject = whereKept('project_id', new ExpressionNode({ op: '$EQ', operands: ['project_id', projectId] }));
+  return recentConversationsRequest(
+    [...ofProject, ...whereKept('archived_at', new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] }))],
+    ofProject.length ? 1 : undefined,
+    `collaboration:${projectId}`,
+  );
+}
 
 /**
  * Resolve whether a collaboration has already been started for a vibe workspace
@@ -24,6 +31,8 @@ const conversationsQuery = new QueryRequest({ type: Conversation.type });
 export function useCollaborationForProject(
   projectId: string | null | undefined,
 ): ProjectCollaboration {
+  // Memoized — a fresh QueryRequest per render makes useEntitiesQuery re-subscribe.
+  const conversationsQuery = useMemo(() => collaborationQuery(projectId ?? ''), [projectId]);
   const { data: conversations = [] } = useEntitiesQuery<Conversation>(conversationsQuery, {
     enabled: !!projectId,
   });

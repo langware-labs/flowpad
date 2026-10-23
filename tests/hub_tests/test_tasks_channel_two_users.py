@@ -81,7 +81,7 @@ def _u(r: httpx.Response):
 
 
 def _list(c: httpx.Client, be: str, entity: str, **match) -> list[dict]:
-    return _u(c.get(f"{be}{GRAPH}/{entity}", params={"filter": json.dumps(match), "limit": 200})) or []
+    return _u(c.get(f"{be}{GRAPH}/{entity}", params={"filter": json.dumps({"match": match, "limit": 200})})) or []
 
 
 def _channel(c: httpx.Client, be: str) -> str:

@@ -62,25 +62,26 @@ async def sync_remote_memberships(someone_typeid: str | None = None) -> int:
     organization, the login payload), and the hub never replays one — an organization created on the
     web or while this box was offline never arrives. Removal is pushed by no one either, so a row the
     hub no longer lists (the user was removed, or it was deleted) is dropped here. Only when the hub
-    answered: an unreachable hub keeps every row. The catch-up transitions call this. Returns the
+    answered the whole list: an unreachable hub, or a walk cut short, keeps every row. The catch-up transitions call this. Returns the
     number of rows mirrored.
     """
     from flow_sdk.builtin.team import Team  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import rows_of  # noqa: PLC0415
 
     mirrored = 0
     for cls in (Organization, Team):
-        try:
-            rows = rows_of(await HubProxy.call("GET", cls.get_type(), params={"limit": 1000}))
-        except HubError as exc:
-            logger.info("[membership-sync] %s list unavailable, keeping local rows: %s", cls.get_type(), exc)
+        walk = await HubProxy.walk(cls.get_type())
+        if not walk.rows and not walk.complete:
+            logger.info("[membership-sync] %s list unavailable, keeping local rows: %s", cls.get_type(), walk.error)
             continue
-        listed = {str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id")}
-        for row in rows:
+        listed = {str(row.get("id")) for row in walk.rows if row.get("id")}
+        for row in walk.rows:
             if await materialize_remote_membership_entity(cls, row, someone_typeid, notify=True) is not None:
                 mirrored += 1
+        if not walk.complete:
+            # A row missing from a list the hub never finished sending was not seen, not removed.
+            logger.info("[membership-sync] %s list cut short, keeping local rows: %s", cls.get_type(), walk.error)
+            continue
         for local in await cls.get_all({"remote": True}):
             if local.id and str(local.id) not in listed:
                 with mirror_delete():  # only this box's copy — the hub row is not ours to delete

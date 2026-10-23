@@ -54,6 +54,15 @@ async def _visible_page(entity_model, entities_filter: QueryFilter, source_entit
     while True:
         batch_filter = entities_filter.model_copy(deep=True, update={"offset": db_offset or None, "limit": fetch})
         batch = await entity_model.get_all(batch_filter, source_entity)
+        # Rows the store read but could not build are not in ``batch``; they still took their place in
+        # the store's page, so they count into the next offset like a hidden row.
+        rows_read = batch_filter.rows_read if batch_filter.rows_read is not None else len(batch)
+        unreadable = max(rows_read - len(batch), 0)
+        if unreadable and limit is not None and fetch > limit - len(page) + 1:
+            # Where the unreadable rows sit in this batch is unknown, so the page must not close inside
+            # it: read again just what the page still needs (+1), which the page cannot overrun.
+            fetch = limit - len(page) + 1
+            continue
         for entity in batch:
             if limit is not None and len(page) == limit:
                 has_more = True
@@ -62,7 +71,8 @@ async def _visible_page(entity_model, entities_filter: QueryFilter, source_entit
             if is_visible(entity):
                 page.append(entity)
         else:
-            if fetch is not None and len(batch) == fetch:
+            db_offset += unreadable
+            if fetch is not None and rows_read == fetch:
                 fetch = max(fetch, limit * 4)  # rows were dropped: read further in bigger steps
                 continue
         break

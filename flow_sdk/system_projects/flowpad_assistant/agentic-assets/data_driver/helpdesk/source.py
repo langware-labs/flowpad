@@ -88,6 +88,8 @@ class HelpdeskSource(MessageSource):
     #: Strangers are the point: an empty allowlist admits every requester.
     open_inbound = True
     identity_config_key = "desk_project_id"
+    #: Every thread here is a help-desk ticket.
+    conversation_kind = "helpdesk"
     #: Chat-grade while watched.
     attention_poll_seconds = 5
 
@@ -202,7 +204,7 @@ class HelpdeskSource(MessageSource):
                 state.tickets[ticket] = _Mark(stamp=stamp)  # quiet since before the window: nothing to read
                 continue
             mark = mark or _Mark()
-            children = _rows_of(await self.hub.get("conversation", ticket, "flow_message"))
+            children = _rows_of(await self.hub.get("conversation", ticket, "messages"))
             fresh = [fm for fm in sorted(children, key=_stamp_of) if str(fm.get("id") or "").strip() and mark.is_new(_stamp_of(fm), str(fm["id"]).strip())]
             taken = fresh[: limit - len(items)]
             for fm in taken:
@@ -239,7 +241,7 @@ class HelpdeskSource(MessageSource):
             active = _when(updated_at)
             if len(held) >= limit and active is not None and active < held[0][0]:
                 break
-            for fm in _rows_of(await self.hub.get("conversation", ticket, "flow_message")):
+            for fm in _rows_of(await self.hub.get("conversation", ticket, "messages")):
                 sent = _when(fm.get("created_date"))
                 if str(fm.get("id") or "").strip() and sent is not None and sent < before:
                     arrival -= 1

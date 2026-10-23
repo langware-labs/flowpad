@@ -1,14 +1,22 @@
 import { useMemo } from 'react';
-import {
-  Conversation,
-  type ConversationParticipant,
-  QueryRequest,
-} from '@sdk';
+import { Conversation, type ConversationParticipant, ExpressionNode } from '@sdk';
+import { recentConversationsRequest, whereKept } from '@src/components/stream-inbox-view/channel-owner';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 // Single canonical keying, shared with ContactPicker / AddressBookButton so the
 // picker's dedup and this subset-match agree on participant identity.
 import { participantKey } from '@src/components/contact-picker/use-contacts';
+
+/** Of the project, or of none (a conversation without a project is offered in every project). */
+function projectOrUnset(projectId: string): ExpressionNode {
+  return new ExpressionNode({
+    op: '$OR',
+    operands: [
+      new ExpressionNode({ op: '$EQ', operands: ['project_id', projectId] }),
+      new ExpressionNode({ op: '$IS_NULL', operands: ['project_id'] }),
+    ],
+  });
+}
 
 export interface UseConversationsForContactsResult {
   conversations: Conversation[];
@@ -27,7 +35,21 @@ export function useConversationsForContacts(
   enabled: boolean = true,
 ): UseConversationsForContactsResult {
   const active = enabled && selected.length > 0;
-  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
+  // What the server can decide, it does (open conversations, of the project) where it keeps the
+  // field; who is in a conversation is its membership, matched here. Every match is shown — no limit.
+  const request = useMemo(
+    () =>
+      recentConversationsRequest(
+        [
+          ...whereKept('dismissed_at', new ExpressionNode({ op: '$IS_NULL', operands: ['dismissed_at'] })),
+          ...whereKept('archived_at', new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] })),
+          ...(projectId ? whereKept('project_id', projectOrUnset(projectId)) : []),
+        ],
+        undefined,
+        `conversations-for-contacts:${projectId ?? ''}`,
+      ),
+    [projectId],
+  );
   const { data: conversations = [], isLoading } = useEntitiesQuery<Conversation>(
     request,
     { enabled: active },

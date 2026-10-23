@@ -54,6 +54,8 @@ class MessageSource(RecordSource):
     echoes_sends: ClassVar[bool] = True
     #: A send may land as a draft instead (nobody on the line, a worker that only drafts).
     sends_may_draft: ClassVar[bool] = False
+    #: The ``Conversation.kind`` this source's threads are (``None``: leave it as the conversation has it).
+    conversation_kind: ClassVar[Optional[str]] = None
     #: The files ``send`` accepts — kinds, sizes, how many per provider message. Takes none by default.
     files: ClassVar[FileSupport] = FileSupport()
     #: A person can answer one message of this channel (``reply(origin)`` reaches them). ``False`` for a
