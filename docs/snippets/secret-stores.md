@@ -403,7 +403,9 @@ its status — `credentials_status(project)` in Python, `credentialsService.stat
 `GET compute_node/@local/credentials/status?project_id=` over REST — says `state: "connected"` and
 each var `present`, `found_in: "env"`; it never carries a value.
 
-It **collects** the credentials the project declares and the auth of every data source it holds —
+It **collects** what the project's installed roots need — its data sources, agents, dependencies and
+the credentials it authored itself (each requirement lists its `roots`; a driver or a template alone
+needs nothing, and collecting declares nothing) — from the auth of every data source it holds —
 a driver's `auth.connector` is a connection, `auth.credential` a credential, and `auth.env` /
 `auth.secrets` names map to whichever credential (declared, else a shipped template) declares
 them. A name nothing declares is reported, never guessed. It then **compiles** a wizard, held in

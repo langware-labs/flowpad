@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   CredentialRequirement,
@@ -146,7 +148,7 @@ export function ProjectSetupDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
   const [busy, setBusy] = useState(NONE);
   const [selected, setSelected] = useState(NONE);
@@ -310,11 +312,8 @@ export function ProjectSetupDialog({
             <SkipChoice
               id="selected"
               disabled={busy.size > 0}
-              whyNotAlways={
-                selectedReqs.every((req) => req.can_skip_always)
-                  ? ''
-                  : t`Some of the selected cannot be removed from the project`
-              }
+              whyNotAlways={whyNotAlways(selectedReqs, t`Some of the selected cannot be removed from the project`)}
+              removes={removedBy(selectedReqs, (kind) => (ROOT_KIND[kind] ? i18n._(ROOT_KIND[kind]) : kind))}
               onSkip={(scope) => void skip(selectedReqs, scope)}
               onCancel={() => setSelected(NONE)}
             />
@@ -490,6 +489,32 @@ const own = (handler: () => void) => (event: MouseEvent) => {
   handler();
 };
 
+/** A root's kind, as "Removes: Gmail (data source)" names it. */
+const ROOT_KIND: Record<string, MessageDescriptor> = {
+  data_source: msg`data source`,
+  agent: msg`agent`,
+  webapp: msg`web app`,
+  dependency: msg`dependency`,
+  credential: msg`credential`,
+};
+
+/** Why Always is not offered for ``reqs``: the first blocked row's own reason; ``''`` when every row can go. */
+function whyNotAlways(reqs: ProjectSetupRequirement[], fallback: string): string {
+  const blocked = reqs.find((req) => !req.can_skip_always);
+  return blocked ? blocked.why_not_always || fallback : '';
+}
+
+/** What "Skip → Always" uninstalls for ``reqs``: each root once, named with its kind — "Gmail (data source)". */
+export function removedBy(reqs: ProjectSetupRequirement[], kindLabel: (kind: string) => string): string {
+  const seen = new Map<string, string>();
+  for (const req of reqs)
+    for (const root of req.roots ?? []) {
+      if (!seen.has(`${root.typeid}:${root.name}`))
+        seen.set(`${root.typeid}:${root.name}`, `${root.name} (${kindLabel(root.kind)})`);
+    }
+  return [...seen.values()].join(', ');
+}
+
 /**
  * The selection bar's skip choice — Locally (a mark on its record, here) | Always (removed from the project, staged in git) |
  * Cancel — of every selected row. ``whyNotAlways`` set means Always is not offered, and why.
@@ -498,12 +523,15 @@ function SkipChoice({
   id,
   disabled = false,
   whyNotAlways,
+  removes = '',
   onSkip,
   onCancel,
 }: {
   id: string;
   disabled?: boolean;
   whyNotAlways: string;
+  /** What Always uninstalls, said: "Gmail (data source)". */
+  removes?: string;
   onSkip: (scope: ProjectSetupSkipScope) => void;
   onCancel: () => void;
 }) {
@@ -531,12 +559,23 @@ function SkipChoice({
           className="h-6 px-2 text-xs"
           data-testid={`project-setup-skip-always-${id}`}
           disabled={disabled || !!whyNotAlways}
-          title={whyNotAlways ? undefined : t`Remove it from the project — the deletion is staged in git`}
+          title={
+            whyNotAlways
+              ? undefined
+              : removes
+                ? t`Removes ${removes} from the project — the deletion is staged in git`
+                : t`Remove it from the project — the deletion is staged in git`
+          }
           onClick={own(() => onSkip('always'))}
         >
           <Trans>Always</Trans>
         </Button>
       </span>
+      {!whyNotAlways && removes && (
+        <span className="text-muted-foreground" data-testid={`project-setup-removes-${id}`}>
+          <Trans>Removes: {removes}</Trans>
+        </span>
+      )}
       <Button
         variant="ghost"
         size="sm"

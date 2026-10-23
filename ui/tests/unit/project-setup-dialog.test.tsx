@@ -177,6 +177,34 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
   });
 
+  it('Always says which installed asset it removes; a root outside the project says why it cannot', async () => {
+    const gmail = req({
+      name: 'gmail',
+      title: 'Gmail',
+      roots: [
+        {
+          typeid: 'data_source-1',
+          kind: 'data_source',
+          name: 'Gmail',
+          asset_ref: '/p/agentic-assets/data_source/gmail',
+        },
+      ],
+    });
+    await open({ ...NOT_READY, to_do: [gmail] });
+    fireEvent.click(screen.getByTestId('project-setup-skip-gmail'));
+    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeEnabled();
+    expect(screen.getByTestId('project-setup-removes-selected')).toHaveTextContent('Removes: Gmail (data source)');
+    cleanup();
+
+    const why =
+      "the data source 'Gmail' is not this project's own (it lives outside the project folder) — skip it locally";
+    await open({ ...NOT_READY, to_do: [{ ...gmail, can_skip_always: false, why_not_always: why }] });
+    fireEvent.click(screen.getByTestId('project-setup-skip-gmail'));
+    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-skip-always-selected').parentElement).toHaveAttribute('title', why);
+    expect(screen.queryByTestId('project-setup-removes-selected')).toBeNull();
+  });
+
   it('Undo un-skips it', async () => {
     const mark = { at: 1, by: 'u1', note: '' };
     await open({ ...NOT_READY, to_do: [], ready: true, skipped: [req({ skipped: mark })] });

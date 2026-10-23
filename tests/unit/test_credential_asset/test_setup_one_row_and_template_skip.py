@@ -12,6 +12,7 @@ from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_PACK,
     REQUIREMENT_SOURCE,
     REQUIREMENT_WEBAPP,
+    RootRef,
     SetupRequirementSpec,
     SetupVarSpec,
 )
@@ -27,8 +28,9 @@ def _source(name: str) -> SetupRequirementSpec:
 
 
 def _pack(*, used_by: list[str], vars=MISSING, declared: bool = True) -> SetupRequirementSpec:
+    roots = [RootRef(typeid=f"data_source-{name}", kind="data_source", name=name) for name in used_by]
     return SetupRequirementSpec(kind=REQUIREMENT_PACK, name="gmail", typeid=TEMPLATE_TYPEID, used_by=used_by,
-                                vars=list(vars), declared=declared)
+                                roots=roots, vars=list(vars), declared=declared)
 
 
 async def test_a_source_waiting_on_a_listed_credential_is_folded_into_its_row():
@@ -48,7 +50,7 @@ async def test_skipping_an_undeclared_template_marks_this_project_not_the_templa
     async def listed(_project, *_a, **_k):
         return [template_req]
 
-    async def nothing_running(_project):
+    async def nothing_running(_project, *_a):
         return []
 
     async def no_record(_req):
@@ -76,7 +78,7 @@ async def test_a_setup_question_skips_the_step_that_asked(project, monkeypatch):
     async def listed(_project, *_a, **_k):
         return [source, template_req]
 
-    async def nothing_running(_project):
+    async def nothing_running(_project, *_a):
         return []
 
     async def this_project(_query):

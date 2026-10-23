@@ -85,6 +85,32 @@ class SetupVarSpec(DataSpec):
         return self.required is CredentialRequirement.ONE_OF
 
 
+#: What a root is — the installed asset kinds a need can come from.
+ROOT_SOURCE = "data_source"
+ROOT_AGENT = "agent"
+ROOT_WEBAPP = "webapp"
+ROOT_DEPENDENCY = "dependency"
+ROOT_CREDENTIAL = "credential"
+
+
+class RootRef(DataSpec):
+    """An installed asset of the project that a requirement exists for. Shipped drivers and credential
+    templates are the catalog and never a root: a need lives as long as the root it comes from, and
+    "Skip → Always" uninstalls the roots."""
+
+    spec_kind: ClassVar[str] = "project.setup.root"
+    model_config = ConfigDict(frozen=True)
+
+    #: The root's record (a dependency: the project's typeid; ``name`` says which).
+    typeid: str
+    #: ``data_source`` / ``agent`` / ``webapp`` / ``dependency`` / ``credential``.
+    kind: str
+    name: str
+    #: Where it is declared on this machine (its folder; a dependency: the project's ``flow.json``) —
+    #: inside the project folder or not decides whether Always may uninstall it. ``""``: not the project's.
+    asset_ref: str = ""
+
+
 class SetupRequirementSpec(DataSpec):
     """One thing to set up, and who needs it."""
 
@@ -124,6 +150,8 @@ class SetupRequirementSpec(DataSpec):
     satisfied: Optional[bool] = None
     #: The data sources (and ``project``, for a pack the project declares itself) that need it.
     used_by: list[str] = []
+    #: The installed assets this requirement exists for (``RootRef``) — what "Skip → Always" removes.
+    roots: list[RootRef] = []
     #: Why a gap is one, or what is off about a requirement (a pack with no setup instructions).
     note: str = ""
     #: The project does not work without it. ``False``: it turns a feature on (an env credential with only

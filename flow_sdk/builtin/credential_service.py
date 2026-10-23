@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from pydantic import ValidationError
 
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
-    "kind", "provider", "scopes", "optional_scopes", "vars", "ways",
+    "kind", "provider", "scopes", "optional_scopes", "vars", "ways", "derived",
 )
 
 
@@ -345,6 +345,24 @@ async def shipped_templates() -> list["Credential"]:
     return sorted(await Credential.get_all(QueryFilter(match=match)), key=lambda spec: str(spec.name))
 
 
+async def credential_for_need(names: Iterable[str], project: Optional["Project"], *, pairs: Optional[list] = None,
+                              templates: Optional[list["Credential"]] = None) -> dict[str, "Credential"]:
+    """``{VAR: credential}`` — who answers each needed variable in ``project``: the credential a process there
+    reads it from (``credential_resolver.declare``), else the shipped template that says how to ask for it. The
+    one "who needs this" lookup: a template is how to ask, never a reason the need exists. ``pairs`` /
+    ``templates``: already read by the caller (``credentials_in_scope`` / ``shipped_templates``)."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare  # noqa: PLC0415
+
+    wanted = set(names)
+    declared = declare(pairs if pairs is not None else await credentials_in_scope(project))
+    owner = {name: declared[name].spec for name in wanted if name in declared}
+    for template in templates if templates is not None else await shipped_templates():
+        for var in template.stored_var_names():
+            if var in wanted:
+                owner.setdefault(var, template)
+    return owner
+
+
 async def template_named(name: str) -> Optional["Credential"]:
     """The shipped catalogue entry named ``name``, or ``None``."""
     return next((spec for spec in await shipped_templates() if spec.name == name), None)
@@ -370,7 +388,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
         raise CredentialError(f"no credential or template named {name!r}")
     scope = SCOPE_USER if template.lm_provider or project is None else SCOPE_PROJECT
     return await save_credential(
-        manifest=_manifest_of(template),
+        manifest={**_manifest_of(template), "derived": scope == SCOPE_PROJECT},  # for a root's need, gone with it
         scope=scope,
         project_id=str(project.id) if project is not None else None,
     )
@@ -475,6 +493,7 @@ async def declare_oauth(project: "Project", provider: str, scopes: list[str]) ->
     else:
         manifest = {"name": name, "title": await _provider_title(provider), "kind": CredentialKind.OAUTH.value,
                     "provider": provider, "scopes": wanted}
+    manifest["derived"] = True  # a root's connection: needed while one acts through it
     return await declare_credential(manifest, project_id=str(project.id), require_setup=False), True
 
 

@@ -33608,3 +33608,23 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "credential"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "dependency"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes {removes} from the project — the deletion is staged in git"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes: {removes}"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "web app"
+msgstr ""

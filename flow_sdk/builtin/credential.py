@@ -90,6 +90,8 @@ class Credential(SetupSkippable, Entity):
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)
     #: How each ONE_OF way of several variables is offered (``CredentialSpec.ways``).
     ways: dict[str, CredentialWaySpec] = APIField(default_factory=dict)
+    #: A root installed it (``CredentialSpec.derived``); else the project authored it.
+    derived: bool = APIField(default=False)
     #: Skipped in this project's setup on THIS machine (``SetupSkipSpec``). PRIVATE: a skip is a person's choice
     #: here, never part of the declaration — the file and a share never carry it.
     setup_skipped: Optional[SetupSkipSpec] = APIField(None, sharing=Sharing.PRIVATE)
