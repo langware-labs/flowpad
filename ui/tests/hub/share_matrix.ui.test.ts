@@ -179,24 +179,22 @@ afterAll(async () => {
         // The same remote entity may already have disappeared after its owner
         // deleted it from the other instance. The action treats that missing
         // hub target as success and removes the remaining local mirror.
-        let result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation-delete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversation_id: id, mode }),
-        })
+        let result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${id}/delete`, { method: 'DELETE' })
           .then((r) => r.json())
           .catch(() => null);
         if (conversation.remote && result?.status !== 'SUCCESS' && Number(result?.data?.hub_status) === 403) {
           mode = 'leave';
-          result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation-delete`, {
+          result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${id}/leave`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversation_id: id, mode }),
+            body: '{}',
           })
             .then((r) => r.json())
             .catch(() => null);
         }
-        if (result?.status !== 'SUCCESS' && !String(result?.message ?? '').includes('Conversation not found')) {
+        // Already gone (its owner's delete for everyone reached this box first): nothing to clean.
+        const gone = /Conversation not found|Entity not found: conversation\//.test(String(result?.message ?? ''));
+        if (result?.status !== 'SUCCESS' && !gone) {
           cleanupFailures.push(`${inst.name} conversation ${id} (${mode}): ${JSON.stringify(result)}`);
         }
       }
