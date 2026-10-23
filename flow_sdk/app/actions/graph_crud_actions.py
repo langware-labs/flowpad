@@ -28,6 +28,21 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiPageResponse, ApiSuccessResponse
 from flow_sdk.server.routes.graph import get_by_id, get_entity_model_from_registry
 
+#: A row no reader is shown unless they ask: an SDK-shipped system entity. A type that has no ``system``
+#: field at all stores nothing there, so the null branch keeps it.
+_NOT_SYSTEM = ExpressionNode(
+    op=QueryOp.OR,
+    operands=[
+        ExpressionNode(op=QueryOp.IS_NULL, operands=["system"]),
+        ExpressionNode(op=QueryOp.EQ, operands=["system", False]),
+    ],
+)
+
+
+def _and_match(match: ExpressionNode | None, extra: ExpressionNode) -> ExpressionNode:
+    """``match`` narrowed by ``extra`` -- ``extra`` alone when there is no match to narrow."""
+    return ExpressionNode(op=QueryOp.AND, operands=[match, extra]) if match is not None else extra
+
 
 def _parse_list_filter(params: dict, entity_type: str) -> QueryFilter:
     """The hub's list contract: paging (``limit``/``offset``/``order_by``) lives inside ``filter``, next to
@@ -53,10 +68,7 @@ def _parse_list_filter(params: dict, entity_type: str) -> QueryFilter:
             entities_filter.order_by = [{field: direction} for field, direction in order]
             if entities_filter.after:
                 keyset = keyset_after(order, entities_filter.after)
-                match = entities_filter.match
-                entities_filter.match = (
-                    ExpressionNode(op=QueryOp.AND, operands=[match, keyset]) if match is not None else keyset
-                )
+                entities_filter.match = _and_match(entities_filter.match, keyset)
         return entities_filter
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -132,6 +144,12 @@ async def handle_query_resource(request: Request):
     # Hide SDK-shipped system entities by default. Callers opt in with
     # ?include_system=true on the request (or include_system: true in the filter).
     include_system = _request_wants_system(request_info, filter_params)
+    if not include_system:
+        # The hidden rows are excluded by the QUERY, not after it: a row dropped afterwards still took its
+        # place in the store's page, so ``offset`` counted rows the caller never saw and the page asked for
+        # at ``offset + limit`` started back inside the previous one (1088 markdown docs beside 36 system
+        # ones answered 36 duplicate rows over twelve ordered pages).
+        entities_filter.match = _and_match(entities_filter.match, _NOT_SYSTEM)
 
     def is_visible(entity: Entity) -> bool:
         return include_system or not getattr(entity, "system", False)

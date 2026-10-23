@@ -32,6 +32,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { useContext } from '@src/hooks/useContext';
+import { userCrumbLabel } from './user-crumb-label';
 import { useProjectLocation } from '@src/hooks/use-project-location';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -198,7 +199,7 @@ const LIVE_SESSION_TYPE = 'remote_worker_session';
 const CONVERSATION_TYPE = 'conversation';
 
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
-  const { project, activeEntity, activeEntityTypeId, localUser } = useContext();
+  const { project, activeEntity, activeEntityTypeId, localUser, currentUser } = useContext();
   const { projectPath } = useProjectLocation();
   // The context hands over the cached Project and does not re-publish when a
   // rename mutates it in place — subscribe to the row (as the project chip does)
@@ -565,7 +566,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (isUserScoped) {
       out.push({
         key: 'user',
-        label: localUser?.name || labelForType(User.type),
+        // The human's DISPLAY name (hub row when signed in, local row otherwise) — see
+        // `userCrumbLabel`. Reading `localUser` here named the local desktop row, so a
+        // desktop signed in to a hub read "Hey Eran" on the hub home and
+        // "serans1 › Stream Inbox" one click away.
+        label: userCrumbLabel(currentUser, localUser) || labelForType(User.type),
         Icon: iconForType(User.type),
         pointer: null,
         kind: 'ancestor',
@@ -797,6 +802,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     sourceConvTypeId,
     sourceConv,
     localUser,
+    currentUser,
     driverName,
     driver,
     nestedChild,

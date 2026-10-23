@@ -130,3 +130,21 @@ async def test_default_order_cursor_walk_through_tied_created_dates():
         convs.append(c)
     rows = await _cursor_walk(convs, limit=2)
     assert [r["id"] for r in rows] == sorted(c.id for c in convs)
+
+
+async def test_pages_asked_for_at_offset_plus_limit_never_repeat_a_row():
+    """A page counts only the rows the caller is shown: hidden system rows are excluded by the query, not
+    after it. Counted after it, a page spanned more store rows than it answered, so the next page — asked
+    for at ``offset + limit``, as a client walking a list does — started back inside it."""
+    tag = uuid.uuid4().hex[:8]
+    convs = []
+    for i in range(24):
+        c = Conversation(id=str(uuid.uuid4()), title=f"hid-{tag}-{i:02}", system=i % 3 == 0)
+        await c.save(notify=False)
+        convs.append(c)
+    mine, rows = [c for c in convs if not c.system], []
+    for offset in range(0, len(mine), 4):
+        body = await _page(convs, limit=4, offset=offset, order_by=[{"title": "asc"}])
+        rows.extend(c["id"] for c in body["data"])
+    assert len(rows) == len(set(rows)), f"{len(rows) - len(set(rows))} row(s) came back twice"
+    assert rows == [c.id for c in mine], "the walk is the visible rows, each once, in order"
