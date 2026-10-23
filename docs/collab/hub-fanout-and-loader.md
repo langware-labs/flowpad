@@ -63,7 +63,7 @@ pre-accept (`conversation.py:282-287`). The sequence is:
 add_message(fm):
   if rank(fm.delivery_status) < rank(SENT): fm.delivery_status = SENT   # :286-287
   reset_create_fields(fm)   # wire attribution is client-controlled      # :298
-  add_child(fm); _recompute_message_count(); update()                   # :299-301
+  add_child(fm); _recompute_message_summary(); update()                 # :299-301
   _fanout_message(fm)                                                   # :302  CONTENT, skip sender
   _fanout_status_update(fm, only_user_id=fm.sender_id)                  # :307  STATUS, sender alone
 ```
