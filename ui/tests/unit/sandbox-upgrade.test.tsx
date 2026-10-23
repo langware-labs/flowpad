@@ -44,7 +44,7 @@ vi.mock('@src/hooks/use-projects', () => ({
 }));
 vi.mock('@src/hooks/use-sandboxes', () => ({
   useSandboxes: () => ({
-    sandboxes: h.sandboxes,
+    sandboxes: h.sandboxes.map((s) => ({ agents: () => Promise.resolve([]), ...s })),
     isLoading: false,
     refetch: vi.fn(),
     createSandbox: vi.fn(),
