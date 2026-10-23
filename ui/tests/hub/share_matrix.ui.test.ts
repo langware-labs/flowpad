@@ -193,7 +193,8 @@ afterAll(async () => {
             .catch(() => null);
         }
         // Already gone (its owner's delete for everyone reached this box first): nothing to clean.
-        const gone = /Conversation not found|Entity not found: conversation\//.test(String(result?.message ?? ''));
+        const message = String(result?.message ?? '');
+        const gone = message.includes('Conversation not found') || message.includes(`Entity not found: conversation/${id}`);
         if (result?.status !== 'SUCCESS' && !gone) {
           cleanupFailures.push(`${inst.name} conversation ${id} (${mode}): ${JSON.stringify(result)}`);
         }
