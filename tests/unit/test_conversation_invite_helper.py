@@ -57,10 +57,6 @@ def hub(monkeypatch):
         calls.bodies.append((path, kwargs.get("json")))
         return _FakeResponse(200, {"status": "success", "data": {}})
 
-    async def fake_hub_post(entity_type, data, *path_parts, action=None, **_kwargs):
-        calls.append(("HUB_POST", action or "/".join(str(p) for p in path_parts[1:])))
-        return {}
-
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
         lambda *a, **k: SimpleNamespace(

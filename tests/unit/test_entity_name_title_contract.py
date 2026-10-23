@@ -21,8 +21,8 @@ Contract under test:
     reflected update PUT sends the raw request body, not ``_hub_body``).
   * ``materialize_remote_membership_entity`` mirrors whichever slot the hub
     filled, with no title→name coercion.
-  * ``_merge_hub_entity_into_local`` merges both slots back from a hub echo —
-    the return leg of the same rename.
+  * ``Entity.mirror_from_hub`` (``accepted_from_hub``) merges both slots back from a
+    hub echo — the return leg of the same rename.
 """
 
 from uuid import uuid4

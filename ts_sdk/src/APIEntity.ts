@@ -41,7 +41,7 @@ export type ReceiveShowTarget = ShowTarget;
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
  * action (``APIEntity.fetchMembers``). The hub normalizes ``user_email`` →
- * ``email`` etc. server-side (see ``_hub_reflect._normalize_hub_response``);
+ * ``email`` etc. server-side (see ``_hub_reflect.normalize_hub_response``);
  * extra hub keys (``status``, ``role``, ``invitation_id``, …) pass through, so
  * this is intentionally open. ``Participant`` in ``entities/members.ts`` is the
  * structurally-compatible alias kept for existing import sites. */
@@ -56,7 +56,7 @@ export interface EntityMember {
 
 /**
  * The hub's roster keys (``user_email`` / ``user_name`` / ``user_picture``) in the client form.
- * The local server does this in ``_normalize_hub_response``, but a hub-only frontend reads the hub
+ * The local server does this in ``normalize_hub_response``, but a hub-only frontend reads the hub
  * directly and skips it — so an invited user with no name rendered as "unknown".
  */
 export function normalizeMember(m: EntityMember): EntityMember {

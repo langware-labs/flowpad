@@ -1205,7 +1205,7 @@ class Agent(Entity):
         }
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
-        data = await HubProxy.call("POST", self.type, self.id, "plan_deployment", payload=body) or {}
+        data = await HubProxy.call("POST", self.type, self.id, "plan_deployment", payload=body)
         deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
         if deployment is None:
             raise RuntimeError("the hub returned no deployment to plan")
