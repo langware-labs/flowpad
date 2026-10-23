@@ -82,6 +82,13 @@ membership + role list and the basis for ownership/authz decisions. Roles
 list of typed pointers `[{"typeid": "flow_message-<id>", "ts": "<ISO>"}, …]`
 ordered oldest-first by jsonl append order; `message_count` is its length.
 
+A hub row keeps no pointer log. It carries `message_count` and its newest message as
+`latest_message_id` / `latest_message_at` instead, read-only and recomputed from the real child
+messages on every add/remove. The TS SDK reads a row's newest message through
+`Conversation.latestMessagePointer` — the log's latest pointer, or the hub's named message when there
+is no log — so the stream inbox batches every row's preview into one `$IN` read on both backends.
+`conversationMessageIds` stays the log only: a hub row has none.
+
 ### Message-status sharing
 Receipt sharing is not Conversation state. Each FlowPad installation controls
 whether it emits `delivered` and `received` acknowledgements through

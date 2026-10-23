@@ -20,17 +20,6 @@ export function conversationMessagesRequest(conversationId: string): QueryReques
   });
 }
 
-/** A conversation's newest message, for a row that keeps no pointer log (a hub row): the same scoped
- *  read, one row. */
-export function latestConversationMessageRequest(conversationId: string): QueryRequest {
-  return new QueryRequest({
-    type: FlowMessage.type,
-    scope: [new TypeId(Conversation.type, conversationId)],
-    name: `latest-message:${conversationId}`,
-    query: new QueryFilter({ limit: 1, order_by: { created_date: 'desc' } }),
-  });
-}
-
 /** The page of a conversation's messages just OLDER than `before` (the oldest one loaded): a keyset
  *  on `created_date`, newest first — so a message arriving meanwhile never shifts it. */
 export function olderConversationMessagesRequest(conversationId: string, before: string): QueryRequest {

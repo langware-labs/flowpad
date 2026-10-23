@@ -47,17 +47,20 @@ export function latestPointer(
 
 /**
  * The message ids a conversation row reads — its first pointer and its latest
- * (see `latestPointer`) — across `conversations`, deduped and sorted so a batch
+ * (`Conversation.latestMessagePointer`) — across `conversations`, deduped and sorted so a batch
  * built from them has a stable key.
  */
 export function conversationRowMessageIds(
-  conversations: readonly { conversationMessageIds?: readonly ConversationMessagePointer[] | null }[],
+  conversations: readonly {
+    conversationMessageIds?: readonly ConversationMessagePointer[] | null;
+    latestMessagePointer?: ConversationMessagePointer | null;
+  }[],
 ): string[] {
   const ids = new Set<string>();
   for (const conv of conversations) {
-    const pointers = conv.conversationMessageIds ?? [];
-    if (pointers[0]?.id) ids.add(pointers[0].id);
-    const latest = latestPointer(pointers)?.id;
+    const first = conv.conversationMessageIds?.[0]?.id;
+    if (first) ids.add(first);
+    const latest = (conv.latestMessagePointer ?? latestPointer(conv.conversationMessageIds))?.id;
     if (latest) ids.add(latest);
   }
   return [...ids].sort();
@@ -131,6 +134,9 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
+  /** The newest message, for a row that keeps no ``message_ids`` log (the hub's). */
+  latest_message_id?: string | null;
+  latest_message_at?: string | Date | null;
   /** The channel this conversation replies through: ``flowpad`` (Flowpad's own chat) or a
    *  data source channel (``gmail``, ``slack``, ``helpdesk``). Test ``channel_spec``, never this. */
   channel?: string | null;
@@ -214,6 +220,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
+  latest_message_id?: string | null;
+  latest_message_at?: string | Date | null;
   channel?: string | null;
   channel_spec?: IChannelSpec | null;
   channel_source_id?: string | null;
@@ -242,6 +250,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
+    this.latest_message_id = entity.latest_message_id ?? null;
+    this.latest_message_at = entity.latest_message_at ?? null;
     this.channel = entity.channel ?? null;
     this.channel_spec = entity.channel_spec ?? null;
     this.channel_source_id = entity.channel_source_id ?? null;
@@ -329,6 +339,15 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     const info = new ActionInfo('act', Conversation.type, this.id, 'POST');
     info.bodyParameters = { action, text };
     return dataManager.callAction<unknown, { ok: boolean; item_id?: string | null }>(info);
+  }
+
+  /** The newest message: the log's latest pointer, or — for a row that keeps no log (the hub's) — the
+   *  newest message the row names. A row's preview reads this; the log itself stays the log. */
+  get latestMessagePointer(): ConversationMessagePointer | null {
+    const logged = latestPointer(this.conversationMessageIds);
+    if (logged || !this.latest_message_id) return logged;
+    const at = this.latest_message_at;
+    return { type: FlowMessage.type, id: this.latest_message_id, ts: at instanceof Date ? at.toISOString() : (at ?? '') };
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {

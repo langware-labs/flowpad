@@ -39,7 +39,6 @@ import {
   leaveConversation,
   unarchiveConversation,
   conversationRowMessageIds,
-  latestPointer,
   isProcessFailed,
   isProcessLive,
   type AgenticProcess,
@@ -58,7 +57,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
-import { latestConversationMessageRequest } from '@src/components/conversation/conversation-messages-query';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import {
   type ChannelAttribution,
@@ -109,9 +107,6 @@ export function deleteKindOf(
   const owner = conv.created_by;
   return owner && (owner === me.cloudUserId || owner === me.localUserId) ? 'owner' : 'leave';
 }
-
-/** The latest-message request a row without an id holds (it never runs). */
-const NO_LATEST_MESSAGE = new QueryRequest({ type: FlowMessage.type, name: 'stream-inbox:no-latest-message' });
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -262,27 +257,18 @@ export function ConversationListRow({
   const firstPtr = pointers[0];
   // Newest by ts, not last-appended — an ingested mailbox backfills
   // newest-first, so the last pointer there is the OLDEST mail.
-  const lastPtr = latestPointer(pointers);
+  const lastPtr = conv.latestMessagePointer;
   const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: pointedLatest } = useEntity<FlowMessage>(latestTypeId);
-  // A row with no pointer log (the hub keeps none) reads its newest message from the conversation.
-  const latestRequest = useMemo(
-    () => (conv.id ? latestConversationMessageRequest(conv.id) : NO_LATEST_MESSAGE),
-    [conv.id],
-  );
-  const { data: scopedLatest } = useEntitiesQuery<FlowMessage>(latestRequest, {
-    enabled: !!conv.id && pointers.length === 0,
-  });
-  const resolvedLatest = pointedLatest ?? scopedLatest?.[0];
   // A row IS its conversation; its preview loading never hides it. When a new message moves the
   // latest pointer, the row keeps the message it last showed until the new one resolves — only a
   // row that has never shown one waits hidden (`inLoadingState`).
   const shownLatest = useRef<{ convId: string; message: FlowMessage } | null>(null);
-  if (resolvedLatest) shownLatest.current = { convId: conv.id ?? '', message: resolvedLatest };
+  if (pointedLatest) shownLatest.current = { convId: conv.id ?? '', message: pointedLatest };
   const latestMessage =
-    resolvedLatest ??
+    pointedLatest ??
     (latestTypeId && shownLatest.current?.convId === (conv.id ?? '') ? shownLatest.current.message : undefined);
 
   const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
@@ -988,7 +974,7 @@ export function StreamInboxView({
   // FlowMessage id of a conversation's latest message — the read/unread flag
   // lives on the message, so bulk read toggles patch the last pointer's FM.
   const latestMessageId = (c: Conversation): string | null => {
-    return latestPointer(c.conversationMessageIds)?.id ?? null;
+    return c.latestMessagePointer?.id ?? null;
   };
 
   const handleBulkMarkRead = useCallback(

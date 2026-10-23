@@ -183,4 +183,61 @@ describe('Stream Inbox batch FlowMessage hydration (X2)', () => {
     // Sanity: the subscribe spy was used (rows subscribe client-side, no network).
     expect(subscribeSpy).toHaveBeenCalled();
   });
+
+  it('a hub row (no pointer log, only its newest message) joins the same one batch', async () => {
+    const { convs: logged, messages } = makeConversations();
+    // The hub keeps no `message_ids`; each row names its newest message instead.
+    const convs = logged.map(
+      (c, i) =>
+        new Conversation({
+          id: c.id,
+          title: c.title,
+          remote: true,
+          created_by: 'someone-else',
+          updated_date: c.updated_date,
+          latest_message_id: `2${i}222222-2222-4222-8222-222222222222`,
+          latest_message_at: `2026-06-1${i}T12:00:00Z`,
+        }),
+    );
+    const latest = messages.filter((m) => m.text?.startsWith('latest'));
+    const cache = new Map<string, FlowMessage>(latest.map((m) => [m.typeId.toString(), m]));
+    vi.spyOn(dataManager, 'getByTypeIdFromCache').mockImplementation(
+      (tid) => (cache.get(tid.toString()) as never) ?? null,
+    );
+    vi.spyOn(dataManager, 'subscribe').mockImplementation(() => () => {});
+    const getByTypeIdSpy = vi
+      .spyOn(dataManager, 'getByTypeId')
+      .mockImplementation(async (tid) => (cache.get(tid.toString()) as never) ?? null);
+    const watchRequests: QueryRequest[] = [];
+    vi.spyOn(dataManager, 'watchQuery').mockImplementation(async (request) => {
+      watchRequests.push(request);
+      if (request.type === Conversation.type) request.callback?.(convs as never[]);
+      else if (request.type === FlowMessage.type) request.callback?.(latest as never[]);
+      else request.callback?.([]);
+      return () => {};
+    });
+    vi.spyOn(dataManager, 'query').mockImplementation(async (request) =>
+      (request.type === Conversation.type ? (convs as never[]) : []),
+    );
+
+    render(
+      <I18nProvider i18n={i18n}>
+        <TooltipProvider>
+          <StreamInboxView />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('stream-inbox-conversation-row').length).toBe(N);
+    });
+    await waitFor(() => expect(screen.getByText('latest 0')).toBeTruthy());
+
+    const fmWatches = watchRequests.filter((r) => r.type === FlowMessage.type);
+    expect(fmWatches.length).toBe(1);
+    const wire = fmWatches[0].query?.toJSON() as { filter: { match: { op: string; operands: unknown[] } } };
+    expect(wire.filter.match.op).toBe('$IN');
+    expect((wire.filter.match.operands[1] as string[]).length).toBe(N);
+    expect(getByTypeIdSpy.mock.calls.filter(([tid]) => tid.type === FlowMessage.type).length).toBe(0);
+  });
 });
