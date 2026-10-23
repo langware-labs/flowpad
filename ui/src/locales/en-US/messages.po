@@ -1633,6 +1633,10 @@ msgstr "{projectName} shared"
 #~ msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
 #~ msgstr "{promptCount, plural, one {# prompt} other {# prompts}}"
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "{provider} connection"
+msgstr "{provider} connection"
+
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
 msgid "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
@@ -3161,6 +3165,7 @@ msgstr "agent"
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Agent"
 msgstr "Agent"
@@ -15615,8 +15620,12 @@ msgid "Join existing"
 msgstr "Join existing"
 
 #: src/components/conversation/ConversationView.tsx
-msgid "Join this support ticket so you can reply"
-msgstr "Join this support ticket so you can reply"
+#~ msgid "Join this support ticket so you can reply"
+#~ msgstr "Join this support ticket so you can reply"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Join this support ticket. Replying picks it up too."
+msgstr "Join this support ticket. Replying picks it up too."
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Joining…"
@@ -15845,6 +15854,10 @@ msgstr "Language"
 #: src/components/inbound/InboundView.tsx
 msgid "lapsed"
 msgstr "lapsed"
+
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Lapsed"
+msgstr "Lapsed"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -16302,6 +16315,10 @@ msgstr "Link to cloud"
 msgid "linked"
 msgstr "linked"
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Linked"
+msgstr "Linked"
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -16502,8 +16519,13 @@ msgid "Load Flowpad assistant"
 msgstr "Load Flowpad assistant"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Load more"
 msgstr "Load more"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Load older messages"
+msgstr "Load older messages"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Loaded"
@@ -16847,6 +16869,7 @@ msgstr "Loading..."
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
+#: src/components/conversation/ConversationView.tsx
 #: src/components/data-sources/ChoiceField.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -16871,6 +16894,7 @@ msgstr "Loading..."
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
+#: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
 msgid "Loading…"
@@ -18653,6 +18677,10 @@ msgstr "No changes to the skill body."
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "No channel is attached yet."
 msgstr "No channel is attached yet."
+
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "No channel links to this agent yet"
+msgstr "No channel links to this agent yet"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No channel reaches this Agent yet. Give it an email address to start."
@@ -21429,6 +21457,10 @@ msgstr "Open the {label}:"
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "Open the {PRIVACY_WIKI_PAGE} page"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open the agent"
+msgstr "Open the agent"
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the agent run"
@@ -29810,6 +29842,10 @@ msgstr "The agent left work running in the background. You can keep chatting. St
 msgid "The agent this link names isn't in the project's files."
 msgstr "The agent this link names isn't in the project's files."
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "The agent's machine may use it"
+msgstr "The agent's machine may use it"
+
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent's plan is ready — approve it in the terminal."
 msgstr "The agent's plan is ready — approve it in the terminal."
@@ -33043,6 +33079,10 @@ msgstr "Waiting for the first message…"
 msgid "waiting for the first signed delivery…"
 msgstr "waiting for the first signed delivery…"
 
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Waiting for the link"
+msgstr "Waiting for the link"
+
 #: src/components/ask/AskChoiceBlock.tsx
 #~ msgid "Waiting for the sign-in…"
 #~ msgstr "Waiting for the sign-in…"
@@ -33173,6 +33213,10 @@ msgstr "Webhook"
 #: src/components/inbound/InboundView.tsx
 msgid "Webhook URL"
 msgstr "Webhook URL"
+
+#: src/components/agent-resources/AgentWebhooksSection.tsx
+msgid "Webhooks & connections"
+msgstr "Webhooks & connections"
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"

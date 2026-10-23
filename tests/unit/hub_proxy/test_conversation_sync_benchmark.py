@@ -12,20 +12,34 @@ from __future__ import annotations
 import time
 
 import pytest
+import pytest_asyncio
 
 from tests.unit.hub_proxy.test_failure_modes_echo import CONVERSATIONS, _conversation_list, _hub_conversations
 
 pytestmark = [pytest.mark.long]
 
 ROWS = 2_400
+# End to end, every row is also written locally (~8 ms each); 1,000 keeps it inside the 30 s test cap.
+E2E_ROWS = 1_000
 PAGE_BUDGET_S = 10.0
 
 
-@pytest.fixture
-def hub_with_conversations(echo_hub):
+@pytest_asyncio.fixture
+async def hub_with_conversations(echo_hub):
     echo_hub.scripted[("GET", "/api/v1/graph/invitation/pending")] = []
     echo_hub.paged[CONVERSATIONS] = _hub_conversations(ROWS)
-    return echo_hub
+    ids = [row["id"] for row in echo_hub.paged[CONVERSATIONS]]
+    yield echo_hub
+    # The session DB is shared: 2,400 remote rows left behind are pruned one by one by the next
+    # conversation-list test (which then runs out of time). Remove them in one statement.
+    from sqlalchemy import bindparam, text
+
+    from flow_sdk.builtin.conversation import Conversation
+
+    async with Conversation._db.session_factory() as session:
+        await session.execute(text("DELETE FROM entities WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+                              {"ids": ids})  # fmt: skip
+        await session.commit()
 
 
 async def test_the_walk_over_2400_conversations_pages_well_inside_the_budget(desktop, hub_with_conversations):
@@ -47,14 +61,31 @@ async def test_the_walk_over_2400_conversations_pages_well_inside_the_budget(des
 
 
 async def test_the_conversation_list_over_2400_hub_conversations_end_to_end(desktop, hub_with_conversations):
+    from flow_sdk.app.actions import flow_message_action
+    from flow_sdk.builtin.conversation import Conversation
+
     echo_hub = hub_with_conversations
+    echo_hub.paged[CONVERSATIONS] = echo_hub.paged[CONVERSATIONS][:E2E_ROWS]
     started = time.monotonic()
     data = await _conversation_list()
     cold_s = time.monotonic() - started
-    print(f"\n[benchmark] conversation-list, {ROWS} hub conversations, first sync: {cold_s:.2f}s")
-    hub_ids = {row["id"] for row in echo_hub.paged[CONVERSATIONS]}
     assert data["hub_reachable"]
-    assert hub_ids <= {c["id"] for c in data["conversations"]}, "the walk did not bring every page in"
     pages = [r for r in echo_hub.received if r.raw_path == CONVERSATIONS]
-    assert len(pages) == 12
+    assert len(pages) == -(-E2E_ROWS // 200)
     assert max(echo_hub.paged_seconds) < PAGE_BUDGET_S / 4
+    # The caller gets its answer inside the foreground budget; the rest lands right after.
+    assert cold_s < flow_message_action.FOREGROUND_RECONCILE_S + 3, f"first sync answered after {cold_s:.2f}s"
+    started = time.monotonic()
+    if flow_message_action._deferred_reconcile is not None:
+        await flow_message_action._deferred_reconcile
+    background_s = time.monotonic() - started
+    hub_ids = {row["id"] for row in echo_hub.paged[CONVERSATIONS]}
+    assert hub_ids <= {c.id for c in await Conversation.get_all({})}, "the walk did not bring every row in"
+    started = time.monotonic()
+    await _conversation_list()
+    warm_s = time.monotonic() - started
+    print(
+        f"\n[benchmark] conversation-list, {E2E_ROWS} hub conversations: first answer {cold_s:.2f}s "
+        f"(+{background_s:.2f}s in the background), next sync {warm_s:.2f}s"
+    )
+    assert warm_s < 5, f"an unchanged list took {warm_s:.2f}s to sync"

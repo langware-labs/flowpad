@@ -198,7 +198,12 @@ const ASSETS: AssetSpec[] = [
     type: 'prompt',
     mainSubdir: 'agentic-assets/prompt',
     create: async (sdk) => {
+      // A library prompt the user keeps (used once): a prompt minted just to ride a message is
+      // refused by the send (``prompts_minted_just_to_send``) and goes inline instead.
       const p = trackForCleanup(await sdk.Prompt.create({ name: testEntityName('prompt'), text: 'do the thing' }));
+      p.use_count = 1;
+      p.last_used_at = new Date().toISOString();
+      await p.save();
       return { id: p.id!, name: p.name ?? p.title };
     },
   },
@@ -258,7 +263,7 @@ async function shareAsset(
     asset_references: [`${spec.type}-${created.id}`],
   });
   const fmId = add.body.data?.flow_message_id as string;
-  expect(fmId, `${spec.type} flow_message_id`).toBeTruthy();
+  expect(fmId, `${spec.type} flow_message_id (got ${JSON.stringify(add.body)})`).toBeTruthy();
   const upload = await post(alice.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
   expect(upload.body.data?.body_status, `${spec.type} body READY`).toBe('ready');
   return { convId: conv.id, fmId, created };

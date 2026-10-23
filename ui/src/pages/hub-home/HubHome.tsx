@@ -1,5 +1,14 @@
 import { SEGMENTED_BUTTON, SEGMENTED_GROUP } from '@src/components/ui/segmented';
-import { type ComputeNode, CredentialsSubview, dataContext, ExecutionEnvironmentStatus, PageId, ViewType } from '@sdk';
+import {
+  type ComputeNode,
+  CredentialsSubview,
+  type NodeAgent,
+  TypeId,
+  dataContext,
+  ExecutionEnvironmentStatus,
+  PageId,
+  ViewType,
+} from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -24,6 +33,7 @@ import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { HubSummaryLine } from './HubSummaryLine';
+import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -45,6 +55,7 @@ import {
   Trash2,
   UserPlus,
   X,
+  Bot,
 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -197,6 +208,48 @@ function SandboxStatus({
       )}
       {login}
     </div>
+  );
+}
+
+/** The agents placed on this machine, one icon each; a click opens that agent in its project's editor. */
+function NodeAgents({ node }: { node: ComputeNode }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const [agents, setAgents] = useState<NodeAgent[]>([]);
+  // Keyed by the machine's id: the card's node object is rebuilt on every list refresh.
+  const nodeRef = useRef(node);
+  nodeRef.current = node;
+  useEffect(() => {
+    let live = true;
+    nodeRef.current
+      .agents()
+      .then((rows) => live && rows.length > 0 && setAgents(rows))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [node.id]);
+  if (agents.length === 0) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1 ps-7" data-testid="machine-agents">
+      {agents.map((a) => (
+        <Tooltip key={a.deployment_typeid}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              disabled={!a.project_id}
+              onClick={() => navigation.openDock(hubProjectAssetDock(a.project_id, new TypeId(a.typeid)))}
+              className="flex max-w-[12rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] hover:bg-muted"
+              data-testid={`machine-agent-${a.typeid}`}
+            >
+              <Bot className="h-3 w-3 shrink-0" />
+              <span className="truncate">{a.name || t`Agent`}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t`Open the agent`}</TooltipContent>
+        </Tooltip>
+      ))}
+    </span>
   );
 }
 
@@ -858,6 +911,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                       loggedInUser={d.logged_in_user}
                       autoLogin={d.auto_login}
                     />
+                    <NodeAgents node={d} />
                   </div>
                 ))}
               </div>
