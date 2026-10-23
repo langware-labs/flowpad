@@ -775,7 +775,6 @@ class Deployment(Entity):
     async def _hub_action(self, verb: str) -> dict[str, Any]:
         """POST one action on this placement's hub row; the row itself comes back down the bridge."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
         from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
@@ -984,7 +983,12 @@ class Deployment(Entity):
 
         Raised, because ``create_process`` is a primitive that hands back a
         process. A boundary that forms an ANSWER (a turn, a launch) catches it
-        and answers with ``exit_code`` instead."""
+        and answers with ``exit_code`` instead.
+
+        Read fresh, not from ``element()``'s memo: a deployment's runner lives for days, and a
+        launch must open the agent as it is now — an edited prompt or model applies to the next
+        session, not after a runner restart."""
+        self._element = None
         agent = await self.agent()
         if agent is None:
             raise AgentUnavailable(
