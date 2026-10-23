@@ -499,9 +499,11 @@ export class Agent extends APIEntity<Agent> {
   async channels(): Promise<AgentChannels> {
     const info = new ActionInfo('channels', this.getType(), this.id, 'GET');
     info.hubReflect = true;
-    return (
-      (await dataManager.callAction<unknown, AgentChannels>(info)) ?? { deployments: [], webhooks: [], connections: [] }
-    );
+    // Only the hub knows this; an agent that was never published is answered by the desktop,
+    // which has no `channels` action and returns the agent row. Each list defaults to empty.
+    const data = (await dataManager.callAction<unknown, Partial<AgentChannels>>(info)) ?? {};
+    const list = <T>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
+    return { deployments: list(data.deployments), webhooks: list(data.webhooks), connections: list(data.connections) };
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */

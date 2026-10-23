@@ -13,10 +13,10 @@
  *   member — installs from their own invite conversation: a brand-new clone of
  *            what was PUBLISHED, none of the editor's uncommitted changes.
  *
- * Needs three instances with SEPARATE homes — see playwright.config.ts. The
- * clone target is `<home>/Flowpad workspace`; with a shared home the editor's
- * and member's clones land in one folder and the assertions below are
- * meaningless, so the suite refuses to run in that setup.
+ * Needs three instances, each with its own workspace (`~/.flow/instances/<name>/workspace`
+ * for any non-prod instance). With a shared workspace the editor's and member's clones
+ * land in one folder and the assertions below are meaningless, so the suite refuses
+ * to run in that setup.
  */
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -57,14 +57,17 @@ function instance(name: string): User {
     const eq = line.indexOf('=');
     if (eq > 0 && !line.startsWith('#')) env[line.slice(0, eq)] = line.slice(eq + 1);
   }
-  const home =
-    process.env[`INVITE_HOME_${name.replace(/-/g, '_').toUpperCase()}`] ?? join(homedir(), `flowpad-${name}-home`);
+  // A non-prod instance keeps its projects in its own instance dir (`BaseSettings.workspace_root`),
+  // so every instance already has its own clone folder. INVITE_WORKSPACE_<NAME> overrides it.
+  const workspace =
+    process.env[`INVITE_WORKSPACE_${name.replace(/-/g, '_').toUpperCase()}`] ??
+    join(homedir(), '.flow', 'instances', name, 'workspace');
   return {
     name,
     email: env.FLOWPAD_CLOUD_USER_EMAIL,
     fe: `http://localhost:${env.VITE_PORT}`,
     be: `http://localhost:${env.LOCAL_SERVER_PORT}`,
-    workspace: join(home, 'Flowpad workspace'),
+    workspace,
   };
 }
 
@@ -174,11 +177,14 @@ async function installShared(page: Page, u: User, projectId: string, conversatio
     })
     .toBe(true);
   await openInviteConversation(page, u, conversationId);
-  const chip = page.getByTestId('project-chip');
+  // The invite's bundle staged the project, so it is the generic dashed attachment chip
+  // (a9d635f32), not the legacy pre-bundle ProjectMessageChip ('project-chip').
+  const chip = page.getByTestId(`entity-chip-project-${projectId}`);
   await expect(chip).toContainText(RUN, { timeout: 60_000 });
+  await expect(page.getByTestId('project-chip')).toHaveCount(0);
   await expect(page.getByTestId('incoming-project-dialog')).toHaveCount(0);
   // The dashed chip opens the review popup; its project branch offers Install project.
-  await chip.getByRole('button').click();
+  await chip.click();
   await page.getByTestId('asset-review-dialog').getByTestId('project-install-button').click();
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path ?? '', {
@@ -188,7 +194,9 @@ async function installShared(page: Page, u: User, projectId: string, conversatio
     .not.toBe('');
   // Installing lands in the project; back in the conversation the chip is the installed one.
   await openInviteConversation(page, u, conversationId);
-  await expect(page.getByTestId('project-chip')).toHaveAttribute('data-state', 'installed', { timeout: 30_000 });
+  await expect(page.getByTestId(`entity-chip-project-${projectId}`)).toHaveAttribute('data-state', 'installed', {
+    timeout: 30_000,
+  });
   return String((await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path);
 }
 
@@ -202,11 +210,12 @@ test.describe('project invite = membership, not publish', () => {
   test.beforeAll(async () => {
     // The pitfall this suite exists around: one shared workspace means one clone folder.
     const workspaces = [admin, editor, member].map((u) => u.workspace);
-    expect(new Set(workspaces.map((w) => w.toLowerCase())).size, 'each instance needs its own home').toBe(3);
+    expect(new Set(workspaces.map((w) => w.toLowerCase())).size, 'each instance needs its own workspace').toBe(3);
     for (const u of [admin, editor, member]) {
       const bootstrap = await (await fetch(`${u.be}/api/v1/graph/bootstrap`)).text();
-      expect(bootstrap, `${u.name} is not running on its own home (${u.workspace})`).toContain(
-        dirname(u.workspace).split(sep).pop(),
+      // The bootstrap names the workspace root without its leading separator.
+      expect(bootstrap, `${u.name} is not using its own workspace (${u.workspace})`).toContain(
+        u.workspace.split(sep).filter(Boolean).join('/'),
       );
     }
 
@@ -228,19 +237,16 @@ test.describe('project invite = membership, not publish', () => {
     });
     projectId = String(project.id);
 
-    // Activating the project (what opening it in the UI does) indexes it, and the
-    // indexer stamps an `id:` into README.md's frontmatter — a dirty tree.
-    // Committing that is the publish gate's "Commit & continue", which is not what
-    // this suite is about, so land it here: publishing is then one click.
+    // Activating the project (what opening it in the UI does) indexes it. Whatever the
+    // indexer writes into the tree is landed here: committing it is the publish gate's
+    // "Commit & continue", which is not what this suite is about, so publishing is then
+    // one click. (A plain README.md is no longer stamped — its id comes from its path.)
     await graph(admin, `project/${projectId}/activate`, { method: 'POST', body: '{}' });
-    await expect
-      .poll(() => lf(readFileSync(join(adminDir, 'README.md'), 'utf8')).startsWith('---\nid:'), {
-        message: 'the indexer never stamped README.md',
-      })
-      .toBe(true);
-    git(adminDir, 'add', '-A');
-    git(adminDir, '-c', 'user.name=admin', '-c', `user.email=${admin.email}`, 'commit', '-qm', 'flowpad ids');
-    git(adminDir, 'push', '-q');
+    if (git(adminDir, 'status', '--porcelain').trim()) {
+      git(adminDir, 'add', '-A');
+      git(adminDir, '-c', 'user.name=admin', '-c', `user.email=${admin.email}`, 'commit', '-qm', 'flowpad ids');
+      git(adminDir, 'push', '-q');
+    }
     const preflight = await graph<{ available: boolean }>(admin, `project/${projectId}/git_share_preflight`);
     expect(preflight, 'admin checkout clean and pushed before publishing').toMatchObject({ available: true });
   });
