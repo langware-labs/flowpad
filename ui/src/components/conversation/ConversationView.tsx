@@ -268,11 +268,16 @@ export function ConversationView({
   // The order of the messages: the conversation's pointer log (``message_ids``) where it keeps
   // one; a conversation without one (the hub keeps no such log) is ordered by the messages
   // themselves — otherwise it read "No messages yet".
+  // A conversation WITH a log is ordered by it even when the agent scope leaves none of it (scope
+  // pending, empty or failed): falling back to the loaded messages then drew — and acked — rows
+  // outside the scope. The fallback is held to the same scope.
+  const hasPointerLog = (conversation?.conversationMessageIds?.length ?? 0) > 0;
   const pointers = useMemo(
     () =>
-      storedPointers.length
+      hasPointerLog
         ? storedPointers
         : conversationMessages
+            .filter((m) => !allowedMessageIds || allowedMessageIds.has(m.id))
             .map((m) => ({ id: m.id, type: FlowMessage.type, ts: String(m.created_date ?? '') }))
             .sort((a, b) => {
               // An undated message sorts last; equal times keep a stable order by id.
@@ -282,7 +287,7 @@ export function ConversationView({
               const kb = Number.isNaN(tb) ? Infinity : tb;
               return ka === kb ? a.id.localeCompare(b.id) : ka - kb;
             }),
-    [conversationMessages, storedPointers],
+    [conversationMessages, storedPointers, hasPointerLog, allowedMessageIds],
   );
   // `tab_switch` ready point for a conversation tab: the first frame after its
   // message window arrived (or failed). Once per mounted conversation.

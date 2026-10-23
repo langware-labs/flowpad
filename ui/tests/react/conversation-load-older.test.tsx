@@ -9,9 +9,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { apiClient, Conversation, GRAPH_API_PREFIX } from '@sdk';
+import { Agent, apiClient, Conversation, dataManager, GRAPH_API_PREFIX } from '@sdk';
 import { ConversationView } from '@src/components/conversation/ConversationView';
-import { CONVERSATION_MESSAGES_WINDOW } from '@src/components/conversation/conversation-messages-query';
+import {
+  CONVERSATION_MESSAGES_WINDOW,
+  conversationMessagesRequest,
+} from '@src/components/conversation/conversation-messages-query';
 import { ConversationContextPanel } from '@src/components/conversation/ConversationContextPanel';
 import { apiTestSetup } from '../utils/test-utils';
 
@@ -96,3 +99,64 @@ describe('a conversation longer than its window', () => {
     get.mockRestore();
   }, 30_000);
 });
+
+/** An agent's view of a conversation draws only the messages in its scope — and none while the scope
+ *  is still loading or comes back empty, whether the conversation keeps a pointer log or not. */
+describe('an agent-scoped conversation with nothing in scope', () => {
+  const AGENT = '9a9a9a9a-1111-4111-8111-9a9a9a9a9a9a';
+  let logged: Conversation;
+  let unlogged: Conversation;
+
+  beforeAll(async () => {
+    await apiTestSetup();
+    logged = new Conversation({ title: `scope-logged ${Date.now()}` });
+    await logged.save();
+    await logged.addMessage('in the log');
+    unlogged = new Conversation({ title: `scope-unlogged ${Date.now()}` });
+    await unlogged.save();
+    await seed(unlogged, 2);
+  }, 60_000);
+
+  afterAll(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  const scopes = {
+    pending: () => new Promise<never>(() => {}),
+    empty: async () => ({ agent_id: AGENT, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] }),
+  };
+
+  for (const [name, scope] of Object.entries(scopes)) {
+    for (const which of ['logged', 'unlogged'] as const) {
+      it(`${name} scope, ${which} conversation: no bubble, no ack`, async () => {
+        cleanup();
+        vi.spyOn(Agent.prototype, 'streamInboxScope').mockImplementation(scope as never);
+        const acks = vi.spyOn(dataManager, 'callAction');
+        const conv = which === 'logged' ? logged : unlogged;
+        render(
+          <MemoryRouter>
+            <ConversationView conversationId={conv.id} agentId={AGENT} />
+          </MemoryRouter>,
+        );
+        // The window has landed (its rows are cached) and still nothing is drawn.
+        await waitFor(
+          () => expect(windowLoaded(conv.id)).toBe(true),
+          { timeout: 10_000 },
+        );
+        await new Promise((r) => setTimeout(r, 300));
+        expect(bubbles()).toBe(0);
+        expect(acks.mock.calls.filter(([a]) => (a as { name?: string })?.name === 'mark_received')).toEqual([]);
+        vi.restoreAllMocks();
+      }, 30_000);
+    }
+  }
+});
+
+function windowLoaded(conversationId: string): boolean {
+  const rows = dataManager.getCachedQueryResults(
+    // the very request ConversationView watches
+    conversationMessagesRequest(conversationId),
+  );
+  return !!rows && rows.length > 0;
+}

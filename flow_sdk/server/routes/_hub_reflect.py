@@ -461,7 +461,10 @@ async def mirror_answer(method: str, gp: GraphPath, entity: Entity | None, raw: 
             return
         if entity is not None:
             if isinstance(data, dict) and data.get("id") == entity.id:
-                await type(entity).mirror_from_hub(data, existing=entity, nulls_clear=True)
+                before = entity.model_copy()
+                mirrored = await type(entity).mirror_from_hub(data, existing=entity, nulls_clear=True)
+                if mirrored is not None and _is_bare_update(method, gp, entity):
+                    await mirrored.after_own_hub_update(before)
             return
         cls = SchemaRegistry.get_entity_cls(gp.type) if gp.type else None
         if cls is None or not isinstance(data, list):
