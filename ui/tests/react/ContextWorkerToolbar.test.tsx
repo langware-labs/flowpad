@@ -1,6 +1,6 @@
 /**
  * Runtime verification for the consolidated worker-launch surface:
- *   - WorkerToolbar display modes (all vs lastOpened) + the Dev-view default,
+ *   - ContextWorkerToolbar display modes (all vs lastOpened) + the Dev-view default,
  *   - the overflow chevron reveal in lastOpened mode,
  *   - the hasProcess → "Open" short-circuit,
  *   - the menu-list variant,
@@ -23,7 +23,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 
 import { instancePreferences, PrefKey } from '@sdk';
 import { setDev, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import { openerToWorker, useLastWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { renderHook } from '@testing-library/react';
 import { resetOpenerPrefs } from '../utils/opener-prefs';
@@ -39,9 +39,9 @@ beforeEach(() => {
   setDev(false); // the "Dev view" test below turns it on
 });
 
-describe('WorkerToolbar — display modes', () => {
+describe('ContextWorkerToolbar — display modes', () => {
   it('mode="all" renders every worker, no chevron', () => {
-    render(<WorkerToolbar onLaunch={() => {}} mode="all" testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} mode="all" testIdPrefix="t" />);
     expect(screen.getByTestId('t-launch-claude_code')).toBeTruthy();
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.getByTestId('t-launch-copilot')).toBeTruthy();
@@ -49,7 +49,7 @@ describe('WorkerToolbar — display modes', () => {
   });
 
   it('each vendor glyph wears its vendor tint, not the plain foreground', () => {
-    render(<WorkerToolbar onLaunch={() => {}} mode="all" testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} mode="all" testIdPrefix="t" />);
     const glyph = (worker: string) => screen.getByTestId(`t-launch-${worker}`).firstElementChild;
     expect(glyph('claude_code')?.getAttribute('class')).toContain('text-orange-500');
     expect(glyph('codex')?.getAttribute('class')).toContain('text-emerald-500');
@@ -57,7 +57,7 @@ describe('WorkerToolbar — display modes', () => {
   });
 
   it('Standard view defaults to lastOpened: one worker + chevron', () => {
-    render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     // No remembered worker yet → falls back to claude_code as primary.
     expect(screen.getByTestId('t-launch-claude_code')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-codex')).toBeNull();
@@ -67,7 +67,7 @@ describe('WorkerToolbar — display modes', () => {
 
   it('Dev view defaults to all (no chevron)', () => {
     setDev(true); // Dev is a switch now, not a view mode
-    render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.getByTestId('t-launch-copilot')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-more')).toBeNull();
@@ -75,7 +75,7 @@ describe('WorkerToolbar — display modes', () => {
 
   it('chevron reveals the remaining workers', async () => {
     const user = userEvent.setup();
-    render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     await user.click(screen.getByTestId('t-launch-more'));
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.getByTestId('t-launch-copilot')).toBeTruthy();
@@ -83,7 +83,7 @@ describe('WorkerToolbar — display modes', () => {
 
   it('leads with the last-used worker', () => {
     instancePreferences.set(PrefKey.LAST_OPENER, 'codex');
-    render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     // Primary is codex; claude_code now lives behind the chevron.
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-claude_code')).toBeNull();
@@ -91,11 +91,11 @@ describe('WorkerToolbar — display modes', () => {
   });
 });
 
-describe('WorkerToolbar — launch + persistence', () => {
+describe('ContextWorkerToolbar — launch + persistence', () => {
   it('launching calls onLaunch and remembers the worker as last opener', async () => {
     const user = userEvent.setup();
     const onLaunch = vi.fn();
-    render(<WorkerToolbar onLaunch={onLaunch} mode="all" testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={onLaunch} mode="all" testIdPrefix="t" />);
 
     await user.click(screen.getByTestId('t-launch-codex'));
 
@@ -106,13 +106,13 @@ describe('WorkerToolbar — launch + persistence', () => {
 
   it('hasProcess short-circuits to the Open button', () => {
     const onOpen = vi.fn();
-    render(<WorkerToolbar onLaunch={() => {}} hasProcess onOpen={onOpen} testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} hasProcess onOpen={onOpen} testIdPrefix="t" />);
     expect(screen.getByTestId('t-open-session')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-claude_code')).toBeNull();
   });
 
   it('menu-list variant renders labelled session rows', () => {
-    render(<WorkerToolbar onLaunch={() => {}} variant="menu-list" mode="all" testIdPrefix="t" />);
+    render(<ContextWorkerToolbar onLaunch={() => {}} variant="menu-list" mode="all" testIdPrefix="t" />);
     const row = screen.getByTestId('t-launch-claude_code');
     expect(row.textContent).toContain('Session');
     expect(row.textContent).toContain('Claude');

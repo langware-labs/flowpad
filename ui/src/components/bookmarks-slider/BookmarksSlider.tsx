@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react/macro';
 import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
+import { BookmarksNotesSection } from '@src/components/notes/BookmarksNotesSection';
 import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
 import { useEffect, type PointerEventHandler } from 'react';
@@ -74,6 +75,7 @@ export function BookmarksSlider({
           `mirrored` is LOGICAL — BrowseableTree XORs it with the locale's dir —
           so this stays correct in both directions and must NOT be flipped here. */}
       <FavoritesTreeMenu mirrored />
+      <BookmarksNotesSection />
     </AnchoredMenu>
   );
 }

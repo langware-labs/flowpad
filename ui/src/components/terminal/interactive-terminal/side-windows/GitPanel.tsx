@@ -30,7 +30,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
 import type { MessageDescriptor } from '@lingui/core';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import type { WorkerType } from '@src/components/workers/worker-types';
 import { notify } from '@src/notifications';
 
@@ -272,7 +272,7 @@ const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix:
     },
     [workdir, commit, onLaunched],
   );
-  return <WorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
+  return <ContextWorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
 };
 
 // ---------------------------------------------------------------------------
