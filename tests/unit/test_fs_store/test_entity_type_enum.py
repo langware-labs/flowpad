@@ -224,6 +224,7 @@ EXPECTED = {
     # the Agent action name ("mailbox") so graph paths stay unambiguous —
     # additive member, no existing value changed.
     "AGENT_MAILBOX": "agent_mailbox",
+    "WEBHOOK": "webhook",
 }
 
 

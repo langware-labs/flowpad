@@ -32,6 +32,8 @@ class EntityType(StrEnum):
     # The Hub's server-minted mailbox row. The value deliberately differs from
     # the Agent action name ("mailbox") so graph paths remain unambiguous.
     AGENT_MAILBOX = "agent_mailbox"
+    # The hub's webhook chain (builtin/webhook.py): hub-only, no local rows.
+    WEBHOOK = "webhook"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"

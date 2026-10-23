@@ -319,3 +319,8 @@ except ImportError as e:
     print(f"[WARN] Failed to import StreamInboxManager: {e}")
 
 __all__ = []
+
+try:
+    from flow_sdk.builtin.webhook import Webhook  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Webhook: {e}")
