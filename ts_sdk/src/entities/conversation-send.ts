@@ -169,7 +169,7 @@ export interface CreateAndSendParams {
   /** Required for project-local conversations; for a cross-user bundle it is
    *  the sender's local-only project mapping — pass it whenever one is selected. */
   project_id?: string | null;
-  participants: ConversationParticipant[];
+  members: ConversationParticipant[];
   title?: string;
   /** Serialized TypeIds stamped as the new conversation's shared context at
    *  create time (constructor-lift into ``_shared_context_entities_``). */
@@ -204,7 +204,7 @@ export async function createConversationForShare(
 ): Promise<CreateAndSendResult> {
   let conversationId: string;
 
-  if (hasRemoteParticipant(params.participants)) {
+  if (hasRemoteParticipant(params.members)) {
     if (opts?.ensureCloudLogin) {
       const gate = await opts.ensureCloudLogin();
       if (!gate.ok) throw new Error(gate.error);
@@ -217,7 +217,7 @@ export async function createConversationForShare(
     // participant has both: it is the path that also works for someone without
     // an account yet.
     const invitees: string[] = [];
-    for (const p of params.participants) {
+    for (const p of params.members) {
       const email = normalizeEmail(p.email) || '';
       if (email.includes('@')) {
         invitees.push(email);
@@ -234,7 +234,7 @@ export async function createConversationForShare(
       opts?.draftRef?.current ??
       new Conversation({
         title: params.title,
-        members: params.participants,
+        members: params.members,
         // Local-only project mapping (the hub body strips project_id) — without
         // it a remote-shared conversation loses its project association and the
         // sender's conversation list can't scope it.
@@ -246,7 +246,7 @@ export async function createConversationForShare(
           : {}),
       } as Partial<Conversation>);
     if (params.title !== undefined) conv.title = params.title;
-    conv.members = params.participants;
+    conv.members = params.members;
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();
@@ -262,7 +262,7 @@ export async function createConversationForShare(
     }
     const r = await createProjectConversation({
       project_id: params.project_id,
-      participants: params.participants,
+      members: params.members,
       title: params.title,
       // Let the backend derive the owning project from the shared entity
       // (deterministic), with ``project_id`` as the ambient fallback.

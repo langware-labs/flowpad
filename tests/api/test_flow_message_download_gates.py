@@ -147,7 +147,7 @@ def _no_project_bundle_bytes(fm_id: str, conv_id: str, prompt_id: str) -> bytes:
         zf.writestr(
             f"attachment/conversation-{conv_id}/header.json",
             json.dumps(
-                {"type": "conversation", "id": conv_id, "participants": [], "project_id": None},
+                {"type": "conversation", "id": conv_id, "members": [], "project_id": None},
                 ensure_ascii=False,
             ),
         )

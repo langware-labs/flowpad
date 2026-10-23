@@ -2265,8 +2265,8 @@ class Entity(DBEntity):
         #  - ``tags``        — local-only labels; the hub doesn't read them.
         #  - ``project_id``  — sender's local project; recipients resolve their
         #    own project mapping, so the hub deliberately doesn't store this.
-        #  - ``participants`` — initial sender-side list (email-only entries).
-        #    The hub builds the real participants list via ``/members`` invites
+        #  - ``members``     — initial sender-side list (email-only entries).
+        #    The hub builds the real roster via ``/members`` invites
         #    + ``/join``, which stamps a real ``user_id`` per joiner.
         # All of the above were producing ``None API field !!!`` errors on the
         # hub at create because the hub schema doesn't declare them. They

@@ -1068,7 +1068,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * The ``members`` action is ``reflect="hub"`` server-side: for a ``remote``
    * entity the local server forwards to the hub and mirrors the roster back
    * onto the local row; for a local-only entity it returns the cached
-   * participants. Either way this returns the normalized ``EntityMember[]``.
+   * members. Either way this returns the normalized ``EntityMember[]``.
    *
    * ``cache`` (default ``true``): return the per-instance cached roster when
    * present, so incidental reads are free. Pass ``cache: false`` to force a

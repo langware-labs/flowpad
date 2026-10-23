@@ -1139,7 +1139,7 @@ class Conversation(ProjectedFields, Entity):
         return {
             "id": self.id,
             "title": self.title or "",
-            "participants": [member_label(p) for p in (self.members or [])],
+            "members": [member_label(p) for p in (self.members or [])],
             "message_count": self.message_count,
             "threads": [
                 {"id": t.id, "title": t.title or "", "channel": t.channel, "message_count": t.message_count}

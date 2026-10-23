@@ -642,7 +642,7 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
     if action_name == "members" and isinstance(hub_resp, list):
         if hasattr(entity, "members"):
             try:
-                new_participants = list(hub_resp)
+                new_members = list(hub_resp)
                 # EQUALITY GUARD — only assign+save when the roster actually
                 # changed. ``Entity.__setattr__`` marks the row dirty on *any*
                 # assignment (it tracks assignment, not value), and ``save()``
@@ -657,9 +657,9 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
                 # value (both went through ``normalize_hub_response``), so the
                 # check isn't defeated by raw-vs-normalized key differences.
                 current = list(getattr(entity, "members", None) or [])
-                if current == new_participants:
+                if current == new_members:
                     return
-                entity.members = new_participants
+                entity.members = new_members
                 # Best-effort save; never blow up the action if persistence fails.
                 save = getattr(entity, "save", None)
                 if callable(save):
@@ -674,6 +674,6 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
             try:
                 from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
 
-                await _learn_address_book(new_participants)
+                await _learn_address_book(new_members)
             except Exception as e:  # noqa: BLE001
                 logger.debug("[hub-reflect] contact learn failed for %s: %s", entity.type, e)

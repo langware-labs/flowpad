@@ -6,9 +6,9 @@ automatically. Outbound, exposes thin convenience methods for the realtime
 conversation actions (start_guest_conversation, add_message, mark_received)
 that callers route through the bridge instead of HTTP.
 
-The hub side reaches participants by user id (notify_user_through_websocket),
-so this bridge does NOT subscribe to entity watches on connect — membership
-in Conversation.participants IS the subscription.
+The hub side reaches members by user id (notify_user_through_websocket),
+so this bridge does NOT subscribe to entity watches on connect — being in a
+conversation's ``members`` IS the subscription.
 """
 
 from __future__ import annotations

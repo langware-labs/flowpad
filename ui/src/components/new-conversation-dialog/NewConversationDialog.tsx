@@ -90,7 +90,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       kind: 'new',
       params: {
         project_id: projectId || null,
-        participants,
+        members: participants,
         title: effectiveTitle,
       },
     };

@@ -34,7 +34,7 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
         "/api/v1/graph/conversation-create",
         json={
             "project_id": project_id,
-            "participants": [
+            "members": [
                 {"email": "alice@example.com", "name": "Alice"},
                 {"email": "bob@example.com"},
             ],
@@ -50,7 +50,7 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
 
     # Participants are stored exactly as the caller provided them. The address
     # book may learn contacts, but it must not rewrite Conversation.participants.
-    parts = data["participants"]
+    parts = data["members"]
     assert parts == [
         {"email": "alice@example.com", "name": "Alice"},
         {"email": "bob@example.com"},
@@ -84,7 +84,7 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
 async def test_conversation_create_rejects_missing_project_id(bootstrapped_client):
     response = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"participants": [{"email": "x@y.com"}]},
+        json={"members": [{"email": "x@y.com"}]},
     )
     assert response.status_code != 200 or response.json()["status"] != "SUCCESS"
     assert "project_id" in response.text.lower()
@@ -99,12 +99,12 @@ async def test_conversation_create_with_no_participants(bootstrapped_client):
 
     response = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "SUCCESS"
-    assert body["data"]["participants"] == []
+    assert body["data"]["members"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ async def test_jsonl_lands_in_records_data_root(bootstrapped_client):
 
     resp = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     conv_id = resp.json()["data"]["conversation_id"]
 
@@ -146,7 +146,7 @@ async def test_append_conversation_writes_into_records_data_jsonl(bootstrapped_c
 
     create = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     conv_id = create.json()["data"]["conversation_id"]
 
@@ -178,7 +178,7 @@ async def test_two_creates_yield_two_distinct_records_data_dirs(bootstrapped_cli
     for _ in range(2):
         resp = await bootstrapped_client.post(
             "/api/v1/graph/conversation-create",
-            json={"project_id": project_id, "participants": []},
+            json={"project_id": project_id, "members": []},
         )
         ids.append(resp.json()["data"]["conversation_id"])
 
@@ -204,7 +204,7 @@ async def test_jsonl_path_not_under_project_mount(bootstrapped_client):
 
     resp = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     conv_id = resp.json()["data"]["conversation_id"]
     jsonl = default_jsonl_path(conv_id).resolve()
@@ -229,7 +229,7 @@ async def test_no_conversations_dir_created_under_project_mount(bootstrapped_cli
 
     resp = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     conv_id = resp.json()["data"]["conversation_id"]
 
@@ -269,7 +269,7 @@ async def test_create_under_system_project_does_not_touch_sdk_tree(bootstrapped_
 
     resp = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": []},
+        json={"project_id": project_id, "members": []},
     )
     assert resp.status_code == 200, resp.text
     conv_id = resp.json()["data"]["conversation_id"]
@@ -294,7 +294,7 @@ async def test_directory_uses_canonical_record_stem_not_slug(bootstrapped_client
         "/api/v1/graph/conversation-create",
         json={
             "project_id": project_id,
-            "participants": [{"email": "leak-check@example.com"}],
+            "members": [{"email": "leak-check@example.com"}],
         },
     )
     conv_id = resp.json()["data"]["conversation_id"]

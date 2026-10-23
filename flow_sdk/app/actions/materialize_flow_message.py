@@ -44,7 +44,7 @@ async def ensure_conversation_entity(
     project_id: Optional[str] = None,
     remote_project_id: Optional[str] = None,
     remote_project_name: Optional[str] = None,
-    participants: Optional[list] = None,
+    members: Optional[list] = None,
     title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
     created_by: Optional[str] = None,
@@ -95,8 +95,8 @@ async def ensure_conversation_entity(
                 payload["remote_project_id"] = remote_project_id
             if remote_project_name:
                 payload["remote_project_name"] = remote_project_name
-            if participants:
-                payload["members"] = list(participants)  # roster cache field (wire key is ``participants``)
+            if members:
+                payload["members"] = list(members)
             if title_clean:
                 payload["title"] = title_clean
             if parent_typeid is not None:
@@ -124,10 +124,10 @@ async def ensure_conversation_entity(
                 # stamp it, so the stream inbox filter finds it without the backfill.
                 conv.owner = owner
                 dirty = True
-            if participants and not (conv.members or []):
+            if members and not (conv.members or []):
                 # Backfill the roster from the bundle so the reply-recipient
                 # resolver can find the other party's email.
-                conv.members = list(participants)
+                conv.members = list(members)
                 dirty = True
             if title_clean and not (conv.title or "").strip():
                 # Backfill title on first receive — keep an existing local override.

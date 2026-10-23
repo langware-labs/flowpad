@@ -24,7 +24,7 @@ async def test_message_sync_skips_local_only_conversation(bootstrapped_client):
 
     created = await bootstrapped_client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": local_project["id"], "participants": []},
+        json={"project_id": local_project["id"], "members": []},
     )
     assert created.status_code == 200, created.text
     conv_id = created.json()["data"]["conversation_id"]
@@ -71,7 +71,7 @@ async def test_message_sync_materializes_exact_assigned_conversation_after_misse
 
     async def fake_hub_get(_method, entity_type, entity_id=None, *args, **kwargs):
         calls.append(("hub_get", entity_type, entity_id))
-        return {"id": conv_id, "title": "Assigned while disconnected", "participants": []}
+        return {"id": conv_id, "title": "Assigned while disconnected", "members": []}
 
     async def fake_upsert(hub_conv, someone_typeid, *, existing):
         calls.append(("upsert", hub_conv["id"], existing))

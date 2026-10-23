@@ -52,7 +52,7 @@ describe('Ask someone for help — stress-run failures', () => {
     await apiClient.post('/cloud/ws/disconnect');
     try {
       const { conversation_id } = await createAndSendConversation(
-        { project_id: null, participants: [{ email: HELPER }], title: task.title },
+        { project_id: null, members: [{ email: HELPER }], title: task.title },
         {
           text: task.title,
           assetReferences: [task.typeId.toString()],
