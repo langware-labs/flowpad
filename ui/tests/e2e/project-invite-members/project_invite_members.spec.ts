@@ -253,6 +253,13 @@ test.describe('project invite = membership, not publish', () => {
 
   test.afterAll(async () => {
     if (projectId) {
+      // The hub copy first, as its owner: a local delete leaves it on the hub, and every later
+      // sign-in sweep (`new-cloud-projects`) then offers it to all three as "shared with you".
+      await graph(admin, `project/${projectId}`, {
+        method: 'DELETE',
+        headers: { 'Hub-Reflect': 'true' },
+        body: '{}',
+      }).catch(() => undefined);
       for (const u of [member, editor, admin]) {
         await graph(u, `project/${projectId}`, { method: 'DELETE' }).catch(() => undefined);
       }

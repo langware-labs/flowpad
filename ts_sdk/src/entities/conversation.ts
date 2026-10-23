@@ -548,6 +548,9 @@ export async function createProjectConversation(
  *  — the hub's ``conversation/<id>/pickup``; the desktop answers it too and lands the ticket. */
 export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
   const action = new ActionInfo('pickup', Conversation.type, conversationId, 'POST');
+  // The hub's own action: an unpicked ticket has no row on this machine yet, and the desktop
+  // has no `pickup` of its own (0c7e9d852) — answered locally it is a 404.
+  action.hubReflect = true;
   action.bodyParameters = {};
   await dataManager.callAction(action);
   return { conversation_id: conversationId };

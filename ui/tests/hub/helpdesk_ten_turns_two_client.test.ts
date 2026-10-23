@@ -113,7 +113,7 @@ beforeEach((context: any) => {
 
 const rowsOf = queryConversationMessages;
 
-const hubMessages = (convId: string): Promise<any[]> => hubJson(helperToken, `/graph/conversation/${convId}/flow_message`);
+const hubMessages = (convId: string): Promise<any[]> => hubJson(helperToken, `/graph/conversation/${convId}/messages`);
 
 const fromRequester = (m: any): boolean => [requesterUserId, `helpdesk:${requesterUserId}`].includes(m.sender_id);
 
@@ -143,7 +143,9 @@ describe('a ten-turn support conversation', () => {
       config: { desk_project_id: deskId },
       status: 'new',
     });
-    await source.save();
+    // Staff already hold their desk's source (ensure_sources, f87389e80): the create answers with
+    // that row, under its own id — keep the answer, not the id this object was minted with.
+    source = (await source.save()) ?? source;
     expect(source.id).toBeTruthy();
   });
 
