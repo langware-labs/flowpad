@@ -45,8 +45,7 @@ async def deploy_entity_to_cloud(
     """
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-    from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
     environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
@@ -54,16 +53,14 @@ async def deploy_entity_to_cloud(
     if not creds or not creds.api_key:
         raise RuntimeError("Cloud login required before deploy")
 
-    path = build_hub_url(entity, action="deploy")
-    async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-        # `post` already unwraps the envelope, and raises on a non-success one —
-        # so a hub-side refusal surfaces here rather than returning {}.
-        body = {
-            "environment": environment,
-            "provider": provider or DEFAULT_CLOUD_PROVIDER,
-            **({"require": require} if require else {}),
-        }
-        data = await client.post(path, body)
+    # `strict` unwraps the envelope and raises on a refusing one —
+    # so a hub-side refusal surfaces here rather than returning {}.
+    body = {
+        "environment": environment,
+        "provider": provider or DEFAULT_CLOUD_PROVIDER,
+        **({"require": require} if require else {}),
+    }
+    data = await HubProxy.call("POST", entity.type, entity.id, "deploy", payload=body, strict=True)
     data = data if isinstance(data, dict) else {}
     await Deployment.adopt_from_hub(data.get("deployment"), element=entity)
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415

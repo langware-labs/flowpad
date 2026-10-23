@@ -160,7 +160,7 @@ console.error = (...args: any[]) => {
 // Developer mode is a PREFERENCE, and this tier persists preferences to one live
 // backend shared by every file — so a file that turned Dev on (or left the legacy
 // stored `view_mode = "dev"`, which reads as on) handed it to the next file, whose
-// Advanced/Dev-gated assertions then flipped with the file order (CI: WorkerToolbar
+// Advanced/Dev-gated assertions then flipped with the file order (CI: ContextWorkerToolbar
 // rendered every worker). Every FILE starts with Dev off; within a file, tests own
 // their sequence. Written only when on, so the common case costs no preference save.
 // Read through the SDK store by its own module paths — files mock both

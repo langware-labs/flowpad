@@ -42,7 +42,7 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
           kind: 'new',
           params: {
             project_id: null, // cross-user bundle conversation
-            participants,
+            members: participants,
             title: task.title || 'Task',
           },
         },

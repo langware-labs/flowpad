@@ -67,6 +67,11 @@ export interface ScopeBudget {
   can_manage: boolean;
   /** May the caller add a team here? Adding one is a scoped `create` on the organization. */
   can_add_child: boolean;
+  /** The caller's own top role on this TEAM — `null` when they are not on its roster. Set only on
+   *  a team's row in the org read; absent from an older hub. */
+  my_role?: string | null;
+  /** How many people hold this team directly. Set only on a team's row in the org read. */
+  member_count?: number | null;
 }
 
 /**

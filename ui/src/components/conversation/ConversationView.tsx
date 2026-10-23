@@ -25,6 +25,7 @@ import {
   Task,
   toplog,
   dataContext,
+  dataManager,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -32,6 +33,7 @@ import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
+import { replyPickedUp, ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
@@ -58,6 +60,7 @@ import {
 } from './conversation-items';
 import { indexCalls, runningProcessCalls } from './process-call';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -67,7 +70,12 @@ import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
-import { conversationMessagesRequest } from './conversation-messages-query';
+import {
+  conversationMessagesRequest,
+  loadedPointers,
+  olderConversationMessagesRequest,
+  oldestCreatedDate,
+} from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
 import { failedPromptOf, pendingPromptOf } from './session-turns';
 import { isSessionExpired } from './session-card-state';
@@ -176,7 +184,7 @@ export function ConversationView({
     () => (agentId ? new Set(agentScope?.flow_message_ids ?? []) : null),
     [agentId, agentScope?.flow_message_ids],
   );
-  const pointers = useMemo(
+  const storedPointers = useMemo(
     () =>
       (conversation?.conversationMessageIds ?? []).filter(
         (pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id),
@@ -208,7 +216,8 @@ export function ConversationView({
     });
   }, [conversationId, localUser?.id]);
   const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
-    enabled: !!conversationId,
+    // Drafts are a desktop feature (local rows); the hub page has none to show.
+    enabled: !!conversationId && !isHubOnly(),
   });
 
   // All FlowMessages in this conversation, fetched in ONE live query (replaces
@@ -221,13 +230,65 @@ export function ConversationView({
   // load on demand via a `created_date $LT` cursor extension here.
   const messagesRequest = useMemo(() => conversationMessagesRequest(conversationId), [conversationId]);
   const {
-    data: conversationMessages = [],
+    data: windowMessages = [],
     refetch: refetchConversationMessages,
     isSuccess: messagesLoaded,
     error: messagesError,
+    hasMore: windowHasMore = false,
   } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
+  // Older messages, a page at a time past the live window: `created_date` older than the oldest
+  // loaded (a keyset). Kept per conversation; a new conversation starts from its window again.
+  const [older, setOlder] = useState<{ conversationId: string; rows: FlowMessage[]; hasMore: boolean } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderRows = older?.conversationId === conversationId ? older.rows : null;
+  const hasOlder = olderRows ? !!older?.hasMore : windowHasMore;
+  const conversationMessages = useMemo(() => {
+    if (!olderRows?.length) return windowMessages;
+    const held = new Set(windowMessages.map((m) => m.id));
+    return [...windowMessages, ...olderRows.filter((m) => !held.has(m.id))];
+  }, [windowMessages, olderRows]);
+  const loadOlder = useCallback(async () => {
+    const before = oldestCreatedDate(conversationMessages);
+    if (!conversationId || !before || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const rows = await dataManager.query<FlowMessage>(olderConversationMessagesRequest(conversationId, before), true);
+      const more = (rows as unknown as { has_more?: boolean }).has_more ?? false;
+      setOlder((prev) => ({
+        conversationId,
+        rows: [...(prev?.conversationId === conversationId ? prev.rows : []), ...rows],
+        hasMore: more,
+      }));
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [conversationId, conversationMessages, loadingOlder]);
+  // The order of the messages: the conversation's pointer log (``message_ids``) where it keeps
+  // one; a conversation without one (the hub keeps no such log) is ordered by the messages
+  // themselves — otherwise it read "No messages yet".
+  // A conversation WITH a log is ordered by it even when the agent scope leaves none of it (scope
+  // pending, empty or failed): falling back to the loaded messages then drew — and acked — rows
+  // outside the scope. The fallback is held to the same scope.
+  const hasPointerLog = (conversation?.conversationMessageIds?.length ?? 0) > 0;
+  const pointers = useMemo(
+    () =>
+      hasPointerLog
+        ? storedPointers
+        : conversationMessages
+            .filter((m) => !allowedMessageIds || allowedMessageIds.has(m.id))
+            .map((m) => ({ id: m.id, type: FlowMessage.type, ts: String(m.created_date ?? '') }))
+            .sort((a, b) => {
+              // An undated message sorts last; equal times keep a stable order by id.
+              const ta = Date.parse(a.ts);
+              const tb = Date.parse(b.ts);
+              const ka = Number.isNaN(ta) ? Infinity : ta;
+              const kb = Number.isNaN(tb) ? Infinity : tb;
+              return ka === kb ? a.id.localeCompare(b.id) : ka - kb;
+            }),
+    [conversationMessages, storedPointers, hasPointerLog, allowedMessageIds],
+  );
   // `tab_switch` ready point for a conversation tab: the first frame after its
   // message window arrived (or failed). Once per mounted conversation.
   const readyTracedRef = useRef<string | null>(null);
@@ -283,7 +344,8 @@ export function ConversationView({
   // `messagesById` query above renders whatever lands, so no per-message
   // backfill loop or remount-keying is needed.
   useEffect(() => {
-    if (!conversationId) return;
+    // The hub page reads the hub itself; there is no local copy to pull into.
+    if (!conversationId || isHubOnly()) return;
     void syncConversationMessages(conversationId, agentId ?? undefined).catch(() => {
       // Hub offline / not configured — the local query still renders what we
       // already have; avoid surfacing transient sync failures to the user.
@@ -334,7 +396,16 @@ export function ConversationView({
     [dockNavigation],
   );
 
-  const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
+  // Bubbles for the loaded messages only: an older pointer waits for "load older" instead of
+  // fetching its message on its own.
+  const shownPointers = useMemo(
+    () => (messagesLoaded ? loadedPointers(pointers, new Set(messagesById.keys())) : pointers),
+    [messagesLoaded, pointers, messagesById],
+  );
+  const orderedItems = useMemo(
+    () => buildConversationItems(shownPointers, draftMessages),
+    [shownPointers, draftMessages],
+  );
 
   // What this conversation's channel is — the backend's `channel_spec`. A reply goes out
   // through a data source only when the channel's transport says so; Flowpad's own chat is
@@ -762,7 +833,8 @@ export function ConversationView({
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
   // "Task it": the tasks made from this conversation's messages (one query), and the one-click create.
-  const messageTasks = useMessageTasks(conversationId);
+  // Task it is a desktop feature: the hub page links no tasks to a conversation.
+  const messageTasks = useMessageTasks(isHubOnly() ? null : conversationId);
   // A task thread's message names its task (the channel puts it in the message's shared context), so the
   // thread shows — and acts on — the same chips as the message the task was made from. One pass: which
   // task each message names, and so which task each thread is about.
@@ -791,7 +863,7 @@ export function ConversationView({
   // dashed staged chips + review modal in each bubble.
   const { byMessage: attachmentsByMessage } = useConversationMessageAttachments(conversationId);
 
-  // The conversation owner (created_by == the local cloud user) may delete ANY
+  // The conversation owner (initiated_by == the local cloud user) may delete ANY
   // message; everyone may delete their own. The per-bubble sender check is done
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
@@ -800,13 +872,10 @@ export function ConversationView({
     () => ({ members: participants ?? [], me: myEmail, cloudUserId }),
     [participants, myEmail, cloudUserId],
   );
-  // Owner = either created_by matches (recipient side, where the hub stamped the
-  // cloud-user id) OR the local user holds role "owner" in the participant
-  // roster (creator side, where created_by is the local user id). The roster is
-  // the hub-authoritative signal on both sides.
+  // Owner = the hub's initiated_by OR the local user holds role "owner" in the roster.
   const isConversationOwner =
     !!cloudUserId &&
-    ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
+    ((!!conversation?.initiated_by && conversation.initiated_by === cloudUserId) ||
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
   // Open-to-read (URL-first): viewing a conversation marks its latest received
@@ -856,8 +925,10 @@ export function ConversationView({
     setHubSyncing(true);
     try {
       await Promise.allSettled([
-        fetchConversations(agentId ?? undefined),
-        syncConversationMessages(conversationId, agentId ?? undefined),
+        // Pulling the hub into the local copy is the desktop's; the hub page reads the hub itself.
+        ...(isHubOnly()
+          ? []
+          : [fetchConversations(agentId ?? undefined), syncConversationMessages(conversationId, agentId ?? undefined)]),
         refreshMembers(),
       ]);
       await refetch();
@@ -866,13 +937,17 @@ export function ConversationView({
     }
   }, [agentId, refetch, refreshMembers, conversationId]);
 
-  // Staff "pick up" affordance for a helpdesk ticket: shown only on a
-  // helpdesk conversation the local cloud user hasn't joined and didn't open
-  // (the guest initiator is the owner). Joining adds them to the roster so they
-  // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
   const [pickingUp, setPickingUp] = useState(false);
   const isParticipant = !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
-  const canPickup = isHelpdeskConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const { canPickup, canSettle } = ticketAffordances({
+    helpdesk: isHelpdeskConversation,
+    cloudUserId,
+    isOwner: isConversationOwner,
+    isParticipant,
+  });
+  useEffect(() => {
+    if (replyPickedUp(canPickup, lastMessageSenderId, cloudUserId)) void refreshMembers();
+  }, [canPickup, lastMessageSenderId, cloudUserId, refreshMembers]);
 
   const showSoloNotice = shouldShowSoloSendNotice({
     remote: conversation?.remote === true,
@@ -929,13 +1004,8 @@ export function ConversationView({
     }
   }, [conversationId, ensureCloudLogin, openLiveSession, t]);
 
-  // Affordance only — the hub's `_set_settlement` is the authority on who may
-  // settle. Mirrors `canPickup` below. Note this is NARROWER than the server
-  // rule: desk staff triaging from the queue who have not picked the ticket up
-  // see no button until they do.
   const [settling, setSettling] = useState(false);
   const isClosed = isClosedConversation(conversation?.status);
-  const canSettle = isHelpdeskConversation && (isConversationOwner || isParticipant);
 
   const handleSettle = useCallback(async () => {
     setSettling(true);
@@ -979,7 +1049,7 @@ export function ConversationView({
             type="button"
             onClick={() => void handlePickup()}
             disabled={pickingUp}
-            title={t`Join this support ticket so you can reply`}
+            title={t`Join this support ticket. Replying picks it up too.`}
             data-testid="pickup-conversation-button"
             className={`${ticketActionClassName} border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400`}
           >
@@ -1017,6 +1087,19 @@ export function ConversationView({
           onShowAll={onThreadNavigate ? () => onThreadNavigate(null) : undefined}
         />
       )}
+      {hasOlder && orderedItems.length > 0 && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void loadOlder()}
+            data-testid="conversation-load-older"
+            className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+          >
+            {loadingOlder ? <Trans>Loading…</Trans> : <Trans>Load older messages</Trans>}
+          </button>
+        </div>
+      )}
       {orderedItems.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">
           <Trans>No messages yet.</Trans>
@@ -1051,9 +1134,7 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={
-                      role === 'host' && session ? () => approveSession(session) : undefined
-                    }
+                    onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!turns?.failed}

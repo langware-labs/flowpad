@@ -35,6 +35,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabLifecycles } from '@src/tabs/use-tab-manager';
 import { ContentTabTooltip, humanizeType, ProcessTabCard, PROVIDER_META } from '@src/tabs/provider-meta';
 import { DocTabCard } from '@src/tabs/doc-tab-card';
+import type { NoteTarget } from '@src/hooks/use-entity-notes';
 import { EntityCard, UrlTabCard } from '@src/components/entity-card/EntityCard';
 import { offersDocChat } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -86,7 +87,15 @@ function ProcessTabIcon({ processId, fallback }: { processId: string; fallback: 
 /** Tab → chip, leading with the tab's own bookmark star when it has one to offer. */
 export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
   const item = chipFor(tab, lifecycle);
-  return { ...item, favorite: tabFavorite(tab, item.title) };
+  return { ...item, favorite: tabFavorite(tab, item.title), notes: tabNotes(tab, item.title) };
+}
+
+/** Where this tab's sticky notes sit: the entity its dock shows (the key its
+ *  star uses), its name, and the dock itself so a note can reopen this view. */
+function tabNotes(tab: Tab, title: string): NoteTarget | null {
+  const dock = tabDock(tab);
+  const typeId = dock?.targetTypeId ?? null;
+  return typeId ? { typeId, name: title, dock: dock?.toJSON() ?? null } : null;
 }
 
 /** What bookmarking this tab means — the SAME answer the navigation bar's star
@@ -108,7 +117,12 @@ function docCard(props: Omit<React.ComponentProps<typeof DocTabCard>, 'dock'> & 
 }
 
 /** The card for the ONE entity a tab is — a shell, a conversation, an app, a project. */
-function entityCard(type: string | null | undefined, id: string | null | undefined, name: string, statusReason?: string) {
+function entityCard(
+  type: string | null | undefined,
+  id: string | null | undefined,
+  name: string,
+  statusReason?: string,
+) {
   if (!type || !id) return undefined;
   return <EntityCard type={type} id={id} fallbackName={name} statusReason={statusReason} />;
 }
@@ -200,8 +214,13 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       statusReason,
       guestNote: isGuestTab(tab) ? i18n._(msg`This asset is not part of this project`) : undefined,
       card:
-        docCard({ tab, dock: docDock, typeLabel, statusReason: statusReason || undefined, location: tab.target_remote }) ??
-        tabEntityCard(tab, label || typeLabel, statusReason),
+        docCard({
+          tab,
+          dock: docDock,
+          typeLabel,
+          statusReason: statusReason || undefined,
+          location: tab.target_remote,
+        }) ?? tabEntityCard(tab, label || typeLabel, statusReason),
       tooltip: (
         <ContentTabTooltip
           tab={tab}

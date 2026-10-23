@@ -7,7 +7,7 @@ import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
-import { OpenSessionButton } from '@src/components/workers/WorkerToolbar';
+import { OpenSessionButton } from '@src/components/workers/ContextWorkerToolbar';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';

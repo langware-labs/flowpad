@@ -47,17 +47,20 @@ export function latestPointer(
 
 /**
  * The message ids a conversation row reads — its first pointer and its latest
- * (see `latestPointer`) — across `conversations`, deduped and sorted so a batch
+ * (`Conversation.latestMessagePointer`) — across `conversations`, deduped and sorted so a batch
  * built from them has a stable key.
  */
 export function conversationRowMessageIds(
-  conversations: readonly { conversationMessageIds?: readonly ConversationMessagePointer[] | null }[],
+  conversations: readonly {
+    conversationMessageIds?: readonly ConversationMessagePointer[] | null;
+    latestMessagePointer?: ConversationMessagePointer | null;
+  }[],
 ): string[] {
   const ids = new Set<string>();
   for (const conv of conversations) {
-    const pointers = conv.conversationMessageIds ?? [];
-    if (pointers[0]?.id) ids.add(pointers[0].id);
-    const latest = latestPointer(pointers)?.id;
+    const first = conv.conversationMessageIds?.[0]?.id;
+    if (first) ids.add(first);
+    const latest = (conv.latestMessagePointer ?? latestPointer(conv.conversationMessageIds))?.id;
     if (latest) ids.add(latest);
   }
   return [...ids].sort();
@@ -131,6 +134,9 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
+  /** The newest message, for a row that keeps no ``message_ids`` log (the hub's). */
+  latest_message_id?: string | null;
+  latest_message_at?: string | Date | null;
   /** The channel this conversation replies through: ``flowpad`` (Flowpad's own chat) or a
    *  data source channel (``gmail``, ``slack``, ``helpdesk``). Test ``channel_spec``, never this. */
   channel?: string | null;
@@ -148,9 +154,6 @@ export interface IConversation extends IEntity {
   started_at?: string | Date | null;
   /** When it ended: a call hung up, or a thread retired by its channel's timeout. */
   ended_at?: string | Date | null;
-  /** Hub role roster — inherited from the Entity base as ``members``. The wire
-   *  key on the conversation fanout is ``participants`` (hub contract), adapted
-   *  in ``onEntityUpdate``. */
   /** User-set display title. Set at creation in NewConversationDialog and
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
@@ -173,6 +176,9 @@ export interface IConversation extends IEntity {
   /** Whose stream inbox lists this conversation — a user or agent typeid string;
    *  null on rows written before the field existed (the local user's). */
   owner?: string | null;
+  /** The hub's owner of the conversation (a cloud user id), copied as is. Null on a conversation
+   *  that never left this machine (``remote`` false: its owner is this machine's user). */
+  initiated_by?: string | null;
   /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
    *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
   is_unread?: boolean;
@@ -202,6 +208,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
+  latest_message_id?: string | null;
+  latest_message_at?: string | Date | null;
   channel?: string | null;
   channel_spec?: IChannelSpec | null;
   channel_source_id?: string | null;
@@ -216,6 +224,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
   owner?: string | null;
+  initiated_by?: string | null;
   is_unread?: boolean;
   unread_count?: number;
   archived?: boolean;
@@ -230,6 +239,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
+    this.latest_message_id = entity.latest_message_id ?? null;
+    this.latest_message_at = entity.latest_message_at ?? null;
     this.channel = entity.channel ?? null;
     this.channel_spec = entity.channel_spec ?? null;
     this.channel_source_id = entity.channel_source_id ?? null;
@@ -242,6 +253,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
     this.owner = entity.owner ?? null;
+    this.initiated_by = entity.initiated_by ?? null;
     this.is_unread = entity.is_unread;
     this.unread_count = entity.unread_count;
     this.archived = entity.archived;
@@ -270,22 +282,16 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value wholesale here
    * and strip it from the payload so the following deepAssign skips it. (Same
    * pattern AgenticProcess uses for ``queue``.)
-   *
-   * Wire adapter: the local backend serializes the roster as ``members``; the
-   * hub conversation fanout uses ``participants`` (hub contract). Accept either
-   * key and land it on ``members``.
    * @internal
    */
-  protected onEntityUpdate(data: Partial<IConversation> & { participants?: unknown }): void {
-    const key = 'members' in data ? 'members' : 'participants' in data ? 'participants' : null;
-    if (key) {
-      const roster = (data as Record<string, unknown>)[key];
-      this.members = Array.isArray(roster)
-        ? roster.map((p) => ({ ...(p as EntityMember) }))
-        : (roster as EntityMember[] | undefined);
-      delete (data as Record<string, unknown>)[key];
+  protected onEntityUpdate(data: Partial<IConversation>): void {
+    if ('members' in data) {
+      const roster = data.members;
+      this.members = Array.isArray(roster) ? roster.map((p) => ({ ...(p as EntityMember) })) : roster;
+      delete data.members;
     }
   }
+
 
   // NOTE: FE-side project chip projection moved server-side. The backend's
   // ``Entity.get_implicit_private_context_entities`` projects project_id
@@ -312,6 +318,15 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     const info = new ActionInfo('act', Conversation.type, this.id, 'POST');
     info.bodyParameters = { action, text };
     return dataManager.callAction<unknown, { ok: boolean; item_id?: string | null }>(info);
+  }
+
+  /** The newest message: the log's latest pointer, or — for a row that keeps no log (the hub's) — the
+   *  newest message the row names. A row's preview reads this; the log itself stays the log. */
+  get latestMessagePointer(): ConversationMessagePointer | null {
+    const logged = latestPointer(this.conversationMessageIds);
+    if (logged || !this.latest_message_id) return logged;
+    const at = this.latest_message_at;
+    return { type: FlowMessage.type, id: this.latest_message_id, ts: at instanceof Date ? at.toISOString() : (at ?? '') };
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {
@@ -502,8 +517,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
 export type CreateProjectConversationParams = {
   project_id: string;
-  participants: ConversationParticipant[];
-  /** Optional display name. Backend falls back to a participants summary when absent. */
+  members: ConversationParticipant[];
+  /** Optional display name. Backend falls back to a members summary when absent. */
   title?: string;
   /** Serialized TypeIds (e.g. ``"markdown-<uuid>"``) shared into this
    *  conversation. The backend DERIVES the owning project from the first one
@@ -516,7 +531,7 @@ export type CreateProjectConversationParams = {
 export interface CreateProjectConversationResult {
   conversation_id: string;
   project_id: string;
-  participants: ConversationParticipant[];
+  members: ConversationParticipant[];
   name?: string | null;
 }
 
@@ -529,30 +544,29 @@ export async function createProjectConversation(
   return res!;
 }
 
-/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its
- *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
- *  conversation locally. */
+/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its messages and can reply
+ *  — the hub's ``conversation/<id>/pickup``; the desktop answers it too and lands the ticket. */
 export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
-  const action = new ActionInfo('conversation-pickup', null, null, 'POST');
-  action.bodyParameters = { conversation_id: conversationId };
-  const res = await dataManager.callAction<{ conversation_id: string }, { conversation_id: string }>(action);
-  return res!;
+  const action = new ActionInfo('pickup', Conversation.type, conversationId, 'POST');
+  // The hub's own action: an unpicked ticket has no row on this machine yet, and the desktop
+  // has no `pickup` of its own (0c7e9d852) — answered locally it is a 404.
+  action.hubReflect = true;
+  action.bodyParameters = {};
+  await dataManager.callAction(action);
+  return { conversation_id: conversationId };
 }
 
-/** Close or reopen a helpdesk ticket. Proxies to the hub (which owns the rule
- *  about who may settle) and mirrors `status` onto the local row, which is what
- *  the requester's portal reads. */
+/** Close or reopen a helpdesk ticket — the hub's own ``conversation/<id>/close|reopen``
+ *  (the hub owns the rule about who may settle). Its answer is the settled conversation; the
+ *  local server folds it into the local row, which is what the requester's portal reads. */
 export async function settleTicket(
   conversationId: string,
   verb: 'close' | 'reopen',
 ): Promise<{ conversation_id: string; status: ConversationStatus }> {
-  const action = new ActionInfo('conversation-settle', null, null, 'POST');
-  action.bodyParameters = { conversation_id: conversationId, verb };
-  const res = await dataManager.callAction<
-    { conversation_id: string; verb: string },
-    { conversation_id: string; status: ConversationStatus }
-  >(action);
-  return res!;
+  const action = new ActionInfo(verb, Conversation.type, conversationId, 'POST');
+  action.hubReflect = true;
+  const row = await dataManager.callAction<undefined, { id: string; status: ConversationStatus }>(action);
+  return { conversation_id: row?.id ?? conversationId, status: row!.status };
 }
 
 /** One row in the staff helpdesk triage queue (lightweight; not a full
@@ -565,9 +579,11 @@ export interface HelpdeskTicket {
   /** Guest (ticket opener) hub user id. */
   initiated_by?: string | null;
   message_count: number;
-  participant_count: number;
+  member_count: number;
   /** True when the calling staff user is already on the roster. */
   picked_up: boolean;
+  /** Staff in the ticket. A picked ticket stays in the queue. */
+  picked_up_by?: string[];
   /** Settlement state. The default queue is all-open; only an audit listing
    *  that asks for closed tickets sees anything else here. */
   status?: ConversationStatus;
@@ -775,21 +791,29 @@ export interface DeleteConversationResult {
   mode: DeleteConversationMode;
 }
 
-/** Per-row conversation delete. The server calls the matching hub action
- *  for non-``local`` modes and hard-deletes the local row on success. */
-export async function deleteConversation(
-  params: DeleteConversationParams,
-): Promise<DeleteConversationResult> {
-  const action = new ActionInfo('conversation-delete', null, null, 'POST');
-  action.bodyParameters = params;
-  const res = await dataManager.callAction<DeleteConversationParams, DeleteConversationResult>(action);
-  return res!;
+/** Per-row conversation removal, through the hub's own conversation actions:
+ *  ``leave`` → ``POST conversation/<id>/leave``; otherwise ``DELETE conversation/<id>/delete``
+ *  (the owner's delete for everyone; on a desktop, a conversation that never reached the hub is
+ *  deleted locally). The desktop answers both itself and drops its local copy. */
+export async function deleteConversation(params: DeleteConversationParams): Promise<DeleteConversationResult> {
+  const action =
+    params.mode === 'leave'
+      ? new ActionInfo('leave', 'conversation', params.conversation_id, 'POST')
+      : new ActionInfo('delete', 'conversation', params.conversation_id, 'DELETE');
+  const body: Record<string, string> = params.agent_id ? { agent_id: params.agent_id } : {};
+  // "Remove here only" is said out loud: the desktop never widens it to a delete for everyone,
+  // whatever its row's ``remote`` says. The owner's delete keeps the hub's own body.
+  if (params.mode === 'local') body.mode = 'local';
+  action.bodyParameters = body;
+  await dataManager.callAction(action);
+  return { id: params.conversation_id, mode: params.mode };
 }
 
 /** Thin alias: leave a shared conversation you don't own. */
-export async function leaveConversation(
-  params: { conversation_id: string; agent_id?: string },
-): Promise<DeleteConversationResult> {
+export async function leaveConversation(params: {
+  conversation_id: string;
+  agent_id?: string;
+}): Promise<DeleteConversationResult> {
   return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave', agent_id: params.agent_id });
 }
 

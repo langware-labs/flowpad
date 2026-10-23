@@ -1,6 +1,6 @@
 """The Decision API, doubled at the hub's two seams — shared by every test that decides.
 
-``hub_get`` answers the catalog with one decider; ``hub_invoke_raw`` answers in Jev's real wire
+``HubProxy.call`` answers the catalog with one decider; ``HubProxy.send`` answers in Jev's real wire
 shape so the dialect's translation runs for real. ``install(monkeypatch, tmp_path)`` wires both
 and returns the ``state`` a test steers: ``state["status"]`` (429 → rate limited),
 ``state["answers"]`` (a ``{question: value}`` override: a float for yes/no, an option for a
@@ -12,8 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from cryptography.fernet import Fernet
+
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 DECIDER = {
     "id": "72575461-9352-4cdb-b2e7-a53be3e3d6e3",
@@ -60,18 +63,21 @@ def seams(state: dict[str, Any]):
     """The two hub functions, doubled, steered by ``state`` — for a test's monkeypatch, or for a
     running backend that sets them itself (``tests/e2e/mock_worker_backend.py``)."""
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
-        if entity_type != "api_endpoint":
+    async def _hub_call(method, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        if method.upper() != "GET" or entity_type != "api_endpoint":
             return {"data": []}
         return [DECIDER] if action == "catalog" else {"data": []}
 
-    async def _invoke(entity_type, entity_id, sub_path, payload, **kwargs):
+    async def _send(method, url, *, json=None, **kwargs):
+        # .../graph/api_endpoint/<id>/invoke/<path>
+        tail = str(url).split("/api_endpoint/", 1)[1]
+        entity_id, _, sub_path = tail.partition("/invoke/")
         state["invoked"].append((entity_id, sub_path))
         if state["status"] != 200:
-            return state["status"], {"error": "rate_limited", "message": "slow down"}
-        return 200, jev_answers(payload, state["answers"])
+            return httpx.Response(state["status"], json={"error": "rate_limited", "message": "slow down"})
+        return httpx.Response(200, json=jev_answers(json, state["answers"]))
 
-    return _hub_get, _invoke
+    return _hub_call, _send
 
 
 def install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, instance: str = "decisiondouble") -> dict:
@@ -80,7 +86,6 @@ def install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, instance: str = 
     monkeypatch.setenv("FLOW_HOME", str(tmp_path))
     monkeypatch.setenv("FLOW_INSTANCE", instance)
     monkeypatch.setenv("SOD_ENC_KEY", Fernet.generate_key().decode())
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.cli.app_config import set_user
     from flow_sdk.cli.auth.hub_login import set_api_key
     from flow_sdk.config import default_service_config
@@ -93,9 +98,10 @@ def install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, instance: str = 
     set_api_key("fp-hub-key")
     set_user({"id": "99999999-2222-4333-8444-555555555555", "email": "box@local.test"})
     state: dict[str, Any] = {"status": 200, "invoked": [], "answers": {}}
-    _hub_get, _invoke = seams(state)
-    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
-    monkeypatch.setattr(hub_http, "hub_invoke_raw", _invoke)
+    _hub_call, _send = seams(state)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_call))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_call))
+    monkeypatch.setattr(HubProxy, "send", staticmethod(_send))
     return state
 
 

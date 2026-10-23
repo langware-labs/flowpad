@@ -1,5 +1,14 @@
 import { SEGMENTED_BUTTON, SEGMENTED_GROUP } from '@src/components/ui/segmented';
-import { type ComputeNode, CredentialsSubview, dataContext, ExecutionEnvironmentStatus, PageId, ViewType } from '@sdk';
+import {
+  type ComputeNode,
+  CredentialsSubview,
+  type NodeAgent,
+  TypeId,
+  dataContext,
+  ExecutionEnvironmentStatus,
+  PageId,
+  ViewType,
+} from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -24,9 +33,14 @@ import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { HubSummaryLine } from './HubSummaryLine';
+import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { type BulkAction, BULK_ACTIONS, bulkActionCopy, bulkTargets, canUpgrade } from './machines-bulk';
+import { isDisconnected, isOperable } from './machine-status';
 import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
 import {
   ArrowUpCircle,
@@ -40,6 +54,8 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
+  X,
+  Bot,
 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -76,31 +92,6 @@ function CardGlyph({ node }: { node: ComputeNode }) {
 /** Border/background tint for a sandbox card, by live status. */
 function statusCardClass(status?: ExecutionEnvironmentStatus): string {
   return (status && STATUS_STYLE[status]?.card) || 'border-border';
-}
-
-/**
- * Did the status probe come back saying the machine cannot be reached?
- *
- * `ERROR` is the one status that means "there is a box and it did not answer" —
- * the same state the card labels "Unreachable". Absent details are NOT this: a
- * probe still in flight is unknown, not failed, and treating it as failed would
- * blank the card's actions on every render before the first poll lands.
- */
-function isUnreachable(info?: SandboxDetails): boolean {
-  return info?.status === ExecutionEnvironmentStatus.ERROR;
-}
-
-/**
- * A connected machine with no live connection to the hub. Open, Terminal and
- * Upgrade can only fail — the hub cannot wake it — so the card offers Connect.
- */
-function isDisconnected(info?: SandboxDetails): boolean {
-  return info?.status === ExecutionEnvironmentStatus.DISCONNECTED;
-}
-
-/** Can the box be acted on (opened, shelled into, upgraded)? Not while unreachable or disconnected. */
-function isOperable(info?: SandboxDetails): boolean {
-  return !isUnreachable(info) && !isDisconnected(info);
 }
 
 /** "12m", "1h 5m" — minutes granularity, clamped at 0. */
@@ -220,6 +211,48 @@ function SandboxStatus({
   );
 }
 
+/** The agents placed on this machine, one icon each; a click opens that agent in its project's editor. */
+function NodeAgents({ node }: { node: ComputeNode }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const [agents, setAgents] = useState<NodeAgent[]>([]);
+  // Keyed by the machine's id: the card's node object is rebuilt on every list refresh.
+  const nodeRef = useRef(node);
+  nodeRef.current = node;
+  useEffect(() => {
+    let live = true;
+    nodeRef.current
+      .agents()
+      .then((rows) => live && rows.length > 0 && setAgents(rows))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [node.id]);
+  if (agents.length === 0) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1 ps-7" data-testid="machine-agents">
+      {agents.map((a) => (
+        <Tooltip key={a.deployment_typeid}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              disabled={!a.project_id}
+              onClick={() => navigation.openDock(hubProjectAssetDock(a.project_id, new TypeId(a.typeid)))}
+              className="flex max-w-[12rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] hover:bg-muted"
+              data-testid={`machine-agent-${a.typeid}`}
+            >
+              <Bot className="h-3 w-3 shrink-0" />
+              <span className="truncate">{a.name || t`Agent`}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t`Open the agent`}</TooltipContent>
+        </Tooltip>
+      ))}
+    </span>
+  );
+}
+
 /** Who the box is signed in as, and whether it still signs itself in. */
 function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; autoLogin?: boolean }) {
   const { t } = useLingui();
@@ -244,6 +277,40 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
         </span>
       )}
     </>
+  );
+}
+
+const BULK_ICON: Record<BulkAction, typeof Trash2> = { upgrade: ArrowUpCircle, signout: LogOut, delete: Trash2 };
+
+/** The one confirm every bulk action goes through: what will run, and how many are skipped. */
+function BulkActionConfirm({
+  action,
+  targets,
+  skipped,
+  onClose,
+  onConfirm,
+}: {
+  action: BulkAction;
+  targets: ComputeNode[];
+  skipped: number;
+  onClose: () => void;
+  onConfirm: (nodes: ComputeNode[]) => void;
+}) {
+  const copy = bulkActionCopy(action);
+  const destructive = action === 'delete';
+  return (
+    <BulkConfirmDialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={copy.title(targets.length)}
+      intro={skipped > 0 ? `${copy.intro} ${copy.skipped(skipped)}` : copy.intro}
+      buckets={[{ label: copy.will, count: targets.length, tone: destructive ? 'destructive' : 'default' }]}
+      confirmLabel={copy.confirm}
+      variant={destructive ? 'destructive' : 'default'}
+      onConfirm={() => onConfirm(targets)}
+    />
   );
 }
 
@@ -290,11 +357,12 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
     openSandbox,
     renameSandbox,
     deleteSandbox,
-    deletingId,
+    deletingIds,
     logoutSandbox,
-    loggingOutId,
+    loggingOutIds,
     upgradeSandbox,
-    upgradingId,
+    upgradingIds,
+    runBulkAction,
     details,
     refetch,
   } = useSandboxes({ pollMachines: showMachines });
@@ -315,6 +383,32 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
   const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
   const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
   const shownSandboxes = machineFilter === 'all' ? sandboxes : activeSandboxes;
+
+  // Multi-select. Only cards on screen count: `selectedNodes` is derived from
+  // what is shown, so a filter change can never send a hidden card to a bulk action.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const selectedNodes = shownSandboxes.filter((d) => selectedIds.has(d.id));
+  const selecting = selectedNodes.length > 0;
+  const allSelected = selectedNodes.length === shownSandboxes.length;
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelectedIds(new Set());
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clearSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selecting]);
+  const targets = bulkTargets(selectedNodes, details, currentUser?.email, cardEnabled);
+  // The bulk action whose confirm is open, or null.
+  const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
   // Inline rename: single-click a sandbox name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -497,24 +591,69 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                 </DialogContent>
               </Dialog>
 
-              <div role="radiogroup" className={`${SEGMENTED_GROUP} h-9 w-fit`} data-testid="machine-filter">
-                {(['active', 'all'] as const).map((f) => (
+              {selecting ? (
+                <div
+                  className="flex min-h-9 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-1"
+                  data-testid="machines-selection-bar"
+                >
+                  <Checkbox
+                    checked={allSelected ? true : 'indeterminate'}
+                    onCheckedChange={() =>
+                      setSelectedIds(allSelected ? new Set() : new Set(shownSandboxes.map((d) => d.id)))
+                    }
+                    aria-label={t`Select all machines`}
+                    data-testid="machines-select-all"
+                  />
+                  <span className="text-sm font-medium" data-testid="machines-selection-count">
+                    {t`${selectedNodes.length} selected`}
+                  </span>
+                  {BULK_ACTIONS.map((action) => {
+                    const Icon = BULK_ICON[action];
+                    return (
+                      <Button
+                        key={action}
+                        size="sm"
+                        variant="secondary"
+                        className={`h-7 px-2.5 text-xs ${action === 'delete' ? 'text-destructive' : ''}`}
+                        disabled={!targets[action].length}
+                        onClick={() => setBulkAction(action)}
+                        data-testid={`machines-bulk-${action}`}
+                      >
+                        <Icon className="me-1.5 h-3 w-3" />
+                        {bulkActionCopy(action).button(targets[action].length)}
+                      </Button>
+                    );
+                  })}
                   <button
-                    key={f}
                     type="button"
-                    role="radio"
-                    aria-checked={machineFilter === f}
-                    onClick={() => setMachineFilter(f)}
-                    className={`${SEGMENTED_BUTTON} h-7 w-auto px-4 text-sm ${machineFilter === f ? 'bg-primary font-medium text-primary-foreground' : 'text-foreground/80 hover:bg-accent hover:text-foreground'}`}
-                    data-testid={`machine-filter-${f}`}
+                    onClick={clearSelection}
+                    aria-label={t`Clear selection`}
+                    className="ms-auto text-muted-foreground hover:text-foreground"
+                    data-testid="machines-selection-clear"
                   >
-                    {f === 'active' ? t`Active` : t`All`}{' '}
-                    <span className="ms-1.5 opacity-70">
-                      ({f === 'all' ? sandboxes.length : activeSandboxes.length})
-                    </span>
+                    <X className="h-4 w-4" />
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div role="radiogroup" className={`${SEGMENTED_GROUP} h-9 w-fit`} data-testid="machine-filter">
+                  {(['active', 'all'] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      role="radio"
+                      aria-checked={machineFilter === f}
+                      onClick={() => setMachineFilter(f)}
+                      className={`${SEGMENTED_BUTTON} h-7 w-auto px-4 text-sm ${machineFilter === f ? 'bg-primary font-medium text-primary-foreground' : 'text-foreground/80 hover:bg-accent hover:text-foreground'}`}
+                      data-testid={`machine-filter-${f}`}
+                    >
+                      {f === 'active' ? t`Active` : t`All`}{' '}
+                      <span className="ms-1.5 opacity-70">
+                        ({f === 'all' ? sandboxes.length : activeSandboxes.length})
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {shownSandboxes.map((d) => (
                   <div
@@ -523,12 +662,27 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                     data-node-id={d.id}
                     data-provider-id={d.node_provider_id}
                     data-status={details[d.id]?.status}
+                    data-selected={selectedIds.has(d.id) || undefined}
                     title={cardEnabled(d) ? undefined : t`Sandbox unavailable`}
+                    // Ctrl/⌘-click anywhere on the card toggles it, like a file list.
+                    onClickCapture={(e) => {
+                      if (!(e.metaKey || e.ctrlKey)) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleSelected(d.id);
+                    }}
                     className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
                       details[d.id]?.status,
-                    )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
+                    )} ${cardEnabled(d) ? '' : 'opacity-60'} ${selectedIds.has(d.id) ? 'ring-2 ring-primary' : ''}`}
                   >
                     <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={selectedIds.has(d.id)}
+                        onCheckedChange={() => toggleSelected(d.id)}
+                        aria-label={t`Select ${d.name || 'machine'}`}
+                        data-testid="sandbox-card-select"
+                        className={`transition-opacity ${selecting ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'}`}
+                      />
                       <CardGlyph node={d} />
                       {editingId === d.id ? (
                         <input
@@ -646,18 +800,18 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                       hover-only, unlike the icons after it: this is how a box
                       gets a fix, and an upgrade nobody can find is an upgrade
                       nobody runs. */}
-                      {isLaunched(d) && isOperable(details[d.id]) && (
+                      {canUpgrade(d, details[d.id]) && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
                               type="button"
                               onClick={() => setUpgrading(d)}
-                              disabled={!cardEnabled(d) || upgradingId === d.id}
+                              disabled={!cardEnabled(d) || upgradingIds.has(d.id)}
                               aria-label={t`Upgrade FlowPad on this sandbox`}
                               data-testid="sandbox-upgrade"
                               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                             >
-                              {upgradingId === d.id ? (
+                              {upgradingIds.has(d.id) ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <ArrowUpCircle className="h-4 w-4" />
@@ -665,7 +819,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                             </button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {upgradingId === d.id ? (
+                            {upgradingIds.has(d.id) ? (
                               <Trans>Upgrading — this takes a minute or two</Trans>
                             ) : (
                               <Trans>Upgrade FlowPad on this sandbox</Trans>
@@ -711,13 +865,13 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         <button
                           type="button"
                           onClick={() => void logoutSandbox(d)}
-                          disabled={loggingOutId === d.id || !cardEnabled(d)}
+                          disabled={loggingOutIds.has(d.id) || !cardEnabled(d)}
                           aria-label={t`Sign this sandbox out`}
                           title={t`Sign out of this sandbox (you stay signed in here)`}
                           data-testid="sandbox-logout"
                           className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                         >
-                          {loggingOutId === d.id ? (
+                          {loggingOutIds.has(d.id) ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <LogOut className="h-4 w-4" />
@@ -737,12 +891,12 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                       <button
                         type="button"
                         onClick={() => void deleteSandbox(d)}
-                        disabled={deletingId === d.id || !cardEnabled(d)}
+                        disabled={deletingIds.has(d.id) || !cardEnabled(d)}
                         aria-label={t`Delete sandbox`}
                         data-testid="sandbox-delete"
                         className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                       >
-                        {deletingId === d.id ? (
+                        {deletingIds.has(d.id) ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <Trash2 className="h-4 w-4" />
@@ -757,6 +911,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                       loggedInUser={d.logged_in_user}
                       autoLogin={d.auto_login}
                     />
+                    <NodeAgents node={d} />
                   </div>
                 ))}
               </div>
@@ -864,6 +1019,20 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
           if (node) void upgradeSandbox(node);
         }}
       />
+
+      {/* One confirm for every bulk action: what will run, and how many are skipped. */}
+      {bulkAction && (
+        <BulkActionConfirm
+          action={bulkAction}
+          targets={targets[bulkAction]}
+          skipped={selectedNodes.length - targets[bulkAction].length}
+          onClose={() => setBulkAction(null)}
+          onConfirm={(nodes) => {
+            clearSelection();
+            void runBulkAction(bulkAction, nodes);
+          }}
+        />
+      )}
 
       {/* Deleting a project is not undoable and it is shared — the people it was
           shared with lose it too — so it asks first, unlike the sandbox rows. */}

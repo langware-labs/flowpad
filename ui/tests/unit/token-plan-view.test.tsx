@@ -165,21 +165,41 @@ describe('TokenPlanView', () => {
   });
   afterEach(() => cleanup());
 
-  it('lands on me by default: headline, resets-in, path chips; no admin button', async () => {
+  it('with nothing selected the centre sums every source', async () => {
+    h.endpoints = [
+      ep(ORG_EP, 'worker root', [], 'user', { owner: true, key: true, allocate: true }),
+      ep(ME_EP, 'default-alice', [FLOWPAD], 'user', { mine: true, left: [1.8, 5] }),
+    ];
+    h.getUsage.mockImplementation((id: string) =>
+      Promise.resolve({
+        series: [],
+        totals: c({ cost_usd: id === ME_EP ? 0.25 : 0.5, requests: 2 }),
+        breakdown: {},
+        names: {},
+      }),
+    );
     renderView(undefined);
-    const hero = await screen.findByTestId('budget-hero');
-    expect(within(hero).getByTestId('budget-headline').textContent).toBe('$1.80 left today');
-    expect(within(hero).getByTestId('budget-resets').textContent).toMatch(/resets in 4 h|resets in 3 h 59 m/);
-    expect(within(hero).getByTestId('budget-bar-cost_usd_per_day')).toBeTruthy();
-    expect(within(hero).queryByTestId('set-budget')).toBeNull();
-    expect(screen.queryByTestId('scope-path')).toBeNull();
-    expect(screen.queryByTestId('members-table')).toBeNull();
+    expect((await screen.findByTestId('summary-title')).textContent).toBe('All sources');
+    expect(screen.getByTestId('budget-headline').textContent).toBe('$1.80 left of $5.00');
+    await waitFor(() => expect(screen.getByTestId('consumption-cost').textContent).toContain('$0.75'));
+    expect(screen.getByTestId('consumption-requests').textContent).toContain('4');
+    expect(screen.getByTestId(`breakdown-${ME_EP}`).textContent).toContain('Flowpad account');
+    expect(screen.queryByTestId('show-all')).toBeNull();
   });
 
-  it('the expert link opens the scope endpoint usage tab', async () => {
-    renderView(undefined);
-    await userEvent.click(await screen.findByTestId('expert-link'));
-    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, `${ME_EP}/usage`);
+  it('a selected row keeps the same layout: its budget, its usage, what was allocated from it', async () => {
+    h.endpoints = [
+      ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] }),
+      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { owner: true, left: [1.8, 5] }),
+    ];
+    renderView(`llm_endpoint-${TEAM_EP}`);
+    expect((await screen.findByTestId('summary-title')).textContent).toBe('Team A');
+    expect(screen.getByTestId('budget-headline').textContent).toBe('$58.00 left of $100.00');
+    expect(screen.getByTestId(`breakdown-${ME_EP}`).textContent).toContain('default-alice');
+    await userEvent.click(screen.getByTestId('expert-link'));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, `${TEAM_EP}/usage`);
+    await userEvent.click(screen.getByTestId('show-all'));
+    expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.TOKEN_PLAN, undefined);
   });
 
   it('lists only root token sources: your keys and what you received; allocations stay out', async () => {
@@ -220,18 +240,6 @@ describe('TokenPlanView', () => {
     expect(screen.queryByText('Empty')).toBeNull();
   });
 
-  it('a selected source lists what was allocated from it, with what is unallocated', async () => {
-    h.endpoints = [
-      ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] }),
-      ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { owner: true, left: [1.8, 5] }),
-    ];
-    renderView(`llm_endpoint-${TEAM_EP}`);
-    expect((await screen.findByTestId('budget-headline')).textContent).toBe('$58.00 left this month');
-    const list = screen.getByTestId('allocations');
-    expect(list.textContent).toContain('default-alice');
-    expect(screen.getByTestId('pool-split').textContent).toContain('unallocated');
-  });
-
   it('Allocate opens the allocate dialog; Add new token source opens the endpoint dialog', async () => {
     h.endpoints = [ep(TEAM_EP, 'Team A', [], 'team', { owner: true, key: true, allocate: true, left: [58, 100] })];
     renderView(undefined);
@@ -242,129 +250,6 @@ describe('TokenPlanView', () => {
     expect(await screen.findByTestId('endpoint-dialog')).toBeTruthy();
     await userEvent.click(screen.getByTestId('all-endpoints'));
     expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS);
-  });
-
-  it('team scope for an admin: Set budget opens the sheet and the members table drills down, sorted by spend', async () => {
-    h.getUsage.mockImplementation((_id, q) =>
-      Promise.resolve({
-        series: [],
-        totals: c({}),
-        breakdown: {
-          [`llm_endpoint-${ME_EP}`]: c({ cost_usd: q.granularity === 'hour' ? 0.5 : 2 }),
-          [`llm_endpoint-${OTHER_EP}`]: c({ cost_usd: q.granularity === 'hour' ? 1 : 9 }),
-          '': c({ cost_usd: 100 }),
-        },
-        names: { [`llm_endpoint-${ME_EP}`]: 'Alice', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
-      }),
-    );
-    renderView(`team/${TEAM_ID}`);
-    const hero = await screen.findByTestId('budget-hero');
-    expect(within(hero).getByTestId('budget-headline').textContent).toBe('$58.00 left this month');
-    await userEvent.click(within(hero).getByTestId('set-budget'));
-    expect(screen.getByTestId('sheet-open')).toBeTruthy();
-
-    const table = await screen.findByTestId('members-table');
-    await waitFor(() => expect(within(table).getAllByTestId(/member-row-/)).toHaveLength(2));
-    const rows = within(table).getAllByTestId(/member-row-/);
-    expect(rows[0].textContent).toContain('Dana');
-    expect(rows[1].textContent).toContain('Alice');
-    expect(rows[1].textContent).toContain('(you)');
-    expect(h.getUsage).toHaveBeenCalledWith(TEAM_EP, expect.objectContaining({ by: 'child' }));
-    await userEvent.click(rows[0]);
-    expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, `${OTHER_EP}/usage`);
-  });
-
-  it('team scope for a non-admin: no Set budget, only my own member row', async () => {
-    h.me.mockResolvedValue(plan([meScope, { ...teamScope, can_configure: false }, orgScope]));
-    h.getUsage.mockResolvedValue({
-      series: [],
-      totals: c({}),
-      breakdown: { [`llm_endpoint-${ME_EP}`]: c({ cost_usd: 2 }), [`llm_endpoint-${OTHER_EP}`]: c({ cost_usd: 9 }) },
-      names: { [`llm_endpoint-${ME_EP}`]: 'Alice', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
-    });
-    renderView(`team/${TEAM_ID}`);
-    const hero = await screen.findByTestId('budget-hero');
-    expect(within(hero).queryByTestId('set-budget')).toBeNull();
-    const table = await screen.findByTestId('members-table');
-    await waitFor(() => expect(within(table).getAllByTestId(/member-row-/)).toHaveLength(1));
-    expect(within(table).getByTestId(`member-row-${ME_EP}`).textContent).toContain('Alice');
-  });
-
-  it('org without an endpoint: setup for admins, "ask an admin" otherwise', async () => {
-    renderView('org');
-    const setup = await screen.findByTestId('scope-setup');
-    expect(setup.textContent).toContain('No organization budget yet');
-    expect(within(setup).queryByTestId('scope-setup-run')).toBeNull();
-    cleanup();
-
-    h.me.mockResolvedValue(plan([meScope, teamScope, { ...orgScope, can_configure: true }]));
-    renderView('org');
-    await userEvent.click(await screen.findByTestId('scope-setup-run'));
-    // With the org's id: `setup` is an action ON the organization, so the caller names which one
-    // and the hub checks their roles on that entity. An id-less call had no target to check.
-    await waitFor(() => expect(h.setupOrg).toHaveBeenCalledWith('o'));
-    expect(h.setupTeam).not.toHaveBeenCalled();
-  });
-
-  it('team without an endpoint runs the team setup with the team id', async () => {
-    h.me.mockResolvedValue(plan([meScope, { ...teamScope, endpoint_id: null }, orgScope]));
-    renderView(`team/${TEAM_ID}`);
-    await userEvent.click(await screen.findByTestId('scope-setup-run'));
-    await waitFor(() => expect(h.setupTeam).toHaveBeenCalledWith(TEAM_ID));
-  });
-
-  it('no budget anywhere: empty hero with Set budget only for admins', async () => {
-    h.me.mockResolvedValue(plan([scope({ can_configure: false })]));
-    renderView(undefined);
-    const empty = await screen.findByTestId('budget-hero-empty');
-    expect(empty.textContent).toContain('No budget set');
-    expect(empty.textContent).toContain('Ask your team admin');
-    expect(within(empty).queryByTestId('set-budget')).toBeNull();
-    cleanup();
-
-    h.me.mockResolvedValue(plan([scope({ can_configure: true })]));
-    renderView(undefined);
-    await userEvent.click(await screen.findByTestId('set-budget'));
-    expect(screen.getByTestId('sheet-open')).toBeTruthy();
-  });
-
-  it('unlimited here but capped upstream reads as the parent cap', async () => {
-    h.me.mockResolvedValue(
-      plan([
-        scope({
-          path: [
-            { endpoint_id: ME_EP, name: 'default-alice', kind: 'me' },
-            { endpoint_id: TEAM_EP, name: 'Team A', kind: 'team' },
-          ],
-          headline: { key: 'cost_usd_per_day', used: 10, limit: 200, remaining: 190, resets_at: null, window: 'day' },
-          remaining: [],
-        }),
-      ]),
-    );
-    renderView(undefined);
-    const hero = await screen.findByTestId('budget-hero');
-    expect(within(hero).getByTestId('budget-headline').textContent).toBe(
-      'Unlimited here — Team A caps you at $200.00 today',
-    );
-  });
-
-  it('typeid endpoint ids (what the hub sends) still resolve to my own member row', async () => {
-    // `endpoint_id` is a typeid on the wire while a breakdown row resolves to a
-    // bare uuid: compared raw, a non-admin matches nothing and the table is empty.
-    const typed = (s: TokenPlanScope): TokenPlanScope => ({ ...s, endpoint_id: `llm_endpoint-${s.endpoint_id}` });
-    h.me.mockResolvedValue(plan([typed(meScope), typed({ ...teamScope, can_configure: false }), orgScope]));
-    h.getUsage.mockResolvedValue({
-      series: [],
-      totals: c({}),
-      breakdown: { [`llm_endpoint-${ME_EP}`]: c({ cost_usd: 2 }), [`llm_endpoint-${OTHER_EP}`]: c({ cost_usd: 9 }) },
-      names: { [`llm_endpoint-${ME_EP}`]: 'Alice', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
-    });
-    renderView(`team/${TEAM_ID}`);
-    const table = await screen.findByTestId('members-table');
-    await waitFor(() => expect(within(table).getAllByTestId(/member-row-/)).toHaveLength(1));
-    const row = within(table).getByTestId(`member-row-${ME_EP}`);
-    expect(row.textContent).toContain('Alice');
-    expect(row.textContent).toContain('(you)');
   });
 
   it('shows an error line when the plan cannot be read', async () => {

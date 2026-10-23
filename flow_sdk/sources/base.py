@@ -102,7 +102,8 @@ class Source:
     # defines when it has them, discovered with ``hasattr``: ``message_for`` (how the application's
     # send arguments address this channel), ``choices_for`` (a field whose options are application
     # state), ``webhook_challenge`` / ``webhook_account`` / ``events_from_webhook`` (push delivery),
-    # ``webhook_authentic`` (the provider's signature over a delivery's raw body; declared, it is required).
+    # ``webhook_authentic`` (the provider's signature over a delivery's raw body; declared, it is required),
+    # ``ensure_sources`` (the sources of this kind the signed-in user should have, made on login and start).
 
     @classmethod
     def build(cls, binding: SourceBinding) -> "Source":

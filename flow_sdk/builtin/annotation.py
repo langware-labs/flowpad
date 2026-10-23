@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, Dict, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -9,7 +9,7 @@ class Annotation(Entity):
     labels: list[str] = APIField(default_factory=list)
     target_type: str = APIField("")
     target_id: str = APIField("")
-    content: str = APIField("")      # max 50 chars
+    content: str = APIField("")
     session_id: str = APIField("")   # Claude session ID
     iso_timestamp: str = APIField("")
     data: Optional[Dict[str, Any]] = APIField(default_factory=dict)  # PTY: seq, seqOffset, line

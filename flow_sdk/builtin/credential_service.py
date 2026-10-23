@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from pydantic import ValidationError
 
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
-    "kind", "provider", "scopes", "optional_scopes", "vars", "ways",
+    "kind", "provider", "scopes", "optional_scopes", "vars", "ways", "derived",
 )
 
 
@@ -345,6 +345,24 @@ async def shipped_templates() -> list["Credential"]:
     return sorted(await Credential.get_all(QueryFilter(match=match)), key=lambda spec: str(spec.name))
 
 
+async def credential_for_need(names: Iterable[str], project: Optional["Project"], *, pairs: Optional[list] = None,
+                              templates: Optional[list["Credential"]] = None) -> dict[str, "Credential"]:
+    """``{VAR: credential}`` — who answers each needed variable in ``project``: the credential a process there
+    reads it from (``credential_resolver.declare``), else the shipped template that says how to ask for it. The
+    one "who needs this" lookup: a template is how to ask, never a reason the need exists. ``pairs`` /
+    ``templates``: already read by the caller (``credentials_in_scope`` / ``shipped_templates``)."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare  # noqa: PLC0415
+
+    wanted = set(names)
+    declared = declare(pairs if pairs is not None else await credentials_in_scope(project))
+    owner = {name: declared[name].spec for name in wanted if name in declared}
+    for template in templates if templates is not None else await shipped_templates():
+        for var in template.stored_var_names():
+            if var in wanted:
+                owner.setdefault(var, template)
+    return owner
+
+
 async def template_named(name: str) -> Optional["Credential"]:
     """The shipped catalogue entry named ``name``, or ``None``."""
     return next((spec for spec in await shipped_templates() if spec.name == name), None)
@@ -370,7 +388,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
         raise CredentialError(f"no credential or template named {name!r}")
     scope = SCOPE_USER if template.lm_provider or project is None else SCOPE_PROJECT
     return await save_credential(
-        manifest=_manifest_of(template),
+        manifest={**_manifest_of(template), "derived": scope == SCOPE_PROJECT},  # for a root's need, gone with it
         scope=scope,
         project_id=str(project.id) if project is not None else None,
     )
@@ -475,6 +493,7 @@ async def declare_oauth(project: "Project", provider: str, scopes: list[str]) ->
     else:
         manifest = {"name": name, "title": await _provider_title(provider), "kind": CredentialKind.OAUTH.value,
                     "provider": provider, "scopes": wanted}
+    manifest["derived"] = True  # a root's connection: needed while one acts through it
     return await declare_credential(manifest, project_id=str(project.id), require_setup=False), True
 
 
@@ -567,8 +586,8 @@ def drop_folder() -> Path:
     return folder
 
 
-def _take_dropped(file: str) -> dict[str, str]:
-    """Read and delete a dropped values file; only a file inside the drop folder is ever read."""
+def _take_dropped(file: str, key: str = "values") -> dict[str, str]:
+    """Read and delete a dropped file's ``key`` map; only a file inside the drop folder is ever read."""
     import json  # noqa: PLC0415
 
     path = Path(file).resolve()
@@ -578,10 +597,33 @@ def _take_dropped(file: str) -> dict[str, str]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     finally:
         path.unlink(missing_ok=True)
-    values = raw.get("values") if isinstance(raw, dict) else None
+    values = raw.get(key) if isinstance(raw, dict) else None
     if not isinstance(values, dict):
-        raise CredentialError("the dropped file holds no values")
+        raise CredentialError(f"the dropped file holds no {key}")
     return {str(k): str(v) for k, v in values.items() if v}
+
+
+async def place_connections(file: str) -> dict[str, Any]:
+    """The hub pushed this deployment's authorized connections (``{"connections": {provider: access token}}``):
+    each becomes this machine's own sign-in for that provider (``record_credential``), so every reader here —
+    data sources, ``flow connections``, ``connections.require`` — finds it locally and never asks the hub for a
+    token. ``{placed, failed}`` by provider; names only."""
+    from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    tokens = _take_dropped(file, "connections")
+    user = await User.get_local()
+    placed: list[str] = []
+    failed: dict[str, str] = {}
+    for provider, token in tokens.items():
+        try:
+            if await record_credential(user, provider, token):
+                placed.append(provider)
+            else:
+                failed[provider] = "not recorded"
+        except Exception as e:  # noqa: BLE001 — reported per provider, names only
+            failed[provider] = type(e).__name__
+    return {"placed": sorted(placed), "failed": failed}
 
 
 async def declare_vars(

@@ -145,14 +145,14 @@ class BrowserContextWatch:
             return
         etype, _, eid = key.partition(":")
         try:
-            from flow_sdk.cloud_client.transport.hub_http import hub_post
+            from flow_sdk.cloud_client.hub_proxy import HubProxy
             from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
             et = BuiltinEntityType(etype)
         except Exception:  # noqa: BLE001 — unknown type → nothing to watch
             return
         try:
-            await hub_post(et, {"connection_id": cid}, eid, action=action)
+            await HubProxy.call("POST", et, eid, action, payload={"connection_id": cid})
             logger.debug("[browser-context-watch] hub %s %s via conn %s", action, key, cid)
         except Exception as e:  # noqa: BLE001
             logger.debug("[browser-context-watch] hub %s failed for %s: %s", action, key, e)

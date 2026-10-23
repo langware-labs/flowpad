@@ -136,10 +136,10 @@ def _scanned_only(typeid: str) -> Any:
 async def hub_asset_location(typeid: str) -> Optional[tuple[str, str]]:
     """The publisher and relative asset path the current hub makes visible to this user.
     Raises ``HubError`` (its status kept) when the hub cannot answer."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
-    data = await hub_get_or_raise(BuiltinEntityType.PROJECT, None, action="published_asset", params={"typeid": typeid})
+    data = await HubProxy.call("GET", BuiltinEntityType.PROJECT, None, "published_asset", params={"typeid": typeid})
     data = data.get("data", data) if isinstance(data, dict) else {}
     project_id, path = str(data.get("source_project_id") or ""), str(data.get("rel_path") or "")
     return (project_id, path) if project_id and path else None

@@ -11,15 +11,25 @@ describe('sendReply session extras', () => {
   });
 
   it('text-only send puts reply_policy + remote_worker_session_id in the JSON body', async () => {
-    const spy = vi.spyOn(dataManager, 'callActionPreferWS').mockResolvedValue(undefined as never);
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
     await sendReply({ conversationId: CONV }, '', undefined, { promptText: 'go', replyPolicy: 'review' });
     const action = spy.mock.calls[0][0];
     expect(action.name).toBe('add_message');
-    expect(action.bodyParameters).toEqual({ message: '', prompt_text: 'go', reply_policy: 'review' });
+    expect(action.bodyParameters).toEqual({
+      type: 'flow_message',
+      text: '',
+      prompt_text: 'go',
+      reply_policy: 'review',
+    });
 
     await sendReply({ conversationId: CONV }, '', undefined, { promptText: 'more', remoteWorkerSessionId: 'sid' });
     const follow = spy.mock.calls[1][0];
-    expect(follow.bodyParameters).toEqual({ message: '', prompt_text: 'more', remote_worker_session_id: 'sid' });
+    expect(follow.bodyParameters).toEqual({
+      type: 'flow_message',
+      text: '',
+      prompt_text: 'more',
+      remote_worker_session_id: 'sid',
+    });
   });
 
   it('multipart send carries the same fields as form entries', async () => {

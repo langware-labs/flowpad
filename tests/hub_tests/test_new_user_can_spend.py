@@ -77,11 +77,11 @@ async def _booked(endpoint_id: str) -> float:
     missing resource. That is a hub bug worth fixing, but it is not this test's subject, and
     proving spend through a broken reader would prove nothing either way.
     """
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     # The report's ``totals`` over its window: the requests booked and what they cost. It includes turns still
     # in the ledger's buffer, so the call just made shows at once.
-    totals = (await hub_get("llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
+    totals = (await HubProxy.try_call("GET", "llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
     return float(totals.get("requests") or 0) + float(totals.get("cost_micro_usd") or 0) / 1e6
 
 

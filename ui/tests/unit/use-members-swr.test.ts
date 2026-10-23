@@ -92,3 +92,84 @@ describe('useMembers — stale-while-revalidate', () => {
     expect(result.current.members).toEqual([]);
   });
 });
+
+describe('useMembers — addMembers on a non-project entity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    availability = { available: true, reason: 'available' };
+  });
+
+  it('invites everyone even when one fails, refreshes the roster, and names who failed', async () => {
+    const invited: string[] = [];
+    entity = {
+      members: [A],
+      inviteMember: vi.fn(async (who: string) => {
+        if (who === 'bad@example.test') throw new Error('no such user');
+        invited.push(who);
+      }),
+    } as any;
+    mockedGetMembers.mockResolvedValue([A] as any);
+    const { result } = renderHook(() => useMembers(typeId));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const fetchesBefore = mockedGetMembers.mock.calls.length;
+
+    await expect(
+      result.current.addMembers([
+        { idOrEmail: 'one@example.test' },
+        { idOrEmail: 'bad@example.test' },
+        { idOrEmail: 'two@example.test' },
+      ]),
+    ).rejects.toThrow(/bad@example\.test.*no such user/);
+
+    expect(invited).toEqual(['one@example.test', 'two@example.test']);
+    expect(mockedGetMembers.mock.calls.length).toBeGreaterThan(fetchesBefore);
+  });
+});
+
+describe('useMembers — follows the stored roster', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    entity = { members: [A, B] };
+    availability = { available: true, reason: 'available' };
+  });
+
+  it('reads the membership again when the hub pushes a changed roster (someone left elsewhere)', async () => {
+    mockedGetMembers.mockResolvedValueOnce([A, B] as any).mockResolvedValueOnce([A] as any);
+    const { result, rerender } = renderHook(() => useMembers(typeId));
+    await waitFor(() => expect(result.current.members).toEqual([A, B]));
+
+    entity = { members: [A] };
+    rerender();
+
+    await waitFor(() => expect(result.current.members).toEqual([A]));
+    expect(mockedGetMembers).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not read it again while the stored roster is unchanged', async () => {
+    mockedGetMembers.mockResolvedValue([A, B] as any);
+    const { result, rerender } = renderHook(() => useMembers(typeId));
+    await waitFor(() => expect(result.current.members).toEqual([A, B]));
+    rerender();
+    expect(mockedGetMembers).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useMembers — a roster the caller may no longer read', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    availability = { available: true, reason: 'available' };
+  });
+
+  it('shows the pushed roster, not its own earlier read, once the read is refused', async () => {
+    entity = { members: [A, B] };
+    mockedGetMembers.mockResolvedValueOnce([A, B] as any).mockRejectedValueOnce(new Error('403'));
+    const { result, rerender } = renderHook(() => useMembers(typeId));
+    await waitFor(() => expect(result.current.members).toEqual([A, B]));
+
+    entity = { members: [A] }; // B returned the ticket; the hub pushed the roster without them
+    rerender();
+
+    await waitFor(() => expect(result.current.members).toEqual([A]));
+    expect(result.current.stale).toBe(true);
+  });
+});

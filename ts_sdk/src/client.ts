@@ -49,6 +49,46 @@ export function clearStats() {
 export type ExecutionContext = 'browser' | 'node';
 
 /**
+ * Where a paged list answer says the next page starts — `has_more` / `next_offset` / `next_cursor` beside
+ * `data`. `next_cursor` (sent back as `filter.after`) continues right after the page's last row; it is
+ * null on the last page, or when that row has no value for a sort field — then page by `next_offset`.
+ */
+export interface ListPage {
+  has_more: boolean;
+  next_offset: number;
+  next_cursor?: string | null;
+}
+
+/**
+ * The unwrap keeps a paged answer's `has_more` / `next_offset` / `next_cursor` on the list it returns — as
+ * non-enumerable properties, so the rows still spread, map and serialize as a plain array. An unpaged
+ * answer has no `has_more`, and its list gets nothing.
+ */
+export function withPage<T>(data: T, envelope: unknown): T {
+  const meta = envelope as Partial<ListPage> | null | undefined;
+  if (!Array.isArray(data) || typeof meta?.has_more !== 'boolean') return data;
+  Object.defineProperty(data, 'has_more', { value: meta.has_more, enumerable: false, configurable: true });
+  Object.defineProperty(data, 'next_offset', { value: meta.next_offset, enumerable: false, configurable: true });
+  Object.defineProperty(data, 'next_cursor', {
+    value: meta.next_cursor ?? null,
+    enumerable: false,
+    configurable: true,
+  });
+  return data;
+}
+
+/** The page a list answer carried, or undefined for an unpaged one. */
+export function pageOf(rows: unknown): ListPage | undefined {
+  const meta = rows as Partial<ListPage> | null | undefined;
+  if (!Array.isArray(rows) || typeof meta?.has_more !== 'boolean') return undefined;
+  return {
+    has_more: meta.has_more,
+    next_offset: Number(meta.next_offset ?? rows.length),
+    next_cursor: typeof meta.next_cursor === 'string' && meta.next_cursor ? meta.next_cursor : null,
+  };
+}
+
+/**
  * Axios, retyped to say what this client ACTUALLY returns.
  *
  * `initApiClient`'s response interceptor returns `response.data.data` — it
@@ -60,8 +100,10 @@ export type ExecutionContext = 'browser' | 'node';
  * code (`const rows = await apiClient.get<Row[]>(…); rows.map(…)`) and the
  * compiler called it an error.
  */
-export interface ApiAxiosInstance
-  extends Omit<AxiosInstance, 'request' | 'get' | 'delete' | 'head' | 'options' | 'post' | 'put' | 'patch'> {
+export interface ApiAxiosInstance extends Omit<
+  AxiosInstance,
+  'request' | 'get' | 'delete' | 'head' | 'options' | 'post' | 'put' | 'patch'
+> {
   request<T = unknown, D = unknown>(config: AxiosRequestConfig<D>): Promise<T>;
   get<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
   delete<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>): Promise<T>;
@@ -155,7 +197,7 @@ function initApiClient(client: ApiAxiosInstance) {
           warnings.map((w) => `${w.error_code}: ${w.message}`).join('; '),
         );
       }
-      return response.data.data;
+      return withPage(response.data.data, response.data);
     },
     (error) => {
       // Any status codes that falls outside the range of 2xx cause this function to trigger
@@ -303,9 +345,7 @@ export function isNetworkErrorMessage(message: string | undefined): boolean {
 
 export function isBackendUnreachable(error: unknown): boolean {
   const e = error as
-    | { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string }
-    | null
-    | undefined;
+    { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string } | null | undefined;
   if (!e) return false;
   return Boolean(
     e.isServiceUnavailable ||

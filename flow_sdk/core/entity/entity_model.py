@@ -6,13 +6,14 @@ import logging
 import os
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 
 DEFAULT_BROWSE_LIMIT = 20
 import types
 from typing import (
     Any,
+    AsyncIterator,
     ClassVar,
     Dict,
     List,
@@ -122,6 +123,29 @@ def suppress_store():
         _SUPPRESS_STORE.reset(token)
 
 
+# Ids a ``mirror_batch`` read as absent INSIDE its writer transaction. While that transaction holds
+# the SQLite writer lock no other writer can create them, so a create of one of these ids is a
+# genuine create and ``_merge_stored_context_links`` has nothing to read back. Consumed on use: a
+# second fresh instance for the same id in the batch is create-over-existing again and merges.
+_VERIFIED_ABSENT: "ContextVar[set[str] | None]" = ContextVar("_verified_absent", default=None)
+
+_MIRROR_DELETE: "ContextVar[bool]" = ContextVar("_mirror_delete", default=False)
+
+
+@contextmanager
+def mirror_delete():
+    """The enclosed delete(s) remove only this machine's copy of hub rows — never the hub row.
+
+    For the hub telling us a row is gone, and for sign-out clearing the hub-derived cache:
+    neither is the user asking the hub to delete anything.
+    """
+    token = _MIRROR_DELETE.set(True)
+    try:
+        yield
+    finally:
+        _MIRROR_DELETE.reset(token)
+
+
 def in_remote_reflection() -> bool:
     """Is the current save a verbatim reflection of a hub-origin row (``remote_reflection``)?"""
     return _REMOTE_REFLECTION.get()
@@ -130,6 +154,21 @@ def in_remote_reflection() -> bool:
 def store_suppressed() -> bool:
     """Does the current save write the row only (``suppress_store`` — the disk→DB adopt path)?"""
     return _SUPPRESS_STORE.get()
+
+
+_UNSET_ROW: Any = object()
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    """Equal, or equal once serialized (``TypeId`` vs its string, an enum vs its value)."""
+    if a == b:
+        return True
+    import json  # noqa: PLC0415
+
+    try:
+        return json.dumps(a, default=str, sort_keys=True) == json.dumps(b, default=str, sort_keys=True)
+    except (TypeError, ValueError):
+        return False
 
 
 @contextmanager
@@ -338,8 +377,7 @@ class Entity(DBEntity):
     # of truth (resolved from RoleRelationship edges), written here by the reflected
     # ``members`` action mirror (see _hub_reflect.mirror_hub_response_into_local)
     # and by the conversation roster fanout, and refreshed on every roster open.
-    # Renamed from the per-type ``participants`` field; the conversation WIRE key
-    # stays ``participants`` (hub contract) and is adapted to ``members`` at ingest.
+    # The hub sends the same roster under the same name, ``members``.
     members: List[dict] = APIField(
         sharing=Sharing.PRIVATE,
         default_factory=list,
@@ -2208,8 +2246,8 @@ class Entity(DBEntity):
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
         creds = load_credentials()
         if not creds or not creds.api_key:
@@ -2227,8 +2265,8 @@ class Entity(DBEntity):
         #  - ``tags``        — local-only labels; the hub doesn't read them.
         #  - ``project_id``  — sender's local project; recipients resolve their
         #    own project mapping, so the hub deliberately doesn't store this.
-        #  - ``participants`` — initial sender-side list (email-only entries).
-        #    The hub builds the real participants list via ``/members`` invites
+        #  - ``members``     — initial sender-side list (email-only entries).
+        #    The hub builds the real roster via ``/members`` invites
         #    + ``/join``, which stamps a real ``user_id`` per joiner.
         # All of the above were producing ``None API field !!!`` errors on the
         # hub at create because the hub schema doesn't declare them. They
@@ -2243,13 +2281,15 @@ class Entity(DBEntity):
             self.add_shared_context_entities(parent_tid)
         body = self._hub_body()
 
-        path = build_hub_url(self.get_type())
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+        try:
+            await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+        except HubError as e:
             # Idempotent: a 409 ("already exist") means this entity is already on
             # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
             # every invite. The create's post-condition is already satisfied, so
             # treat it as a no-op success rather than a 500.
-            await client.post(path, body, idempotent=True)
+            if e.status_code != 409:
+                raise
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.
@@ -2358,8 +2398,7 @@ class Entity(DBEntity):
         creating a child under a non-remote parent would 404 on the hub.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         creds = load_credentials()
         if not creds or not creds.api_key:
@@ -2367,9 +2406,7 @@ class Entity(DBEntity):
         body = child._hub_body()
         # build_hub_url(self) → /graph/<ptype>/<pid>; action=<childtype> appends
         # the trailing bare child type the hub parses as direct_resource_type.
-        path = build_hub_url(self, action=child.get_type())
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(path, body)
+        await HubProxy.call("POST", self.type, self.id, child.get_type(), payload=body, strict=True)
         if "remote" in type(child).model_fields:
             child.remote = True
             # Direct and recursive child creation use the same byte-transport
@@ -2398,7 +2435,8 @@ class Entity(DBEntity):
         A hub refusal raises ``HubError``; a 404 means it is already gone.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_public_url  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         if recursive:
@@ -2411,9 +2449,7 @@ class Entity(DBEntity):
             creds = load_credentials()
             if not creds or not creds.api_key:
                 raise RuntimeError("Cloud login required before unshare()")
-            path = build_hub_url(self)
-            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                response = await client.request("DELETE", path)
+            response = await HubProxy.send("DELETE", hub_public_url(build_hub_url(self)))
             if response.status_code >= 400 and response.status_code != 404:  # 404: already gone
                 from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
@@ -2501,6 +2537,116 @@ class Entity(DBEntity):
         child keeps its true ``parent_type_id`` (the doc) in its own payload.
         """
         return await self.nearest_ancestor(lambda e: getattr(e, "remote", False))
+
+    @classmethod
+    def accepted_from_hub(cls, hub_row: dict, *, nulls_clear: bool = False) -> dict:
+        """A hub row as this type's own fields: wire names lifted (``hub_name``), only the fields the
+        type takes from the hub (``Sharing``). A hub ``null`` clears the local value only with
+        ``nulls_clear`` (the hub's answer to an edit); a synced row's ``null`` is "the hub has none"."""
+        from flow_sdk.fs_store.serializer.hub import HubSerializer  # noqa: PLC0415
+
+        lifted = HubSerializer.unwire(cls, dict(hub_row or {}))
+        refused = cls.fields_not_accepted_from_hub()
+        return {
+            k: v
+            for k, v in lifted.items()
+            if (nulls_clear or v is not None) and k not in refused and cls.is_api_field(k)
+        }
+
+    @classmethod
+    async def mirror_from_hub(
+        cls,
+        hub_row: dict,
+        someone_typeid: Optional[str] = None,
+        *,
+        notify: bool = True,
+        existing: Any = _UNSET_ROW,
+        nulls_clear: bool = False,
+    ) -> Optional["Entity"]:
+        """Land one hub row here — the one mirror every path uses (list sync, WS frame, an answer).
+
+        A row the hub has deleted (``deleted_at``) is dropped (``drop_hub_deleted``). Otherwise the
+        fields the type accepts from the hub are copied over (``accepted_from_hub``), the row is marked
+        ``remote``, the type adds what it derives (``on_hub_mirror``), and it is saved as a reflection —
+        only when something changed. Pass ``existing`` (``None`` = known absent) to skip the read.
+        """
+        row_id = str((hub_row or {}).get("id") or "").strip()
+        if not row_id:
+            return None
+        if hub_row.get("deleted_at"):
+            await cls.drop_hub_deleted(row_id)
+            return None
+        incoming = cls.accepted_from_hub(hub_row, nulls_clear=nulls_clear)
+        incoming["id"] = row_id
+        if existing is _UNSET_ROW:
+            existing = await cls.get_one({"id": row_id})
+        now = datetime.now(timezone.utc)
+        if existing is None:
+            fresh = dict(incoming)
+            for field, value in (("remote", True), ("fetched_at", now)):
+                if field in cls.model_fields:
+                    fresh[field] = value
+            with lenient_entity_load():  # a hub row lacks this box's local-only required fields
+                entity = cls.model_validate(fresh)
+            await entity.on_hub_mirror(hub_row, created=True, changed=set(incoming))
+            with remote_reflection():
+                return await entity.save(someone_typeid, notify=notify)
+        changed: set[str] = set()
+        for field, value in incoming.items():
+            if field == "id":
+                continue
+            before = getattr(existing, field, None)
+            existing.__pydantic_validator__.validate_assignment(existing, field, value)
+            if not _same_value(before, getattr(existing, field, None)):
+                changed.add(field)
+        if await existing.on_hub_mirror(hub_row, created=False, changed=changed):
+            changed.add("derived")
+        if "remote" in cls.model_fields and existing.remote is not True:
+            existing.remote = True
+            changed.add("remote")
+        if not changed:
+            return existing
+        if "fetched_at" in cls.model_fields:
+            existing.fetched_at = now
+        with remote_reflection():
+            return await existing.save(someone_typeid, notify=notify)
+
+    @classmethod
+    @asynccontextmanager
+    async def mirror_batch(cls, ids: list[str]) -> AsyncIterator[dict[str, Entity]]:
+        """Mirror many hub rows in ONE writer transaction; yields the local rows of ``ids`` read inside it.
+
+        A first sync mirrors thousands of rows, and one by one each paid its own transaction (BEGIN
+        IMMEDIATE + commit) and a read-back of a row the caller had just found absent. Here the batch
+        reads ``ids`` once, under the writer lock, so the rows it yields are current and the ones it
+        does not are absent until it commits — their creates skip the read-back
+        (``_VERIFIED_ABSENT``). Pass each yielded row (or ``None``) as ``mirror_from_hub(existing=…)``.
+        Announcements go out at the commit. Keep batches small: the writer lock is held throughout.
+        """
+        wanted = [str(i) for i in ids if i]
+        async with _one_write():
+            found: dict[str, Entity] = {}
+            if wanted:
+                rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted])))
+                found = {str(r.id): r for r in rows if r.id}
+            token = _VERIFIED_ABSENT.set({i for i in wanted if i not in found})
+            try:
+                yield found
+            finally:
+                _VERIFIED_ABSENT.reset(token)
+
+    async def on_hub_mirror(self, hub_row: dict, *, created: bool, changed: set[str]) -> bool:
+        """What a type derives from a hub row beyond its accepted fields. True when it changed this row."""
+        return False
+
+    async def after_own_hub_update(self, before: "Entity") -> None:
+        """This box's own update went to the hub and its answer was mirrored here (as a reflection).
+        ``before`` is the row as it was. A type that records its own edits (task history) does it here."""
+
+    @classmethod
+    async def drop_hub_deleted(cls, row_id: str) -> None:
+        """The hub deleted this row: drop the local copy."""
+        await cls.delete_by_id(row_id)
 
     @classmethod
     async def upsert_from_hub_child(
@@ -2747,7 +2893,11 @@ class Entity(DBEntity):
         # prune drop a link on purpose, and unioning would make removal
         # impossible.
         if was_create:
-            await self._merge_stored_context_links()
+            verified_absent = _VERIFIED_ABSENT.get()
+            if verified_absent is not None and str(self.id) in verified_absent:
+                verified_absent.discard(str(self.id))
+            else:
+                await self._merge_stored_context_links()
         create_target = await self._prepare_for_storage()
         suppress_store = _SUPPRESS_STORE.get()
 
@@ -3033,7 +3183,7 @@ class Entity(DBEntity):
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""
-        if type(self).owns_hub_delete and self.remote:
+        if type(self).owns_hub_delete and self.remote and not _MIRROR_DELETE.get():
             # Before any local side effect: a hub refusal (HubError) keeps the row whole.
             await self.unshare(recursive=False)
 

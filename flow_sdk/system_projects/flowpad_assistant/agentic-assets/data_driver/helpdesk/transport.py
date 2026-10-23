@@ -10,26 +10,21 @@ class AppHub:
     """The ``HubTransport`` a help desk source is built over."""
 
     async def get(self, entity_type, entity_id, action):
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
 
         try:
-            return await hub_get_or_raise(entity_type, entity_id, action)
+            return await HubProxy.call("GET", entity_type, entity_id, action)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me())) from exc
 
     async def post(self, entity_type, payload, entity_id, action):
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
-        from flow_sdk.sources.errors import Rejected  # noqa: PLC0415
-
         try:
-            answer = await hub_post(entity_type, payload, entity_id, action)
+            return await HubProxy.call("POST", entity_type, entity_id, action, payload=payload)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me())) from exc
-        if answer is None:
-            raise Rejected("Flowpad Cloud is not configured on this instance.")
-        return answer
 
     def me(self) -> str:
         """The logged-in hub user, or "" when signed out — the instance config's user pointer."""
@@ -53,7 +48,7 @@ def hub_refusal(exc, *, signed_in: bool):
     reason = str(getattr(exc, "reason", "") or "")
     status = int(getattr(exc, "status_code", 0) or 0)
     if status == 0:
-        if "not configured" in reason:
+        if getattr(exc, "kind", None) == "not_configured" or "not configured" in reason:
             return Rejected(f"Flowpad Cloud is not configured on this instance ({reason}).")
         return SourceUnavailable(f"the hub could not be reached: {reason}")
     if status in (401, 403):

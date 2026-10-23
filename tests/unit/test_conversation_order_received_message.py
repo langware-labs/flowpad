@@ -27,6 +27,7 @@ import pytest
 from flow_sdk.app.actions.flow_message_action import _fetch_conversation_messages
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.operations.conversation import (
     default_jsonl_path,
     from_jsonl,
@@ -67,8 +68,9 @@ def _reply() -> dict:
 
 async def _sync_from_hub(children: list[dict]) -> None:
     """One real children-list reconcile; only the HTTP response is stubbed."""
-    with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get",
+    with patch.object(
+        HubProxy,
+        "try_call",
         new=AsyncMock(return_value=children),
     ):
         assert await _fetch_conversation_messages(_CONV_ID, someone_typeid=None) is True

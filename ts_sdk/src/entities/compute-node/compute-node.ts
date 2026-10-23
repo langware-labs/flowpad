@@ -90,6 +90,15 @@ export function vfsToOsPath(vfsPath: string, root: string): string {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ComputeNode extends EntityMerge<IComputeNode> {}
 
+/** One agent placed on a machine, as `compute_node/<id>/agents` answers it. */
+export interface NodeAgent {
+  typeid: string;
+  name: string;
+  deployment_typeid: string;
+  /** The project holding the agent, to open it there; blank when unknown. */
+  project_id: string;
+}
+
 /**
  * ComputeNode entity class.
  * Manages sandboxed execution environments for running commands and processes.
@@ -474,6 +483,14 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Normalized server-side into one shape across providers, so this type is no
    * longer the union of one provider's fields with another's.
    */
+  /** The agents placed on this machine (`compute_node/<id>/agents`), for its card. Hub-owned, so reflected. */
+  async agents(): Promise<NodeAgent[]> {
+    const info = new ActionInfo('agents', this.getType(), this.id, 'GET');
+    info.hubReflect = true;
+    const data = await dataManager.callAction<unknown, { agents?: NodeAgent[] }>(info);
+    return data?.agents ?? [];
+  }
+
   async status(): Promise<NodeStatus> {
     return this.ops<NodeStatus>('status');
   }

@@ -109,8 +109,23 @@ def ensure_ignored(path: Path | str) -> str:
 def protect_env_local(root: Path | str) -> None:
     """Keep a checkout's ``.env.local`` out of commits, or refuse: a tracked one is already in
     history's path, and a rule git will not honour protects nothing. Outside a work tree there is
-    nothing to protect."""
-    status = ensure_ignored(Path(root) / ".env.local")
+    nothing to protect.
+
+    The rule goes to the clone's own ``info/exclude``, never its ``.gitignore``: the checkout is
+    someone else's repository, and an untracked ``.gitignore`` would dirty it (the next pull of a
+    course or a shared repo then stops on it)."""
+    env_local = Path(root) / ".env.local"
+    status = ignore_status(env_local)
+    if status == NOT_IGNORED:
+        try:
+            found = _git._run_git(["git", "rev-parse", "--git-path", "info/exclude"], str(root), timeout=10)
+            exclude = Path(root) / found.stdout.strip() if found.returncode == 0 and found.stdout.strip() else None
+            if exclude is not None:
+                exclude.parent.mkdir(parents=True, exist_ok=True)
+                append_line(exclude, "/.env.local")
+        except OSError as e:
+            logger.warning("[git-ignore] could not write info/exclude in %s: %s", root, e)
+        status = ignore_status(env_local)
     if status == TRACKED:
         raise RuntimeError(".env.local is already tracked; remove it from the Git index first")
     if status in (NOT_IGNORED, GIT_FAILURE):

@@ -532,6 +532,10 @@ async def _start_agent_server() -> None:
         from flow_sdk.builtin.agent_serve import AgentServer
         from flow_sdk.config import default_service_config
 
+        if _AGENT_SERVER is not None:
+            # A second startup in one process (a test app, a reload) must not leave the first
+            # supervisor's watch loop polling the database forever.
+            await _AGENT_SERVER.stop()
         _AGENT_SERVER = AgentServer(
             run_processes=default_service_config.agent_run_deployments,
             watch_seconds=default_service_config.agent_watch_seconds,

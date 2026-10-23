@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.sources.binding import SourceBinding
 
@@ -24,6 +25,13 @@ class FakeHub:
     def __init__(self):
         self.stores: dict[str, dict[str, tuple[bytes, int]]] = {}
         self.tick = 0
+
+    async def call(self, method, entity_type, entity_id=None, action=None, sub_path=None, *, payload=None, **kw):
+        """``HubProxy.call``: GETs to ``get``, POSTs to ``post``."""
+        if method == "GET":
+            return await self.get(entity_type, entity_id, action, sub_path, scope=kw.get("scope"), params=kw.get("params"))
+        assert method == "POST", method
+        return await self.post(entity_type, payload, entity_id, action, sub_path)
 
     async def get(self, entity_type, entity_id=None, action=None, sub_path=None, *, scope=None, params=None):
         files = self.stores.get(entity_id)
@@ -70,9 +78,7 @@ async def driver():
 @pytest.fixture
 def hub(monkeypatch, driver):
     fake = FakeHub()
-    module = __import__(driver.cls.__module__, fromlist=["hub_get_or_raise"])
-    monkeypatch.setattr(module, "hub_get_or_raise", fake.get)
-    monkeypatch.setattr(module, "hub_post", fake.post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
     return fake
 
 

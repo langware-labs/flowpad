@@ -10,7 +10,7 @@ failure stopping the rest (KTD7, R11). The hub's ``notify_by_message`` is never
 sent: the message moved to the client.
 
 Only the network hops are stubbed: ``FlowpadClient.request`` and
-``flow_sdk.utils.hub.hub_post`` (the message body upload).
+``HubProxy`` (the message body upload).
 """
 
 from __future__ import annotations
@@ -19,9 +19,11 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
@@ -107,9 +109,17 @@ def hub(monkeypatch):
                 return _FakeResponse(answer, {"detail": "boom"})
         return _ok({})
 
-    async def fake_hub_post(entity_type, data, *path_parts, action=None, **_kwargs):
-        calls.append(("HUB_POST", action or "/".join(str(p) for p in path_parts[1:]), data))
+    async def fake_hub_upload(entity_type, entity_id=None, action=None, sub_path=None, **_kwargs):
+        calls.append(("HUB_POST", f"{action}/{sub_path}", {}))
         return {}
+
+    real_call = HubProxy.call
+
+    async def fake_hub_call(method, entity_type, *args, **kwargs):
+        if kwargs.get("action") == "set_body_status":  # the body flip; the rest reaches the faked send
+            calls.append(("HUB_POST", "set_body_status", kwargs.get("payload")))
+            return {}
+        return await real_call(method, entity_type, *args, **kwargs)
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
@@ -118,7 +128,15 @@ def hub(monkeypatch):
         ),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
-    monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
+    # The shared hub transport (``HubProxy.send``) answers from the same fake.
+
+    async def fake_send(method, url, **kwargs):
+        fake = await fake_request(None, method, str(url), **kwargs)
+        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(fake_hub_upload))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_hub_call))
     # The invite message takes the generic send, which reaches the hub only for
     # a logged-in sharer — as every sharer is.
     monkeypatch.setattr("flow_sdk.app.actions.notification_action.is_logged_in", lambda: True)

@@ -13,7 +13,7 @@ The recurring invariant is that the hub — not any client-sent field — is the
 source of truth for membership and identity.
 
 Related: [`./conversation-model.md`](./conversation-model.md) (the
-`participants` field, ownership via the `owner` role),
+`members` field, ownership via the `owner` role),
 [`./sharing-and-sync.md`](./sharing-and-sync.md) (`Conversation.share` mints
 the invitations), [`./hub-fanout-and-loader.md`](./hub-fanout-and-loader.md)
 (receive-side upsert and WS fan-out).
@@ -124,7 +124,7 @@ _schedule_conversation_bundle_pull(…)→ bundle bytes pulled after the respons
 ```
 
 The `/members` roster, when present, *replaces* the conversation's embedded
-`participants` (`:4766-4768`) — it is the more authoritative shape. The whole
+`members` — it is the more authoritative shape. The whole
 block is best-effort: a failure logs and proceeds so the local invitation is
 still marked accepted.
 
@@ -159,11 +159,11 @@ that `useEntity` actually listens for. The handler returns
 
 ## 3. Participants & roles
 
-The roster lives on `Conversation.participants`
-(`flow_sdk/builtin/conversation.py:131`) — `list[dict]` of
-`{user_id, email, name, role}`. On ingest, `_normalize_participants`
-(`flow_message_action.py:66`) fills `email`/`name`/`picture` from the hub's
-`user_*` aliases (`:72-80`) without overwriting already-present values, so the
+The roster lives on `Conversation.members`
+(`flow_sdk/builtin/conversation.py`, a plain `HUB_READ` field under the hub's own name) — `list[dict]` of
+`{user_id, email, name, role}`. On ingest, `_normalize_members`
+(`flow_message_action.py`) fills `email`/`name`/`picture` from the hub's
+`user_*` aliases without overwriting already-present values, so the
 local shape is uniform regardless of which hub payload it came from.
 
 The role ladder and permission helpers are
@@ -189,9 +189,10 @@ The helpers (`roleRank`/`participantRank`/`assignableRoles`/`canInviteMembers`,
   `full-access`/`guest`).
 - **Invite** is gated to **admin and above**.
 
-Ownership for display/authz is read from the roster's `owner` role, **not**
-from `created_by` — see [`./conversation-model.md`](./conversation-model.md);
-`created_by` may legitimately be `None`.
+Ownership is read from `initiated_by` (the hub's owner, copied as is) and the
+roster's `owner` role, **not** from `created_by` — see
+[`./conversation-model.md`](./conversation-model.md); `initiated_by` may
+legitimately be `None`.
 
 ---
 
@@ -235,15 +236,15 @@ SQLite (`remote=True`). It mirrors only the user-visible, hub-owned fields and
 guards the rest.
 
 **Mirrored** (create path `:2613-2644`, update path `:2664-2688`): `title`,
-`participants` (run through `_normalize_participants`), `remote_project_id` /
+`members` (run through `_normalize_members`), `remote_project_id` /
 `remote_project_name`, and `shared_context_entities`.
 
 **Invariants — the load-bearing rules:**
 
-1. **`initiated_by` → `created_by`, VERBATIM, including `None`** (`:2628`,
-   `:2681`). This HTTP accept path preserves a null owner as-is (unlike the WS
-   passive upsert, which uses a `'system'` sentinel); neither stamps the local
-   user. See [`./conversation-model.md`](./conversation-model.md) §`created_by`
+1. **`initiated_by` is copied as is, including `None`.** The hub's owner lands
+   on the desktop's own `Conversation.initiated_by` (same name, no rename); a
+   null owner stays null, and the local user is never stamped. `created_by` is
+   only the local row's attribution. See [`./conversation-model.md`](./conversation-model.md) §`initiated_by`
    for why a null owner is legitimate and why ownership comes from the roster.
 2. **Preserve hub timestamps as LWW** (`:2637-2644`, `:2692`). `updated_date`
    is carried so conversation-list can detect "this conversation changed" by

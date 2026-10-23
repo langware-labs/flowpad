@@ -7,7 +7,7 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 // The dialog's collaborators are app plumbing; the seam is the send hook, whose
 // target is exactly what the dialog decided to create.
 const stable = vi.hoisted(() => ({
-  nav: { navigation: { openDock: () => undefined } },
+  nav: { navigation: { openDock: () => undefined, openDockOnThisPage: () => undefined } },
   ctx: { project: { id: 'p-oss' }, user: null },
   projects: { projects: [{ id: 'p-oss', displayName: 'flowpad-oss' }] },
   auth: { cloudUser: null, localUser: { name: 'Me' }, user: null },

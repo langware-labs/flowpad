@@ -247,7 +247,7 @@ async def test_websocket_unknown_message_type():
 
             # Connection should still work
             ws.send_json({"message_type": "ping", "message_id": "after-unknown"})
-            pong = ws.receive_json()
+            pong = receive_reply(ws)
             assert pong["message_type"] == "pong"
 
 

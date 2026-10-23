@@ -163,16 +163,6 @@ async def test_members_after_share_lists_both_with_roles(hub_base_url, hub_login
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.xfail(
-    reason=(
-        "Hub-side bug: Conversation.leave returns 200 but the leaver's role "
-        "is not actually revoked, so they still appear in get_approved_members. "
-        "Root cause: bare ``except Exception: pass`` around ``self.remove_role`` "
-        "in hub builtin/conversation.py:leave swallows the real failure. "
-        "Fix lives in the hub repo, not flow_sdk."
-    ),
-    strict=True,
-)
 async def test_members_after_leave_excludes_leaver(hub_base_url, hub_login_payload, isolated_hub_keyring):
     """After bob leaves the shared conversation, members no longer includes him."""
     from flow_sdk.builtin.conversation import Conversation

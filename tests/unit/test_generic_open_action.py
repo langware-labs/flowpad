@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from tests.unit._graph_client import call_local as _call_local
 
@@ -34,11 +35,11 @@ def _redirect_params(resp) -> dict[str, list[str]]:
 def message_hub(monkeypatch):
     """The hub a message deep link talks to: the message, its conversation, no
     further messages to sync, and a join that succeeds."""
-    from flow_sdk.app.actions import flow_message_action
 
     fid, cid = str(uuid4()), str(uuid4())
 
-    async def _hub_get(entity_type, entity_id=None, *args, scope=None, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, *args, scope=None, **kwargs):
+        assert method == "GET"
         et = getattr(entity_type, "value", entity_type)
         if et == BuiltinEntityType.FLOW_MESSAGE.value and entity_id == fid:
             return {
@@ -51,11 +52,12 @@ def message_hub(monkeypatch):
             return {"id": cid, "title": "thread"}
         return [] if scope else None
 
-    async def _hub_post(*args, **kwargs):
+    async def _hub_call(method, *args, **kwargs):
+        assert method != "GET", "a read goes through try_call here"
         return {}
 
-    monkeypatch.setattr(flow_message_action, "hub_get", _hub_get)
-    monkeypatch.setattr(flow_message_action, "hub_post", _hub_post)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_call))
     return fid, cid
 
 
@@ -76,14 +78,14 @@ async def test_a_message_link_redirects_into_its_conversation(message_hub):
 
 @pytest.mark.asyncio
 async def test_a_notification_link_redirects_with_its_task(monkeypatch):
-    from flow_sdk.app.actions import notification_action
 
     nid = str(uuid4())
 
-    async def _hub_get(entity_type, entity_id=None, *args, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         return {"metadata": {"task_id": "t-1", "sender_name": "Dana", "task_title": "Fix it"}}
 
-    monkeypatch.setattr(notification_action, "hub_get", _hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
 
     params = _redirect_params(await _call_local("GET", f"notification/{nid}/open"))
 
@@ -121,22 +123,22 @@ def test_one_generic_open_replaces_the_per_type_ones():
 def project_hub(monkeypatch):
     """The hub a project link reads: ``rows`` by id; an int is the HubError status."""
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.cloud_client.transport import hub_http
 
     rows: dict[str, object] = {}
 
-    async def _get_or_raise(entity_type, entity_id=None, *args, **kwargs):
+    async def _get_or_raise(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         row = rows.get(entity_id, 404)
         if isinstance(row, int):
             raise HubError(row, f"hub said {row}")
         return row
 
-    async def _roster(entity_type, entity_id=None, action=None, *args, **kwargs):
-        assert action == "members"
+    async def _roster(method, entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert method == "GET" and action == "members"
         return _ROSTER
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", _get_or_raise)
-    monkeypatch.setattr(hub_http, "hub_get", _roster)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_get_or_raise))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_roster))
     return rows
 
 
@@ -213,18 +215,18 @@ async def test_a_project_link_says_why_it_cannot_open(project_hub, hub_answer, e
 def project_list_hub(monkeypatch):
     """The hub's project list for the signed-in user: ``rows``, signed in."""
     from flow_sdk.cli.auth import hub_login
-    from flow_sdk.cloud_client.transport import hub_http
 
     rows: list[dict] = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, *args, **kwargs):
+    async def _hub_get(method, entity_type, entity_id=None, action=None, *args, **kwargs):
+        assert method == "GET"
         assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value
         if action == "members":
             return _ROSTER
         assert entity_id is None
         return rows
 
-    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
     monkeypatch.setattr(hub_login, "hub_auth_available", lambda: True)
     return rows
 

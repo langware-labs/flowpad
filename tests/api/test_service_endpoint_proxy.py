@@ -27,6 +27,7 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.service_endpoint_spec import (
     PROTOCOL_API_CHAT_OPENAI,
     PROTOCOL_API_MCP,
@@ -302,7 +303,9 @@ async def test_a_remote_endpoints_socket_goes_to_the_hubs_service_route_with_cer
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.example")
     monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="k"))
-    monkeypatch.setenv("FLOWPAD_HUB_URL", "https://hub.example")
+    from flow_sdk.config import default_service_config
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.example")
     endpoint = await _endpoint(remote=True)
 
     base, auth, ssl_context = _hub_socket_target(endpoint)
@@ -390,18 +393,18 @@ async def test_direct_url_on_a_box_the_hub_placed_is_the_hubs_answer(client, mon
     """A hub-placed box (E2B or GCP, sandbox or agent) does not build its own address: the hub holds the row at
     the same id and knows the provider's door for it now — a published door, or its relaying audience host."""
     import flow_sdk.instance_settings.runtime as runtime
-    from flow_sdk.cloud_client.transport import hub_http
 
     asked = []
 
-    async def hub_get(entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+    async def fake_try_call(method, entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        assert method == "GET"
         asked.append((str(entity_type), entity_id, action, kwargs.get("params")))
         return {"url": "https://app--d.flowpad.app/shop/"}
 
     monkeypatch.setattr(
         runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
     )
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
     users = await _app_proxy()
     resp = await client.get(_direct(users, "?route=shop"))
     assert resp.status_code == 200, resp.text
@@ -413,15 +416,14 @@ async def test_direct_url_of_a_placement_the_hub_never_made_is_answered_on_the_b
     """A hub-placed box also has placements of its own (a project the hub never placed): the hub holds no row for
     them, so the box answers as it did before instead of failing the display."""
     import flow_sdk.instance_settings.runtime as runtime
-    from flow_sdk.cloud_client.transport import hub_http
 
-    async def hub_get(*args, **kwargs):
+    async def fake_try_call(*args, **kwargs):
         return None
 
     monkeypatch.setattr(
         runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
     )
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
     resp = await client.get(_direct(await _app_proxy()))
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["url"] == "http://localhost:8765"

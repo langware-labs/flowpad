@@ -390,10 +390,10 @@ async def _pack_conversation_attachment(
         "id": conv.id,
         "project_id": sender_project_id,
         "project_name": sender_project_name,
-        # participants drive the reply-recipient resolver on the receiver side
+        # members drive the reply-recipient resolver on the receiver side
         # (see _resolve_reply_recipient_email): when there's no Task, the reply
-        # routes to the participant whose email isn't the local user's.
-        "participants": list(conv.members or []),
+        # routes to the member whose email isn't the local user's.
+        "members": list(conv.members or []),
         # User-set display title (NewConversationDialog autofill). Receiver
         # stores it on the local Conversation so both sides render the same row.
         "title": (conv.title or None),
@@ -2547,7 +2547,7 @@ async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_Unpa
     conv_header = _read_entity_header(entry_dir) or {}
     bundle_remote_project_id = conv_header.get("project_id") or None
     bundle_remote_project_name = conv_header.get("project_name") or None
-    bundle_participants = conv_header.get("participants") or []
+    bundle_members = conv_header.get("members") or []
     bundle_title = (conv_header.get("title") or "").strip() or None
     # Copy conversation.jsonl to a permanent location before the
     # temp dir is cleaned up — _create_conversation_from_disk
@@ -2577,7 +2577,7 @@ async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_Unpa
         project_id=None,
         remote_project_id=bundle_remote_project_id,
         remote_project_name=bundle_remote_project_name,
-        participants=bundle_participants,
+        members=bundle_members,
         title=bundle_title,
     )
     # Frontend notification is deferred to step 7 — firing it here would

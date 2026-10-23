@@ -462,7 +462,9 @@ async def _write_proxy(deployment, audience: str, routes: dict, existing, projec
         name=audience,
         subkind=audience,
         backend={"type": "routed", "routes": routes},
-        project_id=project_id if project_id is not None else getattr(existing, "project_id", None),
+        # The proxy is the PLACEMENT's: with no app project, it takes the placement's own (none on
+        # this computer's), never whichever app last wrote it.
+        project_id=project_id if project_id is not None else getattr(deployment, "project_id", None),
         existing=existing,
     )
 
@@ -682,10 +684,10 @@ async def _tell_hub(deployment) -> None:
 
     if not get_assigned_compute_node():
         return
-    from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     try:
-        await hub_http.hub_post(deployment.get_type(), {}, deployment.id, "refresh-endpoints")
+        await HubProxy.call("POST", deployment.get_type(), deployment.id, "refresh-endpoints", payload={})
     except Exception:  # noqa: BLE001 — the endpoint serves here either way; the hub catches up on the next one
         _log.info("hub did not refresh the endpoints of %s", deployment.typeid, exc_info=True)
 

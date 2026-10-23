@@ -893,7 +893,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
         header = json.loads(zf.read(header_arc))
         assert header["project_name"] == "Sender Project"
         assert header["title"] == "My Conversation Title"
-        assert header["participants"] == [
+        assert header["members"] == [
             {"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}
         ]
         # The current FM is co-packed.

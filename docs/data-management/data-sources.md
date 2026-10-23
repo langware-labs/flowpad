@@ -131,7 +131,10 @@ The family is declared (it is the payload shape and the destination); the class 
 the access protocols it can honour the access protocols it can honour
 (`Listable`, `Readable`, `Messaging`, `Verifiable`, `Choosing`,
 `Identified`, `StableHandle`) — a capability is discovered by `isinstance`, never
-declared. A source answers *what is there* and *what changed since a cursor*; it never
+declared. A source class may also offer `ensure_sources()` (a classmethod): on start and login
+`ensure_driver_sources` calls it so the driver makes the sources this login should have (the
+help desk makes one per desk the user staffs). A source answers *what is there* and *what
+changed since a cursor*; it never
 writes an entity, emits an event, or advances a cursor. It imports the public SDK, never
 another asset.
 

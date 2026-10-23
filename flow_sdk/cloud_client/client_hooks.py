@@ -16,7 +16,7 @@ class HubAuthExpiredError(httpx.RequestError):
     """Raised when a request is aborted before network due to local expiry."""
 
 
-# Request-extension marker set by ``CloudProxy``: this response's body is streamed
+# Request-extension marker set by ``HubProxy`` (a forwarded response): this response's body is streamed
 # straight back to the caller, so the hooks must not read it. Reading consumes the
 # stream, and the proxy's ``aiter_raw()`` then raises ``StreamConsumed`` *after* the
 # headers (carrying the hub's Content-Length) have already gone out — the caller
@@ -153,6 +153,12 @@ async def _on_response(response: httpx.Response) -> None:
         await hub_error_reporter.recovered(method=response.request.method, path=request_path(response.request.url))
         return
 
+    if passthrough and status_code == 401 and "json" in response.headers.get("content-type", ""):
+        # A forwarded 401 is a small JSON envelope: read it (``relay`` sends the read copy), so a
+        # dead credential still signs this box out when the call was a verbatim forward.
+        await response.aread()
+        if not anonymous and _error_code(response) == "unauthenticated":
+            await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
     if not passthrough:
         await response.aread()
         # The one code that means the credential is dead (the hub sets it on nothing else).

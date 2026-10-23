@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.schema.data_spec.credential_status_spec import active_way, way_named, ways
 from flow_sdk.schema.data_spec.permission_spec import (
@@ -74,24 +74,9 @@ def connection_of(req: RequirementSpec) -> Optional[tuple[str, list[str]]]:
     return None
 
 
-async def _owners(names: Iterable[str], project: Any) -> dict[str, str]:
-    """``{VAR: credential name}`` for the variables a declared credential (else a shipped template)
-    declares — the owner a process in ``project`` would read (``credential_resolver.declare``)."""
-    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare  # noqa: PLC0415
-    from flow_sdk.builtin.credential_service import shipped_templates  # noqa: PLC0415
-
-    names = set(names)
-    declared = declare(await credentials_in_scope(project))
-    owner = {name: str(declared[name].spec.name) for name in names if name in declared}
-    for template in await shipped_templates():
-        for var in template.stored_var_names():
-            if var in names:
-                owner.setdefault(var, str(template.name))
-    return owner
-
-
-async def requirements_of_source(source: "DataSource", project: Any = None) -> list[RequirementSpec]:
-    """What one data source needs, from its driver: permissions, a credential, variables."""
+async def requirements_of_source(source: "DataSource", project: Any = None, *, known: Any = None) -> list[RequirementSpec]:
+    """What one data source needs, from its driver: permissions, a credential, variables. ``known``:
+    ``(credentials in scope, shipped templates)`` the caller already read (either may be ``None``)."""
     from flow_sdk import permissions  # noqa: PLC0415
 
     auth = await auth_of(source)
@@ -110,7 +95,11 @@ async def requirements_of_source(source: "DataSource", project: Any = None) -> l
                                    derived=True, used_by=used_by))
     names = list(auth.env) if auth.env else list(auth.secrets)
     if names:
-        owner = await _owners(names, project)
+        from flow_sdk.builtin.credential_service import credential_for_need  # noqa: PLC0415
+
+        pairs, templates = known or (None, None)
+        owner = {var: str(spec.name) for var, spec in
+                 (await credential_for_need(names, project, pairs=pairs, templates=templates)).items()}
         by_credential: dict[str, list[str]] = {}
         for name in names:
             if name in owner:
@@ -160,7 +149,9 @@ async def derive_requirements(agent: "Agent", project: Any = None) -> list[Requi
         for value in (spec.env or {}).values():
             if match := _VAR_REF.match(str(value).strip()):
                 refs.setdefault(match.group(1), f"mcp:{spec.name}")
-    owner = await _owners(refs, project)
+    from flow_sdk.builtin.credential_service import credential_for_need  # noqa: PLC0415
+
+    owner = {var: str(spec.name) for var, spec in (await credential_for_need(refs, project)).items()}
     for var, user in refs.items():
         kind = REQUIREMENT_CREDENTIAL if var in owner else REQUIREMENT_VARIABLE
         out.append(RequirementSpec(kind=kind, name=owner.get(var, var), vars=[var] if var in owner else [],

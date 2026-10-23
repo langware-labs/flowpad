@@ -7,6 +7,7 @@ import pytest
 
 from flow_sdk.app.actions.group_task_action import _group_members
 from flow_sdk.app.actions.task_receive import _member_asset_ref, _safe_task_folder_name
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
@@ -193,7 +194,7 @@ async def test_sync_group_member_pulls_parent_artifacts(monkeypatch):
         saved["artifacts"] = self.artifacts
         return self
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_hub_get))
     monkeypatch.setattr(Task, "get_one", classmethod(fake_get_one))
     monkeypatch.setattr(Task, "is_stale", staticmethod(lambda existing, data: True))
     monkeypatch.setattr(Task, "save", fake_save)

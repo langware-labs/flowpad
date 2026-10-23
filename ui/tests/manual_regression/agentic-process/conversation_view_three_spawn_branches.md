@@ -15,7 +15,7 @@ id: 29430b8b-4024-5ed6-b018-2b2ea34b70d1
 >   any rendered component. The scenario could not pass as written.
 > - THIS REWRITE 2026-07-07 encodes the ACTUALLY-SHIPPED conversation-session
 >   lifecycle: `useConversationSession.ts` (start/open) surfaced by
->   `ConversationHeaderSession.tsx` (header `WorkerToolbar`) and the drawer's
+>   `ConversationHeaderSession.tsx` (header `ContextWorkerToolbar`) and the drawer's
 >   `ConversationContextPanel.tsx` (Private Context "Add → Session"). The session
 >   is keyed to the CONVERSATION, not a task: one `AgenticProcess` with
 >   `process_type === 'conversation'` (`ProcessKind.Conversation`), linked onto
@@ -28,7 +28,7 @@ Contract under test (`ui/src/components/conversation/useConversationSession.ts`,
 `ConversationHeaderSession.tsx`, `ts_sdk/.../agentic-process.ts::launch`):
 
 - **Launch** on a conversation with a mapped project: the header
-  `WorkerToolbar` shows a launch button per worker. Launching spawns exactly one
+  `ContextWorkerToolbar` shows a launch button per worker. Launching spawns exactly one
   VISIBLE `AgenticProcess` with `{workdir: project.fs_storage_mount_path,
   projectId: conversation.project_id, processType: ProcessKind.Conversation}`,
   links its TypeId onto `conversation.shared_context_entities`, and navigates the

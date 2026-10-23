@@ -78,14 +78,15 @@ describe('help desk as a message source', () => {
     const ts = Date.now();
 
     // 1. Staff attach the desk — the same create the "+" on the channels line does.
-    const source = new staff.sdk.DataSource({
+    let source = new staff.sdk.DataSource({
       name: 'test desk',
       provider: 'helpdesk',
       config: { desk_project_id: deskId },
       status: 'new',
       owner: `user-${staffUserId}`,
     });
-    await source.save();
+    // Staff already hold their desk's source (ensure_sources): the create answers with that row.
+    source = (await source.save()) ?? source;
 
     try {
       // 2. The guest opens a ticket over the hub, as a requester's app does.
@@ -118,7 +119,7 @@ describe('help desk as a message source', () => {
       expect(sent.status, JSON.stringify(sent).slice(0, 200)).toBe('SUCCESS');
       const reply: any = await pollUntil(
         async () => {
-          const msgs: any[] = await hubJson(staffToken, `/graph/conversation/${convId}/flow_message`);
+          const msgs: any[] = await hubJson(staffToken, `/graph/conversation/${convId}/messages`);
           return msgs.find((m) => m.text === replyText) ?? null;
         },
         10_000,

@@ -19,6 +19,9 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_places import PlaceError, _agent_repo, adopt_placement, behind_count, list_places
 from flow_sdk.builtin.deployment import Deployment, DeploymentActionError
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 from tests.unit.agent._seed import seed_agent, seed_project
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -85,10 +88,22 @@ class _Hub:
         self.calls: list[tuple] = []
         self.configured = configured
 
+    async def call(self, method, etype, eid=None, action=None, sub=None, *, payload=None, **kw):
+        if not self.configured:
+            self.calls.append((method, etype, eid, action) + ((kw.get("params"),) if method == "GET" else ()))
+            raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
+        if method == "GET":
+            return await self.get(etype, eid, action, **kw)
+        return await self.post(etype, payload, eid, action)
+
+    async def try_call(self, method, etype, eid=None, action=None, sub=None, **kw):
+        try:
+            return await self.call(method, etype, eid, action, sub, **kw)
+        except HubError:
+            return None
+
     async def post(self, etype, payload, eid=None, action=None, **_):
         self.calls.append(("POST", etype, eid, action))
-        if not self.configured:
-            return None
         if action in ("pause", "resume"):
             # A lifecycle verb answers with the placement as the hub now holds it.
             from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
@@ -106,8 +121,8 @@ class _Hub:
 @pytest.fixture
 def hub(monkeypatch):
     fake = _Hub()
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake.post)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake.get)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake.try_call))
     return fake
 
 

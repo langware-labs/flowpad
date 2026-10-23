@@ -54,7 +54,7 @@ test.beforeAll(async () => {
   const conv = await call<{ conversation_id: string }>(apiA, 'post', '/graph/conversation-create', {
     project_id: project,
     title: `threads ${nonce}`,
-    participants: [{ email: B.email }],
+    members: [{ email: B.email }],
   });
   conversationId = conv.conversation_id;
   await call(apiA, 'post', `/graph/conversation/${conversationId}/share`, { recipients: [B.email] });

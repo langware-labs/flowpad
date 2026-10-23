@@ -145,10 +145,7 @@ async function purgeOne(sdk: SdkLike, type: string, id: string): Promise<void> {
       // Shared conversations need their canonical cloud cascade, not just a
       // local fs-record deletion. Test-created tracked conversations are owned
       // by the active realm, so this removes the hub row and child messages.
-      await sdk.apiClient.post(`${sdk.GRAPH_API_PREFIX}/conversation-delete`, {
-        conversation_id: id,
-        mode: 'delete_for_all',
-      });
+      await sdk.apiClient.delete(`${sdk.GRAPH_API_PREFIX}/conversation/${id}/delete`);
     } catch {
       // A receiver mirror cannot delete for all. Graph DELETE still establishes
       // its local tombstone; owner-side cleanup removes the canonical hub row.

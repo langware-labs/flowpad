@@ -31,6 +31,12 @@ describe('remote entity persistence', () => {
       ...task.toJSON(),
       status: 'in_progress',
     } as never);
+    // The hub's PUT answer carries no local-only fields, so the save re-reads the merged local row.
+    const get = vi.spyOn(apiClient, 'get').mockResolvedValue({
+      ...task.toJSON(),
+      status: 'in_progress',
+      title: 'Merged locally',
+    } as never);
 
     task.status = 'in_progress';
     await task.save();
@@ -42,5 +48,7 @@ describe('remote entity persistence', () => {
       expect.objectContaining({ id: TASK_ID, status: 'in_progress', remote: true }),
       { headers: { 'Hub-Reflect': 'true' } },
     );
+    expect(get).toHaveBeenCalledWith(`${GRAPH_API_PREFIX}/task/${TASK_ID}`);
+    expect(task.title).toBe('Merged locally');
   });
 });

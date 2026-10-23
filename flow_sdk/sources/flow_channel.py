@@ -58,22 +58,20 @@ class AppHub:
     """The hub, as this desktop's signed-in user reaches it."""
 
     async def connect(self, channel: str, target: dict) -> dict:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
-
         body = {"parent": f"@{channel}", "claim": {"kind": "user"}, "target": {"kind": "desktop", **target}}
-        return dict(await hub_post(CLAIM_ENTITY, body, None, "chain") or {})
+        return dict(await self._post(None, "chain", body) or {})
 
     async def claim(self, claim_id: str) -> Optional[dict]:
         """The claim as the hub has it; ``None`` when the hub says it is gone (404) or not ours (403). Any other answer
         goes through the one status table; no answer at all is ``SourceUnavailable`` — not knowing is not "not
         connected"."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
         from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
         from flow_sdk.sources.http import error_for_status  # noqa: PLC0415
 
         try:
-            found = await hub_get_or_raise(CLAIM_ENTITY, claim_id, "view")
+            found = await HubProxy.call("GET", CLAIM_ENTITY, claim_id, "view")
         except HubError as exc:
             if exc.status_code in (403, 404):
                 return None
@@ -85,9 +83,21 @@ class AppHub:
         return dict(found) if isinstance(found, dict) else None
 
     async def reply(self, claim_id: str, text: str, event_id: str) -> dict:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        return dict(await self._post(claim_id, "reply", {"text": text, "event_id": event_id}) or {})
 
-        return dict(await hub_post(CLAIM_ENTITY, {"text": text, "event_id": event_id}, claim_id, "reply") or {})
+    @staticmethod
+    async def _post(claim_id: Optional[str], action: str, payload: dict) -> dict:
+        """POST to the claim; no hub configured is ``Rejected``, as ``claim`` says it."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+        try:
+            return await HubProxy.call("POST", CLAIM_ENTITY, claim_id, action, payload=payload)
+        except HubError as exc:
+            if exc.kind is HubFailureKind.NOT_CONFIGURED:
+                raise Rejected("no hub is configured for this machine") from exc
+            raise
 
 
 class FlowChannelConfig(SourceConfig):

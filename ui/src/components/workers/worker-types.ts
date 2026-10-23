@@ -2,7 +2,7 @@ import { CapabilityKinds } from '@sdk';
 
 /**
  * The CLI worker vendors launchable from any UI surface — the shared
- * `WorkerToolbar`, conversation controls, Vibe selectors, project pickers, and
+ * `ContextWorkerToolbar`, conversation controls, Vibe selectors, project pickers, and
  * the last-opener hook all agree on this one list and type. Lives in `workers/`
  * because it is cross-cutting; `conversation-session-constants` re-exports it
  * for back-compat.

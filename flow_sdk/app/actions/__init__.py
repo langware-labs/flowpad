@@ -21,7 +21,6 @@ from . import (  # noqa: F401
     icons_action,
     inbound_action,
     launch_action,
-    machine_enroll_action,
     members_action,
     message_attachment_action,
     notification_action,

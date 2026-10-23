@@ -14,9 +14,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.entity_model import Entity
 
 
@@ -37,15 +40,16 @@ def hub_response(monkeypatch):
     fully offline. Mutate ``holder['resp']`` per test to pick the hub's reply."""
     holder = {"resp": _FakeResponse(200, '{"status":"success","data":{}}')}
 
-    async def fake_request(self, method, path, **kwargs):
-        return holder["resp"]
+    async def fake_send(method, url, **kwargs):
+        r = holder["resp"]
+        return httpx.Response(r.status_code, text=r.text, request=httpx.Request(method, str(url)))
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}),
+        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}, is_expired=lambda *_a: False),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
-    monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     return holder
 
 
@@ -67,7 +71,7 @@ async def test_share_idempotent_on_409(hub_response, status, text, expect_raise)
     conv = Conversation(title=f"share-{status}")
 
     if expect_raise:
-        with pytest.raises(ValueError, match=str(status)):
+        with pytest.raises(HubError, match=str(status)):
             await Entity.share(conv)
     else:
         assert await Entity.share(conv) is conv

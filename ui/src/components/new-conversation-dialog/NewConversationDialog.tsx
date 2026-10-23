@@ -1,3 +1,4 @@
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ConversationParticipant, hasRemoteParticipant } from '@sdk';
 import type { AssetDescriptor, ConversationSendPayload } from '@sdk';
@@ -89,7 +90,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       kind: 'new',
       params: {
         project_id: projectId || null,
-        participants,
+        members: participants,
         title: effectiveTitle,
       },
     };
@@ -100,7 +101,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     };
     const conversationId = await send(target, payload);
     if (conversationId) {
-      navigation.openDock(DockPointer.forConversation(conversationId));
+      navigation.openDockOnThisPage(DockPointer.forConversation(conversationId));
       onClose();
     }
   };
@@ -221,27 +222,30 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             />
           </div>
 
-          {/* Attachments — dropzone for file drag/drop + small menu for File/Asset */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                <Trans>Attachments</Trans>
-              </label>
-              <AttachMenu
-                assetRefs={assetRefs}
-                onAssetRefsChange={setAssetRefs}
-                onFilesPicked={addFiles}
-                disabled={busy}
-                hideAssetList
-              />
-            </div>
-            {/* Asset chips render below the label row, not inside it: inside a
+          {/* Attachments — dropzone for file drag/drop + small menu for File/Asset. A message body only
+              the desktop packs, so the hub page offers none. */}
+          {!isHubOnly() && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <Trans>Attachments</Trans>
+                </label>
+                <AttachMenu
+                  assetRefs={assetRefs}
+                  onAssetRefsChange={setAssetRefs}
+                  onFilesPicked={addFiles}
+                  disabled={busy}
+                  hideAssetList
+                />
+              </div>
+              {/* Asset chips render below the label row, not inside it: inside a
                 flex row the chip list sizes to its content (min-width:auto),
                 so a long asset label pushes the row past the dialog edge
                 instead of truncating. */}
-            <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />
-            <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
-          </div>
+              <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />
+              <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+            </div>
+          )}
 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>

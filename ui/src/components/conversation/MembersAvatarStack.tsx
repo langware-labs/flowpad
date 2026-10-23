@@ -407,7 +407,6 @@ export function MembersAvatarStack({
     setLinking(true);
     setLinkError(null);
     try {
-      if (!(entity as { remote?: boolean }).remote) await entity.share();
       const link = await mintInviteLink(typeId);
       await navigator.clipboard.writeText(link.url);
       setLinkCopied(true);
