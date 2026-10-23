@@ -123,8 +123,32 @@ export function clockTime(epochSeconds: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** The vendors the hub chains, in the order the screen offers them. */
+/** The vendors the hub chains (`webhook/@<provider>`), in the order the screen offers them. */
 export const INBOUND_PROVIDERS = ['whatsapp', 'telegram', 'slack'] as const;
 export type InboundProvider = (typeof INBOUND_PROVIDERS)[number];
 
 export const PROVIDER_TITLE: Record<string, string> = { whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack' };
+
+/** One way to bring the caller's own account: what the hub's `prove_account` takes for that vendor. */
+export interface OwnRoute {
+  id: string;
+  /** Asks for a server of the caller's own speaking the vendor's API (`proof.graph_url`). */
+  ownServer: boolean;
+  /** Asks for a verify token: the vendor subscribes with a GET handshake (Meta). */
+  verifyToken: boolean;
+}
+
+/**
+ * What differs between vendors on this screen — nothing else names one. `own`: the routes by which the caller's
+ * own account can be proven (none: only Flowpad's account, e.g. Slack, installed per workspace by OAuth).
+ */
+export const VENDOR: Record<InboundProvider, { own: OwnRoute[] }> = {
+  whatsapp: {
+    own: [
+      { id: 'meta', ownServer: false, verifyToken: true },
+      { id: 'generic', ownServer: true, verifyToken: true },
+    ],
+  },
+  telegram: { own: [{ id: 'bot', ownServer: false, verifyToken: false }] },
+  slack: { own: [] },
+};

@@ -15,19 +15,24 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
 import { DestinationPicker } from './DestinationPicker';
-import { type DestinationOption, INBOUND_PROVIDERS, type InboundProvider, PROVIDER_TITLE } from './inbound-model';
+import {
+  type DestinationOption,
+  INBOUND_PROVIDERS,
+  type InboundProvider,
+  type OwnRoute,
+  PROVIDER_TITLE,
+  VENDOR,
+} from './inbound-model';
 import { errorText } from './use-inbound';
 
 type Step = 'choose' | 'link' | 'own' | 'connected';
-/** `meta`: the number in the caller's own Meta app; `generic`: any server speaking Meta's API (its own graph URL). */
-type Route = 'meta' | 'generic';
 
 /** How often a pending claim (a code waiting to be sent, a URL waiting for its first delivery) is re-read. */
 const WAIT_POLL_MS = 3000;
 
 /**
- * Connect a number or bot: through Flowpad's own number (a code proves the caller's phone), or the caller's own
- * number — at Meta, or on any server that speaks Meta's API. The hub proves the number and answers its URL.
+ * Connect a number or bot: through Flowpad's own account on the vendor (a code proves the caller's account), or the
+ * caller's own account by one of the vendor's routes (`VENDOR`). The hub proves the account and answers its URL.
  */
 export function ConnectNumberDialog({
   open,
@@ -47,7 +52,7 @@ export function ConnectNumberDialog({
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('choose');
   const [provider, setProvider] = useState<InboundProvider>('whatsapp');
-  const [route, setRoute] = useState<Route>('generic');
+  const [route, setRoute] = useState<OwnRoute | null>(null);
   const [phoneId, setPhoneId] = useState('');
   const [token, setToken] = useState('');
   const [graphUrl, setGraphUrl] = useState('');
@@ -121,15 +126,49 @@ export function ConnectNumberDialog({
         phoneNumberId: phoneId,
         credential: token,
         appSecret,
-        verifyToken,
-        graphUrl: route === 'generic' ? graphUrl : '',
+        graphUrl: route?.ownServer ? graphUrl : '',
+        verifyToken: route?.verifyToken ? verifyToken : '',
         target: fallback ?? undefined,
       }),
       'connected',
     );
 
   const title = PROVIDER_TITLE[provider];
-  const ownReady = !!phoneId.trim() && !!token.trim() && (route === 'meta' || !!graphUrl.trim());
+  /** The words for one own-account route: what the vendor calls the account, its credential and its signing secret. */
+  const ownText = (route: string) => {
+    if (provider === 'telegram') {
+      return {
+        choice: t`Your own bot`,
+        choiceDetail: t`A bot you made with @BotFather. Telegram calls the hub's webhook URL; replies go out as your bot.`,
+        prove: t`1. The hub proves the bot is yours: it calls Telegram's getMe with the bot token. Only an answer naming the same bot id passes.`,
+        deliver: t`2. You get a webhook URL. Register it with setWebhook and the secret token below — deliveries without it are refused.`,
+        key: t`Bot id`,
+        keyHint: t`The number before the colon in the bot token.`,
+        credential: t`Bot token`,
+        credentialHint: t`Proves the bot (getMe). Stored write-only.`,
+        secret: t`Secret token`,
+        secretHint: t`The secret_token you pass to setWebhook; Telegram sends it with every delivery. Stored write-only.`,
+      };
+    }
+    const generic = route === 'generic';
+    return {
+      choice: generic ? t`Generic Meta-API webhook` : t`Meta official Cloud API`,
+      choiceDetail: generic
+        ? t`Any server that speaks Meta's ${title} API and webhook format. The hub proves the number on that server and replies through it.`
+        : t`Your business number in your own Meta app. Meta calls the hub's webhook URL.`,
+      prove: t`1. The hub proves the number is yours: it asks your server for this phone number ID using the access token. Only an answer naming the same ID passes.`,
+      deliver: t`2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned messages are refused.`,
+      key: t`Phone number ID`,
+      keyHint: t`The id Meta's API uses for the number (not the phone number itself).`,
+      credential: t`Access token`,
+      credentialHint: t`Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only.`,
+      secret: t`App secret`,
+      secretHint: t`Signs every delivery (x-hub-signature-256). Stored write-only.`,
+    };
+  };
+
+  const ownReady = !!route && !!phoneId.trim() && !!token.trim() && (!route.ownServer || !!graphUrl.trim());
+  const text = route ? ownText(route.id) : null;
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -181,49 +220,32 @@ export function ConnectNumberDialog({
               onClick={linkAgent}
               disabled={busy}
             />
-            {provider === 'whatsapp' && (
-              <>
+            {VENDOR[provider].own.map((r) => {
+              const c = ownText(r.id);
+              return (
                 <Choice
-                  testId="inbound-choice-meta"
-                  title={t`Meta official Cloud API`}
-                  detail={t`Your business number in your own Meta app. Meta calls the hub's webhook URL.`}
+                  key={r.id}
+                  testId={`inbound-choice-${r.id}`}
+                  title={c.choice}
+                  detail={c.choiceDetail}
                   onClick={() => {
-                    setRoute('meta');
+                    setRoute(r);
                     setStep('own');
                   }}
                 />
-                <Choice
-                  testId="inbound-choice-generic"
-                  title={t`Generic Meta-API webhook`}
-                  detail={t`Any server that speaks Meta's WhatsApp API and webhook format. The hub proves the number on that server and replies through it.`}
-                  onClick={() => {
-                    setRoute('generic');
-                    setStep('own');
-                  }}
-                />
-              </>
-            )}
+              );
+            })}
           </div>
         )}
 
-        {step === 'own' && (
+        {step === 'own' && route && text && (
           <div className="flex flex-col gap-3 text-sm">
             <div className="space-y-1 rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground">
               <div className="text-sm font-medium text-foreground">
                 <Trans>What happens</Trans>
               </div>
-              <div>
-                <Trans>
-                  1. The hub proves the number is yours: it asks your server for this phone number ID using the access
-                  token. Only an answer naming the same ID passes.
-                </Trans>
-              </div>
-              <div>
-                <Trans>
-                  2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned
-                  messages are refused.
-                </Trans>
-              </div>
+              <div>{text.prove}</div>
+              <div>{text.deliver}</div>
               <div>
                 <Trans>
                   3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through
@@ -236,20 +258,20 @@ export function ConnectNumberDialog({
             </div>
             <Field
               testId="inbound-field-phone-id"
-              label={t`Phone number ID`}
+              label={text.key}
               value={phoneId}
               onChange={setPhoneId}
-              hint={t`The id Meta's API uses for the number (not the phone number itself).`}
+              hint={text.keyHint}
             />
             <Field
               testId="inbound-field-token"
-              label={t`Access token`}
+              label={text.credential}
               value={token}
               onChange={setToken}
               secret
-              hint={t`Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only.`}
+              hint={text.credentialHint}
             />
-            {route === 'generic' && (
+            {route.ownServer && (
               <Field
                 testId="inbound-field-graph-url"
                 label={t`Graph server`}
@@ -261,19 +283,21 @@ export function ConnectNumberDialog({
             )}
             <Field
               testId="inbound-field-app-secret"
-              label={t`App secret`}
+              label={text.secret}
               value={appSecret}
               onChange={setAppSecret}
               secret
-              hint={t`Signs every delivery (x-hub-signature-256). Stored write-only.`}
+              hint={text.secretHint}
             />
-            <Field
-              testId="inbound-field-verify-token"
-              label={t`Verify token`}
-              value={verifyToken}
-              onChange={setVerifyToken}
-              hint={t`A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours.`}
-            />
+            {route.verifyToken && (
+              <Field
+                testId="inbound-field-verify-token"
+                label={t`Verify token`}
+                value={verifyToken}
+                onChange={setVerifyToken}
+                hint={t`A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours.`}
+              />
+            )}
             <div className="font-medium">
               <Trans>Fallback — everything no rule matches goes to</Trans>
             </div>

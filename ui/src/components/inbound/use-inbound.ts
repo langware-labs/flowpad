@@ -94,7 +94,7 @@ export function useInboundChannels(enabled: boolean): InboundChannel[] {
             const agent = owner?.startsWith(`${Agent.type}-`)
               ? agents.find((a) => `${Agent.type}-${a.id}` === owner)
               : undefined;
-            return { id: c.source_id, name: c.name, provider: c.provider, ownerName: agent?.name, places };
+            return { id: c.source_id, name: c.name, provider: c.channel || c.provider, ownerName: agent?.name, places };
           }),
         );
         if (alive) setRows(withPlaces);
