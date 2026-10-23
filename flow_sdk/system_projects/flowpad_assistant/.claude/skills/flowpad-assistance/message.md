@@ -28,7 +28,7 @@ You are often handed one already (`conversation/<uuid>` or `conversation-<uuid>`
 by participant name / email / title:
 
 ```bash
-flow conversation list        # id, title, participants, message_count
+flow conversation list        # id, title, members, message_count
 ```
 
 Do not `Read` the conversation's records folder: it holds pointers only, never message text.
@@ -107,7 +107,7 @@ curl -s -H "$GATE" --max-time 15 "$BASE/graph/conversation" | python3 -c "
 import json,sys
 needle = 'NEEDLE'.lower()   # participant email/name fragment or title fragment
 for c in json.load(sys.stdin)['data']:
-    parts = c.get('participants') or []
+    parts = c.get('members') or []
     hay = ' '.join([c.get('title') or ''] + [p.get('email','')+' '+p.get('name','') for p in parts]).lower()
     if needle in hay:
         print(c['id'], '|', c.get('title'), '|', c.get('updated_date'), '|', [p.get('email') for p in parts])

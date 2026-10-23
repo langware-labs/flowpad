@@ -9,8 +9,8 @@ import asyncio
 import errno
 import json
 import logging
-import os
 import mimetypes
+import os
 import re
 import urllib.parse
 from contextlib import AsyncExitStack
@@ -237,8 +237,8 @@ async def push_entity_files_to_hub(entity) -> int:
     try:
         from pathlib import Path
 
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-        from flow_sdk.utils.hub import hub_upload_entity_file
 
         et = BuiltinEntityType(entity.get_type())
     except Exception as e:  # noqa: BLE001
@@ -266,7 +266,10 @@ async def push_entity_files_to_hub(entity) -> int:
             if source is None or not source.is_file() or not canonical_main:
                 return 0
             try:
-                await hub_upload_entity_file(et, entity.id, canonical_main, source.read_bytes())
+                await HubProxy.upload(
+                    et, entity.id, "fs", "upload",
+                    files={"uploaded_file": (canonical_main, source.read_bytes(), "application/octet-stream")},
+                )  # fmt: skip
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"share: file push failed for {entity.typeid}/{canonical_main}: {e}")
                 return 0
@@ -319,7 +322,9 @@ async def push_entity_files_to_hub(entity) -> int:
             if is_under(local, ignored):
                 continue  # kept out of git, so it stays on this machine (see _push_folder_to_hub)
             content = local.read_bytes()
-            await hub_upload_entity_file(et, entity.id, name, content)
+            await HubProxy.upload(
+                et, entity.id, "fs", "upload", files={"uploaded_file": (name, content, "application/octet-stream")}
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
             continue
@@ -332,8 +337,8 @@ async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = fr
     paths. ``skip_top`` names files at the folder root to leave out."""
     import asyncio  # noqa: PLC0415
 
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
-    from flow_sdk.utils.hub import hub_upload_entity_file  # noqa: PLC0415
 
     # Nobody picked these files one by one, so what git excludes (often private: a data source's local
     # copy, an env file) stays on this machine. A person's own share asks first (``share_has_gitignored``).
@@ -351,7 +356,10 @@ async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = fr
             continue
         sub_path = "upload" if parent == "." else f"upload/{parent}"
         try:
-            await hub_upload_entity_file(et, entity.id, rel.name, source.read_bytes(), sub_path=sub_path)
+            await HubProxy.upload(
+                et, entity.id, "fs", sub_path,
+                files={"uploaded_file": (rel.name, source.read_bytes(), "application/octet-stream")},
+            )  # fmt: skip
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
             continue
@@ -380,9 +388,10 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     try:
 
         from flow_sdk.builtin.flow_message import BODY_FILENAME
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.utils.hub import hub_base_url, hub_get
     except Exception:
         return False
     if not hub_base_url():
@@ -406,7 +415,7 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
         return False
     if entity is None or not getattr(entity, "remote", False):
         return False
-    bytes_ = await hub_get(et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
+    bytes_ = await HubProxy.try_call("GET", et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
     if not bytes_:
         return False
     await storage.upload(BytesIO(bytes_), vfs_path)
@@ -509,7 +518,8 @@ async def extract_preview(request_info: RequestInfo, fs_info: EntityFSReqInfo) -
     The folder lives in this instance's temp preview area (``archive.preview_root``)
     — disposable, re-extracted after the OS wipes it. Nothing is written beside
     the zip. Local storage only: the answer is a path on this machine."""
-    from flow_sdk.utils.archive import UnsafeArchiveError, extract_preview as _extract  # noqa: PLC0415
+    from flow_sdk.utils.archive import UnsafeArchiveError  # noqa: PLC0415
+    from flow_sdk.utils.archive import extract_preview as _extract
 
     if request_info.method != "post":
         return ApiFailResponse(message="extract_preview requires POST")

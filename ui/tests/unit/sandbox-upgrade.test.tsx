@@ -44,7 +44,7 @@ vi.mock('@src/hooks/use-projects', () => ({
 }));
 vi.mock('@src/hooks/use-sandboxes', () => ({
   useSandboxes: () => ({
-    sandboxes: h.sandboxes,
+    sandboxes: h.sandboxes.map((s) => ({ agents: () => Promise.resolve([]), ...s })),
     isLoading: false,
     refetch: vi.fn(),
     createSandbox: vi.fn(),
@@ -57,11 +57,11 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
     openSandbox: vi.fn(),
     renameSandbox: vi.fn(),
     deleteSandbox: vi.fn(),
-    deletingId: null,
+    deletingIds: new Set<string>(),
     logoutSandbox: vi.fn(),
-    loggingOutId: null,
+    loggingOutIds: new Set<string>(),
     upgradeSandbox: h.upgradeSandbox,
-    upgradingId: h.upgradingId,
+    upgradingIds: new Set(h.upgradingId ? [h.upgradingId] : []),
     details: h.details,
   }),
   // The real rule, not a stub — same reason the Open card's test keeps it: which

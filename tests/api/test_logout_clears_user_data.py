@@ -22,6 +22,7 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import DeliveryStatus, FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.organization import Organization
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -88,7 +89,7 @@ async def test_logout_clears_hub_conversations_and_keeps_local_ones(bootstrapped
     # Both are present before the logout, or the test proves nothing.
     assert set(await _search(bootstrapped_client, marker)) == {hub_conv_id, local_conv_id}
 
-    with patch("flow_sdk.app.actions.flow_message_action.hub_get", return_value=[]):
+    with patch.object(HubProxy, "try_call", return_value=[]):
         response = await bootstrapped_client.post("/api/v1/cloud/logout")
     assert response.status_code == 200, response.text
 
@@ -111,7 +112,7 @@ async def test_logout_is_idempotent(bootstrapped_client):
     marker = uuid.uuid4().hex[:12]
     _, local_conv_id, _ = await _seed(marker)
 
-    with patch("flow_sdk.app.actions.flow_message_action.hub_get", return_value=[]):
+    with patch.object(HubProxy, "try_call", return_value=[]):
         first = await bootstrapped_client.post("/api/v1/cloud/logout")
         second = await bootstrapped_client.post("/api/v1/cloud/logout")
 

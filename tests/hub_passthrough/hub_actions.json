@@ -1,0 +1,1238 @@
+[
+ {
+  "name": "agent.resource_access",
+  "fn": "resource_access_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.setup_visitor_deployment",
+  "fn": "setup_visitor_deployment",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.deploy",
+  "fn": "deploy_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.plan_deployment",
+  "fn": "plan_deployment_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.visitor-sandbox",
+  "fn": "deploy_agent_visitor",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.use",
+  "fn": "use_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.launch_info",
+  "fn": "launch_info_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.place_action",
+  "fn": "place_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agent.mailbox",
+  "fn": "mailbox_action",
+  "methods": [
+   "get",
+   "post",
+   "delete"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.read",
+  "fn": "read_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.prompt",
+  "fn": "prompt_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.observe-turn",
+  "fn": "observe_turn_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.enqueue",
+  "fn": "enqueue_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.dequeue",
+  "fn": "dequeue_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.clear-queue",
+  "fn": "clear_queue_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.set-queue-enabled",
+  "fn": "set_queue_enabled_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.get-history",
+  "fn": "get_history_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.status",
+  "fn": "status_action",
+  "methods": [
+   "get",
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "agentic_process.cancel-prompt",
+  "fn": "cancel_prompt_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "func.install",
+  "fn": "install",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "plugin_manifest.install",
+  "fn": "install",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "plugin.call",
+  "fn": "call",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "env-var",
+  "fn": "handle_env_var_request",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "icons",
+  "fn": "get_icons",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "organization.budgets",
+  "fn": "budgets_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "organization.setup-budget",
+  "fn": "setup_budget_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "organization.set-paying-provider",
+  "fn": "set_paying_provider_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.terminal-command",
+  "fn": "terminal_command",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.ops",
+  "fn": "ops",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.connection-token",
+  "fn": "connection_token_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.open",
+  "fn": "open_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.create_webhook",
+  "fn": "create_webhook_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.health",
+  "fn": "health_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.channel_setup",
+  "fn": "channel_setup_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.auto-login",
+  "fn": "auto_login_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.login-access",
+  "fn": "login_access_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.keep-alive",
+  "fn": "keep_alive_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "compute_node.sign-out",
+  "fn": "sign_out_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "job_execution.get_status",
+  "fn": "get_status",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "job_execution.get_logs",
+  "fn": "get_logs",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "job_execution.stop",
+  "fn": "stop",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "job_execution.cleanup",
+  "fn": "cleanup",
+  "methods": [
+   "delete"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "job.execute",
+  "fn": "execute",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "bootstrap",
+  "fn": "bootstrap",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "current-user",
+  "fn": "current_user",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "current-user-desktops",
+  "fn": "current_user_desktops",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "mark_delivered",
+  "fn": "mark_delivered_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "flow_message"
+  ]
+ },
+ {
+  "name": "mark_received",
+  "fn": "mark_received_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "flow_message"
+  ]
+ },
+ {
+  "name": "set_body_status",
+  "fn": "set_body_status_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "flow_message"
+  ]
+ },
+ {
+  "name": "open_on_desktop",
+  "fn": "open_on_desktop_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "flow_message"
+  ]
+ },
+ {
+  "name": "proxy",
+  "fn": "proxy_external_api",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "record",
+  "fn": "record_refs",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "get-by-name",
+  "fn": "get_web_domain_by_name",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "web_domain"
+  ]
+ },
+ {
+  "name": "api_endpoint.allocate",
+  "fn": "allocate_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "api_endpoint.credential",
+  "fn": "credential_action",
+  "methods": [
+   "post",
+   "delete"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "api_endpoint.chain",
+  "fn": "chain_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "api_endpoint.usage",
+  "fn": "usage_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "api_endpoint.invoke",
+  "fn": "invoke",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.add_message",
+  "fn": "add_message_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.remove_message",
+  "fn": "remove_message_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.join",
+  "fn": "join",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.read",
+  "fn": "read_with_roster",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.leave",
+  "fn": "leave",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.delete",
+  "fn": "owner_delete",
+  "methods": [
+   "delete"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.close",
+  "fn": "close_ticket",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.reopen",
+  "fn": "reopen_ticket",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.pickup",
+  "fn": "pickup",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "conversation.return",
+  "fn": "release_to_pool",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "data_store.files",
+  "fn": "files_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "data_store.read",
+  "fn": "read_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "data_store.write",
+  "fn": "write_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "data_store.delete",
+  "fn": "delete_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.providers",
+  "fn": "providers_action",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.authorize",
+  "fn": "authorize_action",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.secrets",
+  "fn": "secrets_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.funding",
+  "fn": "funding_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.pause",
+  "fn": "pause_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.resume",
+  "fn": "resume_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.endpoints",
+  "fn": "endpoints_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.refresh-endpoints",
+  "fn": "refresh_endpoints_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.update",
+  "fn": "update_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "deployment.runs",
+  "fn": "runs_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "diagnosis_request.brief",
+  "fn": "brief_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "diagnosis_request.limits",
+  "fn": "limits_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "diagnosis_request.submit",
+  "fn": "submit_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "diagnosis_request.runs",
+  "fn": "runs_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "diagnosis_request.fund",
+  "fn": "fund_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "funding_sources",
+  "fn": "funding_sources_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "diagnosis_request"
+  ]
+ },
+ {
+  "name": "git_repo.git",
+  "fn": "git_action",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "invitation.pending",
+  "fn": "pending",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "invitation.decline",
+  "fn": "decline",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.allocate",
+  "fn": "allocate_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.credential",
+  "fn": "credential_action",
+  "methods": [
+   "post",
+   "delete"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.public",
+  "fn": "public_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.models",
+  "fn": "models_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.chain",
+  "fn": "chain_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.usage",
+  "fn": "usage_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.history",
+  "fn": "history_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.test",
+  "fn": "test_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "llm_endpoint.invoke",
+  "fn": "invoke",
+  "methods": [
+   "get",
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "service_endpoint.service",
+  "fn": "service_action",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "service_endpoint.domain",
+  "fn": "domain_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "service_endpoint.open",
+  "fn": "open_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "service_endpoint.health",
+  "fn": "health_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "service_endpoint.direct-url",
+  "fn": "direct_url_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.hosted_repo",
+  "fn": "hosted_repo_action",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.git_share",
+  "fn": "git_share_action",
+  "methods": [
+   "all"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.publish_asset",
+  "fn": "publish_asset",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.create_agent",
+  "fn": "create_agent",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.publish_manifest",
+  "fn": "publish_manifest_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.install",
+  "fn": "install_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.published_asset",
+  "fn": "published_asset",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.published_directory",
+  "fn": "published_directory",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.published",
+  "fn": "published_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.launch_info",
+  "fn": "launch_info_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.initialize",
+  "fn": "initialize",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.create-flow",
+  "fn": "create_flow",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.enable_guest_conversations",
+  "fn": "enable_guest_conversations",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.enable_helpdesk",
+  "fn": "enable_helpdesk",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.start_guest_conversation",
+  "fn": "start_guest_conversation",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.deploy",
+  "fn": "deploy_action",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.get-compute-node",
+  "fn": "get_compute_node_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
+  "name": "project.helpdesk_conversations",
+  "fn": "helpdesk_conversations_action",
+  "methods": [
+   "get"
+  ],
+  "types": [
+   "all"
+  ]
+ }
+]

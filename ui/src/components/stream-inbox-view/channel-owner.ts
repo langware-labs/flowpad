@@ -1,4 +1,14 @@
-import { Agent, Conversation, type DataSource, ExpressionNode, QueryFilter, QueryRequest, TypeId, User } from '@sdk';
+import {
+  Agent,
+  Conversation,
+  type DataSource,
+  EVERY_ROW,
+  ExpressionNode,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+  User,
+} from '@sdk';
 import { type AttentionReason, attentionReason } from '@src/components/data-sources/source-attention';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
@@ -27,8 +37,28 @@ export function channelsOwnerFor(agentId: string | undefined, localUserId: strin
  *  cache key, which is what makes opening the stream inbox a warm remount instead of a loading
  *  flash. */
 export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
-  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: ownerMatch(owner) }) });
+  // The stream inbox's own latest page (newest first, one page) — so a strip showing its top rows
+  // asks the server for a page, not for every conversation.
+  return conversationsPageRequest({ owner }, 'all', null);
 }
+
+/** The conversations matching `clauses`, newest first (`updated_date`), at most `limit` — a list that
+ *  shows only its most recent rows asks the server for just those. */
+export function recentConversationsRequest(clauses: ExpressionNode[], limit?: number, name?: string): QueryRequest {
+  return new QueryRequest({
+    type: Conversation.type,
+    name,
+    query: new QueryFilter({
+      match: allOf(clauses) ?? new ExpressionNode(EVERY_ROW),
+      order_by: [{ updated_date: 'desc' }, { id: 'asc' }],
+      ...(limit ? { limit } : {}),
+    }),
+  });
+}
+
+/** The clauses AND-ed; no clause matches every row. */
+export const allOf = (clauses: ExpressionNode[]): ExpressionNode | undefined =>
+  clauses.length ? new ExpressionNode({ op: '$AND', operands: clauses }) : undefined;
 
 function ownerMatch(owner: TypeId): ExpressionNode {
   const owned = new ExpressionNode({ op: '$EQ', operands: ['owner', owner.toString()] });
@@ -59,8 +89,8 @@ export type ConversationScope = { owner: TypeId } | { sourceId: string };
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) => ('owner' in scope ? scope.owner.toString() : scope.sourceId);
 
-const scopeMatch = (scope: ConversationScope) =>
-  'owner' in scope ? ownerMatch(scope.owner) : sourceMatch(scope.sourceId);
+const scopeClauses = (scope: ConversationScope): ExpressionNode[] =>
+  'owner' in scope ? [ownerMatch(scope.owner)] : [sourceMatch(scope.sourceId)];
 
 const notArchived = () =>
   new ExpressionNode({
@@ -72,16 +102,14 @@ const notArchived = () =>
     ],
   });
 
+const notDeleted = () => new ExpressionNode({ op: '$IS_NULL', operands: ['deleted_at'] });
+
 /** The view's clause, answered by the backend from the projected `archived` / `is_unread`, so a page
  *  is N rows of the view rather than N rows the browser then thins out. */
-function viewMatch(view: StreamInboxViewMode): ExpressionNode {
-  if (view === 'archived') return new ExpressionNode({ op: '$EQ', operands: ['archived', true] });
-  if (view === 'unread')
-    return new ExpressionNode({
-      op: '$AND',
-      operands: [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })],
-    });
-  return notArchived();
+function viewClauses(view: StreamInboxViewMode): ExpressionNode[] {
+  if (view === 'archived') return [new ExpressionNode({ op: '$EQ', operands: ['archived', true] })];
+  if (view === 'unread') return [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })];
+  return [notArchived()];
 }
 
 /** The scope's conversations matching `clauses`, in recency order — the ONE ordering every page and
@@ -95,7 +123,9 @@ function pageQuery(
   return new QueryRequest({
     type: Conversation.type,
     query: new QueryFilter({
-      match: new ExpressionNode({ op: '$AND', operands: [scopeMatch(scope), ...clauses] }),
+      // An owner still reads a conversation they deleted on the hub (kept there for audit, `deleted_at`
+      // set); it is gone from the Stream Inbox. A row kept here never carries the field.
+      match: allOf([...scopeClauses(scope), notDeleted(), ...clauses]),
       order_by: [{ updated_date: direction }, { id: 'asc' }],
       ...page,
     }),
@@ -110,7 +140,7 @@ export function conversationsPageRequest(
   before: string | null,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  const clauses = [viewMatch(view)];
+  const clauses = viewClauses(view);
   if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: ['updated_date', before] }));
   return pageQuery(scope, clauses, 'desc', { limit: size });
 }
@@ -123,19 +153,37 @@ export function conversationsByIdsRequest(scope: ConversationScope, ids: string[
   });
 }
 
-/** The bound of the page just NEWER than one whose newest row is at `newest`: the row `size + 1` above
- *  it (one row, read oldest first). Its `updated_date` is the newer page's `before`; no such row means
- *  the newer page is now. */
+/** The rows of the page just NEWER than one whose newest row is at `newest`: the `size` rows above it,
+ *  oldest first — a keyset (`updated_date > newest`), never an offset, so a row arriving meanwhile
+ *  cannot shift the bound. The last of them bounds the newer page (see `newerPageBefore`); fewer than
+ *  a page — or no more past them — means the newer page is now. */
 export function newerBoundaryRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
   newest: string,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  return pageQuery(scope, [viewMatch(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })], 'asc', {
-    limit: 1,
-    offset: size,
-  });
+  return pageQuery(
+    scope,
+    [...viewClauses(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
+    'asc',
+    { limit: size },
+  );
+}
+
+/** The newer page's `before` from the rows `newerBoundaryRequest` read: null (the newer page is now)
+ *  unless they are a full page with more past them; else just past the last of them, so the newer page
+ *  — rows older than its bound, newest first — is exactly those rows. */
+export function newerPageBefore(
+  above: { updated_date?: string | Date | null }[],
+  hasMore: boolean,
+  size: number = STREAM_INBOX_PAGE_SIZE,
+): string | null {
+  if (!hasMore || above.length < size) return null;
+  const last = above[above.length - 1]?.updated_date;
+  if (!last) return null;
+  const at = new Date(last).getTime();
+  return Number.isNaN(at) ? null : new Date(at + 1).toISOString();
 }
 
 /** The identity a channel mark draws: provider AND channel, because one transport

@@ -224,6 +224,12 @@ def test_the_two_egress_seams_now_agree():
     assert sorted(hub - bundle) == ["created_date", "updated_date"], "HUB_READ, by design"
 
 
+# Fields a type takes FROM the hub under the hub's own name (HUB_READ): not private, never sent,
+# owned by the hub — the conversation's owner (``initiated_by``), its roster (``members``) and who
+# picked a ticket up.
+HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "members", "picked_up_by"}}
+
+
 @pytest.mark.parametrize(
     "module, name, kwargs, extra_private, local_only, unfillable",
     [
@@ -396,9 +402,11 @@ def test_the_two_egress_seams_now_agree():
             # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
             # project it was asked from — this machine's bookkeeping until delivery.
             # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
+            # `updated_date`: local recency (the hub clock is `hub_updated_date`).
+            # `archived_at`/`dismissed_at`: this viewer's own archive/dismiss — never travel.
             ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "archived",
              "channel_spec", "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
-             "channel_answered"],
+             "channel_answered", "updated_date", "archived_at", "dismissed_at"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -440,7 +448,8 @@ def test_seam_policy_per_type(module, name, kwargs, extra_private, local_only, u
     # ignores `exclude` entries a model doesn't have, which is why the literal
     # could carry `path`/`cwd`/`installed_root` for types that never had them —
     # so assert the difference is exactly the undeclared names, not a loosening.
-    literal = set(BASE_BUNDLE_EXCLUDE + extra_private) | NEWLY_DECLARED_PRIVATE
+    hub_read = HUB_READ_BY_TYPE.get(name, set())
+    literal = (set(BASE_BUNDLE_EXCLUDE + extra_private) | NEWLY_DECLARED_PRIVATE) - hub_read
     declared = set(cls.model_fields) | set(cls.model_computed_fields)
     assert set(inst._local_fields()) == literal & declared
     assert (literal - set(inst._local_fields())) <= (literal - declared)
@@ -449,15 +458,15 @@ def test_seam_policy_per_type(module, name, kwargs, extra_private, local_only, u
     # `extra_private` is a per-type PRIVATE re-declaration, which withholds from
     # BOTH seams — so it narrows the hub set exactly as it narrows the bundle one.
     hub_expected = (
-        set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE | set(extra_private)
+        set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE | set(extra_private) | hub_read
     ) & declared
     assert set(_base_hub_exclude(cls, inst)) == hub_expected
     # Ingress protection is now derived: PRIVATE ∪ HUB_WRITE. It is a superset
     # of the old hand-written LOCAL_ONLY_FIELDS (which listed only the fields
     # someone remembered), so assert containment plus the type's own additions.
     blocked = cls.fields_not_accepted_from_hub()
-    assert set(local_only) & declared <= blocked
-    assert cls.fields_owned_by_hub() == {"created_date", "updated_date"} & declared
+    assert set(local_only) & declared - hub_read <= blocked
+    assert cls.fields_owned_by_hub() == ({"created_date", "updated_date"} - set(extra_private) | hub_read) & declared
     # Coverage honesty: a new field the filler can't populate must be handled,
     # not silently excluded from every assertion above.
     assert could_not_fill == sorted(unfillable)
@@ -510,18 +519,14 @@ def test_project_hub_body_override_strips_local_project_state():
     # `fs_storage_mount_path` has dropped off this list: the base seam now
     # withholds it, so the override's pop is a no-op. The override is shrinking
     # toward the remainder that genuinely is not per-field policy.
+    # The local project state (presence overlay, session counters, `last_mode`, …) is withheld by
+    # its declarations now, so the override pops only what is not a declared field.
     assert popped == [
         "context_dir_infos",
         # Local absolute paths — the same reason `include_dirs` is here. The
         # frontend reads it from the local API; it must never reach the hub.
         "context_roots",
-        "host_member_id",
         "include_dirs",
-        "last_mode",
-        "last_session_at",
-        "presence",
-        "session_code",
-        "session_count",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

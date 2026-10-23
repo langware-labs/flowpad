@@ -49,7 +49,7 @@ vi.mock('@src/hooks/use-projects', () => ({
 }));
 vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
   useSandboxes: () => ({
-    sandboxes: h.sandboxes,
+    sandboxes: h.sandboxes.map((s) => ({ agents: () => Promise.resolve([]), ...s })),
     isLoading: false,
     refetch: vi.fn(),
     createSandbox: vi.fn(),
@@ -62,9 +62,9 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
     openSandbox: h.openSandbox,
     renameSandbox: vi.fn(),
     deleteSandbox: vi.fn(),
-    deletingId: null,
+    deletingIds: new Set<string>(),
     upgradeSandbox: vi.fn(),
-    upgradingId: null,
+    upgradingIds: new Set<string>(),
     details: h.details,
   }),
   // The real rule, not a stub: which button a card shows is exactly this

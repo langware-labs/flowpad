@@ -49,10 +49,13 @@ async def _destroy_all(rows) -> int:
     why attachments need no pass of their own. One unlucky row must not strand
     the rest: a partial purge that logs beats an abandoned one that doesn't.
     """
+    from flow_sdk.core.entity.entity_model import mirror_delete  # noqa: PLC0415
+
     destroyed = 0
     for row in rows:
         try:
-            await row.destroy()
+            with mirror_delete():  # clearing this machine's cache, not deleting on the hub
+                await row.destroy()
             destroyed += 1
         except Exception:  # noqa: BLE001
             logger.warning("[stream-inbox] clear: failed to destroy %s", getattr(row, "typeid", row), exc_info=True)

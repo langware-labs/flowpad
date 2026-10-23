@@ -22,6 +22,8 @@ import {
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { type ContentInstallSpec, installProjectLandingUrl } from '@src/lib/content-install';
 import { errorMessage } from '@src/lib/error-message';
+import { type BulkResult, runLimited } from '@src/lib/run-limited';
+import { type BulkAction, bulkActionCopy, bulkSummary } from '@src/pages/hub-home/machines-bulk';
 import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -821,15 +823,16 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
   }, []);
 
   // ---- delete / terminate ----
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Per-action sets of busy ids, so a bulk run spins every card it is working on.
+  const [deletingIds, markDeleting] = useIdSet();
 
-  // Sign a box out of the cloud. Separate state from `deletingId` so the two
+  // Sign a box out of the cloud. Separate state from `deletingIds` so the two
   // spinners cannot be mistaken for each other on the same card.
-  const [loggingOutId, setLoggingOutId] = useState<string | null>(null);
+  const [loggingOutIds, markLoggingOut] = useIdSet();
 
-  const logoutSandbox = useCallback(
+  const signOutOne = useCallback(
     async (node: ComputeNode) => {
-      setLoggingOutId(node.id);
+      markLoggingOut(node.id, true);
       try {
         await node.signOut();
         // Clear the cached field HERE, on the entity, because a refetch cannot:
@@ -842,6 +845,17 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
         // raises unless the box confirmed the sign-out, so reaching this line
         // means the hub already cleared its own copy.
         node.logged_in_user = null;
+      } finally {
+        markLoggingOut(node.id, false);
+      }
+    },
+    [markLoggingOut],
+  );
+
+  const logoutSandbox = useCallback(
+    async (node: ComputeNode) => {
+      try {
+        await signOutOne(node);
         // Still refetch: it is what re-renders the list (a new array ref) and it
         // is the honest source for everything the sign-out may have changed.
         await refetch();
@@ -851,16 +865,26 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
           title: t`Could not sign the sandbox out`,
           message: errorMessage(err, 'The sandbox did not confirm the sign-out.'),
         });
-      } finally {
-        setLoggingOutId(null);
       }
     },
-    [refetch],
+    [refetch, signOutOne],
   );
 
   // Upgrading the app INSIDE a box. Its own state again, for the same reason:
   // three spinners on one card must not be able to mean each other.
-  const [upgradingId, setUpgradingId] = useState<string | null>(null);
+  const [upgradingIds, markUpgrading] = useIdSet();
+
+  const upgradeOne = useCallback(
+    async (node: ComputeNode) => {
+      markUpgrading(node.id, true);
+      try {
+        return await node.upgradeApp();
+      } finally {
+        markUpgrading(node.id, false);
+      }
+    },
+    [markUpgrading],
+  );
 
   /**
    * Upgrade the FlowPad app running inside a box, without signing in to it.
@@ -878,9 +902,8 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
    */
   const upgradeSandbox = useCallback(
     async (node: ComputeNode) => {
-      setUpgradingId(node.id);
       try {
-        const result = await node.upgradeApp();
+        const result = await upgradeOne(node);
         notify.success({
           id: 'sandbox-upgrade',
           title: t`Sandbox upgraded`,
@@ -897,16 +920,14 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
           title: t`Could not upgrade the sandbox`,
           message: errorMessage(err, 'The sandbox did not confirm the upgrade.'),
         });
-      } finally {
-        setUpgradingId(null);
       }
     },
-    [refetch],
+    [refetch, upgradeOne],
   );
 
-  const deleteSandbox = useCallback(
+  const deleteOne = useCallback(
     async (node: ComputeNode) => {
-      setDeletingId(node.id);
+      markDeleting(node.id, true);
       try {
         // Shutdown BEFORE delete: it kills the sandbox and revokes the auto-login
         // key (needs the user session). DELETE alone would orphan a live sandbox.
@@ -916,12 +937,42 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
           // A node that never finished setup has no sandbox to shut down; delete anyway.
         }
         await dataManager.delete(new TypeId(ComputeNode.type, node.id));
-        await refetch();
       } finally {
-        setDeletingId(null);
+        markDeleting(node.id, false);
       }
     },
-    [refetch],
+    [markDeleting],
+  );
+
+  const deleteSandbox = useCallback(
+    async (node: ComputeNode) => {
+      await deleteOne(node);
+      await refetch();
+    },
+    [deleteOne, refetch],
+  );
+
+  /**
+   * Run one action on many machines, at most 4 at a time, then refetch once and
+   * report the whole run in one notification. Never throws.
+   */
+  const runBulkAction = useCallback(
+    async (action: BulkAction, nodes: ComputeNode[]): Promise<BulkResult<ComputeNode>> => {
+      const one = { upgrade: upgradeOne, signout: signOutOne, delete: deleteOne }[action];
+      const result = await runLimited(nodes, one);
+      try {
+        await refetch();
+      } catch {
+        // The list is stale until the next poll; the outcome below still stands.
+      }
+      const copy = bulkActionCopy(action);
+      const message = bulkSummary(copy.done(result.ok.length, nodes.length), result);
+      const id = `sandbox-bulk-${action}`;
+      if (result.failed.length) notify.error({ id, title: copy.failed, message });
+      else notify.success({ id, title: message });
+      return result;
+    },
+    [refetch, upgradeOne, signOutOne, deleteOne],
   );
 
   /**
@@ -975,11 +1026,28 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
     openSandbox,
     renameSandbox,
     deleteSandbox,
-    deletingId,
+    /** Ids being deleted / signed out / upgraded right now. Sets, so a bulk run spins every card it touches. */
+    deletingIds,
     logoutSandbox,
-    loggingOutId,
+    loggingOutIds,
     upgradeSandbox,
-    upgradingId,
+    upgradingIds,
+    runBulkAction,
     details,
   };
+}
+
+/** A set of ids held in state, with an add/remove that never loses a concurrent update. */
+function useIdSet(): [ReadonlySet<string>, (id: string, on: boolean) => void] {
+  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
+  const mark = useCallback((id: string, on: boolean) => {
+    setIds((prev) => {
+      if (prev.has(id) === on) return prev;
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  return [ids, mark];
 }

@@ -127,9 +127,17 @@ export async function driveShareDialog(page: Page, opts: ShareDialogOptions): Pr
     await dialog.getByTestId('share-title-input').fill(opts.title);
   }
   if (opts.note !== undefined) {
-    await dialog.getByTestId('share-note-input').fill(opts.note);
+    // The note field opens from "Add note".
+    const note = dialog.getByTestId('share-note-input');
+    if (!(await note.isVisible())) await dialog.getByTestId('share-add-note').click();
+    await note.fill(opts.note);
   }
 
+  // The conversation list sits in a collapsed "Recent conversations" section; open it first.
+  const recent = dialog.getByTestId('share-recent-conversations');
+  if (!(await recent.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await recent.locator('summary').click();
+  }
   await dialog.getByTestId('share-conversation-list').waitFor({ timeout: 10_000 });
   if (opts.existingConversationId) {
     await dialog.getByTestId(`share-conv-row-${opts.existingConversationId}`).click();

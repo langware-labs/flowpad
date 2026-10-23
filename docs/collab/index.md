@@ -46,7 +46,7 @@ invariants established by the previous one.
 
 `Conversation` is the spine; `FlowMessage`s hang off its jsonl pointer index (and
 are *projected* into `message_ids`/`message_count`, never written directly).
-Attachments are embedded in a message. `participants` is the hub roster.
+Attachments are embedded in a message. `members` is the hub roster.
 `Invitation` is a pending membership. Shared context entities (task, markdown,
 skill, …) are anchored to the conversation and recursively auto-share.
 
@@ -114,7 +114,7 @@ skill, …) are anchored to the conversation and recursively auto-share.
   layout.
 - **delivery vs read** — `DeliveryStatus` (transport: created/sent/delivered/
   received) is distinct from `FlowMessage.is_read` (per-recipient read state).
-- **roster / role ladder** — `participants` is the hub-authoritative membership
+- **roster / role ladder** — `members` is the hub-authoritative membership
   list; roles rank `owner > full-access > admin > editor > member > reader >
   guest`. Ownership and "who can invite" derive from it, never from `created_by`.
 - **receiver contract** — a materialized hub child is *query-equivalent* to the

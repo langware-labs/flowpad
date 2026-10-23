@@ -8,7 +8,7 @@ import { useFavorites } from '@src/hooks/use-favorites';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -236,7 +236,7 @@ function MessageMenuItems({
       )}
       {onLaunchWorker && (
         <div className="px-2 py-1">
-          <WorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
+          <ContextWorkerToolbar onLaunch={onLaunchWorker} testIdPrefix="message" />
         </div>
       )}
       {managing && (conversing || sharing) && <DropdownMenuSeparator />}

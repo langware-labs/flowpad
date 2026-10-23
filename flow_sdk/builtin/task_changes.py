@@ -17,9 +17,13 @@ re-index (a ``suppress_store`` save) and the task's creation.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Iterator, Optional
 
 logger = logging.getLogger(__name__)
+
+_PRIOR: "ContextVar[Optional[dict]]" = ContextVar("_task_changes_prior", default=None)
 
 #: The fields whose changes are history.
 TRACKED = ("status", "assignee", "title")
@@ -32,12 +36,25 @@ async def before(task: Any) -> Optional[dict]:
 
     if not task.id or in_remote_reflection() or store_suppressed() or task.owner:
         return None
+    if (prior := _PRIOR.get()) is not None:
+        return prior
     # Looked up, not read off ``exist_in_db``: that flag is "has a creator stamp", and a task received from
     # the hub is stored with none — every change the assignee made would have read as a create.
     stored = await type(task).get_one({"id": task.id})
     if stored is None:
         return None  # a create: the task itself is its first message
     return {field: getattr(stored, field, None) for field in TRACKED}
+
+
+@contextmanager
+def measured_from(prior: Optional[dict]) -> Iterator[None]:
+    """The enclosed save compares against ``prior`` (taken earlier with ``before``) instead of the stored
+    row — for a save that follows a hub write whose echo may already have stored the new values."""
+    token = _PRIOR.set(prior)
+    try:
+        yield
+    finally:
+        _PRIOR.reset(token)
 
 
 async def record(task: Any, prior: dict) -> list:
@@ -87,4 +104,4 @@ def _fold(value: Any) -> str:
     return normalize_email(str(value or "")) or ""
 
 
-__all__ = ["TRACKED", "before", "label", "record", "sentence"]
+__all__ = ["TRACKED", "before", "label", "measured_from", "record", "sentence"]

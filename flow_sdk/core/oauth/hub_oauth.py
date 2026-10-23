@@ -58,9 +58,9 @@ async def _hub_data(
     ``on_error`` is logged with the exception appended, at ``level``.
     """
     try:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        payload = await hub_get(BuiltinEntityType.USER, user_id, action=action, sub_path=sub_path)
+        payload = await HubProxy.try_call("GET", BuiltinEntityType.USER, user_id, action, sub_path)
     except Exception as e:  # noqa: BLE001
         logger.log(level, "%s: %s", on_error, e)
         return None
@@ -93,13 +93,14 @@ async def hub_start_auth(provider: str, *, return_to: str = "", scopes: "list[st
     if not user_id:
         return None
 
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-    data = await hub_get_or_raise(
+    data = await HubProxy.call(
+        "GET",
         BuiltinEntityType.USER,
         user_id,
-        action="oauth",
-        sub_path=f"{hub_provider_name(provider)}/auth",
+        "oauth",
+        f"{hub_provider_name(provider)}/auth",
         params={k: v for k, v in (("return_to", return_to), ("scopes", " ".join(scopes))) if v} or None,
     )
     if not data.get("auth_url"):
@@ -127,7 +128,7 @@ async def hub_test_provider(provider: str) -> Optional[dict[str, Any]]:
 
 async def hub_wait_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
     """Read the exact Hub OAuth session's correlated state."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
 
     user_id = _cloud_user_id()
@@ -135,31 +136,43 @@ async def hub_wait_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
         raise HubError(401, "not logged in", code="cloud_login_required")
-    return await hub_get_or_raise(
+    return await HubProxy.call(
+        "GET",
         BuiltinEntityType.USER,
         user_id,
-        action="oauth",
-        sub_path=f"{hub_provider_name(provider)}/wait-callback",
+        "oauth",
+        f"{hub_provider_name(provider)}/wait-callback",
         params={"oauth_request_id": oauth_request_id},
     )
 
 
 async def hub_cancel_auth(provider: str, oauth_request_id: str) -> dict[str, Any]:
     """Cancel only the exact Hub OAuth session."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
 
     user_id = _cloud_user_id()
     if not user_id:
         return {"oauth_request_id": oauth_request_id, "status": "not_found"}
-    return await hub_post(
-        BuiltinEntityType.USER,
-        {},
-        user_id,
-        action="oauth",
-        sub_path=f"{hub_provider_name(provider)}/cancel",
-        params={"oauth_request_id": oauth_request_id},
-    ) or {"oauth_request_id": oauth_request_id, "status": "not_found"}
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+    not_found = {"oauth_request_id": oauth_request_id, "status": "not_found"}
+    try:
+        answer = await HubProxy.call(
+            "POST",
+            BuiltinEntityType.USER,
+            user_id,
+            "oauth",
+            f"{hub_provider_name(provider)}/cancel",
+            params={"oauth_request_id": oauth_request_id},
+            payload={},
+        )
+    except HubError as e:
+        if e.kind is not HubFailureKind.NOT_CONFIGURED:
+            raise
+        return not_found  # no hub: there is no hub session to cancel
+    return answer or not_found
 
 
 async def hub_credentials_ref(provider: str) -> str:
@@ -391,14 +404,14 @@ def _is_loopback(origin: str) -> bool:
 async def _machine_connection_token(node: str, credentials_name: str) -> Optional[str]:
     """This machine's authorized token for ``credentials_name``; ``None`` when not authorized (the hub
     answers 404 for every refusal). Never cached here: a revocation holds from the next ask."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
     try:
-        data = await hub_get_or_raise(
-            BuiltinEntityType.COMPUTE_NODE, node.removeprefix("compute_node-"),
-            action="connection-token", sub_path=credentials_name,
+        data = await HubProxy.call(
+            "GET", BuiltinEntityType.COMPUTE_NODE, node.removeprefix("compute_node-"),
+            "connection-token", credentials_name,
         )
     except HubError as e:
         logger.debug("[oauth] this machine has no authorized %r: %s", credentials_name, e.status_code)

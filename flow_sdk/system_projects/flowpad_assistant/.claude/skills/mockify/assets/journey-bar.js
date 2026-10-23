@@ -15,6 +15,7 @@
     .mk-path{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--mk-hint,#8b5cf6) 35%,transparent)!important;border-radius:6px}
     @keyframes mk-glow{50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 20%,transparent)}}
     @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}
+    [data-dead]{opacity:.55;cursor:not-allowed!important}
     .mk-pick{outline:2px solid #6d28d9!important;outline-offset:2px!important}
     html.mk-picking,html.mk-picking *{cursor:crosshair!important}`;
   document.head.append(docStyle);
@@ -34,7 +35,6 @@
   const onwardOf = (i) => { const n = J[i]?.next ? find(J[i].next) : -1; return n >= 0 ? n : mainAfter(i); };
   const mainBefore = (i) => { for (let k = i - 1; k >= 0; k--) if (!isBranch(J[k])) return k; return i; };
   const show = (id) => {
-    if (typeof window.mockGo === 'function') return window.mockGo(id);
     document.querySelectorAll('[data-step]').forEach((el) => { el.hidden = el.dataset.step !== id; });
   };
   const go = (i, record = true) => {
@@ -176,9 +176,33 @@
     if (onward && !marked.some((el) => el.classList.contains('mk-next'))) $('.next').classList.add('hint');
   }
   // data-next works on its own: a click on such a control moves the journey (no onclick needed).
+  // Any other control on a screen is not part of the mock: say so where it was clicked, never a silent no-op.
+  // Every app script is stripped, so nothing on a screen is live: anything that LOOKS clickable is inert.
+  const inert = (t, screen) => {
+    for (let el = t; el && el !== screen; el = el.parentElement) {
+      if (el.matches('input, select, textarea, label, [data-dead]') || getComputedStyle(el).cursor === 'pointer') return el;
+    }
+    return null;
+  };
+  let tip = null;
+  const deadTip = (el) => {
+    tip?.remove();
+    const r = el.getBoundingClientRect();
+    tip = document.createElement('div');
+    tip.setAttribute('data-mockify', '');
+    tip.textContent = 'Not part of this mock';
+    tip.style.cssText = `position:fixed;z-index:2147483646;left:${Math.max(4, r.left)}px;top:${Math.max(4, r.bottom + 6)}px;`
+      + 'background:#111827;color:#f9fafb;font:500 12px system-ui;padding:4px 8px;border-radius:6px;pointer-events:none';
+    document.body.append(tip);
+    setTimeout(() => tip?.remove(), 1400);
+  };
   document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-mockify]') || picking) return;
     const el = e.target.closest('[data-next]');
-    if (el && !el.closest('[data-mockify]')) { e.preventDefault(); window.mockifyGo(el.dataset.next); }
+    if (el) { e.preventDefault(); window.mockifyGo(el.dataset.next); return; }
+    const screen = e.target.closest('[data-step]');
+    const dead = screen && !e.target.closest('[data-live]') && inert(e.target, screen);
+    if (dead) { e.preventDefault(); deadTip(dead); }
   });
   let open = '';
   let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
@@ -528,7 +552,7 @@
   });
   function finishBoot() {
     cur = Math.max(0, find(location.hash.slice(1)));
-    if (typeof window.mockGo !== 'function' && J.length) show(J[cur].id);
+    if (J.length) show(J[cur].id);
     render();
     contrast();
   }
@@ -704,7 +728,7 @@
   });
   panel.addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) readImage(f); });
 
-  // Drag by the grip; the position survives reloads (real-mode mocks reload per step) and stays on screen.
+  // Drag by the grip; the position is kept for the session and stays on screen.
   $('.grip').addEventListener('pointerdown', (e) => {
     const r = host.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
     e.target.setPointerCapture(e.pointerId);

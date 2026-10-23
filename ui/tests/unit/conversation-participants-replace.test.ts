@@ -10,10 +10,8 @@
  * uses for ``queue`` — which assigns the wire roster wholesale and strips it
  * from the payload before deepAssign runs.
  *
- * The roster field is ``members`` (generic, on the Entity base). The local
- * backend serializes it as ``members``; the hub conversation fanout uses the
- * ``participants`` wire key — the hook accepts either and lands it on
- * ``members`` (see the wire-adapter case below).
+ * The roster field is ``members`` (generic, on the Entity base), and both the
+ * local backend and the hub send it under that name.
  */
 
 import { dataManager, TypeId } from '@sdk';
@@ -120,21 +118,5 @@ describe('Conversation roster: wire roster replaces cached roster', () => {
     expect(ref.entity.title).toBe('after-leave');
     expect(ref.entity.members).toHaveLength(1);
     expect(ref.entity.members[0].user_id).toBe(USER_A.user_id);
-  });
-
-  it('wire adapter: a legacy ``participants`` frame key lands on ``members``', () => {
-    // The hub conversation fanout uses ``participants``; the hook must accept it
-    // and replace ``members`` (not create a stale ``participants`` field).
-    const ref = seedCachedConversation(typeId, [USER_A, USER_B]);
-
-    fireDataOpUpdate(typeId, {
-      type: ENTITY_TYPE,
-      id: ENTITY_ID,
-      participants: [{ ...USER_B }],
-    });
-
-    expect(ref.entity.members).toHaveLength(1);
-    expect(ref.entity.members[0].user_id).toBe(USER_B.user_id);
-    expect(ref.entity.participants).toBeUndefined();
   });
 });

@@ -36,6 +36,13 @@ async def _get_local_user_cached():
     return user
 
 
+def _hub_reachable() -> bool:
+    """Signed in to a hub, outside Local privacy mode — the hub can be asked."""
+    from flow_sdk.server.routes._hub_reflect import _online  # noqa: PLC0415
+
+    return _online()
+
+
 class RequestTransactionMiddleware:
     """Pure ASGI middleware that sets up ExecutionContext for each request.
 
@@ -101,7 +108,11 @@ class RequestTransactionMiddleware:
                             req_info.target_entity_typeid.type,
                         )
                         allow_missing_target = bool(registered_action and registered_action.allow_missing_target)
-                        if req_info.action == "open" or allow_missing_target:
+                        if req_info.hub_reflect and _hub_reachable():
+                            # Asked of the hub: a row the hub holds but this box has not
+                            # mirrored yet is still the hub's to answer (``route_to_hub``).
+                            pass
+                        elif req_info.action == "open" or allow_missing_target:
                             logging.debug(
                                 "[Middleware] missing-target-capable action "
                                 f"{req_info.action!r} on "

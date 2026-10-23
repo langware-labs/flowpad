@@ -8,6 +8,7 @@ Extracted from the original tests/conftest.py:
 - client: synchronous httpx test client via ASGITransport
 """
 
+import logging
 import os
 import time
 import socket
@@ -15,6 +16,19 @@ from pathlib import Path
 
 import pytest
 import httpx
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logging():
+    """A command run in-process may reconfigure the root logger (``flow connect`` calls
+    ``basicConfig(force=True)``); its new handler writes to the runner's stderr, which is closed
+    once the invoke ends. Left in place, every later log line prints "Logging error" into the next
+    command's output. Each test gets the root logger back as it found it."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)
 
 
 @pytest.fixture(autouse=True)

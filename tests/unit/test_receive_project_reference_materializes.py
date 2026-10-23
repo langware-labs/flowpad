@@ -7,7 +7,7 @@ invite email's set-up link needs a local Project row. So materializing a
 hub-origin message fetches each referenced ``project-<id>`` that is missing
 locally and mirrors it.
 
-Only the network hop (``hub_http.hub_get_or_raise``) is stubbed.
+Only the network hop (``HubProxy.call``) is stubbed.
 
 # do not increase timeout without approval
 """
@@ -21,6 +21,7 @@ import pytest
 
 from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 
 SENDER = "0a0a0a0a-0000-4000-8000-000000000001"
@@ -31,14 +32,15 @@ def hub(monkeypatch):
     calls: list[str] = []
     projects: dict[str, object] = {}
 
-    async def fake_hub_get_or_raise(entity_type, entity_id=None, *args, **kwargs):
+    async def fake_hub_get_or_raise(method, entity_type, entity_id=None, *args, **kwargs):
+        assert method == "GET"
         calls.append(entity_id)
         answer = projects.get(entity_id)
         if isinstance(answer, dict):
             return answer
         raise HubError(answer if isinstance(answer, int) else 404, "refused")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_hub_get_or_raise)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_hub_get_or_raise))
     return SimpleNamespace(calls=calls, projects=projects)
 
 

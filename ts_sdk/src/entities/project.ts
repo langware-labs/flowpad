@@ -235,9 +235,19 @@ export interface ProjectSetupRequirement {
   /** The project does not work without it; `false` turns a feature on and never counts. */
   required: boolean;
   skipped: ProjectSetupSkip | null;
+  /** The installed assets it exists for — what "Skip → Always" uninstalls (`RootRef`). */
+  roots?: ProjectSetupRoot[];
   /** Whether "Skip → Always" can remove it from the project, and if not, why. */
   can_skip_always: boolean;
   why_not_always: string;
+}
+
+/** An installed asset of the project a requirement exists for. Drivers and shipped templates never are one. */
+export interface ProjectSetupRoot {
+  typeid: string;
+  kind: 'data_source' | 'agent' | 'webapp' | 'dependency' | 'credential' | string;
+  name: string;
+  asset_ref: string;
 }
 
 /** `GET project/<id>/setup-requirements` — is this project ready here? */

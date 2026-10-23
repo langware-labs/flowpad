@@ -11,12 +11,12 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy import DateTime, and_, asc, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -37,7 +37,7 @@ from flow_sdk.db.drivers.db_driver import (
     _lifecycle_in_progress,
 )
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
-from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp, order_terms
 from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.flowpad_types.enums import RelationshipDirection
 from flow_sdk.fs_store.type_id import TypeId
@@ -90,6 +90,25 @@ def json_path_sql(field_path: str, column: str = "data") -> str:
         if not _PATH_SEGMENT.match(segment):
             raise ValueError(f"Invalid field path: {field_path!r}")
     return f"json_extract({column}, '$.{field_path}')"
+
+
+def _as_stored_datetime(col, value: Any) -> Any:
+    """An ISO string compared with a DateTime column, as the datetime the column stores.
+
+    SQLite keeps ``created_date``/``updated_date`` as text in SQLAlchemy's format
+    (``2026-10-23 11:25:07.768473``, naive UTC) and compares text with text. A client's
+    ``2026-10-23T11:25:00Z`` compared raw sorts after every stored row of the same day (``' '`` <
+    ``'T'``), so ``$LT`` answered every row and keyset paging broke. Parsed and bound as a datetime,
+    SQLAlchemy writes it in the stored format and the comparison is chronological."""
+    if not isinstance(value, str) or not isinstance(getattr(col, "type", None), DateTime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 # Hand-written per-type indexes now declared on their ``TypeInfo.indexes``.
@@ -1709,10 +1728,9 @@ class SQLiteDBDriver(DBDriver):
         """Update an existing entity. Outer _session_ctx drives commit."""
         # A row only reaches here after ``save()`` has SELECTed it and confirmed
         # it exists, so a null ``created_by`` is NOT a create-on-existing
-        # collision. It is a legitimate hub-origin reflection: the hub stamps no
-        # owner (``initiated_by``) for share/diagnostics conversations, so the
-        # receiver faithfully reflects ``created_by=None`` — and a later backfill
-        # (participants/title/parent) must still be able to UPDATE that row.
+        # collision. It is a legitimate hub-origin reflection that carries no
+        # ``created_by`` — and a later backfill (members/title/parent) must still
+        # be able to UPDATE that row.
         # Rejecting it here aborted invitation-preview + bundle unpack, so the
         # recipient never saw the messages or their attachments. Reject only a
         # structurally malformed entity (the field missing entirely).
@@ -2017,7 +2035,8 @@ class SQLiteDBDriver(DBDriver):
             query = query.where(scope_cond)
 
         # Push ORDER BY for column-level sort fields
-        sql_order = self._build_sql_order_by(entities_filter.order_by)
+        paged = bool(entities_filter.limit or entities_filter.offset)
+        sql_order = self._build_sql_order_by(entities_filter.order_by, paged)
         if sql_order:
             query = query.order_by(*sql_order)
 
@@ -2030,20 +2049,26 @@ class SQLiteDBDriver(DBDriver):
                 query = query.limit(entities_filter.limit)
 
         async with self._session_ctx(write=False) as session:
-            result = await session.execute(query)
-            entities = self._hydrate(result.scalars().all(), "get_all")
+            schemas = (await session.execute(query)).scalars().all()
+            entities = self._hydrate(schemas, "get_all")
+        # An unreadable row skipped by ``_hydrate`` still took its place in the SQL page, like a row the
+        # hub hides from its reader: the offset counts it, and the caller is told how many rows were read.
+        rows_read = len(schemas)
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
             entities = [e for e in entities if self._entity_matches_filter(e, entities_filter)]
 
-        # Pagination — only when not already applied in SQL
+        # Pagination — only when not already applied in SQL; the rows are already in SQL order
+        # (tie-break included), so a slice of the filtered rows is the same page SQL would cut.
         if not fully_sql:
             if entities_filter.offset:
                 entities = entities[entities_filter.offset :]
             if entities_filter.limit:
                 entities = entities[: entities_filter.limit]
+            rows_read = len(entities)
 
+        entities_filter.rows_read = rows_read
         return entities
 
     @staticmethod
@@ -2154,6 +2179,7 @@ class SQLiteDBDriver(DBDriver):
         col = getattr(EntitySchema, field_name, None)
         if col is None:
             return None
+        value = _as_stored_datetime(col, value)
         if op == QueryOp.EQ:
             return col == value
         if op == QueryOp.NE:
@@ -2188,6 +2214,10 @@ class SQLiteDBDriver(DBDriver):
             sv = 1 if value else 0
         elif isinstance(value, str) and value.lower() in ("true", "false"):
             sv = 1 if value.lower() == "true" else 0
+        elif isinstance(value, (int, float)):
+            # A number stays a number: json_extract answers INTEGER/REAL, and SQLite orders every number
+            # before every text, so a bound '10' made `count > 9` false and broke keyset paging.
+            sv = value
         else:
             sv = str(value) if value is not None else None
 
@@ -2219,32 +2249,18 @@ class SQLiteDBDriver(DBDriver):
             return text(f"{path} NOT IN ({placeholders})").bindparams(**params)
         return None
 
-    def _build_sql_order_by(self, order_by) -> list:
+    def _build_sql_order_by(self, order_by, paged: bool = False) -> list:
         """The SQL ORDER BY clauses: column fields as columns, JSON-blob fields (dotted paths
-        included) as validated ``json_extract`` expressions."""
-        if not order_by:
-            return []
-
-        if isinstance(order_by, dict):
-            order_by = [order_by]
-        elif isinstance(order_by, str):
-            order_by = [{order_by: "asc"}]
-
+        included) as validated ``json_extract`` expressions. NULLs sort last ascending and first
+        descending, where the hub's Neo4j puts them."""
         sql_clauses = []
-        for spec in order_by:
-            if isinstance(spec, str):
-                spec = {spec.lstrip("-"): "desc" if spec.startswith("-") else "asc"}
-            if isinstance(spec, dict):
-                for field, direction in spec.items():
-                    if field in self._COLUMN_FIELDS:
-                        col = getattr(EntitySchema, field)
-                        sql_clauses.append(desc(col) if direction == "desc" else asc(col))
-                    else:
-                        # A JSON field (dotted paths included) sorts in SQL too, so LIMIT/OFFSET
-                        # stay in SQL. NULLs land first on ASC and last on DESC — the same place
-                        # the Python ``_sort_key`` puts them.
-                        path = text(json_path_sql(field))
-                        sql_clauses.append(desc(path) if direction == "desc" else asc(path))
+        for field, descending in order_terms(order_by, paged):
+            if field in self._COLUMN_FIELDS:
+                expr = getattr(EntitySchema, field)
+            else:
+                # A JSON field (dotted paths included) sorts in SQL too, so LIMIT/OFFSET stay in SQL.
+                expr = text(json_path_sql(field))
+            sql_clauses.append(desc(expr).nulls_first() if descending else asc(expr).nulls_last())
         return sql_clauses
 
     # ==================== Relationship CRUD ====================

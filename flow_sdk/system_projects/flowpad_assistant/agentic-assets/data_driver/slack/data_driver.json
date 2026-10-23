@@ -10,7 +10,7 @@
   "kind": "datasource.api.slack",
   "setup_wiki": "Slack channels",
   "auth": {
-    "credential": "slack",
+    "credential": "slack_channel",
     "vars": {
       "SLACK_BOT_TOKEN": "SLACK_BOT_TOKEN"
     }

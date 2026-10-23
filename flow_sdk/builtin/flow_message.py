@@ -780,7 +780,9 @@ class FlowMessage(Entity):
         return before != after
 
     @model_serializer(mode="wrap")
-    def _serialize_with_local_paths(self, handler: SerializerFunctionWrapHandler, info: Any) -> dict[str, Any]:
+    def _serialize_with_local_paths(self, handler: SerializerFunctionWrapHandler, info: Any):
+        # No return annotation: pydantic would take it as the serialization schema and hide every field
+        # from the bootstrap schema, which lists the fields this server keeps.
         data = handler(self)
         # Skip local_path resolution when serializing for DB storage
         if info.context and info.context.get("skip_api_serializer"):
@@ -1215,21 +1217,27 @@ class FlowMessage(Entity):
         exactly once per coalesced ``upload_body`` group (see the guard there);
         does not stamp ``self`` (each caller stamps its own instance on success).
         """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
+        from flow_sdk.cloud_client.shared.errors import HubError
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-        from flow_sdk.utils.hub import hub_post
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 
         zip_path = await self.to_file(transfer_mode=transfer_mode, create_bookmark=create_bookmark)
         try:
             content = zip_path.read_bytes()
-            await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE,
-                {},
-                self.id,
-                "fs",
-                "upload",
-                files={"uploaded_file": (BODY_FILENAME, content, "application/zip")},
-                on_progress=on_progress,
-            )
+            try:
+                await HubProxy.upload(
+                    BuiltinEntityType.FLOW_MESSAGE,
+                    self.id,
+                    "fs",
+                    "upload",
+                    files={"uploaded_file": (BODY_FILENAME, content, "application/zip")},
+                    on_progress=on_progress,
+                )
+            except HubError as e:
+                if e.kind is not HubFailureKind.NOT_CONFIGURED:
+                    raise
+                return  # no hub configured: nothing to upload to, as before
         finally:
             zip_path.unlink(missing_ok=True)
 
@@ -1237,14 +1245,15 @@ class FlowMessage(Entity):
         # the action fans the UPDATE to conversation participants so receivers
         # learn the body is downloadable. A plain entity PUT only notifies the
         # sender + owners, leaving receivers stuck on UPLOADING.
-        await hub_post(
+        await HubProxy.call(
+            "POST",
             BuiltinEntityType.FLOW_MESSAGE,
-            {
+            action="set_body_status",
+            payload={
                 "flow_message_id": self.id,
                 "body_status": BodyStatus.READY.value,
                 "attachment_filename": BODY_FILENAME,
             },
-            action="set_body_status",
         )
 
     async def save(self, owner=None, notify: bool = True):

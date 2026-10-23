@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -121,8 +123,8 @@ async def _reset_shared_hub_client():
     connections + TLS context), correct for the server's single lifelong loop.
     Under ``asyncio_mode = auto`` each test gets its OWN loop, so the pooled
     client outlives the loop that built it and every later hub call raises
-    ``RuntimeError: Event loop is closed`` — which ``hub_get``/``hub_post``
-    swallow, returning ``None``. The failure is therefore SILENT (a bare
+    ``RuntimeError: Event loop is closed`` — which ``HubProxy.try_call``
+    swallows, returning ``None``. The failure is therefore SILENT (a bare
     ``assert (None)`` / "row never arrived"), not an error, and lands on
     whichever test follows the last client rebuild. Closing it here, while its
     loop is still alive, forces each test to build its own.
@@ -338,9 +340,9 @@ async def _close_shared_hub_client():
     ``hub_http._shared_client`` is a module global deliberately kept alive across
     calls so the TLS context and connection pool survive (see ``_hub_client``).
     Inside one pytest process that global outlives the test that created it, and
-    its internals end up bound to that test's loop — the next test's ``hub_get``
+    its internals end up bound to that test's loop — the next test's ``HubProxy.try_call``
     then dies with ``<asyncio.locks.Event ...> is bound to a different event
-    loop``, which ``hub_get`` swallows as a non-fatal warning. The caller sees
+    loop``, which ``try_call`` swallows as a non-fatal warning. The caller sees
     ``hub_reachable=False``, degrades to local-only, and asserts against a hub it
     never actually reached: a green-or-red outcome decided by test ORDER.
 
@@ -416,22 +418,39 @@ def _cleanup_identities() -> list[str]:
 _CLEANUP_TYPES = ("conversation", "organization", "team", "skill", "task", "markdown", "agent", "project")
 
 
-def _live_ids(token: str, entity_type: str) -> set[str]:
-    """Ids of this user's not-yet-deleted rows of ``entity_type``.
+def _created_since(token: str, entity_type: str, since: str) -> set[str]:
+    """Ids of this user's not-yet-deleted rows of ``entity_type`` created at or after ``since``.
 
-    Returns an empty set on ANY failure — an unknown type, a 403, a hub blip.
-    An empty "before" snapshot means the diff finds nothing to delete, so a
-    read failure makes cleanup do less, never more.
+    Newest first, a page at a time, stopping at the first older row — a long-lived test account
+    holds thousands of conversations, and listing them whole took longer than the test's cap.
+    Returns what it read so far on ANY failure: cleanup does less, never more.
     """
+    found: set[str] = set()
+    offset = 0
     try:
         with httpx.Client(base_url=f"{_configured_hub_base_url()}/api/v1", timeout=30.0) as client:
-            r = client.get(f"/graph/{entity_type}", headers={"Authorization": f"Bearer {token}"})
-        if r.status_code != 200:
-            return set()
-        rows = r.json().get("data") or []
-        return {x["id"] for x in rows if isinstance(x, dict) and x.get("id") and not x.get("deleted_at")}
+            while True:
+                page = {"match": {}, "limit": 200, "order_by": [{"created_date": "desc"}]}
+                if offset:
+                    page["offset"] = offset
+                r = client.get(
+                    f"/graph/{entity_type}",
+                    params={"filter": json.dumps(page)},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                if r.status_code != 200:
+                    return found
+                rows = [x for x in (r.json().get("data") or []) if isinstance(x, dict) and x.get("id")]
+                for x in rows:
+                    if str(x.get("created_date") or "") < since:
+                        return found
+                    if not x.get("deleted_at"):
+                        found.add(x["id"])
+                if len(rows) < 200:
+                    return found
+                offset += len(rows)
     except Exception:  # noqa: BLE001
-        return set()
+        return found
 
 
 def _delete_entity(base: str, entity_type: str, entity_id: str, tokens: list[str]) -> bool:
@@ -446,6 +465,9 @@ def _delete_entity(base: str, entity_type: str, entity_id: str, tokens: list[str
                     json={},
                 )
             if r.status_code in (200, 404):
+                return True
+            # An already-deleted row: the hub answers 403 ``target_not_found`` (its access check runs first).
+            if r.status_code == 403 and "target_not_found" in r.text:
                 return True
         except Exception:  # noqa: BLE001
             continue
@@ -517,14 +539,15 @@ def _reclaim_hub_entities_the_tier_creates(local_hub_available, request):
         cache.set(_LEFTOVER_CACHE_KEY, unreclaimed)
         print(f"\n[hub-cleanup] reclaimed {reclaimed}/{len(stale)} row(s) left by the previous run")
 
-    before = {(t, kind): _live_ids(t, kind) for t in tokens for kind in _CLEANUP_TYPES}
+    # The hub's clock, ISO like its ``created_date`` (string order is time order).
+    since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     yield
 
     created: list[dict[str, str]] = []
     for token in tokens:
         for kind in _CLEANUP_TYPES:
-            for entity_id in _live_ids(token, kind) - before.get((token, kind), set()):
+            for entity_id in _created_since(token, kind, since):
                 if not any(c["id"] == entity_id for c in created):
                     created.append({"type": kind, "id": entity_id})
     tracked = list(unreclaimed)

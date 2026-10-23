@@ -16,6 +16,7 @@ from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
 from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.responses.response import ApiResponseStatus
 from tests.unit._project_deps import link_context_dirs
@@ -151,13 +152,15 @@ async def test_ticket_list_uses_direct_context_order_not_desk_row_order(tmp_path
             return_value=_request_info({"project_id": target.id}),
         ),
         patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(fma, "hub_request", hub),
+        patch.object(HubProxy, "call", hub),
     ):
         response = await fma.helpdesk_tickets_list()
 
     assert response.status == ApiResponseStatus.SUCCESS.value
     assert response.data["project_id"] == FIRST_CONTEXT_QUEUE
-    hub.assert_awaited_once_with("GET", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "helpdesk_conversations")
+    hub.assert_awaited_once_with(
+        "GET", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "helpdesk_conversations", strict=True
+    )
     fallback.assert_not_awaited()
 
 

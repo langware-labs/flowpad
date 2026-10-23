@@ -2,7 +2,7 @@
 
 Real local git repositories over ``file://`` stand in for remotes (cloning is the step
 under test; a stubbed clone would pin nothing). The hub is the one thing stubbed, at
-``hub_get_or_raise``. Each test gets its own workspace, so a clone from one test can
+``HubProxy.call``. Each test gets its own workspace, so a clone from one test can
 never be "reused" by the next.
 
 # do not increase timeout without approval
@@ -21,6 +21,7 @@ from flow_sdk.assets import flow_json
 from flow_sdk.builtin import project_dependencies
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.data_spec.flow_json_spec import FlowJsonSpec, parse_source
 from flow_sdk.schema.type_info import register_all
@@ -484,7 +485,7 @@ async def test_a_hub_dependency_that_cannot_be_read_says_why(tmp_path, monkeypat
     async def refuse(*_a, **_k):
         raise HubError(status, "no")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{HUB_ID}"}})
     state = _state(await site.resolve_dependencies(), "policies")
@@ -499,7 +500,7 @@ async def test_a_hub_dependency_already_on_this_machine_uses_its_folder(tmp_path
     async def refuse(*_a, **_k):
         raise HubError(0, "no")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     policies = await _project(tmp_path, "policies")
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{policies.id}"}})
@@ -514,7 +515,7 @@ async def test_a_hub_project_backed_by_git_resolves(tmp_path, monkeypatch):
     async def row(*_a, **_k):
         return {"id": HUB_ID, "git_origin": {"kind": "git", "provider": "file", "owner": str(tmp_path), "name": "remote-policies", "branch": "main"}}
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", row)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(row))
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": {"source": f"hub:{HUB_ID}", "path": "policies"}}})
     state = _state(await site.resolve_dependencies(), "policies")
@@ -537,7 +538,6 @@ async def test_dismissing_a_warning_lasts_until_restart(tmp_path):
 
 
 async def test_opening_a_project_resolves_in_the_background_and_says_so(tmp_path):
-    import asyncio
 
     url = _repo(tmp_path / "remote")
     site = await _project(tmp_path, "site")

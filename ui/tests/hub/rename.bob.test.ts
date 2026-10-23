@@ -128,7 +128,9 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
         if (!member) return null;
         const r = await fetch(`${config.SERVER_URL}/cloud/status`);
         const body = (await r.json().catch(() => null)) as { data?: { connection?: { status?: string } } } | null;
-        return body?.data?.connection?.status === 'connected' ? member : null;
+        // ``verified`` is the live bridge after the hub accepted it; ``connected`` the moment before.
+        const status = body?.data?.connection?.status;
+        return status === 'verified' || status === 'connected' ? member : null;
       },
       15_000,
       'hub routes conversation ops to bob (approved role + live hub bridge)',

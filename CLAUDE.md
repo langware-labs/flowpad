@@ -1,9 +1,8 @@
 ---
 id: 91856acd-d005-470d-b3c8-0e762229408a
-version: 2
+version: 3
 ---
 # Claude Guidelines for flow-cli
-
 
 ## Quick Start
 
@@ -192,7 +191,7 @@ Commit a rig only when the user explicitly asks to keep it. If a rig turns out t
 generally useful, say so and ask — don't decide by committing it.
 
 **Why:** a rig is sized to one change and rots the moment the code moves (the
-host-tabs A/B rig was 1,454 lines against ~157 lines of product code).
+host-tabs A/B rig was 1,454 lines against \~157 lines of product code).
 
 ## Entity id policy (non-negotiable)
 
@@ -228,7 +227,9 @@ If a backend route can't be called through `apiClient` because it doesn't return
 Three words, never mixed up (`docs/glossary.md`):
 
 * **kind** — a NAME, a dot-path tag (`navigator.decision`, `ingest.source_item`): what a schema is registered and looked up by.
+
 * **schema** — the DEFINITION registered under a kind: a `DataSpec` subclass in Python, or a `agentic-assets/data_schema/<kind>/` folder (`data_schema.json` + `description.md`) that compiles into one. Same registry, same viewers either way.
+
 * **value** — an INSTANCE of a schema: the object in memory, or its JSON / folder on disk.
 
 Say "the `diagnosis` schema" and "a diagnosis value" — never "a DataSpec" on its own.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getMembers,
   inviteFailure,
@@ -157,6 +157,16 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     };
   }, [typeId, available]);
 
+  // The stored roster changes when the hub pushes one (a member left on another device, a ticket
+  // was returned): read the membership again so the view follows without a manual refresh.
+  const storedRoster = JSON.stringify((entity as { members?: unknown } | undefined)?.members ?? null);
+  const seenRoster = useRef(storedRoster);
+  useEffect(() => {
+    if (seenRoster.current === storedRoster) return;
+    seenRoster.current = storedRoster;
+    void refresh();
+  }, [storedRoster, refresh]);
+
   const addMembers = useCallback(
     async (users: { idOrEmail: string; role?: string }[], opts?: { teams?: TypeId[] }) => {
       const teams = opts?.teams ?? [];
@@ -170,8 +180,19 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
         return result;
       }
       if (teams.length) throw new Error('useMembers: only a project can be shared with a team');
-      await entity.share(users);
-      await refresh();
+      // One hub MembershipRequest per invitee; the desktop publishes the entity first when needed.
+      // Every invitee is tried even when one fails, and the roster refreshes either way.
+      try {
+        const results = await Promise.allSettled(users.map((user) => entity.inviteMember(user.idOrEmail, user.role)));
+        const failed = users.filter((_, i) => results[i].status === 'rejected');
+        if (failed.length) {
+          const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason;
+          const detail = reason instanceof Error ? reason.message : String(reason);
+          throw new Error(`Could not invite ${failed.map((u) => u.idOrEmail).join(', ')}: ${detail}`);
+        }
+      } finally {
+        await refresh();
+      }
       return null;
     },
     [entity, refresh],
@@ -211,12 +232,16 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   // Stale-while-revalidate: the HUB answer wins the moment it arrives. Until
   // then, paint the locally-cached roster (``Entity.members``, kept warm by the
   // fanout for conversations and by the last reflect for everything else) so the
-  // list shows instantly. On a refresh failure we keep the cache (stale) rather
-  // than blanking. This is the inverse of the old "cache wins when non-empty"
-  // rule — a roster the hub has since emptied now correctly clears.
+  // list shows instantly. On a refresh failure we show the cache (stale) rather
+  // than blanking — and rather than an earlier hub answer: the read can fail
+  // because the caller is no longer in it (desk staff who returned a ticket may
+  // not read its roster), and the pushed roster is then newer than our last read.
+  // This is the inverse of the old "cache wins when non-empty" rule — a roster
+  // the hub has since emptied now correctly clears.
   const cached = (entity as any)?.members as Participant[] | undefined;
   const cachedMembers = Array.isArray(cached) ? cached : null;
-  const members: Participant[] = refreshed ?? cachedMembers ?? (EMPTY_MEMBERS as Participant[]);
+  const fresh = error === null ? refreshed : null;
+  const members: Participant[] = fresh ?? cachedMembers ?? refreshed ?? (EMPTY_MEMBERS as Participant[]);
   // "updating…" while a refresh runs over an already-shown cache (the internal
   // ``loading`` state is exposed under the SWR-flavored name).
   const updating = loading;

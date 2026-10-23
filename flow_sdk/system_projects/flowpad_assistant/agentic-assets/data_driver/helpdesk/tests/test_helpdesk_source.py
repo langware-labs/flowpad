@@ -17,11 +17,13 @@ import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import HelpdeskMessageSpec
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.schema.data_spec.choice_spec import Choice
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import InvalidCursor, NotFound
@@ -38,7 +40,7 @@ TICKET = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ME = "11111111-1111-4111-8111-111111111111"
 GUEST = "22222222-2222-4222-8222-222222222222"
 POOL = [{"conversation_id": TICKET, "title": None, "preview": "my printer is broken", "initiated_by": GUEST, "message_count": 1,
-         "participant_count": 1, "picked_up": False, "created_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:00:00+00:00"}]
+         "member_count": 1, "picked_up": False, "created_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:00:00+00:00"}]
 MSG = {"id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "text": "my printer is broken", "sender_id": GUEST, "sender_name": "Guest",
        "created_date": "2026-09-06T10:00:00+00:00", "updated_date": "2026-09-06T10:00:00+00:00"}
 
@@ -135,7 +137,7 @@ class _Desk(_Hub):
         return self.pool if action == "helpdesk_conversations" else self.threads.get(entity_id, [])
 
     def reads(self):
-        return [c[2] for c in self.calls if c[3] == "flow_message"]
+        return [c[2] for c in self.calls if c[3] == "messages"]
 
 
 def _serve(monkeypatch, desk):
@@ -266,6 +268,9 @@ class TestTheAppHub:
         (HubError(401, "Forbidden access"), False, SourceHealth.CONFIG_ERROR, "Log in"),
         (HubError(404, "gone"), True, SourceHealth.CONFIG_ERROR, "no longer exists"),
         (HubError(0, "hub not configured"), True, SourceHealth.CONFIG_ERROR, "not configured"),
+        # HubProxy.call's own no-hub error: told by its kind, whatever the reason's words.
+        (HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED), True, SourceHealth.CONFIG_ERROR,
+         "not configured"),
         (HubError(0, "connection reset"), True, SourceHealth.TRANSIENT_ERROR, "reached"),
         (HubError(429, "slow down"), True, SourceHealth.TRANSIENT_ERROR, "429"),
     ])
@@ -277,7 +282,7 @@ class TestTheAppHub:
         async def refuse(*_a, **_k):
             raise HubError(403, "forbidden")
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+        monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
         monkeypatch.setattr(AppHub, "me", lambda self: ME)
         with pytest.raises(Exception) as caught:
             await AppHub().get("project", DESK, "helpdesk_conversations")

@@ -7,6 +7,8 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+
 
 class FakeHubStore:
     def __init__(self):
@@ -72,6 +74,18 @@ class FakeHubStore:
         self.values.get(eid, {}).pop(sub_path, None)
         return {}
 
+    async def call(self, method, etype, eid=None, action=None, sub_path=None, *, payload=None, **_):
+        """``HubProxy.call`` / ``try_call``, routed to the verb doubles above."""
+        method = method.upper()
+        if method == "GET":
+            return await self.get(etype, eid, action, sub_path)
+        if method == "POST":
+            return await self.post(etype, payload, eid, action, sub_path)
+        if method == "PUT":
+            return await self.put(etype, eid, payload, action, sub_path)
+        assert method == "DELETE", method
+        return await self.delete(etype, eid, action, sub_path)
+
     async def deploy(self, entity, environment=None, *, provider=None, require=None):
         self.deploys.append({"environment": environment, "provider": provider, "require": list(require or [])})
         return {"deployment": {}, "secrets": {"placed": sorted(require or []), "failed": {}}}
@@ -79,9 +93,8 @@ class FakeHubStore:
 
 def install(monkeypatch) -> FakeHubStore:
     fake = FakeHubStore()
-    for name in ("get", "post", "put", "delete"):
-        monkeypatch.setattr(f"flow_sdk.cloud_client.transport.hub_http.hub_{name}", getattr(fake, name))
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake.get)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake.call))
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", fake.deploy)
     return fake
 

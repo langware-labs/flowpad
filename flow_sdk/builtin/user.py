@@ -33,6 +33,37 @@ def normalize_email(email: str | None) -> str | None:
     return normalized or None
 
 
+def _roster_value(member: dict, *keys: str) -> str | None:
+    for key in keys:
+        value = member.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def normalize_roster(members: list | None) -> list[dict]:
+    """A roster in the local shape: ``email``/``name``/``picture`` filled from the hub's
+    ``user_email``/``user_name``/``user_picture`` when missing; the email lowercased."""
+    normalized: list[dict] = []
+    for member in members or []:
+        if not isinstance(member, dict):
+            continue
+        item = dict(member)
+        email = normalize_email(_roster_value(member, "email", "user_email"))
+        name = _roster_value(member, "name", "user_name")
+        picture = _roster_value(member, "picture", "user_picture")
+        if isinstance(item.get("email"), str):
+            item["email"] = normalize_email(item["email"]) or ""
+        if email and not item.get("email"):
+            item["email"] = email
+        if name and not item.get("name"):
+            item["name"] = name
+        if picture and not item.get("picture"):
+            item["picture"] = picture
+        normalized.append(item)
+    return normalized
+
+
 def recipient_user_id(value: object) -> str | None:
     """A hub user id fit to address an invitation with, or ``None``.
 

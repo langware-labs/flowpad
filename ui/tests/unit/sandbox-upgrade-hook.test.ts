@@ -130,6 +130,6 @@ describe('upgradeSandbox', () => {
       await result.current.upgradeSandbox(box());
     });
 
-    expect(result.current.upgradingId).toBeNull();
+    expect(result.current.upgradingIds.size).toBe(0);
   });
 });

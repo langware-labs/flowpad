@@ -161,27 +161,6 @@ async def handle_request(
     if first_param:
         await fill_self_cls_param_if_needed(kwargs, first_param, request_info)
 
-    # A published Git-backed asset has no local byte authority. Forward its
-    # ordinary entity-VFS request before parsing/binding the action body so the
-    # exact method, path, query, multipart bytes, and download response remain
-    # intact. A Hub rejection is the response; there is deliberately no local
-    # fallback for this branch.
-    from flow_sdk.server.routes._hub_reflect import (
-        is_git_backed_remote_fs,
-        proxy_to_hub,
-    )
-
-    entity_for_early_fs_proxy = kwargs.get("self")
-    if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
-        entity_for_early_fs_proxy = request_info.auth_result.target
-    if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
-        sub_path = request_info.sub_path or ""
-        if request.method == "GET" and sub_path.startswith("document/"):
-            from flow_sdk.server.routes._hub_reflect import read_hub_document
-
-            return await read_hub_document(request, entity_for_early_fs_proxy, sub_path.removeprefix("document/"))
-        return await proxy_to_hub(request)
-
     request_params = request_info.request_parameters
 
     # Read JSON body once to avoid consuming it multiple times
@@ -257,67 +236,29 @@ async def handle_request(
             if name in json_data:
                 kwargs[name] = json_data[name]
 
-    # Hub reflection: if the call opts in (``request_info.hub_reflect``) and the
-    # entity has a hub counterpart (remote=True), forward the call to the
-    # hub and mirror its response into the local row instead of running
-    # the local handler. Falls through to the local handler on HubError
-    # (offline / hub unreachable) so degraded mode still works.
-    from flow_sdk.server.routes._hub_reflect import (
-        REFLECT_CONTINUE_LOCAL,
-        reflect_to_hub,
-        should_reflect_to_hub,
-    )
-    from flow_sdk.utils.hub import HubError
+    # Entity files of a remote entity are written through: an upload goes to the hub AND the
+    # local cache (whoever opens the entity reads it from the hub, possibly while this box is
+    # off). Every other hub-bound request never reaches this function (``route_to_hub``).
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+    from flow_sdk.server.routes._hub_reflect import REFLECT_CONTINUE_LOCAL, _reflect_fs_to_hub, should_reflect_to_hub
+    from flow_sdk.cloud_client.shared.errors import HubError
 
-    # The target entity for reflection: entity-bound action handlers receive it
-    # as ``self`` (e.g. ``members``), but the generic CRUD handlers (``update`` /
-    # ``create`` / ``delete``) take only ``request`` — for those, fall back to the
-    # framework-resolved target so a reflectable PUT (e.g. a conversation rename)
-    # still finds its entity.
     entity_for_reflect = kwargs.get("self")
     if entity_for_reflect is None and request_info.auth_result is not None:
         entity_for_reflect = request_info.auth_result.target
-    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect, a.action_name):
+    if a.action_name == "fs" and should_reflect_to_hub(entity_for_reflect, True, "fs"):
         try:
-            # Carry the REAL request method into reflection — never infer the hub
-            # verb from the matched action's static methods (see reflect_to_hub).
-            hub_data = await reflect_to_hub(
-                a,
-                entity_for_reflect,
-                {**request_params, **json_data},
-                request_info.method,
-                request_info.sub_path,
+            mirrored = await _reflect_fs_to_hub(
+                BuiltinEntityType(entity_for_reflect.type), entity_for_reflect.id, request_info.sub_path
             )
-            # Write-through actions (entity files) mirrored to the hub but still
-            # need their LOCAL write — the local store is the cache. Everything
-            # else replaces the local handler with the hub's answer.
-            if hub_data is not REFLECT_CONTINUE_LOCAL:
-                return ApiResponse.success(data=hub_data)
+            if mirrored is not REFLECT_CONTINUE_LOCAL:
+                return ApiResponse.success(data=mirrored)
         except HubError as e:
-            # A hub REJECTION (4xx/5xx) of a mutation must reach the client —
-            # falling back to the local handler would turn a denial (e.g. the
-            # members role-change/remove 403 from the hub's authorization
-            # gates) into a silent fake success and drift local state from the
-            # hub. Only transport failures (status_code == 0: DNS, refused,
-            # timeout — i.e. offline) keep the degraded local fallback, and
-            # GETs do too (a stale local read beats an error) — except a 403:
-            # the hub refusing THIS caller is the answer, not an outage, and a
-            # local read would either show what was refused or hide the refusal
-            # (People & teams turns it into the member's read-only card).
-            is_get = request_info.method.upper() == "GET"
-            if (not is_get and e.status_code >= 400) or (is_get and e.status_code == 403):
+            if e.status_code >= 400:
                 raise HTTPException(status_code=e.status_code, detail=e.reason)
-            service_log.warn(
-                f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
-                f"falling back to local: {e}"
-            )
-        except Exception as e:  # noqa: BLE001
-            # Never let a reflection-layer bug 500 the whole request — fall
-            # through to the local handler. The dispatcher is opportunistic.
-            service_log.warn(
-                f"[hub-reflect] unexpected error on {request_info.action} "
-                f"for {entity_for_reflect.type}/{entity_for_reflect.id}: {type(e).__name__}: {e}"
-            )
+            service_log.warn(f"[hub-fs] upload mirror for {entity_for_reflect.type}/{entity_for_reflect.id}: {e}")
+        except ValueError:
+            pass  # not a hub type: its files stay here
 
     # Call the function with the matched arguments
     try:
@@ -477,11 +418,19 @@ async def catch_all(request: Request, response: Response, background_tasks: Back
     """
     # A type that exists only on the hub has nothing here to parse an action against, read or
     # write — forward the request whole, before any local resolution (see ``hub_only_type``).
-    from flow_sdk.server.routes._hub_reflect import hub_only_type, proxy_hub_only
+    # Where the request is answered is decided from the raw path, before the desktop parses
+    # it: a hub path the desktop does not know must reach the hub intact (``route_to_hub``).
+    if request.method != "OPTIONS":
+        from flow_sdk.server.routes._hub_reflect import route_to_hub
 
-    entity_type = hub_only_type(request.url.path) if request.method != "OPTIONS" else None
-    if entity_type is not None:
-        return await proxy_hub_only(request, entity_type)
+        info = get_current_request_info()
+        target = info.auth_result.target if info is not None and info.auth_result is not None else None
+        # The middleware's Request, when there is one: a body the router reads to decide is
+        # cached on it, so a request that stays local still finds its body.
+        routed = info.request if info is not None and getattr(info, "request", None) is not None else request
+        hub_response = await route_to_hub(routed, target)
+        if hub_response is not None:
+            return hub_response
     try:
         request_info = get_current_request_info()
         if request_info is not None:

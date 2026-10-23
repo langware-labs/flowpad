@@ -16,7 +16,12 @@ import {
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { isKnowledgeSource, isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import {
+  isKnowledgeSource,
+  isMessageDriverSpec,
+  sourcesQuery,
+  useSourceSpecs,
+} from '@src/components/data-sources/use-source-specs';
 import { sourceIcon } from '@src/components/data-sources/source-icon';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
@@ -28,6 +33,7 @@ import { useStagedAssets } from './useStagedAssets';
 import { Empty, IconButton, ResourceRow } from './parts';
 import { AgentCredentialsSection } from './AgentCredentialsSection';
 import { AgentSchedulesSection } from './AgentSchedulesSection';
+import { AgentWebhooksSection } from './AgentWebhooksSection';
 import { AgentDataSourcesSection } from './AgentDataSourcesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
@@ -79,15 +85,21 @@ export function AgentResourcesBody() {
   // `useStagedAssets` like its three neighbours: a DataSource is a DB row and a
   // property of the INSTANCE (`scope: []`, see flow_sdk/builtin/data_source.py),
   // not a file the project-level path scan could find.
-  const { data: sources = NO_SOURCES, isLoading: sourcesLoading, refetch: refetchSources } =
-    useEntitiesQuery<DataSource>(sourcesQuery);
+  const {
+    data: sources = NO_SOURCES,
+    isLoading: sourcesLoading,
+    refetch: refetchSources,
+  } = useEntitiesQuery<DataSource>(sourcesQuery);
 
   // The verb and its confirm copy are owned by `use-source-delete`, shared
   // with the Data Sources screen — this panel reuses them rather than
   // re-implementing "what does deleting a source do".
-  const { deleting, setDeleting, remove: removeSource, confirm: deleteConfirm } = useSourceDelete(
-    () => void refetchSources(),
-  );
+  const {
+    deleting,
+    setDeleting,
+    remove: removeSource,
+    confirm: deleteConfirm,
+  } = useSourceDelete(() => void refetchSources());
 
   // The agent open in the adjacent editor pane, when there is one — read from
   // context rather than re-resolved from the URL: `load-asset.ts` (URL-first
@@ -111,15 +123,9 @@ export function AgentResourcesBody() {
   // form. `dialogs` MUST be rendered or the trigger silently does nothing.
   const { panelProps, dialogs } = useQuickCreatePick();
 
-  const skillRows = useMemo(
-    () => projectRows(skillDescriptors),
-    [skillDescriptors],
-  );
+  const skillRows = useMemo(() => projectRows(skillDescriptors), [skillDescriptors]);
 
-  const docRows = useMemo(
-    () => projectRows(docAssets.descriptors),
-    [docAssets.descriptors],
-  );
+  const docRows = useMemo(() => projectRows(docAssets.descriptors), [docAssets.descriptors]);
 
   // Every row opens NESTED in the agent editor (see DockPointer.child): the item replaces the
   // agent's body in the same tab, the chain reads in the URL and the breadcrumbs, and this menu
@@ -173,7 +179,8 @@ export function AgentResourcesBody() {
   const { channelRows, dataSourceRows } = useMemo(() => {
     const channels: typeof sourceRows = [];
     const data: typeof sourceRows = [];
-    for (const row of sourceRows) (isKnowledgeSource(row.source, specFor(row.source.provider)) ? data : channels).push(row);
+    for (const row of sourceRows)
+      (isKnowledgeSource(row.source, specFor(row.source.provider)) ? data : channels).push(row);
     return { channelRows: channels, dataSourceRows: data };
   }, [sourceRows, specFor]);
   const renderSourceRows = (rows: typeof sourceRows, section: ChildSection) =>
@@ -203,10 +210,7 @@ export function AgentResourcesBody() {
       />
     ));
 
-  const mcpAssetRows = useMemo(
-    () => projectRows(mcpAssets.descriptors),
-    [mcpAssets.descriptors],
-  );
+  const mcpAssetRows = useMemo(() => projectRows(mcpAssets.descriptors), [mcpAssets.descriptors]);
 
   // Same generic route every other file-backed asset (agent, skill, workflow,
   // plan, markdown, …) already deletes through — see
@@ -220,7 +224,9 @@ export function AgentResourcesBody() {
       onConfirm: async () => {
         await apiClient.delete(`${config.API_PREFIXES.graph}/${type}/${id}`);
       },
-      onAfterDelete: () => { void mcpAssets.refresh(); },
+      onAfterDelete: () => {
+        void mcpAssets.refresh();
+      },
     });
   };
 
@@ -268,10 +274,18 @@ export function AgentResourcesBody() {
 
       {editingAgentId && <AgentSchedulesSection agentTypeId={editingAgentId} />}
 
+      {editingAgentId && <AgentWebhooksSection agentTypeId={editingAgentId} />}
+
       {editingAgentId && <AgentCredentialsSection />}
 
       {addChannelOpen && (
-        <DataSourceDialog open onOpenChange={setAddChannelOpen} owner={editingAgentId} only={isMessageDriverSpec} variant="channel" />
+        <DataSourceDialog
+          open
+          onOpenChange={setAddChannelOpen}
+          owner={editingAgentId}
+          only={isMessageDriverSpec}
+          variant="channel"
+        />
       )}
 
       <ConfirmDialog

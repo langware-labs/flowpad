@@ -161,7 +161,10 @@ top-level GET navigation does, and the hub/provider redirects back into the app 
 ## Hub contract
 
 1. `arm_gate` writes the hub's secret into the box at every launch; `_configure_box` does again on
-   login. A local-machine node is not armed at launch.
+   login. A local-machine node is not armed at launch. `/auth/login_callback` switches the logged-in
+   identity or re-arms an already-armed box only for a caller that presents the secret as
+   `X-Cookie-Gate` — the same "hub's hop only" rule as `/auth/revoke`, so a door ticket or grant that
+   passed the gate cannot drive it; a clean (unarmed, signed-out) box still takes a first login with none.
 2. Every hub call into a box goes over the box's loopback with `X-Cookie-Gate`.
 3. `service_endpoint/<id>/open` (reached directly, or through `compute_node/<id>/open/<door>`)
    asks the policy whether THIS caller may enter THIS row, then redirects the browser to the door

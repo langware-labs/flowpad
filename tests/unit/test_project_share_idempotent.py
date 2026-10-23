@@ -24,10 +24,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 
 class _FakeResponse:
@@ -65,10 +67,19 @@ def hub(monkeypatch):
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}),
+        lambda: SimpleNamespace(api_key="test-key", user={"id": "alice"}, is_expired=lambda *_a: False),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
+    # The shared hub transport (``HubProxy.send``) answers from the same fake.
+
+    async def fake_send(method, url, **kwargs):
+        path = str(url)
+        path = "/graph/" + path.split("/graph/", 1)[1] if "/graph/" in path else path
+        fake = await fake_request(None, method, path, **kwargs)
+        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     return holder
 
 

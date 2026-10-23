@@ -146,11 +146,76 @@ export type OrderByType = Record<string, 'asc' | 'desc'>;
  */
 export type MatchMap = Record<string, string | number | boolean | null>;
 
+/** A match every row passes — each row has an id. */
+export const EVERY_ROW = { op: '$IS_NOT_NULL', operands: ['id'] };
+
+/** The keys of a filter that page, order or expand — never fields of the match. */
+const FILTER_WORDS = ['limit', 'offset', 'after', 'order_by', 'expand'];
+
+/** The server's order for a page asked without one: newest first, id breaking ties. */
+const DEFAULT_PAGE_ORDER: OrderByType[] = [{ created_date: 'desc' }, { id: 'asc' }];
+
+function compareValues(a: any, b: any): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  if (a instanceof Date) a = a.getTime();
+  if (b instanceof Date) b = b.getTime();
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  // A date held as a Date on one row and as its ISO string on another (or as ISO strings written
+  // differently) still compares as a time.
+  const isoish = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
+  if (typeof a !== typeof b || (isoish(a) && isoish(b))) {
+    const ta = typeof a === 'number' ? a : Date.parse(String(a));
+    const tb = typeof b === 'number' ? b : Date.parse(String(b));
+    if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta - tb;
+  }
+  const sa = String(a);
+  const sb = String(b);
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
+/** An `order_by` as a list of `{field: dir}` clauses. */
+const orderList = (order?: OrderByType | OrderByType[]): OrderByType[] =>
+  !order ? [] : Array.isArray(order) ? order : [order];
+
+type MatchJSON = { op?: QueryOp; operands: any[] };
+
+/** The field a leaf tests: its first operand, or the `$PROP` field of the legacy `[value, {$PROP: field}]`. */
+function leafField(leaf: MatchJSON): string {
+  const [first, second] = leaf.operands;
+  return second?.op === '$PROP' ? second.operands[0] : first;
+}
+
+/**
+ * `match` as a server that keeps only the `kept` fields can answer it. A field the server does not keep
+ * holds nothing on any of its rows, so a test on it has the same answer for every row: it is answered here,
+ * on an empty row, by the same rules `validate` applies. `$AND` / `$OR` then simplify around the answers.
+ * `true` = every row passes, `false` = none does; otherwise the part left to ask.
+ */
+export function foldUnkept(match: MatchJSON, kept: (field: string) => boolean): MatchJSON | boolean {
+  if (match.op === '$AND' || match.op === '$OR') {
+    const decides = match.op === '$OR'; // the answer that settles the whole node
+    const left: MatchJSON[] = [];
+    for (const operand of match.operands) {
+      const folded = foldUnkept(operand, kept);
+      if (folded === decides) return decides;
+      if (folded !== !decides) left.push(folded as MatchJSON);
+    }
+    if (left.length === 0) return !decides;
+    return left.length === 1 ? left[0] : { op: match.op, operands: left };
+  }
+  const field = String(leafField(match)).split('.')[0];
+  return kept(field) ? match : new QueryFilter({ match: match as ExpressionNode }).validate({});
+}
+
 export class QueryFilter extends ExpansionRequest {
   type?: string;
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
   limit?: number;
   offset?: number;
+  /** A page's `next_cursor`: start right after that page's last row (never together with `offset`). */
+  after?: string;
   order_by?: OrderByType | OrderByType[];
 
   constructor(data: Partial<QueryFilter>) {
@@ -164,6 +229,7 @@ export class QueryFilter extends ExpansionRequest {
       }
       this.limit = data.limit;
       this.offset = data.offset;
+      this.after = data.after;
       this.order_by = data.order_by;
     }
   }
@@ -175,12 +241,12 @@ export class QueryFilter extends ExpansionRequest {
         data = { ...data, ...data.filter };
         delete data.filter;
       }
-      // A map without `match` is the match itself (`{status: 'open'}`) — unless every key is a
-      // filter word: `{limit: 3}` is a page of three, never "the rows whose limit is 3".
-      const words = ['limit', 'offset', 'order_by', 'expand'];
-      const keys = Object.keys(data);
-      if (!data.match && keys.length > 0 && !data.expand && !keys.every((key) => words.includes(key))) {
-        data = { match: data, type: entityType };
+      // A map without `match` is the match itself (`{status: 'open'}`) — but its filter words are not:
+      // `{status: 'open', limit: 3}` is a page of three open rows, never "the rows whose limit is 3".
+      if (!data.match) {
+        const fields = Object.fromEntries(Object.entries(data).filter(([key]) => !FILTER_WORDS.includes(key)));
+        const words = Object.fromEntries(Object.entries(data).filter(([key]) => FILTER_WORDS.includes(key)));
+        data = Object.keys(fields).length ? { ...words, match: fields } : words;
       }
       data = { ...data, type: entityType };
       if (data.expand && typeof data.expand === 'string') {
@@ -201,14 +267,64 @@ export class QueryFilter extends ExpansionRequest {
     if (match instanceof ExpressionNode) {
       match = match.toJSON();
     }
+    // Paging and order ride INSIDE `filter`, beside `match` — the hub reads only `filter`
+    // (`QueryFilter.parse(filter)`), and the local server reads the same keys there. `match` is always
+    // present once anything else is: to the hub a filter without it IS the match (`{limit: 1}` would
+    // read as "rows whose limit is 1"). "Every row" is said as `id IS NOT NULL` — an empty object
+    // does not survive the query-string encoding.
+    const paging = { limit: this.limit, offset: this.offset, after: this.after, order_by: this.order_by };
+    const kept = Object.fromEntries(
+      Object.entries(paging).filter(([, value]) => value !== undefined && value !== null),
+    );
+    const any = match || Object.keys(kept).length;
     return {
-      filter: match ? { match: match } : undefined,
-      limit: this.limit,
-      offset: this.offset,
-      order_by: this.order_by,
+      filter: any ? { match: match ?? EVERY_ROW, ...kept } : undefined,
       expand: this.expandString,
     };
   }
+  /**
+   * This filter as a server that keeps only the `kept` fields can answer it (see {@link foldUnkept}):
+   * tests on other fields are answered here and sorting on them is dropped (they hold the same nothing on
+   * every row). `null` when no row can pass — there is nothing to ask.
+   */
+  forServer(kept: (field: string) => boolean): QueryFilter | null {
+    const folded = this.match ? foldUnkept(new ExpressionNode(this.match).toJSON() as MatchJSON, kept) : true;
+    if (folded === false) return null;
+    const order = orderList(this.order_by)
+      .map((o) => Object.fromEntries(Object.entries(o).filter(([field]) => kept(field))) as OrderByType)
+      .filter((o) => Object.keys(o).length);
+    return new QueryFilter({
+      type: this.type,
+      expand: this.expand,
+      match: folded === true ? undefined : (folded as ExpressionNode),
+      limit: this.limit,
+      offset: this.offset,
+      after: this.after,
+      order_by: order.length ? order : undefined,
+    });
+  }
+
+  /**
+   * The order the server answers this filter in, as a list of `{field: dir}` — the asked `order_by`,
+   * else (for a page) the server's default, newest first. `undefined` for an unpaged, unordered list:
+   * its rows have no order to keep.
+   */
+  get ordering(): OrderByType[] | undefined {
+    if (this.order_by) return orderList(this.order_by);
+    return this.limit != null ? DEFAULT_PAGE_ORDER : undefined;
+  }
+
+  /** Compare two rows in this filter's order (0 when it has none). */
+  compare(a: any, b: any): number {
+    for (const clause of this.ordering ?? []) {
+      for (const [field, dir] of Object.entries(clause)) {
+        const c = compareValues(fieldOf(a, field), fieldOf(b, field));
+        if (c) return dir === 'desc' ? -c : c;
+      }
+    }
+    return 0;
+  }
+
   // Validate the data for whether it passes the filter
   validate(data: any): boolean {
     if (!this.match) {
@@ -389,6 +505,12 @@ export class WatchedQuery<T = any> {
   public readonly request: QueryRequest;
   public results?: T[];
   public pendingPromise?: Promise<T[]>;
+  /** A paged answer's `has_more` — more rows past this page on the server. */
+  public hasMore?: boolean;
+  /** A paged answer's `next_offset` — where the next page starts. */
+  public nextOffset?: number;
+  /** A paged answer's `next_cursor` — sent as `after` to continue right after this page (null: by offset). */
+  public nextCursor?: string | null;
   private callbacks: Map<string, QueryCallback<T>>;
 
   /**
@@ -474,7 +596,17 @@ export class WatchedQuery<T = any> {
    */
   updateResults(newResults: T[]): void {
     this.results = newResults;
+    this.setPage(newResults);
     this.notifyCallbacks();
+  }
+
+  /** Take the `has_more` / `next_offset` / `next_cursor` a paged answer carried (an unpaged one clears them). */
+  setPage(rows: T[] | undefined): void {
+    const meta = rows as unknown as
+      { has_more?: boolean; next_offset?: number; next_cursor?: string | null } | undefined;
+    this.hasMore = typeof meta?.has_more === 'boolean' ? meta.has_more : undefined;
+    this.nextOffset = this.hasMore === undefined ? undefined : Number(meta?.next_offset ?? rows?.length ?? 0);
+    this.nextCursor = this.hasMore === undefined ? undefined : meta?.next_cursor || null;
   }
 
   /**

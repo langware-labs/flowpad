@@ -66,11 +66,16 @@ test.describe('Q publish and cloud asset-editor flow', () => {
     const entityUpdates: string[] = [];
     page.on('request', (request) => {
       const url = request.url();
+      if (url.includes(`/graph/agent/${fixture.agentId}`) && request.method() === 'PUT') entityUpdates.push(url);
+    });
+    // A write counts once its answer is back: the file is read right after, so a write still in flight
+    // would read the old title.
+    page.on('requestfinished', (request) => {
+      const url = request.url();
       // The editor saves the agent's own file through the revision-safe document
       // route (8ad402638); the fields live in agent.json, not agent.md frontmatter.
       if (url.includes(`/graph/agent/${fixture.agentId}/fs/document/agent.json`) && request.method() === 'POST')
         standardFsWrites.push(url);
-      if (url.includes(`/graph/agent/${fixture.agentId}`) && request.method() === 'PUT') entityUpdates.push(url);
     });
     // The hub push is stubbed; its answer is not. The real ``share`` action
     // answers with the canonical entity, now ``remote`` — the ONLY thing the

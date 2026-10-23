@@ -43,26 +43,44 @@ def test_a_drivers_needs_come_from_its_own_manifest():
     assert permissions.needs_of_driver("rss") == []
 
 
+def _signin_of(name: str, manifest) -> str:
+    """The provider a driver signs in through: its ``auth.connector``, or the ``kind: oauth`` way of the
+    credential it owns (a driver that also takes a token, e.g. Slack's bot-or-sign-in)."""
+    import json
+
+    from tests.unit.test_credential_asset._shipped import shipped_credential_folders
+
+    auth = manifest.auth
+    if auth is None:
+        return ""
+    if auth.connector or not auth.credential:
+        return auth.connector
+    folder = shipped_credential_folders().get(auth.credential)
+    variables = json.loads((folder / "credential.json").read_text()).get("vars", {}) if folder else {}
+    return next((v.get("provider", "") for v in variables.values() if v.get("kind") == "oauth"), "")
+
+
 def test_every_oauth_permission_names_only_scopes_its_driver_requests():
     for name, driver in DRIVERS.items():
         manifest = driver.manifest
         if manifest is None or not manifest.permissions:
             continue
+        signin = _signin_of(name, manifest)
         for kind, mapping in manifest.permissions.items():
             if mapping.mechanism != "oauth":
                 continue
-            assert manifest.auth is not None and manifest.auth.connector, f"{name}: {kind} is OAuth without a connector"
-            assert (mapping.connector or provider_of(kind)) == manifest.auth.connector, f"{name}: {kind}"
+            assert signin, f"{name}: {kind} is OAuth without a connector"
+            assert (mapping.connector or provider_of(kind)) == signin, f"{name}: {kind}"
             if mapping.writes or mapping.rows:
                 # Asked for only while a source writes back (or a dataset keeps its rows there): it must be
                 # one the provider lets a connect add,
                 # or one the sign-in already asks for (GitHub's `repo` both reads and comments).
                 from flow_sdk.core.oauth.provider_registry import get_local_provider
 
-                provider = get_local_provider(manifest.auth.connector)
+                provider = get_local_provider(signin)
                 allowed = set(provider.optional_scopes) | set(manifest.auth.scopes) if provider is not None else set()
                 assert provider is not None and set(mapping.oauth_scopes) <= allowed, (
-                    f"{name}: {kind} writes with a scope {manifest.auth.connector} does not offer as optional"
+                    f"{name}: {kind} writes with a scope {signin} does not offer as optional"
                 )
                 continue
             assert set(mapping.oauth_scopes) <= set(manifest.auth.scopes), f"{name}: {kind} names a scope auth never asks for"

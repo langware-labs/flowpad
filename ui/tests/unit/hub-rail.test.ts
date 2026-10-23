@@ -38,7 +38,6 @@ describe('buildHubRailItems', () => {
       'stream_inbox',
       'organization',
       'token-plan',
-      'llm-endpoints',
       'credentials',
     ]);
   });
@@ -66,9 +65,13 @@ describe('buildHubRailItems', () => {
         .map((i) => [i.id, i.pointer]),
     );
 
-    expect(pointers).toEqual({
-      stream_inbox: 'conversation',
-    });
+    expect(pointers).toEqual({});
+  });
+
+  it('opens the stream inbox itself, pointer-less so it stays lit while a row is selected', () => {
+    const streamInbox = buildHubRailItems(t).find((i) => i.id === 'stream_inbox');
+    expect(streamInbox?.viewType).toBe(ViewType.STREAM_INBOX);
+    expect(streamInbox?.pointer).toBeUndefined();
   });
 
   it('sends Organization to the plain screen, not to a graph projection', () => {
@@ -86,22 +89,15 @@ describe('buildHubRailItems', () => {
     expect(organization?.pointer).toBeUndefined();
   });
 
-  it('opens the Token plan view with no pointer, just before LLM Endpoints', () => {
+  it('opens the Token plan view with no pointer, just before Credentials', () => {
+    // LLM Endpoints left the rail: Token plan's "All endpoints" opens it.
     const items = buildHubRailItems(t);
     const idx = items.findIndex((i) => i.id === 'token-plan');
 
     expect(items[idx]?.viewType).toBe(ViewType.TOKEN_PLAN);
     expect(items[idx]?.pointer).toBeUndefined();
-    expect(items[idx + 1]?.id).toBe('llm-endpoints');
-  });
-
-  it('opens the LLM Endpoints view with no pointer, just before Credentials', () => {
-    const items = buildHubRailItems(t);
-    const idx = items.findIndex((i) => i.id === 'llm-endpoints');
-
-    expect(items[idx]?.viewType).toBe(ViewType.LLM_ENDPOINTS);
-    expect(items[idx]?.pointer).toBeUndefined();
     expect(items[idx + 1]?.id).toBe('credentials');
+    expect(items.find((i) => i.id === 'llm-endpoints')).toBeUndefined();
   });
 
   it('never leaks the hub-only ids into the desk rail', () => {

@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import agentic_process
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.compute import keep_alive
 from flow_sdk.instance_settings import runtime
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
@@ -36,12 +37,13 @@ def hub(monkeypatch):
     """The node the hub assigned, and a recorder in place of the hub."""
     sent: list = []
 
-    async def _hub_post(entity_type, payload, entity_id=None, action=None, **_):
+    async def _hub_post(method, entity_type, entity_id=None, action=None, *_, **__):
+        assert method == "POST"
         sent.append((entity_type, entity_id, action))
         return {}
 
     monkeypatch.setattr(runtime.app_config, "get_config", lambda key: NODE if key == "compute_node_typeid" else None)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", _hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_post))
     return sent
 
 
@@ -84,9 +86,9 @@ async def test_an_instance_the_hub_never_assigned_never_reports(monkeypatch):
     monkeypatch.setattr(runtime.app_config, "get_config", lambda key: None)
     keep_alive.note_user_activity()
 
-    with patch("flow_sdk.cloud_client.transport.hub_http.hub_post") as hub_post:
+    with patch.object(HubProxy, "call") as hub_call:
         assert await keep_alive.send_keep_alive_if_in_use() is False
-    hub_post.assert_not_called()
+    hub_call.assert_not_called()
 
 
 async def test_the_ui_action_records_the_moment():

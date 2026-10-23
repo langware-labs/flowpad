@@ -202,10 +202,10 @@ class ServiceEndpoint(Entity):
         return "unknown", f"no builtin check for a {self.backend.type} backend"
 
     async def _health_from_hub(self) -> EndpointHealth:
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            data = await hub_http.hub_get(self.get_type(), self.id, "health")
+            data = await HubProxy.try_call("GET", self.get_type(), self.id, "health")
             return EndpointHealth.model_validate(data)
         except Exception as exc:  # noqa: BLE001 — the hub not answering is not the service failing
             return EndpointHealth(endpoint_id=self.id, name=self.name, state="unknown", detail=f"hub: {exc}")
@@ -292,7 +292,7 @@ class ServiceEndpoint(Entity):
             is_compute_node = get_assigned_compute_node() is not None
             url = await self._direct_url_from_hub(route) if is_compute_node else None
             if is_compute_node and url is None:
-                # No row there, or the call failed: hub_get answers None for both. Not silent.
+                # No row there, or the call failed: try_call answers None for both. Not silent.
                 logger.warning("direct-url: the hub gave no address for %s; answering on this box", self.id)
             url = url or local_direct_url(self, route)
             if url is None:
@@ -332,10 +332,10 @@ class ServiceEndpoint(Entity):
         return ApiSuccessResponse(data=(await self.health_check()).model_dump(mode="json"))
 
     async def _direct_url_from_hub(self, route: Optional[str] = None) -> Optional[str]:
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         params = None if route is None else {"route": route}
-        data = await hub_http.hub_get(self.get_type(), self.id, "direct-url", params=params)
+        data = await HubProxy.try_call("GET", self.get_type(), self.id, "direct-url", params=params)
         return str(data.get("url") or "") or None if isinstance(data, dict) else None
 
 

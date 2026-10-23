@@ -9,7 +9,7 @@
 
 // Export ComputeNode entity class and utilities
 export { ComputeNode, vfsToOsPath, WORKSPACE_FLAVOR } from './compute-node';
-export type { FindSessionResult, WorkerKind } from './compute-node';
+export type { FindSessionResult, NodeAgent, WorkerKind } from './compute-node';
 
 // Export compute node types (enums and interfaces)
 export {

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.cloud_client import webhook_relay
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -42,15 +43,15 @@ def app(monkeypatch):
 
 @pytest.fixture
 def acks(monkeypatch):
-    from flow_sdk.cloud_client.transport import hub_http
 
     sent: list = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def hub_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         sent.append((entity_type, entity_id, action, payload))
         return {"acked": True}
 
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     return sent
 
 

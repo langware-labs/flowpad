@@ -111,19 +111,14 @@ def test_nothing_parses_status_text():
     )
 
 
-def test_the_two_migrated_callers_use_the_machine_surface():
+def test_the_migrated_caller_uses_the_machine_surface():
     """Pin the migration itself, so a revert is a failing test, not a silent
     reintroduction of the bug."""
     verify = (REPO / "scripts" / "verify_instance_reset.sh").read_text()
     assert "instance ctl is-up" in verify
     assert 'grep -q "^  $BYST .*UP"' not in verify
 
-    qa = (REPO / ".claude" / "skills" / "e2e-qa" / "modes" / "qa-cycle.md").read_text()
-    assert "instance ctl port qa-cycle --role backend" in qa
-    # Match the executable assignment, not the prose that explains why the old
-    # one was wrong — the doc deliberately quotes the broken pipeline.
-    assert "QA_BE=$(grep" not in qa
-    assert "<(scripts/instance_ctl.sh status)" not in qa
+    # The other caller, the e2e-qa skill's qa-cycle mode, moved to langware-os (FLOWPAD-2264).
 
 
 # ── CLI behavior the exec callers depend on ──────────────────────────────────

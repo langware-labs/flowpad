@@ -55,7 +55,7 @@ def _hub_conv(c: dict) -> dict:
         "title": c["title"],
         "created_date": c["created_date"],
         "updated_date": c["updated_date"],
-        "participants": [],
+        "members": [],
     }
 
 

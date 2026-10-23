@@ -27,3 +27,19 @@ _OFFLINE_DETAIL = "Budgets require Flowpad Cloud; you're offline or signed out."
 async def budgets(self: Entity):
     """The org's or team's pool and one row per person drawing on it — hub-only."""
     raise HTTPException(status_code=409, detail=_OFFLINE_DETAIL)
+
+
+@action.post(action_name="set-paying-provider", types=["organization"])
+async def set_paying_provider(self: Entity):
+    """Make the organization pay on its own provider key — hub-only, like ``budgets``.
+
+    Registered for the same reason: an unregistered segment is dropped, and the reflected
+    request then reached the hub as ``organization/<id>/create`` (400 "Post not supported").
+    """
+    raise HTTPException(status_code=409, detail=_OFFLINE_DETAIL)
+
+
+@action.post(action_name="setup-budget", types=["organization", "team"])
+async def setup_budget(self: Entity):
+    """Give an organization or team its budget pool — hub-only, like ``budgets``."""
+    raise HTTPException(status_code=409, detail=_OFFLINE_DETAIL)

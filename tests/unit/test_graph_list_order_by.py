@@ -1,46 +1,132 @@
-"""A graph list call sorts on the server BEFORE its limit.
+"""A graph list call sorts on the server BEFORE its limit, and pages without shuffling.
 
-The SDK's QueryFilter.toJSON sends ``order_by`` at the top level, beside
-``filter`` and ``limit``. The StreamInbox asks for the latest 100 conversations that
-way; when the server drops the top-level order it cuts 100 rows in storage
-order, and a conversation updated a moment ago is not among them.
+The order lives inside ``filter`` (the hub's contract). Equal sort keys are settled by ``id`` so page 2
+neither repeats nor skips a row of page 1, and a paged list with no order is newest first.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
+from flow_sdk.builtin.agent_trace import AgentTrace
 from flow_sdk.builtin.conversation import Conversation
 from tests.unit._graph_client import call_local
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-async def test_top_level_order_by_sorts_before_the_limit():
-    tag = uuid.uuid4().hex[:8]
-    # Each save is newer than the last: storage order is the REVERSE of newest-first.
+async def _convs(n: int, title) -> list[Conversation]:
     convs = []
-    for i in range(3):
-        c = Conversation(id=str(uuid.uuid4()), title=f"order-{tag}-{i}")
+    for i in range(n):
+        c = Conversation(id=str(uuid.uuid4()), title=title(i))
         await c.save(notify=False)
         convs.append(c)
+    return convs
 
-    # The query string exactly as the StreamInbox SDK call encodes it.
-    res = await call_local(
-        "GET",
-        "conversation",
-        params={
-            "filter[match][op]": "$IN",
-            "filter[match][operands][0]": "id",
-            **{f"filter[match][operands][1][{i}]": c.id for i, c in enumerate(convs)},
-            "limit": "2",
-            "order_by[0][updated_date]": "desc",
-            "order_by[1][id]": "asc",
-        },
-    )
+
+async def _page(convs, resource: str = "conversation", **page) -> dict:
+    flt = {"match": {"op": "$IN", "operands": ["id", [c.id for c in convs]]}, **page}
+    res = await call_local("GET", resource, params={"filter": json.dumps(flt)})
     assert res.status_code == 200, res.text
-    got = [c["title"] for c in res.json()["data"]]
-    want = [f"order-{tag}-2", f"order-{tag}-1"]
-    assert got == want, f"newest-first returned {got}: order_by was not applied before the limit"
+    return res.json()
+
+
+async def test_order_by_inside_filter_sorts_before_the_limit():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(3, lambda i: f"order-{tag}-{i}")
+    body = await _page(convs, limit=2, order_by=[{"updated_date": "desc"}])
+    got = [c["title"] for c in body["data"]]
+    assert got == [f"order-{tag}-2", f"order-{tag}-1"], f"newest-first returned {got}"
+
+
+async def test_offset_page_two_continues_page_one():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(5, lambda i: f"order-{tag}-{i}")
+    first = await _page(convs, limit=2, order_by=[{"title": "asc"}])
+    second = await _page(convs, limit=2, offset=first["next_offset"], order_by=[{"title": "asc"}])
+    last = await _page(convs, limit=2, offset=second["next_offset"], order_by=[{"title": "asc"}])
+    titles = [c["title"] for body in (first, second, last) for c in body["data"]]
+    assert titles == [f"order-{tag}-{i}" for i in range(5)]
+    assert (first["has_more"], second["has_more"], last["has_more"]) == (True, True, False)
+    assert last["next_offset"] == 5
+
+
+async def test_equal_sort_keys_are_settled_by_id():
+    title = f"same-{uuid.uuid4().hex[:8]}"
+    convs = await _convs(5, lambda i: title)
+    pages = []
+    offset = 0
+    while True:
+        body = await _page(convs, limit=2, offset=offset, order_by=[{"title": "asc"}])
+        pages.extend(c["id"] for c in body["data"])
+        if not body["has_more"]:
+            break
+        offset = body["next_offset"]
+    assert pages == sorted(c.id for c in convs), "equal keys shuffled between pages"
+
+
+async def test_paged_without_order_is_newest_first():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(3, lambda i: f"new-{tag}-{i}")
+    body = await _page(convs, limit=3)
+    assert [c["id"] for c in body["data"]] == [c.id for c in reversed(convs)]
+
+
+async def _cursor_walk(convs, **page) -> list[dict]:
+    """Every row, one page at a time, each page asked for by the previous page's ``next_cursor``."""
+    rows, after = [], None
+    for _ in range(20):
+        body = await _page(convs, **page, **({"after": after} if after else {}))
+        rows.extend(body["data"])
+        assert "next_cursor" in body
+        if not body["has_more"]:
+            assert body["next_cursor"] is None
+            return rows
+        after = body["next_cursor"]
+        assert after
+    raise AssertionError("cursor walk never ended")
+
+
+async def test_cursor_walk_with_tied_keys_neither_repeats_nor_skips():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(7, lambda i: f"cur-{tag}-{(i // 2)}")  # titles tie in pairs
+    rows = await _cursor_walk(convs, limit=2, order_by=[{"title": "desc"}])
+    by_offset = (await _page(convs, limit=7, order_by=[{"title": "desc"}]))["data"]
+    assert [r["id"] for r in rows] == [r["id"] for r in by_offset]
+    assert len({r["id"] for r in rows}) == 7
+
+
+async def test_cursor_walk_on_a_number_compares_numbers():
+    # 9 < 10 < 100 as numbers; compared as text the keyset after 9 would skip 10 and 100.
+    traces = []
+    for count in (9, 10, 10, 2, 100):
+        t = AgentTrace(id=str(uuid.uuid4()), name=f"num-{uuid.uuid4().hex[:8]}", issue_count=count)
+        await t.save(notify=False)
+        traces.append(t)
+    rows = await _cursor_walk(traces, limit=2, order_by=[{"issue_count": "asc"}], resource="agent_trace")
+    assert [r["issue_count"] for r in rows] == [2, 9, 10, 10, 100]
+    assert len({r["id"] for r in rows}) == 5
+
+
+async def test_default_order_cursor_walk_matches_newest_first():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(5, lambda i: f"dflt-{tag}-{i}")
+    rows = await _cursor_walk(convs, limit=2)  # created_date desc, id: keyset compares created_date with $EQ
+    assert [r["id"] for r in rows] == [c.id for c in reversed(convs)]
+
+
+async def test_default_order_cursor_walk_through_tied_created_dates():
+    # The keyset's tie branch is ``created_date $EQ x AND id > y``: an ISO cursor value must equal the
+    # stored DateTime, or every row sharing the page's last timestamp is skipped.
+    same = datetime(2026, 10, 23, 11, 25, 7, 768473, tzinfo=timezone.utc)
+    convs = []
+    for i in range(5):
+        c = Conversation(id=str(uuid.uuid4()), title=f"tie-{i}", created_date=same)
+        await c.save(notify=False)
+        convs.append(c)
+    rows = await _cursor_walk(convs, limit=2)
+    assert [r["id"] for r in rows] == sorted(c.id for c in convs)

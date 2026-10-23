@@ -66,7 +66,7 @@ test('setup: alice creates → bob is a member at once → realtime round-trip <
     // 2. Bob's strip shows the conversation itself, pushed in realtime — no
     //    Refresh, no Accept: the hub already made him a member at invite time.
     await bob.page
-      .locator(`[data-testid="conversation-row"][data-conversation-id="${convId}"]`)
+      .locator(`[data-testid="stream-inbox-conversation-row"][data-conversation-id="${convId}"]`)
       .waitFor({ state: 'visible', timeout: 2_000 });
     console.log(`[setup] bob sees the conversation on his strip  (+${Date.now() - tCreated} ms)`);
 

@@ -41,7 +41,7 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     await expect(bobCard).toHaveAttribute('data-status', 'pending', { timeout: 3_000 });
     await bobCard.getByTestId('session-card-approve').click();
     await expect(sessionCards(alice.page).first()).toHaveAttribute('data-status', 'active', { timeout: 3_000 });
-    await expect(sessionCards(alice.page).first()).toContainText(/1 repl/, { timeout: TURN_BUDGET_MS });
+    await expect(sessionCards(alice.page).first()).toContainText(/(?<!\d)2 messages/, { timeout: TURN_BUDGET_MS });
     await shot(alice.page, 'settings-01-alice-thread-after-first-reply');
 
     // ── follow-up lives in the session view only ───────────────────────────
@@ -56,7 +56,7 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     await shot(alice.page, 'settings-02-alice-session-view-two-replies');
     await alice.page.goBack();
     await alice.page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
-    await expect(sessionCards(alice.page).first()).toContainText(/2 prompts · 2 repl/, { timeout: 3_000 });
+    await expect(sessionCards(alice.page).first()).toContainText(/(?<!\d)4 messages/, { timeout: 3_000 });
     expect(await alice.page.locator('[data-testid^="message-bubble-"]').count()).toBe(threadBubblesBefore);
     await expect(bob.page.locator('[data-testid^="message-bubble-"]')).toHaveCount(threadBubblesBefore, {
       timeout: 3_000,
@@ -91,6 +91,9 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     });
     await alice.page.goBack();
     await alice.page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
+    // The composer icon reopens the open session; a new one starts once this one ends.
+    await sessionCards(alice.page).first().getByTestId('session-card-disconnect').click();
+    await expect(sessionCards(alice.page).first()).toHaveAttribute('data-status', 'ended', { timeout: 3_000 });
     const m4 = `S2-${Date.now()}`;
     await sendOpeningPrompt(alice.page, `Reply with exactly the text ${m4} and nothing else.`);
     await expect(sessionCards(alice.page)).toHaveCount(2, { timeout: 3_000 });
@@ -99,7 +102,7 @@ test('live session settings: follow-up, review policy, standing grant', async ()
     const sessions = await fetch(`${BOB.backendUrl}/api/v1/graph/remote_worker_session`).then((r) => r.json());
     const mine = ((sessions?.data ?? []) as Array<Record<string, unknown>>).filter((s) => s.conversation_id === convId);
     expect(mine.map((s) => s.approved_via).sort()).toEqual(['manual', 'standing_grant']);
-    await expect(second).toContainText(/1 repl/, { timeout: TURN_BUDGET_MS });
+    await expect(second).toContainText(/(?<!\d)2 messages/, { timeout: TURN_BUDGET_MS });
     await shot(alice.page, 'settings-06-alice-two-sessions-second-auto-approved');
     console.log('[settings] follow-up, review, standing grant: all verified');
   } finally {

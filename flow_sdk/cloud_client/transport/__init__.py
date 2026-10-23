@@ -1,29 +1,19 @@
-"""Cloud transport layer — the two ways the local server talks to the hub.
+"""Cloud transport layer — how the local server reaches the hub.
 
-  - ``CloudProxy``           : transparent HTTP reverse proxy (incoming Starlette
-                               request → hub, method carried verbatim).
-  - ``hub_get/post/delete/put`` : outbound HTTP from semantic args (no incoming
-    request) — ``hub_http``.
+  - HTTP: every request goes through ``flow_sdk.cloud_client.hub_proxy.HubProxy``
+    (verbatim forwarding + typed graph calls); ``hub_http`` holds its client and URLs.
   - ``HubWebSocketManager``  : persistent WebSocket proxy (``ws_client``).
 
-This is the canonical grouped import surface for new code. Everything except the
-light ``CloudProxy`` is surfaced lazily so ``import flow_sdk.cloud_client`` stays
-light and cycle-free, and the canonical module identity stays at
+This is the canonical grouped import surface for new code. Everything is surfaced lazily so
+``import flow_sdk.cloud_client`` stays light and cycle-free, and the canonical module identity stays at
 ``cloud_client.client`` / ``.ws_client`` / ``.transport.hub_http`` — so existing
 call sites and test monkeypatches (e.g. ``patch("cloud_client.ws_client.hub_ws_manager")``)
 keep working unchanged.
 """
-from flow_sdk.cloud_client.transport.proxy import CloudProxy
 
 __all__ = [
-    "CloudProxy",
     "ApiConfig",
     "FlowpadClient",
-    "hub_get",
-    "hub_get_or_raise",
-    "hub_post",
-    "hub_delete",
-    "hub_put",
     "hub_graph_url",
     "hub_base_url",
     "get_info",
@@ -36,11 +26,6 @@ _LAZY = {
     "FlowpadClient": ("flow_sdk.cloud_client.client", "FlowpadClient"),
     "HubWebSocketManager": ("flow_sdk.cloud_client.ws_client", "HubWebSocketManager"),
     "hub_ws_manager": ("flow_sdk.cloud_client.ws_client", "hub_ws_manager"),
-    "hub_get": ("flow_sdk.cloud_client.transport.hub_http", "hub_get"),
-    "hub_get_or_raise": ("flow_sdk.cloud_client.transport.hub_http", "hub_get_or_raise"),
-    "hub_post": ("flow_sdk.cloud_client.transport.hub_http", "hub_post"),
-    "hub_delete": ("flow_sdk.cloud_client.transport.hub_http", "hub_delete"),
-    "hub_put": ("flow_sdk.cloud_client.transport.hub_http", "hub_put"),
     "hub_graph_url": ("flow_sdk.cloud_client.transport.hub_http", "hub_graph_url"),
     "hub_base_url": ("flow_sdk.cloud_client.transport.hub_http", "hub_base_url"),
     "get_info": ("flow_sdk.cloud_client.transport.hub_http", "get_info"),

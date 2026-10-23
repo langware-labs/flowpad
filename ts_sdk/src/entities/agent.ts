@@ -492,6 +492,20 @@ export class Agent extends APIEntity<Agent> {
     return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
   }
 
+  /**
+   * What this agent is wired to (`agent/<id>/channels`): its placements and their machines, the caller's links
+   * that deliver to them (channel, state, who — never a code or token) and the connections each may use.
+   */
+  async channels(): Promise<AgentChannels> {
+    const info = new ActionInfo('channels', this.getType(), this.id, 'GET');
+    info.hubReflect = true;
+    // Only the hub knows this; an agent that was never published is answered by the desktop,
+    // which has no `channels` action and returns the agent row. Each list defaults to empty.
+    const data = (await dataManager.callAction<unknown, Partial<AgentChannels>>(info)) ?? {};
+    const list = <T>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
+    return { deployments: list(data.deployments), webhooks: list(data.webhooks), connections: list(data.connections) };
+  }
+
   /** Every place this agent runs on — this computer first — with what each owns. */
   async listPlaces(): Promise<AgentPlace[]> {
     return (await this.get<AgentPlace[]>('places')) ?? [];
@@ -743,6 +757,15 @@ export interface PhoneNumberWire {
 }
 
 /** One place an agent runs on (`GET /agent/<id>/places`). */
+/** `agent/<id>/channels`: what an agent is wired to, names and states only. */
+export interface AgentChannels {
+  deployments: { typeid: string; node_typeid: string | null }[];
+  /** The caller's links delivering to this agent: the channel (`slack`, `whatsapp`…), its state, who it reaches. */
+  webhooks: { id: string; provider: string; status: string; sender: string; name: string; deployment_typeid: string }[];
+  /** Connections a placement may use (`deployment/<id>/authorize`). */
+  connections: { provider: string; deployment_typeid: string }[];
+}
+
 export interface AgentPlace {
   /** The Deployment row, as wire data — wrap with `new Deployment(...)`. */
   deployment: Record<string, unknown> & { id: string; name: string; kind: string };

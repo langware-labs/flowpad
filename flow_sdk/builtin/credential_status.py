@@ -200,13 +200,14 @@ class _Draft:
 
 
 async def credentials_status(
-    project: Optional["Project"], deployment_id: str = "", *, sign_ins: bool = True
+    project: Optional["Project"], deployment_id: str = "", *, sign_ins: bool = True, pairs: Optional[list] = None
 ) -> CredentialsStatusSpec:
     """``sign_ins=False``: a ``cli`` variable's check (a process) is not run and it reads as not signed
-    in — for a reader that lists what a store can hand over, which a sign-in never is."""
+    in — for a reader that lists what a store can hand over, which a sign-in never is. ``pairs``: the
+    project's ``credentials_in_scope``, when the caller read it already."""
     placement = await placement_for_deployment(deployment_id)
     environment = placement.environment
-    pairs = await credentials_in_scope(project)
+    pairs = pairs if pairs is not None else await credentials_in_scope(project)
     declared = declare(pairs)
     (vault_enabled, vault_names), deployments = await asyncio.gather(asyncio.to_thread(_vault_names), known_deployments())
 
@@ -228,6 +229,7 @@ async def credentials_status(
             justification=spec.justification, icon_name=spec.icon_name or "", help_url=spec.help_url or "",
             scope=scope.scope, project_id=scope.project_id, environment=environment,
             setup_skipped=spec.setup_skipped, asset_ref=str(spec.asset_ref or ""),
+            derived=spec.derived,
         )
         if spec.is_oauth:
             state, missing_scopes = grants.get(_grant_key(spec.provider, spec.scopes), ("missing", []))

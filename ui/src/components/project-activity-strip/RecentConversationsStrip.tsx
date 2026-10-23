@@ -13,7 +13,6 @@ import {
   isInvitationGoneError,
   isTypeId,
   conversationRowMessageIds,
-  latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict, type UploadFlowMessageResult } from '@sdk/entities/flow-message';
@@ -476,7 +475,7 @@ function ConversationRow({
   // latest message preview but still need the first to detect invitation kind.
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
-  const lastPtr = latestPointer(pointers);
+  const lastPtr = conv.latestMessagePointer;
 
   const firstTypeId = useMemo(() => (firstPtr ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const lastTypeId = useMemo(() => (lastPtr ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);

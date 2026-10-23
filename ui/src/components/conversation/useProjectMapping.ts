@@ -51,7 +51,7 @@ export async function writeProjectMapping(
   return _cache;
 }
 
-export function useProjectMapping(): {
+export function useProjectMapping({ enabled = true }: { enabled?: boolean } = {}): {
   mapping: ProjectMapping;
   loaded: boolean;
   setMapping: (remoteProjectId: string, localProjectId: string) => Promise<void>;
@@ -60,10 +60,11 @@ export function useProjectMapping(): {
   const [loaded, setLoaded] = useState<boolean>(_cache !== null);
 
   useEffect(() => {
+    if (!enabled) return;
     _listeners.add(setLocal);
     void ensureLoaded().then(() => setLoaded(true));
     return () => { _listeners.delete(setLocal); };
-  }, []);
+  }, [enabled]);
 
   const setMapping = useCallback(async (remoteProjectId: string, localProjectId: string) => {
     await writeProjectMapping(remoteProjectId, localProjectId);

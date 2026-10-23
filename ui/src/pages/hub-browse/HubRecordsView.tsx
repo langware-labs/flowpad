@@ -1,4 +1,4 @@
-import { PageId, QueryRequest, ViewType } from '@sdk';
+import { EVERY_ROW, ExpressionNode, PageId, QueryFilter, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -41,17 +41,36 @@ const RAIL_HEADING: Record<string, string> = {
   markdown: 'Docs',
 };
 
+/** How many records a page of the list asks for. */
+export const HUB_RECORDS_PAGE_SIZE = 100;
+
 export function HubRecordsView({ type }: { type?: string }) {
   const { navigation } = useDockNavigation();
 
+  // A conversation its owner deleted stays readable to that owner on the hub (``deleted_at``
+  // set, kept for audit) — it is gone from the Stream Inbox, so the list asks for live rows only.
   const request = useMemo(
-    () => (type ? new QueryRequest({ type, query: null, scope: [], name: `hub-records-${type}` }) : null),
+    () =>
+      type
+        ? new QueryRequest({
+            type,
+            // The newest page; the server says when more are behind it (`loadMore`).
+            query: new QueryFilter({
+              match:
+                type === 'conversation' ? { op: '$IS_NULL', operands: ['deleted_at'] } : new ExpressionNode(EVERY_ROW),
+              limit: HUB_RECORDS_PAGE_SIZE,
+              order_by: [{ created_date: 'desc' }, { id: 'asc' }],
+            }),
+            scope: [],
+            name: `hub-records-${type}`,
+          })
+        : null,
     [type],
   );
   // Generic list — the concrete entity type is data-driven; we only read `id`
   // and the SDK `displayName` label off each hydrated entity.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, isLoading } = useEntitiesQuery<any>(request as QueryRequest, {
+  const { data, isLoading, hasMore, loadMore, isLoadingMore } = useEntitiesQuery<any>(request as QueryRequest, {
     enabled: !!type && !!request,
   });
   const rows = (data ?? []) as Row[];
@@ -62,6 +81,9 @@ export function HubRecordsView({ type }: { type?: string }) {
     // type opens in the generic HubEntityView (title + entity-field content).
     if (type === 'conversation') {
       navigation.openPage(PageId.HUB, ViewType.CONVERSATION, row.id);
+    } else if (type === 'organization') {
+      // The Organization screen renders an org; the generic entity view only shows "No content.".
+      navigation.openPage(PageId.HUB, ViewType.ORGANIZATION, `organization/${row.id}`);
     } else {
       navigation.openDock(hubEntityDock(type, row.id));
     }
@@ -98,6 +120,17 @@ export function HubRecordsView({ type }: { type?: string }) {
                 <span className="min-w-0 flex-1 truncate text-sm">{row.displayName || row.id}</span>
               </button>
             ))}
+            {hasMore && (
+              <button
+                type="button"
+                disabled={isLoadingMore}
+                onClick={() => void loadMore?.()}
+                data-testid="hub-records-load-more"
+                className="rounded-lg border border-dashed border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent disabled:opacity-60"
+              >
+                {isLoadingMore ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+              </button>
+            )}
           </div>
         )}
       </div>

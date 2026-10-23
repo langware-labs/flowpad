@@ -107,9 +107,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   tabManager.resetForTests();
+  observers.splice(0).forEach((o) => o.disconnect());
   terminalPool.resetForTests();
   vi.restoreAllMocks();
 });
+
+const observers: MutationObserver[] = [];
 
 /** A pool container or the stack itself — the nodes whose moves re-lay-out a panel. */
 const isPoolNode = (n: Node) =>
@@ -137,6 +140,7 @@ async function mount() {
       }
     }
   });
+  observers.push(observer);
   observer.observe(document.body, { childList: true, subtree: true });
   const drain = () => {
     for (const r of observer.takeRecords()) {

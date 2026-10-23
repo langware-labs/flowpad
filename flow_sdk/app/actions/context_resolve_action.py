@@ -33,7 +33,7 @@ from flow_sdk.actions import action
 # Reuse the target-loader so the holder is bound to the active storage scope
 # (required by the save path) — identical to the share/unshare actions.
 from flow_sdk.app.actions.context_share_action import _resolve_target_entity
-from flow_sdk.cloud_client.transport.hub_http import hub_resolve_by_typeid
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
@@ -95,7 +95,7 @@ async def reconcile_context() -> ApiResponse:
         if local is None or local is True:
             # Unknown type / query error → leave it; present locally → not dangling.
             continue
-        state, _data = await hub_resolve_by_typeid(t)
+        state, _data = await HubProxy.exists(t)
         if state == "present":
             remote_present.append(str(t))
             continue

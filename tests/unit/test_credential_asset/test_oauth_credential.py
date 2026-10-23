@@ -157,7 +157,7 @@ async def test_creating_a_source_declares_the_connection_it_acts_through(project
 
 
 @pytest.mark.asyncio
-async def test_an_oauth_credential_a_source_needs_is_skipped_locally_never_always(project, catalogue, monkeypatch):
+async def test_an_oauth_credential_a_source_outside_the_project_needs_is_skipped_locally_only(project, catalogue, monkeypatch):
     from flow_sdk.builtin import project_setup
     from flow_sdk.builtin.data_source import DataSource
 
@@ -171,8 +171,9 @@ async def test_an_oauth_credential_a_source_needs_is_skipped_locally_never_alway
     _grants(monkeypatch, None)
 
     (google,) = [r for r in await project_setup.collect_requirements(project) if r.name == "google"]
-    assert google.is_oauth and not google.can_skip_always and "needed by drive" in google.why_not_always
-    with pytest.raises(project_setup.SkipRefused, match="needed by drive"):
+    assert google.is_oauth and [r.name for r in google.roots] == ["drive"]
+    assert not google.can_skip_always and "'drive' is not declared" in google.why_not_always
+    with pytest.raises(project_setup.SkipRefused, match="not declared"):
         await project_setup.skip_requirement(project, google.typeid, scope="always")
 
     await project_setup.skip_requirement(project, google.typeid, scope="local")

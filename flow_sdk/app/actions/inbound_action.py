@@ -58,8 +58,8 @@ def hub_call(method: str, sub_path: str) -> Optional[HubCall]:
 
 @action.all(action_name="inbound", methods=["get", "post", "delete"], types=["data_source"])
 async def inbound_action() -> ApiResponse:
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_request  # noqa: PLC0415
 
     request_info = get_current_request_info()
     if not request_info or not request_info.request:
@@ -75,7 +75,7 @@ async def inbound_action() -> ApiResponse:
     if payload is not None and not isinstance(payload, dict):
         return ApiFailResponse(message="expected a JSON object", status_code=400)
     try:
-        data = await hub_request(call.method, "webhook", call.entity_id, call.action, payload=payload)
+        data = await HubProxy.call(call.method, "webhook", call.entity_id, call.action, payload=payload, strict=True)
     except HubError as e:
         status = e.status_code if e.status_code >= 400 else 502
         return ApiFailResponse(message=e.reason, status_code=status)

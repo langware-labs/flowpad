@@ -230,8 +230,10 @@ export function buildAssetChild(
       showBusyIndicator: false,
     });
   }
+  const typeId = resultTypeId(result);
   const node: Browseable = {
     id: assetNodeId(typeName, result.asset_ref),
+    entity: typeId ? { type: typeId.type, id: typeId.id } : undefined,
     kind: 'asset',
     label,
     icon: <EntityIcon type={typeName} remote={result.remote} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,

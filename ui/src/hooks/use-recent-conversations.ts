@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Conversation, QueryRequest } from '@sdk';
+import { Conversation, ExpressionNode } from '@sdk';
+import { recentConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 
@@ -18,13 +19,27 @@ export function useRecentConversations(
   opts: { excludeId?: string; limit?: number; filter?: (c: Conversation) => boolean } = {},
 ): Conversation[] {
   const { excludeId, limit = 5, filter } = opts;
-  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
+  // The server answers the newest open conversations — a page, not every conversation. With a filter
+  // of its own (or one to exclude) the page is wider, so the slice still fills after it.
+  const pageSize = filter ? 100 : limit + (excludeId ? 1 : 0);
+  const request = useMemo(
+    () =>
+      recentConversationsRequest(
+        [
+          new ExpressionNode({ op: '$IS_NULL', operands: ['dismissed_at'] }),
+          new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] }),
+        ],
+        pageSize,
+        'recent-conversations',
+      ),
+    [pageSize],
+  );
   const { data: conversations = [] } = useEntitiesQuery<Conversation>(request, { enabled });
 
   return useMemo(
     () =>
       conversations
-        .filter((c) => !c.dismissed_at && !c.archived_at && c.id !== excludeId)
+        .filter((c) => c.id !== excludeId)
         .filter((c) => (filter ? filter(c) : true))
         .sort(compareConversationsByRecency)
         .slice(0, limit),

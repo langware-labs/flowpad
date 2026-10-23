@@ -29,7 +29,7 @@ from typing import Any, Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.task import Task
-from flow_sdk.cloud_client.transport.hub_http import hub_get
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -155,14 +155,14 @@ async def materialize_accepted_task_invitation(target_id: str, someone_typeid) -
 
     Called from ``handle_invitation_accept``.
     """
-    hub_task = await hub_get(BuiltinEntityType.TASK, target_id, params={"expand": "blobs"})
+    hub_task = await HubProxy.try_call("GET", BuiltinEntityType.TASK, target_id, params={"expand": "blobs"})
     if not isinstance(hub_task, dict) or not hub_task.get("id"):
         return None
 
     parent_id = hub_task.get("parent_id")
     if parent_id:
         parent: Optional[Task] = None
-        hub_parent = await hub_get(BuiltinEntityType.TASK, str(parent_id), params={"expand": "blobs"})
+        hub_parent = await HubProxy.try_call("GET", BuiltinEntityType.TASK, str(parent_id), params={"expand": "blobs"})
         if isinstance(hub_parent, dict) and hub_parent.get("id"):
             parent = await materialize_remote_task(hub_parent, someone_typeid)
         child = await materialize_remote_task(
@@ -176,7 +176,9 @@ async def materialize_accepted_task_invitation(target_id: str, someone_typeid) -
     if parent is None:
         return None
     await _pull_history(parent, someone_typeid)
-    children = await hub_get(BuiltinEntityType.TASK, target_id, action=Task.get_type(), params={"expand": "blobs"})
+    children = await HubProxy.try_call(
+        "GET", BuiltinEntityType.TASK, target_id, action=Task.get_type(), params={"expand": "blobs"}
+    )
     child_list = children if isinstance(children, list) else []
     child: Optional[Task] = None
     for raw in child_list:

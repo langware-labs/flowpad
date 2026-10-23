@@ -14,6 +14,7 @@ import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from tests.unit._stream_inbox_matrix import double_for
 from tests.utils.mock_worker import MockDriver
 from tests.utils.snippets import doc, fence_under, point_driver_at, run_fence, run_fence_until
@@ -67,7 +68,6 @@ async def test_channel_routing_group_example(whatsapp, monkeypatch, account_clai
     """
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.agent_serve import admits
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.instance_settings import runtime
 
     driver = DataDriver.loaded("whatsapp")
@@ -77,21 +77,21 @@ async def test_channel_routing_group_example(whatsapp, monkeypatch, account_clai
     await account.save()
     posted = []
 
-    async def hub_get(entity, entity_id=None, action=None, *args, **kwargs):
-        assert (entity, action) == ("webhook", "mine")
+    async def fake_try_call(method, entity, entity_id=None, action=None, *args, **kwargs):
+        assert (method, entity, action) == ("GET", "webhook", "mine")
         return {"webhooks": [{
             "id": "account-claim", "provider": "whatsapp", "status": "active",
             "claim": {"kind": "account", "key": account.config["phone_number_id"]},
             "target": {"kind": "desktop", "instance_id": "routing-instance", "data_source_id": str(account.id)},
         }] if account_claimed else []}
 
-    async def hub_post(entity, payload, entity_id=None, action=None, *args, **kwargs):
-        assert (entity, action) == ("webhook", "chain")
+    async def fake_call(method, entity, entity_id=None, action=None, *args, payload=None, **kwargs):
+        assert (method, entity, action) == ("POST", "webhook", "chain")
         posted.append(payload)
         return {"id": "group-claim"}
 
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "routing-instance")
     group_id = "Y2FwaV9ncm91cDoxMjM0NTY3ODkwMTIzNDU6MTIwMzYzMDAwMDAwMDAwMDAx"
     page = "channel-webhook-routing.md"

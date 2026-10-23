@@ -1,6 +1,6 @@
 """The hub's ``project/<id>/git_share`` action, played for desk-side tests.
 
-``HubDouble`` answers ``hub_get/hub_post/hub_delete/hub_put`` the way the hub does
+``HubDouble`` answers ``HubProxy.call`` / ``try_call`` (GET/POST/DELETE/PUT) the way the hub does
 and checks every request the desk sends: the entity, the id, the action and, for
 ``POST``, that the repo is named by its GitHub ``owner/name``.
 """
@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import uuid
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-
-HUB = "flow_sdk.cloud_client.transport.hub_http"
 
 
 class HubDouble:
@@ -72,12 +71,19 @@ class HubDouble:
         self.git_origin = body["git_origin"]
         return body
 
+    async def call(self, method, etype, eid=None, action=None, sub_path=None, *, payload=None, **_k):
+        """``HubProxy.call`` / ``try_call``, routed to the verb doubles above."""
+        method = method.upper()
+        if method == "GET":
+            return await self.get(etype, eid, action, sub_path)
+        if method == "POST":
+            return await self.post(etype, payload, eid, action, sub_path)
+        if method == "PUT":
+            return await self.put(etype, eid, payload, action, sub_path)
+        assert method == "DELETE", method
+        return await self.delete(etype, eid, action, sub_path)
+
     def install(self, monkeypatch) -> "HubDouble":
-        for name, fn in (
-            ("hub_get", self.get),
-            ("hub_post", self.post),
-            ("hub_delete", self.delete),
-            ("hub_put", self.put),
-        ):
-            monkeypatch.setattr(f"{HUB}.{name}", fn)
+        monkeypatch.setattr(HubProxy, "call", staticmethod(self.call))
+        monkeypatch.setattr(HubProxy, "try_call", staticmethod(self.call))
         return self

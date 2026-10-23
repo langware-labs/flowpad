@@ -140,6 +140,13 @@ class SlackSource(MessageSource):
     #: A person keeps any number of reactions on a message.
     reactions_per_actor = 0
 
+    @classmethod
+    async def recent(cls, hours: float = 24.0) -> dict[str, Any]:
+        """What happened lately in the channels this machine's Slack account is in (``recent.py``)."""
+        from .recent import recent  # noqa: PLC0415
+
+        return await recent(hours)
+
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
         self._client: Any = None

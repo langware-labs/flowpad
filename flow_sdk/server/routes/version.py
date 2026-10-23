@@ -17,7 +17,7 @@ from flow_sdk import __version__
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.server import self_update
 from flow_sdk.server.launch import get_status
-from flow_sdk.utils import hub
+from flow_sdk.cloud_client.transport import hub_http
 from flow_sdk.utils.semver import _cmp_key, is_newer, string2semver
 from flow_sdk.utils.serialization import epoch_to_iso_utc
 
@@ -250,7 +250,7 @@ async def check_version(refresh: bool = False) -> ApiSuccessResponse[VersionChec
         pypi_info, github_result, hub_raw = await asyncio.gather(
             _fetch_pypi(client),
             _fetch_github(client),
-            hub.get_info(),
+            hub_http.get_info(),
         )
     releases, github_error = github_result
     hub_info = _hub_info_from_raw(hub_raw)

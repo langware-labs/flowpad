@@ -27,7 +27,7 @@ async def test_check_version_exposes_hub_build_timestamps(monkeypatch):
 
     monkeypatch.setattr(version_route, "_fetch_pypi", fake_fetch_pypi)
     monkeypatch.setattr(version_route, "_fetch_github", fake_fetch_github)
-    monkeypatch.setattr(version_route.hub, "get_info", fake_hub_info)
+    monkeypatch.setattr(version_route.hub_http, "get_info", fake_hub_info)
 
     try:
         response = (await version_route.check_version()).data
@@ -58,7 +58,7 @@ async def test_check_again_skips_the_cache_that_a_plain_open_reuses(monkeypatch)
 
     monkeypatch.setattr(version_route, "_fetch_pypi", fake_fetch_pypi)
     monkeypatch.setattr(version_route, "_fetch_github", fake_fetch_github)
-    monkeypatch.setattr(version_route.hub, "get_info", fake_hub_info)
+    monkeypatch.setattr(version_route.hub_http, "get_info", fake_hub_info)
 
     try:
         assert (await version_route.check_version()).data.pypi.latest == "0.2.182"

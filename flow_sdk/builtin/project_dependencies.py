@@ -227,8 +227,8 @@ async def _local_project_root(project_id: str, rel: str) -> Optional[str]:
 async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, update: bool, cloned: bool) -> _Found:
     """A hub project: its row names where its files live (``git_origin``) — the
     project's hosted repository, or its own git remote."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
     from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
@@ -237,7 +237,7 @@ async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, updat
     if not fetch:
         raise _NotReady("missing", "not on this machine yet — sync to fetch it")
     try:
-        row = await hub_get_or_raise(BuiltinEntityType.PROJECT, project_id)
+        row = await HubProxy.call("GET", BuiltinEntityType.PROJECT, project_id)
     except HubError as exc:
         from flow_sdk.dependencies.resolve import hub_reason  # noqa: PLC0415
 

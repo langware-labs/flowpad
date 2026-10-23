@@ -41,7 +41,7 @@ export type ReceiveShowTarget = ShowTarget;
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
  * action (``APIEntity.fetchMembers``). The hub normalizes ``user_email`` →
- * ``email`` etc. server-side (see ``_hub_reflect._normalize_hub_response``);
+ * ``email`` etc. server-side (see ``_hub_reflect.normalize_hub_response``);
  * extra hub keys (``status``, ``role``, ``invitation_id``, …) pass through, so
  * this is intentionally open. ``Participant`` in ``entities/members.ts`` is the
  * structurally-compatible alias kept for existing import sites. */
@@ -56,7 +56,7 @@ export interface EntityMember {
 
 /**
  * The hub's roster keys (``user_email`` / ``user_name`` / ``user_picture``) in the client form.
- * The local server does this in ``_normalize_hub_response``, but a hub-only frontend reads the hub
+ * The local server does this in ``normalize_hub_response``, but a hub-only frontend reads the hub
  * directly and skips it — so an invited user with no name rendered as "unknown".
  */
 export function normalizeMember(m: EntityMember): EntityMember {
@@ -270,8 +270,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Hub role roster cache: one row per member with their hub-set role. Membership
    * is a generic capability of any remote entity; the hub is the source of truth
    * (RoleRelationship edges) and this is a READ CACHE. ``deepAssign`` populates it
-   * from the wire ``members`` field. The conversation WIRE key is ``participants``
-   * (hub contract) and is adapted to ``members`` in Conversation.onEntityUpdate.
+   * from the wire ``members`` field.
    */
   members?: EntityMember[];
   _expand?: EntityExpansion;
@@ -1028,8 +1027,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * ``{idOrEmail, role}``) — the local backend's ``share`` action validates it.
    */
   public async share(users: ShareInvitee[] = []): Promise<T> {
-    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     const recipients = shareRecipients(users);
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = recipients.length ? { ...this.toJSON(), recipients } : {};
     // Not one fixed shape — a full entity or a bare receipt, depending on entity type — hence a guarded dict, not a named response type.
     const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
@@ -1069,7 +1068,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * The ``members`` action is ``reflect="hub"`` server-side: for a ``remote``
    * entity the local server forwards to the hub and mirrors the roster back
    * onto the local row; for a local-only entity it returns the cached
-   * participants. Either way this returns the normalized ``EntityMember[]``.
+   * members. Either way this returns the normalized ``EntityMember[]``.
    *
    * ``cache`` (default ``true``): return the per-instance cached roster when
    * present, so incidental reads are free. Pass ``cache: false`` to force a
@@ -1117,7 +1116,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *    false, so the body of every existing caller is unchanged.
    */
   public async inviteMember(
-    email: string,
+    /** An email — for anyone — or a hub user id, for a contact known only by id. */
+    idOrEmail: string,
     role: string = 'member',
     opts?: {
       callbackOverride?: string;
@@ -1149,7 +1149,9 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
-      recipient_email: normalizeEmail(email) ?? '',
+      ...(idOrEmail.includes('@')
+        ? { recipient_email: normalizeEmail(idOrEmail) ?? '' }
+        : { recipient_user_id: idOrEmail.replace(/^user-/, '') }),
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
       ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),

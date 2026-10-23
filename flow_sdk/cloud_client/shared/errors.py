@@ -77,21 +77,35 @@ class HubError(Exception):
             kind=self.kind, status=self.status_code or None, code=self.code, message=self.user_message()
         )
 
-    def fail_response(self, prefix: str):
-        """This failure as an action's answer: the sentence, the status that names whose fault
-        it is, and ``data.error_code`` for the UI to match (never the prose)."""
-        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+    @property
+    def http_status(self) -> int:
+        """The status this failure answers with locally — the one that names whose fault it is."""
         from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
-        status = {
-            HubFailureKind.SIGNED_OUT: 401,
-            HubFailureKind.NOT_CONFIGURED: 503,
-            HubFailureKind.REJECTED: self.status_code if self.status_code >= 400 else 400,
-        }.get(self.kind, 502)
+        if self.kind is HubFailureKind.SIGNED_OUT:
+            return 401
+        if self.kind is HubFailureKind.NOT_CONFIGURED:
+            return 503
+        if self.kind is HubFailureKind.REJECTED:
+            return self.status_code if self.status_code >= 400 else 400
+        return 502  # offline, or the hub itself broke: a bad gateway either way
+
+    @property
+    def envelope_data(self) -> dict:
+        """``data`` of every FAIL envelope built from this failure: the UI matches ``error_code``."""
+        return {
+            "error_code": self.kind.value,
+            "hub_failure": self.kind.value,
+            "hub_status": self.status_code or None,
+            "hub_code": self.code,
+        }
+
+    def fail_response(self, prefix: str):
+        """This failure as an action's answer: the sentence, ``http_status`` and ``envelope_data``."""
+        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
         return ApiFailResponse(
-            message=f"{prefix}: {self.user_message()}",
-            status_code=status,
-            data={"error_code": self.kind.value, "hub_status": self.status_code or None, "hub_code": self.code},
+            message=f"{prefix}: {self.user_message()}", status_code=self.http_status, data=self.envelope_data
         )
 
     def user_message(self) -> str:

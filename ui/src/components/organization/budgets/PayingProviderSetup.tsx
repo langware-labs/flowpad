@@ -180,6 +180,7 @@ function OrgKeyCreateForm({ orgId }: { orgId: string }) {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const setup = useSetPayingProvider();
+  const invalidate = useInvalidateBudgets();
   const spec = PROVIDERS.find((p) => p.id === providerId) ?? PROVIDERS[0];
 
   const submit = async () => {
@@ -197,9 +198,12 @@ function OrgKeyCreateForm({ orgId }: { orgId: string }) {
       const created = await setup.mutateAsync({ orgId, provider: providerId, baseUrl: spec.defaultBaseUrl });
       try {
         await llmEndpointsService.setCredential(endpointIdFromTypeId(created.endpoint_id), key.trim());
+        // The setup's own refetch ran before the key existed; read again so the stored-key hint shows.
+        void invalidate();
+        const providerLabel = i18n._(spec.label);
         notify.success({
           title: t`Organization activated`,
-          message: t`Spending now bills your own ${spec.label}.`,
+          message: t`Spending now bills your own ${providerLabel}.`,
           id: 'org-root',
         });
         setKey('');

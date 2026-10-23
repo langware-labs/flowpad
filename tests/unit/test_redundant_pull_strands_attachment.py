@@ -26,7 +26,7 @@ the fix removes. Tree identity is read from the inode, so a same-path rebuild is
 caught even when the bytes are identical.
 
 Real bundle from the real packer, real pull chokepoint, real unpack. The ONLY
-seam is ``hub_get`` — the network boundary — serving the real bundle's bytes
+seam is ``HubProxy.download`` — the network boundary — serving the real bundle's bytes
 from disk instead of a remote hub. The fault is never simulated.
 
 # do not increase timeout without approval
@@ -42,6 +42,7 @@ from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, BodyStatus, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import pack_bundle
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.operations.flow_message import staged_entry_dir, unpacked_dir
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(60)]  # do not increase timeout without approval
@@ -89,8 +90,9 @@ def _tree_identity() -> tuple[int, int]:
 async def test_redundant_pull_leaves_the_staged_tree_intact(tmp_path):
     bundle = await _real_bundle_bytes(tmp_path)
 
-    with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get",
+    with patch.object(
+        HubProxy,
+        "download",
         AsyncMock(return_value=bundle),
     ) as hub:
         # Pull #1 — the automatic one fired when the conversation opens.

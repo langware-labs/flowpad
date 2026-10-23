@@ -11,14 +11,14 @@ from flow_sdk.server.routes._hub_reflect import read_hub_document
 
 @pytest.mark.parametrize('status', [200, 403, 404])
 async def test_agent_definition_uses_authoritative_downloads(monkeypatch, status):
-    from flow_sdk.cloud_client import CloudProxy
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     agent = Agent(name='Remote', system_prompt='stale local body')
     info = SchemaRegistry.get('agent')
     calls = []
 
-    async def proxy(self, request, url=None):
+    async def proxy(request, url=None):
         calls.append(str(url))
         if str(url).endswith('/agent.json'):
             raw, code = b'{"name":"Authoritative","type":"agent"}', status
@@ -28,7 +28,7 @@ async def test_agent_definition_uses_authoritative_downloads(monkeypatch, status
             yield raw
         return StreamingResponse(chunks(), status_code=code)
 
-    monkeypatch.setattr(CloudProxy, '__call__', proxy)
+    monkeypatch.setattr(HubProxy, 'forward', staticmethod(proxy))
     monkeypatch.setattr('flow_sdk.cloud_client.transport.hub_http.hub_graph_url',
                         lambda et, eid, action, path: f'https://hub/{et}/{eid}/{action}/{path}')
     response = await read_hub_document(Request({'type': 'http', 'method': 'GET', 'path': '/'}), agent, 'agent.json')

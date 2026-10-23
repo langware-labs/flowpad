@@ -6,7 +6,7 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { buildConversationStatusPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { OpenSessionButton, WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { OpenSessionButton, ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 
 /**
  * Conversation-header affordance for the conversation's owning worker session.
@@ -64,7 +64,7 @@ export function ConversationHeaderSession({
             testIdPrefix={testIdPrefix}
           />
         )}
-        <WorkerToolbar starting={starting} onLaunch={launch} testIdPrefix={testIdPrefix} />
+        <ContextWorkerToolbar starting={starting} onLaunch={launch} testIdPrefix={testIdPrefix} />
       </div>
       <OpenProjectComponent {...dialogProps} />
     </>
