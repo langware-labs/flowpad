@@ -42,7 +42,7 @@ loads the driver. Only a source that owes a setup (`setup_owed`) holds its proje
 watches one account once: `save()` of a new source for an account its owner already watches adopts
 that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
 config merged onto it, its cursor kept — instead of minting a twin. Items are the same: `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) looks a row up by its natural key, so a re-ingest updates instead of duplicating.
-`gitignored` (default true) keeps the source's reflected/copied DATA out of git (`keep_out_of_git`, `flow_sdk/ingest/reflect.py`); `data_source.json` itself is a committed project asset. `owner=` takes the entity itself
+`gitignored` (default true) keeps the source's reflected/copied DATA out of git (`keep_out_of_git`, `flow_sdk/ingest/reflect.py`); `data_source.json` itself is a committed project asset: it goes into git with the project, so it holds config only (an address, a channel, an id), never a secret. Tokens, passwords, API keys and other personal secrets live in the credential store (`flow credentials set`, `.env.local` style), which the driver reads through its manifest's `auth`; `tests/unit/test_data_source_holds_no_secret.py` fails on any tracked data source file that names one. `owner=` takes the entity itself
 (an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
 
