@@ -33,17 +33,6 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 _PROVIDER_STATE_KEYS = ("etag", "last_modified", "last_update_ptr", "oldest_ts", "boundary_ids")
 
 
-@pytest.fixture(autouse=True)
-def _restore_drivers():
-    """The fakes these tests register must not outlive them: a later ``flow source list`` lists them."""
-    from flow_sdk.ingest.driver_runtime import DRIVERS
-
-    DRIVERS.ensure()  # the shipped drivers load lazily: take the snapshot with them in it
-    saved = dict(DRIVERS._items)
-    yield
-    DRIVERS._items.clear()
-    DRIVERS._items.update(saved)
-
 
 def test_cursor_state_is_opaque_to_the_subsystem():
     """No provider-private cursor key may be read in ``ingest/``: a cursor is the source's own string."""
