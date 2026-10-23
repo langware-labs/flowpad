@@ -579,7 +579,7 @@ export interface HelpdeskTicket {
   /** Guest (ticket opener) hub user id. */
   initiated_by?: string | null;
   message_count: number;
-  participant_count: number;
+  member_count: number;
   /** True when the calling staff user is already on the roster. */
   picked_up: boolean;
   /** Staff in the ticket. A picked ticket stays in the queue. */

@@ -40,7 +40,7 @@ TICKET = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ME = "11111111-1111-4111-8111-111111111111"
 GUEST = "22222222-2222-4222-8222-222222222222"
 POOL = [{"conversation_id": TICKET, "title": None, "preview": "my printer is broken", "initiated_by": GUEST, "message_count": 1,
-         "participant_count": 1, "picked_up": False, "created_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:00:00+00:00"}]
+         "member_count": 1, "picked_up": False, "created_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:00:00+00:00"}]
 MSG = {"id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "text": "my printer is broken", "sender_id": GUEST, "sender_name": "Guest",
        "created_date": "2026-09-06T10:00:00+00:00", "updated_date": "2026-09-06T10:00:00+00:00"}
 

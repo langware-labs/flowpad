@@ -175,6 +175,36 @@ function compareValues(a: any, b: any): number {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
+type MatchJSON = { op?: QueryOp; operands: any[] };
+
+/** The field a leaf tests: its first operand, or the `$PROP` field of the legacy `[value, {$PROP: field}]`. */
+function leafField(leaf: MatchJSON): string {
+  const [first, second] = leaf.operands;
+  return second?.op === '$PROP' ? second.operands[0] : first;
+}
+
+/**
+ * `match` as a server that keeps only the `kept` fields can answer it. A field the server does not keep
+ * holds nothing on any of its rows, so a test on it has the same answer for every row: it is answered here,
+ * on an empty row, by the same rules `validate` applies. `$AND` / `$OR` then simplify around the answers.
+ * `true` = every row passes, `false` = none does; otherwise the part left to ask.
+ */
+export function foldUnkept(match: MatchJSON, kept: (field: string) => boolean): MatchJSON | boolean {
+  if (match.op === '$AND' || match.op === '$OR') {
+    const decides = match.op === '$OR'; // the answer that settles the whole node
+    const left: MatchJSON[] = [];
+    for (const operand of match.operands) {
+      const folded = foldUnkept(operand, kept);
+      if (folded === decides) return decides;
+      if (folded !== !decides) left.push(folded as MatchJSON);
+    }
+    if (left.length === 0) return !decides;
+    return left.length === 1 ? left[0] : { op: match.op, operands: left };
+  }
+  const field = String(leafField(match)).split('.')[0];
+  return kept(field) ? match : new QueryFilter({ match: match as ExpressionNode }).validate({});
+}
+
 export class QueryFilter extends ExpansionRequest {
   type?: string;
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
@@ -248,6 +278,30 @@ export class QueryFilter extends ExpansionRequest {
       expand: this.expandString,
     };
   }
+  /**
+   * This filter as a server that keeps only the `kept` fields can answer it (see {@link foldUnkept}):
+   * tests on other fields are answered here and sorting on them is dropped (they hold the same nothing on
+   * every row). `null` when no row can pass — there is nothing to ask.
+   */
+  forServer(kept: (field: string) => boolean): QueryFilter | null {
+    const asked = this.match instanceof ExpressionNode ? this.match.toJSON() : this.match;
+    const folded = asked ? foldUnkept(new ExpressionNode(asked).toJSON() as MatchJSON, kept) : true;
+    if (folded === false) return null;
+    const askedOrder = this.order_by ? (Array.isArray(this.order_by) ? this.order_by : [this.order_by]) : [];
+    const order = askedOrder
+      .map((o) => Object.fromEntries(Object.entries(o).filter(([field]) => kept(field))) as OrderByType)
+      .filter((o) => Object.keys(o).length);
+    return new QueryFilter({
+      type: this.type,
+      expand: this.expand,
+      match: folded === true ? undefined : (folded as ExpressionNode),
+      limit: this.limit,
+      offset: this.offset,
+      after: this.after,
+      order_by: order.length ? order : undefined,
+    });
+  }
+
   /**
    * The order the server answers this filter in, as a list of `{field: dir}` — the asked `order_by`,
    * else (for a page) the server's default, newest first. `undefined` for an unpaged, unordered list:
