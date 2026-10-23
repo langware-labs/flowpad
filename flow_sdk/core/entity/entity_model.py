@@ -2609,6 +2609,10 @@ class Entity(DBEntity):
         """What a type derives from a hub row beyond its accepted fields. True when it changed this row."""
         return False
 
+    async def after_own_hub_update(self, before: "Entity") -> None:
+        """This box's own update went to the hub and its answer was mirrored here (as a reflection).
+        ``before`` is the row as it was. A type that records its own edits (task history) does it here."""
+
     @classmethod
     async def drop_hub_deleted(cls, row_id: str) -> None:
         """The hub deleted this row: drop the local copy."""

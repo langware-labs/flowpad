@@ -299,7 +299,7 @@ def hub_chain_call(monkeypatch):
         calls.append((entity_type, entity_id, action))
         return {"status": "SUCCESS", "data": CHAIN}
 
-    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_hub_get))
     return calls
 
 

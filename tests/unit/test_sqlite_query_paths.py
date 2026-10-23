@@ -243,3 +243,28 @@ class TestFtsSources:
         assert entry.title == "Hello" and entry.name == "n"
         # Flat names, no ``fts``: unchanged.
         assert fts_content(SimpleNamespace(body="b", links=["x", "y"]), SimpleNamespace(fts_content=("body", "links"))) == "b\nx y"
+
+
+async def test_a_date_column_compares_as_a_datetime_not_as_text(driver):
+    """Stored ``created_date`` is ``2026-10-23 11:25:07.768473``; a client sends ``…T…Z``. As text the
+    space sorts before ``T`` and ``$LT`` returned every row of the day — keyset paging broke."""
+    import asyncio
+    from datetime import timedelta, timezone as tz
+
+    from flow_sdk.builtin.source_item import SourceItem
+
+    for body in ("older", "newer"):
+        await driver.save(SourceItem(data_source_id="ds-dates", body=body))
+        await asyncio.sleep(0.01)
+    t = SourceItem.get_type()
+    rows = await driver.get_all(QueryFilter(type=t, match=_eq("data_source_id", "ds-dates"), order_by=[{"body": "asc"}]))
+    newer = next(r for r in rows if r.body == "newer")
+    stamp = newer.created_date if newer.created_date.tzinfo else newer.created_date.replace(tzinfo=tz.utc)
+    between = (stamp - timedelta(milliseconds=5)).astimezone(tz.utc).isoformat().replace("+00:00", "Z")
+
+    def _cmp(op):
+        return ExpressionNode(op=QueryOp.AND, operands=[
+            _eq("data_source_id", "ds-dates"), ExpressionNode(op=op, operands=["created_date", between])])
+
+    assert [r.body for r in await driver.get_all(QueryFilter(type=t, match=_cmp(QueryOp.LT)))] == ["older"]
+    assert [r.body for r in await driver.get_all(QueryFilter(type=t, match=_cmp(QueryOp.GT)))] == ["newer"]

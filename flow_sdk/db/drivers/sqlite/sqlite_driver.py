@@ -11,12 +11,12 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy import DateTime, and_, asc, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -90,6 +90,25 @@ def json_path_sql(field_path: str, column: str = "data") -> str:
         if not _PATH_SEGMENT.match(segment):
             raise ValueError(f"Invalid field path: {field_path!r}")
     return f"json_extract({column}, '$.{field_path}')"
+
+
+def _as_stored_datetime(col, value: Any) -> Any:
+    """An ISO string compared with a DateTime column, as the datetime the column stores.
+
+    SQLite keeps ``created_date``/``updated_date`` as text in SQLAlchemy's format
+    (``2026-10-23 11:25:07.768473``, naive UTC) and compares text with text. A client's
+    ``2026-10-23T11:25:00Z`` compared raw sorts after every stored row of the same day (``' '`` <
+    ``'T'``), so ``$LT`` answered every row and keyset paging broke. Parsed and bound as a datetime,
+    SQLAlchemy writes it in the stored format and the comparison is chronological."""
+    if not isinstance(value, str) or not isinstance(getattr(col, "type", None), DateTime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 # Hand-written per-type indexes now declared on their ``TypeInfo.indexes``.
@@ -2161,6 +2180,7 @@ class SQLiteDBDriver(DBDriver):
         col = getattr(EntitySchema, field_name, None)
         if col is None:
             return None
+        value = _as_stored_datetime(col, value)
         if op == QueryOp.EQ:
             return col == value
         if op == QueryOp.NE:
