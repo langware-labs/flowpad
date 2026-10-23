@@ -18,7 +18,8 @@ vi.mock('@sdk/react/hooks', () => ({
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => null,
-  useDockNavigation: () => ({ navigation: { openDock }, currentDock: null }),
+  // The chip opens on whichever page the Stream Inbox is on (desk or hub) — `openDockOnThisPage`.
+  useDockNavigation: () => ({ navigation: { openDock, openDockOnThisPage: openDock }, currentDock: null }),
 }));
 
 import { ConversationListRow } from '@src/components/stream-inbox-view/StreamInboxView';

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  dataManager,
   getMembers,
   normalizeEmail,
   QueryRequest,
@@ -100,8 +101,13 @@ export function teamTypeIdOf(p: ConversationParticipant): TypeId | null {
  * is false, so surfaces that do not offer teams never ask.
  */
 export function useTeamSuggestions(enabled: boolean): { teams: TeamSuggestion[] } {
-  // Hub teams only — filtered by the local query, not after the fact.
-  const request = useMemo(() => new QueryRequest({ type: Team.type, query: { remote: true } }), []);
+  // Hub teams only — filtered by the query, not after the fact. Where the server keeps no `remote`
+  // (the hub itself), every team it lists is a hub team. Re-read once the server's types are known.
+  const keepsRemote = dataManager.servesField(Team.type, 'remote');
+  const request = useMemo(
+    () => new QueryRequest({ type: Team.type, query: keepsRemote ? { remote: true } : null }),
+    [keepsRemote],
+  );
   const { data: rows } = useEntitiesQuery<AnyEntity>(request, { enabled });
   const teams = useMemo(() => (enabled ? knownTeams((rows ?? []) as KnownTeam[]) : []), [enabled, rows]);
   return { teams };

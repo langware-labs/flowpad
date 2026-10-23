@@ -304,6 +304,9 @@ function ContentPanelBody({
         return <OrganizationPage />;
       case ViewType.HUB_RECORDS:
         return <HubRecordsView type={currentDock?.pointer} />;
+      case ViewType.STREAM_INBOX:
+        // The desk's own Stream Inbox: it reads the hub's conversations through the same SDK calls.
+        return <StreamInboxView />;
       case ViewType.ASSET_LIST:
         // The hub home's summary chips open their table here (hub-counters.tsx).
         return (

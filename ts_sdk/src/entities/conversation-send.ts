@@ -193,7 +193,7 @@ export const hasRemoteParticipant = (ps: ConversationParticipant[]): boolean =>
  * create+share half of ``createAndSendConversation``, exposed for commits
  * that put their content in by another means (e.g. ``forwardMessage``).
  * ``draftRef`` (when provided) preserves the same Conversation id across
- * retries so a transient share() failure doesn't orphan a hub conversation.
+ * retries so a transient invite failure doesn't orphan a hub conversation.
  */
 export async function createConversationForShare(
   params: CreateAndSendParams,
@@ -250,7 +250,11 @@ export async function createConversationForShare(
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();
-    await conv.share(invitees);
+    // One hub MembershipRequest per invitee — the hub's own call; the desktop answers it too, publishing
+    // the conversation with the first one, so the rest go out together after it.
+    const [first, ...rest] = invitees;
+    await conv.inviteMember(first);
+    await Promise.all(rest.map((invitee) => conv.inviteMember(invitee)));
     conversationId = conv.id;
   } else {
     if (!params.project_id) {

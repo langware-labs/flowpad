@@ -146,6 +146,9 @@ export type OrderByType = Record<string, 'asc' | 'desc'>;
  */
 export type MatchMap = Record<string, string | number | boolean | null>;
 
+/** A match every row passes — each row has an id. */
+const EVERY_ROW = { op: '$IS_NOT_NULL', operands: ['id'] };
+
 export class QueryFilter extends ExpansionRequest {
   type?: string;
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
@@ -201,11 +204,16 @@ export class QueryFilter extends ExpansionRequest {
     if (match instanceof ExpressionNode) {
       match = match.toJSON();
     }
+    // Paging and order ride INSIDE `filter`, beside `match` — the hub reads only `filter`
+    // (`QueryFilter.parse(filter)`), and the local server reads the same keys there. `match` is always
+    // present once anything else is: to the hub a filter without it IS the match (`{limit: 1}` would
+    // read as "rows whose limit is 1"). "Every row" is said as `id IS NOT NULL` — an empty object
+    // does not survive the query-string encoding.
+    const paging = { limit: this.limit, offset: this.offset, order_by: this.order_by };
+    const kept = Object.fromEntries(Object.entries(paging).filter(([, value]) => value !== undefined && value !== null));
+    const any = match || Object.keys(kept).length;
     return {
-      filter: match ? { match: match } : undefined,
-      limit: this.limit,
-      offset: this.offset,
-      order_by: this.order_by,
+      filter: any ? { match: match ?? EVERY_ROW, ...kept } : undefined,
       expand: this.expandString,
     };
   }

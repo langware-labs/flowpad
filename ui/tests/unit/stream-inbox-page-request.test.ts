@@ -27,6 +27,12 @@ describe('conversationsPageRequest', () => {
     expect(q.validate(row({ archived: true }))).toBe(false);
   });
 
+  it('a conversation deleted on the hub is not listed; a row kept here (no deleted_at) is', () => {
+    const q = conversationsPageRequest(scope, 'all', null).query!;
+    expect(q.validate(row({}))).toBe(true);
+    expect(q.validate(row({ deleted_at: '2026-10-20T00:00:00.000Z' }))).toBe(false);
+  });
+
   it('unread and archived are their own pages', () => {
     const unread = conversationsPageRequest(scope, 'unread', null).query!;
     expect(unread.validate(row({ archived: false, is_unread: true }))).toBe(true);

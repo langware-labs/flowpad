@@ -1,4 +1,14 @@
-import { Agent, Conversation, type DataSource, ExpressionNode, QueryFilter, QueryRequest, TypeId, User } from '@sdk';
+import {
+  Agent,
+  Conversation,
+  dataManager,
+  type DataSource,
+  ExpressionNode,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+  User,
+} from '@sdk';
 import { type AttentionReason, attentionReason } from '@src/components/data-sources/source-attention';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
@@ -27,8 +37,19 @@ export function channelsOwnerFor(agentId: string | undefined, localUserId: strin
  *  cache key, which is what makes opening the stream inbox a warm remount instead of a loading
  *  flash. */
 export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
-  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: ownerMatch(owner) }) });
+  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: allOf(ownerClauses(owner)) }) });
 }
+
+/** ``node`` where the server keeps the conversation ``field`` (``servesField``); nothing (match all) where it does not. */
+const whereKept = (field: string, node: ExpressionNode): ExpressionNode[] =>
+  dataManager.servesField(Conversation.type, field) ? [node] : [];
+
+/** The clauses AND-ed; no clause matches every row. */
+const allOf = (clauses: ExpressionNode[]): ExpressionNode | undefined =>
+  clauses.length ? new ExpressionNode({ op: '$AND', operands: clauses }) : undefined;
+
+/** Whose conversations: the owner clause, where the server keeps an ``owner``. */
+const ownerClauses = (owner: TypeId): ExpressionNode[] => whereKept('owner', ownerMatch(owner));
 
 function ownerMatch(owner: TypeId): ExpressionNode {
   const owned = new ExpressionNode({ op: '$EQ', operands: ['owner', owner.toString()] });
@@ -59,8 +80,8 @@ export type ConversationScope = { owner: TypeId } | { sourceId: string };
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) => ('owner' in scope ? scope.owner.toString() : scope.sourceId);
 
-const scopeMatch = (scope: ConversationScope) =>
-  'owner' in scope ? ownerMatch(scope.owner) : sourceMatch(scope.sourceId);
+const scopeClauses = (scope: ConversationScope): ExpressionNode[] =>
+  'owner' in scope ? ownerClauses(scope.owner) : [sourceMatch(scope.sourceId)];
 
 const notArchived = () =>
   new ExpressionNode({
@@ -72,16 +93,14 @@ const notArchived = () =>
     ],
   });
 
+const notDeleted = () => new ExpressionNode({ op: '$IS_NULL', operands: ['deleted_at'] });
+
 /** The view's clause, answered by the backend from the projected `archived` / `is_unread`, so a page
  *  is N rows of the view rather than N rows the browser then thins out. */
-function viewMatch(view: StreamInboxViewMode): ExpressionNode {
-  if (view === 'archived') return new ExpressionNode({ op: '$EQ', operands: ['archived', true] });
-  if (view === 'unread')
-    return new ExpressionNode({
-      op: '$AND',
-      operands: [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })],
-    });
-  return notArchived();
+function viewClauses(view: StreamInboxViewMode): ExpressionNode[] {
+  if (view === 'archived') return [new ExpressionNode({ op: '$EQ', operands: ['archived', true] })];
+  if (view === 'unread') return [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })];
+  return whereKept('archived', notArchived());
 }
 
 /** The scope's conversations matching `clauses`, in recency order — the ONE ordering every page and
@@ -95,7 +114,9 @@ function pageQuery(
   return new QueryRequest({
     type: Conversation.type,
     query: new QueryFilter({
-      match: new ExpressionNode({ op: '$AND', operands: [scopeMatch(scope), ...clauses] }),
+      // An owner still reads a conversation they deleted on the hub (kept there for audit, `deleted_at`
+      // set); it is gone from the Stream Inbox. A row kept here never carries the field.
+      match: allOf([...scopeClauses(scope), ...whereKept('deleted_at', notDeleted()), ...clauses]),
       order_by: [{ updated_date: direction }, { id: 'asc' }],
       ...page,
     }),
@@ -110,7 +131,7 @@ export function conversationsPageRequest(
   before: string | null,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  const clauses = [viewMatch(view)];
+  const clauses = viewClauses(view);
   if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: ['updated_date', before] }));
   return pageQuery(scope, clauses, 'desc', { limit: size });
 }
@@ -132,10 +153,15 @@ export function newerBoundaryRequest(
   newest: string,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  return pageQuery(scope, [viewMatch(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })], 'asc', {
-    limit: 1,
-    offset: size,
-  });
+  return pageQuery(
+    scope,
+    [...viewClauses(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
+    'asc',
+    {
+      limit: 1,
+      offset: size,
+    },
+  );
 }
 
 /** The identity a channel mark draws: provider AND channel, because one transport

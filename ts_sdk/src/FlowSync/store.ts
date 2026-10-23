@@ -359,6 +359,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return typeof type === 'string' && type.toLowerCase() in this.typeInfos;
   }
 
+  /** Whether the connected server keeps `field` on rows of `type` — its bootstrap schema lists it. A query
+   *  filtering on a field the server does not keep is refused there (the hub answers 400), so a caller leaves
+   *  such a clause out: the stream inbox's projections (`owner`, `archived`, `is_unread`), a task's
+   *  `origin_conversation` and a team's `remote` are the desktop's; `deleted_at` is the hub's. The hub's
+   *  schema omits base fields (`id`, `created_date`, …), so ask only about optional fields. Before the types
+   *  load nothing is known, so nothing is refused. */
+  public servesField(type: string, field: string): boolean {
+    if (Object.keys(this.typeInfos).length === 0) return true;
+    const fields = this.getSchema(type)?.fieldNames;
+    return !fields || fields.includes(field);
+  }
+
   /** All registered TypeInfos (the frontend SchemaRegistry). */
   public getAllTypeInfos(): TypeInfo[] {
     return Object.values(this.typeInfos);

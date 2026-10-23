@@ -1,3 +1,4 @@
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useEffect, useMemo, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { ChevronLeft, ChevronRight, ChevronsLeft } from 'lucide-react';
@@ -55,7 +56,8 @@ export function StreamInboxPager({
   // what is shown (or than the page's bound when nothing is). What arrives joins this live page.
   const short = !!before && rows.length < STREAM_INBOX_PAGE_SIZE && view !== 'archived';
   const askBefore = oldest ?? before;
-  const askKey = short && askBefore ? `${scopeKey(scope)}|${view}|${askBefore}` : null;
+  // Asking the sources for more is the desktop's (its channels); the hub page pages its own rows.
+  const askKey = short && askBefore && !isHubOnly() ? `${scopeKey(scope)}|${view}|${askBefore}` : null;
   const [asked, setAsked] = useState<{ key: string; status: 'loading' | 'more' | 'exhausted' } | null>(null);
   useEffect(() => {
     if (!askKey || !askBefore) return;
