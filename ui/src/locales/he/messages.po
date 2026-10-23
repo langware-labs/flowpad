@@ -1963,8 +1963,8 @@ msgid "+{moreErrors} more"
 msgstr "+{moreErrors} נוספות"
 
 #: src/components/inbound/AddRuleDialog.tsx
-msgid "+972 54-123 4567"
-msgstr "+972 54-123 4567"
+#~ msgid "+972 54-123 4567"
+#~ msgstr "+972 54-123 4567"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "<0/>Hard refresh"
@@ -2128,12 +2128,16 @@ msgid "1. Copy this code"
 msgstr "1. יש להעתיק את הקוד הזה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
+msgid "1. The hub proves the bot is yours: it calls Telegram's getMe with the bot token. Only an answer naming the same bot id passes."
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
 msgid "1. The hub proves the number is yours: it asks your server for this phone number ID using the access token. Only an answer naming the same ID passes."
 msgstr "1. ה-Hub מוודא שהמספר שייך לכם: הוא שואל את השרת שלכם לגבי מזהה מספר הטלפון הזה, באמצעות אסימון הגישה. רק תשובה שמציינת את אותו מזהה עוברת."
 
 #: src/components/inbound/AddRuleDialog.tsx
-msgid "120363…@g.us"
-msgstr "120363…@g.us"
+#~ msgid "120363…@g.us"
+#~ msgstr "120363…@g.us"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "15 minutes"
@@ -2154,6 +2158,10 @@ msgstr "שבוע"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "2. Copy & open the sign-in page"
 msgstr "2. העתיקו ופתחו את עמוד ההתחברות"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "2. You get a webhook URL. Register it with setWebhook and the secret token below — deliveries without it are refused."
+msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned messages are refused."
@@ -2212,6 +2220,10 @@ msgstr "מפתח {label} שמור במחשב הזה"
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a {label} OAuth login on this machine"
 msgstr "התחברות OAuth של {label} במחשב הזה"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "A bot you made with @BotFather. Telegram calls the hub's webhook URL; replies go out as your bot."
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "A call here spends"
@@ -3213,6 +3225,10 @@ msgstr "סבב סוכן"
 #~ msgid "agent-name"
 #~ msgstr "agent-name"
 
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#~ msgid "Agent: {0}"
+#~ msgstr "סוכן: {0}"
+
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "תהליך סוכני"
@@ -3885,8 +3901,12 @@ msgid "Any result"
 msgstr "כל תוצאה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Any server that speaks Meta's WhatsApp API and webhook format. The hub proves the number on that server and replies through it."
-msgstr "כל שרת שמדבר בפורמט ה-API וה-webhook של WhatsApp של Meta. ה-Hub מאמת את המספר בשרת הזה ועונה דרכו."
+msgid "Any server that speaks Meta's {title} API and webhook format. The hub proves the number on that server and replies through it."
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#~ msgid "Any server that speaks Meta's WhatsApp API and webhook format. The hub proves the number on that server and replies through it."
+#~ msgstr "כל שרת שמדבר בפורמט ה-API וה-webhook של WhatsApp של Meta. ה-Hub מאמת את המספר בשרת הזה ועונה דרכו."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Any time"
@@ -5028,6 +5048,11 @@ msgstr "תצוגה מסומנת"
 msgid "Bookmarks"
 msgstr "סימניות"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Bot id"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Bot token"
 msgstr ""
@@ -20755,7 +20780,7 @@ msgstr "פתחו {label}"
 msgid "open {name}"
 msgstr "פתיחת {name}"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/agents/LaunchingAgentRow.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "פתיחת {name}"
@@ -21297,6 +21322,10 @@ msgstr ""
 #: src/components/automations/RunDetail.tsx
 msgid "Open the agent run"
 msgstr "פתחו את הריצה של הסוכן"
+
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#~ msgid "Open the agent's page"
+#~ msgstr "פתיחת דף הסוכן"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Open the assistant in its own window, beside Flowpad"
@@ -23189,6 +23218,10 @@ msgstr "הוכיחו וקשרו"
 #: src/components/inbound/InboundView.tsx
 msgid "proven"
 msgstr "אומת"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Proves the bot (getMe). Stored write-only."
+msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
@@ -26247,6 +26280,10 @@ msgstr "סוד נמחק"
 #: src/components/account/secrets-section.tsx
 msgid "Secret saved"
 msgstr "סוד נשמר"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Secret token"
+msgstr ""
 
 #: src/components/account/account-info.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
@@ -29968,6 +30005,10 @@ msgstr "ההודעה שממנה הגעתם — או הדביקו כל הודעה
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "התקציב החדש נכנס לתוקף מיד, והנוכחי נסגר. מה שכבר נוצל נשאר מנוצל."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The number before the colon in the bot token."
+msgstr ""
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 msgstr "התקציב של הארגון והמפתח השמור שלו יימחקו, וכל צוות שמשתמש בו יפסיק להוציא עד שיוגדר תקציב חדש. הקצאות שכבר ניתנו לצוותים ולאנשים לא יוחזרו — הן יצביעו על תקציב שכבר אינו קיים."
@@ -30060,6 +30101,10 @@ msgstr "אותו מסך כמו ב-hub: הוא מציג את ה-claims שבבעל
 #~ msgid "The schemas could not be read."
 #~ msgstr "לא ניתן היה לקרוא את הסכמות."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The secret_token you pass to setWebhook; Telegram sends it with every delivery. Stored write-only."
+msgstr ""
+
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 msgstr "לישות שנבחרוה אין שם עדיין. בחר אחד — הוא יישמר בישות ויהיה בשימוש כטקסט הקישור."
@@ -30073,8 +30118,12 @@ msgid "the sender is still staging it"
 msgstr "השולח עדיין מכין אותו"
 
 #: src/components/inbound/AddRuleDialog.tsx
-msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
-msgstr "מספר השולח כפי שהספק שולח אותו. אם הוא כבר משויך למישהו אחר — הבקשה נדחית."
+msgid "The sender's id as the vendor sends it. Already claimed by someone else → refused."
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+#~ msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
+#~ msgstr "מספר השולח כפי שהספק שולח אותו. אם הוא כבר משויך למישהו אחר — הבקשה נדחית."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "The sender's upload didn't complete. Ask {firstName} to resend."
@@ -34021,6 +34070,10 @@ msgstr ""
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "Your own assets, shared by every project"
 msgstr "הנכסים שלכם, משותפים לכל הפרויקטים"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Your own bot"
+msgstr ""
 
 #: src/components/inbound/InboundView.tsx
 msgid "Your own number"
