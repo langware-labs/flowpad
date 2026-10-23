@@ -99,24 +99,16 @@ describe('a new conversation invites with the hub call', () => {
   });
 });
 
-describe('a hub conversation row reads like a row kept here', () => {
-  it('lifts participants to members and initiated_by to created_by', () => {
+describe('a hub conversation row needs no renaming', () => {
+  it('reads the hub roster and owner under their own names', () => {
     const conv = new Conversation({
       id: CONVERSATION_ID,
-      participants: [{ user_id: 'u1', name: 'Bob' }],
+      members: [{ user_id: 'u1', name: 'Bob' }],
       initiated_by: 'owner-1',
+      created_by: 'someone-else',
     } as never);
     expect(conv.members).toEqual([{ user_id: 'u1', name: 'Bob' }]);
-    expect(conv.created_by).toBe('owner-1');
-  });
-
-  it('keeps a desktop row as it is', () => {
-    const conv = new Conversation({
-      id: CONVERSATION_ID,
-      members: [{ user_id: 'me' }],
-      created_by: 'local-owner',
-    } as never);
-    expect(conv.members).toEqual([{ user_id: 'me' }]);
-    expect(conv.created_by).toBe('local-owner');
+    expect(conv.initiated_by).toBe('owner-1');
+    expect(conv.created_by).toBe('someone-else');
   });
 });

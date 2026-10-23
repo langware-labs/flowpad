@@ -105,13 +105,6 @@ def _participant_value(participant: dict, *keys: str) -> Optional[str]:
     return None
 
 
-def _local_roster_key(k: str) -> str:
-    """Wire adapter: the hub sends the roster under ``participants``; the local
-    cache field is the generic ``Entity.members``. Map that one key; pass others
-    through. Used by both hub-conv metadata upsert loops."""
-    return "members" if k == "participants" else k
-
-
 def _normalize_participants(participants: list[dict]) -> list[dict]:
     return normalize_roster(participants)
 
@@ -918,7 +911,7 @@ async def _classify_archived_delete(conv: Conversation, current_user_id: Optiona
       1. Is this conversation the target of a still-pending Invitation that
          I (the local cloud user) have not accepted? → 'decline_invitation'.
       2. Is the conv local-only (``remote=False``)? → 'local'.
-      3. Am I the hub-side owner (``conv.created_by == current_user_id``)?
+      3. Am I the hub-side owner (``conv.initiated_by == current_user_id``)?
          → 'delete_for_all'.
       4. Otherwise → 'leave'.
     """
@@ -934,7 +927,7 @@ async def _classify_archived_delete(conv: Conversation, current_user_id: Optiona
             pass
     if not conv.remote:
         return "local"
-    if current_user_id and conv.created_by == current_user_id:
+    if current_user_id and conv.initiated_by == current_user_id:
         return "delete_for_all"
     return "leave"
 
@@ -1267,7 +1260,7 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
 
     Local entrypoint behind the ``remove-message`` action. Flow:
       * gate locally on the resolved cloud-user id == ``fm.sender_id`` OR
-        == ``conv.created_by`` (owner). Purely-local conversations have no
+        == ``conv.initiated_by`` (owner). Purely-local conversations have no
         cloud counterpart, so the local single user always passes.
       * for shared (``remote``) conversations, pre-check hub reachability then
         call ``Conversation.remove_message`` — the hub re-enforces the gate,
@@ -1295,17 +1288,14 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
     # single-user, so the gate + hub round-trip only apply to shared convs.
     if conv and getattr(conv, "remote", False):
         # Gate: deleter is the message sender OR the conversation owner. The
-        # cloud user id is the authority for both. Owner = ``created_by``
-        # matches (recipient-side, where the hub stamped the cloud-user id) OR
-        # the caller holds role ``owner`` in the participant roster
-        # (creator-side, where ``created_by`` is the local user id). The roster
-        # is the hub-authoritative signal on both sides.
+        # cloud user id is the authority for both. Owner = the hub's
+        # ``initiated_by`` OR the caller holds role ``owner`` in the roster.
         cloud_user_id = await _current_cloud_user_id()
         is_sender = bool(cloud_user_id and fm.sender_id and cloud_user_id == fm.sender_id)
         is_owner = bool(
             cloud_user_id
             and (
-                (conv.created_by and cloud_user_id == conv.created_by)
+                (conv.initiated_by and cloud_user_id == conv.initiated_by)
                 or any(
                     (p or {}).get("user_id") == cloud_user_id and str((p or {}).get("role") or "").lower() == "owner"
                     for p in (conv.members or [])
@@ -3690,7 +3680,7 @@ async def _upsert_hub_conversation_metadata(
         return None
     if existing is _UNSET and not hub_conv.get("deleted_at"):
         existing = await Conversation.get_one({"id": conv_id})
-    roster = hub_conv.get("participants")
+    roster = hub_conv.get("members")
     if isinstance(roster, list) and roster and not hub_conv.get("deleted_at"):
         norm_roster = _normalize_participants(roster)
         roster_key = _json.dumps(norm_roster, sort_keys=True, default=str)
@@ -4584,7 +4574,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 )
                 hub_conv = await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, linked_conv_id, strict=True)
                 if isinstance(hub_conv, dict) and hub_conv.get("id"):
-                    participants = hub_conv.get("participants")
+                    roster = hub_conv.get("members")
                     try:
                         members = await HubProxy.call(
                             "GET", BuiltinEntityType.CONVERSATION, linked_conv_id, "members", strict=True
@@ -4594,17 +4584,17 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                                 if isinstance(members.get(key), list):
                                     members = members[key]
                                     break
-                        if isinstance(members, list) and (members or not isinstance(participants, list)):
-                            hub_conv = {**hub_conv, "participants": members}
-                            participants = members
+                        if isinstance(members, list) and (members or not isinstance(roster, list)):
+                            hub_conv = {**hub_conv, "members": members}
+                            roster = members
                     except Exception as roster_err:  # noqa: BLE001
                         logger.debug(
                             "[invitation-accept] members lookup failed for conv=%s: %s",
                             linked_conv_id[:8],
                             roster_err,
                         )
-                    if isinstance(participants, list):
-                        await _learn_address_book(participants)
+                    if isinstance(roster, list):
+                        await _learn_address_book(roster)
                     await _upsert_hub_conversation_metadata(hub_conv, someone_typeid)
                 # Pull the inviter's pre-accept messages — the hub WS only
                 # fanouts from join-time forward, so without this the first

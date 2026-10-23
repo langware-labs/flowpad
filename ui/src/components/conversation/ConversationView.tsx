@@ -863,7 +863,7 @@ export function ConversationView({
   // dashed staged chips + review modal in each bubble.
   const { byMessage: attachmentsByMessage } = useConversationMessageAttachments(conversationId);
 
-  // The conversation owner (created_by == the local cloud user) may delete ANY
+  // The conversation owner (initiated_by == the local cloud user) may delete ANY
   // message; everyone may delete their own. The per-bubble sender check is done
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
@@ -872,13 +872,10 @@ export function ConversationView({
     () => ({ members: participants ?? [], me: myEmail, cloudUserId }),
     [participants, myEmail, cloudUserId],
   );
-  // Owner = either created_by matches (recipient side, where the hub stamped the
-  // cloud-user id) OR the local user holds role "owner" in the participant
-  // roster (creator side, where created_by is the local user id). The roster is
-  // the hub-authoritative signal on both sides.
+  // Owner = the hub's initiated_by OR the local user holds role "owner" in the roster.
   const isConversationOwner =
     !!cloudUserId &&
-    ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
+    ((!!conversation?.initiated_by && conversation.initiated_by === cloudUserId) ||
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
   // Open-to-read (URL-first): viewing a conversation marks its latest received

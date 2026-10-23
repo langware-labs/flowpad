@@ -1,6 +1,6 @@
 """One mirror for every hub conversation row (``Entity.mirror_from_hub``), driven by the declarations.
 
-* the hub's owner (``initiated_by``) and roster (``participants``) land as ``created_by`` / ``members``,
+* the hub's owner (``initiated_by``) and roster (``members``) land under the same names,
   the roster in the local shape;
 * ``picked_up_by`` is the hub's list of staffers — a type mismatch here used to abort the whole row;
 * a synced ``null`` never clears a local value (a guest ticket's title is the local one);
@@ -37,7 +37,7 @@ async def test_a_hub_ticket_row_lands_whole():
             "status": "closed",
             "initiated_by": "requester-1",
             "picked_up_by": ["staff-1"],
-            "participants": [{"user_id": "staff-1", "user_email": "Staff@Desk.test", "role": "member"}],
+            "members": [{"user_id": "staff-1", "user_email": "Staff@Desk.test", "role": "member"}],
             "archived_at": None,
             "updated_date": "2030-01-01T00:00:00Z",
         }
@@ -45,7 +45,7 @@ async def test_a_hub_ticket_row_lands_whole():
     row = await Conversation.get_by_id(conv.id)
     assert row.title == "Help with sync"
     assert row.kind == ConversationKind.HELPDESK and row.status == "closed"
-    assert row.created_by == "requester-1"
+    assert row.initiated_by == "requester-1"
     assert row.picked_up_by == ["staff-1"]
     assert row.members[0]["email"] == "staff@desk.test"
     assert row.archived_at == archived
@@ -57,7 +57,7 @@ async def test_a_hub_ticket_row_lands_whole():
 async def test_a_new_hub_row_is_created_remote_and_a_deleted_one_is_dropped():
     conv_id = mint_uuid()
     created = await Conversation.mirror_from_hub({"id": conv_id, "title": "From the hub", "initiated_by": "u-1"})
-    assert created is not None and created.remote is True and created.created_by == "u-1"
+    assert created is not None and created.remote is True and created.initiated_by == "u-1"
     assert await Conversation.mirror_from_hub({"id": conv_id, "deleted_at": "2030-01-01T00:00:00Z"}) is None
     assert await Conversation.get_by_id(conv_id) is None
 

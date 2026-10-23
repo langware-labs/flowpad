@@ -154,9 +154,6 @@ export interface IConversation extends IEntity {
   started_at?: string | Date | null;
   /** When it ended: a call hung up, or a thread retired by its channel's timeout. */
   ended_at?: string | Date | null;
-  /** Hub role roster — inherited from the Entity base as ``members``. The wire
-   *  key on the conversation fanout is ``participants`` (hub contract), adapted
-   *  in ``onEntityUpdate``. */
   /** User-set display title. Set at creation in NewConversationDialog and
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
@@ -179,6 +176,9 @@ export interface IConversation extends IEntity {
   /** Whose stream inbox lists this conversation — a user or agent typeid string;
    *  null on rows written before the field existed (the local user's). */
   owner?: string | null;
+  /** The hub's owner of the conversation (a cloud user id), copied as is. Null on a conversation
+   *  that never left this machine (``remote`` false: its owner is this machine's user). */
+  initiated_by?: string | null;
   /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
    *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
   is_unread?: boolean;
@@ -198,18 +198,6 @@ export interface IConversation extends IEntity {
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Conversation extends EntityMerge<IConversation> {}
-
-/** A hub row names two fields the way the hub does — the roster ``participants`` and the owner
- *  ``initiated_by`` — where a row kept here says ``members`` / ``created_by`` (the desktop declares the
- *  same pairs as ``hub_name``). Lift them at hydration so either row reads the same. */
-function liftHubWireNames(conv: Conversation, wire: Record<string, unknown>): void {
-  if (!('members' in wire) && Array.isArray(wire.participants)) {
-    conv.members = wire.participants.map((p) => ({ ...(p as EntityMember) }));
-  }
-  if (!conv.created_by && typeof wire.initiated_by === 'string' && wire.initiated_by) {
-    conv.created_by = wire.initiated_by;
-  }
-}
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
@@ -236,6 +224,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
   owner?: string | null;
+  initiated_by?: string | null;
   is_unread?: boolean;
   unread_count?: number;
   archived?: boolean;
@@ -264,10 +253,10 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
     this.owner = entity.owner ?? null;
+    this.initiated_by = entity.initiated_by ?? null;
     this.is_unread = entity.is_unread;
     this.unread_count = entity.unread_count;
     this.archived = entity.archived;
-    liftHubWireNames(this, entity as Record<string, unknown>);
   }
 
   /**
@@ -293,26 +282,16 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value wholesale here
    * and strip it from the payload so the following deepAssign skips it. (Same
    * pattern AgenticProcess uses for ``queue``.)
-   *
-   * Wire adapter: the local backend serializes the roster as ``members``; the
-   * hub conversation fanout uses ``participants`` (hub contract). Accept either
-   * key and land it on ``members``.
    * @internal
    */
-  protected onEntityUpdate(data: Partial<IConversation> & { participants?: unknown }): void {
-    const wire = data as Record<string, unknown>;
-    if (typeof wire.initiated_by === 'string' && wire.initiated_by && !wire.created_by) {
-      this.created_by = wire.initiated_by;
-    }
-    const key = 'members' in data ? 'members' : 'participants' in data ? 'participants' : null;
-    if (key) {
-      const roster = (data as Record<string, unknown>)[key];
-      this.members = Array.isArray(roster)
-        ? roster.map((p) => ({ ...(p as EntityMember) }))
-        : (roster as EntityMember[] | undefined);
-      delete (data as Record<string, unknown>)[key];
+  protected onEntityUpdate(data: Partial<IConversation>): void {
+    if ('members' in data) {
+      const roster = data.members;
+      this.members = Array.isArray(roster) ? roster.map((p) => ({ ...(p as EntityMember) })) : roster;
+      delete data.members;
     }
   }
+
 
   // NOTE: FE-side project chip projection moved server-side. The backend's
   // ``Entity.get_implicit_private_context_entities`` projects project_id

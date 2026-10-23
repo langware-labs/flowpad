@@ -224,10 +224,10 @@ def test_the_two_egress_seams_now_agree():
     assert sorted(hub - bundle) == ["created_date", "updated_date"], "HUB_READ, by design"
 
 
-# Fields a type takes FROM the hub under its own name (HUB_READ, often with a ``hub_name``): not
-# private, never sent, owned by the hub — the conversation's owner (``initiated_by``), its roster
-# (``participants``) and who picked a ticket up.
-HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"created_by", "members", "picked_up_by"}}
+# Fields a type takes FROM the hub under the hub's own name (HUB_READ): not private, never sent,
+# owned by the hub — the conversation's owner (``initiated_by``), its roster (``members``) and who
+# picked a ticket up.
+HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "members", "picked_up_by"}}
 
 
 @pytest.mark.parametrize(

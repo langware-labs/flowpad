@@ -1,10 +1,9 @@
 """``_upsert_hub_conversation_metadata`` carries the hub owner verbatim.
 
 A share-created conversation carries no ``initiated_by`` on the hub. The local
-reflection must therefore land ``created_by = None`` — NOT the 'system' sentinel
-and NOT the local sync user. Ownership for display resolves from the participant
-roster's ``owner`` role. When the hub DOES carry ``initiated_by``, it is mirrored
-verbatim.
+reflection must therefore land ``initiated_by = None`` — NOT the 'system' sentinel
+and NOT the local sync user. Ownership for display resolves from the roster's
+``owner`` role. When the hub DOES carry ``initiated_by``, it is mirrored verbatim.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ async def _upsert_capture(hub_conv: dict):
     captured = {}
 
     async def _capture_save(self, *args, **kwargs):
-        captured["created_by"] = self.created_by
+        captured["initiated_by"] = self.initiated_by
         return self
 
     with (
@@ -32,22 +31,22 @@ async def _upsert_capture(hub_conv: dict):
         patch.object(Conversation, "save", new=_capture_save),
     ):
         await _upsert_hub_conversation_metadata(hub_conv, someone_typeid=None, notify=False)
-    return captured["created_by"]
+    return captured["initiated_by"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_share_created_conv_owner_stays_null():
-    created_by = await _upsert_capture(
-        {"id": _CONV_ID, "title": "Flowpad diagnostics", "participants": []},
+    owner = await _upsert_capture(
+        {"id": _CONV_ID, "title": "Flowpad diagnostics", "members": []},
     )
-    assert created_by is None
+    assert owner is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_hub_owner_mirrored_verbatim():
-    created_by = await _upsert_capture(
+    owner = await _upsert_capture(
         {"id": _CONV_ID, "title": "Project conv", "initiated_by": "49420c72-owner-id"},
     )
-    assert created_by == "49420c72-owner-id"
+    assert owner == "49420c72-owner-id"

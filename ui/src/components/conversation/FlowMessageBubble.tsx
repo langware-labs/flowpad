@@ -190,7 +190,7 @@ interface FlowMessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
-  /** True when the local user owns the parent conversation (created_by). The
+  /** True when the local user owns the parent conversation (initiated_by). The
    *  conversation owner may delete ANY message; everyone may delete their own.
    *  Together with `isCurrentUser` this gates the delete affordance. */
   isConversationOwner?: boolean;

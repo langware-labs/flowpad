@@ -370,8 +370,7 @@ class Entity(DBEntity):
     # of truth (resolved from RoleRelationship edges), written here by the reflected
     # ``members`` action mirror (see _hub_reflect.mirror_hub_response_into_local)
     # and by the conversation roster fanout, and refreshed on every roster open.
-    # Renamed from the per-type ``participants`` field; the conversation WIRE key
-    # stays ``participants`` (hub contract) and is adapted to ``members`` at ingest.
+    # The hub sends the same roster under the same name, ``members``.
     members: List[dict] = APIField(
         sharing=Sharing.PRIVATE,
         default_factory=list,
