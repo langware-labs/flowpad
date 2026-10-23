@@ -219,7 +219,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const stripRef = useRef<HTMLDivElement>(null);
   const keyList = items.map((i) => i.key).join('\n');
   const keys = useMemo(() => (keyList ? keyList.split('\n') : []), [keyList]);
-  const { frozenPx, leadPad, closeByMouse, onPointerLeave, onPointerEnter } = useCloseFreeze(keys, stripRef);
+  const { frozenPx, leadPad, closeByMouse, onPointerLeave, onPointerEnter } = useCloseFreeze(keys, stripRef, CHIP_MAX_PX);
 
   useEffect(() => {
     for (const [key, token] of highlights) {
