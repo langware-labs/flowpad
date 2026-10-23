@@ -94,3 +94,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Bring the window forward: the hub asked this desktop to open something (a message from its email).
   focusWindow: () => ipcRenderer.send('focus-window'),
 });
+
+// Heartbeat for the hung-renderer watchdog (renderer-watchdog.js): a timer on this page's main
+// thread. A render loop or any other busy main thread silences it, and main restarts the window clean.
+setInterval(() => ipcRenderer.send('renderer-heartbeat'), 1000);

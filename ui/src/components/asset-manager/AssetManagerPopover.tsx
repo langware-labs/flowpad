@@ -13,8 +13,7 @@ import {
   type Agent,
   type AssetDescriptor,
 } from '@sdk';
-import { AgentAvatar } from '@src/components/agents/AgentAvatar';
-import { AgentTypeChip } from '@src/components/agents/AgentIntroCard';
+import { LaunchingAgentRow } from '@src/components/agents/LaunchingAgentRow';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -631,7 +630,7 @@ export function AssetManagerPopover({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
             {/* The run's principal — the Agent it was launched through. */}
-            {showPinnedRows && agent && <LaunchingAgentRow agent={agent} />}
+            {showPinnedRows && agent && <LaunchingAgentRow agent={agent} testId="asset-manager-launching-agent" className="m-1 w-[calc(100%-0.5rem)]" />}
             {filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
             {(assets ?? ownAssets).unresolvedUsage?.map((usage) => (
               <div key={`${usage.resolution}:${usage.reference}`} className="px-3 py-2 text-xs" data-testid="asset-unresolved-usage">
@@ -833,34 +832,6 @@ function ProjectPickRow({
     </button>
   );
 }
-
-/**
- * The run's principal, pinned above every asset section: the Agent this process
- * was launched through. Avatar (image / emoji / icon) with the name's initial
- * as the fallback, then the name; the row opens the agent.
- */
-function LaunchingAgentRow({ agent }: { agent: Agent }) {
-  const { t } = useLingui();
-  const { navigation } = useDockNavigation();
-  const name = agent.displayName;
-
-  return (
-    <button
-      type="button"
-      onClick={() => navigation.openDock(agent.dockPointer)}
-      className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-border bg-muted/30 px-2.5 py-1.5 text-start hover:bg-muted"
-      data-testid="asset-manager-launching-agent"
-      title={t`Open ${name}`}
-    >
-      <AgentAvatar agent={agent} className="h-6 w-6 text-[11px]" data-testid="asset-manager-launching-agent-avatar" />
-      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" data-testid="asset-manager-launching-agent-name">
-        {name}
-      </span>
-      <AgentTypeChip className="flex-shrink-0" />
-    </button>
-  );
-}
-
 
 export function AssetRow({
   descriptor,

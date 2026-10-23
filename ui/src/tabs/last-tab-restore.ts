@@ -39,6 +39,17 @@ function storage<T>(fn: (s: Storage) => T): T | null {
   }
 }
 
+/**
+ * A clean start — what the desktop shell loads after it recovered a hung or crashed window
+ * (`electron/renderer-watchdog.js`): Home, with no last-place restore and no launch redirect, so the
+ * page that hung cannot reopen itself.
+ */
+const SAFE_START_PARAM = 'safeStart';
+
+export function isSafeStart(url: URL): boolean {
+  return url.pathname === '/' && url.searchParams.has(SAFE_START_PARAM);
+}
+
 /** The main window finished loading `dock` at `url`. Pop-out windows (`/win`) never speak for it. */
 export function rememberLastPlace(dock: DockPointer, url: string): void {
   if (dock.layout === Layout.DOCK) storage((s) => s.setItem(STORAGE_KEY, url));

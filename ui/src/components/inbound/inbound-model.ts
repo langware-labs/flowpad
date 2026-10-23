@@ -10,6 +10,8 @@ export interface InboundChannel {
   id: string;
   name: string;
   provider: string;
+  /** This computer's instance id (the channel's `this` place); absent on the hub page. */
+  instanceId?: string;
   /** Who answers it (the owning agent's name), when known. */
   ownerName?: string;
   /** The agent's cloud placements that hold this channel (`DataSource.route()` places with a node). */
@@ -35,12 +37,11 @@ export interface DestinationLabels {
 
 /**
  * Every place a claim of `provider` can go: the default (no place of its own — the number's fallback), this
- * computer's channels (desktop only: `instanceId` is null on the hub page), and each channel's cloud placements.
+ * computer's channels (desktop only: a channel with an `instanceId`), and each channel's cloud placements.
  */
 export function destinationOptions(
   provider: string,
   channels: InboundChannel[],
-  instanceId: string | null,
   labels: DestinationLabels,
   { withDefault = true }: { withDefault?: boolean } = {},
 ): DestinationOption[] {
@@ -56,12 +57,12 @@ export function destinationOptions(
   }
   for (const ch of channels.filter((c) => c.provider === provider)) {
     const who = ch.ownerName || ch.name;
-    if (instanceId) {
+    if (ch.instanceId) {
       out.push({
         key: `this:${ch.id}`,
         label: `${who} · ${labels.thisComputer}`,
         detail: `${labels.thisComputer} · ${labels.channel(ch.name)}`,
-        target: { kind: 'desktop', instance_id: instanceId, data_source_id: ch.id },
+        target: { kind: 'desktop', instance_id: ch.instanceId, data_source_id: ch.id },
         testId: `inbound-dest-this-${ch.id}`,
       });
     }
@@ -123,8 +124,32 @@ export function clockTime(epochSeconds: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** The vendors the hub chains, in the order the screen offers them. */
+/** The vendors the hub chains (`webhook/@<provider>`), in the order the screen offers them. */
 export const INBOUND_PROVIDERS = ['whatsapp', 'telegram', 'slack'] as const;
 export type InboundProvider = (typeof INBOUND_PROVIDERS)[number];
 
 export const PROVIDER_TITLE: Record<string, string> = { whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack' };
+
+/** One way to bring the caller's own account: what the hub's `prove_account` takes for that vendor. */
+export interface OwnRoute {
+  id: string;
+  /** Asks for a server of the caller's own speaking the vendor's API (`proof.graph_url`). */
+  ownServer: boolean;
+  /** Asks for a verify token: the vendor subscribes with a GET handshake (Meta). */
+  verifyToken: boolean;
+}
+
+/**
+ * What differs between vendors on this screen — nothing else names one. `own`: the routes by which the caller's
+ * own account can be proven (none: only Flowpad's account, e.g. Slack, installed per workspace by OAuth).
+ */
+export const VENDOR: Record<InboundProvider, { own: OwnRoute[] }> = {
+  whatsapp: {
+    own: [
+      { id: 'meta', ownServer: false, verifyToken: true },
+      { id: 'generic', ownServer: true, verifyToken: true },
+    ],
+  },
+  telegram: { own: [{ id: 'bot', ownServer: false, verifyToken: false }] },
+  slack: { own: [] },
+};

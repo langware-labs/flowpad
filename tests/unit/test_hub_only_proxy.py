@@ -74,3 +74,31 @@ async def test_a_type_with_local_rows_is_not_forwarded(hub):
     await call_local("GET", "organization")
 
     assert fake.seen == []
+
+
+@pytest.mark.asyncio
+async def test_every_webhook_verb_the_inbound_screen_calls_goes_to_the_hub_verbatim(hub):
+    from flow_sdk.builtin.webhook import Webhook  # noqa: F401, PLC0415 — registers the hub-only type
+
+    fake = hub()
+    claim = mint_uuid()
+
+    calls = [
+        ("GET", "webhook/mine", None),
+        ("POST", "webhook/chain", {"parent": "@whatsapp", "claim": {"kind": "account", "key": "1"}}),
+        ("POST", f"webhook/{claim}/set_target", {"target": {"kind": "none"}}),
+        ("POST", f"webhook/{claim}/probe", {"phase": "reach"}),
+        ("DELETE", f"webhook/{claim}", None),
+    ]
+    for method, path, body in calls:
+        with pytest.raises(AssertionError, match="forwarded"):
+            await call_local(method, path, json=body)
+
+    assert [(m, p) for m, p, _, _ in fake.seen] == [
+        ("GET", "/api/v1/graph/webhook/mine"),
+        ("POST", "/api/v1/graph/webhook/chain"),
+        ("POST", f"/api/v1/graph/webhook/{claim}/set_target"),
+        ("POST", f"/api/v1/graph/webhook/{claim}/probe"),
+        ("DELETE", f"/api/v1/graph/webhook/{claim}"),
+    ]
+    assert fake.seen[1][3] == {"parent": "@whatsapp", "claim": {"kind": "account", "key": "1"}}

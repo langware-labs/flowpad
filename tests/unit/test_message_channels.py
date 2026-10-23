@@ -62,6 +62,9 @@ async def test_each_channel_says_where_its_messages_arrive(monkeypatch):
         )
         assert rows[elsewhere["id"]]["routed"] == "instance" and rows[elsewhere["id"]]["source_id"] == ""
         assert "root" not in rows, "the vendor's root is not anyone's channel"
+        assert rows[str(here.id)]["channel"] == "whatsapp" and rows[str(polled.id)]["channel"] == "telegram", (
+            "a Flow channel driver names the hub vendor it arrives on, claimed or not"
+        )
     finally:
         await here.delete()
         await polled.delete()

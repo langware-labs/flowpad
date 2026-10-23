@@ -4,7 +4,6 @@ import { AppWindow, Copy, ExternalLink, Monitor, PanelTop, Sparkles } from 'luci
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -26,7 +25,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { MediaLightbox } from '@src/components/ui/media-lightbox';
 import { BrowserProfileItems } from './BrowserProfileItems';
-import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
+import { useBrowserProfiles } from '@src/lib/browser-profiles';
 import { lightboxMediaName, linkKind } from '@src/lib/link-kind';
 import { linkActions, type LinkActionId, type LinkSurface } from './link-actions';
 import type { LinkHandlers, LinkSource } from './link-events';
@@ -139,16 +138,7 @@ const LinkMenu = forwardRef<LinkMenuHandle, { onRun: (action: LinkAction, link: 
     [],
   );
   // Refetched on every open; the last list stays shown meanwhile, so only the first right-click waits.
-  const [browsers, setBrowsers] = useState<Browser[]>([]);
-  const opened = state !== null;
-  useEffect(() => {
-    if (!opened) return;
-    let live = true;
-    void fetchBrowserProfiles().then((list) => live && setBrowsers(list));
-    return () => {
-      live = false;
-    };
-  }, [opened]);
+  const browsers = useBrowserProfiles(state !== null);
 
   if (!state) return null;
   const { link, x, y, items, id } = state;

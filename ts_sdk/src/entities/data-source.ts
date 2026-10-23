@@ -103,6 +103,8 @@ export type { ChannelRouteClaim, ChannelRouteTarget } from './inbound-webhook';
 export interface ChannelRoutePlace {
   key: string;
   label: string;
+  /** `this`: this computer's instance id. */
+  instance_id?: string;
   node_typeid?: string;
 }
 

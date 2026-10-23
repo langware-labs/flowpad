@@ -19,7 +19,7 @@ vi.mock('@src/navigation', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useDockNavigation: () => ({ navigation: { ...mocks, openLinkInBrowserProfile: vi.fn() } }),
 }));
-vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: () => Promise.resolve([]) }));
+vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: () => Promise.resolve([]), useBrowserProfiles: () => [] }));
 
 const { LinkScope, useLinkHandlers } = await import('@src/components/links/LinkHandlersContext');
 const { MarkdownView } = await import('@src/components/markdown-view');

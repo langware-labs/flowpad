@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import noEntityConstructInRender from './eslint-rules/no-entity-construct-in-render.js';
 
 export default tseslint.config(
   {
@@ -36,9 +37,12 @@ export default tseslint.config(
     },
     plugins: {
       'react-hooks': reactHooks,
+      flowpad: { rules: { 'no-entity-construct-in-render': noEntityConstructInRender } },
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Building an entity while rendering froze the app (2026-10-23): eslint-rules/no-entity-construct-in-render.js
+      'flowpad/no-entity-construct-in-render': 'error',
       '@typescript-eslint/no-unused-vars': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unsafe-assignment': 'off',

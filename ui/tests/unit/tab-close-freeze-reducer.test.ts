@@ -12,6 +12,7 @@ import {
 const close = (tabPx: number, where: 'middle' | 'last' | 'only' = 'middle'): FreezeEvent => ({
   type: 'closeByMouse',
   tabPx,
+  maxPx: 200,
   ...(where === 'middle' ? { index: 1, count: 5 } : where === 'last' ? { index: 4, count: 5 } : { index: 0, count: 1 }),
 });
 const RELEASE: FreezeEvent = { type: 'release' };
@@ -27,6 +28,10 @@ describe('freezeReducer', () => {
     expect(run([close(120, 'last')]).leadPad).toBe(121);
     expect(run([close(120, 'last'), close(120, 'last')]).leadPad).toBe(242);
     expect(run([close(120, 'last'), close(120, 'last'), close(120, 'last')]).leadPad).toBe(363);
+  });
+
+  it('closing the last tab at full width adds no spacer (the row has free space)', () => {
+    expect(run([close(200, 'last')])).toEqual({ frozenPx: 200, leadPad: 0 });
   });
 
   it('closing the only/first tab adds no separator width', () => {

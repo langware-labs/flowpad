@@ -12,113 +12,113 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useLingui } from '@lingui/react/macro';
 import { ownerOf } from '@src/components/stream-inbox-view/channel-owner';
 import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { errorMessage } from '@src/lib/error-message';
 import type { DestinationLabels, InboundChannel } from './inbound-model';
 
-/** How often the screen re-reads `webhook/mine` while it is open — what moves the live counters. */
-export const INBOUND_POLL_MS = 5000;
+/** How often the screen re-reads `webhook/mine` while it is open and visible — what moves the live counters. */
+const INBOUND_POLL_MS = 5000;
 
 /**
- * The caller's hub claims, re-read every 5 s while mounted. `openedAt` (epoch seconds) is when the screen opened:
- * the live counters count `recent[]` from there, client-side — nothing is stored.
+ * The caller's hub claims, re-read every 5 s while mounted and the tab is visible. `openedAt` (epoch seconds) is
+ * when the screen opened: the live counters count `recent[]` from there, client-side — nothing is stored.
  */
 export function useInboundClaims(api: InboundApi = InboundWebhooks, pollMs: number = INBOUND_POLL_MS) {
   const [claims, setClaims] = useState<InboundClaim[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const openedAt = useRef(Date.now() / 1000).current;
+  const last = useRef('');
+  const busy = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
     try {
-      setClaims(await api.mine());
+      const next = await api.mine();
+      // An unchanged answer keeps the same array: nothing downstream re-renders.
+      const seen = JSON.stringify(next);
+      if (seen !== last.current) {
+        last.current = seen;
+        setClaims(next);
+      }
       setError(null);
     } catch (e) {
-      setError(errorText(e));
+      setError(errorMessage(e, String(e)));
+    } finally {
+      busy.current = false;
     }
   }, [api]);
 
   useEffect(() => {
     void refresh();
     if (pollMs <= 0) return;
-    const timer = setInterval(() => void refresh(), pollMs);
-    return () => clearInterval(timer);
+    const tick = () => document.visibilityState === 'visible' && void refresh();
+    const timer = setInterval(tick, pollMs);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
   }, [refresh, pollMs]);
 
   const numbers = useMemo(() => inboundTree(claims ?? []), [claims]);
-  return { claims, numbers, error, loading: claims === null && error === null, refresh, openedAt };
-}
-
-/** This desktop's instance id (null on the hub page, or while it is read). */
-export function useHereInstance(api: InboundApi = InboundWebhooks): string | null {
-  const [here, setHere] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api
-      .here()
-      .then((id) => alive && setHere(id))
-      .catch(() => alive && setHere(null));
-    return () => {
-      alive = false;
-    };
-  }, [api]);
-  return here;
+  return { numbers, error, loading: claims === null && error === null, refresh, openedAt };
 }
 
 const agentsQuery = new QueryRequest({ type: Agent.type, scope: [], name: 'inbound:agents' });
 const NO_SOURCES: DataSource[] = [];
 const NO_AGENTS: Agent[] = [];
 
+/** A channel as fetched, before the owning agent's name is put on it. */
+type FetchedChannel = Omit<InboundChannel, 'ownerName'> & { owner: string | null };
+
 /**
- * The message channels on this desktop a claim can deliver to, each with the agent that answers it and that
- * agent's cloud placements holding the same channel. Empty on the hub page: there are no local channels there.
+ * The message channels on this desktop a claim can deliver to, each with the agent that answers it, this
+ * computer's instance id and the agent's cloud placements holding the same channel. Empty on the hub page.
+ * The channels and their places are fetched once per set of sources; agent names are put on without a request.
  */
 export function useInboundChannels(enabled: boolean): InboundChannel[] {
   const { data: sources = NO_SOURCES } = useEntitiesQuery<DataSource>(sourcesQuery, { enabled });
   const { data: agents = NO_AGENTS } = useEntitiesQuery<Agent>(agentsQuery, { enabled });
-  const [rows, setRows] = useState<InboundChannel[]>([]);
+  const [fetched, setFetched] = useState<FetchedChannel[]>([]);
+  const sourceIds = sources.map((s) => s.id).join(',');
 
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
+    const byId = new Map(sources.map((s) => [s.id, s]));
     void (async () => {
       try {
         const channels = (await DataSource.channels()).filter((c) => c.source_id);
-        const withPlaces = await Promise.all(
-          channels.map(async (c) => {
-            const source = sources.find((s) => s.id === c.source_id);
-            let places: InboundChannel['places'] = [];
-            try {
-              places = source ? (await source.route()).places : [];
-            } catch {
-              places = [];
-            }
-            const owner = source ? ownerOf(source) : null;
-            const agent = owner?.startsWith(`${Agent.type}-`)
-              ? agents.find((a) => `${Agent.type}-${a.id}` === owner)
-              : undefined;
-            return { id: c.source_id, name: c.name, provider: c.provider, ownerName: agent?.name, places };
+        const rows = await Promise.all(
+          channels.map(async (c): Promise<FetchedChannel> => {
+            const source = byId.get(c.source_id);
+            const places = (source && (await source.route().catch(() => null))?.places) || [];
+            return {
+              id: c.source_id,
+              name: c.name,
+              provider: c.channel || c.provider,
+              instanceId: places.find((p) => p.key === 'this')?.instance_id,
+              places,
+              owner: source ? ownerOf(source) : null,
+            };
           }),
         );
-        if (alive) setRows(withPlaces);
+        if (alive) setFetched(rows);
       } catch {
-        if (alive) setRows([]);
+        if (alive) setFetched([]);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [enabled, sources, agents]);
+    // Keyed by the set of sources, not the query's array identity: a refetch with the same rows fetches nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, sourceIds]);
 
-  return enabled ? rows : [];
-}
-
-/** The hub's own sentence for a refusal, else the error's. */
-export function errorText(e: unknown): string {
-  const said = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-  return said || (e instanceof Error ? e.message : String(e));
-}
-
-/** The HTTP status of a failed call, when it carried one. */
-export function errorStatus(e: unknown): number | undefined {
-  return (e as { response?: { status?: number } })?.response?.status;
+  return useMemo(() => {
+    const names = new Map(agents.map((a) => [`${Agent.type}-${a.id}`, a.name]));
+    return fetched.map(({ owner, ...c }) => ({ ...c, ownerName: owner ? names.get(owner) : undefined }));
+  }, [fetched, agents]);
 }
 
 /** The picker's words, localized. */

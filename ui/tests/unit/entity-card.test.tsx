@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Conversation, Shell } from '@sdk';
@@ -59,7 +60,11 @@ describe('entity card', () => {
   });
 
   it('a web page tab shows its address', () => {
-    render(<UrlTabCard name="example.com" url="https://example.com/a" />);
+    render(
+      <MemoryRouter>
+        <UrlTabCard name="example.com" url="https://example.com/a" />
+      </MemoryRouter>,
+    );
     expect(screen.getByTestId('url-tab-card-url')).toHaveTextContent('https://example.com/a');
   });
 });
