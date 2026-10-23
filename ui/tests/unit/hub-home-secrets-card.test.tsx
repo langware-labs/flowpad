@@ -48,7 +48,7 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
   useSandboxes: () => ({
     // `node_provider_id` marks it as launched — the card branches on it to
     // choose between Open and Launch.
-    sandboxes: [{ id: 'node-1', name: 'Sandbox One', node_provider_id: 'sbx-1' }],
+    sandboxes: [{ id: 'node-1', name: 'Sandbox One', node_provider_id: 'sbx-1', agents: () => Promise.resolve([]) }],
     isLoading: false,
     refetch: vi.fn(),
     createSandbox: vi.fn(),
