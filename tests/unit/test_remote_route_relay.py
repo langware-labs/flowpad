@@ -4,12 +4,12 @@ Mirror of the hub's own ``test_deployed_agent_chat_proxy.py`` one tier up: a
 session opened on a placement that is not on this machine goes through the hub
 (``Deployment._use_on_hub``), the process is adopted AT THE HUB'S ID as a route
 row (``AgenticProcess.adopt_route``), and every process action on that row
-forwards — SDK bodies unchanged, streams verbatim through ``CloudProxy``, the
+forwards — SDK bodies unchanged, streams verbatim through ``HubProxy.forward``, the
 projection re-read afterwards so the local WS ``data_op`` fires for the chat
 panel. Verbs that only make sense next to the worker refuse with 409.
 
 The hub is faked at the two seams the relay uses: the shared hub verbs
-(``hub_http.hub_get/hub_post/hub_delete``) and the request proxy. No network.
+(``HubProxy.get/post/delete``) and the request proxy (``HubProxy.forward``). No network.
 """
 
 import uuid
@@ -22,6 +22,7 @@ from starlette.responses import StreamingResponse
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -70,7 +71,7 @@ class _FakeHub:
             raise HubError(0, "box unreachable")
         return {"deleted": True}
 
-    async def proxy(self, request, url):  # bound in place of CloudProxy.__call__
+    async def proxy(self, request, url):  # bound in place of HubProxy.forward
         self.calls.append(("STREAM", url))
         self.streams_open += 1
 
@@ -92,10 +93,10 @@ class _FakeHub:
 @pytest.fixture
 def hub(monkeypatch):
     fake = _FakeHub()
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake.post)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake.get)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_delete", fake.delete)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.proxy.CloudProxy.__call__", fake.proxy)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(fake.post))
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake.get))
+    monkeypatch.setattr(HubProxy, "delete", staticmethod(fake.delete))
+    monkeypatch.setattr(HubProxy, "forward", staticmethod(fake.proxy))
     return fake
 
 
@@ -234,7 +235,8 @@ async def test_reads_and_terminal_verbs_relay_without_a_projection_round_trip(hu
 async def test_status_relay_is_itself_the_projection(hub, monkeypatch):
     route = await _route(hub)
     monkeypatch.setattr(
-        "flow_sdk.cloud_client.transport.hub_http.hub_get",
+        HubProxy,
+        "get",
         AsyncMock(return_value={"status": "running", "busy": True, "worker_status": "working"}),
     )
     result = await route.get_status()

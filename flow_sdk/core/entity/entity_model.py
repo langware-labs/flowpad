@@ -122,6 +122,23 @@ def suppress_store():
         _SUPPRESS_STORE.reset(token)
 
 
+_MIRROR_DELETE: "ContextVar[bool]" = ContextVar("_mirror_delete", default=False)
+
+
+@contextmanager
+def mirror_delete():
+    """The enclosed delete(s) remove only this machine's copy of hub rows — never the hub row.
+
+    For the hub telling us a row is gone, and for sign-out clearing the hub-derived cache:
+    neither is the user asking the hub to delete anything.
+    """
+    token = _MIRROR_DELETE.set(True)
+    try:
+        yield
+    finally:
+        _MIRROR_DELETE.reset(token)
+
+
 def in_remote_reflection() -> bool:
     """Is the current save a verbatim reflection of a hub-origin row (``remote_reflection``)?"""
     return _REMOTE_REFLECTION.get()
@@ -2208,7 +2225,9 @@ class Entity(DBEntity):
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_public_url  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         creds = load_credentials()
@@ -2243,13 +2262,16 @@ class Entity(DBEntity):
             self.add_shared_context_entities(parent_tid)
         body = self._hub_body()
 
-        path = build_hub_url(self.get_type())
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+        url = hub_public_url(build_hub_url(self.get_type()))
+        try:
+            await HubProxy.call_url("POST", url, json=body, strict=True)
+        except HubError as e:
             # Idempotent: a 409 ("already exist") means this entity is already on
             # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
             # every invite. The create's post-condition is already satisfied, so
             # treat it as a no-op success rather than a 500.
-            await client.post(path, body, idempotent=True)
+            if e.status_code != 409:
+                raise
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.
@@ -2358,7 +2380,8 @@ class Entity(DBEntity):
         creating a child under a non-remote parent would 404 on the hub.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_public_url  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         creds = load_credentials()
@@ -2367,9 +2390,8 @@ class Entity(DBEntity):
         body = child._hub_body()
         # build_hub_url(self) → /graph/<ptype>/<pid>; action=<childtype> appends
         # the trailing bare child type the hub parses as direct_resource_type.
-        path = build_hub_url(self, action=child.get_type())
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            await client.post(path, body)
+        url = hub_public_url(build_hub_url(self, action=child.get_type()))
+        await HubProxy.call_url("POST", url, json=body, strict=True)
         if "remote" in type(child).model_fields:
             child.remote = True
             # Direct and recursive child creation use the same byte-transport
@@ -2398,7 +2420,8 @@ class Entity(DBEntity):
         A hub refusal raises ``HubError``; a 404 means it is already gone.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_public_url  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         if recursive:
@@ -2411,9 +2434,7 @@ class Entity(DBEntity):
             creds = load_credentials()
             if not creds or not creds.api_key:
                 raise RuntimeError("Cloud login required before unshare()")
-            path = build_hub_url(self)
-            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                response = await client.request("DELETE", path)
+            response = await HubProxy.send("DELETE", hub_public_url(build_hub_url(self)))
             if response.status_code >= 400 and response.status_code != 404:  # 404: already gone
                 from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
@@ -3033,7 +3054,7 @@ class Entity(DBEntity):
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""
-        if type(self).owns_hub_delete and self.remote:
+        if type(self).owns_hub_delete and self.remote and not _MIRROR_DELETE.get():
             # Before any local side effect: a hub refusal (HubError) keeps the row whole.
             await self.unshare(recursive=False)
 

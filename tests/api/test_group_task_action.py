@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.task import Task
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.task_spec import TaskKind
 
 pytestmark = pytest.mark.asyncio
@@ -101,7 +102,6 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
     await bootstrapped_client.post(f"{GRAPH}/task/{parent['id']}/create-group-task", json={"group_id": group["id"]})
     child = (await Task.get_all({"parent_id": parent["id"]}))[0]
 
-    import flow_sdk.app.actions.group_task_action as gta
 
     hub_rows = {
         child.id: {
@@ -115,7 +115,7 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
     async def fake_hub_get(entity_type, entity_id=None, *a, **k):
         return hub_rows.get(entity_id)
 
-    monkeypatch.setattr(gta, "hub_get", fake_hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
     # The owner-side sync ALSO pulls each child's comments via
     # ``_sync_remote_children`` (a separate ``hub_get``); stub it to no children
     # so this test stays focused on the member-owned field merge.

@@ -20,6 +20,7 @@ from flow_sdk.builtin.comment import Comment
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.builtin.task import Task
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.stream_inbox import outbound
 from flow_sdk.stream_inbox.projection import project_source_item, reconcile_source
 from flow_sdk.tasks import runtime
@@ -195,7 +196,6 @@ async def test_done_reopened_done_is_three_messages(channel, bootstrapped_client
 
 
 async def test_reassigning_takes_the_task_back_from_the_previous_assignee(channel, bootstrapped_client, hub_faked, monkeypatch):
-    import flow_sdk.app.actions.task_assign_action as taa  # noqa: PLC0415
 
     revoked: list[tuple[str, dict]] = []
 
@@ -203,7 +203,7 @@ async def test_reassigning_takes_the_task_back_from_the_previous_assignee(channe
         revoked.append((f"/graph/{getattr(entity_type, 'value', entity_type)}/{entity_id}/{action}", payload))
         return {}
 
-    monkeypatch.setattr(taa, "hub_delete", fake_hub_delete)
+    monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_hub_delete))
     task = await _assigned_to_bob(bootstrapped_client)
     assert revoked == [], "handing over my own task takes it from no one"
 
@@ -243,13 +243,11 @@ async def test_a_change_after_the_first_pull_arrives_as_news(channel, bootstrapp
     """A steady pull lists only what changed since the last one, so a change is ingested as an arrival
     — its item tag is what projects it (and re-projects an update) in the app. A pull that re-listed the
     whole window went over the storm cap, ingested silently, and an update never reached the thread."""
-    from flow_sdk.tags import on_tag  # noqa: PLC0415
-
-    from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
-
     from datetime import datetime, timedelta, timezone  # noqa: PLC0415
 
     from flow_sdk.core.entity.entity_model import remote_reflection  # noqa: PLC0415
+    from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
+    from flow_sdk.tags import on_tag  # noqa: PLC0415
 
     # Enough of my tasks in the window that re-listing it all would cross the storm cap — written an hour ago
     # (a reflection save keeps the stamps it is given), so they are backlog, not news.

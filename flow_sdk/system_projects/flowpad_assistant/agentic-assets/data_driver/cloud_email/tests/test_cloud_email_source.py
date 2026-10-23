@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
@@ -292,7 +293,7 @@ class TestTheAppMailbox:
                 raise error
             return {"messages": [LIST_ITEM], "count": 1} if sub_path == "messages" else {**LIST_ITEM, "text": FULL_TEXT}
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
 
     async def test_it_lists_by_agent_and_hydrates_with_an_encoded_id(self, monkeypatch):
         calls: list = []

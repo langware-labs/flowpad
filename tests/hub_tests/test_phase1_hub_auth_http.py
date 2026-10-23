@@ -8,8 +8,8 @@ from flow_sdk.cli.app_config import set_user
 from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.utils.hub import hub_get, hub_post, hub_put
 
 pytestmark = pytest.mark.hub
 
@@ -71,14 +71,14 @@ async def test_hub_helpers_use_shared_auth_for_get_post_put(hub_login_payload):
     save_credentials(creds)
     set_user(creds.user)
 
-    user = await hub_get(BuiltinEntityType.USER, creds.user["id"])
+    user = await HubProxy.get(BuiltinEntityType.USER, creds.user["id"])
     assert user and user["id"] == creds.user["id"]
 
     task_title = f"hub-auth-test-{uuid.uuid4().hex}"
-    task = await hub_post(BuiltinEntityType.TASK, {"title": task_title})
+    task = await HubProxy.post(BuiltinEntityType.TASK, {"title": task_title})
     assert task and task["title"] == task_title
 
-    updated = await hub_put(BuiltinEntityType.TASK, task["id"], {"title": task_title, "status": "Done"})
+    updated = await HubProxy.put(BuiltinEntityType.TASK, task["id"], {"title": task_title, "status": "Done"})
     assert updated and updated["id"] == task["id"]
     assert updated["status"] == "Done"
 

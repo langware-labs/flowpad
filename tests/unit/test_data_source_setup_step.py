@@ -13,6 +13,7 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.sources.setup_steps import SetupShown, SourceUpdateSpec, setup_step
@@ -189,7 +190,6 @@ async def test_an_undeclared_step_is_not_found(stub):
 
 
 async def test_public_webhook_asks_the_hub_for_this_desktops_url_with_a_fresh_verify_token(stub, monkeypatch):
-    from flow_sdk.cloud_client.transport import hub_http
 
     name, kept = stub
     asked: list = []
@@ -198,7 +198,7 @@ async def test_public_webhook_asks_the_hub_for_this_desktops_url_with_a_fresh_ve
         asked.append((entity_type, action, payload))
         return {"id": "w-1", "url": "https://hub.example/api/v1/webhook/w-1"}
 
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     source = DataSource(provider=name, name="bot", config={})
 
     answer = await source.step("public-webhook")
@@ -217,7 +217,6 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     (``webhook/@<provider>``), delivered to THIS channel on THIS instance -- not a desktop-wide webhook."""
     from pydantic import SecretStr
 
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.instance_settings import runtime
     from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
@@ -235,7 +234,7 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     def hub_claim(cls, config, secrets):
         return {"provider": "vendor", "key": config["app_id"], "proof": {"credential": secrets["secret"]}}
 
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
     monkeypatch.setattr(driver, "credentials_for", credentials_for)
     monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
@@ -260,7 +259,6 @@ async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_cla
     account: the chain request's parent is the person's own account claim (the one delivering HERE first), the
     source keeps no URL of its own, and with no account claim yet it says to claim the account first."""
     from flow_sdk.builtin import data_source as ds
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.instance_settings import runtime
 
     name, kept = stub
@@ -279,7 +277,7 @@ async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_cla
         return {"provider": "vendor", "kind": "group", "key": config["group"],
                 "under": {"kind": "account", "key": config["app_id"]}}
 
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     monkeypatch.setattr(ds, "_hub_claims", hub_claims)
     monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
     monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
@@ -363,7 +361,6 @@ async def test_the_hubs_source_nudge_wakes_the_driver_it_names(monkeypatch):
 
 
 async def test_direct_callback_needs_no_hub_and_redacts_only_secrets(stub, monkeypatch):
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.server import webhook_listener
 
     name, kept = stub
@@ -379,7 +376,7 @@ async def test_direct_callback_needs_no_hub_and_redacts_only_secrets(stub, monke
         pytest.fail("direct setup must not contact the hub")
 
     monkeypatch.setattr(webhook_listener, "callback_base_url", callback_base_url)
-    monkeypatch.setattr(hub_http, "hub_post", forbidden)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(forbidden))
     answer = await source.step("public-webhook", values={"delivery": "direct"})
     assert answer.ok
     assert answer.value["secrets"] == {}

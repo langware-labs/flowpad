@@ -11,7 +11,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.app.actions import membership_sync
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.builtin.team import Team
-from flow_sdk.cloud_client.transport import hub_http
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.type_info import register_all
 
 register_all()
@@ -27,7 +27,7 @@ async def test_sync_mirrors_hub_organizations_and_teams_missing_locally(monkeypa
         asked.append(str(entity_type))
         return {"items": rows[str(entity_type)]}
 
-    monkeypatch.setattr(hub_http, "hub_get", fake_hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
     assert await Organization.get_one({"id": org_id}) is None
     assert await Team.get_one({"id": team_id}) is None
 
@@ -45,6 +45,6 @@ async def test_sync_is_a_no_op_when_the_hub_is_unreachable(monkeypatch):
     async def unreachable(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(hub_http, "hub_get", unreachable)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(unreachable))
 
     assert await membership_sync.sync_remote_memberships() == 0

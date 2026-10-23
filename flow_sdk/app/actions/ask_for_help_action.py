@@ -344,7 +344,8 @@ async def open_on_hub(conv: Conversation, opening: FlowMessage) -> Optional[HubF
 
 async def _open_ticket(conv: Conversation, opening: FlowMessage) -> Optional[HubFailure]:
     from flow_sdk.app.actions.flow_message_action import resolve_helpdesk  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import get_info, hub_request  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
 
     info = await get_info()
     if info is None:
@@ -373,7 +374,7 @@ async def _open_ticket(conv: Conversation, opening: FlowMessage) -> Optional[Hub
         "attachment": [a.model_dump(mode="json") for a in (opening.attachment or [])],
         **({"body_status": "uploading"} if opening.has_body() else {}),
     }
-    data = await hub_request(
+    data = await HubProxy.request(
         "POST", BuiltinEntityType.PROJECT, conv.remote_project_id, "start_guest_conversation", payload=payload
     )
     if (data or {}).get("id") != conv.id:

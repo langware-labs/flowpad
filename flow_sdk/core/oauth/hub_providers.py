@@ -154,9 +154,9 @@ async def hub_provider_rows() -> EntityEnvVars:
     stale = cached[1] if cached is not None else None
 
     try:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        payload = await hub_get(BuiltinEntityType.USER, user_id, action="env-var", sub_path="table")
+        payload = await HubProxy.get(BuiltinEntityType.USER, user_id, action="env-var", sub_path="table")
     except Exception as e:  # noqa: BLE001
         logger.debug("[oauth] hub provider fetch failed: %s", e)
         return _serve_stale(user_id, stale)

@@ -6704,7 +6704,7 @@ class AgenticProcess(Entity):
     # A process opened on a REMOTE deployment lives on that machine; the local
     # row (``hub_route=True``, adopted at the hub's id by ``adopt_route``) only
     # carries the hub's PROJECTION of it and relays every action there, on the
-    # shared hub verbs (``hub_http``) and the request proxy (``CloudProxy``).
+    # shared hub verbs and the request forwarder (``HubProxy``).
     # Caller-less sweeps go through ``local_rows`` so they never see one.
 
     #: The derived axes a route row persists instead of computing.
@@ -6785,9 +6785,9 @@ class AgenticProcess(Entity):
         )
 
     async def _read_remote_projection(self) -> dict | None:
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        descriptor = await hub_http.hub_get(self.get_type(), self.id)
+        descriptor = await HubProxy.get(self.get_type(), self.id)
         return descriptor if isinstance(descriptor, dict) else None
 
     async def _refresh_remote_projection(self) -> None:
@@ -6803,19 +6803,19 @@ class AgenticProcess(Entity):
         """Forward one JSON action to the hub, unchanged. ``refresh`` re-reads the
         projection afterwards — off for pure reads and for verbs after which the
         row is idle or gone."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         etype, eid = self.get_type(), self.id
         try:
             if method == "GET":
-                data = await hub_http.hub_get(etype, eid, action)
+                data = await HubProxy.get(etype, eid, action)
                 if data is None:
                     raise HubError(503, "hub unreachable or refused")
             elif method == "DELETE":
-                data = await hub_http.hub_delete(etype, eid, action)
+                data = await HubProxy.delete(etype, eid, action)
             else:
-                data = await hub_http.hub_post(etype, body or {}, eid, action)
+                data = await HubProxy.post(etype, body or {}, eid, action)
         except HubError as exc:
             status = exc.status_code if 400 <= (exc.status_code or 0) < 600 else 503
             return ApiFailResponse(message=f"deployed agent process: {exc.reason}", status_code=status)
@@ -6824,14 +6824,14 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(data=data)
 
     async def _relay_stream(self, action: str, *, marks_busy: bool = False):
-        """Forward a streaming action through ``CloudProxy`` (the incoming request,
+        """Forward a streaming action through ``HubProxy.forward`` (the incoming request,
         verbatim, hub-authenticated by the shared client). ``marks_busy`` makes the
         projection say busy for the life of the stream; the projection is re-read
         when the response finishes, disconnects included — a background task."""
         from starlette.background import BackgroundTask  # noqa: PLC0415 — app-layer dep
 
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.proxy import CloudProxy  # noqa: PLC0415
 
         request_info = get_current_request_info()
         if request_info is None or request_info.request is None:
@@ -6840,7 +6840,9 @@ class AgenticProcess(Entity):
             {**self.remote_projection, "busy": True, "ready_for_input": False}
         ):
             await self.save(notify=True)
-        response = await CloudProxy()(request_info.request, hub_http.hub_graph_url(self.get_type(), self.id, action))
+        response = await HubProxy.forward(
+            request_info.request, hub_http.hub_graph_url(self.get_type(), self.id, action)
+        )
         release = response.background
 
         async def _finish() -> None:

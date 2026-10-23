@@ -1215,13 +1215,13 @@ class FlowMessage(Entity):
         exactly once per coalesced ``upload_body`` group (see the guard there);
         does not stamp ``self`` (each caller stamps its own instance on success).
         """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-        from flow_sdk.utils.hub import hub_post
 
         zip_path = await self.to_file(transfer_mode=transfer_mode, create_bookmark=create_bookmark)
         try:
             content = zip_path.read_bytes()
-            await hub_post(
+            await HubProxy.post(
                 BuiltinEntityType.FLOW_MESSAGE,
                 {},
                 self.id,
@@ -1237,7 +1237,7 @@ class FlowMessage(Entity):
         # the action fans the UPDATE to conversation participants so receivers
         # learn the body is downloadable. A plain entity PUT only notifies the
         # sender + owners, leaving receivers stuck on UPLOADING.
-        await hub_post(
+        await HubProxy.post(
             BuiltinEntityType.FLOW_MESSAGE,
             {
                 "flow_message_id": self.id,

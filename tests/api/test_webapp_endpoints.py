@@ -39,6 +39,7 @@ from flow_sdk.builtin.webapp_placement import (
     unplace_webapp,
     webapp_routes,
 )
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 
 def _deployment_typeid() -> str:
@@ -317,7 +318,6 @@ async def test_a_placement_of_something_else_is_refused(client, tmp_path):
 
 
 async def test_a_box_asks_the_hub_to_refresh_a_desktop_does_not(monkeypatch, tmp_path):
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
     import flow_sdk.instance_settings.runtime as runtime
 
     asked: list = []
@@ -326,7 +326,7 @@ async def test_a_box_asks_the_hub_to_refresh_a_desktop_does_not(monkeypatch, tmp
         asked.append((entity_type, entity_id, action))
         return {}
 
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     project = await _project(tmp_path)
 
     # A box is one the hub placed — any provider, sandbox or agent — not one whose id E2B's metadata answers.

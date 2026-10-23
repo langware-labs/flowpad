@@ -16,6 +16,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.status import InstallState, LoginState
 from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
 from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
@@ -484,7 +485,6 @@ async def test_an_unavailable_preference_fails_loudly_rather_than_spending_somet
 
 async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
     """A spawn must never wait on the hub to find out what may fund it."""
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
 
     _bind(monkeypatch)
     calls: list[str] = []
@@ -493,7 +493,7 @@ async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
         calls.append("hub")
         return None
 
-    monkeypatch.setattr(hub_http, "hub_get", _no_network)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_no_network))
     await _resolve_source(_process())
     assert calls == [], "resolution reached for the hub"
 

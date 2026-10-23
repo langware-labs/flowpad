@@ -15,8 +15,8 @@ from __future__ import annotations
 import base64
 from typing import Any, Mapping, Optional
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
-from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise, hub_post
 from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
@@ -81,7 +81,7 @@ class FlowStorageSource(ObjectSource):
     async def list_files(self) -> dict[str, str]:
         prefix = _joined(self.config.get("prefix") or "")
         try:
-            answer = await hub_get_or_raise(STORE, self.store_id, "files", params={"prefix": prefix})
+            answer = await HubProxy.get_or_raise(STORE, self.store_id, "files", params={"prefix": prefix})
         except HubError as exc:
             raise _refusal(exc, f"the files of {prefix or 'the store'}") from exc
         base = f"{prefix}/" if prefix else ""
@@ -89,7 +89,7 @@ class FlowStorageSource(ObjectSource):
 
     async def read_file(self, path: str) -> bytes:
         try:
-            answer = await hub_get_or_raise(STORE, self.store_id, "read", params={"path": self._path(path)})
+            answer = await HubProxy.get_or_raise(STORE, self.store_id, "read", params={"path": self._path(path)})
         except HubError as exc:
             raise _refusal(exc, path) from exc
         return base64.b64decode(str(answer.get("data") or ""))
@@ -100,7 +100,7 @@ class FlowStorageSource(ObjectSource):
         if expected is not None:
             body["expected"] = expected
         try:
-            answer = await hub_post(STORE, body, self.store_id, "write")
+            answer = await HubProxy.post(STORE, body, self.store_id, "write")
         except HubError as exc:
             raise _refusal(exc, path) from exc
         return str((answer or {}).get("version") or "")
@@ -111,7 +111,7 @@ class FlowStorageSource(ObjectSource):
         if expected is not None:
             body["expected"] = expected
         try:
-            await hub_post(STORE, body, self.store_id, "delete")
+            await HubProxy.post(STORE, body, self.store_id, "delete")
         except HubError as exc:
             raise _refusal(exc, path) from exc
 
@@ -120,7 +120,7 @@ class FlowStorageSource(ObjectSource):
         if not self.store_id:
             return Verdict(ready=False, detail="This data source has no data store yet: run its setup to make one.")
         try:
-            await hub_get_or_raise(STORE, self.store_id, "files", params={"prefix": "__none__"})
+            await HubProxy.get_or_raise(STORE, self.store_id, "files", params={"prefix": "__none__"})
         except HubError as exc:
             if exc.status_code in (401, 403, 404):
                 return Verdict(ready=False, detail=f"The hub data store is not reachable for you ({exc.reason or exc.status_code}).")
@@ -136,7 +136,7 @@ class FlowStorageSource(ObjectSource):
             return ReturnedValue.not_yet("No data store yet")
         name = str(values.get("name") or self.binding.name or "project data")
         try:
-            made = await hub_post(STORE, {"name": name})
+            made = await HubProxy.post(STORE, {"name": name})
         except HubError as exc:
             return ReturnedValue.not_yet(f"The hub did not make the data store: {exc.reason or exc.status_code}")
         store_id = str((made or {}).get("id") or "")

@@ -4,15 +4,15 @@ name: mockify
 description: 'Turns a product idea into a clickable HTML mock of the user journey
   that the user can walk and comment on — every screen in order, with a journey bar
   and a per-screen feedback box (text + image) whose comments are saved as typed rows and
-  sent back to this session in one Execute. The mock and its feedback are typed data
-  (kinds mockify.mock / mockify.feedback). Two
+  sent back to this session in one Execute. Mock and feedback are typed
+  (mockify.mock / mockify.feedback). Two
   modes: real, the default (built from a running app''s own captured DOM and CSS,
   checked side by side so it looks exactly like the app), and fast (HTML in the
   product''s tokens, minutes — only for a product that does not run here, or when
   the user asks for a rough sketch). Use for "mock this flow", "show me the UX", "prototype the journey", "how
   would the user do X — show me", "make a clickable mock", or a design discussion that
-  needs screens before code; also when feedback on a mock arrives. Works in three phases: plan every
-  screen, implement each one into a single HTML file, validate it with a script before showing it. NOT for a working
+  needs screens before code; also when feedback on a mock arrives. Plans every screen, builds one HTML
+  file, script-validates it before showing. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
 ---
 

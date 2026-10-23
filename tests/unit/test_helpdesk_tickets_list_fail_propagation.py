@@ -20,6 +20,7 @@ import pytest
 
 from flow_sdk.app.actions import flow_message_action as fma
 from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.responses.response import ApiResponseStatus
 
@@ -45,7 +46,7 @@ async def test_hub_fail_envelope_propagates_as_failure() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(side_effect=refused)),
+        patch.object(HubProxy, "request", AsyncMock(side_effect=refused)),
     ):
         resp = await fma.helpdesk_tickets_list()
 
@@ -63,7 +64,7 @@ async def test_hub_transport_failure_propagates_as_failure() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(side_effect=HubError(0, "connection refused"))),
+        patch.object(HubProxy, "request", AsyncMock(side_effect=HubError(0, "connection refused"))),
     ):
         resp = await fma.helpdesk_tickets_list()
 
@@ -79,7 +80,7 @@ async def test_hub_success_returns_tickets() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(return_value=rows)),
+        patch.object(HubProxy, "request", AsyncMock(return_value=rows)),
     ):
         resp = await fma.helpdesk_tickets_list()
 
@@ -94,7 +95,7 @@ async def test_hub_success_non_list_data_coerced_empty() -> None:
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
         patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
-        patch.object(fma, "hub_request", AsyncMock(return_value={"unexpected": "shape"})),
+        patch.object(HubProxy, "request", AsyncMock(return_value={"unexpected": "shape"})),
     ):
         resp = await fma.helpdesk_tickets_list()
 

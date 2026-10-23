@@ -682,10 +682,10 @@ async def _tell_hub(deployment) -> None:
 
     if not get_assigned_compute_node():
         return
-    from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     try:
-        await hub_http.hub_post(deployment.get_type(), {}, deployment.id, "refresh-endpoints")
+        await HubProxy.post(deployment.get_type(), {}, deployment.id, "refresh-endpoints")
     except Exception:  # noqa: BLE001 — the endpoint serves here either way; the hub catches up on the next one
         _log.info("hub did not refresh the endpoints of %s", deployment.typeid, exc_info=True)
 

@@ -1194,7 +1194,7 @@ class Agent(Entity):
         default; omitted leaves it as it is)."""
         from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
         environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
@@ -1205,7 +1205,7 @@ class Agent(Entity):
         }
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
-        data = await hub_post(self.type, body, self.id, "plan_deployment") or {}
+        data = await HubProxy.post(self.type, body, self.id, "plan_deployment") or {}
         deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
         if deployment is None:
             raise RuntimeError("the hub returned no deployment to plan")
@@ -1423,8 +1423,8 @@ class Agent(Entity):
         """`POST /agent/<id>/place_action {deployment_id, op, trigger_id}` — `run_now` a schedule
         on a CLOUD place, through the hub, which alone reaches the machine."""
         from flow_sdk.builtin import agent_places  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         body = await self._body()
 
@@ -1440,7 +1440,7 @@ class Agent(Entity):
                 "trigger_id": str(body.get("trigger_id") or ""),
             }
             try:
-                data = await hub_http.hub_post(self.get_type(), payload, self.id, "place_action")
+                data = await HubProxy.post(self.get_type(), payload, self.id, "place_action")
             except HubError as exc:
                 raise agent_places.PlaceError(f"the hub refused: {exc}", status_code=502) from exc
             if data is None:

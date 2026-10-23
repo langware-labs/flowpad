@@ -159,11 +159,12 @@ async def sync_remote_memberships(someone_typeid: str | None = None) -> int:
     the number of rows mirrored; ``0`` when the hub is unreachable.
     """
     from flow_sdk.builtin.team import Team  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get, rows_of  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import rows_of  # noqa: PLC0415
 
     mirrored = 0
     for cls in (Organization, Team):
-        for row in rows_of(await hub_get(cls.get_type())):
+        for row in rows_of(await HubProxy.get(cls.get_type())):
             if await materialize_remote_membership_entity(cls, row, someone_typeid, notify=True) is not None:
                 mirrored += 1
     return mirrored

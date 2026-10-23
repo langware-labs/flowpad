@@ -55,7 +55,7 @@ from flow_sdk.app.actions.task_receive import _member_asset_ref, materialize_rem
 from flow_sdk.builtin.contacts_group import ContactsGroup
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import normalize_email
-from flow_sdk.cloud_client.transport.hub_http import hub_get, hub_post
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
@@ -129,7 +129,7 @@ async def _invite_member(email: str, child: Task, parent: Task, message: str | N
     # the primitive's invite with one extra target, not a second wire literal.
     body = assignee_invite_body(email, child, message or f'You have been assigned the task "{parent.title}"')
     body["invitation_targets"].append({"typeid": f"task-{parent.id}", "role": HubRole.GUEST.value})
-    await hub_post(BuiltinEntityType.TASK, body, child.id, "members")
+    await HubProxy.post(BuiltinEntityType.TASK, body, child.id, "members")
 
 
 async def _existing_children_by_assignee(task: Task) -> dict[str, Task]:
@@ -309,7 +309,7 @@ async def _sync_group_owner(task: Task, someone_typeid) -> int:
             await _sync_remote_children(child.typeid, BuiltinEntityType.COMMENT.value, someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[group-task] comment pull for %s failed (non-fatal): %s", child.id, e)
-        hub_row = await hub_get(BuiltinEntityType.TASK, child.id)
+        hub_row = await HubProxy.get(BuiltinEntityType.TASK, child.id)
         if not isinstance(hub_row, dict) or not hub_row.get("id"):
             continue
         if not Task.is_stale(child, hub_row):
@@ -345,7 +345,7 @@ async def _sync_group_member(child: Task, someone_typeid) -> int:
     The member's own child fields are locally authoritative — never touched.
     No plan/spec pull: the plan is deliberately not shared.
     """
-    hub_parent = await hub_get(BuiltinEntityType.TASK, child.parent_id, params={"expand": "blobs"})
+    hub_parent = await HubProxy.get(BuiltinEntityType.TASK, child.parent_id, params={"expand": "blobs"})
     if not isinstance(hub_parent, dict) or not hub_parent.get("id"):
         return 0
     parent = await Task.get_one({"id": child.parent_id})

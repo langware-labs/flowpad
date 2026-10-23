@@ -7,6 +7,8 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+
 
 class FakeHubStore:
     def __init__(self):
@@ -80,8 +82,8 @@ class FakeHubStore:
 def install(monkeypatch) -> FakeHubStore:
     fake = FakeHubStore()
     for name in ("get", "post", "put", "delete"):
-        monkeypatch.setattr(f"flow_sdk.cloud_client.transport.hub_http.hub_{name}", getattr(fake, name))
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake.get)
+        monkeypatch.setattr(HubProxy, name, staticmethod(getattr(fake, name)))
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake.get))
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", fake.deploy)
     return fake
 

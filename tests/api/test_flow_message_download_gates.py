@@ -32,6 +32,7 @@ import pytest
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 from flow_sdk.builtin.flow_message import BODY_FILENAME, AttachmentType, BodyStatus, FlowMessage
 from flow_sdk.builtin.message_attachment import MessageAttachment
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -79,8 +80,9 @@ def _download_gets(mock_get) -> list:
 @pytest.mark.asyncio
 async def test_open_dangling_pointer_issues_no_download(bootstrapped_client) -> None:
     """body_status='na' (dangling) → the gate skips; no fs/download GET fires."""
-    with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get",
+    with patch.object(
+        HubProxy,
+        "get",
         AsyncMock(return_value=_hub_fm("na")),
     ) as mock_get:
         r = await bootstrapped_client.get(f"/api/v1/graph/flow_message/{FM_ID}/open")
@@ -102,8 +104,9 @@ async def test_open_ready_pointer_issues_download(bootstrapped_client) -> None:
             return b""
         return _hub_fm("ready")
 
-    with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get",
+    with patch.object(
+        HubProxy,
+        "get",
         AsyncMock(side_effect=_fake_get),
     ) as mock_get:
         r = await bootstrapped_client.get(f"/api/v1/graph/flow_message/{FM_ID}/open")
@@ -199,8 +202,9 @@ async def test_download_body_no_project_stages_assets_without_materializing(
             return bundle
         return None
 
-    with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get",
+    with patch.object(
+        HubProxy,
+        "get",
         AsyncMock(side_effect=_fake_get),
     ):
         r = await bootstrapped_client.post(

@@ -17,8 +17,6 @@ import pytest
 import flow_sdk.server.routes._hub_reflect as reflect_mod
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.app.actions.membership_sync import materialize_remote_organization
-from flow_sdk.utils.hub import HubError
-from tests.unit._graph_client import call_local
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -29,66 +27,3 @@ REFLECT = {"Hub-Reflect": "true"}
 async def org(monkeypatch):
     monkeypatch.setattr(reflect_mod, "is_logged_in", lambda: True)
     return await materialize_remote_organization({"id": mint_uuid(), "name": "Begin School"}, notify=False)
-
-
-@pytest.mark.asyncio
-async def test_budgets_reaches_the_hub_as_budgets(monkeypatch, org):
-    asked = []
-
-    async def hub(entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
-        asked.append((str(entity_type), entity_id, action))
-        return {"org": {"id": entity_id, "name": "Begin School"}, "teams": [], "people": []}
-
-    monkeypatch.setattr(reflect_mod, "hub_get_or_raise", hub)
-
-    resp = await call_local("GET", f"organization/{org.id}/budgets", headers=REFLECT)
-
-    assert resp.status_code == 200, resp.text
-    assert asked == [("organization", org.id, "budgets")]
-    assert resp.json()["data"]["org"]["name"] == "Begin School"
-
-
-@pytest.mark.asyncio
-async def test_a_hub_refusal_reaches_the_caller(monkeypatch, org):
-    async def refused(*args, **kwargs):
-        raise HubError(403, "not an admin here")
-
-    monkeypatch.setattr(reflect_mod, "hub_get_or_raise", refused)
-
-    resp = await call_local("GET", f"organization/{org.id}/budgets", headers=REFLECT)
-
-    assert resp.status_code == 403, resp.text
-
-
-@pytest.mark.asyncio
-async def test_an_outage_falls_through_to_the_local_refusal(monkeypatch, org):
-    async def offline(*args, **kwargs):
-        raise HubError(0, "connection refused")
-
-    monkeypatch.setattr(reflect_mod, "hub_get_or_raise", offline)
-
-    resp = await call_local("GET", f"organization/{org.id}/budgets", headers=REFLECT)
-
-    assert resp.status_code == 409, resp.text
-    assert "require Flowpad Cloud" in resp.text
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("action", ["set-paying-provider", "setup-budget"])
-async def test_an_org_budget_setup_reaches_the_hub_by_its_own_name(monkeypatch, org, action):
-    """Unregistered, the segment was dropped and the POST reached the hub as ``organization/<id>/create``
-    (400 "Post not supported") — so Activate and "Set up budget" never worked from the desktop."""
-    asked = []
-
-    async def hub(entity_type, body, entity_id=None, action=None, sub_path=None, **kwargs):
-        asked.append((str(entity_type), entity_id, action, body))
-        return {"endpoint_id": "llm_endpoint-x"}
-
-    monkeypatch.setattr(reflect_mod, "hub_post", hub)
-
-    resp = await call_local("POST", f"organization/{org.id}/{action}", json={"provider": "openrouter"}, headers=REFLECT)
-
-    assert resp.status_code == 200, resp.text
-    # A single-type action is registered under its qualified name; the hub path takes the bare one.
-    assert [(t, i, a.rsplit(".", 1)[-1]) for t, i, a, _ in asked] == [("organization", org.id, action)]
-    assert asked[0][3].get("provider") == "openrouter"

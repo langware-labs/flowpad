@@ -12,7 +12,6 @@ only remote is the hub, reached with the user's hub token.
 from __future__ import annotations
 
 import asyncio
-
 from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.git_publish import (
@@ -77,7 +76,8 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     from flow_sdk.assets.project_manifest import rel_path_for  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import HubError, hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import HubError  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE  # noqa: PLC0415
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
 
@@ -119,7 +119,7 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "Cloud login required")
 
     try:
-        repo = await hub_post("project", {}, project.id, action="hosted_repo")
+        repo = await HubProxy.post("project", {}, project.id, action="hosted_repo")
     except HubError as exc:
         raise AssetPublishError(
             AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project"
@@ -152,7 +152,7 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
 
     payload = publish_asset_payload(project.id, entity.get_type(), entity.id, rel_path)
     try:
-        hub_result = await hub_post("project", payload, action="publish_asset")
+        hub_result = await HubProxy.post("project", payload, action="publish_asset")
     except HubError as exc:
         raise AssetPublishError(
             AssetPublishCode.HUB_PUBLISH_FAILED,

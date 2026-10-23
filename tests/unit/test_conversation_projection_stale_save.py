@@ -18,19 +18,19 @@ are real.
 from __future__ import annotations
 
 import json
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from flow_sdk.app.actions.flow_message_action import _fetch_conversation_messages
 from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL, Conversation
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.operations.conversation import (
     default_jsonl_path,
     from_jsonl,
     project_pointers_to_entity,
 )
-
-import uuid
 
 
 def _msg(conv_id: str, mid: str, at: str) -> dict:
@@ -43,8 +43,9 @@ def _msg(conv_id: str, mid: str, at: str) -> dict:
 
 async def _arrive(conv_id: str, children: list[dict]) -> Conversation:
     """One real children-list sync + projection; returns the stored row."""
-    with patch(
-        "flow_sdk.app.actions.flow_message_action.hub_get",
+    with patch.object(
+        HubProxy,
+        "get",
         new=AsyncMock(return_value=children),
     ):
         assert await _fetch_conversation_messages(conv_id, someone_typeid=None) is True

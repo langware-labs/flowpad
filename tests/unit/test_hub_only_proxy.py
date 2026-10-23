@@ -5,7 +5,8 @@ listing came back empty (the endpoint row spun forever), the id-less ``catalog``
 parse (422), and every edit answered 404. The router now forwards any request on such a type
 to the hub verbatim, with the hub's own status — and refuses it loudly when signed out.
 
-Real request middleware + graph dispatcher; the hub is a stub ``CloudProxy``.
+Real request middleware + graph dispatcher; the hub is a stub ``HubProxy.open``.
+(What reaches a real hub, byte for byte, is pinned by the proxy fidelity suite.)
 """
 
 from __future__ import annotations
@@ -15,10 +16,10 @@ import json
 import pytest
 from starlette.responses import JSONResponse
 
-import flow_sdk.cloud_client as cloud_client
 import flow_sdk.server.routes._hub_reflect as reflect_mod
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: F401 — registers the hub-only type
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.type_info import register_all
 from tests.unit._graph_client import call_local
 
@@ -28,7 +29,7 @@ pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 
 class _Hub:
-    """Stands in for ``CloudProxy``: records what was forwarded, answers ``status``."""
+    """Stands in for the hub behind ``HubProxy.open``: records what was forwarded."""
 
     def __init__(self, status: int = 200, data=None):
         self.status, self.data, self.seen = status, data, []
@@ -44,47 +45,15 @@ def hub(monkeypatch):
     def install(status: int = 200, data=None, logged_in: bool = True) -> _Hub:
         fake = _Hub(status, data)
 
-        class FakeProxy:
-            async def __call__(self, request):
-                return await fake.forward(request)
+        async def open_(request, url=None, *, content=None):
+            await fake.forward(request)
+            raise AssertionError("recorded: the request was forwarded")
 
-        monkeypatch.setattr(cloud_client, "CloudProxy", FakeProxy)
+        monkeypatch.setattr(HubProxy, "open", staticmethod(open_))
         monkeypatch.setattr(reflect_mod, "is_logged_in", lambda: logged_in)
         return fake
 
     return install
-
-
-@pytest.mark.asyncio
-async def test_the_listing_is_the_hubs(hub):
-    fake = hub(data=[{"id": "e1", "name": "Team 9a"}])
-
-    resp = await call_local("GET", "llm_endpoint", params={"expand": "permissions"})
-
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["data"] == [{"id": "e1", "name": "Team 9a"}]
-    assert fake.seen == [("GET", "/api/v1/graph/llm_endpoint", "expand=permissions", None)]
-
-
-@pytest.mark.asyncio
-async def test_an_id_less_hub_action_is_forwarded_not_refused(hub):
-    fake = hub(data=[])
-
-    resp = await call_local("GET", "llm_endpoint/catalog")
-
-    assert resp.status_code == 200, resp.text
-    assert fake.seen[0][:2] == ("GET", "/api/v1/graph/llm_endpoint/catalog")
-
-
-@pytest.mark.asyncio
-async def test_an_edit_reaches_the_hub_and_its_refusal_comes_back(hub):
-    fake = hub(status=403)
-    endpoint_id = mint_uuid()
-
-    resp = await call_local("PUT", f"llm_endpoint/{endpoint_id}", json={"name": "renamed"})
-
-    assert resp.status_code == 403, resp.text
-    assert fake.seen == [("PUT", f"/api/v1/graph/llm_endpoint/{endpoint_id}", "", {"name": "renamed"})]
 
 
 @pytest.mark.asyncio

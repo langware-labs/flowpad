@@ -34,8 +34,8 @@ from flow_sdk.app.actions.share_action import (
 )
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import normalize_email
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
-from flow_sdk.cloud_client.transport.hub_http import hub_delete, hub_put, hub_request
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
 from flow_sdk.request_context.methods import get_current_request_info
@@ -96,7 +96,7 @@ async def push_hub_fields(task: Task, fields: Iterable[str]) -> None:
     if not names:
         return
     try:
-        await hub_put(
+        await HubProxy.put(
             BuiltinEntityType.TASK,
             str(task.id),
             {name: getattr(task, name, None) for name in names},
@@ -196,7 +196,7 @@ async def revoke_on_hub(task: Task, email: str) -> None:
     comment on the task, while they could still read it), so their thread ends with it. Non-fatal: the
     new assignee has the task either way."""
     try:
-        await hub_delete(BuiltinEntityType.TASK, str(task.id), "members", payload={"user_email": email})
+        await HubProxy.delete(BuiltinEntityType.TASK, str(task.id), "members", payload={"user_email": email})
     except Exception as e:  # noqa: BLE001
         logger.warning("[task-assign] could not revoke %s on task %s (non-fatal): %s", email, task.id, e)
 
@@ -213,7 +213,7 @@ async def assign_on_hub(
     if not await ensure_task_on_hub(task, someone_typeid):
         await task.save(someone_typeid)
         await push_hub_fields(task, ("assignee", "reporter"))
-    await hub_request(
+    await HubProxy.request(
         "POST",
         BuiltinEntityType.TASK,
         task.id,

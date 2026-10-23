@@ -30,6 +30,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -61,7 +63,7 @@ async def test_deleted_conversation_is_not_dispatched_for_message_fetch(monkeypa
             return []
         raise AssertionError(f"unexpected hub_get call: {entity_type=} {args=} {kwargs=}")
 
-    monkeypatch.setattr(fma, "hub_get", _fake_hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_fake_hub_get))
 
     resp = await fma.handle_conversation_list(SimpleNamespace(id="local-someone-typeid"))
 

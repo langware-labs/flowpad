@@ -1805,7 +1805,7 @@ class DataSource(SetupSkippable, Entity):
         """POST /api/v1/graph/data_source/{id}/set_route ``{"place": "this" | <deployment id>}`` — point the hub
         claim that delivers to this channel at another place. Its URL never changes, and the vendor is not
         touched: the next message goes to the new place."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
         place = str((await self._body()).get("place") or "")
@@ -1818,7 +1818,7 @@ class DataSource(SetupSkippable, Entity):
             target = self._node_target(place, await self.route_places())
             if target is None:
                 return ApiFailResponse(message="no such place for this channel", status_code=404)
-        moved = await hub_post("webhook", {"target": target}, str(claim.get("id")), "set_target")
+        moved = await HubProxy.post("webhook", {"target": target}, str(claim.get("id")), "set_target")
         if not moved:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": moved, "current": place})
@@ -1828,12 +1828,12 @@ class DataSource(SetupSkippable, Entity):
         """POST /api/v1/graph/data_source/{id}/probe_reach — ask the hub whether the claim that delivers to this
         channel is active and its place is live (the hub's ``probe`` ``reach`` phase), with this instance's own
         hub sign-in: a page testing the route needs no hub key of its own."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         claim = await self._hub_route()
         if claim is None:
             return ApiFailResponse(message="no hub webhook delivers to this channel yet — connect it first", status_code=404)
-        answer = await hub_post("webhook", {"phase": "reach"}, str(claim.get("id")), "probe")
+        answer = await HubProxy.post("webhook", {"phase": "reach"}, str(claim.get("id")), "probe")
         if not answer:
             return ApiFailResponse(message="the hub did not answer the reach probe", status_code=502)
         return ApiSuccessResponse(data=answer)
@@ -1845,7 +1845,7 @@ class DataSource(SetupSkippable, Entity):
         is its proof), targeted at that machine's copy of this channel. Each place answers on its own."""
         import asyncio  # noqa: PLC0415
 
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         place = str((await self._body()).get("place") or "")
         claims, places = await asyncio.gather(_hub_claims(), self.route_places())
@@ -1859,7 +1859,7 @@ class DataSource(SetupSkippable, Entity):
         # The same kind as the proven claim: a linked person (user) or a number of one's own (account).
         kind = str((claim.get("claim") or {}).get("kind") or "user")
         body = {"parent": f"@{claim.get('provider')}", "claim": {"kind": kind, "key": key}, "target": target}
-        added = await hub_post("webhook", body, None, "chain")
+        added = await HubProxy.post("webhook", body, None, "chain")
         if not added:
             return ApiFailResponse(message="the hub did not take the new place", status_code=502)
         return ApiSuccessResponse(data={"claim": added, "place": place})
@@ -2058,7 +2058,7 @@ class DataSource(SetupSkippable, Entity):
         is empty) lets the hub answer the provider's handshake itself."""
         import secrets  # noqa: PLC0415
 
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
         from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE  # noqa: PLC0415
         from flow_sdk.sources.setup_steps import SourceUpdateSpec  # noqa: PLC0415
@@ -2114,7 +2114,7 @@ class DataSource(SetupSkippable, Entity):
         if claim is not None and claim["claim"]["kind"] != "account":
             # A part of an account (a group) rides the account's URL: the hub routes it here by its claim, so
             # there is no URL of its own to keep — the account's stays where it is.
-            data = await hub_post("webhook", claim, None, "chain")
+            data = await HubProxy.post("webhook", claim, None, "chain")
             if not data or not data.get("id"):
                 return ReturnedValue.not_yet("the hub did not take this claim — sign in to Flowpad cloud first")
             kind, key = claim["claim"]["kind"], claim["claim"]["key"]
@@ -2123,7 +2123,7 @@ class DataSource(SetupSkippable, Entity):
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
             # instance -- never to every desktop of the person.
-            data = await hub_post("webhook", claim, None, "chain")
+            data = await HubProxy.post("webhook", claim, None, "chain")
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
             update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
@@ -2134,7 +2134,7 @@ class DataSource(SetupSkippable, Entity):
             "filters": {"methods": list(hook.methods), "required_headers": list(hook.required_headers)},
             **({"verify_token": token} if token else {}),
         }
-        data = await hub_post("webhook", body, None, "create_for_desktop")
+        data = await HubProxy.post("webhook", body, None, "create_for_desktop")
         if not data or not data.get("url"):
             return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
         update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
@@ -2362,11 +2362,11 @@ class DataSource(SetupSkippable, Entity):
         """Drop the hub claims that deliver to this channel. Left behind, a deleted channel's claim kept
         taking its number's messages (and probes) on the hub, and this app refused them as a dead channel.
         Best effort like ``teardown``: a hub that is down never blocks a delete."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
             for claim in _claims_for(await _hub_claims(), str(self.id)):
-                await hub_delete("webhook", str(claim.get("id")))
+                await HubProxy.delete("webhook", str(claim.get("id")))
             return ""
         except Exception as exc:  # noqa: BLE001 — reported, never raised
             return f"hub claim not released: {type(exc).__name__}"
@@ -2517,9 +2517,9 @@ async def prune_fileless_data_sources() -> int:
 
 async def _hub_claims() -> list[dict]:
     """Every hub webhook claim of the signed-in person (``webhook/mine``) — empty when the hub is unreachable."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-    mine = await hub_get("webhook", None, "mine") or {}
+    mine = await HubProxy.get("webhook", None, "mine") or {}
     rows = mine.get("webhooks") if isinstance(mine, dict) else None
     return [r for r in rows or [] if isinstance(r, dict)]
 

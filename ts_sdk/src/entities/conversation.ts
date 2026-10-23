@@ -539,20 +539,17 @@ export async function pickupConversation(conversationId: string): Promise<{ conv
   return res!;
 }
 
-/** Close or reopen a helpdesk ticket. Proxies to the hub (which owns the rule
- *  about who may settle) and mirrors `status` onto the local row, which is what
- *  the requester's portal reads. */
+/** Close or reopen a helpdesk ticket — the hub's own ``conversation/<id>/close|reopen``
+ *  (the hub owns the rule about who may settle). Its answer is the settled conversation; the
+ *  local server folds it into the local row, which is what the requester's portal reads. */
 export async function settleTicket(
   conversationId: string,
   verb: 'close' | 'reopen',
 ): Promise<{ conversation_id: string; status: ConversationStatus }> {
-  const action = new ActionInfo('conversation-settle', null, null, 'POST');
-  action.bodyParameters = { conversation_id: conversationId, verb };
-  const res = await dataManager.callAction<
-    { conversation_id: string; verb: string },
-    { conversation_id: string; status: ConversationStatus }
-  >(action);
-  return res!;
+  const action = new ActionInfo(verb, Conversation.type, conversationId, 'POST');
+  action.hubReflect = true;
+  const row = await dataManager.callAction<undefined, { id: string; status: ConversationStatus }>(action);
+  return { conversation_id: row?.id ?? conversationId, status: row!.status };
 }
 
 /** One row in the staff helpdesk triage queue (lightweight; not a full

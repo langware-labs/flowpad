@@ -155,11 +155,9 @@ export interface LLMAllowanceHistoryRow {
 export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
   const info = new ActionInfo(name, type, id, method);
   if (subpath) info.subpath = subpath;
-  // Hub-owned — reflect, or the desk (no handler for these) falls through to a
-  // generic entity read and answers 200 with the ENTITY. Id-less actions
-  // (`catalog`, `token_plan/me`) cannot reflect — `should_reflect_to_hub` needs
-  // a target entity — and are served by the desk's own proxy action instead.
-  info.hubReflect = id !== null;
+  // Hub-owned — the local server forwards it to the hub verbatim, with or without an id
+  // (`catalog`, `token_plan/me` included).
+  info.hubReflect = true;
   return info;
 }
 

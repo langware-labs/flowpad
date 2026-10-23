@@ -17,6 +17,7 @@ import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import HelpdeskMessageSpec
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
@@ -277,7 +278,7 @@ class TestTheAppHub:
         async def refuse(*_a, **_k):
             raise HubError(403, "forbidden")
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(refuse))
         monkeypatch.setattr(AppHub, "me", lambda self: ME)
         with pytest.raises(Exception) as caught:
             await AppHub().get("project", DESK, "helpdesk_conversations")

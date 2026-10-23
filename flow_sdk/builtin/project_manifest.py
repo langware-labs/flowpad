@@ -270,13 +270,13 @@ async def resolve_published_row(typeid: str) -> dict:
     """A bare typeid → its published row plus publisher, from the hub's
     ``project/published_asset`` lookup — the ``install_request`` shape, so the
     CLI's ``flow asset install <typeid>`` walks the same path as the dialog."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     try:
         split_typeid(typeid)
     except ValueError as exc:
         raise PublishRefused("bad_request", str(exc)) from exc
-    data = await hub_get("project", None, action="published_asset", params={"typeid": typeid})
+    data = await HubProxy.get("project", None, action="published_asset", params={"typeid": typeid})
     if not isinstance(data, dict) or not data.get("typeid"):
         raise PublishRefused(
             "not_published",
@@ -374,7 +374,7 @@ async def reflect_manifest_to_hub(project) -> bool:
     failure means "not reflected", never a failed publish. The file on disk
     stays the truth; re-sends converge (the hub replaces the whole document)."""
     from flow_sdk.assets.project_manifest import ManifestError, read_manifest  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     mount = _mount_of(project)
     if mount is None:
@@ -385,7 +385,7 @@ async def reflect_manifest_to_hub(project) -> bool:
         return False
     document = spec.to_document() if spec is not None else None
     try:
-        result = await hub_post("project", {"manifest": document}, str(project.id), action="publish_manifest")
+        result = await HubProxy.post("project", {"manifest": document}, str(project.id), action="publish_manifest")
     except Exception as exc:  # noqa: BLE001 — logged, never raised into the toggle
         logger.info("[project_manifest] hub reflection skipped for %s: %s", project.id, exc)
         return False

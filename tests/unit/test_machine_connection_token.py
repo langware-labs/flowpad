@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.oauth import hub_oauth
 
@@ -22,7 +23,7 @@ async def test_a_machine_asks_its_own_route_and_a_refusal_is_no_token(monkeypatc
         raise HubError(404, "not found")
 
     monkeypatch.setattr("flow_sdk.instance_settings.runtime.get_assigned_compute_node", lambda: NODE)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", hub_get)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub_get))
 
     assert await hub_oauth.hub_credential_value("slack_bot") == "xoxb-fresh"
     assert await hub_oauth.hub_credential_value("github_credentials") is None

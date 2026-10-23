@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from flow_sdk.builtin import agent_serve
 from flow_sdk.builtin.agent_serve import admits
 from flow_sdk.builtin.data_source import SourceStatus
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.server.routes import data_source_webhook
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
@@ -35,7 +36,6 @@ def _row(**over):
 def channel(monkeypatch):
     """The route with this row as the only source and an ingest that records what it was handed."""
     from flow_sdk.builtin.data_source import DataSource
-    from flow_sdk.cloud_client.transport import hub_http
 
     state = SimpleNamespace(row=_row(), ingested=[], hub=[])
 
@@ -55,7 +55,7 @@ def channel(monkeypatch):
 
     monkeypatch.setattr(DataSource, "get_by_id", get_by_id)
     monkeypatch.setattr(data_source_webhook, "_pushing_type", pushing)
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     monkeypatch.setattr(agent_serve, "_PROBES", {})
     return state
 
@@ -166,7 +166,6 @@ def test_admitted_probe_senders_stay_bounded(monkeypatch):
 async def test_deleting_a_channel_releases_its_hub_claims(monkeypatch):
     """A deleted channel's hub claim must go too: left behind it kept taking the number's messages."""
     from flow_sdk.builtin import data_source as ds
-    from flow_sdk.cloud_client.transport import hub_http
 
     deleted = []
 
@@ -177,7 +176,7 @@ async def test_deleting_a_channel_releases_its_hub_claims(monkeypatch):
         deleted.append((kind, eid))
 
     monkeypatch.setattr(ds, "_hub_claims", claims)
-    monkeypatch.setattr(hub_http, "hub_delete", hub_delete)
+    monkeypatch.setattr(HubProxy, "delete", staticmethod(hub_delete))
     source = ds.DataSource(provider="whatsapp", name="x", config={})
     source.id = "src-1"
     assert await source.release_hub_claims() == ""

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.sources.binding import SourceBinding
 
@@ -70,9 +71,8 @@ async def driver():
 @pytest.fixture
 def hub(monkeypatch, driver):
     fake = FakeHub()
-    module = __import__(driver.cls.__module__, fromlist=["hub_get_or_raise"])
-    monkeypatch.setattr(module, "hub_get_or_raise", fake.get)
-    monkeypatch.setattr(module, "hub_post", fake.post)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake.get))
+    monkeypatch.setattr(HubProxy, "post", staticmethod(fake.post))
     return fake
 
 

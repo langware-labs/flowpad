@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -44,7 +45,6 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure, HubFailureKind
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
 from flow_sdk.utils.git import find_project_root
-from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
 
@@ -1634,7 +1634,7 @@ async def open_notification_params(notification_id: str) -> "OpenLinkSpec":
     fetch it from the hub and return the ``action=open`` params for its task."""
     from flow_sdk.server.routes.notify import message_deep_link_params
 
-    data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
+    data = await HubProxy.get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     # Notification.id is the same as the hub FlowMessage id (set in

@@ -14,7 +14,7 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.cloud_client.hub_bridge import HubWsBridge, _conversation_allows_inbound_materialization
-from flow_sdk.utils import hub as hub_utils
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -64,13 +64,13 @@ async def test_inbound_materialization_rejects_deleted_parent_but_recovers_misse
     async def deleted_parent(*args, **kwargs):
         return {"id": conv_id, "deleted_at": "2026-08-02T00:00:00Z"}
 
-    monkeypatch.setattr(hub_utils, "hub_get", deleted_parent)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(deleted_parent))
     assert await _conversation_allows_inbound_materialization(conv_id) is False
 
     async def live_assigned_parent(*args, **kwargs):
         return {"id": conv_id, "deleted_at": None}
 
-    monkeypatch.setattr(hub_utils, "hub_get", live_assigned_parent)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(live_assigned_parent))
     assert await _conversation_allows_inbound_materialization(conv_id) is True
 
 

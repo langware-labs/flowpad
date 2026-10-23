@@ -316,7 +316,7 @@ class LLMEndpoint(Entity):
         means, and the UI reports per-address outcomes.
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         if self.kind != LLMEndpointKind.HUB:
             raise ValueError(f"an {self.kind} endpoint is local to this machine and cannot be shared")
@@ -326,7 +326,7 @@ class LLMEndpoint(Entity):
             # match, so a mixed-case address is an invitation the recipient never sees.
             if not (address := normalize_email(email)):
                 continue
-            await hub_post(
+            await HubProxy.post(
                 "llm_endpoint",
                 {
                     "recipient_email": address,

@@ -109,15 +109,15 @@ async def test_verify_is_the_gate_asked_now_so_a_claim_the_hub_lost_is_not_conne
 async def test_the_hub_saying_no_is_no_claim_and_a_hub_that_cannot_answer_is_unavailable(monkeypatch, status, gone):
     """A 404 / 403 is the hub's answer (no such claim of ours); no answer or a 5xx is not knowing, retried — never
     read as "not connected"."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.sources.errors import SourceUnavailable
     from flow_sdk.sources.flow_channel import AppHub
 
     async def refuse(*a, **kw):
         raise HubError(status, "nope")
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", refuse)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(refuse))
     if gone:
         assert await AppHub().claim("C1") is None
     else:

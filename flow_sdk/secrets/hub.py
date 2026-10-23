@@ -40,12 +40,12 @@ class HubStore(SecretStore):
         return f"hub deployment {self.config.deployment_id}"
 
     async def _rows(self) -> list[dict]:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
         # Raises on an unreachable hub: an outage must not read as "holds nothing" (a save would then
         # create instead of update, a forget would report success).
-        rows = await hub_get_or_raise(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var")
+        rows = await HubProxy.get_or_raise(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var")
         return [r for r in rows or [] if isinstance(r, dict) and r.get("var_type") in _CONFIDENTIAL]
 
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
@@ -56,22 +56,22 @@ class HubStore(SecretStore):
         return [str(r.get("name")) for r in await self._rows()]
 
     async def save(self, values: Mapping[str, Any], *, description: str = "") -> None:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
         held = set(await self.names())
         for name, value in plain_values(values).items():
             if name in held:
-                await hub_put(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, {"value": value},
+                await HubProxy.put(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, {"value": value},
                               action="env-var", sub_path=name)
             else:
-                await hub_post(BuiltinEntityType.DEPLOYMENT,
+                await HubProxy.post(BuiltinEntityType.DEPLOYMENT,
                                {"name": name, "var_type": "api_key", "value": value, "description": description or name},
                                self.config.deployment_id, action="env-var")
 
     async def forget(self, names: Iterable[str]) -> tuple[list[str], list[str]]:
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
         held = set(await self.names())
@@ -81,7 +81,7 @@ class HubStore(SecretStore):
             if name not in held:
                 continue
             try:
-                await hub_delete(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var", sub_path=name)
+                await HubProxy.delete(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var", sub_path=name)
                 deleted.append(name)
             except HubError as e:
                 logger.warning("[secrets] the hub kept %s: %s", name, e.status_code)

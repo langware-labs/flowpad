@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.cloud_client.transport import hub_http
 
@@ -16,7 +17,7 @@ async def test_relays_the_hubs_providers(client, monkeypatch):
         return ["e2b", "gcp_vm"]
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.test")
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub))
     resp = await client.get(URL)
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"] == ["e2b", "gcp_vm"]
@@ -35,6 +36,6 @@ async def test_a_hub_refusal_keeps_its_status(client, monkeypatch):
         raise HubError(401, "auth expired")
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.test")
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub))
     resp = await client.get(URL)
     assert resp.status_code == 401, resp.text
