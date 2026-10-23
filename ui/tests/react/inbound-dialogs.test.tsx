@@ -190,6 +190,36 @@ describe('ConnectNumberDialog', () => {
     expect(await screen.findByTestId('inbound-link-code')).toHaveTextContent('K4Q9ZD');
     expect(sent).toEqual([{ verb: 'chain', args: [{ parent: '@whatsapp', claim: { kind: 'user' } }] }]);
   });
+  it('connects your own Telegram bot with only what Telegram proves (no server, no verify token)', async () => {
+    const { api, sent } = recordingApi();
+    render(<ConnectNumberDialog open onOpenChange={() => {}} optionsFor={() => []} onDone={() => {}} api={api} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('inbound-provider-telegram'));
+    expect(screen.queryByTestId('inbound-choice-generic')).toBeNull();
+    await user.click(screen.getByTestId('inbound-choice-bot'));
+    expect(screen.getByText('Bot token')).toBeInTheDocument();
+    expect(screen.queryByTestId('inbound-field-graph-url')).toBeNull();
+    expect(screen.queryByTestId('inbound-field-verify-token')).toBeNull();
+    await user.type(screen.getByTestId('inbound-field-phone-id'), '123456');
+    await user.type(screen.getByTestId('inbound-field-token'), '123456:abc');
+    await user.type(screen.getByTestId('inbound-field-app-secret'), 'sec');
+    await user.click(screen.getByTestId('inbound-connect-submit'));
+    await screen.findByTestId('inbound-connected-url');
+    expect(sent[0].args[0]).toEqual({
+      parent: '@telegram',
+      claim: { kind: 'account', key: '123456' },
+      proof: { credential: '123456:abc', app_secret: 'sec' },
+    });
+  });
+
+  it('offers Slack only through Flowpad (installed per workspace)', async () => {
+    const { api } = recordingApi();
+    render(<ConnectNumberDialog open onOpenChange={() => {}} optionsFor={() => []} onDone={() => {}} api={api} />);
+    await userEvent.setup().click(screen.getByTestId('inbound-provider-slack'));
+    expect(screen.getByTestId('inbound-choice-agent')).toBeInTheDocument();
+    expect(screen.queryByTestId('inbound-choice-meta')).toBeNull();
+    expect(screen.queryByTestId('inbound-choice-bot')).toBeNull();
+  });
 });
 
 describe('RouteCheck', () => {

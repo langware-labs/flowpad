@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { type ChannelRouteTarget, type InboundApi, type InboundClaim, InboundWebhooks, ruleChainBody } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -31,7 +31,6 @@ export function AddRuleDialog({
   onDone: () => void;
   api?: InboundApi;
 }) {
-  const { t } = useLingui();
   const [kind, setKind] = useState<'user' | 'group'>('user');
   const [key, setKey] = useState('');
   const [target, setTarget] = useState<ChannelRouteTarget | null>(null);
@@ -123,14 +122,12 @@ export function AddRuleDialog({
                 <Input
                   data-testid="inbound-field-rule-key"
                   value={key}
-                  placeholder={kind === 'user' ? t`+972 54-123 4567` : t`120363…@g.us`}
+                  placeholder={keyExample(number.provider, kind)}
                   onChange={(e) => setKey(e.target.value)}
                 />
                 <span className="text-xs text-muted-foreground">
                   {kind === 'user' ? (
-                    <Trans>
-                      The sender's number as the vendor sends it. Already claimed by someone else → refused.
-                    </Trans>
+                    <Trans>The sender's id as the vendor sends it. Already claimed by someone else → refused.</Trans>
                   ) : (
                     <Trans>The group's id as the vendor sends it. Already claimed by someone else → refused.</Trans>
                   )}
@@ -159,4 +156,15 @@ export function AddRuleDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** What a sender's or a group's id looks like on the number's vendor. */
+function keyExample(provider: string, kind: 'user' | 'group'): string {
+  const examples: Record<string, [string, string]> = {
+    whatsapp: ['972541234567', 'Y2FwaV9ncm91cDo…'],
+    telegram: ['123456789', '-1001234567890'],
+    slack: ['U0123ABCD', 'C0123ABCD'],
+  };
+  const [user, group] = examples[provider] ?? ['', ''];
+  return kind === 'user' ? user : group;
 }
