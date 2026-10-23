@@ -303,7 +303,9 @@ async def test_a_remote_endpoints_socket_goes_to_the_hubs_service_route_with_cer
 
     monkeypatch.setattr(hub_http, "hub_base_url", lambda: "https://hub.example")
     monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="k"))
-    monkeypatch.setenv("FLOWPAD_HUB_URL", "https://hub.example")
+    from flow_sdk.config import default_service_config
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.example")
     endpoint = await _endpoint(remote=True)
 
     base, auth, ssl_context = _hub_socket_target(endpoint)
