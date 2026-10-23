@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Conversation, ExpressionNode } from '@sdk';
-import { recentConversationsRequest, whereKept } from '@src/components/stream-inbox-view/channel-owner';
+import { recentConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 
@@ -26,8 +26,8 @@ export function useRecentConversations(
     () =>
       recentConversationsRequest(
         [
-          ...whereKept('dismissed_at', new ExpressionNode({ op: '$IS_NULL', operands: ['dismissed_at'] })),
-          ...whereKept('archived_at', new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] })),
+          new ExpressionNode({ op: '$IS_NULL', operands: ['dismissed_at'] }),
+          new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] }),
         ],
         pageSize,
         'recent-conversations',
@@ -39,7 +39,7 @@ export function useRecentConversations(
   return useMemo(
     () =>
       conversations
-        .filter((c) => !c.dismissed_at && !c.archived_at && c.id !== excludeId)
+        .filter((c) => c.id !== excludeId)
         .filter((c) => (filter ? filter(c) : true))
         .sort(compareConversationsByRecency)
         .slice(0, limit),

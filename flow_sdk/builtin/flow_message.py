@@ -780,7 +780,9 @@ class FlowMessage(Entity):
         return before != after
 
     @model_serializer(mode="wrap")
-    def _serialize_with_local_paths(self, handler: SerializerFunctionWrapHandler, info: Any) -> dict[str, Any]:
+    def _serialize_with_local_paths(self, handler: SerializerFunctionWrapHandler, info: Any):
+        # No return annotation: pydantic would take it as the serialization schema and hide every field
+        # from the bootstrap schema, which lists the fields this server keeps.
         data = handler(self)
         # Skip local_path resolution when serializing for DB storage
         if info.context and info.context.get("skip_api_serializer"):

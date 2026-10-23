@@ -142,6 +142,11 @@ export class JSONSchemaParser {
   get fieldNames(): string[] {
     return Object.keys(this.schema.properties || {});
   }
+  private _fieldSet?: Set<string>;
+  /** The listed fields, as a set (built once). */
+  get fieldSet(): Set<string> {
+    return (this._fieldSet ??= new Set(this.fieldNames));
+  }
   get hasBlobs(): boolean {
     // check if one of the properties is a blob
     for (const key of this.fieldNames) {

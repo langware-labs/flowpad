@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { Conversation, ExpressionNode, QueryRequest } from '@sdk';
-import { recentConversationsRequest, whereKept } from '@src/components/stream-inbox-view/channel-owner';
+import { recentConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 
 export interface ProjectCollaboration {
   /** The most-recent collaboration conversation's id for this project, or null
@@ -10,13 +9,14 @@ export interface ProjectCollaboration {
   conversationId: string | null;
 }
 
-/** The project's newest open conversation, asked of the server where it keeps `project_id` (one row);
- *  where it does not, every conversation, newest first, matched here. */
+/** The project's newest open conversation (one row). */
 function collaborationQuery(projectId: string): QueryRequest {
-  const ofProject = whereKept('project_id', new ExpressionNode({ op: '$EQ', operands: ['project_id', projectId] }));
   return recentConversationsRequest(
-    [...ofProject, ...whereKept('archived_at', new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] }))],
-    ofProject.length ? 1 : undefined,
+    [
+      new ExpressionNode({ op: '$EQ', operands: ['project_id', projectId] }),
+      new ExpressionNode({ op: '$IS_NULL', operands: ['archived_at'] }),
+    ],
+    1,
     `collaboration:${projectId}`,
   );
 }
@@ -37,12 +37,5 @@ export function useCollaborationForProject(
     enabled: !!projectId,
   });
 
-  return useMemo(() => {
-    const conv = projectId
-      ? conversations
-          .filter((c) => c.project_id === projectId && !c.archived_at)
-          .sort(compareConversationsByRecency)[0] ?? null
-      : null;
-    return { conversationId: conv?.id ?? null };
-  }, [conversations, projectId]);
+  return { conversationId: (projectId && conversations[0]?.id) || null };
 }

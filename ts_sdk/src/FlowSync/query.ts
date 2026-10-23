@@ -175,6 +175,10 @@ function compareValues(a: any, b: any): number {
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
 
+/** An `order_by` as a list of `{field: dir}` clauses. */
+const orderList = (order?: OrderByType | OrderByType[]): OrderByType[] =>
+  !order ? [] : Array.isArray(order) ? order : [order];
+
 type MatchJSON = { op?: QueryOp; operands: any[] };
 
 /** The field a leaf tests: its first operand, or the `$PROP` field of the legacy `[value, {$PROP: field}]`. */
@@ -284,11 +288,9 @@ export class QueryFilter extends ExpansionRequest {
    * every row). `null` when no row can pass — there is nothing to ask.
    */
   forServer(kept: (field: string) => boolean): QueryFilter | null {
-    const asked = this.match instanceof ExpressionNode ? this.match.toJSON() : this.match;
-    const folded = asked ? foldUnkept(new ExpressionNode(asked).toJSON() as MatchJSON, kept) : true;
+    const folded = this.match ? foldUnkept(new ExpressionNode(this.match).toJSON() as MatchJSON, kept) : true;
     if (folded === false) return null;
-    const askedOrder = this.order_by ? (Array.isArray(this.order_by) ? this.order_by : [this.order_by]) : [];
-    const order = askedOrder
+    const order = orderList(this.order_by)
       .map((o) => Object.fromEntries(Object.entries(o).filter(([field]) => kept(field))) as OrderByType)
       .filter((o) => Object.keys(o).length);
     return new QueryFilter({
@@ -308,7 +310,7 @@ export class QueryFilter extends ExpansionRequest {
    * its rows have no order to keep.
    */
   get ordering(): OrderByType[] | undefined {
-    if (this.order_by) return Array.isArray(this.order_by) ? this.order_by : [this.order_by];
+    if (this.order_by) return orderList(this.order_by);
     return this.limit != null ? DEFAULT_PAGE_ORDER : undefined;
   }
 
