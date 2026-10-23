@@ -21037,6 +21037,7 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
 
+#: src/components/entity-card/EntityCard.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
