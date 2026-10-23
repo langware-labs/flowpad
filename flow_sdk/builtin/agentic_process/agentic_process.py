@@ -445,7 +445,7 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "last_started_snapshot",
     "last_started_hash",
     "restart_required",
-    "restart_changed_fields",
+    "restart_changes",
     # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
     # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
     # (tab_order). A delegated write is exactly as invisible to the caller as an
@@ -735,6 +735,18 @@ def _union_display_stacks(a: list, b: list) -> list[dict]:
     return result
 
 
+
+_RESTART_PREVIEW_CHARS = 120
+
+
+def _value_preview(value: Any) -> str:
+    """A short display string for a restart-diff value — keeps big launch-config
+    values (prompts, env) off every save and broadcast."""
+    if value is None:
+        return "∅"
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return text if len(text) <= _RESTART_PREVIEW_CHARS else text[:_RESTART_PREVIEW_CHARS] + "…"
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
@@ -890,11 +902,12 @@ class AgenticProcess(Entity):
             "Set automatically by the save-hook; can also be set externally via API."
         ),
     )
-    restart_changed_fields: list[str] = APIField(
+    restart_changes: list[dict[str, Any]] = APIField(
         default_factory=list,
         description=(
-            "Names of the launch-config fields behind ``restart_required`` "
-            "(the ``restart-info`` diff). Empty when no restart is required."
+            "The ``restart-info`` diff behind ``restart_required``: one "
+            "``{field, loaded, current}`` per changed field, the values as short "
+            "previews (start vs now). Empty when no restart is required."
         ),
     )
     start_failure: str | None = APIField(
@@ -1866,7 +1879,7 @@ class AgenticProcess(Entity):
             self.last_started_snapshot = snapshot_payload
             self.last_started_hash = self._restart_snapshot(snapshot_payload)
             self.restart_required = False
-            self.restart_changed_fields = []
+            self.restart_changes = []
             await self.save()
 
             # The worker is live with the queued prompt as its launch arg; the
@@ -6362,11 +6375,13 @@ class AgenticProcess(Entity):
                 self.last_started_hash = reference
             payload = self._restart_snapshot_payload()
             self.restart_required = self._restart_snapshot(payload) != reference
-            self.restart_changed_fields = (
-                sorted({c["field"] for c in self._diff_snapshot_fields(self.last_started_snapshot, payload)})
-                if self.restart_required
-                else []
+            changes = (
+                self._diff_snapshot_fields(self.last_started_snapshot, payload) if self.restart_required else []
             )
+            self.restart_changes = [
+                {"field": c["field"], "loaded": _value_preview(c["loaded"]), "current": _value_preview(c["current"])}
+                for c in changes
+            ]
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
