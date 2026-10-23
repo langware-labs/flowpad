@@ -89,7 +89,7 @@ describe('a new conversation invites with the hub call', () => {
     const share = vi.spyOn(Conversation.prototype, 'share');
 
     await createConversationForShare({
-      participants: [{ email: 'Bob@Example.test' }, { user_id: 'u-2' }],
+      members: [{ email: 'Bob@Example.test' }, { user_id: 'u-2' }],
       title: 'hello',
     });
 

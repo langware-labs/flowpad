@@ -517,8 +517,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
 export type CreateProjectConversationParams = {
   project_id: string;
-  participants: ConversationParticipant[];
-  /** Optional display name. Backend falls back to a participants summary when absent. */
+  members: ConversationParticipant[];
+  /** Optional display name. Backend falls back to a members summary when absent. */
   title?: string;
   /** Serialized TypeIds (e.g. ``"markdown-<uuid>"``) shared into this
    *  conversation. The backend DERIVES the owning project from the first one
@@ -531,7 +531,7 @@ export type CreateProjectConversationParams = {
 export interface CreateProjectConversationResult {
   conversation_id: string;
   project_id: string;
-  participants: ConversationParticipant[];
+  members: ConversationParticipant[];
   name?: string | null;
 }
 

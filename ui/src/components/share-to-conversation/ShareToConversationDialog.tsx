@@ -564,7 +564,7 @@ export function ShareToConversationDialog({
                 // receiver knows where it came from; failing that, a remote share drops
                 // the active project (it would be arbitrary).
                 project_id: owningProject?.id ?? (isRemote ? null : effectiveProjectId),
-                participants,
+                members: participants,
                 title: effectiveTitle,
                 shared_context_entities: payload.sharedContextEntities,
               },

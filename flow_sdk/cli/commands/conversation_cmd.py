@@ -159,7 +159,7 @@ def _conv_summary_row(conv: dict) -> dict:
         "title": conv.get("title"),
         "kind": conv.get("kind"),
         "message_count": conv.get("message_count"),
-        "participants": parts,
+        "members": parts,
         "created_at": conv.get("created_at"),
         "updated_at": conv.get("modified_at") or conv.get("updated_at"),
     }
@@ -167,7 +167,7 @@ def _conv_summary_row(conv: dict) -> dict:
 
 @conversation_app.command(
     "list",
-    help="List the current user's conversations (title, participants, message count).",
+    help="List the current user's conversations (title, members, message count).",
 )
 def list_conversations() -> None:
     url = _graph_url(_discover_port(), "conversation-list")
@@ -226,7 +226,7 @@ def _render_message(m: dict) -> str:
 
 
 def _render_transcript(data: dict) -> str:
-    people = ", ".join(data.get("participants") or [])
+    people = ", ".join(data.get("members") or [])
     shown, total = len(data.get("messages") or []), data.get("message_count")
     lines = [
         f"Conversation: {data.get('title') or '(untitled)'}  [conversation-{data.get('id')}]",

@@ -267,7 +267,7 @@ full invite sequence:
 
 2. POST /graph/conversation/<id>/join           (:416)
    The caller joins IMMEDIATELY after create, so the creator enters
-   `participants` and the hub stamps `initiated_by`. Until then even the creator
+   `members` and the hub stamps `initiated_by`. Until then even the creator
    cannot owner-delete the row, so nothing that can block or fail may run first.
 
 3. _link_context_to_conversation()               (:421 → :478-521)

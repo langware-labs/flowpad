@@ -190,7 +190,7 @@ async def create_support_conversation(
     # 1) Conversation — created normally, hidden at the end (step 3) so the
     #    message it carries can't auto-revive it in the Recent strip.
     title = f"Flowpad diagnostics — {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
-    conv = Conversation.model_validate({"project_id": project.id, "participants": [], "title": title, "name": title})
+    conv = Conversation.model_validate({"project_id": project.id, "members": [], "title": title, "name": title})
     conv.id = Conversation.allocate_id(conv.model_dump())
     conv = await conv.save(owner)
     await project.attach_child(conv)

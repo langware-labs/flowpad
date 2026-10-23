@@ -170,7 +170,7 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
         {
             "id": conv_id,
             "title": "accepted",
-            "participants": embedded_participants,
+            "members": embedded_participants,
         },
         authoritative_members,
     ]

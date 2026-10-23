@@ -105,8 +105,8 @@ def _participant_value(participant: dict, *keys: str) -> Optional[str]:
     return None
 
 
-def _normalize_participants(participants: list[dict]) -> list[dict]:
-    return normalize_roster(participants)
+def _normalize_members(members: list[dict]) -> list[dict]:
+    return normalize_roster(members)
 
 
 def _participant_label(participant: dict) -> str:
@@ -133,21 +133,21 @@ def participant_identity_key(participant: dict) -> str:
     return value.strip().lower()
 
 
-async def _learn_address_book(participants: list[dict]) -> int:
+async def _learn_address_book(members: list[dict]) -> int:
     """Upsert every participant into the address book. Keyed on user_id OR email
     (a hub-only participant carries a ``user_id`` and no email). Returns the
     number of participants that produced/updated a contact. The single per-roster
     learner — reused by create/receive/share and the address-book scan.
     """
-    return await _learn_normalized_participants(_normalize_participants(participants))
+    return await _learn_normalized_members(_normalize_members(members))
 
 
-async def _learn_normalized_participants(participants: list[dict]) -> int:
+async def _learn_normalized_members(members: list[dict]) -> int:
     """Learner fast-path for callers that already hold a normalized roster —
     skips the re-normalization. See :func:`_learn_address_book`.
     """
     upserted = 0
-    for participant in participants:
+    for participant in members:
         email = _participant_value(participant, "email")
         user_id = _participant_value(participant, "user_id")
         if not email and not user_id:
@@ -580,16 +580,16 @@ async def download_body_action() -> ApiResponse:
 
 async def handle_create_project_conversation(
     project_id: str,
-    participants: list[dict],
+    members: list[dict],
     someone_typeid: str,
     title: Optional[str] = None,
     shared_context_entities: Optional[list] = None,
 ) -> ApiResponse:
     """Create a Conversation directly under a Project (no Task).
 
-    Each participant entry is {email, name?}. Every email is upserted as a
+    Each member entry is {email, name?}. Every email is upserted as a
     local User so the contact list grows automatically. `title` becomes the
-    conversation's display name; when omitted, falls back to a participants
+    conversation's display name; when omitted, falls back to a members
     summary.
 
     The owning project is DERIVED from the shared/target entity, not the
@@ -608,7 +608,7 @@ async def handle_create_project_conversation(
     if not project:
         return ApiFailResponse(message=f"Project not found: {effective_project_id}", status_code=404)
 
-    resolved = list(participants or [])
+    resolved = list(members or [])
     await _learn_address_book(resolved)
 
     derived_name = (title or "").strip() or (", ".join(_participant_label(p) for p in resolved) or None)
@@ -640,7 +640,7 @@ async def handle_create_project_conversation(
         data={
             "conversation_id": conv.id,
             "project_id": project.id,
-            "participants": resolved,
+            "members": resolved,
             "name": conv.name,
         }
     )
@@ -892,7 +892,7 @@ async def _hard_delete_local_conversation(conv: Conversation) -> None:
 def _is_invitation_conversation(conv: Conversation) -> bool:
     """A conversation row that surfaces an invitation: it was materialized
     from a hub Invitation's embedded ``conversation`` payload AND the local
-    user has not yet been added to ``participants`` (i.e. hasn't accepted).
+    user has not yet been added to ``members`` (i.e. hasn't accepted).
     """
     if not conv:
         return False
@@ -1465,14 +1465,14 @@ async def conversation_create() -> ApiResponse:
         # project instead, so it's required only when nothing is shared.
         if not project_id and not shared_context_entities:
             return ApiFailResponse(message="project_id is required")
-        participants = body.get("participants") or []
-        if not isinstance(participants, list):
-            return ApiFailResponse(message="participants must be a list")
+        members = body.get("members") or []
+        if not isinstance(members, list):
+            return ApiFailResponse(message="members must be a list")
         title = (body.get("title") or "").strip() or None
 
         return await handle_create_project_conversation(
             project_id=project_id,
-            participants=participants,
+            members=members,
             someone_typeid=request_info.someone_typeid,
             title=title,
             shared_context_entities=shared_context_entities,
@@ -3501,7 +3501,7 @@ async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -
     """
     from flow_sdk.builtin.conversation import Conversation as LocalConversation  # noqa: PLC0415
 
-    # Join the hub-side conv so we enter ``participants`` and start
+    # Join the hub-side conv so we enter ``members`` and start
     # receiving WS fanout. Idempotent — already-a-member is a no-op.
     try:
         await HubProxy.call("POST", BuiltinEntityType.CONVERSATION, conv_id, "join", payload={})
@@ -3682,13 +3682,13 @@ async def _upsert_hub_conversation_metadata(
         existing = await Conversation.get_one({"id": conv_id})
     roster = hub_conv.get("members")
     if isinstance(roster, list) and roster and not hub_conv.get("deleted_at"):
-        norm_roster = _normalize_participants(roster)
+        norm_roster = _normalize_members(roster)
         roster_key = _json.dumps(norm_roster, sort_keys=True, default=str)
         if (existing is None or (existing.members or []) != norm_roster) and (
             learned_rosters is None or roster_key not in learned_rosters
         ):
             try:
-                await _learn_normalized_participants(norm_roster)
+                await _learn_normalized_members(norm_roster)
                 if learned_rosters is not None:
                     learned_rosters.add(roster_key)
             except Exception as learn_err:  # noqa: BLE001
@@ -3799,7 +3799,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     1. Read local conversations from SQLite (the canonical render source).
     2. In parallel, HubProxy.try_call("GET", CONVERSATION) + HubProxy.try_call("GET", INVITATION, pending).
        Failures here are non-fatal — we degrade to local-only with a flag.
-    3. For each hub conversation, upsert metadata locally (title, participants,
+    3. For each hub conversation, upsert metadata locally (title, members,
        updated_date, etc.). If the hub's parent ``updated_date`` is newer than
        the local copy's (bumped on add OR edit of any child message), queue a
        single-flight background message sync.
@@ -3916,11 +3916,14 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         # ride is_stale. Compare it here against the cache (free, in-memory) so the
         # repair branch in _upsert still runs; converged rows match and skip.
         _created_drift = hub_created_drift(existing, hub_conv)
+        # A row synced before ``initiated_by`` was a field of its own holds no owner, and the hub
+        # clock never moves for it — take the hub's owner once; a healed row matches and skips.
+        _owner_missing = existing is not None and not existing.initiated_by and bool(hub_conv.get("initiated_by"))
         # Same converging watermark as the fetch gate. With ``is_stale`` here the
         # local metadata write also re-fired on every call for every already-synced
         # conversation — a save + a WS ``data_op`` per conversation per call, which
         # is what made the client re-list the whole stream inbox dozens of times per login.
-        if existing is None or not existing.remote or _clock_moved or _created_drift:
+        if existing is None or not existing.remote or _clock_moved or _created_drift or _owner_missing:
             try:
                 await _upsert_hub_conversation_metadata(
                     hub_conv,
@@ -4585,7 +4588,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         return ApiFailResponse(message=f"Accept transport error: {e}")
 
     # Conversation target → join the hub-side conversation so we enter
-    # ``participants`` and start receiving WS fanout. Then GET the conv from
+    # ``members`` and start receiving WS fanout. Then GET the conv from
     # the hub and save it locally so the UI's conversation view has something
     # to render the moment ``invitation-accept`` returns — without racing the
     # bridge's async ``_handle_conversation_op`` materialization.
