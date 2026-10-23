@@ -54,10 +54,13 @@ def test_callback_url_honors_docker_public_url():
     assert parse_qs(parsed.query)["instance"] == [INSTANCE_ID]
 
 
-def test_the_login_url_enters_through_the_gate_on_the_callback_host():
+def test_the_login_url_enters_through_the_gate_on_the_callback_host(monkeypatch):
     """A browser that never opened Flowpad has no gate cookie, and the hub's return
     to /auth/login_callback is refused without one: the login starts at /auth/gate."""
     from flow_sdk.cli.auth.cloud_urls import get_login_url
+    from flow_sdk.config import default_service_config
+
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.example")
 
     with (
         patch("flow_sdk.instance_settings.get_instance_settings", return_value=_Settings(port=9008)),
