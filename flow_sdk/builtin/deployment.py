@@ -352,14 +352,14 @@ class Deployment(Entity):
         """Take back ``provider``: the machine's next token ask is refused."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await HubProxy.call("DELETE", self.type, self.id, "authorize", provider) or {}
+        data = await HubProxy.call("DELETE", self.type, self.id, "authorize", provider)
         return list(data.get("revoked") or [])
 
     async def authorizations(self) -> list[dict]:
         """The connections this deployment's machine may use (``{provider, permissions}``). Names only."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return list(await HubProxy.call("GET", self.type, self.id, action="authorize") or [])
+        return list(await HubProxy.call("GET", self.type, self.id, action="authorize"))
 
     async def secrets_inventory(self) -> dict:
         """What the hub holds for this deployment: each name with its last write and placement, and the

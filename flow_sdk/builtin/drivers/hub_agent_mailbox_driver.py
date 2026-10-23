@@ -132,7 +132,7 @@ class HubAgentMailboxDriver:
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            return await HubProxy.call("POST", BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION, sub_path, payload=body) or {}
+            return await HubProxy.call("POST", BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION, sub_path, payload=body)
         except HubError as exc:
             raise await _as_email_error(exc) from exc
 
