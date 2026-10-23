@@ -322,11 +322,12 @@ async def test_a_box_asks_the_hub_to_refresh_a_desktop_does_not(monkeypatch, tmp
 
     asked: list = []
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, **_):
+    async def fake_call(method, entity_type, entity_id=None, action=None, *, payload=None, **_):
+        assert method == "POST"
         asked.append((entity_type, entity_id, action))
         return {}
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     project = await _project(tmp_path)
 
     # A box is one the hub placed — any provider, sandbox or agent — not one whose id E2B's metadata answers.
@@ -481,6 +482,7 @@ async def test_per_app_endpoint_rows_are_dropped_and_every_webapp_is_a_route_aga
         protocol={"spec_kind": "api.chat.openai"},
         backend={"type": "channel", "data_source_id": "s"},
     )
+    await prune_per_app_endpoints()  # the database is shared: rows earlier tests left are not this test's count
     for row in (*stale, chat):
         await row.save()
 
@@ -672,7 +674,9 @@ async def test_a_project_is_found_from_a_folder_inside_it_over_real_http(tmp_pat
     inside.mkdir(parents=True)
 
     port = _unused_port()
-    server = uvicorn.Server(uvicorn.Config(backend, host="127.0.0.1", port=port, log_level="warning"))
+    # Routes only: the app's startup (lifespan) boots the whole desktop — pollers, the hub bridge,
+    # process-wide singletons — inside this test process, and that broke ~150 tests that ran after it.
+    server = uvicorn.Server(uvicorn.Config(backend, host="127.0.0.1", port=port, log_level="warning", lifespan="off"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     try:
