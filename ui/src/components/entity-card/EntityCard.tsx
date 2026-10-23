@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Agent, AgenticProcess, LLMEndpoint, Project, TypeId, type FSOriginField } from '@sdk';
-import { GitBranch } from 'lucide-react';
+import { AppWindow, ExternalLink, GitBranch } from 'lucide-react';
+import { useBrowserProfiles } from '@src/lib/browser-profiles';
+import { ProfileLabel } from '@src/components/links/BrowserProfileItems';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AgentCardBody, CardLink } from '@src/components/agents/AgentIntroCard';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
@@ -172,6 +175,55 @@ export function UrlTabCard({ name, url }: { name: string; url: string }) {
     <div className="min-w-[220px] max-w-[320px] space-y-1.5 p-2.5" data-testid="url-tab-card">
       <TabTooltipName name={name} />
       <CopyPathButton path={url} testId="url-tab-card-url" className="w-full" />
+      <UrlOpenActions url={url} />
+    </div>
+  );
+}
+
+/**
+ * The link menu's browser actions, inline: the default browser, then each profile.
+ * Inline rather than a submenu — a menu portaled out of the hover card closes the card.
+ */
+function UrlOpenActions({ url }: { url: string }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const browsers = useBrowserProfiles();
+  const item = 'flex w-full items-center gap-2 rounded px-1.5 py-1 text-start text-[11px] hover:bg-muted';
+  return (
+    <div className="space-y-0.5 border-t pt-1.5" data-testid="url-tab-card-open">
+      <button
+        type="button"
+        className={item}
+        data-testid="url-tab-card-open-browser"
+        onClick={(e) => {
+          e.stopPropagation();
+          void navigation.openLinkInBrowser(url, null);
+        }}
+      >
+        <ExternalLink className="h-3 w-3 shrink-0" />
+        {t`Open in browser`}
+      </button>
+      {browsers.map((browser) => (
+        <div key={browser.id} role="group" aria-label={browser.name}>
+          <p className="px-1.5 pt-1 text-[10px] text-muted-foreground">{browser.name}</p>
+          {browser.profiles.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              className={item}
+              title={profile.email ?? profile.name}
+              data-testid={`url-tab-card-profile-${browser.id}-${profile.id}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void navigation.openLinkInBrowserProfile(url, null, browser.id, profile.id);
+              }}
+            >
+              <AppWindow className="h-3 w-3 shrink-0" />
+              <ProfileLabel profile={profile} />
+            </button>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

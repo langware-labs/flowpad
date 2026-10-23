@@ -1,5 +1,5 @@
 import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@src/components/ui/dropdown-menu';
-import type { Browser } from '@src/lib/browser-profiles';
+import type { Browser, BrowserProfile } from '@src/lib/browser-profiles';
 
 /** Every installed browser's profiles as menu items, grouped under the browser's name. */
 export function BrowserProfileItems({
@@ -24,16 +24,23 @@ export function BrowserProfileItems({
               data-testid={`${testIdPrefix}-${browser.id}-${profile.id}`}
               title={profile.email ?? profile.name}
             >
-              <span className="truncate">
-                {profile.name}
-                {profile.email && profile.email !== profile.name && (
-                  <span className="text-muted-foreground"> — {profile.email}</span>
-                )}
-              </span>
+              <ProfileLabel profile={profile} />
             </DropdownMenuItem>
           ))}
         </div>
       ))}
     </>
+  );
+}
+
+/** A profile's name, then its email when that says more. */
+export function ProfileLabel({ profile }: { profile: BrowserProfile }) {
+  return (
+    <span className="truncate">
+      {profile.name}
+      {profile.email && profile.email !== profile.name && (
+        <span className="text-muted-foreground"> — {profile.email}</span>
+      )}
+    </span>
   );
 }

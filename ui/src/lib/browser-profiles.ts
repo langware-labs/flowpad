@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { dataContext, RuntimeKind } from '@sdk';
 import apiClient from '@sdk/client';
 
@@ -37,4 +38,18 @@ export async function fetchBrowserProfiles(): Promise<Browser[]> {
 /** Open a web URL in one browser profile. Rejects with the backend's reason. */
 export async function openInBrowserProfile(url: string, browser: string, profile: string): Promise<void> {
   await apiClient.post('/api/v1/browser-profiles/open', { browser, profile, url });
+}
+
+/** `fetchBrowserProfiles` while `enabled`; the last list stays meanwhile. */
+export function useBrowserProfiles(enabled = true): Browser[] {
+  const [browsers, setBrowsers] = useState<Browser[]>([]);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void fetchBrowserProfiles().then((list) => live && setBrowsers(list));
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+  return browsers;
 }
