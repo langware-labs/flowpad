@@ -164,6 +164,32 @@ class HelpdeskSource(MessageSource):
                 out.append(Choice(id=queue, name=str(getattr(desk, "display_name", "") or queue), detail="adopted desk"))
         return out
 
+    @classmethod
+    async def ensure_sources(cls) -> int:
+        """One help-desk source per desk this login staffs: a hub project it holds a role on whose help
+        desk is on. A ticket reaches its staff only through such a source (they are not in it), so a
+        staffer never has to connect their own desk by hand. Returns how many were made."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        walk = await HubProxy.walk("project")
+        driver = DataDriver.loaded(cls.provider)
+        if not walk.complete or driver is None:
+            return 0
+        made = 0
+        for project in walk.rows:
+            desk = project.get("helpdesk") or {}
+            desk_id = str(project.get("id") or "").strip()
+            if not desk.get("enabled") or not desk_id:
+                continue
+            if await DataSource.find_for_account(cls.provider, cls.identity_config_key, desk_id) is not None:
+                continue
+            name = str(desk.get("display_name") or project.get("name") or desk_id)
+            await driver.create_source(driver.create_config(**{cls.identity_config_key: desk_id}), name=name).save()
+            made += 1
+        return made
+
     # ── read: the desk ──────────────────────────────────────────────────────
     def query(self) -> MessageQuery:
         """The whole desk: no one ticket. ``narrow={"conversation": ticket}`` reads just that one."""

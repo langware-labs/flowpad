@@ -3994,7 +3994,9 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         # Re-read local state because the upsert + invitation steps may have
         # added rows that didn't exist when we snapshotted earlier.
         for c in await Conversation.get_all({}):
-            if c.remote and c.id and c.id not in seen_ids:
+            # A row a data source feeds (a help-desk ticket staff returned) is the source's to keep:
+            # out of the hub list means "not in it", not "gone".
+            if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id:
                 try:
                     await _hard_delete_local_conversation(c)
                     pruned.append(c.id)
