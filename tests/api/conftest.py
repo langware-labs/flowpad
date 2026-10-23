@@ -245,6 +245,12 @@ def reset_db_for_testclient():
     _invalidate_caches()
 
 
+def _is_asyncio_internal(task) -> bool:
+    """A task asyncio's subprocess transport runs for itself (``_connect_pipes``)."""
+    code = getattr(task.get_coro(), "cr_code", None)
+    return bool(code) and code.co_filename.replace("\\", "/").endswith("asyncio/base_subprocess.py")
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def drain_background_tasks():
     """Drain pending asyncio tasks and kill PTY sessions after each test."""
@@ -280,7 +286,12 @@ async def drain_background_tasks():
     # contexts which close cleanly even on cancellation paths.
     current = asyncio.current_task()
     pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
-    for task in pending:
+    # asyncio's own subprocess plumbing (``BaseSubprocessTransport._connect_pipes``) is not ours to
+    # cancel: cancelled mid-connect, the transport never learns its child exited, so the app task's
+    # cleanup (kill the child, then ``await proc.wait()``) waits forever. Cancel the app's tasks and
+    # let that plumbing finish; the kill it unblocks is what ends the child.
+    ours = [t for t in pending if not _is_asyncio_internal(t)]
+    for task in ours:
         task.cancel()
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)

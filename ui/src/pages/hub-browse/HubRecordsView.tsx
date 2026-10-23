@@ -1,4 +1,4 @@
-import { PageId, QueryFilter, QueryRequest, ViewType } from '@sdk';
+import { EVERY_ROW, ExpressionNode, PageId, QueryFilter, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -57,11 +57,9 @@ export function HubRecordsView({ type }: { type?: string }) {
             // The newest page; the server says when more are behind it (`loadMore`).
             query: new QueryFilter({
               match:
-                type === 'conversation'
-                  ? { op: '$IS_NULL', operands: ['deleted_at'] }
-                  : { op: '$IS_NOT_NULL', operands: ['id'] },
+                type === 'conversation' ? { op: '$IS_NULL', operands: ['deleted_at'] } : new ExpressionNode(EVERY_ROW),
               limit: HUB_RECORDS_PAGE_SIZE,
-              order_by: [{ created_date: 'desc' }, { id: 'desc' }],
+              order_by: [{ created_date: 'desc' }, { id: 'asc' }],
             }),
             scope: [],
             name: `hub-records-${type}`,

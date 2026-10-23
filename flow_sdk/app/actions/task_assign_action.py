@@ -78,9 +78,15 @@ async def ensure_task_on_hub(task: Task, someone_typeid) -> bool:
         logger.warning("[task-assign] blob expansion failed (non-fatal): %s", e)
     if task.remote:
         return False
+    from flow_sdk.builtin import task_changes  # noqa: PLC0415
+
+    # Measured before the share: the hub's echo of the create can land first and store the new
+    # assignee, and the save below would then see no change and write no hand-over line.
+    prior = await task_changes.before(task)
     await task.share()
     task.remote = True
-    await task.save(someone_typeid)
+    with task_changes.measured_from(prior):
+        await task.save(someone_typeid)
     return True
 
 

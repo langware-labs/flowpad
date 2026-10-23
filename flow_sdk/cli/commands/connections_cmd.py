@@ -203,6 +203,6 @@ def recent_cmd(
         typer.echo(f"No messages in the last {hours:g} hours.")
         return
     for channel in channels:
-        typer.echo(f"#{channel['name']}")
+        typer.echo(f"#{channel['name']} ({channel.get('id', '')})")
         for m in channel["messages"]:
             typer.echo(f"  {users.get(m['user'], m['user'])}: {m['text']}")

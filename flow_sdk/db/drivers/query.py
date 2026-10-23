@@ -51,10 +51,8 @@ class ExpressionNode(BaseModel):
 
 
 OrderType = Dict[str, Literal["asc", "desc"]]
-#: The keys of a filter beside `match` (`QueryFilter.parse`).
-_FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
-#: The same words in the hub's order (``PAGING_KEYS`` there).
-PAGING_KEYS = ("limit", "offset", "order_by", "expand")
+#: The keys of a filter beside `match` (`QueryFilter.parse`; ``PAGING_KEYS`` on the hub too).
+PAGING_KEYS = _FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
 # A plain field name, as on the hub; the desktop also sorts on dotted JSON paths (``input.created``), each
 # segment a plain name.
 _FIELD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")

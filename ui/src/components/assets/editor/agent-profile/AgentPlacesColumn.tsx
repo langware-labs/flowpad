@@ -2,12 +2,13 @@ import { Agent, Deployment, type AgentPlace } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
-import { ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronRight, Loader2, Plus, Server } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 
+import { providerIcon, useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
 import { NewDeploymentDialog } from './NewDeploymentDialog';
 import { useAgentPlaces } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
@@ -30,6 +31,8 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
   const { navigation, currentDock } = useDockNavigation();
   const display = usePlaceDisplay();
   const { places, reload } = useAgentPlaces(agent);
+  // The hub has no `places` call; it answers where the agent runs and what is wired to it in one read.
+  const wired = useAgentChannels(agent);
   const [deployOpen, setDeployOpen] = useState(false);
   const hub = isHubOnly();
 
@@ -69,6 +72,15 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
       )}
       {places === null ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      ) : visible.length === 0 && hub && wired && wired.deployments.length > 0 ? (
+        <ul className="flex flex-col divide-y rounded-md border" data-testid="agent-hub-deployments">
+          {wired.deployments.map((d) => (
+            <li key={d.typeid} className="flex items-center gap-2 px-3 py-2 text-sm">
+              <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{d.node_typeid ? t`Cloud machine` : t`No machine yet`}</span>
+            </li>
+          ))}
+        </ul>
       ) : visible.length === 0 ? (
         <span className="text-xs text-muted-foreground" data-testid="agent-places-empty">
           <Trans>Not deployed yet — it runs nowhere until you launch it.</Trans>
@@ -87,7 +99,10 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
                 >
                   <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground" data-testid={`agent-place-state-${place.deployment.id}`}>
+                  <span
+                    className="shrink-0 text-xs text-muted-foreground"
+                    data-testid={`agent-place-state-${place.deployment.id}`}
+                  >
                     {stateOf(place)}
                   </span>
                   <span
@@ -103,6 +118,51 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
             );
           })}
         </ul>
+      )}
+      {wired && (wired.webhooks.length > 0 || wired.connections.length > 0) && (
+        <div className="flex flex-col gap-1.5" data-testid="agent-wiring">
+          <h3 className="text-xs font-semibold text-muted-foreground">
+            <Trans>Webhooks & connections</Trans>
+          </h3>
+          <ul className="flex flex-col divide-y rounded-md border">
+            {wired.webhooks.map((hook) => {
+              const Icon = providerIcon(hook.provider);
+              return (
+                <li
+                  key={hook.id}
+                  className="flex items-center gap-2 px-3 py-2 text-sm"
+                  data-testid={`agent-webhook-${hook.id}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {hook.sender ? `${hook.provider} · ${hook.sender}` : hook.provider}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {hook.status === 'active'
+                      ? t`Linked`
+                      : hook.status === 'pending'
+                        ? t`Waiting for the link`
+                        : t`Lapsed`}
+                  </span>
+                </li>
+              );
+            })}
+            {[...new Set(wired.connections.map((c) => c.provider))].map((provider) => {
+              const Icon = providerIcon(provider);
+              return (
+                <li
+                  key={`c-${provider}`}
+                  className="flex items-center gap-2 px-3 py-2 text-sm"
+                  data-testid={`agent-connection-${provider}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{t`${provider} connection`}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{t`Its machine may use it`}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </section>
   );

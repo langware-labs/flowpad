@@ -147,13 +147,13 @@ export type OrderByType = Record<string, 'asc' | 'desc'>;
 export type MatchMap = Record<string, string | number | boolean | null>;
 
 /** A match every row passes — each row has an id. */
-const EVERY_ROW = { op: '$IS_NOT_NULL', operands: ['id'] };
+export const EVERY_ROW = { op: '$IS_NOT_NULL', operands: ['id'] };
 
 /** The keys of a filter that page, order or expand — never fields of the match. */
 const FILTER_WORDS = ['limit', 'offset', 'order_by', 'expand'];
 
 /** The server's order for a page asked without one: newest first, id breaking ties. */
-const DEFAULT_PAGE_ORDER: OrderByType[] = [{ created_date: 'desc' }, { id: 'desc' }];
+const DEFAULT_PAGE_ORDER: OrderByType[] = [{ created_date: 'desc' }, { id: 'asc' }];
 
 function compareValues(a: any, b: any): number {
   if (a == null && b == null) return 0;
@@ -236,7 +236,9 @@ export class QueryFilter extends ExpansionRequest {
     // read as "rows whose limit is 1"). "Every row" is said as `id IS NOT NULL` — an empty object
     // does not survive the query-string encoding.
     const paging = { limit: this.limit, offset: this.offset, order_by: this.order_by };
-    const kept = Object.fromEntries(Object.entries(paging).filter(([, value]) => value !== undefined && value !== null));
+    const kept = Object.fromEntries(
+      Object.entries(paging).filter(([, value]) => value !== undefined && value !== null),
+    );
     const any = match || Object.keys(kept).length;
     return {
       filter: any ? { match: match ?? EVERY_ROW, ...kept } : undefined,

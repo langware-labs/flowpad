@@ -3,6 +3,7 @@ import {
   Conversation,
   dataManager,
   type DataSource,
+  EVERY_ROW,
   ExpressionNode,
   QueryFilter,
   QueryRequest,
@@ -49,7 +50,7 @@ export function recentConversationsRequest(clauses: ExpressionNode[], limit?: nu
     type: Conversation.type,
     name,
     query: new QueryFilter({
-      match: allOf(clauses) ?? new ExpressionNode({ op: '$IS_NOT_NULL', operands: ['id'] }),
+      match: allOf(clauses) ?? new ExpressionNode(EVERY_ROW),
       order_by: [{ updated_date: 'desc' }, { id: 'asc' }],
       ...(limit ? { limit } : {}),
     }),
