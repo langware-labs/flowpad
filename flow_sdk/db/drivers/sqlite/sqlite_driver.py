@@ -1728,10 +1728,9 @@ class SQLiteDBDriver(DBDriver):
         """Update an existing entity. Outer _session_ctx drives commit."""
         # A row only reaches here after ``save()`` has SELECTed it and confirmed
         # it exists, so a null ``created_by`` is NOT a create-on-existing
-        # collision. It is a legitimate hub-origin reflection: the hub stamps no
-        # owner (``initiated_by``) for share/diagnostics conversations, so the
-        # receiver faithfully reflects ``created_by=None`` — and a later backfill
-        # (participants/title/parent) must still be able to UPDATE that row.
+        # collision. It is a legitimate hub-origin reflection that carries no
+        # ``created_by`` — and a later backfill (members/title/parent) must still
+        # be able to UPDATE that row.
         # Rejecting it here aborted invitation-preview + bundle unpack, so the
         # recipient never saw the messages or their attachments. Reject only a
         # structurally malformed entity (the field missing entirely).

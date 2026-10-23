@@ -166,18 +166,12 @@ class Conversation(ProjectedFields, Entity):
     # LOCAL row, so without the mirror a ticket they just closed keeps
     # presenting as open on the surface they closed it from.
     status: ConversationStatus = APIField(default=ConversationStatus.OPEN)
-    # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
-    # on the hub). Populated VERBATIM by ``_upsert_hub_conversation_metadata``
-    # and used by ``handle_conversation_delete_archived`` to classify each
-    # archived row as own-delete vs leave vs decline. A cloud-user id when the
-    # hub carried an owner — but MAY be null: the hub only stamps
-    # ``initiated_by`` for project-created conversations, so share/diagnostics
-    # convs reflect ``None`` here (the receiver must NOT fabricate a 'system'
-    # sentinel). Ownership for display/authz resolves from the participant
-    # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
-    created_by: Optional[str] = APIField(default=None, sharing=Sharing.HUB_READ, hub_name="initiated_by")
+    # The hub's owner of the conversation, under the hub's own name and copied as is. ``None`` for a
+    # conversation that never left this machine (its owner is this machine's user: ``remote`` is false)
+    # and for hub rows without one (share/diagnostics). ``created_by`` stays the row's own attribution.
+    initiated_by: Optional[str] = APIField(default=None, sharing=Sharing.HUB_READ)
     # Whose stream inbox lists this conversation — the local user's or an Agent's. Not
-    # ``created_by`` (the hub's creator mirror, a bare user uuid) and not the
+    # ``initiated_by`` (the hub's owner, a bare user uuid) and not the
     # roster's ``owner`` role (hub-side authz): this is the LOCAL partition key
     # the stream inbox filters by, set from the thread that minted the conversation.
     # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
@@ -221,17 +215,11 @@ class Conversation(ProjectedFields, Entity):
     awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
-    # The roster's hub WIRE key is ``participants`` (hub contract); the local
-    # read cache is the generic ``members``. Declared once here so every
-    # ingest/merge seam reads the alias from ``hub_names(Conversation)``.
-    members: List[dict] = APIField(default_factory=list, sharing=Sharing.HUB_READ, hub_name="participants")
+    # Who is in the conversation: the hub's ``members``, copied as is.
+    members: List[dict] = APIField(default_factory=list, sharing=Sharing.HUB_READ)
     # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
     # log, like ``message_count``: rebuilt locally, never accepted from the hub.
     message_ids: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
-    # Roster cache lives on the Entity base as ``members`` (generic hub capability).
-    # The hub sends/receives the conversation roster on the WIRE as ``participants``
-    # (its field + fanout key); that key is adapted to ``members`` at ingest
-    # (hub_bridge._handle_conversation_op, flow_message_action metadata upsert).
     # Conversation-scoped default transfer mode for asset shares. When True,
     # asset shares into this conversation ride as Git-origin metadata (the
     # receiver clones/pulls on an explicit Download) instead of copied bytes.

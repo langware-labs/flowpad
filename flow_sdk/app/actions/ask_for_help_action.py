@@ -389,7 +389,7 @@ async def _open_ticket(conv: Conversation, opening: FlowMessage) -> Optional[Hub
     if data.get("title"):
         conv.title = data["title"]
     if data.get("initiated_by"):
-        conv.created_by = data["initiated_by"]
+        conv.initiated_by = data["initiated_by"]
     if opening.has_body():
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
 

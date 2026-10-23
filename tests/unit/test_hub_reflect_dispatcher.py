@@ -99,7 +99,7 @@ def test_should_reflect_false_when_logged_out(logged_out):
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_a_conversation_takes_from_the_hub_only_what_the_hub_owns():
-    """The one mirror reads the declarations: the hub's owner and roster land under their local
+    """The one mirror reads the declarations: the hub's owner and roster land under their own
     names (the roster in the local shape), local-only fields and unknown keys never do."""
     from flow_sdk.builtin.conversation import Conversation
 
@@ -107,13 +107,13 @@ def test_a_conversation_takes_from_the_hub_only_what_the_hub_owns():
         {
             "title": "new",
             "initiated_by": "owner-1",
-            "participants": [{"user_id": "u1", "user_email": "A@X.test"}],
+            "members": [{"user_id": "u1", "user_email": "A@X.test"}],
             "message_count": 9,  # a local projection — never from the hub
             "archived_at": "2026-01-01T00:00:00Z",  # this user's own state — never from the hub
             "not_a_field_xyz": "z",
         }
     )
-    assert accepted["title"] == "new" and accepted["created_by"] == "owner-1"
+    assert accepted["title"] == "new" and accepted["initiated_by"] == "owner-1"
     assert accepted["members"] == [{"user_id": "u1", "user_email": "A@X.test"}]
     assert Conversation(id="c1", members=accepted["members"]).members[0]["email"] == "a@x.test"
     assert not {"message_count", "archived_at", "not_a_field_xyz"} & set(accepted)

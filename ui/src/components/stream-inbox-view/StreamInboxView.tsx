@@ -97,15 +97,14 @@ import { attachmentSummary } from '@src/components/conversation/useAttachments';
 const PER_MACHINE_ROW_ACTIONS = new Set(['toggle-read', 'archive', 'unarchive']);
 
 /** What removing a conversation does for this viewer: a row that never reached the hub (``remote: false``
- *  — a hub row carries no flag) is deleted here; its owner (who created it, here or on the hub) deletes it for
- *  everyone; anyone else leaves. One rule for the row, the bulk counts and the bulk delete. */
+ *  — a hub row carries no flag) is deleted here; the hub's owner (``initiated_by``) deletes it for everyone;
+ *  anyone else leaves. One rule for the row, the bulk counts and the bulk delete. */
 export function deleteKindOf(
-  conv: Pick<Conversation, 'remote' | 'created_by'>,
-  me: { cloudUserId?: string | null; localUserId?: string | null },
+  conv: Pick<Conversation, 'remote' | 'initiated_by'>,
+  cloudUserId: string | null | undefined,
 ): 'local' | 'owner' | 'leave' {
   if (conv.remote === false) return 'local';
-  const owner = conv.created_by;
-  return owner && (owner === me.cloudUserId || owner === me.localUserId) ? 'owner' : 'leave';
+  return conv.initiated_by && conv.initiated_by === cloudUserId ? 'owner' : 'leave';
 }
 
 type RowDeleteAction =
@@ -304,7 +303,7 @@ export function ConversationListRow({
   // Trash does different things depending on ownership — say which one
   // up-front so the tooltip distinguishes it from the (reversible) Archive.
   const { t } = useLingui();
-  const deleteKind = deleteKindOf(conv, { cloudUserId, localUserId });
+  const deleteKind = deleteKindOf(conv, cloudUserId);
   const deleteLabel =
     deleteKind === 'local'
       ? t`Delete — removes permanently`
@@ -930,7 +929,7 @@ export function StreamInboxView({
           invitationCount += 1;
           continue;
         }
-        const kind = deleteKindOf(c, { cloudUserId, localUserId });
+        const kind = deleteKindOf(c, cloudUserId);
         if (kind === 'local') localCount += 1;
         else if (kind === 'owner') ownerCount += 1;
         else nonOwnerCount += 1;
@@ -1025,7 +1024,7 @@ export function StreamInboxView({
           // to surface the decline-vs-dismiss choice the per-row dialog offers.
           await dismissConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
         } else {
-          const kind = deleteKindOf(c, { cloudUserId, localUserId });
+          const kind = deleteKindOf(c, cloudUserId);
           const scope = agentId ? { agent_id: agentId } : {};
           if (kind === 'leave') await leaveConversation({ conversation_id: c.id, ...scope });
           else
