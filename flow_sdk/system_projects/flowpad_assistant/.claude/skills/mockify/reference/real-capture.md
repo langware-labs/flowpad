@@ -56,6 +56,7 @@ window.__info = () => fetch('http://127.0.0.1:PORT/info.json', { method: 'POST',
   bodyFont: getComputedStyle(document.body).fontFamily,
   stylesheets: [...document.querySelectorAll('link[rel=stylesheet]')].map((l) => l.href),
   fonts: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => `${f.family} ${f.weight}`),
+  viewport: { w: innerWidth, h: innerHeight },
 }) });
 await __info(); await __cap('home.html');   // then drive to the next step and __cap('<step id>.html'), every step
 ```
@@ -99,9 +100,13 @@ Assemble. Keep the command in `<mock-dir>/build.sh` — you will rerun it:
 ```bash
 python3 -I <skill>/scripts/build_mock.py <mock-dir> --row row.json --key <mock slug> --project <mock project id> \
   --step home=capture/home.html --step pick=capture/pick.html --step denied=capture/denied.html \
-  --origin http://localhost:<app port> --html-attrs '<htmlAttrs from info.json>' \
+  --origin http://localhost:<app port> --html-attrs '<htmlAttrs from info.json>' --width <viewport.w from info.json> \
   --head '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=…">'
 ```
+
+**Always pass `--width`.** The mock opens in the Flowpad display, about half the capture window. Without
+it the captured layout reflows into the narrow frame: tabs shrink to bare icons, popovers land off screen,
+and the reviewer sees an empty dark page. With it every screen keeps its captured layout, zoomed to fit.
 
 A file a screen shows that is not in `<mock-dir>` stays a link and the validator reports it missing — copy
 it in (under its app path, e.g. `assets/x.png`) and rebuild.
