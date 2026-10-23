@@ -581,6 +581,8 @@ export interface HelpdeskTicket {
   participant_count: number;
   /** True when the calling staff user is already on the roster. */
   picked_up: boolean;
+  /** Staff in the ticket. A picked ticket stays in the queue. */
+  picked_up_by?: string[];
   /** Settlement state. The default queue is all-open; only an audit listing
    *  that asks for closed tickets sees anything else here. */
   status?: ConversationStatus;

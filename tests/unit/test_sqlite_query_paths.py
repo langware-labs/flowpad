@@ -54,23 +54,38 @@ def _prop_in(value, prop):
     return ExpressionNode(op=QueryOp.IN, operands=[value, ExpressionNode(op=QueryOp.PROP, operands=[prop])])
 
 
+async def test_dotted_filter_in_python_fallback(driver):
+    t = await _seed(driver)
+    # The PROP leaf is not SQL-pushable, so the whole AND is re-evaluated in Python.
+    match = ExpressionNode(op=QueryOp.AND, operands=[_eq("origin.key", "k1"), _prop_in("x", "recipients")])
+    assert driver._expr_to_sql(match, [0])[1] is False
+    rows = await driver.get_all(QueryFilter(type=t, match=match))
+    assert [r.body for r in rows] == ["a"]
+    miss = ExpressionNode(op=QueryOp.AND, operands=[_eq("origin.key", "k3"), _prop_in("x", "recipients")])
+    assert await driver.get_all(QueryFilter(type=t, match=miss)) == []
+
+    # Paging runs AFTER the Python filter, in SQL order: k3/c (no recipient) is not counted by the offset.
+    python_only = _prop_in("x", "recipients")
+    page = await driver.get_all(QueryFilter(type=t, match=python_only, order_by=[{"body": "desc"}], limit=1, offset=1))
+    assert [r.body for r in page] == ["a"]
+    # Equal keys page by id, the hub's tie-break: every row once, none repeated.
+    all_ids = sorted(r.id for r in await driver.get_all(QueryFilter(type=t, match=python_only)))
+    paged_ids = []
+    for offset in range(len(all_ids)):
+        same = QueryFilter(type=t, match=python_only, order_by=[{"data_source_id": "asc"}], limit=1, offset=offset)
+        paged_ids += [r.id for r in await driver.get_all(same)]
+    assert paged_ids == all_ids
+    # A page with no order is newest first.
+    newest = await driver.get_all(QueryFilter(type=t, match=python_only, limit=2))
+    assert [r.body for r in newest] == ["a", "b"]
+
+
 class TestDottedPaths:
     @pytest.mark.asyncio
     async def test_dotted_filter_in_sql(self, driver):
         t = await _seed(driver)
         rows = await driver.get_all(QueryFilter(type=t, match=_eq("origin.key", "k1")))
         assert [r.body for r in rows] == ["a"]
-
-    @pytest.mark.asyncio
-    async def test_dotted_filter_in_python_fallback(self, driver):
-        t = await _seed(driver)
-        # The PROP leaf is not SQL-pushable, so the whole AND is re-evaluated in Python.
-        match = ExpressionNode(op=QueryOp.AND, operands=[_eq("origin.key", "k1"), _prop_in("x", "recipients")])
-        assert driver._expr_to_sql(match, [0])[1] is False
-        rows = await driver.get_all(QueryFilter(type=t, match=match))
-        assert [r.body for r in rows] == ["a"]
-        miss = ExpressionNode(op=QueryOp.AND, operands=[_eq("origin.key", "k3"), _prop_in("x", "recipients")])
-        assert await driver.get_all(QueryFilter(type=t, match=miss)) == []
 
     def test_python_evaluator_walks_paths_and_keeps_flat_keys(self, driver):
         attrs = {"origin": {"key": "k1"}, "origin.key": None, "body": "a", "tags": [{"n": 1}, {"n": 2}]}

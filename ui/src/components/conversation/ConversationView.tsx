@@ -32,6 +32,7 @@ import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
+import { ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
@@ -891,13 +892,14 @@ export function ConversationView({
     }
   }, [agentId, refetch, refreshMembers, conversationId]);
 
-  // Staff "pick up" affordance for a helpdesk ticket: shown only on a
-  // helpdesk conversation the local cloud user hasn't joined and didn't open
-  // (the guest initiator is the owner). Joining adds them to the roster so they
-  // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
   const [pickingUp, setPickingUp] = useState(false);
   const isParticipant = !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
-  const canPickup = isHelpdeskConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const { canPickup, canSettle } = ticketAffordances({
+    helpdesk: isHelpdeskConversation,
+    cloudUserId,
+    isOwner: isConversationOwner,
+    isParticipant,
+  });
 
   const showSoloNotice = shouldShowSoloSendNotice({
     remote: conversation?.remote === true,
@@ -954,13 +956,8 @@ export function ConversationView({
     }
   }, [conversationId, ensureCloudLogin, openLiveSession, t]);
 
-  // Affordance only — the hub's `_set_settlement` is the authority on who may
-  // settle. Mirrors `canPickup` below. Note this is NARROWER than the server
-  // rule: desk staff triaging from the queue who have not picked the ticket up
-  // see no button until they do.
   const [settling, setSettling] = useState(false);
   const isClosed = isClosedConversation(conversation?.status);
-  const canSettle = isHelpdeskConversation && (isConversationOwner || isParticipant);
 
   const handleSettle = useCallback(async () => {
     setSettling(true);
@@ -1004,7 +1001,7 @@ export function ConversationView({
             type="button"
             onClick={() => void handlePickup()}
             disabled={pickingUp}
-            title={t`Join this support ticket so you can reply`}
+            title={t`Join this support ticket. Replying picks it up too.`}
             data-testid="pickup-conversation-button"
             className={`${ticketActionClassName} border-violet-500/40 bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 dark:text-violet-400`}
           >

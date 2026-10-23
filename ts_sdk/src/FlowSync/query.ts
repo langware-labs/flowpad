@@ -149,6 +149,22 @@ export type MatchMap = Record<string, string | number | boolean | null>;
 /** A match every row passes — each row has an id. */
 const EVERY_ROW = { op: '$IS_NOT_NULL', operands: ['id'] };
 
+/** The keys of a filter that page, order or expand — never fields of the match. */
+const FILTER_WORDS = ['limit', 'offset', 'order_by', 'expand'];
+
+/** The server's order for a page asked without one: newest first, id breaking ties. */
+const DEFAULT_PAGE_ORDER: OrderByType[] = [{ created_date: 'desc' }, { id: 'desc' }];
+
+function compareValues(a: any, b: any): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  const sa = String(a);
+  const sb = String(b);
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
 export class QueryFilter extends ExpansionRequest {
   type?: string;
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
@@ -178,12 +194,12 @@ export class QueryFilter extends ExpansionRequest {
         data = { ...data, ...data.filter };
         delete data.filter;
       }
-      // A map without `match` is the match itself (`{status: 'open'}`) — unless every key is a
-      // filter word: `{limit: 3}` is a page of three, never "the rows whose limit is 3".
-      const words = ['limit', 'offset', 'order_by', 'expand'];
-      const keys = Object.keys(data);
-      if (!data.match && keys.length > 0 && !data.expand && !keys.every((key) => words.includes(key))) {
-        data = { match: data, type: entityType };
+      // A map without `match` is the match itself (`{status: 'open'}`) — but its filter words are not:
+      // `{status: 'open', limit: 3}` is a page of three open rows, never "the rows whose limit is 3".
+      if (!data.match) {
+        const fields = Object.fromEntries(Object.entries(data).filter(([key]) => !FILTER_WORDS.includes(key)));
+        const words = Object.fromEntries(Object.entries(data).filter(([key]) => FILTER_WORDS.includes(key)));
+        data = Object.keys(fields).length ? { ...words, match: fields } : words;
       }
       data = { ...data, type: entityType };
       if (data.expand && typeof data.expand === 'string') {
@@ -217,6 +233,27 @@ export class QueryFilter extends ExpansionRequest {
       expand: this.expandString,
     };
   }
+  /**
+   * The order the server answers this filter in, as a list of `{field: dir}` — the asked `order_by`,
+   * else (for a page) the server's default, newest first. `undefined` for an unpaged, unordered list:
+   * its rows have no order to keep.
+   */
+  get ordering(): OrderByType[] | undefined {
+    if (this.order_by) return Array.isArray(this.order_by) ? this.order_by : [this.order_by];
+    return this.limit != null ? DEFAULT_PAGE_ORDER : undefined;
+  }
+
+  /** Compare two rows in this filter's order (0 when it has none). */
+  compare(a: any, b: any): number {
+    for (const clause of this.ordering ?? []) {
+      for (const [field, dir] of Object.entries(clause)) {
+        const c = compareValues(fieldOf(a, field), fieldOf(b, field));
+        if (c) return dir === 'desc' ? -c : c;
+      }
+    }
+    return 0;
+  }
+
   // Validate the data for whether it passes the filter
   validate(data: any): boolean {
     if (!this.match) {
@@ -397,6 +434,10 @@ export class WatchedQuery<T = any> {
   public readonly request: QueryRequest;
   public results?: T[];
   public pendingPromise?: Promise<T[]>;
+  /** A paged answer's `has_more` — more rows past this page on the server. */
+  public hasMore?: boolean;
+  /** A paged answer's `next_offset` — where the next page starts. */
+  public nextOffset?: number;
   private callbacks: Map<string, QueryCallback<T>>;
 
   /**
@@ -482,7 +523,15 @@ export class WatchedQuery<T = any> {
    */
   updateResults(newResults: T[]): void {
     this.results = newResults;
+    this.setPage(newResults);
     this.notifyCallbacks();
+  }
+
+  /** Take the `has_more` / `next_offset` a paged answer carried (an unpaged one clears them). */
+  setPage(rows: T[] | undefined): void {
+    const meta = rows as unknown as { has_more?: boolean; next_offset?: number } | undefined;
+    this.hasMore = typeof meta?.has_more === 'boolean' ? meta.has_more : undefined;
+    this.nextOffset = this.hasMore === undefined ? undefined : Number(meta?.next_offset ?? rows?.length ?? 0);
   }
 
   /**

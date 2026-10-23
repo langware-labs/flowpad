@@ -330,6 +330,8 @@ msgstr "(unnamed flow)"
 msgid "(unnamed)"
 msgstr "(unnamed)"
 
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/token-plan/MembersTable.tsx
 msgid "(you)"
 msgstr "(you)"
@@ -410,8 +412,11 @@ msgid "{0, plural, one {# layout} other {# layouts}}"
 msgstr "{0, plural, one {# layout} other {# layouts}}"
 
 #. placeholder {0}: (g.contacts ?? []).length
+#. placeholder {0}: team.member_count
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 #: src/components/contact-picker/ContactPicker.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "{0, plural, one {# member} other {# members}}"
 msgstr "{0, plural, one {# member} other {# members}}"
 
@@ -493,10 +498,9 @@ msgstr "{0} — ask {manager}"
 msgid "{0} — current project"
 msgstr "{0} — current project"
 
-#. placeholder {0}: outcome.already.join(', ')
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "{0} — no email sent."
-msgstr "{0} — no email sent."
+#~ msgid "{0} — no email sent."
+#~ msgstr "{0} — no email sent."
 
 #. placeholder {0}: attachmentFileName(a)
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -871,6 +875,13 @@ msgstr "{0} new"
 msgid "{0} not tested"
 msgstr "{0} not tested"
 
+#. placeholder {0}: chipNotes.length
+#. placeholder {0}: notes.length
+#: src/components/notes/TabNotes.tsx
+#: src/components/tabs/TabStrip.tsx
+msgid "{0} notes"
+msgstr "{0} notes"
+
 #. placeholder {0}: person.name || person.email || ''
 #. placeholder {1}: task.title
 #: src/components/assets/editor/task/OwnerButton.tsx
@@ -1000,6 +1011,7 @@ msgstr "{0} secret{1}"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/terminal/HistoryModal.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "{0} selected"
 msgstr "{0} selected"
 
@@ -1068,15 +1080,15 @@ msgstr "{0} was not fully deleted"
 msgid "{0} was upgraded and restarted."
 msgstr "{0} was upgraded and restarted."
 
-#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
 msgstr "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
 
-#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 
@@ -1466,6 +1478,18 @@ msgstr "{n} files changed, first {path}"
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{n} rows"
 msgstr "{n} rows"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "{n} skipped: not signed in as you, or unavailable."
+msgstr "{n} skipped: not signed in as you, or unavailable."
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "{n} skipped: not started, unreachable or unavailable."
+msgstr "{n} skipped: not started, unreachable or unavailable."
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "{n} skipped: unavailable."
+msgstr "{n} skipped: unavailable."
 
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
@@ -1877,6 +1901,10 @@ msgstr "↻ re-run"
 #~ msgid "+ Add a cloud machine"
 #~ msgstr "+ Add a cloud machine"
 
+#: src/components/tabs/TabStrip.tsx
+msgid "+ Add note"
+msgstr "+ Add note"
+
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/inbound/InboundView.tsx
 msgid "+ Add rule"
@@ -1890,9 +1918,17 @@ msgstr "+ Allocate"
 msgid "+ Enter path..."
 msgstr "+ Enter path..."
 
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "+ Invite people"
+msgstr "+ Invite people"
+
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "+ New flow"
 msgstr "+ New flow"
+
+#: src/components/organization/tabs/shared.tsx
+msgid "+ New team"
+msgstr "+ New team"
 
 #~ msgid "+ Override"
 #~ msgstr "+ Override"
@@ -2602,6 +2638,7 @@ msgstr "Activity"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -2654,6 +2691,11 @@ msgstr "Add a machine"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "Add a message to send without it."
+
+#: src/components/notes/TabNotes.tsx
+#: src/components/notes/TabNotes.tsx
+msgid "Add a note"
+msgstr "Add a note"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add a note to the running session"
@@ -2886,7 +2928,7 @@ msgstr "Add note"
 msgid "Add package"
 msgstr "Add package"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Add people"
 msgstr "Add people"
 
@@ -3078,6 +3120,11 @@ msgstr "Admin"
 msgid "Advanced"
 msgstr "Advanced"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Advanced limits"
+msgstr "Advanced limits"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Advanced mode"
 msgstr "Advanced mode"
@@ -3102,6 +3149,7 @@ msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "agent"
 msgstr "agent"
@@ -3271,6 +3319,7 @@ msgstr "all"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
@@ -3560,7 +3609,7 @@ msgid "Already not installed: {0}"
 msgstr "Already not installed: {0}"
 
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Already on {0}"
 msgstr "Already on {0}"
 
@@ -4946,6 +4995,15 @@ msgstr "Behind by {0} · Update"
 msgid "Betas allowed"
 msgstr "Betas allowed"
 
+#: src/components/organization/tabs/BillingTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
+msgid "Billing & keys"
+msgstr "Billing & keys"
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Billing & keys →"
+msgstr "Billing & keys →"
+
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Bless \"{name}\" — create its Tag entity"
 msgstr "Bless \"{name}\" — create its Tag entity"
@@ -5079,7 +5137,6 @@ msgstr "Browse…"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 msgid "Budget"
 msgstr "Budget"
 
@@ -5089,8 +5146,8 @@ msgid "Budget allocated from {0}"
 msgstr "Budget allocated from {0}"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Budget created for {label}"
-msgstr "Budget created for {label}"
+#~ msgid "Budget created for {label}"
+#~ msgstr "Budget created for {label}"
 
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Budget endpoint created for {0}"
@@ -5098,14 +5155,18 @@ msgstr "Budget created for {label}"
 
 #. placeholder {0}: member.name
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Budget for {0}"
 msgstr "Budget for {0}"
 
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget for the whole scope"
 msgstr "Budget for the whole scope"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Budget history"
+msgstr "Budget history"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Budget in dollars"
@@ -5116,8 +5177,8 @@ msgid "Budget removed"
 msgstr "Budget removed"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Budget settings"
-msgstr "Budget settings"
+#~ msgid "Budget settings"
+#~ msgstr "Budget settings"
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Budget shared"
@@ -5405,11 +5466,14 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/shared.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -6241,6 +6305,7 @@ msgstr "Clear search index?"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Clear selection"
 msgstr "Clear selection"
 
@@ -6424,6 +6489,7 @@ msgstr "Cloning…"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
@@ -7057,6 +7123,12 @@ msgstr "Connect a number"
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
 msgstr "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
+
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Connect Flow to {0}"
+msgstr "Connect Flow to {0}"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -7819,7 +7891,7 @@ msgstr "Could not create group task"
 msgid "Could not create organization"
 msgstr "Could not create organization"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not create the budget"
 msgstr "Could not create the budget"
 
@@ -7862,8 +7934,8 @@ msgstr "Could not delete"
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/use-source-delete.ts
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not delete {0}"
 msgstr "Could not delete {0}"
 
@@ -7955,9 +8027,13 @@ msgstr "Could not give this project access to {0}."
 msgid "Could not install the package"
 msgstr "Could not install the package"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Could not invite {email}"
+msgstr "Could not invite {email}"
+
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Could not invite everyone"
-msgstr "Could not invite everyone"
+#~ msgid "Could not invite everyone"
+#~ msgstr "Could not invite everyone"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Could not keep the task"
@@ -8171,7 +8247,7 @@ msgid "Could not remove"
 msgstr "Could not remove"
 
 #. placeholder {0}: target.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not remove {0}"
 msgstr "Could not remove {0}"
 
@@ -8346,9 +8422,14 @@ msgstr "Could not save the advanced settings"
 msgid "Could not save the allowed models"
 msgstr "Could not save the allowed models"
 
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Could not save the budget"
 msgstr "Could not save the budget"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Could not save the default"
+msgstr "Could not save the default"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Could not save the endpoint"
@@ -8826,10 +8907,10 @@ msgstr "CPU:"
 #: src/components/cron-view/CronForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/organization-page.tsx
+#: src/components/organization/tabs/shared.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
@@ -9028,6 +9109,10 @@ msgstr "Creating..."
 msgid "Creating…"
 msgstr "Creating…"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "credential"
+msgstr "credential"
+
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/i18n/type-labels.ts
@@ -9129,6 +9214,10 @@ msgstr "cursor"
 msgid "Cursor"
 msgstr "Cursor"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "custom"
+msgstr "custom"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Custom"
 msgstr "Custom"
@@ -9157,6 +9246,10 @@ msgstr "Custom verbs for the progress spinner"
 msgid "Customize"
 msgstr "Customize"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Customize response"
+msgstr "Customize response"
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Cut"
@@ -9165,6 +9258,10 @@ msgstr "Cut"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Daily at {time}"
 msgstr "Daily at {time}"
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Danger zone"
+msgstr "Danger zone"
 
 #: src/components/automations/BusView.tsx
 msgid "Data (JSON)"
@@ -9187,6 +9284,7 @@ msgstr "Data privacy mode"
 msgid "Data Schema"
 msgstr "Data Schema"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "data source"
 msgstr "data source"
@@ -9428,6 +9526,11 @@ msgstr "Default bash command timeout in milliseconds"
 msgid "Default budget per member"
 msgstr "Default budget per member"
 
+#. placeholder {0}: team.name
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Default budget per person in {0}"
+msgstr "Default budget per person in {0}"
+
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Default CLI"
 msgstr "Default CLI"
@@ -9454,6 +9557,10 @@ msgstr "Default model to use for conversations"
 #: src/components/settings-view/settings-utils.ts
 msgid "Default output style"
 msgstr "Default output style"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Default per person"
+msgstr "Default per person"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Default permission mode"
@@ -9533,10 +9640,8 @@ msgstr "delete"
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -9545,6 +9650,7 @@ msgstr "delete"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/pages/hub-home/machines-bulk.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "Delete"
@@ -9557,6 +9663,10 @@ msgstr "Delete — removes permanently"
 #: src/components/account/secrets-section.tsx
 msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "Delete \"{0}\" from the OS keychain? This cannot be undone."
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Delete ({n})"
+msgstr "Delete ({n})"
 
 #. placeholder {0}: c.displayName
 #. placeholder {0}: item.name
@@ -9588,8 +9698,8 @@ msgstr "Delete {0} credential?"
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/connections-manager.tsx
 #: src/components/credentials-view/CredentialView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Delete {0}?"
 msgstr "Delete {0}?"
 
@@ -9597,6 +9707,10 @@ msgstr "Delete {0}?"
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Delete {label}"
 msgstr "Delete {label}"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Delete {n} machines?"
+msgstr "Delete {n} machines?"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete {selectedCount} conversations"
@@ -9641,6 +9755,10 @@ msgstr "Delete bookmark"
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Delete bookmark?"
 msgstr "Delete bookmark?"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Delete budget"
+msgstr "Delete budget"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -9729,6 +9847,18 @@ msgstr "Delete message"
 msgid "Delete node"
 msgstr "Delete node"
 
+#: src/components/notes/NoteViews.tsx
+msgid "Delete note"
+msgstr "Delete note"
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Delete organization"
+msgstr "Delete organization"
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Delete organization…"
+msgstr "Delete organization…"
+
 #: src/components/assets/AssetsPage.tsx
 msgid "Delete project"
 msgstr "Delete project"
@@ -9756,6 +9886,10 @@ msgstr "Delete selected ({selectedCount})"
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Delete tag {name}"
 msgstr "Delete tag {name}"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Delete team"
+msgstr "Delete team"
 
 #: src/components/image-annotator/TextBoxLayer.tsx
 msgid "Delete text"
@@ -9834,6 +9968,10 @@ msgstr "Delete this step"
 msgid "Deleted {ok} conversations"
 msgstr "Deleted {ok} conversations"
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Deleted {ok} of {total} machines."
+msgstr "Deleted {ok} of {total} machines."
+
 #. placeholder {0}: failed.length
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -9844,6 +9982,10 @@ msgstr "Deleted {ok}, {0} failed"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted 1 conversation"
 msgstr "Deleted 1 conversation"
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Deletes every team and budget in this organization. You'll type its name to confirm."
+msgstr "Deletes every team and budget in this organization. You'll type its name to confirm."
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Deletes the harness's own session history. The folders and their files are not touched."
@@ -9892,6 +10034,10 @@ msgstr "Deny"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Dependencies"
 #~ msgstr "Dependencies"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "dependency"
+msgstr "dependency"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -10836,6 +10982,10 @@ msgstr "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo 
 msgid "Each hop, without sending a message."
 msgstr "Each hop, without sending a message."
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Each machine is shut down and removed. This cannot be undone."
+msgstr "Each machine is shut down and removed. This cannot be undone."
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 msgstr "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
@@ -10890,7 +11040,6 @@ msgstr "Edges by kind"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 msgid "Edit"
 msgstr "Edit"
 
@@ -11006,16 +11155,13 @@ msgid "Effort"
 msgstr "Effort"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Email"
 msgstr "Email"
 
-#. placeholder {0}: member.email
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Email {0} an invitation to {teamName}"
-msgstr "Email {0} an invitation to {teamName}"
+#~ msgid "Email {0} an invitation to {teamName}"
+#~ msgstr "Email {0} an invitation to {teamName}"
 
 #~ msgid "Email is now answered here"
 #~ msgstr "Email is now answered here"
@@ -11039,12 +11185,9 @@ msgstr "Email settings could not be saved."
 msgid "Email:"
 msgstr "Email:"
 
-#. placeholder {0}: outcome.invited.length
-#. placeholder {1}: emails.length
-#. placeholder {2}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Emailed {0} of {1} about {2}."
-msgstr "Emailed {0} of {1} about {2}."
+#~ msgid "Emailed {0} of {1} about {2}."
+#~ msgstr "Emailed {0} of {1} about {2}."
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Embedded in message"
@@ -11626,10 +11769,14 @@ msgstr "Every selection"
 #~ msgid "Every skill, agent, spec, and document this project ships."
 #~ msgstr "Every skill, agent, spec, and document this project ships."
 
-#. placeholder {0}: org.name
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Every team and budget inside {0} is deleted with it. This cannot be undone."
-msgstr "Every team and budget inside {0} is deleted with it. This cannot be undone."
+#~ msgid "Every team and budget inside {0} is deleted with it. This cannot be undone."
+#~ msgstr "Every team and budget inside {0} is deleted with it. This cannot be undone."
+
+#. placeholder {0}: org.name
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Every team and budget inside {0} is deleted with it. This cannot be undone. Type the organization's name to confirm."
+msgstr "Every team and budget inside {0} is deleted with it. This cannot be undone. Type the organization's name to confirm."
 
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Every team you manage already has a budget."
@@ -11649,6 +11796,11 @@ msgstr "Every weekday at 09:00, an agent summarizes what changed."
 #: src/components/automations/KindGallery.tsx
 msgid "Every weekday at 9, every hour, once next Tuesday."
 msgstr "Every weekday at 9, every hour, once next Tuesday."
+
+#. placeholder {0}: data.org.name
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Everyone in {0}."
+msgstr "Everyone in {0}."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Everyone in {teamName} gets this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
@@ -11675,7 +11827,7 @@ msgid "Everyone in {teamName} will get the project you pick."
 msgstr "Everyone in {teamName} will get the project you pick."
 
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Everyone's budget inside {0} is deleted with it. This cannot be undone."
 msgstr "Everyone's budget inside {0} is deleted with it. This cannot be undone."
 
@@ -12345,6 +12497,7 @@ msgstr "Failed to start GitHub connection"
 #: src/components/conversation/useImplementPlan.ts
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
+#: src/components/notes/useNoteWorker.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -12387,6 +12540,10 @@ msgstr "Failed to update trigger"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to upload image"
 msgstr "Failed to upload image"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Failed:"
+msgstr "Failed:"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
@@ -13098,6 +13255,14 @@ msgstr "FlowPad isn't installed on this computer"
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 msgstr "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Flowpad shared pool. Usage draws on Flowpad credits."
+msgstr "Flowpad shared pool. Usage draws on Flowpad credits."
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
+msgstr "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
@@ -13474,6 +13639,8 @@ msgid "GCP region for Vertex AI"
 msgstr "GCP region for Vertex AI"
 
 #: src/components/account/account-info.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
 #: src/i18n/pref-labels.ts
 msgid "General"
 msgstr "General"
@@ -13529,8 +13696,8 @@ msgid "Get it at flowpad.ai"
 msgstr "Get it at flowpad.ai"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Get my link code"
-msgstr "Get my link code"
+#~ msgid "Get my link code"
+#~ msgstr "Get my link code"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your {label} messages here, and answer them from Flowpad."
@@ -13551,6 +13718,10 @@ msgstr "Getting the controller project"
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Getting the project to work on"
 msgstr "Getting the project to work on"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Getting your Slack link…"
+msgstr "Getting your Slack link…"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -13718,8 +13889,12 @@ msgid "Give this project access"
 msgstr "Give this project access"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Given out to teams"
-msgstr "Given out to teams"
+#~ msgid "Given out to teams"
+#~ msgstr "Given out to teams"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Given to teams"
+msgstr "Given to teams"
 
 #~ msgid "Given to you by the hub"
 #~ msgstr "Given to you by the hub"
@@ -15236,8 +15411,8 @@ msgid "Invitation no longer valid"
 msgstr "Invitation no longer valid"
 
 #: src/components/account/organization-panel.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Invitation sent"
 msgstr "Invitation sent"
 
@@ -15305,6 +15480,10 @@ msgstr "Invited {trimmed}."
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "It can read your Slack channels."
+msgstr "It can read your Slack channels."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "It cannot be removed from the project"
@@ -15976,6 +16155,10 @@ msgstr "Let anyone with the launch link try this agent in a sandbox of their own
 msgid "Let anyone with the link view this agent — its files stay private"
 msgstr "Let anyone with the link view this agent — its files stay private"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Let it read your Slack"
+msgstr "Let it read your Slack"
+
 #: src/i18n/pref-labels.ts
 msgid "Let other participants see when messages are delivered or read."
 msgstr "Let other participants see when messages are delivered or read."
@@ -15993,6 +16176,7 @@ msgid "Light up the {messageCount} messages this is attached to"
 msgstr "Light up the {messageCount} messages this is attached to"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Limit"
 msgstr "Limit"
 
@@ -16375,7 +16559,7 @@ msgstr "Loading branches..."
 msgid "Loading branches…"
 msgstr "Loading branches…"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/OrgView.tsx
 msgid "Loading budgets…"
 msgstr "Loading budgets…"
 
@@ -16673,6 +16857,7 @@ msgstr "Loading..."
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/shared.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -16912,8 +17097,8 @@ msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr "Make an agent in 60 seconds — where will you talk to it?"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Make another"
-msgstr "Make another"
+#~ msgid "Make another"
+#~ msgstr "Make another"
 
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Make the two the same — edit either one — and the next sync carries on."
@@ -17229,6 +17414,9 @@ msgstr "members"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "Members"
 msgstr "Members"
 
@@ -17244,6 +17432,10 @@ msgstr "Members assigned, but some messages failed"
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 msgstr "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
+
+#: src/components/conversation/ConversationMembersLine.tsx
+msgid "Members:"
+msgstr "Members:"
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -17510,8 +17702,8 @@ msgid "Model"
 msgstr "Model"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Model / status"
-msgstr "Model / status"
+#~ msgid "Model / status"
+#~ msgstr "Model / status"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Model & Performance"
@@ -17563,6 +17755,11 @@ msgstr "model slug"
 msgid "Models"
 msgstr "Models"
 
+#: src/components/organization/tabs/BillingTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Models & status"
+msgstr "Models & status"
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Models allowed"
@@ -17611,6 +17808,8 @@ msgstr "more"
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/ui/breadcrumb.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "More"
@@ -17632,8 +17831,16 @@ msgstr "More from {0}"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
-msgstr "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+#~ msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+#~ msgstr "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "More is given out than this budget holds."
+msgstr "More is given out than this budget holds."
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "More is given out than this budget holds. Nothing is blocked — whoever spends last is refused once the money runs out."
+msgstr "More is given out than this budget holds. Nothing is blocked — whoever spends last is refused once the money runs out."
 
 #: src/components/ui/pagination.tsx
 msgid "More pages"
@@ -17643,7 +17850,7 @@ msgstr "More pages"
 msgid "More than one readable asset matches this word. Bind it to a specific asset."
 msgstr "More than one readable asset matches this word. Bind it to a specific asset."
 
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "More…"
 msgstr "More…"
 
@@ -17698,6 +17905,10 @@ msgstr "Must be a number, or blank for no limit."
 msgid "My automations"
 msgstr "My automations"
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "My role"
+msgstr "My role"
+
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "My Schedule"
 msgstr "My Schedule"
@@ -17742,10 +17953,8 @@ msgstr "name"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
@@ -18105,6 +18314,10 @@ msgstr "New messages will appear here on the next poll."
 msgid "New name"
 msgstr "New name"
 
+#: src/components/notes/NoteViews.tsx
+msgid "New note"
+msgstr "New note"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "New option"
 msgstr "New option"
@@ -18178,7 +18391,6 @@ msgstr "New sub-team"
 msgid "New tab"
 msgstr "New tab"
 
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "New team"
 msgstr "New team"
@@ -18297,6 +18509,7 @@ msgstr "No access to this repository. Connect GitHub if it's private, or check t
 #~ msgstr "No actions configured."
 
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
+#: src/components/notes/useNoteWorker.ts
 #: src/components/terminal/HistoryModal.tsx
 msgid "No active project"
 msgstr "No active project"
@@ -18377,6 +18590,10 @@ msgstr "No bookmarks yet"
 #: src/components/token-plan/TokenPlanChip.tsx
 msgid "no budget"
 msgstr "no budget"
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "No budget"
+msgstr "No budget"
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "No budget — visitors bring their own"
@@ -19006,6 +19223,10 @@ msgstr "No models."
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
 
+#: src/components/tabs/TabStrip.tsx
+msgid "No notes yet"
+msgstr "No notes yet"
+
 #: src/components/inbound/InboundView.tsx
 msgid "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
 msgstr "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
@@ -19466,12 +19687,21 @@ msgstr "No tasks found for this session."
 msgid "No tasks yet — \"Task it\" on a message makes one."
 msgstr "No tasks yet — \"Task it\" on a message makes one."
 
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "No team"
+msgstr "No team"
+
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "No team budget yet"
 #~ msgstr "No team budget yet"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "No team matches."
+msgstr "No team matches."
+
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "No teams yet."
 msgstr "No teams yet."
 
@@ -19594,9 +19824,13 @@ msgstr "No working directory for this project."
 msgid "Nobody can log in to this sandbox, including its owner."
 msgstr "Nobody can log in to this sandbox, including its owner."
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
+
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Nobody here."
+msgstr "Nobody here."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
@@ -19901,6 +20135,10 @@ msgstr "not set"
 msgid "Not set up for publishing"
 msgstr "Not set up for publishing"
 
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Not set up yet. Add your own provider key to start spending."
+msgstr "Not set up yet. Add your own provider key to start spending."
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
 msgstr "not signed in"
@@ -19987,6 +20225,13 @@ msgstr "Note (optional)"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Note: File is missing"
 msgstr "Note: File is missing"
+
+#. placeholder {0}: notes.length
+#. placeholder {0}: target.name
+#: src/components/notes/BookmarksNotesSection.tsx
+#: src/components/notes/TabNotes.tsx
+msgid "Notes · {0}"
+msgstr "Notes · {0}"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "nothing"
@@ -20292,6 +20537,11 @@ msgstr "Occurred"
 msgid "of [{viewportTopRow}…]"
 msgstr "of [{viewportTopRow}…]"
 
+#. placeholder {0}: formatUsd(org.limit_usd)
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "of {0}"
+msgstr "of {0}"
+
 #: src/components/automations/BusView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "off"
@@ -20355,6 +20605,11 @@ msgstr "On"
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "On — anyone with the launch link can try it"
 msgstr "On — anyone with the launch link can try it"
+
+#. placeholder {0}: (note.data?.name as string) ?? ''
+#: src/components/notes/NoteViews.tsx
+msgid "on <0>{0}</0>"
+msgstr "on <0>{0}</0>"
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "On <0>{where}</0>, open a terminal."
@@ -20545,6 +20800,10 @@ msgstr "Only harness entries here — enable “Show all” to view them."
 msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
 msgstr "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Only my teams"
+msgstr "Only my teams"
+
 #: src/components/assets/dependency-sources.tsx
 msgid "Only on this device. It is never saved in the project or committed, and the project doesn't say it exists."
 msgstr "Only on this device. It is never saved in the project or committed, and the project doesn't say it exists."
@@ -20580,6 +20839,7 @@ msgstr "Oops! Page not found"
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/project-home/ProjectUploadMessageButton.tsx
@@ -20587,7 +20847,7 @@ msgstr "Oops! Page not found"
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/wiki-tip/WikiLabel.tsx
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
@@ -20595,14 +20855,13 @@ msgstr "Oops! Page not found"
 msgid "Open"
 msgstr "Open"
 
-#. placeholder {0}: CHANNEL_TITLE[channel]
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#. placeholder {0}: item.label
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
 
@@ -20694,6 +20953,10 @@ msgstr "Open a project to see its data model."
 #~ msgid "Open a project to see its schemas."
 #~ msgstr "Open a project to see its schemas."
 
+#: src/components/notes/useNoteWorker.ts
+msgid "Open a project to work on this note."
+msgstr "Open a project to work on this note."
+
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
 msgstr "Open a session on this machine"
@@ -20711,8 +20974,8 @@ msgid "Open address book"
 msgstr "Open address book"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Open admin"
-msgstr "Open admin"
+#~ msgid "Open admin"
+#~ msgstr "Open admin"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Open again"
@@ -20819,10 +21082,9 @@ msgstr "Open file"
 msgid "Open Flowpad Cloud"
 msgstr "Open Flowpad Cloud"
 
-#. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Open Flowpad on {0}"
-msgstr "Open Flowpad on {0}"
+#~ msgid "Open Flowpad on {0}"
+#~ msgstr "Open Flowpad on {0}"
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -21544,9 +21806,12 @@ msgstr "Ordered list"
 msgid "Org & teams"
 msgstr "Org & teams"
 
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Org role"
+msgstr "Org role"
+
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -21556,6 +21821,10 @@ msgstr "Organization"
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization activated"
 msgstr "Organization activated"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Organization budget"
+msgstr "Organization budget"
 
 #: src/components/organization/organization-page.tsx
 msgid "Organization created"
@@ -21568,6 +21837,10 @@ msgstr "Organization created, but the key was not saved"
 #: src/components/organization/organization-page.tsx
 msgid "Organization name…"
 msgstr "Organization name…"
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Organization spend"
+msgstr "Organization spend"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Organization WorldView"
@@ -21582,8 +21855,8 @@ msgid "Organizations and teams live in the cloud. Switch out of Local mode to ma
 msgstr "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 
 #: src/components/organization/organization-page.tsx
-msgid "Organizations, the teams inside them, and who has a budget in each."
-msgstr "Organizations, the teams inside them, and who has a budget in each."
+#~ msgid "Organizations, the teams inside them, and who has a budget in each."
+#~ msgstr "Organizations, the teams inside them, and who has a budget in each."
 
 #~ msgid "Origin"
 #~ msgstr "Origin"
@@ -22034,6 +22307,9 @@ msgstr "pending"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Pending"
 msgstr "Pending"
@@ -22048,7 +22324,6 @@ msgstr "Pending repo invitations ({invitationCount})"
 msgid "pending_count"
 msgstr "Pending: {0}"
 
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "People"
 msgstr "People"
@@ -22058,8 +22333,12 @@ msgid "People & teams"
 msgstr "People & teams"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "People with no team"
-msgstr "People with no team"
+#~ msgid "People with no team"
+#~ msgstr "People with no team"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "People without their own limit get this."
+msgstr "People without their own limit get this."
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
@@ -22091,6 +22370,11 @@ msgstr "Permission Request"
 #: src/components/settings-view/settings-utils.ts
 msgid "Permissions"
 msgstr "Permissions"
+
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Person"
+msgstr "Person"
 
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Personal"
@@ -23914,7 +24198,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -23932,10 +24216,9 @@ msgstr "Remove"
 msgid "Remove {0}"
 msgstr "Remove {0}"
 
-#. placeholder {0}: member.name
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Remove {0} from {teamName}"
-msgstr "Remove {0} from {teamName}"
+#~ msgid "Remove {0} from {teamName}"
+#~ msgstr "Remove {0} from {teamName}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -24003,7 +24286,7 @@ msgstr "Remove file"
 #~ msgstr "Remove folder"
 
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from {0}?"
 msgstr "Remove from {0}?"
 
@@ -24029,7 +24312,7 @@ msgstr "Remove from project"
 msgid "Remove from queue"
 msgstr "Remove from queue"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from team"
 msgstr "Remove from team"
 
@@ -24099,7 +24382,7 @@ msgstr "Remove this argument"
 msgid "Remove this budget and start again?"
 msgstr "Remove this budget and start again?"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove this budget?"
 msgstr "Remove this budget?"
 
@@ -24179,6 +24462,10 @@ msgstr "Removed: {0}"
 #~ msgid "removed: {0} · not found: {1}"
 #~ msgstr "removed: {0} · not found: {1}"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes {removes} from the project — the deletion is staged in git"
+msgstr "Removes {removes} from the project — the deletion is staged in git"
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Removes Flowpad's copy. The message stays where it was sent."
 msgstr "Removes Flowpad's copy. The message stays where it was sent."
@@ -24186,6 +24473,10 @@ msgstr "Removes Flowpad's copy. The message stays where it was sent."
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes: {removes}"
+msgstr "Removes: {removes}"
 
 #~ msgid "Removing & re-checking…"
 #~ msgstr "Removing & re-checking…"
@@ -24234,8 +24525,8 @@ msgstr "Rename folder"
 #~ msgstr "Rename project"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Rename this budget"
-msgstr "Rename this budget"
+#~ msgid "Rename this budget"
+#~ msgstr "Rename this budget"
 
 #: src/components/footer/PendingActionsChip.tsx
 msgid "Rename worker"
@@ -24524,6 +24815,10 @@ msgstr "Rescan docs"
 msgid "Rescanning…"
 msgstr "Rescanning…"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "reset"
+msgstr "reset"
+
 #: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
@@ -24547,6 +24842,10 @@ msgstr "Reset failed."
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
 msgstr "Reset to default"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Reset to the team default"
+msgstr "Reset to the team default"
 
 #: src/components/assets/editor/agent-trace/TraceTimeline.tsx
 msgid "reset zoom"
@@ -24634,10 +24933,13 @@ msgstr "Restart"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "Restart required — {changedCount} {0} changed"
 
-#. placeholder {0}: fields.join(', ')
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Restart required — changed since start: {0}"
-msgstr "Restart required — changed since start: {0}"
+#~ msgid "Restart required — changed since start: {0}"
+#~ msgstr "Restart required — changed since start: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {lines}"
+msgstr "Restart required — changed since start: {lines}"
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
@@ -24921,9 +25223,9 @@ msgstr "Right-to-left paragraph"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
 #: src/components/organization/member-list.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Role"
 msgstr "Role"
 
@@ -25506,6 +25808,7 @@ msgstr "Sandbox upgraded"
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -26006,6 +26309,10 @@ msgstr "Search needs one Microsoft component"
 msgid "Search nodes…"
 msgstr "Search nodes…"
 
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Search people…"
+msgstr "Search people…"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -26044,6 +26351,10 @@ msgstr "Search settings"
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "Search settings..."
 msgstr "Search settings..."
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Search teams…"
+msgstr "Search teams…"
 
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Search terminal…"
@@ -26164,7 +26475,9 @@ msgstr "Segment dur"
 #~ msgstr "select"
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: d.name || 'machine'
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Select {0}"
 msgstr "Select {0}"
 
@@ -26264,6 +26577,10 @@ msgstr "Select all {tabLabel} projects"
 msgid "Select all conversations"
 msgstr "Select all conversations"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Select all machines"
+msgstr "Select all machines"
+
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Select all matches"
 msgstr "Select all matches"
@@ -26352,7 +26669,6 @@ msgstr "Self-Summary"
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/organization/invite-row.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Send"
 msgstr "Send"
 
@@ -26408,13 +26724,13 @@ msgstr "Send failed."
 #~ msgid "Send files to cloud"
 #~ msgstr "Send files to cloud"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Send invite"
 msgstr "Send invite"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Send invites to everyone"
-msgstr "Send invites to everyone"
+#~ msgid "Send invites to everyone"
+#~ msgstr "Send invites to everyone"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -26598,7 +26914,7 @@ msgid "Session"
 msgstr "Session"
 
 #. placeholder {0}: workerLabel(worker)
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Session — {0}"
 msgstr "Session — {0}"
 
@@ -26825,7 +27141,7 @@ msgstr "Set up again"
 msgid "Set up as this name"
 msgstr "Set up as this name"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Set up budget"
 msgstr "Set up budget"
 
@@ -27176,9 +27492,9 @@ msgstr "Shared via cloud with {0}"
 msgid "Shared with {0}"
 msgstr "Shared with {0}"
 
-#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-#~ msgid "Sharing"
-#~ msgstr "Sharing"
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Sharing"
+msgstr "Sharing"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -27372,13 +27688,17 @@ msgstr "Show more"
 msgid "Show more ({0} of {total})"
 msgstr "Show more ({0} of {total})"
 
+#: src/components/tabs/TabStrip.tsx
+msgid "Show notes"
+msgstr "Show notes"
+
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Show only the current step"
 msgstr "Show only the current step"
 
-#: src/components/workers/WorkerToolbar.tsx
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Show other workers"
 msgstr "Show other workers"
 
@@ -27661,8 +27981,17 @@ msgstr "Sign in with another account"
 msgid "Sign me in automatically — this sandbox belongs to one person."
 msgstr "Sign me in automatically — this sandbox belongs to one person."
 
-#~ msgid "Sign out"
-#~ msgstr "Sign out"
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Sign out"
+msgstr "Sign out"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Sign out ({n})"
+msgstr "Sign out ({n})"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Sign out {n} machines?"
+msgstr "Sign out {n} machines?"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign out of this sandbox (you stay signed in here)"
@@ -27759,6 +28088,10 @@ msgstr "signed out"
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Signed out"
 msgstr "Signed out"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Signed out {ok} of {total} machines."
+msgstr "Signed out {ok} of {total} machines."
 
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
@@ -27981,6 +28314,10 @@ msgstr "Skipped: the automation was off"
 msgid "Skipped: the check before running found nothing"
 msgstr "Skipped: the check before running found nothing"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
+msgstr "Slack is linked. Your agent goes live as soon as its machine is ready."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
 msgstr "Slower. To wipe rows first, use Clear Index then Full."
@@ -28047,6 +28384,18 @@ msgstr "Some deployments are stale or partial"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "Some deployments have errors"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Some machines were not deleted"
+msgstr "Some machines were not deleted"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Some machines were not signed out"
+msgstr "Some machines were not signed out"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Some machines were not upgraded"
+msgstr "Some machines were not upgraded"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Some of the selected cannot be removed from the project"
@@ -28209,14 +28558,16 @@ msgstr "Spec created"
 msgid "Specific unix sockets allowed in sandbox"
 msgstr "Specific unix sockets allowed in sandbox"
 
-#. placeholder {0}: spec.label
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Spending now bills your own {0}."
-msgstr "Spending now bills your own {0}."
+#~ msgid "Spending now bills your own {0}."
+#~ msgstr "Spending now bills your own {0}."
 
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Spending now bills your own {providerLabel}."
+msgstr "Spending now bills your own {providerLabel}."
+
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Spent"
 msgstr "Spent"
 
@@ -28224,6 +28575,11 @@ msgstr "Spent"
 #: src/components/token-plan/SourceSummary.tsx
 msgid "spent {0}"
 msgstr "spent {0}"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Spent / limit"
+msgstr "Spent / limit"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Spent then"
@@ -28317,7 +28673,7 @@ msgid "Start"
 msgstr "Start"
 
 #. placeholder {0}: workerLabel(worker)
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Start {0}"
 msgstr "Start {0}"
 
@@ -29186,6 +29542,7 @@ msgstr "Tasks {openTaskCount}"
 #: src/components/contact-picker/ContactPicker.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -29195,13 +29552,17 @@ msgstr "Team"
 msgid "Team collaboration mode"
 msgstr "Team collaboration mode"
 
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/shared.tsx
 msgid "Team created"
 msgstr "Team created"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "team default"
+msgstr "team default"
+
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "Team name…"
 
@@ -29210,13 +29571,20 @@ msgid "Teammate Mode"
 msgstr "Teammate Mode"
 
 #: src/components/account/organization-panel.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "Teams"
 msgstr "Teams"
 
 #: src/pages/hub-home/HubHome.tsx
 #~ msgid "Teams and people across your org."
 #~ msgstr "Teams and people across your org."
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Teams group people and share a budget."
+msgstr "Teams group people and share a budget."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "Teams in this organization"
@@ -30039,6 +30407,10 @@ msgstr "The worker exited immediately after launch, so auto-relaunch is paused. 
 msgid "Then"
 msgstr "Then"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Then send this to the Flowpad bot:"
+msgstr "Then send this to the Flowpad bot:"
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Then: run its rule code"
 msgstr "Then: run its rule code"
@@ -30534,9 +30906,13 @@ msgstr "This organization pays on its own provider key."
 msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
 msgstr "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
 
+#: src/components/organization/tabs/OrgView.tsx
+msgid "This organization's budgets could not be read."
+msgstr "This organization's budgets could not be read."
+
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "This organization's budgets could not be read. The server answered with nothing to show."
-msgstr "This organization's budgets could not be read. The server answered with nothing to show."
+#~ msgid "This organization's budgets could not be read. The server answered with nothing to show."
+#~ msgstr "This organization's budgets could not be read. The server answered with nothing to show."
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -30851,6 +31227,10 @@ msgstr "This task looks done — you can switch its status to Done"
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
 msgstr "This task no longer exists or is unavailable."
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "This team has no budget yet."
+msgstr "This team has no budget yet."
 
 #: src/components/assets/editor/deck-template/DeckTemplateViewer.tsx
 msgid "This template has no layouts under <0>layouts/</0> yet."
@@ -31198,8 +31578,8 @@ msgstr "Tokens / week"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Tokens spent"
-msgstr "Tokens spent"
+#~ msgid "Tokens spent"
+#~ msgstr "Tokens spent"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Tokens, total"
@@ -31302,14 +31682,12 @@ msgstr "total"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "Total"
 
 #. placeholder {0}: org.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/BillingTab.tsx
 msgid "Total budget for {0}"
 msgstr "Total budget for {0}"
 
@@ -31320,6 +31698,10 @@ msgstr "Total cost"
 #: src/components/cost-dashboard/constants.ts
 msgid "Total Cost"
 msgstr "Total Cost"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Total limit"
+msgstr "Total limit"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Total Time"
@@ -31455,7 +31837,7 @@ msgstr "Triggers"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/OrgView.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -31464,6 +31846,7 @@ msgstr "Triggers"
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "Try again"
@@ -31941,8 +32324,17 @@ msgid "Updating…"
 msgstr "Updating…"
 
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade"
 msgstr "Upgrade"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Upgrade ({n})"
+msgstr "Upgrade ({n})"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Upgrade FlowPad on {n} machines?"
+msgstr "Upgrade FlowPad on {n} machines?"
 
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -31957,6 +32349,10 @@ msgstr "Upgrade FlowPad on this sandbox?"
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "Upgrade to v{0}"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Upgraded {ok} of {total} machines."
+msgstr "Upgraded {ok} of {total} machines."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Upgrading — this takes a minute or two"
@@ -32758,6 +33154,10 @@ msgstr "We couldn't reach the cloud service. Check your connection or try again 
 msgid "We skipped {count} sessions that couldn't be restored."
 msgstr "We skipped {count} sessions that couldn't be restored."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "web app"
+msgstr "web app"
+
 #: src/types/ViewType.ts
 msgid "Web App"
 msgstr "Web App"
@@ -33172,6 +33572,14 @@ msgstr "who calls whom, step by step — with sub-flows and feedback"
 msgid "Who may log in to this sandbox"
 msgstr "Who may log in to this sandbox"
 
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Who pays"
+msgstr "Who pays"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Who pays for AI usage in this organization, and how much it may spend."
+msgstr "Who pays for AI usage in this organization, and how much it may spend."
+
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr "Who this agent is — its system prompt."
 
@@ -33223,6 +33631,18 @@ msgstr "Wiki page not found on this hub."
 msgid "Wikis"
 msgstr "Wikis"
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Will delete"
+msgstr "Will delete"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Will sign out"
+msgstr "Will sign out"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Will upgrade"
+msgstr "Will upgrade"
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
 msgstr "Window (days)"
@@ -33254,6 +33674,10 @@ msgstr "Work on it in the FlowPad desktop app with your coding agents."
 #: src/pages/entry/EntityLanding.tsx
 msgid "Work on it on your machine"
 msgstr "Work on it on your machine"
+
+#: src/components/notes/NoteViews.tsx
+msgid "Work on this note"
+msgstr "Work on this note"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
@@ -33404,6 +33828,10 @@ msgstr "Would not"
 msgid "Write & plan"
 msgstr "Write & plan"
 
+#: src/components/notes/NoteViews.tsx
+msgid "Write a note…"
+msgstr "Write a note…"
+
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
 msgstr "Write it here"
@@ -33516,13 +33944,18 @@ msgstr "You already have this. Replace it with the shared version?"
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "You approved this session only — {guestName} will need your approval again next time."
 
+#. placeholder {0}: team.my_role
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "you are {0}"
+msgstr "you are {0}"
+
 #~ msgid "you are {role}"
 #~ msgstr "you are {role}"
 
 #~ msgid "You are not in any team in this organization yet."
 #~ msgstr "You are not in any team in this organization yet."
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/OrgView.tsx
 msgid "You are not on any team yet."
 msgstr "You are not on any team yet."
 
@@ -33756,8 +34189,8 @@ msgid "your Claude Code"
 msgstr "your Claude Code"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Your code comes once the machine is ready"
-msgstr "Your code comes once the machine is ready"
+#~ msgid "Your code comes once the machine is ready"
+#~ msgstr "Your code comes once the machine is ready"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
@@ -33800,6 +34233,11 @@ msgstr "Your new API key has been created. Please save it securely."
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 msgstr "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 
+#. placeholder {0}: t(spec.label)
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Your own {0} key. Usage is billed to your provider account."
+msgstr "Your own {0} key. Usage is billed to your provider account."
+
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "Your own assets, shared by every project"
 msgstr "Your own assets, shared by every project"
@@ -33811,6 +34249,10 @@ msgstr "Your own number"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Your own provider key"
 msgstr "Your own provider key"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Your own provider key. Usage is billed to your provider account."
+msgstr "Your own provider key. Usage is billed to your provider account."
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
@@ -33843,6 +34285,10 @@ msgstr "Your session has expired. Sign in again to launch."
 #~ msgid "Your session has expired. Sign in again to open this agent."
 #~ msgstr "Your session has expired. Sign in again to open this agent."
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Your session on each machine is cleared. You stay signed in here."
+msgstr "Your session on each machine is cleared. You stay signed in here."
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Your Slack account is linked. The agent will post as you."
 msgstr "Your Slack account is linked. The agent will post as you."
@@ -33851,8 +34297,9 @@ msgstr "Your Slack account is linked. The agent will post as you."
 msgid "Your status report is ready"
 msgstr "Your status report is ready"
 
-#~ msgid "Your teams"
-#~ msgstr "Your teams"
+#: src/components/organization/tabs/OrgView.tsx
+msgid "Your teams"
+msgstr "Your teams"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Your workspace is ready"
@@ -33887,23 +34334,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "credential"
-msgstr "credential"
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "dependency"
-msgstr "dependency"
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Removes {removes} from the project — the deletion is staged in git"
-msgstr "Removes {removes} from the project — the deletion is staged in git"
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Removes: {removes}"
-msgstr "Removes: {removes}"
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "web app"
-msgstr "web app"

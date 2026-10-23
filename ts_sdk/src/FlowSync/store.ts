@@ -4,7 +4,7 @@ import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
-import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
+import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX, ListPage, pageOf, withPage } from '../client';
 
 import config from '../config';
 import { IEntity } from '../IEntity';
@@ -36,7 +36,7 @@ import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
-import { ExpansionRequest, QueryRequest } from './query';
+import { ExpansionRequest, QueryRequest, WatchedQuery } from './query';
 import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
@@ -694,7 +694,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     emitEntityTag(typeId, op, data ?? null);
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
-      this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
+      this.watchedQueries.removeEntityFromResults(typeId.type, typeId, this.refillPage);
     } else if (op === 'update' && this.dataOpQueryInvalidation) {
       // `update` ops only invalidate (full network refetch) when explicitly
       // enabled. `create` no longer takes this path — the data-op already carries
@@ -750,6 +750,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           // approved. Merge into the row the list holds too.
           const row = watchedQuery.results[index];
           if (row !== this.entities.get(typeId)?.entity) this.deepAssign(row, data);
+          // An ordered list keeps its order: the changed field may be the one it is sorted by.
+          WatchQueryMap.reorder(watchedQuery);
           watchedQuery.notifyCallbacks();
         }
       }
@@ -1295,7 +1297,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public removeEntityFromCache(typeId: TypeId): void {
-    this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
+    this.watchedQueries.removeEntityFromResults(typeId.type, typeId, this.refillPage);
     const entity = this._evict(typeId);
     this._notifyAllAliases(typeId, entity, null);
   }
@@ -1978,6 +1980,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.callAction<_Req, Res>(actionInfo);
   }
 
+  /** Ask a live paged query's page again (a row of it went away and it has more behind it). */
+  private refillPage = (watchedQuery: WatchedQuery<T>): void => {
+    void this._query(watchedQuery.request)
+      .then((rows) => watchedQuery.updateResults(rows))
+      .catch((error) => console.warn(`[FlowSync] ${watchedQuery.request.type}: page refill failed`, error));
+  };
+
+  /** The `has_more` / `next_offset` of a live paged query, or undefined for an unpaged one. */
+  public getQueryPage(request: QueryRequest): ListPage | undefined {
+    const watchedQuery = this.watchedQueries.getWatchedQuery(request);
+    if (watchedQuery?.hasMore === undefined) return undefined;
+    return { has_more: watchedQuery.hasMore, next_offset: watchedQuery.nextOffset ?? 0 };
+  }
+
   public getCachedQueryResults<U extends T>(request: QueryRequest): U[] | undefined {
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     return watchedQuery?.results as U[] | undefined;
@@ -2151,7 +2167,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         queryResult.push(ref.entity as U);
       }
 
-      return queryResult;
+      // A paged answer says where the next page starts; the rows keep it.
+      const page = pageOf(entitiesJson);
+      return page ? withPage(queryResult, page) : queryResult;
     })().finally(() => this.settleIdBatch(idBatch));
 
     // Register the pending promise BEFORE awaiting it
@@ -2165,6 +2183,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const watchedQuery = this.watchedQueries.getWatchedQuery(request);
       if (epoch === this.queryEpoch && watchedQuery?.pendingPromise === queryPromise) {
         watchedQuery.results = results;
+        watchedQuery.setPage(results);
         watchedQuery.pendingPromise = undefined;
       }
       this.watchedQueries.releaseIfUnwatched(request);
@@ -2308,7 +2327,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       this._evict(typeId);
       // Keep query-driven UIs reactive even when backend doesn't emit a delete DataOp.
       // If a delete DataOp arrives later, removeEntityFromResults is idempotent.
-      this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
+      this.watchedQueries.removeEntityFromResults(typeId.type, typeId, this.refillPage);
       console.log(`🗂️ [DataManager.delete] Removed ${typeId.type}:${typeId.id} from local entities cache`);
       console.log(`🔔 [DataManager.delete] Waiting for DataOp from server for query invalidation...`);
     } catch (error) {
