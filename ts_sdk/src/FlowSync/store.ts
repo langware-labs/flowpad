@@ -1987,11 +1987,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       .catch((error) => console.warn(`[FlowSync] ${watchedQuery.request.type}: page refill failed`, error));
   };
 
-  /** The `has_more` / `next_offset` of a live paged query, or undefined for an unpaged one. */
+  /** The `has_more` / `next_offset` / `next_cursor` of a live paged query, or undefined for an unpaged one. */
   public getQueryPage(request: QueryRequest): ListPage | undefined {
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     if (watchedQuery?.hasMore === undefined) return undefined;
-    return { has_more: watchedQuery.hasMore, next_offset: watchedQuery.nextOffset ?? 0 };
+    return {
+      has_more: watchedQuery.hasMore,
+      next_offset: watchedQuery.nextOffset ?? 0,
+      next_cursor: watchedQuery.nextCursor ?? null,
+    };
   }
 
   public getCachedQueryResults<U extends T>(request: QueryRequest): U[] | undefined {
@@ -2080,7 +2084,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!this.servesType(type)) {
       if (!this.unservedTypesLogged.has(type)) {
         this.unservedTypesLogged.add(type);
-        console.warn(`[FlowSync] ${type}: not served by this backend (absent from bootstrap types); queries answer empty`);
+        console.warn(
+          `[FlowSync] ${type}: not served by this backend (absent from bootstrap types); queries answer empty`,
+        );
       }
       return [];
     }

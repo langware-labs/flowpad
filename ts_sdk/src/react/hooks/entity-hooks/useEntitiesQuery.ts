@@ -296,7 +296,8 @@ function useWatchedEntitiesQuery<T extends APIEntity<T>>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, request.type, queryJsonStringified, scopeJsonStringified, request.name]);
 
-  // The next page: the base request again at the server's `next_offset`, its rows appended.
+  // The next page: the base request again right after the last page (its `next_cursor`, as `after`), else
+  // at the server's `next_offset` — its rows appended.
   const loadMore = useCallback(async () => {
     if (!enabled || !request.query || stateRef.current.isLoadingMore) return;
     const scope = request.scope?.filter((s) => s != null) || [];
@@ -307,13 +308,23 @@ function useWatchedEntitiesQuery<T extends APIEntity<T>>(
     stateRef.current = { ...stateRef.current, isLoadingMore: true };
     notifyRef.current?.();
     try {
+      const cursor = page.next_cursor || undefined;
       const next = new QueryRequest({
         type: request.type,
-        query: new QueryFilter({ ...request.query, offset: page.next_offset }),
+        query: new QueryFilter(
+          cursor
+            ? { ...request.query, offset: undefined, after: cursor }
+            : { ...request.query, offset: page.next_offset },
+        ),
         scope,
       });
       const rows = await dataManager.query<T>(next, true);
-      const nextPage = pageOf(rows) ?? { has_more: false, next_offset: page.next_offset + rows.length };
+      let nextPage = pageOf(rows) ?? { has_more: false, next_offset: page.next_offset + rows.length };
+      if (cursor && nextPage.has_more && !nextPage.next_cursor) {
+        // A cursor page's `next_offset` counts from its cursor, not the top: there is no way to go on.
+        console.warn(`[useEntitiesQuery] ${request.type}: a cursor page ended without a next_cursor`);
+        nextPage = { ...nextPage, has_more: false };
+      }
       loadedPages.set(key, { rows: [...(loaded?.rows ?? []), ...rows], page: nextPage });
       const first = dataManager.getCachedQueryResults<T>(base) ?? [];
       stateRef.current = {

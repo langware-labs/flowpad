@@ -150,7 +150,7 @@ export type MatchMap = Record<string, string | number | boolean | null>;
 export const EVERY_ROW = { op: '$IS_NOT_NULL', operands: ['id'] };
 
 /** The keys of a filter that page, order or expand — never fields of the match. */
-const FILTER_WORDS = ['limit', 'offset', 'order_by', 'expand'];
+const FILTER_WORDS = ['limit', 'offset', 'after', 'order_by', 'expand'];
 
 /** The server's order for a page asked without one: newest first, id breaking ties. */
 const DEFAULT_PAGE_ORDER: OrderByType[] = [{ created_date: 'desc' }, { id: 'asc' }];
@@ -180,6 +180,8 @@ export class QueryFilter extends ExpansionRequest {
   match?: ExpressionNode | Partial<ExpressionNode> | MatchMap;
   limit?: number;
   offset?: number;
+  /** A page's `next_cursor`: start right after that page's last row (never together with `offset`). */
+  after?: string;
   order_by?: OrderByType | OrderByType[];
 
   constructor(data: Partial<QueryFilter>) {
@@ -193,6 +195,7 @@ export class QueryFilter extends ExpansionRequest {
       }
       this.limit = data.limit;
       this.offset = data.offset;
+      this.after = data.after;
       this.order_by = data.order_by;
     }
   }
@@ -235,7 +238,7 @@ export class QueryFilter extends ExpansionRequest {
     // present once anything else is: to the hub a filter without it IS the match (`{limit: 1}` would
     // read as "rows whose limit is 1"). "Every row" is said as `id IS NOT NULL` — an empty object
     // does not survive the query-string encoding.
-    const paging = { limit: this.limit, offset: this.offset, order_by: this.order_by };
+    const paging = { limit: this.limit, offset: this.offset, after: this.after, order_by: this.order_by };
     const kept = Object.fromEntries(
       Object.entries(paging).filter(([, value]) => value !== undefined && value !== null),
     );
@@ -450,6 +453,8 @@ export class WatchedQuery<T = any> {
   public hasMore?: boolean;
   /** A paged answer's `next_offset` — where the next page starts. */
   public nextOffset?: number;
+  /** A paged answer's `next_cursor` — sent as `after` to continue right after this page (null: by offset). */
+  public nextCursor?: string | null;
   private callbacks: Map<string, QueryCallback<T>>;
 
   /**
@@ -539,11 +544,13 @@ export class WatchedQuery<T = any> {
     this.notifyCallbacks();
   }
 
-  /** Take the `has_more` / `next_offset` a paged answer carried (an unpaged one clears them). */
+  /** Take the `has_more` / `next_offset` / `next_cursor` a paged answer carried (an unpaged one clears them). */
   setPage(rows: T[] | undefined): void {
-    const meta = rows as unknown as { has_more?: boolean; next_offset?: number } | undefined;
+    const meta = rows as unknown as
+      { has_more?: boolean; next_offset?: number; next_cursor?: string | null } | undefined;
     this.hasMore = typeof meta?.has_more === 'boolean' ? meta.has_more : undefined;
     this.nextOffset = this.hasMore === undefined ? undefined : Number(meta?.next_offset ?? rows?.length ?? 0);
+    this.nextCursor = this.hasMore === undefined ? undefined : meta?.next_cursor || null;
   }
 
   /**

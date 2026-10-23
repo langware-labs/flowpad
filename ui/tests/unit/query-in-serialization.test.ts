@@ -48,10 +48,7 @@ describe('$IN id-array serialization', () => {
   });
 
   it('round-trips through QueryFilter.parse without mangling the array', () => {
-    const filter = QueryFilter.parse(
-      { match: { op: '$IN', operands: ['id', ids] } },
-      FlowMessage.type,
-    );
+    const filter = QueryFilter.parse({ match: { op: '$IN', operands: ['id', ids] } }, FlowMessage.type);
     const json = filter.toJSON() as { filter: { match: { operands: unknown[] } } };
     expect(json.filter.match.operands).toEqual(['id', ids]);
   });
@@ -84,6 +81,14 @@ describe('paging rides inside filter on the wire', () => {
     expect(wire).not.toMatch(/[?&](limit|offset|order_by)[=[]/);
   });
 
+  it('a page asked after a cursor says filter[after] — and after is a filter word, never a match field', () => {
+    const wire = wireOf(QueryFilter.parse({ status: 'open', limit: 2, after: 'eyJ9' }, 'task'));
+    expect(wire).toContain('filter[after]=eyJ9');
+    expect(wire).toContain('filter[match][operands][0]=status');
+    expect(wire).not.toContain('operands][0]=after');
+    expect(wire).not.toMatch(/[?&]after=/);
+  });
+
   it('a page with no match still says one (every row), never a bare filter[limit]', () => {
     const wire = wireOf(new QueryFilter({ limit: 3 }));
     expect(wire).toContain('filter[match][op]=$IS_NOT_NULL');
@@ -94,7 +99,7 @@ describe('paging rides inside filter on the wire', () => {
 describe('a paged answer keeps has_more / next_offset past the unwrap', () => {
   it('rides on the rows without changing what they spread or serialize to', () => {
     const rows = withPage([{ id: 'a' }], { status: 'SUCCESS', data: [], has_more: true, next_offset: 7 });
-    expect(pageOf(rows)).toEqual({ has_more: true, next_offset: 7 });
+    expect(pageOf(rows)).toEqual({ has_more: true, next_offset: 7, next_cursor: null });
     expect(JSON.stringify(rows)).toBe('[{"id":"a"}]');
     expect([...rows]).toEqual([{ id: 'a' }]);
   });
@@ -106,7 +111,22 @@ describe('a paged answer keeps has_more / next_offset past the unwrap', () => {
   it('the response interceptor keeps it', async () => {
     const handlers = (apiClient.interceptors.response as any).handlers as { fulfilled: (r: unknown) => unknown }[];
     const unwrap = handlers.find((h) => h?.fulfilled)!.fulfilled;
-    const rows = await unwrap({ config: { method: 'get' }, data: { status: 'SUCCESS', data: [{ id: 'a' }], has_more: false, next_offset: 1 } });
-    expect(pageOf(rows)).toEqual({ has_more: false, next_offset: 1 });
+    const rows = await unwrap({
+      config: { method: 'get' },
+      data: { status: 'SUCCESS', data: [{ id: 'a' }], has_more: false, next_offset: 1 },
+    });
+    expect(pageOf(rows)).toEqual({ has_more: false, next_offset: 1, next_cursor: null });
+  });
+
+  it('keeps the next_cursor a page carried', () => {
+    const rows = withPage([{ id: 'a' }], {
+      status: 'SUCCESS',
+      data: [],
+      has_more: true,
+      next_offset: 1,
+      next_cursor: 'eyJ9',
+    });
+    expect(pageOf(rows)).toEqual({ has_more: true, next_offset: 1, next_cursor: 'eyJ9' });
+    expect(JSON.stringify(rows)).toBe('[{"id":"a"}]');
   });
 });

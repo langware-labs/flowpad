@@ -9,6 +9,7 @@ real HTTP, nothing patched. The echo hub answers every request with what it RECE
 from __future__ import annotations
 
 import asyncio
+import base64
 import gzip
 import hashlib
 import json
@@ -19,6 +20,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import uvicorn
+
+from flow_sdk.db.drivers.query import encode_cursor, page_order
 
 
 def free_port() -> int:
@@ -194,21 +197,49 @@ async def _page_answer(hub: "EchoHub", rec: Received, respond) -> None:
         return
     flt = json.loads(query.get("filter", ["{}"])[0])
     limit, offset = flt.get("limit"), int(flt.get("offset") or 0)
+    rows = hub.paged[rec.raw_path]
+    # The rows are kept in the order asked for; a page's order is total (``page_order``), and ``after`` (a
+    # page's ``next_cursor``) starts right after the row it names — as on the hub, never with an offset.
+    order = page_order(flt.get("order_by"))
+    if flt.get("after") is not None:
+        start = _cursor_start(rows, order, flt["after"]) if "offset" not in flt else None
+        if start is None:
+            detail = {"detail": "after: not a cursor for this list"}
+            await respond(json.dumps(detail).encode(), "application/json", st=400)
+            return
+        rows, base = rows[start:], start
+    else:
+        base = 0
     fail_at = hub.paged_fail_at.get(rec.raw_path)
     if hub.paged_delay:
         await asyncio.sleep(hub.paged_delay)
-    if fail_at is not None and offset >= fail_at:
+    if fail_at is not None and base + offset >= fail_at:
         await respond(json.dumps({"detail": "unavailable"}).encode(), "application/json", st=503)
         return
-    rows = hub.paged[rec.raw_path]
     envelope: dict[str, Any] = {"status": "SUCCESS", "message": "success"}
     if limit is None:
         envelope["data"] = rows
     else:
         page = rows[offset : offset + int(limit)]
-        envelope.update(data=page, has_more=offset + len(page) < len(rows), next_offset=offset + len(page))
+        has_more = offset + len(page) < len(rows)
+        cursor = encode_cursor(order, page[-1]) if has_more and page else None
+        envelope.update(data=page, has_more=has_more, next_offset=offset + len(page), next_cursor=cursor)
     await respond(json.dumps(envelope).encode(), "application/json")
     hub.paged_seconds.append(time.monotonic() - started)
+
+
+def _cursor_start(rows: list[dict], order: list[tuple[str, str]], cursor: str) -> int | None:
+    """Where the page after ``cursor`` starts in ``rows``: right after the row whose sort values it carries."""
+    try:
+        decoded = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    except Exception:  # noqa: BLE001 -- a malformed cursor is the caller's error
+        return None
+    if [tuple(term) for term in decoded.get("order", [])] != order:
+        return None
+    for i, row in enumerate(rows):
+        if [row.get(field) for field, _ in order] == decoded.get("values"):
+            return i + 1
+    return None
 
 
 def build_desktop_app():

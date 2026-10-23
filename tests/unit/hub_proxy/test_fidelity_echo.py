@@ -109,6 +109,52 @@ async def test_a_paged_answer_comes_back_with_its_paging_fields(desktop, echo_hu
     body = r.json()
     assert len(body["data"]) == 2
     assert (body["has_more"], body["next_offset"]) == (True, 4)
+    assert body["next_cursor"] is None  # these rows have no created_date: page on by offset
+
+
+def _sent_filters(echo_hub) -> list[dict]:
+    from urllib.parse import parse_qs
+
+    return [json.loads(parse_qs(r.query)["filter"][0]) for r in echo_hub.received if r.raw_path == CONVERSATIONS]
+
+
+CONVERSATIONS = "/api/v1/graph/conversation"
+
+
+async def test_a_walk_follows_the_hubs_next_cursor(desktop, echo_hub):
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    stamps = [f"2026-01-01T00:00:0{i // 2}+00:00" for i in range(5)]  # created_date ties in pairs
+    echo_hub.paged[CONVERSATIONS] = [
+        {"id": f"c{i}", "type": "conversation", "created_date": t} for i, t in enumerate(stamps)
+    ]
+    walk = await HubProxy.walk("conversation", page_size=2)
+    assert walk.complete, walk.error
+    assert [r["id"] for r in walk.rows] == ["c0", "c1", "c2", "c3", "c4"]
+    sent = _sent_filters(echo_hub)
+    assert len(sent) == 3
+    assert "after" not in sent[0] and all("after" in f and "offset" not in f for f in sent[1:])
+
+
+async def test_a_walk_without_cursors_pages_by_offset(desktop, echo_hub):
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    echo_hub.paged[CONVERSATIONS] = [{"id": f"n{i}", "type": "conversation"} for i in range(5)]  # no sort values
+    walk = await HubProxy.walk("conversation", page_size=2)
+    assert walk.complete, walk.error
+    assert [r["id"] for r in walk.rows] == [f"n{i}" for i in range(5)]
+    assert [f.get("offset") for f in _sent_filters(echo_hub)] == [None, 2, 4]
+
+
+async def test_a_cursor_the_hub_refuses_ends_the_walk_incomplete(desktop, echo_hub):
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    rows = [{"id": f"r{i}", "type": "conversation", "created_date": f"2026-01-01T00:00:0{i}+00:00"} for i in range(5)]
+    echo_hub.paged[CONVERSATIONS] = rows
+    echo_hub.paged_fail_at[CONVERSATIONS] = 2  # the page the cursor asks for is unavailable
+    walk = await HubProxy.walk("conversation", page_size=2)
+    assert not walk.complete and walk.error is not None
+    assert [r["id"] for r in walk.rows] == ["r0", "r1"]
 
 
 async def test_percent_encoded_and_unicode_segments_are_not_re_encoded(desktop, echo_hub):

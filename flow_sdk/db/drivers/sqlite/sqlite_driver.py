@@ -2214,6 +2214,10 @@ class SQLiteDBDriver(DBDriver):
             sv = 1 if value else 0
         elif isinstance(value, str) and value.lower() in ("true", "false"):
             sv = 1 if value.lower() == "true" else 0
+        elif isinstance(value, (int, float)):
+            # A number stays a number: json_extract answers INTEGER/REAL, and SQLite orders every number
+            # before every text, so a bound '10' made `count > 9` false and broke keyset paging.
+            sv = value
         else:
             sv = str(value) if value is not None else None
 

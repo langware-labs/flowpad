@@ -6,13 +6,14 @@ import logging
 import os
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 
 DEFAULT_BROWSE_LIMIT = 20
 import types
 from typing import (
     Any,
+    AsyncIterator,
     ClassVar,
     Dict,
     List,
@@ -121,6 +122,12 @@ def suppress_store():
     finally:
         _SUPPRESS_STORE.reset(token)
 
+
+# Ids a ``mirror_batch`` read as absent INSIDE its writer transaction. While that transaction holds
+# the SQLite writer lock no other writer can create them, so a create of one of these ids is a
+# genuine create and ``_merge_stored_context_links`` has nothing to read back. Consumed on use: a
+# second fresh instance for the same id in the batch is create-over-existing again and merges.
+_VERIFIED_ABSENT: "ContextVar[set[str] | None]" = ContextVar("_verified_absent", default=None)
 
 _MIRROR_DELETE: "ContextVar[bool]" = ContextVar("_mirror_delete", default=False)
 
@@ -2604,6 +2611,30 @@ class Entity(DBEntity):
         with remote_reflection():
             return await existing.save(someone_typeid, notify=notify)
 
+    @classmethod
+    @asynccontextmanager
+    async def mirror_batch(cls, ids: list[str]) -> AsyncIterator[dict[str, Entity]]:
+        """Mirror many hub rows in ONE writer transaction; yields the local rows of ``ids`` read inside it.
+
+        A first sync mirrors thousands of rows, and one by one each paid its own transaction (BEGIN
+        IMMEDIATE + commit) and a read-back of a row the caller had just found absent. Here the batch
+        reads ``ids`` once, under the writer lock, so the rows it yields are current and the ones it
+        does not are absent until it commits — their creates skip the read-back
+        (``_VERIFIED_ABSENT``). Pass each yielded row (or ``None``) as ``mirror_from_hub(existing=…)``.
+        Announcements go out at the commit. Keep batches small: the writer lock is held throughout.
+        """
+        wanted = [str(i) for i in ids if i]
+        async with _one_write():
+            found: dict[str, Entity] = {}
+            if wanted:
+                rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted])))
+                found = {str(r.id): r for r in rows if r.id}
+            token = _VERIFIED_ABSENT.set({i for i in wanted if i not in found})
+            try:
+                yield found
+            finally:
+                _VERIFIED_ABSENT.reset(token)
+
     async def on_hub_mirror(self, hub_row: dict, *, created: bool, changed: set[str]) -> bool:
         """What a type derives from a hub row beyond its accepted fields. True when it changed this row."""
         return False
@@ -2862,7 +2893,11 @@ class Entity(DBEntity):
         # prune drop a link on purpose, and unioning would make removal
         # impossible.
         if was_create:
-            await self._merge_stored_context_links()
+            verified_absent = _VERIFIED_ABSENT.get()
+            if verified_absent is not None and str(self.id) in verified_absent:
+                verified_absent.discard(str(self.id))
+            else:
+                await self._merge_stored_context_links()
         create_target = await self._prepare_for_storage()
         suppress_store = _SUPPRESS_STORE.get()
 

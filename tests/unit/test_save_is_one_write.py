@@ -82,3 +82,55 @@ async def test_seeding_the_capabilities_is_one_writer_acquisition(monkeypatch):
 
     assert len(seeded) > 1, "the sweep wrote nothing — the test proves nothing"
     assert len(taken) == 1, f"seeding {len(seeded)} rows took the writer lock {len(taken)} times"
+
+
+@async_context
+async def test_a_mirror_batch_is_one_writer_acquisition_for_all_its_rows(monkeypatch):
+    """A first conversation sync mirrors thousands of hub rows. One transaction per row (plus a
+    read-back of each row just found absent) cost ~8 ms a row; a batch commits them together."""
+    import uuid
+
+    from flow_sdk.builtin.conversation import Conversation
+
+    rows = [{"id": str(uuid.uuid4()), "title": f"batched {n}"} for n in range(5)]
+    taken: list[int] = []
+    real = conn_mod._begin_immediate
+    monkeypatch.setattr(conn_mod, "_begin_immediate", lambda conn: (taken.append(1), real(conn))[1])
+
+    async with Conversation.mirror_batch([r["id"] for r in rows]) as found:
+        assert found == {}
+        for row in rows:
+            await Conversation.mirror_from_hub(row, existing=None, notify=False)
+    assert len(taken) == 1, f"a batch of {len(rows)} mirrors took the writer lock {len(taken)} times"
+    for row in rows:
+        stored = await Conversation.get_by_id(row["id"])
+        assert stored is not None and stored.title == row["title"] and stored.remote is True
+
+
+@async_context
+async def test_a_mirror_batch_still_keeps_links_on_a_create_over_an_existing_row():
+    """Only ids the batch itself read as absent skip the read-back. A fresh instance saved over a row
+    the batch found — or a second fresh instance for an id it just created — still merges the stored
+    context links instead of narrowing them."""
+    import uuid
+
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.db.drivers.db_base_record import TypeId
+
+    held_id, new_id = str(uuid.uuid4()), str(uuid.uuid4())
+    link = TypeId(type="project", id=str(uuid.uuid4()))
+    held = Conversation(id=held_id, title="held")
+    held.shared_context_entities = [link]
+    await held.save(notify=False)
+
+    async with Conversation.mirror_batch([held_id, new_id]) as found:
+        assert set(found) == {held_id}
+        await Conversation(id=held_id, title="re-created").save(notify=False)
+        first = Conversation(id=new_id, title="new")
+        first.shared_context_entities = [link]
+        await first.save(notify=False)
+        await Conversation(id=new_id, title="new again").save(notify=False)
+
+    for conv_id in (held_id, new_id):
+        stored = await Conversation.get_by_id(conv_id)
+        assert [str(t) for t in stored.shared_context_entities or []] == [str(link)], conv_id
