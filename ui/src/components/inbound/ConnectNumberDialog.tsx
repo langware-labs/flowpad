@@ -10,10 +10,12 @@ import {
 } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
+import { errorMessage } from '@src/lib/error-message';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
+import { Chip } from './Chip';
 import { DestinationPicker } from './DestinationPicker';
 import {
   type DestinationOption,
@@ -23,12 +25,14 @@ import {
   PROVIDER_TITLE,
   VENDOR,
 } from './inbound-model';
-import { errorText } from './use-inbound';
 
 type Step = 'choose' | 'link' | 'own' | 'connected';
 
 /** How often a pending claim (a code waiting to be sent, a URL waiting for its first delivery) is re-read. */
 const WAIT_POLL_MS = 3000;
+
+/** The own-account form: the account's key at the vendor, its credential, and how deliveries are signed. */
+const EMPTY_FORM = { key: '', token: '', graphUrl: '', appSecret: '', verifyToken: '' };
 
 /**
  * Connect a number or bot: through Flowpad's own account on the vendor (a code proves the caller's account), or the
@@ -53,11 +57,8 @@ export function ConnectNumberDialog({
   const [step, setStep] = useState<Step>('choose');
   const [provider, setProvider] = useState<InboundProvider>('whatsapp');
   const [route, setRoute] = useState<OwnRoute | null>(null);
-  const [phoneId, setPhoneId] = useState('');
-  const [token, setToken] = useState('');
-  const [graphUrl, setGraphUrl] = useState('');
-  const [appSecret, setAppSecret] = useState('');
-  const [verifyToken, setVerifyToken] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
+  const field = (name: keyof typeof EMPTY_FORM) => (value: string) => setForm((f) => ({ ...f, [name]: value }));
   const [fallback, setFallback] = useState<ChannelRouteTarget | null>(null);
   const [made, setMade] = useState<InboundClaim | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,19 +69,13 @@ export function ConnectNumberDialog({
     setStep('choose');
     setMade(null);
     setError(null);
-    setPhoneId('');
-    setToken('');
-    setGraphUrl('');
-    setAppSecret('');
-    setVerifyToken('');
+    setForm(EMPTY_FORM);
   }, [open]);
 
   const options = optionsFor(provider);
   useEffect(() => {
     if (open) setFallback(options.find((o) => o.target.kind === 'desktop')?.target ?? null);
-    // Re-preselect when the vendor (and so its channels) changes, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, provider, options.length]);
+  }, [open, options]);
 
   // A pending code until the sender proves it; a fresh URL until its first signed delivery.
   const waiting = !!made && (made.status === 'pending' || (step === 'connected' && !made.deliveries));
@@ -112,7 +107,7 @@ export function ConnectNumberDialog({
       setMade(await api.chain(body));
       setStep(next);
     } catch (e) {
-      setError(errorText(e));
+      setError(errorMessage(e, String(e)));
     } finally {
       setBusy(false);
     }
@@ -123,11 +118,11 @@ export function ConnectNumberDialog({
     void run(
       accountChainBody({
         provider,
-        phoneNumberId: phoneId,
-        credential: token,
-        appSecret,
-        graphUrl: route?.ownServer ? graphUrl : '',
-        verifyToken: route?.verifyToken ? verifyToken : '',
+        phoneNumberId: form.key,
+        credential: form.token,
+        appSecret: form.appSecret,
+        graphUrl: route?.ownServer ? form.graphUrl : '',
+        verifyToken: route?.verifyToken ? form.verifyToken : '',
         target: fallback ?? undefined,
       }),
       'connected',
@@ -136,7 +131,7 @@ export function ConnectNumberDialog({
   const title = PROVIDER_TITLE[provider];
   /** The words for one own-account route: what the vendor calls the account, its credential and its signing secret. */
   const ownText = (route: string) => {
-    if (provider === 'telegram') {
+    if (route === 'bot') {
       return {
         choice: t`Your own bot`,
         choiceDetail: t`A bot you made with @BotFather. Telegram calls the hub's webhook URL; replies go out as your bot.`,
@@ -167,7 +162,7 @@ export function ConnectNumberDialog({
     };
   };
 
-  const ownReady = !!route && !!phoneId.trim() && !!token.trim() && (!route.ownServer || !!graphUrl.trim());
+  const ownReady = !!route && !!form.key.trim() && !!form.token.trim() && (!route.ownServer || !!form.graphUrl.trim());
   const text = route ? ownText(route.id) : null;
 
   return (
@@ -181,13 +176,13 @@ export function ConnectNumberDialog({
           <DialogTitle className="text-base font-normal text-muted-foreground">
             <Trans>Connect a number</Trans> ›{' '}
             <b className="text-foreground">
-              {step === 'link'
-                ? t`${title} › Flowpad's number`
-                : step === 'own'
-                  ? t`${title} › Your own number`
-                  : step === 'connected'
-                    ? t`${title} › Connected`
-                    : title}
+              {step === 'choose'
+                ? title
+                : {
+                    link: t`${title} › Flowpad's number`,
+                    own: t`${title} › Your own number`,
+                    connected: t`${title} › Connected`,
+                  }[step]}
             </b>
           </DialogTitle>
         </DialogHeader>
@@ -196,18 +191,9 @@ export function ConnectNumberDialog({
           <div className="flex flex-col gap-3 text-sm">
             <div className="flex gap-2">
               {INBOUND_PROVIDERS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  data-testid={`inbound-provider-${p}`}
-                  onClick={() => setProvider(p)}
-                  className={cn(
-                    'rounded-full px-2 py-0.5 text-xs font-medium',
-                    provider === p ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                  )}
-                >
+                <Chip key={p} active={provider === p} testId={`inbound-provider-${p}`} onClick={() => setProvider(p)}>
                   {PROVIDER_TITLE[p]}
-                </button>
+                </Chip>
               ))}
             </div>
             <p className="text-muted-foreground">
@@ -259,15 +245,15 @@ export function ConnectNumberDialog({
             <Field
               testId="inbound-field-phone-id"
               label={text.key}
-              value={phoneId}
-              onChange={setPhoneId}
+              value={form.key}
+              onChange={field('key')}
               hint={text.keyHint}
             />
             <Field
               testId="inbound-field-token"
               label={text.credential}
-              value={token}
-              onChange={setToken}
+              value={form.token}
+              onChange={field('token')}
               secret
               hint={text.credentialHint}
             />
@@ -275,8 +261,8 @@ export function ConnectNumberDialog({
               <Field
                 testId="inbound-field-graph-url"
                 label={t`Graph server`}
-                value={graphUrl}
-                onChange={setGraphUrl}
+                value={form.graphUrl}
+                onChange={field('graphUrl')}
                 placeholder="https://graph.example.com/v23.0"
                 hint={t`Where your server answers Meta's API. https only.`}
               />
@@ -284,8 +270,8 @@ export function ConnectNumberDialog({
             <Field
               testId="inbound-field-app-secret"
               label={text.secret}
-              value={appSecret}
-              onChange={setAppSecret}
+              value={form.appSecret}
+              onChange={field('appSecret')}
               secret
               hint={text.secretHint}
             />
@@ -293,8 +279,8 @@ export function ConnectNumberDialog({
               <Field
                 testId="inbound-field-verify-token"
                 label={t`Verify token`}
-                value={verifyToken}
-                onChange={setVerifyToken}
+                value={form.verifyToken}
+                onChange={field('verifyToken')}
                 hint={t`A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours.`}
               />
             )}
@@ -345,7 +331,9 @@ export function ConnectNumberDialog({
               <Trans>Now send your messages to the hub. Paste these into your server's webhook settings:</Trans>
             </p>
             <CopyRow testId="inbound-connected-url" value={made.url} />
-            {verifyToken.trim() && <CopyRow testId="inbound-connected-verify-token" value={verifyToken.trim()} />}
+            {form.verifyToken.trim() && (
+              <CopyRow testId="inbound-connected-verify-token" value={form.verifyToken.trim()} />
+            )}
             <p className="text-xs text-muted-foreground">
               <Trans>
                 Verify token: when you save the URL, your server calls it once with this word and the hub echoes back a

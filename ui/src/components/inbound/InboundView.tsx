@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   type ChannelRouteTarget,
@@ -15,9 +15,10 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
-import { cn } from '@src/lib/utils';
+import { errorMessage } from '@src/lib/error-message';
 import { AddRuleDialog } from './AddRuleDialog';
 import { ConnectNumberDialog } from './ConnectNumberDialog';
+import { Chip } from './Chip';
 import { RouteCheck } from './RouteCheck';
 import {
   type DestinationOption,
@@ -28,7 +29,7 @@ import {
   destinationOptions,
   optionFor,
 } from './inbound-model';
-import { errorText, useDestinationLabels, useHereInstance, useInboundChannels, useInboundClaims } from './use-inbound';
+import { useDestinationLabels, useInboundChannels, useInboundClaims } from './use-inbound';
 
 type RuleEdit = { number: InboundClaim; rule: InboundClaim | null };
 
@@ -40,8 +41,8 @@ type RuleEdit = { number: InboundClaim; rule: InboundClaim | null };
 export function InboundView({ api = InboundWebhooks }: { api?: InboundApi }) {
   const { t } = useLingui();
   const { numbers, error, loading, refresh, openedAt } = useInboundClaims(api);
-  const here = useHereInstance(api);
   const channels = useInboundChannels(!isHubOnly());
+  const here = channels.find((c) => c.instanceId)?.instanceId ?? null;
   const labels = useDestinationLabels();
   const [vendor, setVendor] = useState<string>('all');
   const [connectOpen, setConnectOpen] = useState(false);
@@ -49,13 +50,16 @@ export function InboundView({ api = InboundWebhooks }: { api?: InboundApi }) {
   const [checking, setChecking] = useState<InboundNumber | null>(null);
   const [removing, setRemoving] = useState<{ claim: InboundClaim; rules: number; isRule: boolean } | null>(null);
 
-  const optionsFor = useMemo(
-    () =>
-      (provider: string, withDefault: boolean): DestinationOption[] =>
-        destinationOptions(provider, channels, here, labels, { withDefault }),
-    [channels, here, labels],
-  );
-  const numberOptionsFor = useMemo(() => (provider: string) => optionsFor(provider, false), [optionsFor]);
+  // Built once per vendor and default flag, not per row on every render.
+  const optionsFor = useMemo(() => {
+    const cache = new Map<string, DestinationOption[]>();
+    return (provider: string, withDefault = true): DestinationOption[] => {
+      const key = `${provider}:${withDefault}`;
+      if (!cache.has(key)) cache.set(key, destinationOptions(provider, channels, labels, { withDefault }));
+      return cache.get(key)!;
+    };
+  }, [channels, labels]);
+  const numberOptionsFor = useCallback((provider: string) => optionsFor(provider, false), [optionsFor]);
 
   const counts = useMemo(() => {
     const by: Record<string, number> = {};
@@ -86,12 +90,11 @@ export function InboundView({ api = InboundWebhooks }: { api?: InboundApi }) {
       await api.remove(claim.id);
       await refresh();
     } catch (e) {
-      notify.error({ title: errorText(e) });
+      notify.error({ title: errorMessage(e, String(e)) });
     }
   };
 
-  const editing = ruleEdit;
-  const editingIsFallback = !!editing?.rule && editing.rule.id === editing.number.id;
+  const editingIsFallback = !!ruleEdit?.rule && ruleEdit.rule.id === ruleEdit.number.id;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-10" data-testid="inbound-view">
@@ -170,13 +173,13 @@ export function InboundView({ api = InboundWebhooks }: { api?: InboundApi }) {
         onDone={() => void refresh()}
         api={api}
       />
-      {editing && (
+      {ruleEdit && (
         <AddRuleDialog
           open
           onOpenChange={(open) => !open && setRuleEdit(null)}
-          number={editing.number}
-          rule={editing.rule}
-          options={optionsFor(editing.number.provider, !editingIsFallback)}
+          number={ruleEdit.number}
+          rule={ruleEdit.rule}
+          options={optionsFor(ruleEdit.number.provider, !editingIsFallback)}
           onDone={() => void refresh()}
           api={api}
         />
@@ -408,30 +411,4 @@ function StatusText({ status }: { status: InboundClaim['status'] }) {
   if (status === 'pending') return <Trans>waiting to be proven</Trans>;
   if (status === 'lapsed') return <Trans>lapsed</Trans>;
   return <Trans>proven</Trans>;
-}
-
-function Chip({
-  active,
-  onClick,
-  testId,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  testId: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      className={cn(
-        'rounded-full px-2 py-0.5 text-xs font-medium',
-        active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-      )}
-    >
-      {children}
-    </button>
-  );
 }

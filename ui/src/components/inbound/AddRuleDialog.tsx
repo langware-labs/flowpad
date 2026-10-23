@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { type ChannelRouteTarget, type InboundApi, type InboundClaim, InboundWebhooks, ruleChainBody } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { errorMessage } from '@src/lib/error-message';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { cn } from '@src/lib/utils';
+import { Chip } from './Chip';
 import { DestinationPicker } from './DestinationPicker';
 import { type DestinationOption, claimTitle } from './inbound-model';
-import { errorText } from './use-inbound';
 
 /**
  * Add a rule under a number (one sender or one group → one place), or — given `rule` — change where an existing
@@ -57,17 +57,11 @@ export function AddRuleDialog({
       onDone();
       onOpenChange(false);
     } catch (e) {
-      setError(errorText(e));
+      setError(errorMessage(e, String(e)));
     } finally {
       setBusy(false);
     }
   };
-
-  const chip = (active: boolean) =>
-    cn(
-      'rounded-full px-2 py-0.5 text-xs font-medium',
-      active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-    );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,30 +85,15 @@ export function AddRuleDialog({
                   <Trans>Match</Trans>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    data-testid="inbound-rule-kind-user"
-                    className={chip(kind === 'user')}
-                    onClick={() => setKind('user')}
-                  >
+                  <Chip active={kind === 'user'} testId="inbound-rule-kind-user" onClick={() => setKind('user')}>
                     <Trans>One sender</Trans>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="inbound-rule-kind-group"
-                    className={chip(kind === 'group')}
-                    onClick={() => setKind('group')}
-                  >
+                  </Chip>
+                  <Chip active={kind === 'group'} testId="inbound-rule-kind-group" onClick={() => setKind('group')}>
                     <Trans>One group</Trans>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="inbound-rule-kind-keyword"
-                    disabled
-                    className={cn(chip(false), 'cursor-not-allowed opacity-60')}
-                  >
+                  </Chip>
+                  <Chip active={false} disabled testId="inbound-rule-kind-keyword">
                     <Trans>keyword / time — not supported</Trans>
-                  </button>
+                  </Chip>
                 </div>
               </div>
               <label className="flex flex-col gap-1">

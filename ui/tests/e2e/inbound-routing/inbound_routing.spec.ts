@@ -93,10 +93,10 @@ test.describe.serial('inbound routing: waha → UI-configured chain → agent �
     cfg = await json(`${CTL}/ctl/config`);
     group = (await post(`${CTL}/ctl/group`, { chat: GROUP_CHAT, people: [S, T] })).group_id;
     // A clean slate: no claim left on this number from an earlier run.
-    const mine = await json(`${BE}/data_source/inbound/mine`);
+    const mine = await json(`${BE}/webhook/mine`);
     for (const w of mine.data?.webhooks ?? []) {
       if (w.claim?.kind === 'account' && w.claim?.key === cfg.phone_number_id)
-        await fetch(`${BE}/data_source/inbound/${w.id}`, { method: 'DELETE' });
+        await fetch(`${BE}/webhook/${w.id}`, { method: 'DELETE' });
     }
     page = await browser.newPage();
   });
