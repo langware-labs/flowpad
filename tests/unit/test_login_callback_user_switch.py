@@ -34,6 +34,21 @@ def _secrets_enabled():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _unarmed_box():
+    """These cases are an UNARMED box (an armed one refuses a switch without the gate secret).
+    Another test may have left this instance's local gate token; set it aside and put it back."""
+    from flow_sdk.instance_settings import cookie_gate
+
+    path = cookie_gate._token_path()
+    saved = path.read_bytes() if path.exists() else None
+    cookie_gate.clear_cookie_gate()
+    yield
+    if saved is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(saved)
+
+
 @pytest.fixture
 def finalize_login():
     with patch("flow_sdk.cli.auth.cloud_login._finalize_login", new=AsyncMock()) as spy:
