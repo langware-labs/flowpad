@@ -174,3 +174,25 @@ async def test_strict_without_a_login_is_signed_out_before_anything_is_sent(hub,
         await HubProxy.call("POST", "task", payload={}, strict=True)
     assert e.value.kind is HubFailureKind.SIGNED_OUT
     assert hub.sent == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        lambda req: httpx.Response(200, json={"status": "FAIL", "message": "no"}),
+        lambda req: httpx.Response(200, json={"status": "SUCCESS", "data": {}}),
+        lambda req: httpx.Response(200, json={"status": "SUCCESS"}),
+    ],
+    ids=["fail_envelope", "not_a_list", "no_data"],
+)
+async def test_a_walk_that_got_no_list_is_not_complete(hub, answer):
+    """A caller prunes on a complete walk; a page that listed nothing real must never read as one."""
+    hub.handler = answer
+    walk = await HubProxy.walk("organization")
+    assert walk.complete is False and walk.rows == [] and walk.error is not None
+
+
+async def test_an_empty_list_is_a_complete_walk(hub):
+    hub.handler = lambda req: httpx.Response(200, json={"status": "SUCCESS", "data": []})
+    walk = await HubProxy.walk("organization")
+    assert walk.complete is True and walk.rows == []

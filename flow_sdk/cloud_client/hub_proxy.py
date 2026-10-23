@@ -300,13 +300,19 @@ class HubProxy:
                     "GET", url, params={"filter": _json.dumps(page_filter)}, timeout=timeout or DEFAULT_TIMEOUT
                 )
                 out.page_seconds.append(time.monotonic() - started)
-                data = _unwrap(resp, method="GET", url=url)
+                # Strict: a 200 whose envelope says FAIL is a failed page, not an empty one.
+                _unwrap(resp, method="GET", url=url, strict=True)
                 body = resp.json()
+                # Read ``data`` itself: an empty list is a real (empty) page, not "no answer".
+                data = body.get("data") if isinstance(body, dict) else body
+                if not isinstance(data, list):
+                    # Not a list answer: nothing was listed, so nothing may be read as absent.
+                    raise HubError(200, f"list answer is not a list ({type(data).__name__})", kind=HubFailureKind.SERVER_ERROR)
             except HubError as e:
                 logger.info("[hub] walk %s stopped after %d page(s): %s", entity_type, out.pages, e)
                 out.error = e
                 return out
-            rows = data if isinstance(data, list) else []
+            rows = data
             out.rows.extend(r for r in rows if isinstance(r, dict))
             out.pages += 1
             has_more = body.get("has_more") if isinstance(body, dict) else None
