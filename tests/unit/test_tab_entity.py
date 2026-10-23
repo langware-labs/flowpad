@@ -14,6 +14,7 @@ Real DB, no mocks (session SQLite fixture from tests/conftest.py).
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -122,6 +123,29 @@ async def test_close_is_soft_and_reopen_reshows() -> None:
     reopened = await ensure_tab(p)
     assert reopened.id == tab.id
     assert reopened.visible is True
+
+
+@pytest.mark.asyncio
+async def test_project_home_landing_does_not_resurrect_closed_content_tab() -> None:
+    """A credential opened in the project-scoped Assets view shares that view's
+    pointer with Project home. Closing it, then landing on Project home (a project
+    switch from Assets), must not bring the closed 'whatsapp' chip back."""
+    project_id = str(uuid.uuid4())
+    scoped_assets = json.dumps({
+        "viewType": "assets",
+        "pointer": "",
+        "options": {"scope-mode": "project", "scope-activeProjectId": project_id},
+    })
+    credential_tab = await ensure_tab(
+        scoped_assets, target_type="credential", target_id=str(uuid.uuid4()), name="whatsapp",
+    )
+    await credential_tab.close()
+
+    landing = await ensure_tab(scoped_assets, project_id=project_id)
+
+    stored = await Tab.get_one({"id": landing.id})
+    assert stored.name != "whatsapp", "Project home landing re-showed the closed credential tab"
+    assert stored.target_type is None, "the landing tab kept the closed credential as its target"
 
 
 @pytest.mark.asyncio
