@@ -132,10 +132,11 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
     by = {(r.kind, r.name): r for r in reqs}
 
     assert [r.kind for r in reqs] == sorted((r.kind for r in reqs), key=[REQUIREMENT_PACK, REQUIREMENT_GAP].index)
-    # A connection the sources act through IS a credential of the project (kind: oauth), declared with the
-    # union of their scopes — an indexed asset with a row, listed like any other credential.
+    # A connection the sources act through is listed with the union of their scopes; collecting declares
+    # nothing (the setup step or the source's create does), so with no template it is the project's need.
     google = by[(REQUIREMENT_PACK, "google")]
-    assert google.is_oauth and google.provider == "google" and google.typeid.startswith("credential-")
+    assert google.is_oauth and google.provider == "google" and not google.declared
+    assert [r.kind for r in google.roots] == ["data_source", "data_source"], "the sources are its roots"
     assert google.used_by == ["gdrive source", "gcs source"], "one connection, every requester"
     assert set(google.scopes) == {
         "https://www.googleapis.com/auth/drive.readonly",
@@ -144,8 +145,7 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
         "https://www.googleapis.com/auth/drive",
     }
     assert google.satisfied is False and google.vars == [], "no grant here; nothing to type"
-    declared = await Credential.get("google", project)
-    assert declared.scope == "project" and declared.is_oauth and set(declared.scopes) == set(google.scopes)
+    assert await credential_service.credential_named("google", project) is None, "collect is read-only"
 
     stripe = by[(REQUIREMENT_PACK, "stripe")]
     assert stripe.used_by == ["project"] and stripe.declared and [v.env_var for v in stripe.missing] == ["STRIPE_KEY"]

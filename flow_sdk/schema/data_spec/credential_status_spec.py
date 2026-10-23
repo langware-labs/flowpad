@@ -173,6 +173,8 @@ class CredentialStatusRowSpec(DataSpec):
     setup_skipped: Optional[SetupSkipSpec] = None
     #: Where its folder is on this machine — what "Skip → Always" would remove.
     asset_ref: str = ""
+    #: A root installed it (``CredentialSpec.derived``); else the project authored it.
+    derived: bool = False
     #: The ONE_OF way set up here (``Credential.chosen``); ``""`` when none is chosen yet.
     setup_choice: str = ""
     #: How each ONE_OF way of several variables is offered (``CredentialSpec.ways``).

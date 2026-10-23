@@ -185,6 +185,10 @@ class CredentialSpec(DataSpec):
     #: The wizards this credential's values are obtained with, in order (``setup_stage_spec.py``).
     #: Empty: the default ask-store-check wizard ``flow project setup`` compiles from ``vars``.
     setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
+    #: An installed asset (a data source, an agent) declared this credential from a template for a need of its
+    #: own. Which ones is derived on every read (``project_setup``): it is needed while a root needs it, and goes
+    #: with the last. ``False``: the project authored it itself — it is its own root.
+    derived: bool = False
 
     @field_validator("setup_wizards")
     @classmethod

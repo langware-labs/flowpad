@@ -33887,3 +33887,23 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "credential"
+msgstr "credential"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "dependency"
+msgstr "dependency"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes {removes} from the project — the deletion is staged in git"
+msgstr "Removes {removes} from the project — the deletion is staged in git"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes: {removes}"
+msgstr "Removes: {removes}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "web app"
+msgstr "web app"
