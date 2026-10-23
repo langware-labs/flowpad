@@ -101,24 +101,10 @@ def test_project_rename_reaches_the_hub_through_the_reflected_update():
         assert LocalProject.is_api_field(key), f"{key!r} must be a field the hub also declares"
 
 
-def test_merge_hub_entity_into_local_applies_both_slots():
-    """The return leg: a hub echo of either slot merges onto the local row."""
-    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
-
-    p = Project(name="old name", fs_storage_mount_path="/tmp/demo_merge")
-    updates = _merge_hub_entity_into_local(p, {"name": "new name"})
-    assert updates == {"name": "new name"}
-
-    t = Task(title="old title")
-    updates = _merge_hub_entity_into_local(t, {"title": "new title"})
-    assert updates == {"title": "new title"}
-
-
-def test_merge_skips_a_slot_that_did_not_change():
-    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
-
-    p = Project(name="same", fs_storage_mount_path="/tmp/demo_merge_noop")
-    assert _merge_hub_entity_into_local(p, {"name": "same"}) == {}
+def test_a_hub_echo_carries_both_slots_back():
+    """The return leg: a hub echo of either slot is taken from the hub."""
+    assert Project.accepted_from_hub({"name": "new name"}) == {"name": "new name"}
+    assert Task.accepted_from_hub({"title": "new title"}) == {"title": "new title"}
 
 
 # ── inbound mirror keeps whichever slot the hub filled ───────────────────────

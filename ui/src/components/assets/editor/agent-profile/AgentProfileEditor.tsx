@@ -180,7 +180,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   // Every MCP server in the project is attached (the temporary policy); the list itself is shown in
   // the agent-resources menu, not here.
   const commitMcp = useCallback((ids: string[]) => void save({ mcp_servers: ids }), [save]);
-  useAgentMcpSync(profile.mcp_servers, commitMcp);
+  useAgentMcpSync(profile.mcp_servers, commitMcp, !hub);
 
   const commit = useCallback(
     <K extends keyof AgentDocumentPatch>(key: K, value: AgentDocumentPatch[K]) => {

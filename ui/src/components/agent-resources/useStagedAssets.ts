@@ -4,7 +4,7 @@ import type { AssetDescriptor } from '@sdk';
 import { useProcessAssets, type UseProcessAssetsResult } from '@src/components/asset-manager';
 
 /** Staging offers exactly the occurrences the backend says can be attached. */
-export function useStagedAssets(type: string): UseProcessAssetsResult {
+export function useStagedAssets(type: string, { enabled = true }: { enabled?: boolean } = {}): UseProcessAssetsResult {
   // The pane rides the active project; `useProcessAssets` falls back to
   // `@local` on its own when there is none, so this stays undefined rather
   // than guessing an id here.
@@ -12,7 +12,7 @@ export function useStagedAssets(type: string): UseProcessAssetsResult {
 
   // Keyed on the type STRING, not an array literal, so the fetch is rebuilt
   // only when the caller actually asks for a different type.
-  const options = useMemo(() => ({ projectId, types: [type] }), [projectId, type]);
+  const options = useMemo(() => ({ projectId, types: [type], enabled }), [projectId, type, enabled]);
 
   // Destructured, NOT kept as one object: `useProcessAssets` returns a fresh
   // literal every render, so memoizing on it would hand back a new descriptors

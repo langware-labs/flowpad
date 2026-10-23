@@ -1,13 +1,14 @@
 """Decisions through the hub ``APIEndpoint`` marked ``decision``: spec, dialect, discovery, decide.
 
-The hub is doubled at its two seams (``hub_get`` for discovery, ``hub_invoke_raw`` for the
-call). The Jev bodies are recorded from the live API (``jev-1.13.0``), not invented.
+The hub is doubled at its two seams (``HubProxy.try_call`` for discovery, ``HubProxy.send`` — the invoke
+passthrough — for the call). The Jev bodies are recorded from the live API (``jev-1.13.0``), not invented.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 from cryptography.fernet import Fernet
 
@@ -163,16 +164,20 @@ def _hub(monkeypatch, *, listing, catalog, invoke=None):
 
     asked: list = []
 
-    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+    async def _hub_get(_method, entity_type, entity_id=None, action=None, **kwargs):
         asked.append((entity_type, action))
         return listing if action is None else catalog
 
-    async def _invoke(entity_type, entity_id, sub_path, payload, **kwargs):
-        asked.append(("invoke", entity_id, sub_path, payload))
-        return invoke
+    async def _send(method, url, *, json=None, **kwargs):
+        # .../api/v1/graph/api_endpoint/<id>/invoke/<sub_path>
+        head, _, sub_path = str(url).partition("/invoke/")
+        assert method == "POST" and sub_path, url
+        asked.append(("invoke", head.rsplit("/", 1)[-1], sub_path, json))
+        status, body = invoke
+        return httpx.Response(status, json=body, request=httpx.Request(method, str(url)))
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
-    monkeypatch.setattr(HubProxy, "invoke_raw", staticmethod(_invoke))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "send", staticmethod(_send))
     return asked
 
 

@@ -26,6 +26,13 @@ class FakeHub:
         self.stores: dict[str, dict[str, tuple[bytes, int]]] = {}
         self.tick = 0
 
+    async def call(self, method, entity_type, entity_id=None, action=None, sub_path=None, *, payload=None, **kw):
+        """``HubProxy.call``: GETs to ``get``, POSTs to ``post``."""
+        if method == "GET":
+            return await self.get(entity_type, entity_id, action, sub_path, scope=kw.get("scope"), params=kw.get("params"))
+        assert method == "POST", method
+        return await self.post(entity_type, payload, entity_id, action, sub_path)
+
     async def get(self, entity_type, entity_id=None, action=None, sub_path=None, *, scope=None, params=None):
         files = self.stores.get(entity_id)
         if entity_type != "data_store" or files is None:
@@ -71,8 +78,7 @@ async def driver():
 @pytest.fixture
 def hub(monkeypatch, driver):
     fake = FakeHub()
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake.get))
-    monkeypatch.setattr(HubProxy, "post", staticmethod(fake.post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake.call))
     return fake
 
 

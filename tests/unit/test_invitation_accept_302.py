@@ -35,8 +35,8 @@ async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(mon
     monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
     monkeypatch.setattr(
         HubProxy,
-        "get",
-        AsyncMock(side_effect=AssertionError("hub_get must not be called on a login redirect")),
+        "try_call",
+        AsyncMock(side_effect=AssertionError("the hub must not be read on a login redirect")),
     )
 
     location = (
@@ -49,9 +49,9 @@ async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(mon
     mock_resp.text = ""
 
     send = AsyncMock(return_value=mock_resp)
-    call_url = AsyncMock(side_effect=AssertionError("hub calls must not be made on a login redirect"))
+    call = AsyncMock(side_effect=AssertionError("hub calls must not be made on a login redirect"))
 
-    with patch.object(HubProxy, "send", send), patch.object(HubProxy, "call_url", call_url):
+    with patch.object(HubProxy, "send", send), patch.object(HubProxy, "call", call):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",
@@ -60,7 +60,7 @@ async def test_handle_invitation_accept_302_to_login_fails_and_skips_cleanup(mon
     assert isinstance(result, ApiFailResponse)
     assert "login" in result.message.lower()
     assert "login.html" in result.message
-    call_url.assert_not_called()
+    call.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -75,15 +75,15 @@ async def test_handle_invitation_accept_302_to_flow_message_runs_cleanup(monkeyp
 
     monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
 
-    # Capture what hub_get is called with — confirms Location parsing yielded
+    # Capture what HubProxy.try_call is called with — confirms Location parsing yielded
     # the right FM id and that the cleanup path proceeded past the rejection.
     fm_lookups = []
 
-    async def fake_hub_get(entity_type, entity_id, *args, **kwargs):
+    async def fake_hub_get(_method, entity_type, entity_id, *args, **kwargs):
         fm_lookups.append((entity_type, entity_id))
         return {}  # Empty dict; further cleanup will no-op.
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_hub_get))
 
     fm_id = "c48e18bf-617c-4da9-a5a0-7c517c17fd50"
     mock_resp = MagicMock(spec=httpx.Response)
@@ -93,14 +93,14 @@ async def test_handle_invitation_accept_302_to_flow_message_runs_cleanup(monkeyp
 
     with (
         patch.object(HubProxy, "send", AsyncMock(return_value=mock_resp)),
-        patch.object(HubProxy, "call_url", AsyncMock(return_value={})),
+        patch.object(HubProxy, "call", AsyncMock(return_value={})),
     ):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",
         )
 
-    # The Location parser fed the FM id into hub_get to resolve the parent conv.
+    # The Location parser fed the FM id into HubProxy.try_call to resolve the parent conv.
     assert fm_lookups and fm_lookups[0][1] == fm_id
     # Action returned the resolved typeids in its success payload.
     assert getattr(result, "status", None) != "fail"
@@ -143,7 +143,7 @@ async def test_learn_address_book_accepts_hub_member_keys(monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_invitation_accept_learns_conversation_participants(monkeypatch):
     """Accepting a conversation invitation learns every roster email as a contact."""
-    import flow_sdk.utils.hub as hub_utils
+    import flow_sdk.cloud_client.transport.hub_http as hub_utils
     from flow_sdk.app.actions import flow_message_action
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.invitation import Invitation
@@ -176,10 +176,10 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
     ]
     get_urls: list[str] = []
 
-    async def fake_call_url(method, url, **_kwargs):
+    async def fake_call(method, entity_type, entity_id=None, action=None, sub_path=None, **_kwargs):
         if method == "POST":
             return {}
-        get_urls.append(str(url))
+        get_urls.append("/graph/" + "/".join(str(getattr(p, "value", p)) for p in (entity_type, entity_id, action) if p))
         return hub_gets.pop(0)
 
     learned = AsyncMock()
@@ -198,7 +198,7 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
     monkeypatch.setattr(Conversation, "get_one", fake_get_one)
 
     with patch.object(HubProxy, "send", AsyncMock(return_value=accept_resp)), \
-            patch.object(HubProxy, "call_url", staticmethod(fake_call_url)):
+            patch.object(HubProxy, "call", staticmethod(fake_call)):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
             someone_typeid="user-1",
@@ -258,7 +258,7 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     })
 
     with patch.object(HubProxy, "send", AsyncMock(return_value=accept_resp)), \
-            patch.object(HubProxy, "call_url", project_get):
+            patch.object(HubProxy, "call", project_get):
         result = await flow_message_action.handle_invitation_accept(
             {"invitation_id": inv_id},
             someone_typeid=f"user-{uuid4()}",
@@ -271,8 +271,8 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     assert project.include_dirs == []
     assert await Folder.get_by_id(origin.key()) is None, "accept must not mint context Folder rows"
     project_get.assert_awaited_once()
-    method, url = project_get.await_args.args
-    assert method == "GET" and str(url).endswith(f"/graph/project/{project_id}")
+    method, entity_type, entity_id = project_get.await_args.args
+    assert (method, str(getattr(entity_type, "value", entity_type)), entity_id) == ("GET", "project", project_id)
 
 
 @pytest.mark.asyncio

@@ -125,10 +125,12 @@ async def test_upload_is_mirrored_to_hub_and_continues_locally(monkeypatch):
 
     sent = []
 
-    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+    async def _fake_upload(et, entity_id, action, sub_path=None, *, files, **_kw):
+        assert action == "fs"
+        filename, content, _ctype = files["uploaded_file"]
         sent.append({"et": et, "id": entity_id, "name": filename, "content": content, "sub_path": sub_path})
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
     _patch_request_files(monkeypatch, {"uploaded_file": _upload_file("a.txt", b"hello")})
 
     result = await mod._reflect_fs_to_hub(BuiltinEntityType.TASK, "task-1", "upload")
@@ -156,7 +158,7 @@ async def test_upload_stream_is_rewound_for_the_local_handler(monkeypatch):
     async def _fake_upload(*a, **kw):
         return None
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
     up = _upload_file("a.txt", b"hello")
     _patch_request_files(monkeypatch, {"uploaded_file": up})
 
@@ -175,7 +177,7 @@ async def test_non_upload_fs_actions_are_not_mirrored(monkeypatch):
     async def _boom(*a, **kw):  # pragma: no cover - must never run
         raise AssertionError("non-upload fs action must not hit the hub")
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_boom))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_boom))
 
     for sub_path in ("download/a.txt", "browse", "delete/a.txt", None):
         assert await mod._reflect_fs_to_hub(BuiltinEntityType.TASK, "t", sub_path) is mod.REFLECT_CONTINUE_LOCAL
@@ -198,12 +200,12 @@ class _Storage:
 
 
 def _patch_hub_get(monkeypatch, payload):
-    import flow_sdk.utils.hub as hub
+    import flow_sdk.cloud_client.transport.hub_http as hub
 
     async def _fake_hub_get(*a, **kw):
         return payload
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_fake_hub_get))
     monkeypatch.setattr(hub, "hub_base_url", lambda: "https://hub.test")
 
 
@@ -305,10 +307,12 @@ async def test_share_push_reads_via_entity_relative_path(monkeypatch, tmp_path):
 
     sent = []
 
-    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+    async def _fake_upload(et, entity_id, action, sub_path=None, *, files, **_kw):
+        assert action == "fs"
+        filename, content, _ctype = files["uploaded_file"]
         sent.append((entity_id, filename, content))
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
     monkeypatch.setattr(fsa, "get_entity_storage", lambda _tid: _PrefixStorage(tmp_path, folder))
     monkeypatch.setattr(
         fsa.VFSPath, "from_entity_path", staticmethod(lambda *a, **k: SimpleNamespace(abs_vfspath=folder))
@@ -376,10 +380,12 @@ async def test_share_push_publishes_markdown_under_canonical_hub_name(monkeypatc
     entity = _FileBackedEntity(entity_type="markdown", record=record)
     sent = []
 
-    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+    async def _fake_upload(et, entity_id, action, sub_path=None, *, files, **_kw):
+        assert action == "fs"
+        filename, content, _ctype = files["uploaded_file"]
         sent.append((entity_id, filename, content, sub_path))
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
 
     assert await push_entity_files_to_hub(entity) == 1
     assert sent == [(entity.id, "document.md", b"# Wiki doc", "upload")]
@@ -401,10 +407,12 @@ async def test_share_push_recursively_preserves_skill_folder_paths(monkeypatch, 
     entity = _FolderBackedEntity(entity_type="skill", record=record)
     sent = []
 
-    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+    async def _fake_upload(et, entity_id, action, sub_path=None, *, files, **_kw):
+        assert action == "fs"
+        filename, content, _ctype = files["uploaded_file"]
         sent.append((filename, content, sub_path))
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
 
     assert await push_entity_files_to_hub(entity) == 2
     assert sent == [
@@ -430,10 +438,12 @@ async def test_share_push_does_not_publish_symlinks_outside_skill(monkeypatch, t
     entity = _FolderBackedEntity(entity_type="skill", record=record)
     sent = []
 
-    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+    async def _fake_upload(et, entity_id, action, sub_path=None, *, files, **_kw):
+        assert action == "fs"
+        filename, content, _ctype = files["uploaded_file"]
         sent.append(filename)
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
 
     assert await push_entity_files_to_hub(entity) == 1
     assert sent == ["SKILL.md"]
@@ -449,15 +459,15 @@ async def test_create_child_pushes_existing_record_bytes_after_hub_create(monkey
     posted = []
     pushed = []
 
-    async def _fake_call_url(method, url, *, json=None, **_kw):
-        posted.append((method, url, json))
+    async def _fake_call(method, entity_type, entity_id=None, action=None, sub_path=None, *, payload=None, **_kw):
+        posted.append((method, (entity_type, entity_id, action), payload))
 
     async def _fake_push(entity):
         pushed.append(entity)
         return 1
 
     monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="key"))
-    monkeypatch.setattr(HubProxy, "call_url", staticmethod(_fake_call_url))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_fake_call))
     monkeypatch.setattr(fs_actions, "push_entity_files_to_hub", _fake_push)
 
     project = Project(id=str(uuid.uuid4()), name="Shared", remote=True)
@@ -487,10 +497,12 @@ async def test_share_push_sends_task_attachments_from_its_folder(monkeypatch, tm
 
     sent = []
 
-    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+    async def _fake_upload(et, entity_id, action, sub_path=None, *, files, **_kw):
+        assert action == "fs"
+        filename, content, _ctype = files["uploaded_file"]
         sent.append((filename, content, sub_path))
 
-    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
+    monkeypatch.setattr(HubProxy, "upload", staticmethod(_fake_upload))
     class _EmptyEmbedded:  # nothing left in the old embedded store
         async def list_dir(self, _root):
             return []

@@ -26,7 +26,7 @@ the fix removes. Tree identity is read from the inode, so a same-path rebuild is
 caught even when the bytes are identical.
 
 Real bundle from the real packer, real pull chokepoint, real unpack. The ONLY
-seam is ``hub_get`` — the network boundary — serving the real bundle's bytes
+seam is ``HubProxy.download`` — the network boundary — serving the real bundle's bytes
 from disk instead of a remote hub. The fault is never simulated.
 
 # do not increase timeout without approval
@@ -92,7 +92,7 @@ async def test_redundant_pull_leaves_the_staged_tree_intact(tmp_path):
 
     with patch.object(
         HubProxy,
-        "get",
+        "download",
         AsyncMock(return_value=bundle),
     ) as hub:
         # Pull #1 — the automatic one fired when the conversation opens.

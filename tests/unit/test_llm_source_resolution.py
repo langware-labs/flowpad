@@ -493,7 +493,7 @@ async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
         calls.append("hub")
         return None
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_no_network))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_no_network))
     await _resolve_source(_process())
     assert calls == [], "resolution reached for the hub"
 

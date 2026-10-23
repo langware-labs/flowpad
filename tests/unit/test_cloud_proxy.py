@@ -126,3 +126,17 @@ async def test_cloudproxy_reuses_one_hub_connection_across_requests(tmp_path, mo
         await hub_http.close_hub_client()
         server.close()
         await server.wait_closed()
+
+
+def test_this_machines_credentials_never_reach_the_hub():
+    """A forwarded request carries the hub bearer only: the local session cookie and the gate
+    secret stay on this machine."""
+    forwarded = HubProxy.outbound_headers(
+        [
+            (b"Cookie", b"flowpad_session=local"),
+            (b"X-Cookie-Gate", b"gate-secret"),
+            (b"Authorization", b"Bearer stale"),
+            (b"Content-Type", b"application/json"),
+        ]
+    )
+    assert forwarded == [(b"Content-Type", b"application/json")]

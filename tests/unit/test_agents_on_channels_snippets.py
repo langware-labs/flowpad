@@ -77,21 +77,21 @@ async def test_channel_routing_group_example(whatsapp, monkeypatch, account_clai
     await account.save()
     posted = []
 
-    async def hub_get(entity, entity_id=None, action=None, *args, **kwargs):
-        assert (entity, action) == ("webhook", "mine")
+    async def fake_try_call(method, entity, entity_id=None, action=None, *args, **kwargs):
+        assert (method, entity, action) == ("GET", "webhook", "mine")
         return {"webhooks": [{
             "id": "account-claim", "provider": "whatsapp", "status": "active",
             "claim": {"kind": "account", "key": account.config["phone_number_id"]},
             "target": {"kind": "desktop", "instance_id": "routing-instance", "data_source_id": str(account.id)},
         }] if account_claimed else []}
 
-    async def hub_post(entity, payload, entity_id=None, action=None, *args, **kwargs):
-        assert (entity, action) == ("webhook", "chain")
+    async def fake_call(method, entity, entity_id=None, action=None, *args, payload=None, **kwargs):
+        assert (method, entity, action) == ("POST", "webhook", "chain")
         posted.append(payload)
         return {"id": "group-claim"}
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(hub_get))
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(fake_try_call))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "routing-instance")
     group_id = "Y2FwaV9ncm91cDoxMjM0NTY3ODkwMTIzNDU6MTIwMzYzMDAwMDAwMDAwMDAx"
     page = "channel-webhook-routing.md"

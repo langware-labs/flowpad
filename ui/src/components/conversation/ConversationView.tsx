@@ -58,6 +58,7 @@ import {
 } from './conversation-items';
 import { indexCalls, runningProcessCalls } from './process-call';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -176,7 +177,7 @@ export function ConversationView({
     () => (agentId ? new Set(agentScope?.flow_message_ids ?? []) : null),
     [agentId, agentScope?.flow_message_ids],
   );
-  const pointers = useMemo(
+  const storedPointers = useMemo(
     () =>
       (conversation?.conversationMessageIds ?? []).filter(
         (pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id),
@@ -208,7 +209,8 @@ export function ConversationView({
     });
   }, [conversationId, localUser?.id]);
   const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
-    enabled: !!conversationId,
+    // Drafts are a desktop feature (local rows); the hub page has none to show.
+    enabled: !!conversationId && !isHubOnly(),
   });
 
   // All FlowMessages in this conversation, fetched in ONE live query (replaces
@@ -228,6 +230,25 @@ export function ConversationView({
   } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
+  // The order of the messages: the conversation's pointer log (``message_ids``) where it keeps
+  // one; a conversation without one (the hub keeps no such log) is ordered by the messages
+  // themselves — otherwise it read "No messages yet".
+  const pointers = useMemo(
+    () =>
+      storedPointers.length
+        ? storedPointers
+        : conversationMessages
+            .map((m) => ({ id: m.id, type: FlowMessage.type, ts: String(m.created_date ?? '') }))
+            .sort((a, b) => {
+              // An undated message sorts last; equal times keep a stable order by id.
+              const ta = Date.parse(a.ts);
+              const tb = Date.parse(b.ts);
+              const ka = Number.isNaN(ta) ? Infinity : ta;
+              const kb = Number.isNaN(tb) ? Infinity : tb;
+              return ka === kb ? a.id.localeCompare(b.id) : ka - kb;
+            }),
+    [conversationMessages, storedPointers],
+  );
   // `tab_switch` ready point for a conversation tab: the first frame after its
   // message window arrived (or failed). Once per mounted conversation.
   const readyTracedRef = useRef<string | null>(null);
@@ -283,7 +304,8 @@ export function ConversationView({
   // `messagesById` query above renders whatever lands, so no per-message
   // backfill loop or remount-keying is needed.
   useEffect(() => {
-    if (!conversationId) return;
+    // The hub page reads the hub itself; there is no local copy to pull into.
+    if (!conversationId || isHubOnly()) return;
     void syncConversationMessages(conversationId, agentId ?? undefined).catch(() => {
       // Hub offline / not configured — the local query still renders what we
       // already have; avoid surfacing transient sync failures to the user.
@@ -762,7 +784,8 @@ export function ConversationView({
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
   // "Task it": the tasks made from this conversation's messages (one query), and the one-click create.
-  const messageTasks = useMessageTasks(conversationId);
+  // Task it is a desktop feature: the hub page links no tasks to a conversation.
+  const messageTasks = useMessageTasks(isHubOnly() ? null : conversationId);
   // A task thread's message names its task (the channel puts it in the message's shared context), so the
   // thread shows — and acts on — the same chips as the message the task was made from. One pass: which
   // task each message names, and so which task each thread is about.
@@ -856,8 +879,10 @@ export function ConversationView({
     setHubSyncing(true);
     try {
       await Promise.allSettled([
-        fetchConversations(agentId ?? undefined),
-        syncConversationMessages(conversationId, agentId ?? undefined),
+        // Pulling the hub into the local copy is the desktop's; the hub page reads the hub itself.
+        ...(isHubOnly()
+          ? []
+          : [fetchConversations(agentId ?? undefined), syncConversationMessages(conversationId, agentId ?? undefined)]),
         refreshMembers(),
       ]);
       await refetch();

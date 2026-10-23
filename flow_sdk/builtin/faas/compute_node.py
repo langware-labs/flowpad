@@ -2069,7 +2069,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 "analysis",
                 None,
                 "search",
-                json={"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
+                payload={"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
                 strict=True,
             )
             await self._apply_cloud_results(result.get("results", []))

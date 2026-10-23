@@ -56,8 +56,9 @@ class _Hub:
         self.submitted: list[dict] = []
         self.files: dict[str, bytes] = {}
 
-    async def __call__(self, method, kind, entity_id, action, payload=None, *, raw=False):
+    async def __call__(self, method, kind, entity_id, action, *, payload=None, raw=False, anonymous=False, **_kw):
         assert kind == "diagnosis_request" and entity_id == REQUEST_ID
+        assert anonymous, "the id is the credential: no hub login is sent"
         if action == "brief":
             return self.brief
         if action.startswith("brief/attachment/"):
@@ -123,7 +124,7 @@ async def _diagnosis(_cls, _id):
 
 def _invoke(hub, calls, stdin):
     with (
-        patch.object(HubProxy, "anonymous_request", hub),
+        patch.object(HubProxy, "call", hub),
         patch.object(diagnose_cmd, "_run_diagnose", _recording_run(calls)),
         patch.object(diagnose_cmd, "_load_recorded_diagnosis", _diagnosis),
     ):

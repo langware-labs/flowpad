@@ -58,7 +58,7 @@ async def test_the_steps_run_before_the_diagnosis_whichever_way_they_were_approv
         seen["extra"] = prompt_extra
         return 1  # stop before the result is loaded -- the order is what is under test
 
-    monkeypatch.setattr(HubProxy, "anonymous_request", staticmethod(hub))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub))
     monkeypatch.setattr(diagnose_cmd, "_ask", lambda q, **_: next(answers))
     monkeypatch.setattr(diagnose_cmd, "_run_diagnose", run_diagnose)
 

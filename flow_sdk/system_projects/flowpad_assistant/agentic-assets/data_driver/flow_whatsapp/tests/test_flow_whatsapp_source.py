@@ -117,7 +117,7 @@ async def test_the_hub_saying_no_is_no_claim_and_a_hub_that_cannot_answer_is_una
     async def refuse(*a, **kw):
         raise HubError(status, "nope")
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(refuse))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     if gone:
         assert await AppHub().claim("C1") is None
     else:

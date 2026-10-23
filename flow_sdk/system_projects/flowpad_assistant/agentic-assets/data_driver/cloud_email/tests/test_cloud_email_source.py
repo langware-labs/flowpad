@@ -286,14 +286,15 @@ class TestTheAppMailbox:
 
     @staticmethod
     def _hub(monkeypatch, *, error=None, calls=None):
-        async def fake_get(entity_type, entity_id=None, action=None, sub_path=None, *, params=None, **_):
+        async def fake_get(method, entity_type, entity_id=None, action=None, sub_path=None, *, params=None, **_):
+            assert method == "GET", method
             if calls is not None:
                 calls.append((entity_id, action, sub_path))
             if error is not None:
                 raise error
             return {"messages": [LIST_ITEM], "count": 1} if sub_path == "messages" else {**LIST_ITEM, "text": FULL_TEXT}
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
 
     async def test_it_lists_by_agent_and_hydrates_with_an_encoded_id(self, monkeypatch):
         calls: list = []

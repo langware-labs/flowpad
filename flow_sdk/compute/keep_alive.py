@@ -117,7 +117,7 @@ async def send_keep_alive_if_in_use() -> bool:
     try:
         # The hub addresses an entity by its bare id; the typeid form is a 422 there.
         node_id = node_typeid.removeprefix("compute_node-")
-        await HubProxy.post("compute_node", {}, entity_id=node_id, action="keep-alive")
+        await HubProxy.call("POST", "compute_node", node_id, "keep-alive", payload={})
     except HubError as e:
         # Not retried: the next tick is a minute away, and a missed report costs at
         # most the difference between the active and idle windows.

@@ -15,6 +15,5 @@ def case(monkeypatch, tmp_path):
     hub.stores["store-1"] = {path: (body, n) for n, (path, body) in enumerate(
         (("a.md", b"# a\n"), ("b/c.md", b"# c\n"), ("d.md", b"# d\n")), start=1)}
     hub.tick = 3
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub.get))
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub.post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub.call))
     yield {"config": {"store_id": "store-1"}, "fields": {"reflect": "copy"}}

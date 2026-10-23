@@ -374,8 +374,13 @@ async def _open_ticket(conv: Conversation, opening: FlowMessage) -> Optional[Hub
         "attachment": [a.model_dump(mode="json") for a in (opening.attachment or [])],
         **({"body_status": "uploading"} if opening.has_body() else {}),
     }
-    data = await HubProxy.request(
-        "POST", BuiltinEntityType.PROJECT, conv.remote_project_id, "start_guest_conversation", payload=payload
+    data = await HubProxy.call(
+        "POST",
+        BuiltinEntityType.PROJECT,
+        conv.remote_project_id,
+        "start_guest_conversation",
+        payload=payload,
+        strict=True,
     )
     if (data or {}).get("id") != conv.id:
         return HubFailure(

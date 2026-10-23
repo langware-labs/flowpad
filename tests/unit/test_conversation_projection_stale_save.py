@@ -45,7 +45,7 @@ async def _arrive(conv_id: str, children: list[dict]) -> Conversation:
     """One real children-list sync + projection; returns the stored row."""
     with patch.object(
         HubProxy,
-        "get",
+        "try_call",
         new=AsyncMock(return_value=children),
     ):
         assert await _fetch_conversation_messages(conv_id, someone_typeid=None) is True

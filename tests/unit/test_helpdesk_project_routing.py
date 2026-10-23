@@ -152,13 +152,15 @@ async def test_ticket_list_uses_direct_context_order_not_desk_row_order(tmp_path
             return_value=_request_info({"project_id": target.id}),
         ),
         patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(HubProxy, "request", hub),
+        patch.object(HubProxy, "call", hub),
     ):
         response = await fma.helpdesk_tickets_list()
 
     assert response.status == ApiResponseStatus.SUCCESS.value
     assert response.data["project_id"] == FIRST_CONTEXT_QUEUE
-    hub.assert_awaited_once_with("GET", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "helpdesk_conversations")
+    hub.assert_awaited_once_with(
+        "GET", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "helpdesk_conversations", strict=True
+    )
     fallback.assert_not_awaited()
 
 

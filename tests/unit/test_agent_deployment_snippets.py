@@ -180,8 +180,8 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     async def deploy(entity, environment=None, *, provider=None, require=None):
         return {"deployment_id": "dep-1", "entity": entity.name, "environment": environment or "production"}
 
-    async def plan(etype, payload, eid=None, action=None, **_):
-        assert action == "plan_deployment"
+    async def plan(method, etype, eid=None, action=None, *, payload=None, **_):
+        assert (method, action) == ("POST", "plan_deployment")
         return {"deployment": {"id": "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "name": "researcher (e2b)",
                                "environment": payload["environment"],
                                "target": {"provider": "e2b", "scope": "agent"}}}
@@ -189,7 +189,7 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     monkeypatch.setattr(flow_sdk.auth, "login", login)
     monkeypatch.setattr(Agent, "ensure_on_hub", ensure_on_hub)
     monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
-    monkeypatch.setattr(HubProxy, "post", staticmethod(plan))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(plan))
     ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
     assert published == [("researcher", str(ns["actor"]))], "publish comes first, as the caller"
     assert ns["receipt"]["entity"] == "researcher"

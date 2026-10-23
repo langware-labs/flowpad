@@ -98,46 +98,38 @@ def test_should_reflect_false_when_logged_out(logged_out):
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_merge_hub_entity_skips_roster_and_unchanged_scalars(monkeypatch):
-    """``_merge_hub_entity_into_local`` returns the differing api fields, skipping
-    unchanged scalars, non-fields, and the denylisted roster (``members``)."""
-    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
+def test_a_conversation_takes_from_the_hub_only_what_the_hub_owns():
+    """The one mirror reads the declarations: the hub's owner and roster land under their local
+    names (the roster in the local shape), local-only fields and unknown keys never do."""
+    from flow_sdk.builtin.conversation import Conversation
 
-    e = _make_entity(remote=True, members=[{"user_id": "u1"}])
-    e.title = "old"
-    updates = _merge_hub_entity_into_local(
-        e,
+    accepted = Conversation.accepted_from_hub(
         {
-            "title": "new",  # scalar, changed → applied
-            "git_sharing_enabled": False,  # scalar, unchanged → skipped
-            "members": [{"user_id": "hub"}],  # denylisted roster → skipped
-            "not_a_field_xyz": "z",  # not an api field → skipped
-        },
+            "title": "new",
+            "initiated_by": "owner-1",
+            "participants": [{"user_id": "u1", "user_email": "A@X.test"}],
+            "message_count": 9,  # a local projection — never from the hub
+            "archived_at": "2026-01-01T00:00:00Z",  # this user's own state — never from the hub
+            "not_a_field_xyz": "z",
+        }
     )
-    assert updates == {"title": "new"}
+    assert accepted["title"] == "new" and accepted["created_by"] == "owner-1"
+    assert accepted["members"] == [{"user_id": "u1", "user_email": "A@X.test"}]
+    assert Conversation(id="c1", members=accepted["members"]).members[0]["email"] == "a@x.test"
+    assert not {"message_count", "archived_at", "not_a_field_xyz"} & set(accepted)
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_merge_hub_entity_merges_hub_modeled_collection_but_skips_roster():
-    """The hub is the source of truth, so a hub-modeled COLLECTION field (a task's
-    ``artifacts``) merges onto the local row for immediate reflection — while the
-    denylisted roster/projection collections (``members`` / ``message_ids``) are
-    never overwritten by a bare entity PUT response."""
+def test_a_hub_null_clears_only_in_an_answer():
+    """A synced row's ``null`` means the hub has none (a guest ticket's title); the hub's answer
+    to an edit is its whole row, so there it clears."""
     from flow_sdk.builtin.task import Task
-    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
 
-    t = Task(id="task-x", title="old", remote=True)
     arts = [{"path": "/p/repo", "label": "repo", "git_origin": {"kind": "git"}}]
-    updates = _merge_hub_entity_into_local(
-        t,
-        {
-            "title": "new",  # scalar, changed → applied
-            "artifacts": arts,  # hub-modeled collection → applied
-            "members": [{"user_id": "h"}],  # denylisted roster → skipped
-            "message_ids": ["m1"],  # denylisted projection → skipped
-        },
-    )
-    assert updates == {"title": "new", "artifacts": arts}
+    synced = Task.accepted_from_hub({"title": None, "artifacts": arts, "message_ids": ["m1"]})
+    assert synced == {"artifacts": arts}
+    answered = Task.accepted_from_hub({"title": None, "artifacts": arts}, nulls_clear=True)
+    assert answered == {"title": None, "artifacts": arts}
 
 
 @pytest.mark.timeout(30)
@@ -145,7 +137,7 @@ def test_normalize_preserves_hub_only_fields():
     """invitation_id, invitation_method, picture, and any future hub-added key
     must pass through the normalizer unchanged so downstream callers (pending-
     invite UX, role-management UI) don't lose data at the dispatcher boundary."""
-    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response
+    from flow_sdk.server.routes._hub_reflect import normalize_hub_response
 
     hub_resp = [
         {
@@ -160,7 +152,7 @@ def test_normalize_preserves_hub_only_fields():
             "joined_at": "2026-05-27T10:00:00Z",  # hypothetical future field
         }
     ]
-    out = _normalize_hub_response("members", hub_resp)
+    out = normalize_hub_response("members", hub_resp)
     assert len(out) == 1
     e = out[0]
     # Hub legacy keys translated to client form.
@@ -184,9 +176,9 @@ def test_normalize_client_key_wins_over_hub_legacy():
     """If a (future) hub emits both ``email`` and ``user_email`` during a
     migration, the client-form key wins so the renamed contract stays
     authoritative."""
-    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response
+    from flow_sdk.server.routes._hub_reflect import normalize_hub_response
 
-    out = _normalize_hub_response(
+    out = normalize_hub_response(
         "members",
         [{"email": "client@example.com", "user_email": "legacy@example.com"}],
     )
@@ -198,15 +190,15 @@ def test_normalize_client_key_wins_over_hub_legacy():
 def test_normalize_passes_through_non_list_and_non_members():
     """Empty dict (hub returns no data), non-members actions, and non-dict
     entries must round-trip unchanged."""
-    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response
+    from flow_sdk.server.routes._hub_reflect import normalize_hub_response
 
     # Non-members action: untouched.
-    assert _normalize_hub_response("rename", {"title": "x"}) == {"title": "x"}
+    assert normalize_hub_response("rename", {"title": "x"}) == {"title": "x"}
     # Members action but non-list (hub returned {} via the empty-list coercion
     # in hub.py:191 — caller will handle this defensively).
-    assert _normalize_hub_response("members", {}) == {}
+    assert normalize_hub_response("members", {}) == {}
     # Members action with a non-dict entry (defensive: don't crash).
-    out = _normalize_hub_response("members", [{"user_email": "a@x.com"}, "weird"])
+    out = normalize_hub_response("members", [{"user_email": "a@x.com"}, "weird"])
     assert out[0]["email"] == "a@x.com"
     assert out[1] == "weird"
 

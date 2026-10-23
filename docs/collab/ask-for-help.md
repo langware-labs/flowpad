@@ -121,7 +121,7 @@ The `remote` flag no longer drives the predicate, and `sender_id` is never used 
 - login (the LOGGED_IN transition);
 - WS (re)connect;
 - `resend`;
-- the **reachability edge**: the first successful `hub_request` after a recorded failure drains the outbox once. This is
+- the **reachability edge**: the first successful `HubProxy.call` after a recorded failure drains the outbox once. This is
   event-driven, not a timer.
 
 **SENT heal path.** The hub's `_fanout_status_update` push marks SENT on helpdesk rows too.
@@ -146,7 +146,7 @@ The `remote` flag no longer drives the predicate, and `sender_id` is never used 
   `invalidate_hub_login(...)` so the UI flips.
 - It never sends an unauthenticated request.
 
-**`hub_request(...)`** runs on the shared `FlowpadClient`, so the hooks apply. It raises `HubError(.failure: HubFailure)`. HTTP
+**`HubProxy.call(...)`** runs on the shared `FlowpadClient`, so the hooks apply. It raises `HubError(.failure: HubFailure)`. HTTP
 status is classified first and the envelope is used as detail:
 
 | What came back | `HubFailureKind` |
@@ -220,7 +220,7 @@ Each phase lands green before the next starts. The hub ships first.
 | Phase | Repo | Work | Closes |
 |---|---|---|---|
 | P0 | hub | `add_message` replay/409 · `start_guest_conversation` ids + global collision check + capability flag · membership same-role no-op · `UNAUTHENTICATED` · `fs/upload target_not_found` · BodyStatus from `flow_sdk` · guest body upload (D5) · policy pin + security tests | prerequisites for 1, 2, 8, 9, 10, 12 |
-| P1 | desk | `HubFailure` + `hub_request` + `hub_auth` + `hub_fail_response` + reachability edge; delete `_hub_action`; classification table test | 11, 12 |
+| P1 | desk | `HubFailure` + `HubProxy.call` + `hub_auth` + `hub_fail_response` + reachability edge; delete `_hub_action`; classification table test | 11, 12 |
 | P2 | desk | `BodyStatus.FAILED`, `outbound`, `delivery_failure` (D1); `Conversation.deliver()` stages 0a/0/1/2; outbox predicate; triggers; receiver FAILED; deletions from section 3 | 2, 3 |
 | P3 | desk | `ask-for-help` capture; `help-recipients`, `help-requests`, `resend`; `helpdesk-ensure` new semantics; `resolve_desk` + `helpdesk.default`; explicit context only | 1, 8, 9, 10, 13 |
 | P4 | ui | `AskForHelpDialog` everywhere; the portal button; load hand-off; ingest; receipt; rows; delete `HelpdeskRequestDialog` and the `Task.assign` chain; active-process callback | 4, 5, 6, 7, 13 |
@@ -236,7 +236,7 @@ Each phase lands green before the next starts. The hub ships first.
 - **D3 — deploy order.** The hub goes first. The desk gates the ticket stage on the hub capability flag, and the rest on hub
   idempotency.
 - **D4 — test ports.** These keep their strength but change their fault seam or expectation:
-  - the Vibe retry matrix: the fault moves to the backend `hub_request`, per stage;
+  - the Vibe retry matrix: the fault moves to the backend `HubProxy.call`, per stage;
   - closed dialog: (i) a real hub rejection after capture, (ii) Escape during capture;
   - `says_why[502]` and `[signed-out]`: `ask-for-help` returns SUCCESS with `delivery.failure`;
   - the opening line: the fault moves to `mark_sent`;
@@ -247,6 +247,6 @@ Each phase lands green before the next starts. The hub ships first.
   upload the body of their own ticket message (recommended, since screenshots are what support needs), or refusing files on a
   desk ask.
 - **D6 — no context guessing.** Footer tickets no longer attach the latest session silently. The user ticks it.
-- **D7 — scope of `hub_request`.** Only the help paths now; the other ~25 hand-built hub callers follow later.
+- **D7 — scope of `HubProxy.call`.** Only the help paths now; the other ~25 hand-built hub callers follow later.
 - **D8 — FYI.** A signed-out request is captured and held, not refused. That overrules the fail-fast alternative. And when the
   credential store can't be read, the user is signed out locally.

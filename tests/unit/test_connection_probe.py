@@ -49,13 +49,14 @@ def channel(monkeypatch):
     async def pushing(name, verb):
         return SimpleNamespace(ingest_pushed=ingest_pushed)
 
-    async def hub_post(entity_type, payload, entity_id=None, action=None, *a, **kw):
+    async def hub_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        assert method == "POST"
         state.hub.append((entity_type, entity_id, action, payload))
         return {}
 
     monkeypatch.setattr(DataSource, "get_by_id", get_by_id)
     monkeypatch.setattr(data_source_webhook, "_pushing_type", pushing)
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     monkeypatch.setattr(agent_serve, "_PROBES", {})
     return state
 
@@ -172,11 +173,12 @@ async def test_deleting_a_channel_releases_its_hub_claims(monkeypatch):
     async def claims():
         return [{"id": "c-mine", "target": {"data_source_id": "src-1"}}, {"id": "c-other", "target": {"data_source_id": "src-2"}}]
 
-    async def hub_delete(kind, eid, *a, **k):
+    async def fake_call(method, kind, eid, *a, **k):
+        assert method == "DELETE"
         deleted.append((kind, eid))
 
     monkeypatch.setattr(ds, "_hub_claims", claims)
-    monkeypatch.setattr(HubProxy, "delete", staticmethod(hub_delete))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     source = ds.DataSource(provider="whatsapp", name="x", config={})
     source.id = "src-1"
     assert await source.release_hub_claims() == ""

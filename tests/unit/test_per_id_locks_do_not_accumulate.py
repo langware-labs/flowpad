@@ -273,7 +273,7 @@ async def test_seven_per_id_registries_are_empty_after_use(tmp_path):
         roots.append(root)
 
     with (
-        patch.object(HubProxy, "get", new=AsyncMock(return_value=None)),
+        patch.object(HubProxy, "try_call", new=AsyncMock(return_value=None)),
         patch.object(ingest_sync, "_sync_source", new=AsyncMock(return_value=None)),
         patch.object(project_dependencies, "_resolve", new=AsyncMock(return_value=[])),
         patch.object(docs_graph, "_indexer", new=lambda _root: _StubIndexer()),

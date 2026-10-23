@@ -152,7 +152,7 @@ class BrowserContextWatch:
         except Exception:  # noqa: BLE001 — unknown type → nothing to watch
             return
         try:
-            await HubProxy.post(et, {"connection_id": cid}, eid, action=action)
+            await HubProxy.call("POST", et, eid, action, payload={"connection_id": cid})
             logger.debug("[browser-context-watch] hub %s %s via conn %s", action, key, cid)
         except Exception as e:  # noqa: BLE001
             logger.debug("[browser-context-watch] hub %s failed for %s: %s", action, key, e)

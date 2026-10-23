@@ -348,6 +348,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.typeInfos[type.toLowerCase()];
   }
 
+  /** Types a query was answered empty for because the server does not serve them (warned once). */
+  private readonly unservedTypesLogged = new Set<string>();
+
+  /** Whether the connected server serves rows of this type — its bootstrap ``types`` lists every
+   *  type it serves (the desktop all of its own, the hub its API-visible ones). Before the types
+   *  load nothing is known, so nothing is refused. */
+  public servesType(type: string): boolean {
+    if (Object.keys(this.typeInfos).length === 0) return true;
+    return typeof type === 'string' && type.toLowerCase() in this.typeInfos;
+  }
+
   /** All registered TypeInfos (the frontend SchemaRegistry). */
   public getAllTypeInfos(): TypeInfo[] {
     return Object.values(this.typeInfos);
@@ -1654,9 +1665,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // A remote entity's save goes to the hub: the local server forwards the PUT verbatim
         // and answers with the HUB's row (hub field names, no local-only fields), after folding
         // it into the local row. So the entity is re-read from the local server, which holds
-        // both halves. Local-only entities omit the header and save purely locally. In
-        // hub-only mode this client already talks to the hub, so there is nothing to reflect.
-        const reflect = entity.remote && !isHubOnly();
+        // both halves. Local-only entities omit the header and save purely locally; a hub row
+        // carries no `remote` flag, so a save on the hub page is a plain PUT.
+        const reflect = entity.remote === true;
         const reflectConfig = reflect ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
         newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
         if (reflect) {
@@ -1689,11 +1700,28 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (this.applyPendingUpdate(selfTypeId, ref)) {
         ref.status = EntityStatus.READY;
         ref.error = null;
+      } else if (entity.saved && entity.typeId.id) {
+        // The edit was applied to the cached entity before the PUT; a refused or failed PUT must
+        // not leave it showing as if it saved. Put back what the server holds (still rejecting).
+        await this.restoreServerCopy(ref, `${GRAPH_API_PREFIX}${scope_path}/${entityType}/${entity.typeId.id}`);
       }
       throw error;
     } finally {
       ref.saveInFlight = false;
       this.resolvePendingRequests(ref);
+    }
+  }
+
+  /** Replace a ref's entity with the server's copy after a failed save; best-effort — with no
+   *  answer the edited value stays (it is still marked dirty and the save already rejected). */
+  private async restoreServerCopy(ref: EntityRef<T>, endpoint: string): Promise<void> {
+    try {
+      const serverJson = (await apiClient.get<IEntity>(endpoint)) as IEntity | null;
+      if (!serverJson) return;
+      ref.entity = this.castAndDeepAssign(serverJson);
+      if (ref.entity) ref.entity.dirty = false;
+    } catch {
+      // Unreachable too: nothing more honest to show than the unsaved edit.
     }
   }
 
@@ -2020,6 +2048,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   private async _query<U extends T>(request: QueryRequest): Promise<U[]> {
     const { type, query, scope } = request;
+    // A type this server does not serve has no rows here: answer empty instead of asking.
+    if (!this.servesType(type)) {
+      if (!this.unservedTypesLogged.has(type)) {
+        this.unservedTypesLogged.add(type);
+        console.warn(`[FlowSync] ${type}: not served by this backend (absent from bootstrap types); queries answer empty`);
+      }
+      return [];
+    }
     const epoch = this.queryEpoch;
 
     // Check if WatchedQuery with pending promise already exists (another call beat us to it)

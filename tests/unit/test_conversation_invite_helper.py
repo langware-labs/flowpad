@@ -9,7 +9,7 @@ is a hub-owned root). ``discard_invite_conversation`` removes a conversation
 whose invite failed.
 
 Only the network hops are stubbed: ``FlowpadClient.request`` (create, join,
-invite, delete) and ``flow_sdk.utils.hub.hub_post``.
+invite, delete) and ``HubProxy``.
 
 # do not increase timeout without approval
 """
@@ -63,7 +63,9 @@ def hub(monkeypatch):
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda *a, **k: SimpleNamespace(api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}),
+        lambda *a, **k: SimpleNamespace(
+            api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}, is_expired=lambda *_a: False
+        ),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
@@ -74,7 +76,6 @@ def hub(monkeypatch):
         return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
 
     monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
-    monkeypatch.setattr(HubProxy, "post", staticmethod(fake_hub_post))
     return calls
 
 

@@ -405,10 +405,6 @@ def hub_faked(_blob_storage, monkeypatch):
         posts.append((f"/graph/{etype}/{entity_id}/{action}", payload))
         return {}
 
-    async def fake_hub_request(method, entity_type, entity_id=None, action=None, *a, payload=None, **k):
-        assert method == "POST", f"unexpected hub {method}"
-        return await fake_hub_post(entity_type, payload, entity_id, action)
-
     async def fake_hub_put(entity_type, entity_id, payload, *a, **k):
         etype = getattr(entity_type, "value", entity_type)
         puts.append((f"/graph/{etype}/{entity_id}", payload))
@@ -418,6 +414,16 @@ def hub_faked(_blob_storage, monkeypatch):
         etype = getattr(entity_type, "value", entity_type)
         deletes.append((f"/graph/{etype}/{entity_id}/{action}", payload))
         return {}
+
+    async def fake_hub_call(method, entity_type, entity_id=None, action=None, sub_path=None, *, payload=None, **k):
+        method = method.upper()
+        if method == "POST":
+            return await fake_hub_post(entity_type, payload, entity_id, action)
+        if method == "PUT":
+            return await fake_hub_put(entity_type, entity_id, payload)
+        if method == "DELETE":
+            return await fake_hub_delete(entity_type, entity_id, action, payload=payload)
+        raise AssertionError(f"hub_faked: unstubbed hub {method} {entity_type}/{entity_id}/{action}")
 
     async def no_real_hub(method, url, *a, **k):
         raise AssertionError(f"hub_faked: unstubbed hub call {method} {url} would reach the network")
@@ -431,11 +437,9 @@ def hub_faked(_blob_storage, monkeypatch):
     monkeypatch.setattr(creds_mod, "load_credentials", lambda *a, **k: _FakeCreds())
     monkeypatch.setattr(login_mod, "is_logged_in", lambda: True)
     # BOTH modules: the group fan-out reaches the hub through the primitive's
-    # ``ensure_task_on_hub`` / ``push_hub_fields`` (hub_request) as well as its own hub_post.
-    monkeypatch.setattr(HubProxy, "post", staticmethod(fake_hub_post))
-    monkeypatch.setattr(HubProxy, "request", staticmethod(fake_hub_request))
-    monkeypatch.setattr(HubProxy, "put", staticmethod(fake_hub_put))
-    monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_hub_delete))
+    # ``ensure_task_on_hub`` / ``push_hub_fields`` as well as its own calls — all through ``HubProxy.call``.
+    # ``try_call`` routes through ``cls.call``, so patching ``call`` covers both.
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_hub_call))
     monkeypatch.setattr(HubProxy, "send", staticmethod(no_real_hub))
     monkeypatch.setattr(taa, "_local_mode_share_blocked", lambda: False)
     monkeypatch.setattr(Task, "share", fake_share)

@@ -23,6 +23,7 @@ from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.schema.data_spec.choice_spec import Choice
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import InvalidCursor, NotFound
@@ -267,6 +268,9 @@ class TestTheAppHub:
         (HubError(401, "Forbidden access"), False, SourceHealth.CONFIG_ERROR, "Log in"),
         (HubError(404, "gone"), True, SourceHealth.CONFIG_ERROR, "no longer exists"),
         (HubError(0, "hub not configured"), True, SourceHealth.CONFIG_ERROR, "not configured"),
+        # HubProxy.call's own no-hub error: told by its kind, whatever the reason's words.
+        (HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED), True, SourceHealth.CONFIG_ERROR,
+         "not configured"),
         (HubError(0, "connection reset"), True, SourceHealth.TRANSIENT_ERROR, "reached"),
         (HubError(429, "slow down"), True, SourceHealth.TRANSIENT_ERROR, "429"),
     ])
@@ -278,7 +282,7 @@ class TestTheAppHub:
         async def refuse(*_a, **_k):
             raise HubError(403, "forbidden")
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(refuse))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
         monkeypatch.setattr(AppHub, "me", lambda self: ME)
         with pytest.raises(Exception) as caught:
             await AppHub().get("project", DESK, "helpdesk_conversations")

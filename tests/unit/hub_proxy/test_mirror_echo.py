@@ -66,14 +66,12 @@ async def test_a_members_sub_endpoint_is_not_a_roster(desktop, echo_hub):
     from flow_sdk.builtin.conversation import Conversation
 
     conv = await _remote_conversation()
-    link = {"id": "L1", "url": "https://x/accept"}
+    path = f"/api/v1/graph/conversation/{conv.id}/members/link"
     async with httpx.AsyncClient(base_url=desktop) as c:
-        r = await c.post(f"/api/v1/graph/conversation/{conv.id}/members/link", json={},
-                         headers={**REFLECT, "x-echo-mode": "answer", "x-echo-answer": json.dumps(link)})  # fmt: skip
-    assert r.json()["data"] == link
-    assert [x.raw_path for x in echo_hub.all_received if "/members" in x.raw_path] == [
-        f"/api/v1/graph/conversation/{conv.id}/members/link"
-    ]  # no roster re-read
+        r = await c.post(path, json={}, headers=REFLECT)
+    # The desktop mints the link on the hub and answers the hub's answer (the echo of what it got).
+    assert r.json()["data"]["method"] == "POST" and r.json()["data"]["raw_path"] == path, r.text
+    assert [x.raw_path for x in echo_hub.all_received if "/members" in x.raw_path] == [path]  # no roster re-read
     assert (await _get(Conversation, conv.id)).members == [{"user_id": "stale"}]
 
 

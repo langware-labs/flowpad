@@ -535,7 +535,8 @@ async def test_stress_concurrent_attachment_rounds_preserve_sources(tmp_path):
 @pytest.mark.parametrize("enveloped", [False, True])
 async def test_hub_asset_lookup_uses_published_asset_contract(monkeypatch, enveloped):
 
-    async def hub_get(resource, entity_id, *, action, params):
+    async def fake_call(method, resource, entity_id, action, *, params):
+        assert method == "GET"
         assert str(resource) == "project" and entity_id is None
         assert action == "published_asset"
         assert params == {"typeid": "skill-3b0c1d7e-2222-4222-8222-222222222222"}
@@ -543,7 +544,7 @@ async def test_hub_asset_lookup_uses_published_asset_contract(monkeypatch, envel
                "rel_path": ".claude/skills/mail"}
         return {"data": row} if enveloped else row
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub_get))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
     assert await dep_resolve.hub_asset_location("skill-3b0c1d7e-2222-4222-8222-222222222222") == (
         "8c1f0b2e-1111-4111-8111-111111111111", ".claude/skills/mail",
     )

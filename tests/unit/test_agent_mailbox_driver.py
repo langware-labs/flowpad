@@ -64,11 +64,12 @@ class TestTheHubMember:
     async def test_enable_and_disable_use_the_lifecycle_subpaths(self, monkeypatch):
         seen: list[tuple[str, dict]] = []
 
-        async def fake_post(_type, body, _entity_id, _action, sub_path):
-            seen.append((sub_path, body))
+        async def fake_call(method, _type, _entity_id, _action, sub_path, *, payload=None, **_k):
+            assert method == "POST"
+            seen.append((sub_path, payload))
             return DESCRIPTOR
 
-        monkeypatch.setattr(HubProxy, "post", staticmethod(fake_post))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
         driver = HubAgentMailboxDriver()
 
         await driver.enable_mailbox(AGENT_ID)
@@ -85,7 +86,7 @@ class TestTheHubMember:
         async def fake_get(*_a, **_k):
             return {"mailbox": DESCRIPTOR}
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
 
         assert (await HubAgentMailboxDriver().get_mailbox(AGENT_ID))["address"] == DESCRIPTOR["address"]
 
@@ -95,7 +96,7 @@ class TestTheHubMember:
         async def fake_get(*_a, **_k):
             return {"mailbox": None}
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
 
         assert await HubAgentMailboxDriver().get_mailbox(AGENT_ID) is None
 
@@ -108,7 +109,7 @@ class TestTheHubMember:
         async def fake_delete(*_a, **_k):
             raise HubError(404, "agent has no mailbox")
 
-        monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_delete))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_delete))
 
         assert await HubAgentMailboxDriver().delete_mailbox(AGENT_ID) is False
 
@@ -121,7 +122,7 @@ class TestTheHubMember:
         async def fake_delete(*_a, **_k):
             raise HubError(0, "connection reset")
 
-        monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_delete))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_delete))
 
         # Re-raised as the FAMILY's error, not the hub's: callers above the
         # driver are supposed to work against any backend.
@@ -134,7 +135,7 @@ class TestTheHubMember:
         async def fake_get(*_a, **_k):
             raise HubError(401, "target unavailable", code=HubErrorCode.TARGET_NOT_FOUND.value)
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
 
         with pytest.raises(AgentMailboxError) as caught:
             await HubAgentMailboxDriver().get_mailbox(AGENT_ID)
@@ -150,7 +151,7 @@ class TestTheHubMember:
         async def valid_user(_client):
             return {"id": "user-1"}
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
         monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_user", valid_user)
 
         with pytest.raises(AgentMailboxError) as caught:
@@ -165,11 +166,11 @@ class TestTheHubMember:
         builder does no quoting."""
         seen = {}
 
-        async def fake_get(_type, entity_id=None, action=None, sub_path=None, **_k):
+        async def fake_get(_method, _type, entity_id=None, action=None, sub_path=None, **_k):
             seen.update({"action": action, "sub_path": sub_path})
             return {}
 
-        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_get))
 
         await HubAgentMailboxDriver().get_message(AGENT_ID, "<abc@mail.example>")
 

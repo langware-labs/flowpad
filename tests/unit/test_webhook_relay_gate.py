@@ -49,10 +49,10 @@ def app(monkeypatch):
 @pytest.fixture(autouse=True)
 def acks(monkeypatch):
 
-    async def hub_post(*_a, **_kw):
+    async def fake_call(*_a, **_kw):
         return {"acked": True}
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
 
 
 def _message(path, delivery_id="d-1"):

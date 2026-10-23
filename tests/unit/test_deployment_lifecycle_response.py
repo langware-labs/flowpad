@@ -19,11 +19,12 @@ async def test_remote_lifecycle_response_adopts_hub_state(monkeypatch, verb, bef
     reply = {**row.model_dump(mode='json'), 'status': {'provider_state': after, 'observed_at': observed}, 'secrets': None}
     calls = []
 
-    async def hub_post(entity_type, payload, entity_id, action):
+    async def hub_call(method, entity_type, entity_id, action, *, payload=None):
+        assert method == "POST"
         calls.append((entity_type, entity_id, action))
         return reply
 
-    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     result = await getattr(row, f'{verb}_action')()
     assert result.data['status']['provider_state'] == after
     assert result.data['status']['observed_at'] == observed

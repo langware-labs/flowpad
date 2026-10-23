@@ -61,7 +61,7 @@ def desktop_server():
 DEAD_HUB = "http://127.0.0.1:9"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="package", autouse=True)
 def _no_real_hub_in_this_suite():
     from flow_sdk.config import default_service_config
 

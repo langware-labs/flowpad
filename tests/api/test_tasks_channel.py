@@ -199,11 +199,15 @@ async def test_reassigning_takes_the_task_back_from_the_previous_assignee(channe
 
     revoked: list[tuple[str, dict]] = []
 
-    async def fake_hub_delete(entity_type, entity_id, action=None, *a, payload=None, **k):
+    faked_call = HubProxy.call  # hub_faked's call: keeps recording the POSTs
+
+    async def fake_hub_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **k):
+        if method.upper() != "DELETE":
+            return await faked_call(method, entity_type, entity_id, action, *a, payload=payload, **k)
         revoked.append((f"/graph/{getattr(entity_type, 'value', entity_type)}/{entity_id}/{action}", payload))
         return {}
 
-    monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_hub_delete))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_hub_call))
     task = await _assigned_to_bob(bootstrapped_client)
     assert revoked == [], "handing over my own task takes it from no one"
 

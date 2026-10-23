@@ -22,6 +22,7 @@ import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConversationTasksPanel } from './ConversationTasksPanel';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useConversationTasks } from './task-it';
 import { isOpenTask } from '@src/components/task-bar/task-utils';
 
@@ -195,7 +196,8 @@ export function ConversationPanel({
   // `OpenProjectComponent` dialog and the same per-machine remote→local
   // mapping table.
   const { data: convEntity } = useEntity<Conversation>(new TypeId(Conversation.type, conversationId));
-  const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined);
+  // Mapping a conversation to a local project is the desktop's; the hub page has no local folder.
+  const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined, { enabled: !isHubOnly() });
   const ensureMapped = mappingGate.ensureMapped;
   const mappingDialogProps = mappingGate.dialogProps;
 

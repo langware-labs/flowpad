@@ -1028,8 +1028,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * ``{idOrEmail, role}``) — the local backend's ``share`` action validates it.
    */
   public async share(users: ShareInvitee[] = []): Promise<T> {
-    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     const recipients = shareRecipients(users);
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = recipients.length ? { ...this.toJSON(), recipients } : {};
     // Not one fixed shape — a full entity or a bare receipt, depending on entity type — hence a guarded dict, not a named response type.
     const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
@@ -1117,7 +1117,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *    false, so the body of every existing caller is unchanged.
    */
   public async inviteMember(
-    email: string,
+    /** An email — for anyone — or a hub user id, for a contact known only by id. */
+    idOrEmail: string,
     role: string = 'member',
     opts?: {
       callbackOverride?: string;
@@ -1149,7 +1150,9 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
-      recipient_email: normalizeEmail(email) ?? '',
+      ...(idOrEmail.includes('@')
+        ? { recipient_email: normalizeEmail(idOrEmail) ?? '' }
+        : { recipient_user_id: idOrEmail.replace(/^user-/, '') }),
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
       ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),

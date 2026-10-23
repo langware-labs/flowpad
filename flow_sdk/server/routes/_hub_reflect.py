@@ -21,7 +21,7 @@ from starlette.responses import JSONResponse, Response
 from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.utils.hub import HubError
+from flow_sdk.cloud_client.shared.errors import HubError
 
 logger = logging.getLogger(__name__)
 
@@ -290,11 +290,23 @@ async def decide(
         return Route.LOCAL, gp, entity
     if gp.action == "fs" and entity is not None:
         return Route.LOCAL, gp, entity  # this box holds the files (a cache filled from the hub on a miss)
+    if _admits_locally(method, gp, entity):
+        return Route.LOCAL, gp, entity
     if gp.id:
         if entity is not None and getattr(entity, "remote", False) is not True:
             return Route.LOCAL, gp, entity
         return Route.PROXY, gp, entity
     return Route.PROXY, gp, None
+
+
+def _admits_locally(method: str, gp: GraphPath, entity: Entity | None) -> bool:
+    """An invitation into a row held here (``POST <type>/<id>/members``, or its invite ``/link``).
+
+    The same ``MembershipRequest`` the hub takes, answered here first so the desktop can publish
+    a row the hub doesn't have yet and add a conversation's shared skills/agents before sending it
+    on (``members_action.members``).
+    """
+    return method.upper() == "POST" and gp.rest in (["members"], ["members", "link"]) and entity is not None
 
 
 def _is_bare_update(method: str, gp: GraphPath, entity: Entity | None) -> bool:
@@ -422,10 +434,12 @@ async def mirror_answer(method: str, gp: GraphPath, entity: Entity | None, raw: 
 
     - ``members`` on an entity: the roster cache (re-read after a change: a mutation answers a
       message, not the roster);
-    - the entity itself — any answer that is this row (a read, an update, ``close``/``pickup``…):
-      its hub-owned fields (``Sharing`` decides which);
-    - a list of a type kept here: each row this box already holds as remote. Which hub rows to
-      ADD locally is the mirror's next step, not the proxy's.
+    - the entity itself — any answer that is this row (a read, an update, ``close``/``pickup``…);
+    - a list of a type kept here: each row this box already holds as remote.
+
+    Both through the one mirror (``Entity.mirror_from_hub``: the fields ``Sharing`` says the hub
+    owns). An answer is the hub's whole row, so its ``null`` clears. Rows a list adds or drops
+    are the sync's (``conversation-list``, the WS bridge), which sees the whole set.
     """
     import json  # noqa: PLC0415
 
@@ -443,11 +457,11 @@ async def mirror_answer(method: str, gp: GraphPath, entity: Entity | None, raw: 
                 from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
                 data = await HubProxy.call("GET", entity.type, entity.id, "members")
-            await mirror_hub_response_into_local(entity, "members", _normalize_hub_response("members", data))
+            await mirror_hub_response_into_local(entity, "members", normalize_hub_response("members", data))
             return
         if entity is not None:
             if isinstance(data, dict) and data.get("id") == entity.id:
-                await _apply_hub_fields(entity, data)
+                await type(entity).mirror_from_hub(data, existing=entity, nulls_clear=True)
             return
         cls = SchemaRegistry.get_entity_cls(gp.type) if gp.type else None
         if cls is None or not isinstance(data, list):
@@ -457,16 +471,9 @@ async def mirror_answer(method: str, gp: GraphPath, entity: Entity | None, raw: 
                 continue
             local = await cls.get_by_id(row["id"])
             if local is not None and getattr(local, "remote", False) is True:
-                await _apply_hub_fields(local, row)
+                await cls.mirror_from_hub(row, existing=local, nulls_clear=True)
     except Exception as e:  # noqa: BLE001 — a mirror miss is a stale row, never a failed call
         logger.warning("[hub-proxy] mirror of %s failed: %s", gp, e)
-
-
-async def _apply_hub_fields(entity: Entity, hub_row: dict[str, Any]) -> None:
-    updates = _merge_hub_entity_into_local(entity, hub_row)
-    if updates:
-        entity.apply_field_updates(updates)
-        await entity.save(notify=True)
 
 
 async def read_hub_document(request: Request, entity: Entity, path: str) -> Response:
@@ -552,7 +559,9 @@ async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
         # The local handler reads these same objects afterwards — rewind, or it
         # writes an empty file into the cache.
         await f.seek(0)
-        await HubProxy.upload_entity_file(et, hub_id, f.filename, content, sub_path)
+        await HubProxy.upload(
+            et, hub_id, "fs", sub_path, files={"uploaded_file": (f.filename, content, "application/octet-stream")}
+        )
     return REFLECT_CONTINUE_LOCAL
 
 
@@ -570,7 +579,7 @@ def _changes_only_local_fields(entity: Entity, body: dict[str, Any]) -> bool:
     return bool(changed) and changed <= not_for_hub
 
 
-def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
+def normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
     """Translate hub field names into the canonical client shape.
 
     The hub's ``Membership`` response uses ``user_email`` / ``user_name`` /
@@ -613,56 +622,6 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
 _MISSING = object()
 
 
-def _merge_skip_fields(entity: Entity) -> frozenset[str]:
-    """Fields a bare entity PUT response must never overwrite: what the type
-    declares not-accepted-from-hub (``PRIVATE`` + ``HUB_WRITE`` — the roster
-    ``members``, owned by the ``members`` reflect and echoed in the hub's
-    ``{user_id,…}`` shape; the conversation message projections, rebuilt from
-    the pointer log) plus each such field's hub wire name (the roster arrives
-    as ``participants``). Every OTHER hub-modeled field — scalars AND
-    collections the hub genuinely owns (a task's ``artifacts``, ``tags``,
-    ``links``, ``metadata``) — is hub-authoritative and merges."""
-    from flow_sdk.fs_store.serializer.hub import hub_names  # noqa: PLC0415
-
-    blocked = type(entity).fields_not_accepted_from_hub()
-    wire = hub_names(type(entity))
-    return blocked | frozenset(wire[n] for n in blocked if n in wire)
-
-
-def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any]:
-    """Select the hub-authoritative fields to merge onto the local entity.
-
-    A reflected ``update`` returns the hub's view of the entity, and the hub is
-    the source of truth: every API field the hub echoes (scalar OR collection)
-    that differs from the local value is applied, so a remote entity reflects
-    IMMEDIATELY into the local row — including hub-modeled collections like a
-    task's ``artifacts``. The only exclusions are ``_merge_skip_fields`` (the
-    roster + message projections, which own their own sync and carry a divergent
-    hub shape). Local-only fields (``project_id``, ``dismissed_at``,
-    ``archived_at``, a task's ``session_id`` …) are absent from the hub response
-    → preserved untouched. Anything the hub doesn't model doesn't reflect — the
-    fix for a field that SHOULD travel is to model it on the hub, not to
-    re-apply it locally from the request body.
-
-    Returns the dict of fields to apply, empty when nothing changed (so the caller
-    skips the save+broadcast entirely).
-    """
-    from flow_sdk.fs_store.serializer.hub import HubSerializer  # noqa: PLC0415
-
-    if not isinstance(hub_resp, dict):
-        return {}
-    updates: dict[str, Any] = {}
-    skip = _merge_skip_fields(entity)
-    for k, v in HubSerializer.unwire(type(entity), hub_resp).items():
-        if k in skip:
-            continue
-        if not entity.is_api_field(k):
-            continue
-        if getattr(entity, k, _MISSING) != v:
-            updates[k] = v
-    return updates
-
-
 async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_resp: Any) -> None:
     """Write hub-provided state back into the local entity row.
 
@@ -692,7 +651,7 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
                 # an unchanged roster is a no-op (no assignment, no save, no
                 # UPDATE), so the loop converges after the first mirror. Compare
                 # the already-normalized stored value against the new normalized
-                # value (both went through ``_normalize_hub_response``), so the
+                # value (both went through ``normalize_hub_response``), so the
                 # check isn't defeated by raw-vs-normalized key differences.
                 current = list(getattr(entity, "members", None) or [])
                 if current == new_participants:

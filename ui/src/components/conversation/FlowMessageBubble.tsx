@@ -317,8 +317,11 @@ export function FlowMessageBubble({
   // the invitation-kind placeholder, whose author is the inviter.
   // `created_by` can be a non-entity sentinel (e.g. "system") for hub-authored
   // messages — guard so the TypeId constructor doesn't throw on those.
+  // A message names its sender (``sender_name``, stamped by the hub); the creator's user record is
+  // only the fallback label — and another user's record need not be readable.
+  const needsCreator = !fm?.sender_name?.trim();
   const { data: creator } = useEntity<User>(
-    fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
+    needsCreator && fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
   // An agent's own sent copies are authored by the Agent (never a roster member,
   // so the roster tiers below cannot name it). Resolve the Agent so an empty

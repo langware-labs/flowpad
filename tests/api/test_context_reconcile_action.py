@@ -52,7 +52,7 @@ async def test_reconcile_keeps_dangling_ref_when_hub_unknown(bootstrapped_client
     async def _indeterminate(_typeid):
         return ("indeterminate", None)
 
-    monkeypatch.setattr(HubProxy, "resolve_by_typeid", staticmethod(_indeterminate))
+    monkeypatch.setattr(HubProxy, "exists", staticmethod(_indeterminate))
 
     await _share(bootstrapped_client, task["id"], dangling)
 
@@ -82,7 +82,7 @@ async def test_reconcile_removes_ref_absent_on_hub(bootstrapped_client, monkeypa
     async def _absent(_typeid):
         return ("absent", None)
 
-    monkeypatch.setattr(HubProxy, "resolve_by_typeid", staticmethod(_absent))
+    monkeypatch.setattr(HubProxy, "exists", staticmethod(_absent))
 
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/task/{task['id']}/reconcile-context",
@@ -109,7 +109,7 @@ async def test_reconcile_keeps_ref_present_on_hub(bootstrapped_client, monkeypat
     async def _present(_typeid):
         return ("present", {"id": "x"})
 
-    monkeypatch.setattr(HubProxy, "resolve_by_typeid", staticmethod(_present))
+    monkeypatch.setattr(HubProxy, "exists", staticmethod(_present))
 
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/task/{task['id']}/reconcile-context",
@@ -137,7 +137,7 @@ async def test_reconcile_never_touches_live_local_ref(bootstrapped_client, monke
     async def _absent(_typeid):  # would delete if it were ever consulted
         return ("absent", None)
 
-    monkeypatch.setattr(HubProxy, "resolve_by_typeid", staticmethod(_absent))
+    monkeypatch.setattr(HubProxy, "exists", staticmethod(_absent))
 
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/task/{holder['id']}/reconcile-context",

@@ -139,7 +139,7 @@ async def hub_asset_location(typeid: str) -> Optional[tuple[str, str]]:
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
-    data = await HubProxy.get_or_raise(BuiltinEntityType.PROJECT, None, action="published_asset", params={"typeid": typeid})
+    data = await HubProxy.call("GET", BuiltinEntityType.PROJECT, None, "published_asset", params={"typeid": typeid})
     data = data.get("data", data) if isinstance(data, dict) else {}
     project_id, path = str(data.get("source_project_id") or ""), str(data.get("rel_path") or "")
     return (project_id, path) if project_id and path else None

@@ -17,8 +17,8 @@ conversation ("test3", deleted 2026-07-09) was found fully resurrected locally
 with all its messages, re-triggered on every single stream inbox open.
 
 This test drives the REAL ``handle_conversation_list`` handler — only the hub
-HTTP boundary (``hub_get``) is mocked, matching the established pattern in
-``test_conversation_list_logged_out_gate.py`` (hub_get is an external network
+HTTP boundary (``HubProxy.try_call``) is mocked, matching the established pattern in
+``test_conversation_list_logged_out_gate.py`` (the hub is an external network
 call, not the code under test).
 """
 
@@ -56,14 +56,14 @@ async def test_deleted_conversation_is_not_dispatched_for_message_fetch(monkeypa
         "participants": [],
     }
 
-    async def _fake_hub_get(entity_type, *args, **kwargs):
+    async def _fake_hub_get(_method, entity_type, *args, **kwargs):
         if entity_type == BuiltinEntityType.CONVERSATION and not args and "action" not in kwargs:
             return [hub_conv]
         if entity_type == BuiltinEntityType.INVITATION:
             return []
-        raise AssertionError(f"unexpected hub_get call: {entity_type=} {args=} {kwargs=}")
+        raise AssertionError(f"unexpected HubProxy.try_call: {entity_type=} {args=} {kwargs=}")
 
-    monkeypatch.setattr(HubProxy, "get", staticmethod(_fake_hub_get))
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_fake_hub_get))
 
     resp = await fma.handle_conversation_list(SimpleNamespace(id="local-someone-typeid"))
 

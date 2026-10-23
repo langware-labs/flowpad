@@ -829,7 +829,7 @@ async def _receive_attachments(request_id: str, attachments: list[dict], workdir
     ``.claude/skills/<name>/`` so the agent finds it as a project skill; a file lands in
     ``from-supporter/``. Unpacking refuses traversal, symlinks and zip bombs (``safe_extract_zip``).
     A failed attachment is reported and skipped -- it must not stop the diagnosis."""
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import ANONYMOUS_TIMEOUT, HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
     from flow_sdk.utils.archive import UnsafeArchiveError, safe_extract_zip  # noqa: PLC0415
@@ -840,9 +840,10 @@ async def _receive_attachments(request_id: str, attachments: list[dict], workdir
         if kind not in ("files", "skills") or not name:
             continue
         try:
-            content = await HubProxy.anonymous_request(
-                "GET", EntityType.DIAGNOSIS_REQUEST.value, request_id, f"brief/attachment/{kind}/{name}", raw=True
-            )
+            content = await HubProxy.call(
+                "GET", EntityType.DIAGNOSIS_REQUEST.value, request_id, f"brief/attachment/{kind}/{name}",
+                anonymous=True, raw=True, timeout=ANONYMOUS_TIMEOUT,
+            )  # fmt: skip
         except HubError as e:
             typer.echo(f"  ! Could not fetch {name}: {e.reason}", err=True)
             continue
@@ -901,18 +902,18 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
     """``flow diagnose <id>``: read the request's brief from the hub, ask this user how to approve
     the supporter's instructions, run the diagnosis on the request's budget, and submit the result.
 
-    No hub login is needed anywhere here: the id is the credential (``HubProxy.anonymous_request``).
+    No hub login is needed anywhere here: the id is the credential (``HubProxy.call(..., anonymous=True)``).
     """
     import tempfile  # noqa: PLC0415
 
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import ANONYMOUS_TIMEOUT, HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     kind = EntityType.DIAGNOSIS_REQUEST.value
     try:
-        brief = await HubProxy.anonymous_request("GET", kind, request_id, "brief")
+        brief = await HubProxy.call("GET", kind, request_id, "brief", anonymous=True, timeout=ANONYMOUS_TIMEOUT)
     except HubError as e:
         typer.echo(
             "ERROR: no diagnosis request with that id -- check the command you were sent."
@@ -1029,7 +1030,10 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
         typer.echo("Not sent. The diagnosis stays on this computer only.")
         return 1
     try:
-        sent = await HubProxy.anonymous_request("POST", kind, request_id, "submit", run.model_dump(mode="json"))
+        sent = await HubProxy.call(
+            "POST", kind, request_id, "submit",
+            payload=run.model_dump(mode="json"), anonymous=True, timeout=ANONYMOUS_TIMEOUT,
+        )  # fmt: skip
     except HubError as e:
         typer.echo(f"ERROR: the diagnosis ran but could not be sent ({e.reason}).", err=True)
         return 1

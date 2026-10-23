@@ -344,28 +344,29 @@ class Deployment(Entity):
         token when it needs one; your refresh token never leaves the hub. Revoke with :meth:`revoke`."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await HubProxy.post(self.type, {"provider": provider, "permissions": list(permissions or [])},
-                              self.id, "authorize") or {}
+        return await HubProxy.call(
+            "POST", self.type, self.id, "authorize", payload={"provider": provider, "permissions": list(permissions or [])}
+        ) or {}
 
     async def revoke(self, provider: str) -> list[str]:
         """Take back ``provider``: the machine's next token ask is refused."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await HubProxy.delete(self.type, self.id, action="authorize", sub_path=provider) or {}
+        data = await HubProxy.call("DELETE", self.type, self.id, "authorize", provider) or {}
         return list(data.get("revoked") or [])
 
     async def authorizations(self) -> list[dict]:
         """The connections this deployment's machine may use (``{provider, permissions}``). Names only."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return list(await HubProxy.get_or_raise(self.type, self.id, action="authorize") or [])
+        return list(await HubProxy.call("GET", self.type, self.id, action="authorize") or [])
 
     async def secrets_inventory(self) -> dict:
         """What the hub holds for this deployment: each name with its last write and placement, and the
         connections its machine may use. Names only."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await HubProxy.get(self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
+        return await HubProxy.try_call("GET", self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
 
     async def funding(self) -> dict | None:
         """What pays for this cloud placement's model turns (``kind``: ``allocation`` | ``default``, the
@@ -373,7 +374,7 @@ class Deployment(Entity):
         empty. ``None`` when the hub cannot say."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await HubProxy.get(self.type, self.id, action="funding")
+        return await HubProxy.try_call("GET", self.type, self.id, action="funding")
 
     # ── convergence ───────────────────────────────────────────────────────
 
@@ -613,7 +614,7 @@ class Deployment(Entity):
         if not hub_base_url():
             return ApiFailResponse(message="Sign in to the hub to deploy to the cloud", status_code=409)
         try:
-            providers = await HubProxy.get_or_raise(EntityType.DEPLOYMENT.value, None, "providers")
+            providers = await HubProxy.call("GET", EntityType.DEPLOYMENT.value, None, "providers")
         except HubError as exc:
             return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
         return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
@@ -633,7 +634,7 @@ class Deployment(Entity):
         if self.remote:
             from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-            data = await HubProxy.get(self.get_type(), self.id, "endpoints")
+            data = await HubProxy.try_call("GET", self.get_type(), self.id, "endpoints")
             rows = data.get("endpoints") if isinstance(data, dict) else None
             if not isinstance(rows, list):
                 return ApiFailResponse(message="the hub did not answer for this cloud placement", status_code=502)
@@ -765,7 +766,7 @@ class Deployment(Entity):
             raise DeploymentActionError("this computer's runs are the local run list", status_code=409)
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await HubProxy.get(self.get_type(), self.id, "runs", params={"limit": str(int(limit))})
+        data = await HubProxy.try_call("GET", self.get_type(), self.id, "runs", params={"limit": str(int(limit))})
         if not isinstance(data, dict):
             raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
         # The hub already drops anything that is not a run.
@@ -775,9 +776,15 @@ class Deployment(Entity):
         """POST one action on this placement's hub row; the row itself comes back down the bridge."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await HubProxy.post(self.get_type(), {}, self.id, verb)
-        if data is None:
-            raise DeploymentActionError(f"cloud login required to {verb} a cloud machine", status_code=401)
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+        try:
+            data = await HubProxy.call("POST", self.get_type(), self.id, verb, payload={})
+        except HubError as e:
+            if e.kind is not HubFailureKind.NOT_CONFIGURED:
+                raise
+            raise DeploymentActionError(f"cloud login required to {verb} a cloud machine", status_code=401) from e
         return data if isinstance(data, dict) else {}
 
     @action.post(action_name="pause")
@@ -1104,7 +1111,7 @@ class Deployment(Entity):
         # ``launch_surface`` rides along so the placement machine's ``use_action`` can
         # stamp it (``COMMON_UI`` layer); a hub that does not forward it drops it.
         body = {"deployment_id": self.id, **launch_surface_fields(launch_surface)}
-        opened = await HubProxy.post(agent.get_type(), body, agent.id, "use")
+        opened = await HubProxy.call("POST", agent.get_type(), agent.id, "use", payload=body)
         process_id = str((opened or {}).get("process_id") or "")
         if not is_valid_entity_id(process_id):
             raise RuntimeError("the hub returned an invalid process for this deployment")

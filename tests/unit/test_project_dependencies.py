@@ -2,7 +2,7 @@
 
 Real local git repositories over ``file://`` stand in for remotes (cloning is the step
 under test; a stubbed clone would pin nothing). The hub is the one thing stubbed, at
-``hub_get_or_raise``. Each test gets its own workspace, so a clone from one test can
+``HubProxy.call``. Each test gets its own workspace, so a clone from one test can
 never be "reused" by the next.
 
 # do not increase timeout without approval
@@ -485,7 +485,7 @@ async def test_a_hub_dependency_that_cannot_be_read_says_why(tmp_path, monkeypat
     async def refuse(*_a, **_k):
         raise HubError(status, "no")
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(refuse))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{HUB_ID}"}})
     state = _state(await site.resolve_dependencies(), "policies")
@@ -500,7 +500,7 @@ async def test_a_hub_dependency_already_on_this_machine_uses_its_folder(tmp_path
     async def refuse(*_a, **_k):
         raise HubError(0, "no")
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(refuse))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(refuse))
     policies = await _project(tmp_path, "policies")
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{policies.id}"}})
@@ -515,7 +515,7 @@ async def test_a_hub_project_backed_by_git_resolves(tmp_path, monkeypatch):
     async def row(*_a, **_k):
         return {"id": HUB_ID, "git_origin": {"kind": "git", "provider": "file", "owner": str(tmp_path), "name": "remote-policies", "branch": "main"}}
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(row))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(row))
     site = await _project(tmp_path, "site")
     _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": {"source": f"hub:{HUB_ID}", "path": "policies"}}})
     state = _state(await site.resolve_dependencies(), "policies")

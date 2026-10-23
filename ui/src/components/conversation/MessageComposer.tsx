@@ -1,3 +1,4 @@
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Boxes,
@@ -478,19 +479,22 @@ export function MessageComposer({
     }
   };
 
+  // Attachments travel as a message body only the desktop packs; the hub page sends text.
+  const canAttach = !isHubOnly();
+
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!isDisabled) setDragging(true);
+    if (!isDisabled && canAttach) setDragging(true);
   };
   const onDragLeave = () => setDragging(false);
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    if (!isDisabled) void addFiles(e.dataTransfer.files);
+    if (!isDisabled && canAttach) void addFiles(e.dataTransfer.files);
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (isDisabled) return;
+    if (isDisabled || !canAttach) return;
     const pastedImages = imageFilesFromClipboardData(e.clipboardData);
     if (pastedImages.length === 0) return;
 
@@ -510,7 +514,7 @@ export function MessageComposer({
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
-  const hiddenFileInput = (
+  const hiddenFileInput = canAttach && (
     <input
       ref={fileInputRef}
       type="file"
@@ -528,32 +532,36 @@ export function MessageComposer({
    *  (no nested popovers). This is the attach row both modes render. */
   const attachButtons = (
     <>
-      <button
-        type="button"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={attachmentsDisabled}
-        title={t`Attach files`}
-        data-testid="attach-file-button"
-        className={ICON_BUTTON_CLASS}
-      >
-        <Paperclip className="h-3.5 w-3.5" />
-      </button>
-      <AssetManagerPopover
-        trigger={
+      {canAttach && (
+        <>
           <button
             type="button"
-            disabled={assetsDisabled}
-            title={t`Attach an asset (skill, agent, doc, spec)`}
-            data-testid="attach-asset-button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={attachmentsDisabled}
+            title={t`Attach files`}
+            data-testid="attach-file-button"
             className={ICON_BUTTON_CLASS}
           >
-            <Boxes className="h-3.5 w-3.5" />
+            <Paperclip className="h-3.5 w-3.5" />
           </button>
-        }
-        {...assetSelection}
-        side="top"
-        searchPlaceholder={t`Search assets…`}
-      />
+          <AssetManagerPopover
+            trigger={
+              <button
+                type="button"
+                disabled={assetsDisabled}
+                title={t`Attach an asset (skill, agent, doc, spec)`}
+                data-testid="attach-asset-button"
+                className={ICON_BUTTON_CLASS}
+              >
+                <Boxes className="h-3.5 w-3.5" />
+              </button>
+            }
+            {...assetSelection}
+            side="top"
+            searchPlaceholder={t`Search assets…`}
+          />
+        </>
+      )}
       <EmojiPicker
         side="top"
         onPick={insertAtCaret}

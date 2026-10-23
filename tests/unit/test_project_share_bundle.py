@@ -49,7 +49,7 @@ def _hub_offline(monkeypatch):
     async def _offline(*args, **kwargs):
         raise HubError(0, "no hub in this test")
 
-    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(_offline))
+    monkeypatch.setattr(HubProxy, "call", staticmethod(_offline))
 
 
 def _origin() -> GitOrigin:
