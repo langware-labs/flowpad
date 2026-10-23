@@ -10,6 +10,7 @@ import { ClaudeSettingsJsonFsRecord } from './base';
 import { ClaudePermissionsFsRecord } from './permissions';
 import { ClaudeSandboxFsRecord } from './sandbox';
 import { ClaudeAttributionFsRecord } from './attribution';
+import { deepEqual } from '../../../../utils/deep-equal';
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -40,27 +41,6 @@ function getDefaults<T extends FsRecord>(
     defaults[key] = (inst as Record<string, unknown>)[key];
   }
   return defaults;
-}
-
-/** Deep-equal for primitives, arrays, and plain objects. */
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a == null || b == null) return a === b;
-  if (typeof a !== typeof b) return false;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => deepEqual(v, b[i]));
-  }
-  if (typeof a === 'object' && typeof b === 'object') {
-    const aObj = a as Record<string, unknown>;
-    const bObj = b as Record<string, unknown>;
-    const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
-    for (const k of keys) {
-      if (!deepEqual(aObj[k], bObj[k])) return false;
-    }
-    return true;
-  }
-  return false;
 }
 
 /** Shallow-merge two plain objects (for dict/env fields). */

@@ -1199,12 +1199,9 @@ export function MessageEntityChip({
       </>
     );
   }
-  const artifact =
-    typeId.type === Artifact.type && data
-      ? data instanceof Artifact
-        ? data
-        : new Artifact(data as unknown as Partial<Artifact>)
-      : null;
+  // Built on click, not in render: constructing an entity while rendering notifies the cache
+  // (eslint-rules/no-entity-construct-in-render.js).
+  const artifactData = typeId.type === Artifact.type && data ? data : null;
   // Installed via a MessageAttachment: behavior splits by view mode.
   //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
   //    uninstall / test live and an "Open" button jumps to the entity view.
@@ -1222,8 +1219,14 @@ export function MessageEntityChip({
           typeId={typeId}
           inside={{ type: 'conversation', id: conversationId }}
           onClick={
-            artifact
-              ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
+            artifactData
+              ? () =>
+                  void openArtifact(
+                    artifactData instanceof Artifact
+                      ? artifactData
+                      : new Artifact(artifactData as unknown as Partial<Artifact>),
+                    { navigation, currentProjectId: projectId ?? null },
+                  )
               : handleFolderPull
                 ? () => void handleFolderPull()
                 : attachment && !autoInstalled && isAdvanced
