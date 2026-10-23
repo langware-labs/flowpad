@@ -10,8 +10,8 @@ import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorke
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { providerMetaFor } from '@src/tabs/provider-meta';
 
-export type WorkerToolbarMode = 'lastOpened' | 'all';
-export type WorkerToolbarVariant = 'icon-row' | 'menu-list';
+export type ContextWorkerToolbarMode = 'lastOpened' | 'all';
+export type ContextWorkerToolbarVariant = 'icon-row' | 'menu-list';
 
 /**
  * Canonical compact icon-button style for worker-launch surfaces. Shared so
@@ -27,7 +27,7 @@ export const WORKER_ICON_BUTTON_CLASS =
 export const MENU_ITEM_CLASS =
   'flex w-full items-center gap-2 rounded px-2 py-1.5 text-start transition-colors hover:bg-muted disabled:opacity-50';
 
-interface WorkerToolbarProps {
+interface ContextWorkerToolbarProps {
   /** Launch the chosen worker. The toolbar persists it as the last opener. */
   onLaunch: (worker: WorkerType) => void | Promise<void>;
   /** Single-session surfaces: when a process exists, show **Open** instead of the row. */
@@ -52,9 +52,9 @@ interface WorkerToolbarProps {
    * behind a chevron), except in Dev view where it defaults to `all`. An
    * explicit prop always wins.
    */
-  mode?: WorkerToolbarMode;
+  mode?: ContextWorkerToolbarMode;
   /** `icon-row` (default) or `menu-list` (vertical labelled rows, e.g. the "+" menu). */
-  variant?: WorkerToolbarVariant;
+  variant?: ContextWorkerToolbarVariant;
   testIdPrefix?: string;
 }
 
@@ -74,7 +74,7 @@ interface WorkerToolbarProps {
  *                    (the standard-view default). Launching remembers the choice
  *                    in the shared last-opener key, so it surfaces first next time.
  */
-export function WorkerToolbar({
+export function ContextWorkerToolbar({
   onLaunch,
   hasProcess = false,
   onOpen,
@@ -85,14 +85,14 @@ export function WorkerToolbar({
   mode,
   variant = 'icon-row',
   testIdPrefix = 'worker',
-}: WorkerToolbarProps) {
+}: ContextWorkerToolbarProps) {
   const { t } = useLingui();
   const isDev = useIsDev();
   const { lastWorker, rememberWorker } = useLastWorkerType();
   const defaultWorker = useDefaultWorkerType();
   const [expanded, setExpanded] = useState(false);
 
-  const effectiveMode: WorkerToolbarMode = mode ?? (isDev ? 'all' : 'lastOpened');
+  const effectiveMode: ContextWorkerToolbarMode = mode ?? (isDev ? 'all' : 'lastOpened');
 
   // The in-flight guard lives here (not on `disabled`) so a click during a
   // launch still reaches us and can say so in the console. A `disabled` button
@@ -101,7 +101,7 @@ export function WorkerToolbar({
   const launch = (worker: WorkerType) => {
     if (starting) {
       console.warn(
-        `[WorkerToolbar] launch click IGNORED — a launch is already in flight (starting=true). ` +
+        `[ContextWorkerToolbar] launch click IGNORED — a launch is already in flight (starting=true). ` +
           `worker=${worker} surface=${testIdPrefix}. If no session ever opens, the launch promise never settled.`,
       );
       return;

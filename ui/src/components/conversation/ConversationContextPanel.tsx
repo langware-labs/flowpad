@@ -33,7 +33,7 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import { localAttachmentUrl, dockPointerForLocalFile } from './attachment-url';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
@@ -898,7 +898,7 @@ function PrivateContextSection({
           {menuOpen && (
             <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
               {onStartAssistance && (
-                <WorkerToolbar
+                <ContextWorkerToolbar
                   variant="menu-list"
                   onLaunch={handleLaunchWorker}
                   starting={starting}

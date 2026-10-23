@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import './milkdown.css';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 import type { WorkerType } from '@src/components/workers/worker-types';
 import { planNotePlugins } from './plan-note-plugin';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
@@ -379,7 +379,7 @@ const PlanFileEditor: React.FC = () => {
             <span className="text-xs text-muted-foreground">
               <Trans>Open with:</Trans>
             </span>
-            <WorkerToolbar
+            <ContextWorkerToolbar
               mode="all"
               onLaunch={reviewPlan}
               starting={isExecuting || fetchState !== 'loaded'}

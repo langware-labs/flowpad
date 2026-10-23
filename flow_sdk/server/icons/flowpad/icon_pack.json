@@ -82,6 +82,12 @@
       "aliases": [
         "HelpDesk"
       ]
+    },
+    {
+      "kind": "sticky-note",
+      "asset": "sticky-note.svg",
+      "tintable": false,
+      "source": "Flowpad's own sticky note (folded corner)"
     }
   ]
 }

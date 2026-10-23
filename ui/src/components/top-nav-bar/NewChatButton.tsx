@@ -18,7 +18,7 @@ import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
  *
  * The two things a chat launcher normally asks for are both already decided:
  *   - the HARNESS is the last one launched from any surface (the shared
- *     last-opener preference the terminal strip and `WorkerToolbar` write),
+ *     last-opener preference the terminal strip and `ContextWorkerToolbar` write),
  *     falling back to the capability-selected default before a first launch;
  *   - the MODE is the current View mode — `openNewChat` reads it and settles
  *     transport, surface and persona from that one value, so this button gets

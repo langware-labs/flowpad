@@ -50,7 +50,7 @@ export async function gotoNewShell(page: Page) {
  */
 export const AP_OPENER = process.env.AP_OPENER || 'claude';
 
-/** The same vendor named as a `WorkerType` (the WorkerToolbar's testid suffix). */
+/** The same vendor named as a `WorkerType` (the ContextWorkerToolbar's testid suffix). */
 export const AP_WORKER_TYPE = AP_OPENER === 'opencode' ? 'opencode' : 'claude_code';
 
 /** The same vendor as the Quick Create panel labels it. */

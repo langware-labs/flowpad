@@ -9,7 +9,7 @@ import type { WorkerType } from '@src/components/workers/worker-types';
  *
  * The terminal strip (`usePinnedOpeners`) remembers the last *opener* (a broader
  * set: `claude` / `codex` / `copilot` / `terminal` / `sandbox` / …), while the
- * shared `WorkerToolbar` cares only about the three worker vendors. Both read and
+ * shared `ContextWorkerToolbar` cares only about the three worker vendors. Both read and
  * write this one preference (`PrefKey.LAST_OPENER`) so launching Claude from
  * either surface keeps the other in sync; prefMan handles reactivity.
  */
