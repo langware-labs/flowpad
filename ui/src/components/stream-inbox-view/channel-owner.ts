@@ -1,7 +1,6 @@
 import {
   Agent,
   Conversation,
-  dataManager,
   type DataSource,
   EVERY_ROW,
   ExpressionNode,
@@ -57,16 +56,9 @@ export function recentConversationsRequest(clauses: ExpressionNode[], limit?: nu
   });
 }
 
-/** ``node`` where the server keeps the conversation ``field`` (``servesField``); nothing (match all) where it does not. */
-export const whereKept = (field: string, node: ExpressionNode): ExpressionNode[] =>
-  dataManager.servesField(Conversation.type, field) ? [node] : [];
-
 /** The clauses AND-ed; no clause matches every row. */
 export const allOf = (clauses: ExpressionNode[]): ExpressionNode | undefined =>
   clauses.length ? new ExpressionNode({ op: '$AND', operands: clauses }) : undefined;
-
-/** Whose conversations: the owner clause, where the server keeps an ``owner``. */
-const ownerClauses = (owner: TypeId): ExpressionNode[] => whereKept('owner', ownerMatch(owner));
 
 function ownerMatch(owner: TypeId): ExpressionNode {
   const owned = new ExpressionNode({ op: '$EQ', operands: ['owner', owner.toString()] });
@@ -98,7 +90,7 @@ export type ConversationScope = { owner: TypeId } | { sourceId: string };
 export const scopeKey = (scope: ConversationScope) => ('owner' in scope ? scope.owner.toString() : scope.sourceId);
 
 const scopeClauses = (scope: ConversationScope): ExpressionNode[] =>
-  'owner' in scope ? ownerClauses(scope.owner) : [sourceMatch(scope.sourceId)];
+  'owner' in scope ? [ownerMatch(scope.owner)] : [sourceMatch(scope.sourceId)];
 
 const notArchived = () =>
   new ExpressionNode({
@@ -117,7 +109,7 @@ const notDeleted = () => new ExpressionNode({ op: '$IS_NULL', operands: ['delete
 function viewClauses(view: StreamInboxViewMode): ExpressionNode[] {
   if (view === 'archived') return [new ExpressionNode({ op: '$EQ', operands: ['archived', true] })];
   if (view === 'unread') return [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })];
-  return whereKept('archived', notArchived());
+  return [notArchived()];
 }
 
 /** The scope's conversations matching `clauses`, in recency order — the ONE ordering every page and
@@ -133,7 +125,7 @@ function pageQuery(
     query: new QueryFilter({
       // An owner still reads a conversation they deleted on the hub (kept there for audit, `deleted_at`
       // set); it is gone from the Stream Inbox. A row kept here never carries the field.
-      match: allOf([...scopeClauses(scope), ...whereKept('deleted_at', notDeleted()), ...clauses]),
+      match: allOf([...scopeClauses(scope), notDeleted(), ...clauses]),
       order_by: [{ updated_date: direction }, { id: 'asc' }],
       ...page,
     }),

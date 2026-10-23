@@ -359,16 +359,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return typeof type === 'string' && type.toLowerCase() in this.typeInfos;
   }
 
-  /** Whether the connected server keeps `field` on rows of `type` — its bootstrap schema lists it. A query
-   *  filtering on a field the server does not keep is refused there (the hub answers 400), so a caller leaves
-   *  such a clause out: the stream inbox's projections (`owner`, `archived`, `is_unread`), a task's
-   *  `origin_conversation` and a team's `remote` are the desktop's; `deleted_at` is the hub's. The hub's
-   *  schema omits base fields (`id`, `created_date`, …), so ask only about optional fields. Before the types
-   *  load nothing is known, so nothing is refused. */
-  public servesField(type: string, field: string): boolean {
-    if (Object.keys(this.typeInfos).length === 0) return true;
-    const fields = this.getSchema(type)?.fieldNames;
-    return !fields || fields.includes(field);
+  /** Which fields the connected server keeps on rows of `type`: the ones its bootstrap schema lists. Each
+   *  server lists exactly the fields it keeps, so a query is folded to those before it is sent
+   *  (`QueryFilter.forServer`). Before the types load — or for a schema that does not even list `id`, so does
+   *  not describe its rows — nothing is known, and every field counts as kept. */
+  private keptFields(type: string): (field: string) => boolean {
+    const fields = this.getSchema(type)?.fieldSet;
+    return fields?.has('id') ? (field) => fields.has(field) : () => true;
   }
 
   /** All registered TypeInfos (the frontend SchemaRegistry). */
@@ -2125,10 +2122,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
       }
 
-      let apiQuery: any = {};
-      if (query) {
-        apiQuery = query.toJSON();
+      // A test on a field this server does not keep is answered here, not sent (the server refuses it).
+      const asked = query ? query.forServer(this.keptFields(type)) : undefined;
+      if (asked === null) {
+        const none: U[] = [];
+        return query?.limit != null
+          ? withPage(none, { has_more: false, next_offset: query.offset ?? 0, next_cursor: null })
+          : none;
       }
+      const apiQuery: any = asked ? asked.toJSON() : {};
       // Blob-carrying types (comment.raw_content, …) serve their blob fields
       // only under expand=blobs — without this, a scoped query returns rows
       // with EMPTY bodies (a receiver's synced comment renders "(empty)" in

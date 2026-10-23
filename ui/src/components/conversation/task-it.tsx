@@ -79,10 +79,7 @@ function useLinkedTasks(conversationId: string | null | undefined): Task[] {
       }),
     [conversationId],
   );
-  // `origin_conversation` is this machine's link; a server that does not keep it has no such tasks.
-  const { data: tasks = NO_TASKS } = useEntitiesQuery<Task>(request, {
-    enabled: !!conversationId && dataManager.servesField(Task.type, 'origin_conversation'),
-  });
+  const { data: tasks = NO_TASKS } = useEntitiesQuery<Task>(request, { enabled: !!conversationId });
   return tasks;
 }
 
