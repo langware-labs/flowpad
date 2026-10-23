@@ -1050,6 +1050,12 @@ async def ensure_tab_created(
             existing.pointer = _json.dumps({"viewType": vt, "pointer": sub})
             dirty = True
         reopened = not existing.visible
+        # A closed row reopened for DIFFERENT content (Project home landing on the
+        # scoped-Assets pointer a closed credential tab used) is a new tab in an old
+        # slot: it must not come back carrying the closed content's target and label.
+        reused_for_other_content = reopened and (
+            existing.target_type != target_type or existing.target_id != target_id
+        )
         if reopened:
             existing.visible = True
             existing.closed_with_parent = False
@@ -1058,7 +1064,7 @@ async def ensure_tab_created(
             ("target_type", target_type),
             ("target_id", target_id),
         ):
-            if val is not None and getattr(existing, attr) != val:
+            if (val is not None or reused_for_other_content) and getattr(existing, attr) != val:
                 existing._write_derived(**{attr: val})
                 dirty = True
         # ``project_id`` is re-derived from the target on every (re)open, so an
@@ -1083,11 +1089,11 @@ async def ensure_tab_created(
         # they do not choose, and the scope-keyed Assets variant re-points only its
         # presentation metadata (same viewType, same inner pointer) so it keeps the
         # never-clobber rule.
-        refresh_label = repointed_target
-        if name and (refresh_label or not existing.name) and existing.name != name:
+        refresh_label = repointed_target or reused_for_other_content
+        if (name or reused_for_other_content) and (refresh_label or not existing.name) and existing.name != name:
             existing.name = name
             dirty = True
-        if icon_key and (refresh_label or not existing.icon_key) and existing.icon_key != icon_key:
+        if (icon_key or reused_for_other_content) and (refresh_label or not existing.icon_key) and existing.icon_key != icon_key:
             existing.icon_key = icon_key
             dirty = True
         if not existing.worktree and worktree:
