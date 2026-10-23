@@ -676,7 +676,7 @@ def _project_for_cwd(*, required: bool = True) -> str:
                 EXIT_NOT_FOUND, "NO_INSTANCE", "Project scope needs a running instance. Start one, or pass --project."
             )
         return ""
-    rows = _call("GET", f"http://127.0.0.1:{port}/api/v1/graph/project", params={"limit": 500})
+    rows = _call("GET", f"http://127.0.0.1:{port}/api/v1/graph/project", params={"filter": json.dumps({"match": {}, "limit": 500})})
     best_mount, best_id = "", ""
     for row in rows if isinstance(rows, list) else []:
         mount = str(row.get("fs_storage_mount_path") or "")

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ticketAffordances } from '../../src/components/conversation/ticket-affordances';
+import { replyPickedUp, ticketAffordances } from '../../src/components/conversation/ticket-affordances';
 
 const base = { helpdesk: true, cloudUserId: 'u1', isOwner: false, isParticipant: false };
 
@@ -20,5 +20,14 @@ describe('ticketAffordances', () => {
 
   it('logged out of the hub there is no one to pick it up as', () => {
     expect(ticketAffordances({ ...base, cloudUserId: null })).toEqual({ canPickup: false, canSettle: false });
+  });
+});
+
+describe('replyPickedUp', () => {
+  it('is true only for staff not yet in the ticket whose own message is the newest', () => {
+    expect(replyPickedUp(true, 'u1', 'u1')).toBe(true);
+    expect(replyPickedUp(true, 'u2', 'u1')).toBe(false);
+    expect(replyPickedUp(false, 'u1', 'u1')).toBe(false);
+    expect(replyPickedUp(true, null, null)).toBe(false);
   });
 });

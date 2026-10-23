@@ -2024,7 +2024,6 @@ class SQLiteDBDriver(DBDriver):
 
         # Push LIMIT/OFFSET to SQL only when the whole filter runs in SQL (a Python
         # post-filter must see every row before pagination). Sorting always runs in SQL.
-        unpaged_query = query
         if fully_sql:
             if entities_filter.offset:
                 query = query.offset(entities_filter.offset)
@@ -2034,12 +2033,9 @@ class SQLiteDBDriver(DBDriver):
         async with self._session_ctx(write=False) as session:
             schemas = (await session.execute(query)).scalars().all()
             entities = self._hydrate(schemas, "get_all")
-            if fully_sql and paged and len(entities) < len(schemas):
-                # An unreadable row was skipped, so the SQL page came back short and its offset counted a
-                # row nobody can read. Page over the readable rows instead: the caller's offset and its
-                # next page both count only rows it can see, and the page is full.
-                entities = self._hydrate((await session.execute(unpaged_query)).scalars().all(), "get_all")
-                fully_sql = False
+        # An unreadable row skipped by ``_hydrate`` still took its place in the SQL page, like a row the
+        # hub hides from its reader: the offset counts it, and the caller is told how many rows were read.
+        rows_read = len(schemas)
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
@@ -2052,7 +2048,9 @@ class SQLiteDBDriver(DBDriver):
                 entities = entities[entities_filter.offset :]
             if entities_filter.limit:
                 entities = entities[: entities_filter.limit]
+            rows_read = len(entities)
 
+        entities_filter.rows_read = rows_read
         return entities
 
     @staticmethod

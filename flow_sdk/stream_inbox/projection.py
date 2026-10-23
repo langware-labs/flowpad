@@ -33,7 +33,6 @@ driver's own report is empty.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -349,6 +348,8 @@ async def project_source_item(
     # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
     # a source channel is never overwritten (`Conversation.adopt_channel`).
     changed = conversation.adopt_channel(channel, str(source.id), str(getattr(source, "provider", "") or ""))
+    if _adopt_kind(source, conversation):
+        changed = True
     if await _follow_subject(source, thread, conversation, subject):
         changed = True
     from flow_sdk.builtin.data_source import answered_by  # noqa: PLC0415
@@ -391,6 +392,19 @@ async def project_source_item(
         conversation_id, sender, sender_name, existing_fm,
         notify=notify, recount=recount, announce=announce, item_changed=item_changed,
     )
+
+
+def _adopt_kind(source, conversation) -> bool:
+    """Give the conversation the kind the source's threads are (``conversation_kind``), so a help-desk
+    ticket that only ever arrived through its source is still a ticket. Answers whether it changed."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(str(getattr(source, "provider", "") or ""))
+    kind = getattr(driver.cls, "conversation_kind", None) if driver is not None else None
+    if not kind or conversation.kind == kind:
+        return False
+    conversation.kind = kind
+    return True
 
 
 async def _follow_subject(source, thread, conversation, subject: str) -> bool:

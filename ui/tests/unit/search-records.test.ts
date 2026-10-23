@@ -49,4 +49,21 @@ describe('a query request says what it does not read', () => {
     expect(request.query?.validate({ status: 'open' })).toBe(true);
     expect(request.query?.validate({ status: 'done' })).toBe(false);
   });
+
+  it('a field map with paging words: the fields are the match, the words page it', () => {
+    const request = new QueryRequest({ type: 'task', query: { status: 'open', limit: 3, order_by: { created_date: 'desc' } } });
+    expect([request.query?.limit, request.query?.order_by]).toEqual([3, { created_date: 'desc' }]);
+    expect(request.query?.validate({ status: 'open' })).toBe(true);
+    expect(request.query?.validate({ status: 'done', limit: 3 })).toBe(false);
+    expect(JSON.stringify((request.query?.toJSON() as { filter: { match: unknown } }).filter.match)).not.toMatch(
+      /limit|order_by/,
+    );
+  });
+
+  it('a field map with expand: the field is the match, expand is not a field', () => {
+    const request = new QueryRequest({ type: 'task', query: { status: 'open', expand: 'blobs' } });
+    expect(request.query?.expand).toEqual(['blobs']);
+    expect(request.query?.validate({ status: 'open' })).toBe(true);
+    expect(request.query?.validate({ status: 'done' })).toBe(false);
+  });
 });

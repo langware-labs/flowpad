@@ -7,7 +7,6 @@ import {
   dataManager,
   FlowMessage,
   ProcessStatus,
-  QueryRequest,
   Skill,
   Spec,
   Task,
@@ -39,6 +38,7 @@ import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
+import { conversationMessagesRequest } from './conversation-messages-query';
 import type { WorkerType } from './conversation-session-constants';
 import { useConversationSession } from './useConversationSession';
 import {
@@ -147,21 +147,11 @@ export function ConversationContextPanel({
   // origin-overlap cascade is suppressed so clicking one entity doesn't
   // co-light every other entity that happens to share its messages.
   const entityKey = selectedEntityKey ?? null;
-  // Fetch every FlowMessage in the conversation so we can aggregate context
-  // across all of them. Sorting is deferred to the order the conversation
-  // itself records on `conversationMessageIds` (the ordered jsonl pointer
-  // list) — origin lists derived from this query are then re-sorted to that
-  // order so click-back consistently jumps to the *earliest* occurrence.
-  const flowMessagesQuery = useMemo(
-    () =>
-      new QueryRequest({
-        type: FlowMessage.type,
-        scope: [],
-        name: `conv-flow-messages:${conversationId}`,
-        query: undefined,
-      }),
-    [conversationId],
-  );
+  // The conversation's own messages — its children (`conversation/<id>/flow_message`), the very
+  // request ConversationView reads, so the two share one fetch and one watch. Ordering is deferred to
+  // the order the conversation records on `conversationMessageIds` (the ordered pointer list) — origin
+  // lists derived from it are re-sorted to that order so click-back jumps to the *earliest* occurrence.
+  const flowMessagesQuery = useMemo(() => conversationMessagesRequest(conversationId), [conversationId]);
   const { data: candidateFlowMessages = [], refetch: refetchFlowMessages } = useEntitiesQuery<FlowMessage>(
     flowMessagesQuery,
     {
@@ -186,10 +176,8 @@ export function ConversationContextPanel({
   }, [pointerCount, refetchFlowMessages]);
 
   // The conversation's pointer list is the authoritative ordering — same
-  // approach `ConversationView` uses. We don't filter server-side on
-  // `conversation_id` (it isn't reliably set on every FlowMessage), so this
-  // pulls all FlowMessages and keeps only those whose id is in the pointer
-  // list. Drops drafts / strays at the same time.
+  // approach `ConversationView` uses; keeping only the ids in it drops
+  // drafts / strays at the same time.
   const orderedMessages = useMemo(
     () => orderMessagesByConversation(conversation, candidateFlowMessages),
     [candidateFlowMessages, conversation],

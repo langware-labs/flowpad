@@ -97,4 +97,31 @@ describe('DataManager: UPDATE reconciles match-filtered live-query membership', 
     expect(wq.results.length).toBe(1); // still matches visible:true — stays
     unsub();
   });
+
+  it('re-sorts an ordered page when the field it is ordered by changes', async () => {
+    const OTHER = '7b1f4d2c-1c2e-4a9b-8f3d-0a1b2c3d4e5f';
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      Object.assign(
+        [
+          { type: 'tab', id: OTHER, pointer: POINTER, visible: true, lane: 'sorted', updated_date: '2026-10-20T00:00:00Z' },
+          tabJson(true, { lane: 'sorted', updated_date: '2026-10-10T00:00:00Z' }),
+        ],
+        { has_more: false, next_offset: 2 },
+      ) as any,
+    );
+    const request = new QueryRequest({
+      type: Tab.type,
+      scope: [],
+      query: new QueryFilter({ match: { visible: true, lane: 'sorted' }, limit: 10, order_by: { updated_date: 'desc' } }),
+      callback: () => {},
+    });
+    const unsub = await dataManager.watchQuery(request);
+    const wq = watchedFor(request);
+    expect(wq.results.map((e: any) => e.id)).toEqual([OTHER, ID]);
+
+    fireUpdate(tabJson(true, { lane: 'sorted', updated_date: '2026-10-22T00:00:00Z' }));
+
+    expect(wq.results.map((e: any) => e.id)).toEqual([ID, OTHER]);
+    unsub();
+  });
 });

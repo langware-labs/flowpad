@@ -25,6 +25,7 @@ import {
   Task,
   toplog,
   dataContext,
+  dataManager,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -32,7 +33,7 @@ import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
-import { ticketAffordances } from './ticket-affordances';
+import { replyPickedUp, ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
@@ -69,7 +70,12 @@ import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
-import { conversationMessagesRequest } from './conversation-messages-query';
+import {
+  conversationMessagesRequest,
+  loadedPointers,
+  olderConversationMessagesRequest,
+  oldestCreatedDate,
+} from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
 import { failedPromptOf, pendingPromptOf } from './session-turns';
 import { isSessionExpired } from './session-card-state';
@@ -224,13 +230,41 @@ export function ConversationView({
   // load on demand via a `created_date $LT` cursor extension here.
   const messagesRequest = useMemo(() => conversationMessagesRequest(conversationId), [conversationId]);
   const {
-    data: conversationMessages = [],
+    data: windowMessages = [],
     refetch: refetchConversationMessages,
     isSuccess: messagesLoaded,
     error: messagesError,
+    hasMore: windowHasMore = false,
   } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
+  // Older messages, a page at a time past the live window: `created_date` older than the oldest
+  // loaded (a keyset). Kept per conversation; a new conversation starts from its window again.
+  const [older, setOlder] = useState<{ conversationId: string; rows: FlowMessage[]; hasMore: boolean } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderRows = older?.conversationId === conversationId ? older.rows : null;
+  const hasOlder = olderRows ? !!older?.hasMore : windowHasMore;
+  const conversationMessages = useMemo(() => {
+    if (!olderRows?.length) return windowMessages;
+    const held = new Set(windowMessages.map((m) => m.id));
+    return [...windowMessages, ...olderRows.filter((m) => !held.has(m.id))];
+  }, [windowMessages, olderRows]);
+  const loadOlder = useCallback(async () => {
+    const before = oldestCreatedDate(conversationMessages);
+    if (!conversationId || !before || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const rows = await dataManager.query<FlowMessage>(olderConversationMessagesRequest(conversationId, before), true);
+      const more = (rows as unknown as { has_more?: boolean }).has_more ?? false;
+      setOlder((prev) => ({
+        conversationId,
+        rows: [...(prev?.conversationId === conversationId ? prev.rows : []), ...rows],
+        hasMore: more,
+      }));
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [conversationId, conversationMessages, loadingOlder]);
   // The order of the messages: the conversation's pointer log (``message_ids``) where it keeps
   // one; a conversation without one (the hub keeps no such log) is ordered by the messages
   // themselves — otherwise it read "No messages yet".
@@ -357,7 +391,16 @@ export function ConversationView({
     [dockNavigation],
   );
 
-  const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
+  // Bubbles for the loaded messages only: an older pointer waits for "load older" instead of
+  // fetching its message on its own.
+  const shownPointers = useMemo(
+    () => (messagesLoaded ? loadedPointers(pointers, new Set(messagesById.keys())) : pointers),
+    [messagesLoaded, pointers, messagesById],
+  );
+  const orderedItems = useMemo(
+    () => buildConversationItems(shownPointers, draftMessages),
+    [shownPointers, draftMessages],
+  );
 
   // What this conversation's channel is — the backend's `channel_spec`. A reply goes out
   // through a data source only when the channel's transport says so; Flowpad's own chat is
@@ -900,6 +943,9 @@ export function ConversationView({
     isOwner: isConversationOwner,
     isParticipant,
   });
+  useEffect(() => {
+    if (replyPickedUp(canPickup, lastMessageSenderId, cloudUserId)) void refreshMembers();
+  }, [canPickup, lastMessageSenderId, cloudUserId, refreshMembers]);
 
   const showSoloNotice = shouldShowSoloSendNotice({
     remote: conversation?.remote === true,
@@ -1039,6 +1085,19 @@ export function ConversationView({
           onShowAll={onThreadNavigate ? () => onThreadNavigate(null) : undefined}
         />
       )}
+      {hasOlder && orderedItems.length > 0 && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void loadOlder()}
+            data-testid="conversation-load-older"
+            className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+          >
+            {loadingOlder ? <Trans>Loading…</Trans> : <Trans>Load older messages</Trans>}
+          </button>
+        </div>
+      )}
       {orderedItems.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">
           <Trans>No messages yet.</Trans>
@@ -1073,9 +1132,7 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={
-                      role === 'host' && session ? () => approveSession(session) : undefined
-                    }
+                    onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!turns?.failed}

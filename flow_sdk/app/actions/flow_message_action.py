@@ -28,7 +28,7 @@ from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email, normalize_roster
-from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.hub_proxy import HubProxy, HubWalk
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.cloud_client.transport.hub_http import hub_base_url, rows_of
 from flow_sdk.core.entity.entity_model import remote_reflection
@@ -3834,14 +3834,25 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     local_list = await Conversation.get_all({})
     local_index = {c.id: c for c in local_list if c.id}
 
-    hub_convs_result, hub_invs_result = await asyncio.gather(
-        HubProxy.try_call("GET", BuiltinEntityType.CONVERSATION),
+    # The conversation list is walked page by page (the hub pages every list); ``invitation/pending``
+    # is an action answering one plain list.
+    hub_walk, hub_invs_result = await asyncio.gather(
+        HubProxy.walk(BuiltinEntityType.CONVERSATION),
         HubProxy.try_call("GET", BuiltinEntityType.INVITATION, action="pending"),
         return_exceptions=True,
     )
 
     hub_reachable = True
     auth_required = False
+    # Pruning on absence is safe only when the hub sent the WHOLE list.
+    hub_list_complete = False
+    if isinstance(hub_walk, HubWalk):
+        hub_list_complete = hub_walk.complete
+        if hub_walk.error is not None and hub_walk.error.status_code == 401:
+            auth_required = True
+        hub_convs_result = hub_walk.rows if (hub_walk.rows or hub_walk.complete) else hub_walk.error
+    else:
+        hub_convs_result = hub_walk
 
     def _coerce_list(result) -> Optional[list]:
         nonlocal hub_reachable, auth_required
@@ -3954,7 +3965,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # user lost access). Reconcile by hard-deleting locally so the next
     # render reflects reality.
     pruned_ids: list[str] = []
-    if hub_reachable:
+    if hub_reachable and hub_list_complete:
         seen_ids = {c.get("id") for c in hub_convs if c.get("id") and not c.get("deleted_at")}
         seen_ids.update(invitation_conv_ids)
         # Re-read local state because the upsert + invitation steps may have

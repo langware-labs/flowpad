@@ -294,11 +294,16 @@ export class WatchQueryMap<T> {
     }
   }
 
-  /** Re-sort an ordered query's results after a row in it changed (a no-op for an unordered one). */
-  public static reorder<T>(watchedQuery: WatchedQuery<T>): void {
+  /**
+   * Re-sort an ordered query's results after a row in it changed (a no-op for an unordered one). The
+   * changed row is read with `data` over it: the update may not have been merged into it yet.
+   */
+  public static reorder<T>(watchedQuery: WatchedQuery<T>, changed?: { typeId: TypeId; data: object }): void {
     const query = watchedQuery.request.query;
     if (!query?.ordering || !watchedQuery.results) return;
-    watchedQuery.results.sort((a, b) => query.compare(a, b));
+    const view = (row: any) =>
+      changed && row?.typeId?.equals?.(changed.typeId) ? Object.assign(Object.create(row), changed.data) : row;
+    watchedQuery.results.sort((a, b) => query.compare(view(a), view(b)));
   }
 
   /**

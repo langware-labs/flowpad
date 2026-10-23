@@ -553,17 +553,18 @@ async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
     """
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     endpoint_id = _endpoint_id(endpoint_ref)
     _require_hub_login()
 
     try:
-        body = await HubProxy.try_call("GET", "llm_endpoint", endpoint_id, action="chain")
+        body = await HubProxy.call("GET", "llm_endpoint", endpoint_id, action="chain")
     except HubError as exc:
+        if exc.kind is HubFailureKind.NOT_CONFIGURED:
+            raise HubEndpointBindError("no hub is configured for this box", 409) from exc
         raise HubEndpointBindError(f"hub refused the chain read: {exc}", 502) from exc
-    if body is None:
-        raise HubEndpointBindError("no hub is configured for this box", 409)
-    # ``HubProxy.try_call("GET")`` answers the envelope for a type listing and the bare payload for an action;
+    # ``HubProxy.call("GET")`` answers the envelope for a type listing and the bare payload for an action;
     # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     return data if isinstance(data, dict) else {}

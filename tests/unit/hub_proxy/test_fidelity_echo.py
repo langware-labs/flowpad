@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import json
 import uuid
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -75,6 +76,39 @@ async def test_method_path_query_body_reach_the_hub_verbatim(desktop, echo_hub, 
     assert "hub-reflect" not in hdr
     assert hdr["host"].startswith("127.0.0.1:")
     assert len(echo_hub.received) == 1
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The hub's list contract: paging inside ``filter``, JSON form ...
+        "filter=" + quote(json.dumps(
+            {"match": {"status": "open"}, "limit": 100, "offset": 200, "order_by": [{"updated_date": "desc"}]}
+        ), safe=""),
+        # ... and bracket form.
+        "filter%5Bmatch%5D%5Bstatus%5D=open&filter%5Blimit%5D=100&filter%5Boffset%5D=200"
+        "&filter%5Border_by%5D%5B0%5D%5Bupdated_date%5D=desc",
+        # A plain ?limit the hub refuses still reaches it unchanged: refusing is the hub's call.
+        "limit=100&offset=200",
+    ],
+    ids=["json", "brackets", "plain"],
+)
+async def test_list_paging_params_reach_the_hub_verbatim(desktop, echo_hub, query):
+    async with httpx.AsyncClient(base_url=desktop, timeout=20) as c:
+        r = await c.get(f"/api/v1/graph/conversation?{query}", headers=REFLECT)
+    assert r.status_code == 200, r.text
+    assert echo_hub.received[0].query == query
+
+
+async def test_a_paged_answer_comes_back_with_its_paging_fields(desktop, echo_hub):
+    echo_hub.paged["/api/v1/graph/conversation"] = [{"id": _id(), "type": "conversation"} for _ in range(5)]
+    flt = json.dumps({"match": {}, "limit": 2, "offset": 2})
+    async with httpx.AsyncClient(base_url=desktop, timeout=20) as c:
+        r = await c.get("/api/v1/graph/conversation", params={"filter": flt}, headers=REFLECT)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["data"]) == 2
+    assert (body["has_more"], body["next_offset"]) == (True, 4)
 
 
 async def test_percent_encoded_and_unicode_segments_are_not_re_encoded(desktop, echo_hub):

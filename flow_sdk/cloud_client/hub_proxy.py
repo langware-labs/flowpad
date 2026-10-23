@@ -110,6 +110,23 @@ class HubAnswer:
         return json.loads(self.content) if self.content else None
 
 
+# Rows per page when walking a whole hub list (``HubProxy.walk``).
+WALK_PAGE_SIZE = 200
+
+
+@dataclass
+class HubWalk:
+    """A hub list read page by page. ``complete`` is True only when the hub said the last page was the
+    last (``has_more`` false): a caller that prunes the rows a list no longer holds must prune only then —
+    a failed, partial or timed-out walk is missing rows it never saw. ``error`` is the failure that cut it."""
+
+    rows: list[dict] = field(default_factory=list)
+    complete: bool = False
+    pages: int = 0
+    error: Optional[HubError] = None
+    page_seconds: list[float] = field(default_factory=list)  # how long each page took to come back
+
+
 def graph_url(
     entity_type: Any,
     entity_id: str | None = None,
@@ -243,6 +260,69 @@ class HubProxy:
             timeout=timeout, anonymous=anonymous,
         )  # fmt: skip
         return _unwrap(resp, method=method, url=url, strict=strict, raw=raw)
+
+    @classmethod
+    async def walk(
+        cls,
+        entity_type: Any,
+        *,
+        match: Any = None,
+        order_by: Any = None,
+        page_size: int = WALK_PAGE_SIZE,
+        scope: list[tuple[str, str]] | None = None,
+        timeout: httpx.Timeout | float | None = None,
+    ) -> HubWalk:
+        """Every row of a hub list, one page at a time, following ``next_offset`` until ``has_more`` is
+        false (the hub's list contract: paging inside ``filter`` next to a ``match``).
+
+        Never raises: a page that fails ends the walk with ``complete=False`` and the rows read so far.
+        Each page has its own ``timeout`` (``DEFAULT_TIMEOUT``), so one slow hub costs one page's budget.
+        Ordered oldest first by default, so a row the hub gains mid-walk lands on a later page.
+        """
+        import json as _json  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        out = HubWalk()
+        try:
+            url = _require_url(entity_type, scope=scope)
+        except HubError as e:
+            out.error = e
+            return out
+        offset = 0
+        order = order_by if order_by is not None else [{"created_date": "asc"}]
+        while True:
+            page_filter = {"match": match or {}, "limit": page_size, "order_by": order}
+            if offset:
+                page_filter["offset"] = offset
+            started = time.monotonic()
+            try:
+                resp = await cls.send(
+                    "GET", url, params={"filter": _json.dumps(page_filter)}, timeout=timeout or DEFAULT_TIMEOUT
+                )
+                out.page_seconds.append(time.monotonic() - started)
+                data = _unwrap(resp, method="GET", url=url)
+                body = resp.json()
+            except HubError as e:
+                logger.info("[hub] walk %s stopped after %d page(s): %s", entity_type, out.pages, e)
+                out.error = e
+                return out
+            rows = data if isinstance(data, list) else []
+            out.rows.extend(r for r in rows if isinstance(r, dict))
+            out.pages += 1
+            has_more = body.get("has_more") if isinstance(body, dict) else None
+            if has_more is None:
+                # An answer without the paging fields did not page: it is whole only if it came back short.
+                has_more = len(rows) >= page_size
+                next_offset = offset + len(rows)
+            else:
+                next_offset = body.get("next_offset")
+            if not has_more:
+                out.complete = True
+                return out
+            if not isinstance(next_offset, int) or next_offset <= offset:
+                out.error = HubError(200, f"list paging did not advance (next_offset={next_offset!r})")
+                return out
+            offset = next_offset
 
     @classmethod
     async def try_call(cls, method: str, entity_type: Any, *args: Any, **kwargs: Any) -> Any:

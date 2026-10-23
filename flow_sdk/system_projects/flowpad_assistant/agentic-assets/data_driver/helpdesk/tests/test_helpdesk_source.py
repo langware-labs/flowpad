@@ -137,7 +137,7 @@ class _Desk(_Hub):
         return self.pool if action == "helpdesk_conversations" else self.threads.get(entity_id, [])
 
     def reads(self):
-        return [c[2] for c in self.calls if c[3] == "flow_message"]
+        return [c[2] for c in self.calls if c[3] == "messages"]
 
 
 def _serve(monkeypatch, desk):

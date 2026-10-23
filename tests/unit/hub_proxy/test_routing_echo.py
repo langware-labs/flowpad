@@ -197,6 +197,24 @@ async def test_a_list_answer_updates_rows_held_here_and_adds_none(desktop, echo_
     assert await Conversation.get_by_id(stranger) is None
 
 
+async def test_a_paged_list_answer_past_the_mirror_cap_comes_back_whole(desktop, echo_hub):
+    """A page of more than ``_MIRROR_LIST_CAP`` rows reaches the caller verbatim — every row and the
+    page's ``has_more``/``next_offset`` — while only the first 500 are folded into local copies."""
+    first, past_cap = await _conversation(remote=True, title="old"), await _conversation(remote=True, title="old")
+    rows = [{"id": str(uuid.uuid4()), "type": "conversation", "title": f"r{i}"} for i in range(700)]
+    rows[0] = {"id": first.id, "type": "conversation", "title": "new"}
+    rows[550] = {"id": past_cap.id, "type": "conversation", "title": "new"}
+    echo_hub.paged["/api/v1/graph/conversation"] = rows
+    flt = json.dumps({"match": {}, "limit": 600})
+    r = await _http(desktop, "GET", "conversation", params={"filter": flt}, headers=REFLECT)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["data"] == rows[:600]
+    assert (body["has_more"], body["next_offset"]) == (True, 600)
+    assert (await _reload(first)).title == "new"
+    assert (await _reload(past_cap)).title == "old"  # past the cap: not mirrored by this call
+
+
 async def test_a_refusal_changes_nothing_locally(desktop, echo_hub):
     conv = await _conversation(remote=True, title="keep")
     r = await _http(desktop, "PUT", f"conversation/{conv.id}", json={"title": "nope"},
@@ -265,6 +283,17 @@ async def test_ws_query_and_sub_path_reach_the_hub(desktop, echo_hub):
               query={"link-id": "L1"})  # fmt: skip
     [rec] = [r for r in echo_hub.all_received if r.raw_path == f"/api/v1/graph/conversation/{cid}/members/link"]
     assert rec.query == "link-id=L1"
+
+
+async def test_ws_list_paging_params_reach_the_hub(desktop, echo_hub):
+    rows = [{"id": str(uuid.uuid4()), "type": "conversation"} for _ in range(5)]
+    echo_hub.paged["/api/v1/graph/conversation"] = rows
+    flt = json.dumps({"match": {}, "limit": 2, "offset": 2, "order_by": [{"updated_date": "desc"}]})
+    content = await _ws(desktop, "GET", direct_resource_type="conversation", query={"filter": flt})
+    assert content["status"] == "SUCCESS"
+    assert content["data"] == rows[2:4]
+    [rec] = [r for r in echo_hub.all_received if r.raw_path == "/api/v1/graph/conversation"]
+    assert json.loads(httpx.QueryParams(rec.query)["filter"]) == json.loads(flt)
 
 
 async def test_ws_hub_refusal_comes_back_as_fail(desktop, echo_hub):

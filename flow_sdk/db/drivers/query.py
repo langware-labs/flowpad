@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums import ExpansionType
@@ -97,6 +97,17 @@ class QueryFilter(BaseModel):
     limit: Optional[int] = Field(None, ge=1)
     offset: Optional[int] = Field(None, ge=0)
     expand: Optional[List[str]] = None
+    # Set by a driver's ``get_all``: how many stored rows the page consumed, unreadable ones included, so a
+    # caller paging on can count them into its next offset. Not part of the filter's JSON.
+    _rows_read: Optional[int] = PrivateAttr(default=None)
+
+    @property
+    def rows_read(self) -> Optional[int]:
+        return self._rows_read
+
+    @rows_read.setter
+    def rows_read(self, value: Optional[int]) -> None:
+        self._rows_read = value
 
     @field_validator("order_by")
     @classmethod

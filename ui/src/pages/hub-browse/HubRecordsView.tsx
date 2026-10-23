@@ -41,6 +41,9 @@ const RAIL_HEADING: Record<string, string> = {
   markdown: 'Docs',
 };
 
+/** How many records a page of the list asks for. */
+export const HUB_RECORDS_PAGE_SIZE = 100;
+
 export function HubRecordsView({ type }: { type?: string }) {
   const { navigation } = useDockNavigation();
 
@@ -51,8 +54,15 @@ export function HubRecordsView({ type }: { type?: string }) {
       type
         ? new QueryRequest({
             type,
-            query:
-              type === 'conversation' ? new QueryFilter({ match: { op: '$IS_NULL', operands: ['deleted_at'] } }) : null,
+            // The newest page; the server says when more are behind it (`loadMore`).
+            query: new QueryFilter({
+              match:
+                type === 'conversation'
+                  ? { op: '$IS_NULL', operands: ['deleted_at'] }
+                  : { op: '$IS_NOT_NULL', operands: ['id'] },
+              limit: HUB_RECORDS_PAGE_SIZE,
+              order_by: [{ created_date: 'desc' }, { id: 'desc' }],
+            }),
             scope: [],
             name: `hub-records-${type}`,
           })
@@ -62,7 +72,7 @@ export function HubRecordsView({ type }: { type?: string }) {
   // Generic list — the concrete entity type is data-driven; we only read `id`
   // and the SDK `displayName` label off each hydrated entity.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, isLoading } = useEntitiesQuery<any>(request as QueryRequest, {
+  const { data, isLoading, hasMore, loadMore, isLoadingMore } = useEntitiesQuery<any>(request as QueryRequest, {
     enabled: !!type && !!request,
   });
   const rows = (data ?? []) as Row[];
@@ -112,6 +122,17 @@ export function HubRecordsView({ type }: { type?: string }) {
                 <span className="min-w-0 flex-1 truncate text-sm">{row.displayName || row.id}</span>
               </button>
             ))}
+            {hasMore && (
+              <button
+                type="button"
+                disabled={isLoadingMore}
+                onClick={() => void loadMore?.()}
+                data-testid="hub-records-load-more"
+                className="rounded-lg border border-dashed border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent disabled:opacity-60"
+              >
+                {isLoadingMore ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+              </button>
+            )}
           </div>
         )}
       </div>

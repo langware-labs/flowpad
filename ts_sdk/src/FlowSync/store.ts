@@ -751,7 +751,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           const row = watchedQuery.results[index];
           if (row !== this.entities.get(typeId)?.entity) this.deepAssign(row, data);
           // An ordered list keeps its order: the changed field may be the one it is sorted by.
-          WatchQueryMap.reorder(watchedQuery);
+          WatchQueryMap.reorder(watchedQuery, { typeId, data });
           watchedQuery.notifyCallbacks();
         }
       }

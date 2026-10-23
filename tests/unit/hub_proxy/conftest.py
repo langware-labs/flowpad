@@ -84,6 +84,10 @@ def echo_hub(echo_app, echo_server, monkeypatch):
     echo_app.all_received.clear()
     echo_app.sse_closed.clear()
     echo_app.scripted.clear()
+    echo_app.paged.clear()
+    echo_app.paged_fail_at.clear()
+    echo_app.paged_delay = 0.0
+    echo_app.paged_seconds.clear()
     yield echo_app
     _TAG.reset(token)
     echo_app.tag = None
