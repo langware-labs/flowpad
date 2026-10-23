@@ -16,13 +16,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from flow_sdk.builtin.flow_message import (
+    BODY_FILENAME,
     Attachment,
     AttachmentType,
-    BODY_FILENAME,
     BodyStatus,
     FlowMessage,
 )
-
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -45,8 +45,8 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})) as mock_put,
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
+        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
     ):
         await fm.upload_body(transfer_mode="git")
 
@@ -96,8 +96,8 @@ async def test_upload_body_pack_failure_leaves_uploading(tmp_path: Path) -> None
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(side_effect=RuntimeError("pack boom"))),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})) as mock_put,
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
+        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
     ):
         with pytest.raises(RuntimeError, match="pack boom"):
             await fm.upload_body()
@@ -118,8 +118,8 @@ async def test_upload_body_upload_failure_leaves_uploading(tmp_path: Path) -> No
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(return_value=fake_zip)),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})) as mock_put,
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(side_effect=RuntimeError("upload boom"))) as mock_post,
+        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
+        patch.object(HubProxy, "post", AsyncMock(side_effect=RuntimeError("upload boom"))) as mock_post,
     ):
         with pytest.raises(RuntimeError, match="upload boom"):
             await fm.upload_body()
@@ -175,8 +175,8 @@ async def test_concurrent_upload_body_fires_single_fs_upload(tmp_path: Path) -> 
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(side_effect=_fake_post)) as mock_post,
+        patch.object(HubProxy, "put", AsyncMock(return_value={})),
+        patch.object(HubProxy, "post", AsyncMock(side_effect=_fake_post)) as mock_post,
     ):
         await asyncio.gather(fm_auto.upload_body(), fm_explicit.upload_body())
 
@@ -210,8 +210,8 @@ async def test_sequential_upload_body_reuploads(tmp_path: Path) -> None:
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "put", AsyncMock(return_value={})),
+        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
     ):
         await fm.upload_body()
         await fm.upload_body()
@@ -245,8 +245,8 @@ async def test_concurrent_upload_body_failure_propagates_to_both(tmp_path: Path)
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(side_effect=_boom)),
+        patch.object(HubProxy, "put", AsyncMock(return_value={})),
+        patch.object(HubProxy, "post", AsyncMock(side_effect=_boom)),
     ):
         results = await asyncio.gather(
             fm_a.upload_body(), fm_b.upload_body(), return_exceptions=True

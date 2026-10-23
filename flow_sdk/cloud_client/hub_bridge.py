@@ -218,10 +218,10 @@ async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: An
     if not blob_fields or not isinstance(data, dict) or any(data.get(f) for f in blob_fields):
         return data
     try:
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-        from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
 
-        expanded = await hub_get(BuiltinEntityType(entity_type), entity_id, params={"expand": "blobs"})
+        expanded = await HubProxy.get(BuiltinEntityType(entity_type), entity_id, params={"expand": "blobs"})
         if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
             return {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
     except Exception:  # noqa: BLE001
@@ -240,12 +240,12 @@ async def _conversation_allows_inbound_materialization(conversation_id: str) -> 
     inaccessible parents reject the stale child.
     """
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-    from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
 
     if await Conversation.get_one({"id": conversation_id}) is not None:
         return True
-    hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conversation_id)
+    hub_conv = await HubProxy.get(BuiltinEntityType.CONVERSATION, conversation_id)
     return bool(isinstance(hub_conv, dict) and hub_conv.get("id") == conversation_id and not hub_conv.get("deleted_at"))
 
 
@@ -1256,7 +1256,10 @@ class HubWsBridge:
             logger.debug("hub_bridge: membership op for unknown type %s", entity_type)
             return
         if op == "delete" or data.get("deleted_at"):
-            await cls.delete_by_id(entity_id)
+            from flow_sdk.core.entity.entity_model import mirror_delete  # noqa: PLC0415
+
+            with mirror_delete():  # the hub already deleted it
+                await cls.delete_by_id(entity_id)
             return
 
         local_user = await User.get_local()

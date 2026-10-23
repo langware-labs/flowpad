@@ -22,6 +22,7 @@ from flow_sdk.builtin import flow_message_bundle
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
@@ -157,7 +158,6 @@ def _asset_folder(tmp_path: Path) -> Path:
 
 async def test_the_hub_push_of_an_entity_folder_leaves_excluded_files(tmp_path, monkeypatch):
     from flow_sdk.actions.fs import fs_actions
-    from flow_sdk.utils import hub
 
     root = _asset_folder(tmp_path)
     sent: list[str] = []
@@ -165,7 +165,7 @@ async def test_the_hub_push_of_an_entity_folder_leaves_excluded_files(tmp_path, 
     async def _upload(et, eid, name, content, sub_path="upload"):
         sent.append(f"{sub_path}/{name}")
 
-    monkeypatch.setattr(hub, "hub_upload_entity_file", _upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_upload))
 
     class _Ent:
         id, typeid = "e1", "skill-e1"

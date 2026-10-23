@@ -14,6 +14,7 @@ import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from tests.unit._stream_inbox_matrix import double_for
 from tests.utils.mock_worker import MockDriver
 from tests.utils.snippets import doc, fence_under, point_driver_at, run_fence, run_fence_until
@@ -67,7 +68,6 @@ async def test_channel_routing_group_example(whatsapp, monkeypatch, account_clai
     """
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.agent_serve import admits
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.instance_settings import runtime
 
     driver = DataDriver.loaded("whatsapp")
@@ -90,8 +90,8 @@ async def test_channel_routing_group_example(whatsapp, monkeypatch, account_clai
         posted.append(payload)
         return {"id": "group-claim"}
 
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(hub_get))
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "routing-instance")
     group_id = "Y2FwaV9ncm91cDoxMjM0NTY3ODkwMTIzNDU6MTIwMzYzMDAwMDAwMDAwMDAx"
     page = "channel-webhook-routing.md"

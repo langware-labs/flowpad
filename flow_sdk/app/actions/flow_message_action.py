@@ -28,7 +28,8 @@ from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email
-from flow_sdk.cloud_client.transport.hub_http import hub_request, rows_of
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.transport.hub_http import rows_of
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
@@ -54,7 +55,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     resolve_local_stream_inbox_scope,
 )
 from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
-from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post
+from flow_sdk.utils.hub import HubError, hub_base_url, hub_graph_url
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -357,7 +358,7 @@ async def open_flow_message_params(fm_id: str, someone_typeid: str | None = None
     ``action=open`` params that send the UI into the conversation."""
     from flow_sdk.server.routes.notify import message_deep_link_params
 
-    data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
+    data = await HubProxy.get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     meta = (data or {}).get("metadata") or {}
 
     attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
@@ -465,9 +466,8 @@ async def _load_fm_local_or_hub(fm_id: str) -> Optional[FlowMessage]:
     fm = await FlowMessage.get_one({"id": fm_id})
     if fm is not None:
         return fm
-    from flow_sdk.utils.hub import hub_get
 
-    payload = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
+    payload = await HubProxy.get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     if not payload:
         return None
     return FlowMessage.model_validate(payload)
@@ -970,7 +970,7 @@ async def _hub_decline_invitation(invitation_id: str) -> None:
     """Class-level action — pending recipients have no entity role yet, so
     the hub registers ``decline`` as a class-action like ``pending``. We pass
     the invitation_id in the body."""
-    await hub_post(
+    await HubProxy.post(
         BuiltinEntityType.INVITATION,
         {"invitation_id": invitation_id},
         action="decline",
@@ -1056,13 +1056,12 @@ async def _self_heal_gone_invitation(inv_id: str, *, context: str) -> ApiFailRes
 
 
 async def _hub_delete_conversation(conv_id: str) -> None:
-    from flow_sdk.utils.hub import hub_delete  # noqa: PLC0415
 
-    await hub_delete(BuiltinEntityType.CONVERSATION, conv_id, action="delete")
+    await HubProxy.delete(BuiltinEntityType.CONVERSATION, conv_id, action="delete")
 
 
 async def _hub_leave_conversation(conv_id: str) -> None:
-    await hub_post(
+    await HubProxy.post(
         BuiltinEntityType.CONVERSATION,
         {},
         entity_id=conv_id,
@@ -1606,7 +1605,7 @@ async def conversation_pickup() -> ApiResponse:
             return ApiFailResponse(message="conversation_id is required")
 
         try:
-            await hub_request("POST", BuiltinEntityType.CONVERSATION, conv_id, "pickup", payload={})
+            await HubProxy.request("POST", BuiltinEntityType.CONVERSATION, conv_id, "pickup", payload={})
         except HubError as e:
             return e.fail_response("Could not pick up conversation")
 
@@ -1624,7 +1623,7 @@ async def conversation_pickup() -> ApiResponse:
         # metadata seam every other sync path uses (mirrors invitation-accept:
         # join → fetch → upsert).
         try:
-            data = await hub_request("GET", BuiltinEntityType.CONVERSATION, conv_id)
+            data = await HubProxy.request("GET", BuiltinEntityType.CONVERSATION, conv_id)
             if isinstance(data, dict) and data.get("id"):
                 await _upsert_hub_conversation_metadata(data, someone_typeid)
         except Exception as e:  # noqa: BLE001
@@ -1640,54 +1639,6 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
-@action.post(action_name="conversation-settle", types=None)
-async def conversation_settle() -> ApiResponse:
-    """Close or reopen a helpdesk ticket. Proxies to the hub's ``close`` /
-    ``reopen`` actions and mirrors the settled row locally.
-
-    Authorization is the hub's (see ``Conversation._set_settlement``); this adds
-    none of its own. The local mirror matters as much as the hub write — the
-    requester's portal reads the LOCAL row, so an unmirrored close still
-    presents as open on the surface it was clicked from.
-    """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-        someone_typeid = request_info.someone_typeid
-
-        body = await request_info.get_post_data() or {}
-        conv_id = (body.get("conversation_id") or "").strip()
-        if not conv_id:
-            return ApiFailResponse(message="conversation_id is required")
-        # The verb is the hub action name; anything else is a typo, not a state.
-        verb = (body.get("verb") or "close").strip().lower()
-        if verb not in ("close", "reopen"):
-            return ApiFailResponse(message="verb must be 'close' or 'reopen'")
-
-        try:
-            settled_data = await hub_request("POST", BuiltinEntityType.CONVERSATION, conv_id, verb, payload={})
-        except HubError as e:
-            return e.fail_response(f"Could not {verb} ticket")
-
-        # The write response IS the settled conversation (the hub action returns
-        # `data=self`), so there is nothing to re-read — and mirroring what the
-        # hub actually stored beats mapping the verb back to a status ourselves,
-        # which would be a second copy of the hub's own rule.
-        data = settled_data
-        status = None
-        if isinstance(data, dict) and data.get("id"):
-            status = data.get("status")
-            try:
-                await _upsert_hub_conversation_metadata(data, someone_typeid)
-            except Exception as e:  # noqa: BLE001 -- the hub is authoritative; a
-                # local mirror miss is a stale row, not a failed close.
-                logger.warning("[conversation-settle] local mirror failed (non-fatal): %s", e)
-
-        return ApiSuccessResponse(data={"conversation_id": conv_id, "status": status})
-    except Exception as e:
-        logger.error("[flow_message_action] conversation-settle error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to settle ticket: {str(e)}")
 
 
 @action.post(action_name="helpdesk-tickets-list", types=None)
@@ -1732,7 +1683,7 @@ async def helpdesk_tickets_list() -> ApiResponse:
         # A hub refusal stays a refusal, never an empty queue: a non-staff caller is told
         # "no valid access", which is what lets the staff UI tell the two apart.
         try:
-            rows = await hub_request("GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations")
+            rows = await HubProxy.request("GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations")
         except HubError as e:
             return e.fail_response("Could not list help desk tickets")
         if not isinstance(rows, list):
@@ -1881,7 +1832,7 @@ async def _download_and_unpack_bundle_locked(
         unpack_bundle,
     )
 
-    bundle_bytes = await hub_get(
+    bundle_bytes = await HubProxy.get(
         BuiltinEntityType.FLOW_MESSAGE,
         fm_id,
         "fs",
@@ -1962,7 +1913,7 @@ async def _fetch_raw_messages_from_hub(since: str | None) -> list[dict] | None:
     Returns the list of raw message dicts, or None if the hub is unavailable.
     """
     params: dict = {"since": since} if since else {}
-    result = await hub_get(BuiltinEntityType.FLOW_MESSAGE, params=params)
+    result = await HubProxy.get(BuiltinEntityType.FLOW_MESSAGE, params=params)
     if result is None:
         return None
     return result if isinstance(result, list) else []
@@ -2216,7 +2167,7 @@ async def handle_stream_inbox_open(fm_id: str) -> ApiResponse:
         body_status = local_fm.body_status
         raw_context = [str(c) for c in (local_fm.shared_context_entities or [])]
     else:
-        hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
+        hub_data = await HubProxy.get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
         body_status = (hub_data or {}).get("body_status")
         hub_updated = (hub_data or {}).get("updated_date")
@@ -3169,7 +3120,7 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
     # expand=blobs: blob fields (e.g. comment raw_content) are db-excluded from the
     # hub row and served only on request — without this the pull materializes
     # children with EMPTY bodies (the live-push path carries them; catch-up must too).
-    children = await hub_get(parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"})
+    children = await HubProxy.get(parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"})
     child_list = rows_of(children)
     parent_ref = f"{parent_tid.type}-{parent_tid.id}"
     hub_ids: set[str] = set()
@@ -3226,7 +3177,7 @@ async def _reconcile_deleted_children(conv, child_type: str, hub_ids: set[str], 
             # out from under it on the next catch-up sync (the create/update race).
             if child_etype is not None:
                 try:
-                    if await hub_get(child_etype, ent.id) is not None:
+                    if await HubProxy.get(child_etype, ent.id) is not None:
                         continue  # still on the hub → a list lag, not a deletion
                 except Exception:  # noqa: BLE001
                     continue  # couldn't confirm → never prune on uncertainty
@@ -3371,7 +3322,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
     and zero per-message GETs.
 
     Replaces the prior approach (read the ``message_ids`` pointer projection,
-    diff new-only, then one ``hub_get(FLOW_MESSAGE, id)`` per missing id) — that
+    diff new-only, then one ``HubProxy.get(FLOW_MESSAGE, id)`` per missing id) — that
     missed edits and fanned out N requests. The children route returns the full
     FM dicts, so the per-id GET loop is gone.
 
@@ -3388,7 +3339,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
             # Children-list route, primary source: returns the conversation's
             # FlowMessage children (with updated_date) the caller may see.
             # hub_get's url builder requires an action segment before sub_path.
-            children = await hub_get(
+            children = await HubProxy.get(
                 BuiltinEntityType.CONVERSATION,
                 conv_id,
                 action="flow_message",
@@ -3544,7 +3495,7 @@ async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -
     # Join the hub-side conv so we enter ``participants`` and start
     # receiving WS fanout. Idempotent — already-a-member is a no-op.
     try:
-        await hub_post(BuiltinEntityType.CONVERSATION, {}, conv_id, "join")
+        await HubProxy.post(BuiltinEntityType.CONVERSATION, {}, conv_id, "join")
     except Exception as e:
         logger.debug("[conv-sync] join %s: %s", conv_id[:8], e)
 
@@ -3552,7 +3503,7 @@ async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -
     existing = await LocalConversation.get_one({"id": conv_id})
     if existing is None:
         try:
-            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            hub_conv = await HubProxy.get(BuiltinEntityType.CONVERSATION, conv_id)
             if isinstance(hub_conv, dict) and hub_conv.get("id"):
                 await LocalConversation.model_validate(
                     {
@@ -3594,7 +3545,7 @@ async def _sync_conversation_messages(
         materialize_flow_message,
     )
 
-    hub_msgs = await hub_get(
+    hub_msgs = await HubProxy.get(
         BuiltinEntityType.FLOW_MESSAGE,
         scope=[("conversation", conv_id)],
     )
@@ -3667,7 +3618,7 @@ async def _pull_conversation_bundles(conv_id: str) -> None:
     first message, no staged MessageAttachment rows, no entity chip. This runs
     the same pull immediately after the response instead of during it.
     """
-    hub_msgs = await hub_get(
+    hub_msgs = await HubProxy.get(
         BuiltinEntityType.FLOW_MESSAGE,
         scope=[("conversation", conv_id)],
     )
@@ -3979,7 +3930,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     Pipeline (all stages run inside the request handler unless noted):
 
     1. Read local conversations from SQLite (the canonical render source).
-    2. In parallel, hub_get(CONVERSATION) + hub_get(INVITATION, pending).
+    2. In parallel, HubProxy.get(CONVERSATION) + HubProxy.get(INVITATION, pending).
        Failures here are non-fatal — we degrade to local-only with a flag.
     3. For each hub conversation, upsert metadata locally (title, participants,
        updated_date, etc.). If the hub's parent ``updated_date`` is newer than
@@ -4017,8 +3968,8 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     local_index = {c.id: c for c in local_list if c.id}
 
     hub_convs_result, hub_invs_result = await asyncio.gather(
-        hub_get(BuiltinEntityType.CONVERSATION),
-        hub_get(BuiltinEntityType.INVITATION, action="pending"),
+        HubProxy.get(BuiltinEntityType.CONVERSATION),
+        HubProxy.get(BuiltinEntityType.INVITATION, action="pending"),
         return_exceptions=True,
     )
 
@@ -4357,7 +4308,7 @@ async def handle_invitation_sync(someone_typeid: str, *, target_id: str | None =
         return ApiFailResponse(message="Hub not configured")
 
     inv_count = 0
-    invitations = await hub_get(BuiltinEntityType.INVITATION, action="pending") or []
+    invitations = await HubProxy.get(BuiltinEntityType.INVITATION, action="pending") or []
     if not isinstance(invitations, list):
         invitations = []
     if target_id:
@@ -4454,7 +4405,7 @@ async def conversation_message_sync() -> ApiResponse:
         # cannot trigger a local write.
         local_conv = await Conversation.get_one({"id": conv_id})
         if local_conv is None:
-            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            hub_conv = await HubProxy.get(BuiltinEntityType.CONVERSATION, conv_id)
             if not isinstance(hub_conv, dict) or not hub_conv.get("id"):
                 return ApiFailResponse(message="conversation not found", status_code=404)
             local_conv = await _upsert_hub_conversation_metadata(
@@ -4525,15 +4476,12 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     linked_fm_id: Optional[str] = None
     linked_conv_id: Optional[str] = None
     try:
-        from flow_sdk.cloud_client import ApiConfig, FlowpadClient
-
-        async with FlowpadClient(ApiConfig.from_env()) as client:
-            resp = await client.request(
-                "GET",
-                accept_url,
-                params={"invitation-id": inv_id},
-                timeout=10,
-            )
+        resp = await HubProxy.send(
+            "GET",
+            accept_url,
+            params={"invitation-id": inv_id},
+            timeout=10,
+        )
         # Hub responses we treat as "accept succeeded, run local cleanup":
         #   200 — JSON success: ``data`` carries the chosen target typeid.
         #   302 — post-accept landing redirect: ``Location`` points at
@@ -4655,7 +4603,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             # parent conv lives as a typeid in ``shared_context_entities``.
             if linked_fm_id and not linked_conv_id:
                 try:
-                    fm_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
+                    fm_data = await HubProxy.get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
                     if isinstance(fm_data, dict):
                         # 1. Top-level field (older shape / direct mirror).
                         cid = (fm_data.get("conversation_id") or "").strip()
@@ -4685,18 +4633,26 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     if linked_conv_id:
         try:
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-            from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
             creds = load_credentials()
             if creds and creds.api_key:
-                async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                    await client.post(f"/graph/conversation/{linked_conv_id}/join", {})
-                    hub_conv = await client.get(f"/graph/conversation/{linked_conv_id}")
+                await HubProxy.call_url(
+                    "POST",
+                    hub_graph_url(BuiltinEntityType.CONVERSATION, linked_conv_id, "join"),
+                    json={},
+                    strict=True,
+                )
+                hub_conv = await HubProxy.call_url(
+                    "GET", hub_graph_url(BuiltinEntityType.CONVERSATION, linked_conv_id), strict=True
+                )
                 if isinstance(hub_conv, dict) and hub_conv.get("id"):
                     participants = hub_conv.get("participants")
                     try:
-                        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                            members = await client.get(f"/graph/conversation/{linked_conv_id}/members")
+                        members = await HubProxy.call_url(
+                            "GET",
+                            hub_graph_url(BuiltinEntityType.CONVERSATION, linked_conv_id, "members"),
+                            strict=True,
+                        )
                         if isinstance(members, dict):
                             for key in ("data", "members", "items", "results"):
                                 if isinstance(members.get(key), list):
@@ -4791,14 +4747,16 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 project_payload_error: str | None = None
                 try:
                     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-                    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
                     creds = load_credentials()
                     if not creds or not creds.api_key:
                         project_payload_error = "cloud login required"
                     else:
-                        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                            hub_project = await client.get(f"/graph/project/{membership_target.target_id}")
+                        hub_project = await HubProxy.call_url(
+                            "GET",
+                            hub_graph_url(BuiltinEntityType.PROJECT, membership_target.target_id),
+                            strict=True,
+                        )
                         if isinstance(hub_project, dict) and hub_project.get("id"):
                             target_payload.update(hub_project)
                         else:
@@ -4860,7 +4818,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     bundle_unpacked = False
     if linked_fm_id and not conversation_synced:
         try:
-            hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
+            hub_fm = await HubProxy.get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
             if attachment_filename:
                 bundle_unpacked = await _download_and_unpack_bundle(

@@ -159,7 +159,7 @@ class RequestInfo:
             raise ValueError("RequestInfo is locked and cannot be modified")
         self.request = request
         # Per-call hub-reflection opt-in (default False). The header is a local
-        # routing directive only — CloudProxy strips it before forwarding to the hub.
+        # routing directive only — HubProxy strips it before forwarding to the hub.
         self.hub_reflect = request.headers.get("Hub-Reflect", "").strip().lower() in ("true", "1", "yes")
         self.initiator_connection_id = request.headers.get("X-Flow-Connection-Id", "").strip()
         visitor_id = request.cookies.get(default_service_config.visitor_cookie_name) or request.cookies.get(
@@ -191,7 +191,7 @@ class RequestInfo:
 
         # Request bodies are deliberately not consumed in middleware. The graph
         # dispatcher parses them once when binding handler arguments. This also
-        # lets a Git-backed remote FS request take the early CloudProxy branch
+        # lets a Git-backed remote FS request go to the hub (``_hub_reflect.decide``)
         # with its original multipart/streaming body intact.
 
     @property

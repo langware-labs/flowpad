@@ -1,6 +1,6 @@
 """The hub's ``project/<id>/git_share`` action, played for desk-side tests.
 
-``HubDouble`` answers ``hub_get/hub_post/hub_delete/hub_put`` the way the hub does
+``HubDouble`` answers ``HubProxy.get/post/delete/put`` the way the hub does
 and checks every request the desk sends: the entity, the id, the action and, for
 ``POST``, that the repo is named by its GitHub ``owner/name``.
 """
@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import uuid
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-
-HUB = "flow_sdk.cloud_client.transport.hub_http"
 
 
 class HubDouble:
@@ -74,10 +73,10 @@ class HubDouble:
 
     def install(self, monkeypatch) -> "HubDouble":
         for name, fn in (
-            ("hub_get", self.get),
-            ("hub_post", self.post),
-            ("hub_delete", self.delete),
-            ("hub_put", self.put),
+            ("get", self.get),
+            ("post", self.post),
+            ("delete", self.delete),
+            ("put", self.put),
         ):
-            monkeypatch.setattr(f"{HUB}.{name}", fn)
+            monkeypatch.setattr(HubProxy, name, staticmethod(fn))
         return self

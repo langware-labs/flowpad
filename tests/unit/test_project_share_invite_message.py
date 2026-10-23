@@ -19,9 +19,11 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
@@ -118,7 +120,14 @@ def hub(monkeypatch):
         ),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
-    monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
+    # The shared hub transport (``HubProxy.send``) answers from the same fake.
+
+    async def fake_send(method, url, **kwargs):
+        fake = await fake_request(None, method, str(url), **kwargs)
+        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
+    monkeypatch.setattr(HubProxy, "post", staticmethod(fake_hub_post))
     # The invite message takes the generic send, which reaches the hub only for
     # a logged-in sharer — as every sharer is.
     monkeypatch.setattr("flow_sdk.app.actions.notification_action.is_logged_in", lambda: True)

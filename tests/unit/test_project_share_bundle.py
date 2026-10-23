@@ -32,8 +32,8 @@ from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessag
 from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
-from flow_sdk.cloud_client.transport import hub_http
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.responses.response import ApiSuccessResponse
@@ -49,7 +49,7 @@ def _hub_offline(monkeypatch):
     async def _offline(*args, **kwargs):
         raise HubError(0, "no hub in this test")
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", _offline)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(_offline))
 
 
 def _origin() -> GitOrigin:

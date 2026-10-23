@@ -15,6 +15,8 @@ from typing import Any
 import pytest
 from cryptography.fernet import Fernet
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+
 DECIDER = {
     "id": "72575461-9352-4cdb-b2e7-a53be3e3d6e3",
     "name": "Jev (TypeSafe)",
@@ -80,7 +82,6 @@ def install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, instance: str = 
     monkeypatch.setenv("FLOW_HOME", str(tmp_path))
     monkeypatch.setenv("FLOW_INSTANCE", instance)
     monkeypatch.setenv("SOD_ENC_KEY", Fernet.generate_key().decode())
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.cli.app_config import set_user
     from flow_sdk.cli.auth.hub_login import set_api_key
     from flow_sdk.config import default_service_config
@@ -94,8 +95,8 @@ def install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, instance: str = 
     set_user({"id": "99999999-2222-4333-8444-555555555555", "email": "box@local.test"})
     state: dict[str, Any] = {"status": 200, "invoked": [], "answers": {}}
     _hub_get, _invoke = seams(state)
-    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
-    monkeypatch.setattr(hub_http, "hub_invoke_raw", _invoke)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "invoke_raw", staticmethod(_invoke))
     return state
 
 

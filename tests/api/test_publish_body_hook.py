@@ -12,6 +12,7 @@ import pytest
 
 import flow_sdk.builtin.project_manifest as pm
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 from flow_sdk.fs_store.record_types import RecordType
 from tests.api._published import entity_row, index, project, toggle, write_skill
@@ -54,7 +55,7 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
         return {}
 
     monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", fake_publish)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(fake_post))
 
     pid = await project(bootstrapped_client, tmp_path)
     write_skill(tmp_path, "rca")

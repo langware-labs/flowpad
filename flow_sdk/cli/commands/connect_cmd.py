@@ -65,10 +65,10 @@ def _node_matches(node: dict[str, Any], machine_id: str) -> bool:
 
 async def find_existing_node(machine_id: str) -> Optional[dict[str, Any]]:
     """The hub ComputeNode already standing for this machine, if any."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_get
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.schema.types import EntityType
 
-    nodes = await hub_get(EntityType.COMPUTE_NODE)
+    nodes = await HubProxy.get(EntityType.COMPUTE_NODE)
     if not isinstance(nodes, list):
         return None
     for node in nodes:
@@ -89,7 +89,7 @@ def _node_config(machine_id: str, workspace_port: int) -> dict[str, Any]:
 
 
 async def create_node(machine_id: str, name: str, workspace_port: int) -> dict[str, Any]:
-    from flow_sdk.cloud_client.transport.hub_http import hub_post
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.config import ComputeProviderType
     from flow_sdk.schema.types import EntityType
 
@@ -98,7 +98,7 @@ async def create_node(machine_id: str, name: str, workspace_port: int) -> dict[s
         "node_provider": ComputeProviderType.USER_MACHINE.value,
         "node_config": _node_config(machine_id, workspace_port),
     }
-    created = await hub_post(EntityType.COMPUTE_NODE, payload)
+    created = await HubProxy.post(EntityType.COMPUTE_NODE, payload)
     if not created or not created.get("id"):
         raise RuntimeError("hub did not return the created compute node")
     return created
@@ -106,23 +106,23 @@ async def create_node(machine_id: str, name: str, workspace_port: int) -> dict[s
 
 async def setup_node(node_id: str) -> str:
     """``ops/setup`` pins ``node_provider_id`` to the node's own id. Idempotent."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_post
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.schema.types import EntityType
 
-    result = await hub_post(EntityType.COMPUTE_NODE, {}, node_id, action="ops", sub_path="setup")
+    result = await HubProxy.post(EntityType.COMPUTE_NODE, {}, node_id, action="ops", sub_path="setup")
     return str(result) if result is not None else ""
 
 
 async def _refresh_node_config(node: dict[str, Any], machine_id: str, workspace_port: int) -> dict[str, Any]:
     """Re-stamp this machine's facts (port, hostname) on a reused node when they moved."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_put
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.schema.types import EntityType
 
     current = dict(node.get("node_config") or {})
     wanted = {**current, **_node_config(machine_id, workspace_port)}
     if wanted == current:
         return node
-    updated = await hub_put(EntityType.COMPUTE_NODE, str(node["id"]), {"node_config": wanted})
+    updated = await HubProxy.put(EntityType.COMPUTE_NODE, str(node["id"]), {"node_config": wanted})
     return updated or {**node, "node_config": wanted}
 
 

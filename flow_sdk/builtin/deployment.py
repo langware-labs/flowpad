@@ -342,38 +342,38 @@ class Deployment(Entity):
     async def authorize(self, provider: str, permissions: list[str] | None = None) -> dict:
         """Let this deployment's machine use your ``provider`` connection: it asks the hub for a fresh
         token when it needs one; your refresh token never leaves the hub. Revoke with :meth:`revoke`."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await hub_post(self.type, {"provider": provider, "permissions": list(permissions or [])},
+        return await HubProxy.post(self.type, {"provider": provider, "permissions": list(permissions or [])},
                               self.id, "authorize") or {}
 
     async def revoke(self, provider: str) -> list[str]:
         """Take back ``provider``: the machine's next token ask is refused."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await hub_delete(self.type, self.id, action="authorize", sub_path=provider) or {}
+        data = await HubProxy.delete(self.type, self.id, action="authorize", sub_path=provider) or {}
         return list(data.get("revoked") or [])
 
     async def authorizations(self) -> list[dict]:
         """The connections this deployment's machine may use (``{provider, permissions}``). Names only."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return list(await hub_get_or_raise(self.type, self.id, action="authorize") or [])
+        return list(await HubProxy.get_or_raise(self.type, self.id, action="authorize") or [])
 
     async def secrets_inventory(self) -> dict:
         """What the hub holds for this deployment: each name with its last write and placement, and the
         connections its machine may use. Names only."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await hub_get(self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
+        return await HubProxy.get(self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
 
     async def funding(self) -> dict | None:
         """What pays for this cloud placement's model turns (``kind``: ``allocation`` | ``default``, the
         endpoint's ``name``) and ``exhausted``: the used-up limit its next turn would be refused with, or
         empty. ``None`` when the hub cannot say."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await hub_get(self.type, self.id, action="funding")
+        return await HubProxy.get(self.type, self.id, action="funding")
 
     # ── convergence ───────────────────────────────────────────────────────
 
@@ -605,14 +605,15 @@ class Deployment(Entity):
         type-level call has no entity, so the router cannot reflect it to the hub — hence a relay,
         like ``machine-enroll``. Nothing is cached here; the client caches.
         """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_base_url, hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         if not hub_base_url():
             return ApiFailResponse(message="Sign in to the hub to deploy to the cloud", status_code=409)
         try:
-            providers = await hub_get_or_raise(EntityType.DEPLOYMENT.value, None, "providers")
+            providers = await HubProxy.get_or_raise(EntityType.DEPLOYMENT.value, None, "providers")
         except HubError as exc:
             return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
         return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
@@ -630,9 +631,9 @@ class Deployment(Entity):
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         if self.remote:
-            from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+            from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-            data = await hub_http.hub_get(self.get_type(), self.id, "endpoints")
+            data = await HubProxy.get(self.get_type(), self.id, "endpoints")
             rows = data.get("endpoints") if isinstance(data, dict) else None
             if not isinstance(rows, list):
                 return ApiFailResponse(message="the hub did not answer for this cloud placement", status_code=502)
@@ -762,9 +763,9 @@ class Deployment(Entity):
         """
         if self.is_local:
             raise DeploymentActionError("this computer's runs are the local run list", status_code=409)
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await hub_http.hub_get(self.get_type(), self.id, "runs", params={"limit": str(int(limit))})
+        data = await HubProxy.get(self.get_type(), self.id, "runs", params={"limit": str(int(limit))})
         if not isinstance(data, dict):
             raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
         # The hub already drops anything that is not a run.
@@ -772,9 +773,9 @@ class Deployment(Entity):
 
     async def _hub_action(self, verb: str) -> dict[str, Any]:
         """POST one action on this placement's hub row; the row itself comes back down the bridge."""
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        data = await hub_http.hub_post(self.get_type(), {}, self.id, verb)
+        data = await HubProxy.post(self.get_type(), {}, self.id, verb)
         if data is None:
             raise DeploymentActionError(f"cloud login required to {verb} a cloud machine", status_code=401)
         return data if isinstance(data, dict) else {}
@@ -1097,13 +1098,13 @@ class Deployment(Entity):
         process it minted as a route row. The hub refuses a placement it never
         made — a cloud row minted locally has no counterpart there."""
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         agent = await self._require_agent()
         # ``launch_surface`` rides along so the placement machine's ``use_action`` can
         # stamp it (``COMMON_UI`` layer); a hub that does not forward it drops it.
         body = {"deployment_id": self.id, **launch_surface_fields(launch_surface)}
-        opened = await hub_http.hub_post(agent.get_type(), body, agent.id, "use")
+        opened = await HubProxy.post(agent.get_type(), body, agent.id, "use")
         process_id = str((opened or {}).get("process_id") or "")
         if not is_valid_entity_id(process_id):
             raise RuntimeError("the hub returned an invalid process for this deployment")

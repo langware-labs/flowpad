@@ -8,6 +8,7 @@ local provider whose credential is already resolvable here.
 
 import pytest
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVarType
 from flow_sdk.core.oauth import hub_providers as hp
 from flow_sdk.core.oauth import oauth_provider_rows
@@ -121,7 +122,7 @@ async def test_uses_the_cloud_user_id_not_the_local_one(monkeypatch):
 
     monkeypatch.setattr(hp, "_hub_reachable", lambda: True)
     monkeypatch.setattr(hp, "_cloud_user_id", lambda: "cloud-user-77")
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_get))
 
     rows = await hp.hub_provider_rows()
 
@@ -136,7 +137,7 @@ async def test_a_hub_failure_degrades_to_local_only(monkeypatch):
 
     monkeypatch.setattr(hp, "_hub_reachable", lambda: True)
     monkeypatch.setattr(hp, "_cloud_user_id", lambda: "cloud-user-77")
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", boom)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(boom))
 
     assert (await hp.hub_provider_rows()).values == []
 
@@ -156,7 +157,7 @@ async def test_non_provider_rows_from_the_hub_are_ignored(monkeypatch):
 
     monkeypatch.setattr(hp, "_hub_reachable", lambda: True)
     monkeypatch.setattr(hp, "_cloud_user_id", lambda: "u")
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_get))
 
     assert [r.name for r in (await hp.hub_provider_rows()).values] == ["slack"]
 
@@ -175,7 +176,7 @@ async def test_a_token_the_hub_holds_reads_as_connected(monkeypatch):
 
     monkeypatch.setattr(hp, "_hub_reachable", lambda: True)
     monkeypatch.setattr(hp, "_cloud_user_id", lambda: "cloud-user-held")
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_get))
 
     table = await get_oauth_providers_as_env_table(None)
     google = next(r for r in table.values if r.name == "google")

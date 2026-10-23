@@ -1369,13 +1369,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-            from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+            from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
             creds = load_credentials()
             if not creds or not creds.api_key:
                 return
-            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                hub_project = await client.get(f"/graph/project/{project.id}")
+            hub_project = await HubProxy.call("GET", "project", project.id, strict=True)
             if not isinstance(hub_project, dict) or not hub_project.get("id"):
                 return
             await materialize_remote_membership_entity(Project, hub_project)
@@ -1834,20 +1833,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         rows = await list_connections(project=project, include_unconnected=include_unconnected)
         return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
 
-    @action.get(action_name="slack-recent")
-    async def slack_recent_action(self, hours: str = "24") -> "ApiResponse":
-        """``GET compute_node/@local/slack-recent?hours=24`` — the channels this machine's Slack connection is a
-        member of, with their messages from the last ``hours``. Read with the machine's own connection; the answer
-        is messages, never the token."""
-        from flow_sdk.core.connections.slack_recent import SlackNotConnected, recent  # noqa: PLC0415
-
-        try:
-            return ApiSuccessResponse(data=await recent(float(hours or 24)))
-        except SlackNotConnected as e:
-            return ApiFailResponse(message=str(e), status_code=409)
-        except (RuntimeError, ValueError) as e:
-            return ApiFailResponse(message=str(e), status_code=502)
-
     @action.all(action_name="status", methods=["get", "post"])
     async def status_action(self) -> "ApiResponse":
         """The status record: harnesses (installed, login, account), stored keys, hub login.
@@ -2065,7 +2050,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def search_cloud_errors_action(self) -> ApiResponse:
         """Proxy error fingerprint search to the Flowpad cloud, then apply results to local records."""
         from flow_sdk.cli.auth.hub_login import get_api_key as get_flowpad_api_key
-        from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+        from flow_sdk.cloud_client.hub_proxy import HubProxy
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -2078,15 +2063,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not flowpad_api_key:
             return ApiFailResponse(message="Not logged in to Flowpad cloud")
 
-        config = ApiConfig()
-
         try:
-            async with FlowpadClient(config) as client:
-                client.set_api_key(flowpad_api_key)
-                result = await client.post(
-                    "/graph/analysis/search",
-                    {"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
-                )
+            result = await HubProxy.call(
+                "POST",
+                "analysis",
+                None,
+                "search",
+                json={"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
+                strict=True,
+            )
             await self._apply_cloud_results(result.get("results", []))
             return ApiSuccessResponse(data=result)
         except Exception as e:

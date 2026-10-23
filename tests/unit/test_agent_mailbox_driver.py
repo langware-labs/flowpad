@@ -22,6 +22,7 @@ from flow_sdk.builtin.agent_mailbox_driver import (
     get_agent_mailbox_driver,
 )
 from flow_sdk.builtin.drivers.hub_agent_mailbox_driver import HubAgentMailboxDriver
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode
 
 AGENT_ID = "22222222-2222-4222-8222-222222222222"
@@ -67,7 +68,7 @@ class TestTheHubMember:
             seen.append((sub_path, body))
             return DESCRIPTOR
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_post)
+        monkeypatch.setattr(HubProxy, "post", staticmethod(fake_post))
         driver = HubAgentMailboxDriver()
 
         await driver.enable_mailbox(AGENT_ID)
@@ -84,7 +85,7 @@ class TestTheHubMember:
         async def fake_get(*_a, **_k):
             return {"mailbox": DESCRIPTOR}
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
 
         assert (await HubAgentMailboxDriver().get_mailbox(AGENT_ID))["address"] == DESCRIPTOR["address"]
 
@@ -94,7 +95,7 @@ class TestTheHubMember:
         async def fake_get(*_a, **_k):
             return {"mailbox": None}
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
 
         assert await HubAgentMailboxDriver().get_mailbox(AGENT_ID) is None
 
@@ -107,7 +108,7 @@ class TestTheHubMember:
         async def fake_delete(*_a, **_k):
             raise HubError(404, "agent has no mailbox")
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_delete", fake_delete)
+        monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_delete))
 
         assert await HubAgentMailboxDriver().delete_mailbox(AGENT_ID) is False
 
@@ -120,7 +121,7 @@ class TestTheHubMember:
         async def fake_delete(*_a, **_k):
             raise HubError(0, "connection reset")
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_delete", fake_delete)
+        monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_delete))
 
         # Re-raised as the FAMILY's error, not the hub's: callers above the
         # driver are supposed to work against any backend.
@@ -133,7 +134,7 @@ class TestTheHubMember:
         async def fake_get(*_a, **_k):
             raise HubError(401, "target unavailable", code=HubErrorCode.TARGET_NOT_FOUND.value)
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
 
         with pytest.raises(AgentMailboxError) as caught:
             await HubAgentMailboxDriver().get_mailbox(AGENT_ID)
@@ -149,7 +150,7 @@ class TestTheHubMember:
         async def valid_user(_client):
             return {"id": "user-1"}
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
         monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_user", valid_user)
 
         with pytest.raises(AgentMailboxError) as caught:
@@ -168,7 +169,7 @@ class TestTheHubMember:
             seen.update({"action": action, "sub_path": sub_path})
             return {}
 
-        monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
+        monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_get))
 
         await HubAgentMailboxDriver().get_message(AGENT_ID, "<abc@mail.example>")
 

@@ -230,8 +230,8 @@ async def approve_container_code(user_code: str, node_name: str) -> dict[str, An
     is the shared hub client's (``client_hooks._on_request``), i.e. exactly the one
     ``_current_hub_api_key`` reported, so it is never passed around by hand.
     """
-    from flow_sdk.cloud_client.transport.hub_http import hub_post
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
 
-    machine = await hub_post("machine-enroll", {"user_code": user_code}, action="lookup")
-    approved = await hub_post("machine-enroll", {"user_code": user_code, "node_name": node_name}, action="approve")
+    machine = await HubProxy.post("machine-enroll", {"user_code": user_code}, action="lookup")
+    approved = await HubProxy.post("machine-enroll", {"user_code": user_code, "node_name": node_name}, action="approve")
     return {"machine": machine or {}, **(approved or {})}

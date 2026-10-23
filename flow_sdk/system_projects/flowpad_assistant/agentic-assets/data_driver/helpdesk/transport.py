@@ -10,21 +10,21 @@ class AppHub:
     """The ``HubTransport`` a help desk source is built over."""
 
     async def get(self, entity_type, entity_id, action):
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
 
         try:
-            return await hub_get_or_raise(entity_type, entity_id, action)
+            return await HubProxy.get_or_raise(entity_type, entity_id, action)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me())) from exc
 
     async def post(self, entity_type, payload, entity_id, action):
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
         from flow_sdk.sources.errors import Rejected  # noqa: PLC0415
 
         try:
-            answer = await hub_post(entity_type, payload, entity_id, action)
+            answer = await HubProxy.post(entity_type, payload, entity_id, action)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me())) from exc
         if answer is None:

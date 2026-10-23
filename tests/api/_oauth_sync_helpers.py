@@ -167,10 +167,10 @@ def hub(dummy_provider, monkeypatch):
     """
     double = HubDouble(dummy=dummy_provider)
 
-    from flow_sdk.cloud_client.transport import hub_http
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
 
-    monkeypatch.setattr(hub_http, "hub_get", double.hub_get)
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", double.hub_get_or_raise)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(double.hub_get))
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(double.hub_get_or_raise))
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: True)
     monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: CLOUD_USER)
     monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: True)

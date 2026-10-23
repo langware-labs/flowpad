@@ -16,6 +16,7 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import SourceStatus
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.ingest.testing import make_data_source
 from tests.unit._stream_inbox_matrix import double_for
@@ -188,7 +189,7 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     monkeypatch.setattr(flow_sdk.auth, "login", login)
     monkeypatch.setattr(Agent, "ensure_on_hub", ensure_on_hub)
     monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", plan)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(plan))
     ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
     assert published == [("researcher", str(ns["actor"]))], "publish comes first, as the caller"
     assert ns["receipt"]["entity"] == "researcher"

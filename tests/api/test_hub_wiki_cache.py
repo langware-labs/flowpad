@@ -5,7 +5,7 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.wiki import Wiki
-from flow_sdk.cloud_client import wiki_cache
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.fs_record import FSRecord
 
@@ -58,7 +58,7 @@ async def test_hub_wiki_bridge_uses_canonical_graph_calls_and_caches_metadata(
             }
         raise AssertionError((entity_type, entity_id, action, params))
 
-    monkeypatch.setattr(wiki_cache, "hub_get", fake_hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
 
     response = await bootstrapped_client.get(
         f"/api/v1/cloud/wiki/{wiki_id}/resolve",
@@ -125,7 +125,7 @@ async def test_hub_wiki_bridge_preserves_existing_local_placement(
             "created_by": creator_id,
         }
 
-    monkeypatch.setattr(wiki_cache, "hub_get", fake_hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake_hub_get))
 
     response = await bootstrapped_client.get(
         f"/api/v1/cloud/wiki/{wiki_id}/resolve",

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from cryptography.fernet import Fernet
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.external_apis.decision import DecisionError, jev
 from flow_sdk.schema.data_spec.decision_spec import (
     ChoiceAnswer,
@@ -159,7 +160,6 @@ def _login() -> None:
 
 
 def _hub(monkeypatch, *, listing, catalog, invoke=None):
-    import flow_sdk.cloud_client.transport.hub_http as hub_http
 
     asked: list = []
 
@@ -171,8 +171,8 @@ def _hub(monkeypatch, *, listing, catalog, invoke=None):
         asked.append(("invoke", entity_id, sub_path, payload))
         return invoke
 
-    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
-    monkeypatch.setattr(hub_http, "hub_invoke_raw", _invoke)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
+    monkeypatch.setattr(HubProxy, "invoke_raw", staticmethod(_invoke))
     return asked
 
 

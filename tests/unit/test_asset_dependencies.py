@@ -20,6 +20,7 @@ import pytest
 from flow_sdk.assets import flow_json
 from flow_sdk.builtin import project_dependencies
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.dependencies import resolve as dep_resolve
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.data_spec.flow_json_spec import AssetFlowJsonSpec, FlowDependency, FlowJsonSpec
@@ -533,7 +534,6 @@ async def test_stress_concurrent_attachment_rounds_preserve_sources(tmp_path):
 
 @pytest.mark.parametrize("enveloped", [False, True])
 async def test_hub_asset_lookup_uses_published_asset_contract(monkeypatch, enveloped):
-    from flow_sdk.cloud_client.transport import hub_http
 
     async def hub_get(resource, entity_id, *, action, params):
         assert str(resource) == "project" and entity_id is None
@@ -543,7 +543,7 @@ async def test_hub_asset_lookup_uses_published_asset_contract(monkeypatch, envel
                "rel_path": ".claude/skills/mail"}
         return {"data": row} if enveloped else row
 
-    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(hub_get))
     assert await dep_resolve.hub_asset_location("skill-3b0c1d7e-2222-4222-8222-222222222222") == (
         "8c1f0b2e-1111-4111-8111-111111111111", ".claude/skills/mail",
     )

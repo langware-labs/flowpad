@@ -16,6 +16,7 @@ and nothing else. Anything above it would let them raise the very cap they were 
 import pytest
 
 from flow_sdk.builtin.llm_endpoint import SHARE_ROLE, LLMEndpoint
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 ENDPOINT_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -34,7 +35,7 @@ class _HubCalls:
 @pytest.fixture()
 def hub_calls(monkeypatch):
     calls = _HubCalls()
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", calls.post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(calls.post))
     return calls
 
 

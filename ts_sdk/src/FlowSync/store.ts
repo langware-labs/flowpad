@@ -1651,13 +1651,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           throw new Error('Entity missing id on ref');
         }
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${entity.typeId.id}`;
-        // A remote entity's save reflects to the hub: the server forwards the PUT,
-        // merges the hub's authoritative response (incl. server times) back onto the
-        // local row + broadcasts, and returns the merged entity. Local-only entities
-        // omit the header and save purely locally. The server still re-gates on
-        // remote + logged-in, so an offline remote entity falls back to local.
-        const reflectConfig = entity.remote ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
+        // A remote entity's save goes to the hub: the local server forwards the PUT verbatim
+        // and answers with the HUB's row (hub field names, no local-only fields), after folding
+        // it into the local row. So the entity is re-read from the local server, which holds
+        // both halves. Local-only entities omit the header and save purely locally. In
+        // hub-only mode this client already talks to the hub, so there is nothing to reflect.
+        const reflect = entity.remote && !isHubOnly();
+        const reflectConfig = reflect ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
         newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
+        if (reflect) {
+          newEntityJson = ((await apiClient.get<IEntity>(endpoint)) as IEntity) ?? newEntityJson;
+        }
       }
       if (!newEntityJson) {
         throw new Error('No data returned');

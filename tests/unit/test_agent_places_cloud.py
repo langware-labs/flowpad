@@ -19,6 +19,7 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_places import PlaceError, _agent_repo, adopt_placement, behind_count, list_places
 from flow_sdk.builtin.deployment import Deployment, DeploymentActionError
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from tests.unit.agent._seed import seed_agent, seed_project
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -106,8 +107,8 @@ class _Hub:
 @pytest.fixture
 def hub(monkeypatch):
     fake = _Hub()
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake.post)
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", fake.get)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(fake.post))
+    monkeypatch.setattr(HubProxy, "get", staticmethod(fake.get))
     return fake
 
 

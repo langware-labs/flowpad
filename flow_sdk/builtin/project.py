@@ -389,10 +389,11 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
 async def _hub_roster(project_id: str) -> list[dict]:
     """A hub project's role roster in the client shape (``name``/``email``/``role``);
     empty when the hub can't be asked."""
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
     from flow_sdk.server.routes._hub_reflect import _normalize_hub_response  # noqa: PLC0415
 
-    payload = await hub_http.hub_get(BuiltinEntityType.PROJECT, project_id, "members")
+    payload = await HubProxy.get(BuiltinEntityType.PROJECT, project_id, "members")
     return _normalize_hub_response("members", hub_http.rows_of(payload))
 
 
@@ -1671,10 +1672,11 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
         from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
 
         mount = Path(self.fs_storage_mount_path or "")
-        repo = await hub_post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
+        repo = await HubProxy.post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")
         origin = HubRepoOrigin(repo=repo["repo"], rel_path=".")
@@ -1697,19 +1699,19 @@ class Project(SetupSkippable, Entity):
             author=author,
             project_typeid=str(self.typeid),
         )
-        await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
+        await HubProxy.put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
         return origin
 
     # ── git share: members use the project's private GitHub repo through the hub ──
 
     async def git_share(self) -> "GitShare":
         """Whether this project's git is shared with its members, as the hub reports it."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.git_share_spec import GitShare  # noqa: PLC0415
 
         if not self.remote:
             return GitShare()
-        return GitShare.from_hub(await hub_get(BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
+        return GitShare.from_hub(await HubProxy.get(BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
 
     async def share_git(self) -> "GitShare":
         """Let this project's members clone and push its private GitHub repo through the hub.
@@ -1722,11 +1724,11 @@ class Project(SetupSkippable, Entity):
         it and call again. Once shared, the hub row's git origin becomes the hub's, so a
         member who accepts the project clones it through the hub.
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.git_share_spec import GitShare, GitShareError  # noqa: PLC0415
 
         origin = await self._github_origin()
-        data = await hub_post(
+        data = await HubProxy.post(
             BuiltinEntityType.PROJECT, {"repo": f"{origin.owner}/{origin.name}"}, str(self.id), action="git_share"
         )
         share = GitShare.from_hub(data)
@@ -1734,19 +1736,19 @@ class Project(SetupSkippable, Entity):
             if not share.git_repo:
                 raise GitShareError("The hub shared the repo but did not say where it serves it")
             served = HubRepoOrigin(repo=share.git_repo, rel_path=".")
-            await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": served.model_dump(mode="json")})
+            await HubProxy.put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": served.model_dump(mode="json")})
         return share
 
     async def unshare_git(self) -> "GitShare":
         """Stop sharing this project's git: members can no longer fetch or push through the
         hub. Their clones keep what they have, and the GitHub repo is untouched."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete, hub_put  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.git_share_spec import GitShare  # noqa: PLC0415
 
         origin = await self._github_origin()
-        share = GitShare.from_hub(await hub_delete(BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
+        share = GitShare.from_hub(await HubProxy.delete(BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
         # Members who accept the project from now on are pointed at GitHub again.
-        await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
+        await HubProxy.put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
         return share
 
     async def _github_origin(self) -> GitOrigin:
@@ -2560,11 +2562,11 @@ class Project(SetupSkippable, Entity):
         so the caller can offer a retry instead of calling it gone. ``name``
         replaces the hub's name — the receiver's choice when it is taken here."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         try:
-            payload = await hub_http.hub_get_or_raise(BuiltinEntityType.PROJECT, project_id)
+            payload = await HubProxy.get_or_raise(BuiltinEntityType.PROJECT, project_id)
         except HubError as e:
             if e.status_code in (403, 404, 422):
                 return None
@@ -2652,12 +2654,13 @@ class Project(SetupSkippable, Entity):
         Empty when the hub can't be asked."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
         if not hub_auth_available():
             return []
         links = []
-        for row in hub_http.rows_of(await hub_http.hub_get(BuiltinEntityType.PROJECT)):
+        for row in hub_http.rows_of(await HubProxy.get(BuiltinEntityType.PROJECT)):
             project_id = str(row.get("id") or "")
             if not project_id or await cls.get_one({"id": project_id}) is not None:
                 continue

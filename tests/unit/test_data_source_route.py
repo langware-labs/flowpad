@@ -7,13 +7,13 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
 @pytest.fixture
 def hub(monkeypatch):
-    from flow_sdk.cloud_client.transport import hub_http
     from flow_sdk.instance_settings import runtime
 
     state: dict = {"claims": [], "posted": []}
@@ -26,8 +26,8 @@ def hub(monkeypatch):
         state["posted"].append((entity_type, entity_id, action, payload))
         return {"id": entity_id, "target": payload["target"]}
 
-    monkeypatch.setattr(hub_http, "hub_get", hub_get)
-    monkeypatch.setattr(hub_http, "hub_post", hub_post)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(hub_get))
+    monkeypatch.setattr(HubProxy, "post", staticmethod(hub_post))
     monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
     return state
 

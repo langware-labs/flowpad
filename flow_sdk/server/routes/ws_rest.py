@@ -125,6 +125,40 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
     response = None
     execution_context = None
 
+    # The same routing rule as HTTP (``route_to_hub``), decided before the desktop parses the
+    # path: a hub-bound call is answered by the hub, verbatim, inside the usual response_msg.
+    try:
+        from flow_sdk.server.routes._hub_reflect import route_ws_to_hub  # noqa: PLC0415
+
+        hub_answer = await route_ws_to_hub(
+            api_message.method or "GET",
+            api_message.api_path,
+            api_message.query_string or "",
+            api_message.body,
+            bool(api_message.hub_reflect),
+        )
+    except Exception as ex:  # noqa: BLE001 — a routing failure must not drop the message
+        logger.error(f"[WS_REST] hub routing failed for {api_message.api_path}: {ex}")
+        hub_answer = (500, {"status": "FAIL", "message": "Request error", "data": str(ex)})
+    if hub_answer is not None:
+        status, body = hub_answer
+        if not (isinstance(body, dict) and "status" in body):
+            # A FastAPI ``{"detail": ...}`` refusal, or a body that is not an envelope.
+            detail = body.get("detail") if isinstance(body, dict) else body
+            ok = 200 <= status < 300
+            body = {"status": "SUCCESS" if ok else "FAIL", "message": "" if ok else str(detail), "data": body if ok else None}
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "message_type": "response_msg",
+                    "message_id": api_message.message_id,
+                    "response_message_id": api_message.message_id,
+                    "content": body,
+                }
+            )
+        )
+        return body
+
     try:
         execution_context = await setup_rest_context(connection_id, message_json)
         async with execution_context.transaction_scope():

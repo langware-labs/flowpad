@@ -17,7 +17,13 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from flow_sdk.external_apis.decision import DecisionError, DecisionFailure, dialect_for_host, failure_detail, reason_for_status
+from flow_sdk.external_apis.decision import (
+    DecisionError,
+    DecisionFailure,
+    dialect_for_host,
+    failure_detail,
+    reason_for_status,
+)
 from flow_sdk.instance_settings.api_endpoint import decision_endpoints, fetch_hub_api_endpoints
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import (
@@ -47,7 +53,8 @@ async def _endpoint(endpoint: Optional[str]) -> APIEndpointOffer:
 
 
 async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -> DecisionResult:
-    from flow_sdk.cloud_client.transport.hub_http import HubError, hub_invoke_raw  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import HubError  # noqa: PLC0415
 
     if not isinstance(spec, DecisionSpec):
         try:
@@ -61,7 +68,7 @@ async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -
     wire = DecisionWire(endpoint=offer.typeid, path=dialect.PATH, request=sent)
     started = time.perf_counter()
     try:
-        status, body = await hub_invoke_raw("api_endpoint", offer.id, dialect.PATH, sent)
+        status, body = await HubProxy.invoke_raw("api_endpoint", offer.id, dialect.PATH, sent)
     except HubError as exc:
         raise DecisionError(
             "auth" if exc.status == 401 else "unavailable",

@@ -26,6 +26,7 @@ from flow_sdk.builtin.flow_message import (
     BodyStatus,
     FlowMessage,
 )
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -104,8 +105,8 @@ async def test_upload_body_happy_path(bootstrapped_client, tmp_path: Path) -> No
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(return_value=fake_zip)),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})) as mock_put,
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
+        patch.object(HubProxy, "put", AsyncMock(return_value={})) as mock_put,
+        patch.object(HubProxy, "post", AsyncMock(return_value={})) as mock_post,
     ):
         r = await bootstrapped_client.post(f"/api/v1/graph/flow_message/{fm_id}/upload_body", json={})
 
@@ -141,8 +142,8 @@ async def test_upload_body_accepts_git_transfer_mode(bootstrapped_client, tmp_pa
 
     with (
         patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
-        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
-        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})),
+        patch.object(HubProxy, "put", AsyncMock(return_value={})),
+        patch.object(HubProxy, "post", AsyncMock(return_value={})),
     ):
         r = await bootstrapped_client.post(
             f"/api/v1/graph/flow_message/{fm_id}/upload_body",

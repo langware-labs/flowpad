@@ -21,6 +21,7 @@ import pytest
 
 from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 
 SENDER = "0a0a0a0a-0000-4000-8000-000000000001"
@@ -38,7 +39,7 @@ def hub(monkeypatch):
             return answer
         raise HubError(answer if isinstance(answer, int) else 404, "refused")
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_hub_get_or_raise)
+    monkeypatch.setattr(HubProxy, "get_or_raise", staticmethod(fake_hub_get_or_raise))
     return SimpleNamespace(calls=calls, projects=projects)
 
 

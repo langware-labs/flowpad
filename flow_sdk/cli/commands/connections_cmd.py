@@ -109,7 +109,7 @@ def list_connections_cmd(
         # harness login and "not connected" would be a false one.
         typer.echo(f"{row.provider}\t{row.kind}\t{row.state}\t{row.display_name}")
     if any(row.provider == "slack" and row.state == "connected" for row in specs):
-        typer.echo("\nRead Slack: `flow connections slack-recent --hours 24` (channels you are in, who said what).")
+        typer.echo("\nRead Slack: `flow connections recent slack --hours 24` (channels you are in, who said what).")
 
 
 @connections_app.command("connect")
@@ -173,12 +173,13 @@ def test_connection(
         raise typer.Exit(EXIT_NOT_CONNECTED)
 
 
-@connections_app.command("slack-recent")
-def slack_recent_cmd(
+@connections_app.command("recent")
+def recent_cmd(
+    driver: Annotated[str, typer.Argument(help="The data source to read, e.g. slack.")],
     hours: Annotated[float, typer.Option("--hours", help="How far back to read.")] = 24.0,
     json_output: Annotated[bool, typer.Option("--json", help="Emit one JSON object.")] = False,
 ) -> None:
-    """What happened on Slack in the last HOURS, read with this machine's Slack connection.
+    """What happened on DRIVER in the last HOURS, read with this machine's own connection.
 
     Every channel the connected account is a member of, newest first, one block per channel with
     who said what — the input for "summarize the last 24 hours on Slack". The token stays with the
@@ -186,7 +187,7 @@ def slack_recent_cmd(
     """
     from flow_sdk.cli.commands._common import discover_port, local_get  # noqa: PLC0415
 
-    url = f"http://127.0.0.1:{discover_port()}/api/v1/graph/compute_node/@local/slack-recent"
+    url = f"http://127.0.0.1:{discover_port()}/api/v1/graph/data_driver/{driver}/recent"
     resp = local_get(url, params={"hours": str(hours)}, timeout=120)
     body = resp.json() if resp.content else {}
     if body.get("status") != "SUCCESS":

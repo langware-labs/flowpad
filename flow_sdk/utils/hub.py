@@ -3,44 +3,25 @@
 The implementations now live in ``flow_sdk.cloud_client`` (HTTP is cloud-specific,
 not a generic util):
   - ``HubError`` / ``_extract_reason`` → ``cloud_client.shared.errors``
-  - ``hub_get`` / ``hub_post`` / ``hub_delete`` / ``hub_put``,
-    ``hub_graph_url`` / ``hub_base_url`` / ``get_info`` → ``cloud_client.transport.hub_http``
+  - ``hub_graph_url`` / ``hub_base_url`` / ``get_info`` → ``cloud_client.transport.hub_http``
+  - every hub call → ``cloud_client.hub_proxy.HubProxy``
 
-This module re-exports them so existing imports (``from flow_sdk.utils.hub import
-hub_get``) and test monkeypatches (``patch("flow_sdk.utils.hub.hub_post")``) keep
-working unchanged. Prefer importing from ``flow_sdk.cloud_client`` in new code.
+This module re-exports the names above for existing imports. Prefer
+``flow_sdk.cloud_client`` in new code.
 """
 
 from __future__ import annotations
 
+from flow_sdk.cloud_client.hub_proxy import ProgressCallback
 from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode, _extract_reason
-from flow_sdk.cloud_client.transport.hub_http import (
-    ProgressCallback,
-    _hub_post_streamed_upload,
-    get_info,
-    hub_base_url,
-    hub_delete,
-    hub_get,
-    hub_get_or_raise,
-    hub_graph_url,
-    hub_post,
-    hub_put,
-    hub_upload_entity_file,
-)
+from flow_sdk.cloud_client.transport.hub_http import get_info, hub_base_url, hub_graph_url
 
 __all__ = [
     "HubError",
     "HubErrorCode",
     "_extract_reason",
     "ProgressCallback",
-    "_hub_post_streamed_upload",
     "get_info",
     "hub_base_url",
-    "hub_delete",
-    "hub_get",
-    "hub_get_or_raise",
     "hub_graph_url",
-    "hub_post",
-    "hub_put",
-    "hub_upload_entity_file",
 ]

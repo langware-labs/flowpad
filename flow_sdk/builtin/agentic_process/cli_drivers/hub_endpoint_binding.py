@@ -498,8 +498,8 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     Returns the hub's answer verbatim. A REFUSED call is a verdict, not an error, and comes
     back inside the success envelope with ``ok: false``; only a transport/auth failure raises.
     """
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
     endpoint_ref = str(payload.get("endpoint_typeid") or payload.get("id") or "")
     endpoint_id = _endpoint_id(endpoint_ref)
@@ -512,7 +512,7 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     _require_hub_login()
 
     try:
-        verdict = await hub_post("llm_endpoint", {}, endpoint_id, "test")
+        verdict = await HubProxy.post("llm_endpoint", {}, endpoint_id, "test")
     except HubError as exc:
         raise HubEndpointBindError(f"hub refused the test: {exc}", 502) from exc
     if verdict is None:
@@ -551,19 +551,19 @@ async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
     Same reason for living here as ``test``: the hub's ``chain`` action addresses an entity
     this box has no row for.
     """
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
     endpoint_id = _endpoint_id(endpoint_ref)
     _require_hub_login()
 
     try:
-        body = await hub_get("llm_endpoint", endpoint_id, action="chain")
+        body = await HubProxy.get("llm_endpoint", endpoint_id, action="chain")
     except HubError as exc:
         raise HubEndpointBindError(f"hub refused the chain read: {exc}", 502) from exc
     if body is None:
         raise HubEndpointBindError("no hub is configured for this box", 409)
-    # ``hub_get`` answers the envelope for a type listing and the bare payload for an action;
+    # ``HubProxy.get`` answers the envelope for a type listing and the bare payload for an action;
     # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     return data if isinstance(data, dict) else {}

@@ -18,6 +18,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.external_apis.llm.errors import LLMNotInvocable
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -96,7 +97,7 @@ async def test_the_hub_listing_forces_the_hub_kind_whatever_the_hub_sent(env, mo
     async def _fake_get(_type, action=None, **_kw):
         return {"data": [row]} if action is None else []
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", _fake_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_fake_get))
     settings.reset_cache()
     endpoints = await settings.fetch_hub_llm_endpoints()
     assert [e.kind for e in endpoints] == [LLMEndpointKind.HUB]

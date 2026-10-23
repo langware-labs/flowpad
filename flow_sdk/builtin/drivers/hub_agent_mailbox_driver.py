@@ -16,7 +16,7 @@ call, not after a process restart.
 down must not take a worker spawn with it". A mailbox caller has to tell "this
 agent has no mailbox" (a person must act) from "the hub is unreachable" (try again
 next tick), and collapsing both to ``None`` makes that impossible — so this
-raises with the status intact and lets the caller decide. See ``hub_get_or_raise``.
+raises with the status intact and lets the caller decide. See ``HubProxy.get_or_raise``.
 
 The status is re-raised as the FAMILY's ``AgentMailboxError``, never as
 ``HubError``: everything above this file is supposed to work against any mailbox
@@ -84,10 +84,10 @@ class HubAgentMailboxDriver:
         whether it is the first or second attempt. Every other failure still
         raises — a hub that is down must not read as "already gone".
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            await hub_delete(BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION)
+            await HubProxy.delete(BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION)
             return True
         except HubError as exc:
             if exc.status_code == 404:
@@ -112,26 +112,26 @@ class HubAgentMailboxDriver:
     # ── transport ────────────────────────────────────────────────────────────
 
     async def _get(self, agent_id: str, sub_path: Optional[str], *, params: Optional[dict] = None) -> dict:
-        """Through ``hub_get_or_raise``, never ``hub_get``.
+        """Through ``HubProxy.get_or_raise``, never ``HubProxy.get``.
 
-        ``hub_get`` collapses "no hub configured", "signed out", "network down",
+        ``HubProxy.get`` collapses "no hub configured", "signed out", "network down",
         "5xx" and a definitive 404 all to ``None``. Callers of a mailbox have to
         act differently on those, so the status has to survive.
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            return await hub_get_or_raise(
+            return await HubProxy.get_or_raise(
                 BuiltinEntityType.AGENT, agent_id, MAILBOX_ACTION, sub_path, params=params
             )
         except HubError as exc:
             raise await _as_email_error(exc) from exc
 
     async def _post(self, agent_id: str, sub_path: str, body: dict) -> dict:
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         try:
-            return await hub_post(BuiltinEntityType.AGENT, body, agent_id, MAILBOX_ACTION, sub_path) or {}
+            return await HubProxy.post(BuiltinEntityType.AGENT, body, agent_id, MAILBOX_ACTION, sub_path) or {}
         except HubError as exc:
             raise await _as_email_error(exc) from exc
 

@@ -385,6 +385,7 @@ def _blob_storage(tmp_path):
 def hub_faked(_blob_storage, monkeypatch):
     """Fake every hub touchpoint the group-task actions use."""
     posts: list[tuple[str, dict]] = []
+    deletes: list[tuple[str, dict | None]] = []
     puts: list[tuple[str, dict]] = []
     created_children: list[tuple[str, str]] = []
 
@@ -413,20 +414,30 @@ def hub_faked(_blob_storage, monkeypatch):
         puts.append((f"/graph/{etype}/{entity_id}", payload))
         return {}
 
-    import flow_sdk.app.actions.group_task_action as gta
+    async def fake_hub_delete(entity_type, entity_id, action=None, *a, payload=None, **k):
+        etype = getattr(entity_type, "value", entity_type)
+        deletes.append((f"/graph/{etype}/{entity_id}/{action}", payload))
+        return {}
+
+    async def no_real_hub(method, url, *a, **k):
+        raise AssertionError(f"hub_faked: unstubbed hub call {method} {url} would reach the network")
+
     import flow_sdk.app.actions.task_assign_action as taa
     import flow_sdk.cli.auth.credentials as creds_mod
     import flow_sdk.cli.auth.hub_login as login_mod
     from flow_sdk.builtin.task import Task
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
 
     monkeypatch.setattr(creds_mod, "load_credentials", lambda *a, **k: _FakeCreds())
     monkeypatch.setattr(login_mod, "is_logged_in", lambda: True)
     # BOTH modules: the group fan-out reaches the hub through the primitive's
     # ``ensure_task_on_hub`` / ``push_hub_fields`` (hub_request) as well as its own hub_post.
-    monkeypatch.setattr(gta, "hub_post", fake_hub_post)
-    monkeypatch.setattr(taa, "hub_request", fake_hub_request)
-    monkeypatch.setattr(taa, "hub_put", fake_hub_put)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(fake_hub_post))
+    monkeypatch.setattr(HubProxy, "request", staticmethod(fake_hub_request))
+    monkeypatch.setattr(HubProxy, "put", staticmethod(fake_hub_put))
+    monkeypatch.setattr(HubProxy, "delete", staticmethod(fake_hub_delete))
+    monkeypatch.setattr(HubProxy, "send", staticmethod(no_real_hub))
     monkeypatch.setattr(taa, "_local_mode_share_blocked", lambda: False)
     monkeypatch.setattr(Task, "share", fake_share)
     monkeypatch.setattr(Task, "create_child", fake_create_child)
-    return {"posts": posts, "puts": puts, "children": created_children}
+    return {"posts": posts, "puts": puts, "deletes": deletes, "children": created_children}

@@ -25,6 +25,7 @@ import pytest
 from starlette.datastructures import UploadFile
 
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 
 def _entity(*, remote: bool):
@@ -127,7 +128,7 @@ async def test_upload_is_mirrored_to_hub_and_continues_locally(monkeypatch):
     async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
         sent.append({"et": et, "id": entity_id, "name": filename, "content": content, "sub_path": sub_path})
 
-    monkeypatch.setattr(mod, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
     _patch_request_files(monkeypatch, {"uploaded_file": _upload_file("a.txt", b"hello")})
 
     result = await mod._reflect_fs_to_hub(BuiltinEntityType.TASK, "task-1", "upload")
@@ -155,7 +156,7 @@ async def test_upload_stream_is_rewound_for_the_local_handler(monkeypatch):
     async def _fake_upload(*a, **kw):
         return None
 
-    monkeypatch.setattr(mod, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
     up = _upload_file("a.txt", b"hello")
     _patch_request_files(monkeypatch, {"uploaded_file": up})
 
@@ -174,7 +175,7 @@ async def test_non_upload_fs_actions_are_not_mirrored(monkeypatch):
     async def _boom(*a, **kw):  # pragma: no cover - must never run
         raise AssertionError("non-upload fs action must not hit the hub")
 
-    monkeypatch.setattr(mod, "hub_upload_entity_file", _boom)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_boom))
 
     for sub_path in ("download/a.txt", "browse", "delete/a.txt", None):
         assert await mod._reflect_fs_to_hub(BuiltinEntityType.TASK, "t", sub_path) is mod.REFLECT_CONTINUE_LOCAL
@@ -202,7 +203,7 @@ def _patch_hub_get(monkeypatch, payload):
     async def _fake_hub_get(*a, **kw):
         return payload
 
-    monkeypatch.setattr(hub, "hub_get", _fake_hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_fake_hub_get))
     monkeypatch.setattr(hub, "hub_base_url", lambda: "https://hub.test")
 
 
@@ -296,7 +297,6 @@ async def test_share_push_reads_via_entity_relative_path(monkeypatch, tmp_path):
     calling ``get_storage_path``, or every file 'push' dies on ENOENT while the
     share still reports success — the bytes silently never reach the hub."""
     import flow_sdk.actions.fs.fs_actions as fsa
-    import flow_sdk.utils.hub as hub
     from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
 
     folder = "task-abc123"
@@ -308,7 +308,7 @@ async def test_share_push_reads_via_entity_relative_path(monkeypatch, tmp_path):
     async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
         sent.append((entity_id, filename, content))
 
-    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
     monkeypatch.setattr(fsa, "get_entity_storage", lambda _tid: _PrefixStorage(tmp_path, folder))
     monkeypatch.setattr(
         fsa.VFSPath, "from_entity_path", staticmethod(lambda *a, **k: SimpleNamespace(abs_vfspath=folder))
@@ -368,7 +368,6 @@ _register_hub_layout_probes()
 
 @pytest.mark.asyncio
 async def test_share_push_publishes_markdown_under_canonical_hub_name(monkeypatch, tmp_path):
-    import flow_sdk.utils.hub as hub
     from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
 
     source = tmp_path / "sender-name.md"
@@ -380,7 +379,7 @@ async def test_share_push_publishes_markdown_under_canonical_hub_name(monkeypatc
     async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
         sent.append((entity_id, filename, content, sub_path))
 
-    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
 
     assert await push_entity_files_to_hub(entity) == 1
     assert sent == [(entity.id, "document.md", b"# Wiki doc", "upload")]
@@ -388,7 +387,6 @@ async def test_share_push_publishes_markdown_under_canonical_hub_name(monkeypatc
 
 @pytest.mark.asyncio
 async def test_share_push_recursively_preserves_skill_folder_paths(monkeypatch, tmp_path):
-    import flow_sdk.utils.hub as hub
     from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
 
     skill_root = tmp_path / "my-skill"
@@ -406,7 +404,7 @@ async def test_share_push_recursively_preserves_skill_folder_paths(monkeypatch, 
     async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
         sent.append((filename, content, sub_path))
 
-    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
 
     assert await push_entity_files_to_hub(entity) == 2
     assert sent == [
@@ -417,7 +415,6 @@ async def test_share_push_recursively_preserves_skill_folder_paths(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_share_push_does_not_publish_symlinks_outside_skill(monkeypatch, tmp_path):
-    import flow_sdk.utils.hub as hub
     from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
 
     skill_root = tmp_path / "my-skill"
@@ -436,7 +433,7 @@ async def test_share_push_does_not_publish_symlinks_outside_skill(monkeypatch, t
     async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
         sent.append(filename)
 
-    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
 
     assert await push_entity_files_to_hub(entity) == 1
     assert sent == ["SKILL.md"]
@@ -446,33 +443,21 @@ async def test_share_push_does_not_publish_symlinks_outside_skill(monkeypatch, t
 async def test_create_child_pushes_existing_record_bytes_after_hub_create(monkeypatch):
     import flow_sdk.actions.fs.fs_actions as fs_actions
     import flow_sdk.cli.auth.credentials as credentials
-    import flow_sdk.cloud_client.client as cloud_client
     from flow_sdk.builtin.claude_memory_entities import Docs
     from flow_sdk.builtin.project import Project
 
     posted = []
     pushed = []
 
-    class _Client:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def post(self, path, body):
-            posted.append((path, body))
+    async def _fake_call_url(method, url, *, json=None, **_kw):
+        posted.append((method, url, json))
 
     async def _fake_push(entity):
         pushed.append(entity)
         return 1
 
     monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="key"))
-    monkeypatch.setattr(cloud_client, "FlowpadClient", _Client)
-    monkeypatch.setattr(cloud_client.ApiConfig, "from_env", classmethod(lambda cls: SimpleNamespace()))
+    monkeypatch.setattr(HubProxy, "call_url", staticmethod(_fake_call_url))
     monkeypatch.setattr(fs_actions, "push_entity_files_to_hub", _fake_push)
 
     project = Project(id=str(uuid.uuid4()), name="Shared", remote=True)
@@ -492,7 +477,6 @@ async def test_share_push_sends_task_attachments_from_its_folder(monkeypatch, tm
     share-time push sends ``attachments/**`` with their paths, never the task's
     own documents (``task.md`` is fields; ``spec.md`` stays home)."""
     import flow_sdk.actions.fs.fs_actions as fsa
-    import flow_sdk.utils.hub as hub
     from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
 
     folder = tmp_path / "agentic-assets" / "task" / "help"
@@ -506,7 +490,7 @@ async def test_share_push_sends_task_attachments_from_its_folder(monkeypatch, tm
     async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
         sent.append((filename, content, sub_path))
 
-    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(HubProxy, "upload_entity_file", staticmethod(_fake_upload))
     class _EmptyEmbedded:  # nothing left in the old embedded store
         async def list_dir(self, _root):
             return []

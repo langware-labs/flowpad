@@ -1,40 +1,43 @@
-"""Generic action-to-hub reflection.
+"""Which graph requests the hub answers, and folding its answers into local rows.
 
-When a local action runs against an entity that has a hub counterpart
-(``entity.remote=True``) and the call opts into reflection (the ``Hub-Reflect``
-header, or the ``hub_reflect`` field on a WS ``rest_api_msg`` → ``request_info.hub_reflect``),
-the dispatcher forwards the call to the hub instead of invoking the local handler.
-The hub's response is then mirrored into the local row so the local cache stays
-consistent.
-
-The TS SDK only ever talks to the local server; this module is the seam
-that turns the local server into a transparent proxy for remote entities.
+The TS SDK only ever talks to the local server. ``decide`` is the ONE rule for whether a
+graph request is answered here or by the hub (read from the raw path, before the desktop
+parses it); ``route_to_hub`` (HTTP) and ``route_ws_to_hub`` (WS ``rest_api_msg``) apply it
+and forward through ``HubProxy`` verbatim — the desktop graph path IS the hub's. A JSON
+answer about rows this box keeps is then folded into them (``mirror_answer``) without
+changing the answer.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from flow_sdk.actions.action_registry import Action
-from flow_sdk.cli.auth.hub_login import is_logged_in
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.instance_settings.privacy_mode import is_local_mode
-from flow_sdk.utils.hub import (
-    HubError,
-    hub_delete,
-    hub_get,
-    hub_get_or_raise,
-    hub_post,
-    hub_put,
-    hub_upload_entity_file,
-)
+from flow_sdk.utils.hub import HubError
 
 logger = logging.getLogger(__name__)
+
+
+# Looked up at CALL time, never bound at import: an import that happens while some caller has
+# these patched would otherwise freeze the patched function into this module for good.
+def is_logged_in() -> bool:
+    from flow_sdk.cli.auth import hub_login  # noqa: PLC0415
+
+    return hub_login.is_logged_in()
+
+
+def is_local_mode() -> bool:
+    from flow_sdk.instance_settings import privacy_mode  # noqa: PLC0415
+
+    return privacy_mode.is_local_mode()
 
 
 def scope_body_to_assignee_fields(entity: Entity, body: dict[str, Any]) -> dict[str, Any]:
@@ -184,54 +187,286 @@ def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> b
 
 _HUB_ONLY_OFFLINE = "{type} exists only on Flowpad Cloud; you're offline or signed out."
 
+# The most rows of a hub list answer folded into local copies per call.
+_MIRROR_LIST_CAP = 500
+# The biggest JSON answer read whole to mirror it; anything larger streams through untouched.
+_MIRROR_BYTES_CAP = 8 * 1024 * 1024
 
-def hub_only_type(path: str) -> str | None:
-    """The entity type a graph ``path`` addresses, when that type exists ONLY on the hub.
 
-    A ``_hub_only`` type (``LLMEndpoint``, ``AgentMailbox``) has no local row and no local
-    store: every read, write and action on it is the hub's. The per-entity reflection above
-    cannot serve it — it needs a local row to find before it forwards, so a list came back
-    empty, an id-less action (``catalog``) failed to parse, and every edit answered 404 —
-    so the router forwards the whole request instead (``proxy_hub_only``).
+class Route(StrEnum):
+    LOCAL = "local"  # the local handler answers
+    PROXY = "proxy"  # the hub answers, verbatim
+    UNAVAILABLE = "unavailable"  # only the hub could answer and it can't be reached (409)
+
+
+@dataclass
+class GraphPath:
+    """A graph path read the way the hub reads it, without the desktop's action registry.
+
+    The desktop parser drops a segment it does not know as an action (``conversation/<id>/pickup``
+    parses as a bare op on the conversation) and refuses others (``invitation/pending``), so the
+    routing decision cannot rest on it: a hub path the desktop never heard of must still go to
+    the hub intact.
     """
+
+    type: str | None
+    id: str | None
+    rest: list[str]  # the action segment, then its sub-path
+
+    @property
+    def action(self) -> str | None:
+        return self.rest[0].lower() if self.rest else None
+
+
+def parse_graph_path(path: str) -> GraphPath | None:
+    """``/api/v1/graph/[<type>/<id>/...]<type>[/<id>][/<action>[/<sub...>]]`` → ``GraphPath``."""
     from flow_sdk.api.api_request import APIRequest  # noqa: PLC0415
+    from flow_sdk.api.api_types.identifier import is_valid_identifier  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    graph_prefix = f"{APIRequest.api_prefix}{APIRequest.graph_prefix}/"
-    if not path.startswith(graph_prefix):
+    prefix = f"{APIRequest.api_prefix}{APIRequest.graph_prefix}/"
+    if not path.startswith(prefix):
         return None
-    entity_type = path[len(graph_prefix) :].split("/", 1)[0]
-    cls = SchemaRegistry.get_entity_cls(entity_type) if entity_type else None
-    return entity_type if cls is not None and cls._hub_only else None
+    segs = [s for s in path[len(prefix) :].split("/")]
+    while segs and segs[-1] == "":
+        segs.pop()
+    def is_type(seg: str) -> bool:
+        # ``is_entity_type`` alone misses the ``_hub_only`` types (no local storage).
+        return SchemaRegistry.is_entity_type(seg) or SchemaRegistry.get_entity_cls(seg) is not None
+
+    entity_type: str | None = None
+    entity_id: str | None = None
+    i = 0
+    # Leading (type, id) pairs: the last one is the target; a type after them is a scoped list.
+    while i + 1 < len(segs) and is_type(segs[i].lower()) and is_valid_identifier(segs[i + 1]):
+        entity_type, entity_id = segs[i].lower(), segs[i + 1]
+        i += 2
+    if entity_type is None and segs and is_type(segs[0].lower()):
+        entity_type = segs[0].lower()
+        i = 1
+    return GraphPath(entity_type, entity_id, segs[i:])
 
 
-async def proxy_hub_only(request: Request, entity_type: str) -> Response:
-    """Forward a request on a ``_hub_only`` type to the hub verbatim — or refuse it offline.
+def _online() -> bool:
+    return is_logged_in() and not is_local_mode()
 
-    The hub answers with the caller's own credential, so what comes back is exactly what the
-    hub lets this user see or change; its status rides back unchanged, so a refused or failed
-    write reaches the caller as one. Offline or signed out there is nothing local to answer
-    from, so the request fails loudly (409) rather than with an empty list or a fake success.
+
+async def decide(
+    method: str, path: str, hub_reflect: bool, target: Entity | None = None
+) -> tuple[Route, GraphPath | None, Entity | None]:
+    """Where a graph request is answered — the ONE rule, for HTTP and WS alike.
+
+    - a ``_hub_only`` type: the hub, always (409 when it can't be reached);
+    - entity files of a git-backed remote asset: the hub (git is their only authority);
+    - otherwise only when the caller asked (``Hub-Reflect``) and this box is signed in:
+      * an id: the hub, unless that row is here and is not remote (a local-only entity);
+      * no id: the hub — list / create, a scoped child list, a type or root action. A desktop
+        action of the same name does not shadow it: asking for the hub means the hub's.
+    Entity files of a row held here are served here (uploads are written through to the hub by
+    ``_reflect_fs_to_hub``); files of a row held only by the hub are the hub's.
     """
-    if not is_logged_in() or is_local_mode():
-        detail = _HUB_ONLY_OFFLINE.format(type=entity_type)
-        return JSONResponse({"status": "FAIL", "message": detail, "data": None}, status_code=409)
-    return await proxy_to_hub(request)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    gp = parse_graph_path(path)
+    if gp is None:
+        return Route.LOCAL, None, None
+    cls = SchemaRegistry.get_entity_cls(gp.type) if gp.type else None
+    if cls is not None and cls._hub_only:
+        return (Route.PROXY if _online() else Route.UNAVAILABLE), gp, None
+
+    entity = None
+    if cls is not None and gp.id:
+        if target is not None and getattr(target, "id", None) == gp.id and getattr(target, "type", None) == gp.type:
+            entity = target
+        else:
+            try:
+                entity = await cls.get_by_id(gp.id)
+            except Exception:  # noqa: BLE001 — an unreadable row is a missing row
+                entity = None
+
+    if gp.action == "fs" and is_git_backed_remote_fs(entity, "fs"):
+        return Route.PROXY, gp, entity
+    if not (hub_reflect and _online()):
+        return Route.LOCAL, gp, entity
+    if gp.action == "fs" and entity is not None:
+        return Route.LOCAL, gp, entity  # this box holds the files (a cache filled from the hub on a miss)
+    if gp.id:
+        if entity is not None and getattr(entity, "remote", False) is not True:
+            return Route.LOCAL, gp, entity
+        return Route.PROXY, gp, entity
+    return Route.PROXY, gp, None
 
 
-async def proxy_to_hub(request: Request) -> Response:
-    """Forward one standard graph request to Hub with full HTTP fidelity."""
+def _is_bare_update(method: str, gp: GraphPath, entity: Entity | None) -> bool:
+    return entity is not None and gp.id is not None and not gp.rest and method.upper() in ("PUT", "PATCH")
 
-    from flow_sdk.cloud_client import CloudProxy  # noqa: PLC0415
+
+async def _update_body(request_body: bytes, entity: Entity) -> bytes | None:
+    """The body a bare update sends: narrowed to what an assignee may change. ``None`` means
+    nothing in it is the hub's to hold — the update stays local."""
+    import json  # noqa: PLC0415
 
     try:
-        return await CloudProxy()(request)
-    except HubError as exc:
-        # Missing Hub configuration/transport is a gateway failure. A concrete
-        # Hub rejection keeps its status. Either way this remains a replacement
-        # response; callers never fall through to local storage.
-        status = exc.status_code if exc.status_code >= 400 else 502
-        return Response(exc.reason.encode(), status_code=status, media_type="text/plain")
+        body = json.loads(request_body or b"{}")
+    except ValueError:
+        return request_body
+    if not isinstance(body, dict):
+        return request_body
+    if _changes_only_local_fields(entity, body):
+        return None
+    scoped = scope_body_to_assignee_fields(entity, body)
+    return request_body if scoped is body else json.dumps(scoped).encode()
+
+
+def _wants_mirror(status: int, content_type: str, length: int | None, gp: GraphPath, entity: Entity | None) -> bool:
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    if not (200 <= status < 300) or "json" not in content_type:
+        return False
+    if length is not None and length > _MIRROR_BYTES_CAP:
+        return False
+    if entity is not None:
+        return True  # ``mirror_answer`` folds only an answer that IS this row (or its roster)
+    cls = SchemaRegistry.get_entity_cls(gp.type) if gp.type else None
+    return cls is not None and not cls._hub_only and gp.action is None and gp.id is None
+
+
+async def route_to_hub(request: Request, target: Entity | None = None) -> Response | None:
+    """Answer an HTTP graph request from the hub when ``decide`` says so; ``None`` = run it locally.
+
+    The hub's status, headers and body come back verbatim. A JSON answer about rows this box
+    keeps is folded into them afterwards (``mirror_answer``); that never changes the answer.
+    Nothing came back: a read falls back to the local copy, everything else fails loudly.
+    """
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+    hub_reflect = (request.headers.get("hub-reflect") or "").lower() in ("true", "1", "yes")
+    route, gp, entity = await decide(request.method, request.url.path, hub_reflect, target)
+    if route is Route.LOCAL:
+        return None
+    if route is Route.UNAVAILABLE:
+        detail = _HUB_ONLY_OFFLINE.format(type=gp.type if gp else "This")
+        return JSONResponse({"status": "FAIL", "message": detail, "data": None}, status_code=409)
+
+    if gp.action == "fs" and entity is not None and request.method.upper() == "GET" and gp.rest[1:2] == ["document"]:
+        # The desktop's document view of a git-backed asset, built from the hub's downloads.
+        return await read_hub_document(request, entity, "/".join(gp.rest[2:]))
+    content = None
+    if _is_bare_update(request.method, gp, entity):
+        content = await _update_body(await request.body(), entity)
+        if content is None:
+            return None
+    try:
+        resp = await HubProxy.open(request, content=content)
+    except HubError as e:
+        if e.status_code == 0 and request.method.upper() in ("GET", "HEAD") and gp.type is not None:
+            logger.warning("[hub-proxy] %s %s: hub unreachable, answering from the local copy", request.method, gp)
+            return None
+        return HubProxy.failure(e)
+
+    length = resp.headers.get("content-length")
+    if not _wants_mirror(
+        resp.status_code, resp.headers.get("content-type", ""), int(length) if length else None, gp, entity
+    ):
+        return HubProxy.relay(resp)
+    try:
+        raw = await resp.aread()
+    finally:
+        await resp.aclose()
+    await mirror_answer(request.method, gp, entity, raw)
+    headers = [(k, v) for (k, v) in HubProxy.inbound_headers(list(resp.headers.raw))
+               if k.lower() not in (b"content-encoding", b"content-length")]  # fmt: skip
+    out = Response(raw, status_code=resp.status_code)
+    out.raw_headers = headers + [(b"content-length", str(len(raw)).encode())]
+    return out
+
+
+async def route_ws_to_hub(method: str, path: str, query: str, body: Any, hub_reflect: bool) -> tuple[int, Any] | None:
+    """``route_to_hub`` for a WS ``rest_api_msg``: ``(status, parsed body)`` or ``None`` = local."""
+    import json  # noqa: PLC0415
+
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+    route, gp, entity = await decide(method, path, hub_reflect)
+    if route is Route.LOCAL:
+        return None
+    if route is Route.UNAVAILABLE:
+        return 409, {
+            "status": "FAIL",
+            "message": _HUB_ONLY_OFFLINE.format(type=gp.type if gp else "This"),
+            "data": None,
+        }
+    content = json.dumps(body).encode() if body not in (None, "") else None
+    if _is_bare_update(method, gp, entity):
+        content = await _update_body(content or b"{}", entity)
+        if content is None:
+            return None
+    headers = [(b"content-type", b"application/json")] if content else []
+    try:
+        answer = await HubProxy.forward_buffered(method, path, query, headers=headers, content=content)
+    except HubError as e:
+        if e.status_code == 0 and method.upper() in ("GET", "HEAD") and gp.type is not None:
+            return None
+        failure = HubProxy.failure(e)
+        return failure.status_code, json.loads(failure.body)
+    if _wants_mirror(answer.status_code, answer.content_type, len(answer.content), gp, entity):
+        await mirror_answer(method, gp, entity, answer.content)
+    try:
+        return answer.status_code, answer.json()
+    except ValueError:
+        return answer.status_code, answer.content.decode("utf-8", "replace")
+
+
+async def mirror_answer(method: str, gp: GraphPath, entity: Entity | None, raw: bytes) -> None:
+    """Fold a hub answer into the rows this box keeps — never changes the answer itself.
+
+    - ``members`` on an entity: the roster cache (re-read after a change: a mutation answers a
+      message, not the roster);
+    - the entity itself — any answer that is this row (a read, an update, ``close``/``pickup``…):
+      its hub-owned fields (``Sharing`` decides which);
+    - a list of a type kept here: each row this box already holds as remote. Which hub rows to
+      ADD locally is the mirror's next step, not the proxy's.
+    """
+    import json  # noqa: PLC0415
+
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    try:
+        data = (json.loads(raw) or {}).get("data")
+    except (ValueError, AttributeError):
+        return
+    try:
+        if entity is not None and gp.action == "members":
+            if len(gp.rest) > 1:
+                return  # members/<sub> is another endpoint (a link), not the roster
+            if method.upper() != "GET":
+                from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+                data = await HubProxy.call("GET", entity.type, entity.id, "members")
+            await mirror_hub_response_into_local(entity, "members", _normalize_hub_response("members", data))
+            return
+        if entity is not None:
+            if isinstance(data, dict) and data.get("id") == entity.id:
+                await _apply_hub_fields(entity, data)
+            return
+        cls = SchemaRegistry.get_entity_cls(gp.type) if gp.type else None
+        if cls is None or not isinstance(data, list):
+            return
+        for row in data[:_MIRROR_LIST_CAP]:
+            if not isinstance(row, dict) or not row.get("id"):
+                continue
+            local = await cls.get_by_id(row["id"])
+            if local is not None and getattr(local, "remote", False) is True:
+                await _apply_hub_fields(local, row)
+    except Exception as e:  # noqa: BLE001 — a mirror miss is a stale row, never a failed call
+        logger.warning("[hub-proxy] mirror of %s failed: %s", gp, e)
+
+
+async def _apply_hub_fields(entity: Entity, hub_row: dict[str, Any]) -> None:
+    updates = _merge_hub_entity_into_local(entity, hub_row)
+    if updates:
+        entity.apply_field_updates(updates)
+        await entity.save(notify=True)
 
 
 async def read_hub_document(request: Request, entity: Entity, path: str) -> Response:
@@ -241,12 +476,12 @@ async def read_hub_document(request: Request, entity: Entity, path: str) -> Resp
     from flow_sdk.assets.document import read_document_bytes
     from flow_sdk.assets.entity_document import read_entity_document_bytes
     from flow_sdk.assets.serialization import entity_body_path
-    from flow_sdk.cloud_client import CloudProxy
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
     from flow_sdk.cloud_client.transport.hub_http import hub_graph_url
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     async def download(relative: str):
-        response = await CloudProxy()(request, hub_graph_url(entity.type, entity.id, "fs", f"download/{relative}"))
+        response = await HubProxy.forward(request, hub_graph_url(entity.type, entity.id, "fs", f"download/{relative}"))
         if response.status_code != 200:
             return response, b""
         try:
@@ -317,7 +552,7 @@ async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
         # The local handler reads these same objects afterwards — rewind, or it
         # writes an empty file into the cache.
         await f.seek(0)
-        await hub_upload_entity_file(et, hub_id, f.filename, content, sub_path)
+        await HubProxy.upload_entity_file(et, hub_id, f.filename, content, sub_path)
     return REFLECT_CONTINUE_LOCAL
 
 
@@ -333,105 +568,6 @@ def _changes_only_local_fields(entity: Entity, body: dict[str, Any]) -> bool:
     current = entity.model_dump(mode="json", include=set(body))
     changed = {name for name, value in body.items() if name in fields and current.get(name) != value}
     return bool(changed) and changed <= not_for_hub
-
-
-async def reflect_to_hub(
-    a: Action,
-    entity: Entity,
-    body: dict[str, Any],
-    method: str,
-    sub_path: str | None = None,
-) -> Any:
-    """Forward the action call to the hub and mirror the response into the local row.
-
-    ``method`` is the **actual incoming HTTP method** (e.g. from
-    ``RequestInfo.method``). The hub verb is taken from it verbatim — NOT inferred
-    from the matched action's static ``a.methods``. That inference was the bug: an
-    action name (e.g. ``members``) registers both a GET (list) and a DELETE
-    (remove) handler under one registry key, so a roster GET could resolve to the
-    DELETE-registered ``Action`` and reflect a destructive hub DELETE with an empty
-    body → hub 400 → the "Cloud request rejected" toast. The request method never
-    lies; ``a.methods`` does.
-
-    ``sub_path`` is the segment after the action (``members/link`` → ``"link"``),
-    forwarded verbatim so one action name can front several hub endpoints. It also
-    *disqualifies* the roster-shaped post-processing below: ``members`` returns a
-    participant list, but ``members/link`` returns ``{id, url, …}``, and mirroring
-    that onto ``participants`` would corrupt the roster.
-
-    Returns the hub's response payload (the unwrapped ``data`` dict/list),
-    after normalizing per-action shapes (e.g. ``members`` field rename).
-    Raises ``HubError`` on failure — caller decides whether to fall through
-    to the local handler.
-    """
-    et = _entity_type_enum(entity)
-    if et is None:
-        raise HubError(0, f"entity type {entity.type!r} has no hub representation")
-
-    hub_id = entity.id
-    verb = (method or "").lower()
-    # Entity files ride the same reflection as entity fields, but write-through
-    # rather than replace — see ``_reflect_fs_to_hub``.
-    if a.action_name == "fs":
-        return await _reflect_fs_to_hub(et, hub_id, sub_path)
-    # Roster-shaped handling applies to the bare ``members`` action only — a
-    # sub-path (``members/link``) is a different hub endpoint with its own shape.
-    is_roster = a.action_name == "members" and not sub_path
-    if verb == "get":
-        # Raises ``HubError`` carrying the hub's status, so the caller can tell a
-        # refusal (403 — the answer) from an outage (0 — fall through to local).
-        hub_resp = await hub_get_or_raise(et, hub_id, action=a.action_name, sub_path=sub_path)
-    elif verb == "delete":
-        # DELETE carries its selector in the body (e.g. members remove →
-        # MembershipMethod {member_through, value}); hub_delete sends it as
-        # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
-        # which propagates to the caller verbatim.
-        hub_resp = await hub_delete(et, hub_id, action=a.action_name, sub_path=sub_path, payload=body or {})
-    elif verb in ("put", "patch") and a.action_name != "update":
-        # A NAMED action PUTs to its own hub endpoint, sub-path included — a role
-        # change (``members``), a public-access stamp (``access/public/visitor``).
-        # Without this branch the generic PUT below would reflect the body as a
-        # bare entity update onto ``/<type>/<id>``, silently writing it onto the
-        # row. ``update`` is the name the framework gives a PUT with no action
-        # segment — the bare field update below. Raises HubError on non-200 (e.g.
-        # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
-        hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name, sub_path=sub_path)
-    elif verb in ("put", "patch") and _changes_only_local_fields(entity, body or {}):
-        # Nothing in this update is the hub's to hold (a project's ``last_mode``, say): it is a
-        # local write, and a reader — who may not write the shared entity — must not be refused it.
-        return REFLECT_CONTINUE_LOCAL
-    elif verb in ("put", "patch"):
-        # A bare entity field update (the generic ``update`` CRUD action, e.g. a
-        # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the
-        # hub's authoritative response (server-set times etc.) onto the local row +
-        # broadcast, then return the MERGED LOCAL entity — the same shape a normal
-        # (non-reflected) update returns, so the local cache and the client stay
-        # consistent (the hub is the source of truth for every differing scalar).
-        hub_resp = await hub_put(et, hub_id, scope_body_to_assignee_fields(entity, body or {}))
-        updates = _merge_hub_entity_into_local(entity, hub_resp)
-        if updates:
-            entity.apply_field_updates(updates)
-            await entity.save(notify=True)  # local row + data_op broadcast to watchers
-        return entity.model_dump()
-    else:
-        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name, sub_path=sub_path)
-
-    # A sub-path'd call (e.g. ``members/link`` → {id, url, …}) is not a roster:
-    # return the hub's payload verbatim, with no re-fetch, rename, or mirror.
-    if sub_path:
-        return hub_resp
-
-    # After a successful members mutation (remove / role change) the hub returns
-    # a message, not a roster — so re-fetch the canonical roster to mirror
-    # locally (keeps participants in sync without a second client round-trip).
-    if verb in ("delete", "put", "patch") and is_roster:
-        refreshed = await hub_get(et, hub_id, action=a.action_name)
-        if refreshed is not None:
-            hub_resp = refreshed
-
-    normalized = _normalize_hub_response(a.action_name, hub_resp)
-    await mirror_hub_response_into_local(entity, a.action_name, normalized)
-    return normalized
 
 
 def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:

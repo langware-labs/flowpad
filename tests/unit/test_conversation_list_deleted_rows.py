@@ -5,6 +5,7 @@ import pytest
 
 from flow_sdk.app.actions import flow_message_action as fma
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 
 @pytest.mark.asyncio
@@ -40,7 +41,7 @@ async def test_deleted_hub_audit_row_is_removed_without_background_fetch():
     dispatch = MagicMock()
     with (
         patch.object(Conversation, "get_all", new=AsyncMock(side_effect=get_all)),
-        patch.object(fma, "hub_get", new=AsyncMock(side_effect=hub_get)),
+        patch.object(HubProxy, "get", new=AsyncMock(side_effect=hub_get)),
         patch.object(fma, "hub_base_url", return_value="https://hub.test"),
         patch(
             "flow_sdk.cli.auth.hub_login.hub_auth_available",

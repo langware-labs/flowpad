@@ -20,6 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.cloud_client.hub_proxy import HubProxy
+
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -42,7 +44,7 @@ async def test_conversation_list_skips_hub_when_logged_out(monkeypatch):
     async def _boom(*args, **kwargs):
         raise AssertionError("hub_get must not be called when logged out")
 
-    monkeypatch.setattr(fma, "hub_get", _boom)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_boom))
 
     # someone_typeid is unused on the gated path (no upsert/materialize runs).
     resp = await fma.handle_conversation_list("local-someone-typeid")

@@ -3,7 +3,7 @@
 Its owner opens it here (``open``): a local row, pushed to the hub at the same id with the generic
 ``Entity.share``, optionally funded with a public, capped, expiring LLM budget (the hub's ``fund``).
 They send ``flow diagnose <id>`` to the person they support; that person's machine -- signed in or
-not -- reads the hub's ``brief`` and ``submit``\\ s each run there, by id (``hub_anonymous_request``).
+not -- reads the hub's ``brief`` and ``submit``\\ s each run there, by id (``HubProxy.anonymous_request``).
 Only the owner reads the runs back (``runs``), and whoever they share the request with.
 
 The diagnosis fields it inherits show the LATEST run; every run is kept whole on the hub.
@@ -110,18 +110,18 @@ class DiagnosisRequest(FlowpadDiagnosis):
         the hub and here), the window and
         the run size (the hub's ``limits``, which clamps them like open), and the budget (a fresh
         ``fund`` -- the hub drops the one it replaces). Raises ``HubError``."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         if spec.instructions is not None:
             name = _title_of(spec.instructions)
             body: dict[str, Any] = {"instructions": spec.instructions, "name": name}
             if not self.run_count:  # once a run came back, the title is the latest run's
                 body["title"] = name
-            await hub_put(EntityType.DIAGNOSIS_REQUEST.value, self.id, body)
+            await HubProxy.put(EntityType.DIAGNOSIS_REQUEST.value, self.id, body)
             self.instructions, self.name = spec.instructions, name
             await self.save()
         if spec.ask_permission is not None:
-            await hub_put(EntityType.DIAGNOSIS_REQUEST.value, self.id, {"ask_permission": spec.ask_permission})
+            await HubProxy.put(EntityType.DIAGNOSIS_REQUEST.value, self.id, {"ask_permission": spec.ask_permission})
             self.ask_permission = spec.ask_permission
             await self.save()
         limits: dict[str, Any] = {}
@@ -130,7 +130,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
         if spec.max_run_mb is not None:
             limits["max_run_bytes"] = spec.max_run_mb * 1024 * 1024
         if limits:
-            await hub_post(EntityType.DIAGNOSIS_REQUEST.value, limits, self.id, "limits")
+            await HubProxy.post(EntityType.DIAGNOSIS_REQUEST.value, limits, self.id, "limits")
         if spec.funding is not None:
             await self.fund(spec.funding)
         return await self.pull()
@@ -142,7 +142,7 @@ class DiagnosisRequest(FlowpadDiagnosis):
         which is what the screen warns about -- since a stranger's machine can only spend what the
         hub holds.
         """
-        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         source = funding.source_typeid or await _hub_root_for_local_key(funding.local_key_provider)
         body: dict[str, Any] = {
@@ -152,12 +152,12 @@ class DiagnosisRequest(FlowpadDiagnosis):
         }
         if funding.model:
             body["model"] = funding.model
-        await hub_post(EntityType.DIAGNOSIS_REQUEST.value, body, self.id, "fund")
+        await HubProxy.post(EntityType.DIAGNOSIS_REQUEST.value, body, self.id, "fund")
 
     async def attach(self, attachment: DiagnosisAttachmentSpec) -> dict[str, str]:
         """Send the runner a file or an asset: uploaded to the request's hub storage, where
         ``flow diagnose <id>`` fetches it from the brief. Returns ``{kind, name}``."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_upload_entity_file  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         if attachment.asset_typeid:
             kind, name, content = await _pack_asset(attachment.asset_typeid)
@@ -165,23 +165,23 @@ class DiagnosisRequest(FlowpadDiagnosis):
             import base64  # noqa: PLC0415
 
             kind, name, content = "files", attachment.file_name, base64.b64decode(attachment.content_b64)
-        await hub_upload_entity_file(
+        await HubProxy.upload_entity_file(
             EntityType.DIAGNOSIS_REQUEST.value, self.id, name, content, sub_path=f"upload/attachments/{kind}"
         )
         return {"kind": kind, "name": name}
 
     async def attachments(self) -> list[dict[str, Any]]:
         """What the runner will receive, as the hub lists it in the brief."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        brief = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "brief")
+        brief = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "brief")
         return list(brief.get("attachments") or [])
 
     async def pull(self) -> "DiagnosisRequest":
         """Refresh the hub-owned fields (the latest run, the tally, the budget) into the local row."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        row = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id)
+        row = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id)
         changed = False
         for field in _HUB_FIELDS:
             if field in row and getattr(self, field) != row[field]:
@@ -217,12 +217,12 @@ class DiagnosisRequest(FlowpadDiagnosis):
 
     async def runs(self, number: int | None = None) -> Any:
         """Every kept run (``number`` None), or one run whole, files included -- read from the hub."""
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         await self.pull()
         if number is not None:
-            return await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs", str(number))
-        listed = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs")
+            return await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs", str(number))
+        listed = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, self.id, "runs")
         return listed if isinstance(listed, list) else []  # an empty list arrives as ``{}``
 
 
@@ -244,13 +244,13 @@ async def mine() -> list[dict[str, Any]]:
     ``project_id`` from this computer's copy (``None`` for one opened elsewhere).
     """
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     # Signed out is an ordinary state, as it is for ``fetch_hub_llm_endpoints``: nothing on the
     # hub is this user's to read, so the sidebar's count is zero -- not a 401 on every asset page.
     if not hub_auth_available():
         return []
-    rows = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value)
+    rows = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value)
     listed = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict) or not row.get("id"):
@@ -264,9 +264,9 @@ async def funding_sources() -> dict[str, Any]:
     """What the owner may fund a request from: the hub's answer (which budgets they may hand out,
     and whom to ask for the rest) plus the keys stored on this computer that the hub can take."""
     from flow_sdk.cli.auth.lm_api_keys import list_lm_api  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-    hub = await hub_get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, None, "funding_sources")
+    hub = await HubProxy.get_or_raise(EntityType.DIAGNOSIS_REQUEST.value, None, "funding_sources")
     keys = [
         {"provider": row["provider"], "uploads_to_hub": True}
         for row in list_lm_api()
@@ -310,7 +310,7 @@ async def _hub_root_for_local_key(provider: str) -> str:
     """A hub root endpoint holding THIS computer's ``provider`` key -- reused if one was made before."""
     from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
     from flow_sdk.cli.auth.lm_api_keys import get_lm_api  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get, hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     if provider not in HUB_KEY_PROVIDERS:
         raise ValueError(f"the hub cannot hold a {provider} key")
@@ -322,14 +322,14 @@ async def _hub_root_for_local_key(provider: str) -> str:
     # so it cannot be forged. Matching on the name alone would pick up an endpoint someone else
     # named the same and shared here -- and its base_url would carry the runner's traffic.
     me = str((get_user() or {}).get("id") or "")
-    existing = await hub_get(EntityType.LLM_ENDPOINT.value) or []
+    existing = await HubProxy.get(EntityType.LLM_ENDPOINT.value) or []
     for row in existing if isinstance(existing, list) else []:
         mine = bool(me) and str(row.get("created_by") or "") == me
         if mine and row.get("name") == name and row.get("provider") == provider:
             return f"{EntityType.LLM_ENDPOINT.value}-{row['id']}"
-    created = await hub_post(EntityType.LLM_ENDPOINT.value, {"name": name, "provider": provider})
+    created = await HubProxy.post(EntityType.LLM_ENDPOINT.value, {"name": name, "provider": provider})
     endpoint_id = str((created or {}).get("id") or "")
     if not endpoint_id:
         raise ValueError("the hub did not create the endpoint")
-    await hub_post(EntityType.LLM_ENDPOINT.value, {"key": key}, endpoint_id, "credential")
+    await HubProxy.post(EntityType.LLM_ENDPOINT.value, {"key": key}, endpoint_id, "credential")
     return f"{EntityType.LLM_ENDPOINT.value}-{endpoint_id}"

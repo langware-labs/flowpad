@@ -204,10 +204,10 @@ async def channel_delivery(source_id: str, request: Request):
 async def _answer_route_probe(row, nonce: str, claim_id: str) -> dict:
     """A hub connection probe's ``route`` leg: tell the hub who would answer this channel and where —
     ``"<agent> @ <place>"`` — without taking the message in."""
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     text = f"{await _answerer_of(row)} @ {await _place_of(row)}"
-    await hub_post("webhook", {"event_id": nonce, "text": text}, str(claim_id), "reply")
+    await HubProxy.post("webhook", {"event_id": nonce, "text": text}, str(claim_id), "reply")
     return {"probe": nonce, "text": text}
 
 

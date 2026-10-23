@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -239,7 +240,7 @@ def hub_test_call(monkeypatch):
         calls.append((entity_type, entity_id, action))
         return VERDICT
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", _hub_post)
+    monkeypatch.setattr(HubProxy, "post", staticmethod(_hub_post))
     return calls
 
 
@@ -297,7 +298,7 @@ def hub_chain_call(monkeypatch):
         calls.append((entity_type, entity_id, action))
         return {"status": "SUCCESS", "data": CHAIN}
 
-    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get", _hub_get)
+    monkeypatch.setattr(HubProxy, "get", staticmethod(_hub_get))
     return calls
 
 
