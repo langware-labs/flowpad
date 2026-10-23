@@ -3939,14 +3939,40 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # Newest first, inside a time budget: a first sync of thousands of hub conversations writes each
     # one locally, and the caller is waiting. What the budget leaves is reconciled right after the
     # response, in one background task, and reaches the UI over WS like the message catch-up.
+    # Rows go RECONCILE_BATCH at a time through one writer transaction (``Conversation.mirror_batch``):
+    # one commit per batch instead of per row, and the batch's own read of its rows replaces both the
+    # (older) bulk snapshot and each create's read-back. A batch that fails as a whole is replayed
+    # row by row, the way every row went before.
+    async def reconcile_rows(rows: list[dict], deadline: Optional[float] = None) -> list[dict]:
+        for start in range(0, len(rows), RECONCILE_BATCH):
+            if deadline is not None and time.monotonic() > deadline:
+                return rows[start:]
+            chunk = rows[start : start + RECONCILE_BATCH]
+            ids = [str(c.get("id") or "").strip() for c in chunk]
+            rosters_before = set(learned_rosters)
+            try:
+                async with Conversation.mirror_batch(ids) as fresh:
+                    for conv_id in ids:
+                        if conv_id in fresh:
+                            local_index[conv_id] = fresh[conv_id]
+                        else:
+                            local_index.pop(conv_id, None)
+                    for hub_conv in chunk:
+                        await reconcile(hub_conv)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[conv-list] batch of %d failed (%s); replaying row by row", len(chunk), e)
+                learned_rosters.intersection_update(rosters_before)
+                for conv_id in ids:
+                    local_index.pop(conv_id, None)
+                    held = await Conversation.get_one({"id": conv_id}) if conv_id else None
+                    if held is not None:
+                        local_index[conv_id] = held
+                for hub_conv in chunk:
+                    await reconcile(hub_conv)
+        return []
+
     ordered = sorted(hub_convs, key=lambda c: str(c.get("updated_date") or ""), reverse=True)
-    deadline = time.monotonic() + FOREGROUND_RECONCILE_S
-    deferred: list[dict] = []
-    for index, hub_conv in enumerate(ordered):
-        if time.monotonic() > deadline:
-            deferred = ordered[index:]
-            break
-        await reconcile(hub_conv)
+    deferred = await reconcile_rows(ordered, time.monotonic() + FOREGROUND_RECONCILE_S)
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
@@ -4022,7 +4048,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # reconcile in _fetch_conversation_messages and stream in via WS data_op.
     if deferred:
         _dispatch_deferred_reconcile(
-            deferred, reconcile, prune if can_prune else None, bg_fetch_pending, someone_typeid
+            deferred, reconcile_rows, prune if can_prune else None, bg_fetch_pending, someone_typeid
         )
     else:
         _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
@@ -4032,10 +4058,12 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
 #: Seconds the conversation-list request spends mirroring hub rows before it answers; the rest
 #: continues in the background (``_dispatch_deferred_reconcile``).
 FOREGROUND_RECONCILE_S = 3.0
+#: Hub rows mirrored per writer transaction — small, because the batch holds the SQLite writer lock.
+RECONCILE_BATCH = 50
 _deferred_reconcile: Optional[asyncio.Task] = None
 
 
-def _dispatch_deferred_reconcile(deferred, reconcile, prune, bg_fetch_pending, someone_typeid) -> None:
+def _dispatch_deferred_reconcile(deferred, reconcile_rows, prune, bg_fetch_pending, someone_typeid) -> None:
     """Finish a conversation-list sync after its response: mirror the rows the foreground budget left,
     prune only now that every row is in (``prune`` is None when the walk was incomplete), then start
     the message catch-up. One at a time — a sync that finds one running leaves the rest to it and to
@@ -4046,8 +4074,7 @@ def _dispatch_deferred_reconcile(deferred, reconcile, prune, bg_fetch_pending, s
         return
 
     async def finish() -> None:
-        for hub_conv in deferred:
-            await reconcile(hub_conv)
+        await reconcile_rows(deferred)
         if prune is not None:
             await prune()
         stream_inbox.touch("conversation-list")

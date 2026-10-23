@@ -1,7 +1,8 @@
 /**
  * `useEntitiesQuery` on a paged request: the first page is the live watched query, `hasMore` is the
- * server's `has_more`, and `loadMore()` asks the same request again at the server's `next_offset` —
- * inside `filter`, never top-level — and appends what it answers.
+ * server's `has_more`, and `loadMore()` asks the same request again right after the server's
+ * `next_cursor` (as `after`) when it gave one, else at its `next_offset` — inside `filter`, never
+ * top-level — and appends what it answers.
  */
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,8 +16,8 @@ const ids = [
   'c3333333-3333-4333-8333-333333333333',
 ];
 const tab = (id: string) => ({ type: 'tab', id, pointer: `lens|x/${id}`, visible: true, lane: 'load-more' });
-const page = (rows: string[], has_more: boolean, next_offset: number) =>
-  Object.assign(rows.map(tab), { has_more, next_offset });
+const page = (rows: string[], has_more: boolean, next_offset: number, next_cursor: string | null = null) =>
+  Object.assign(rows.map(tab), { has_more, next_offset, next_cursor });
 
 describe('useEntitiesQuery: hasMore + loadMore', () => {
   beforeEach(async () => {
@@ -52,6 +53,38 @@ describe('useEntitiesQuery: hasMore + loadMore', () => {
     expect(result.current.data?.map((t) => t.id)).toEqual(ids);
     expect(result.current.hasMore).toBe(false);
     expect(offsets).toEqual([undefined, 5]);
+  });
+
+  it('appends the next page after next_cursor, sending after and no offset', async () => {
+    const asked: { offset?: unknown; after?: unknown }[] = [];
+    vi.spyOn(apiClient, 'get').mockImplementation((async (_url: string, config?: { params?: any }) => {
+      const filter = config?.params?.filter ?? {};
+      asked.push({ offset: filter.offset, after: filter.after });
+      if (filter.after === 'cur-2') return page([ids[2]], false, 1);
+      if (filter.after === 'cur-1') return page([ids[1]], true, 1, 'cur-2');
+      return page([ids[0]], true, 1, 'cur-1');
+    }) as never);
+    const request = new QueryRequest({
+      type: Tab.type,
+      query: new QueryFilter({ match: { lane: 'load-more' }, limit: 1 }),
+      name: 'load-more-cursor',
+    });
+
+    const { result } = renderHook(() => useEntitiesQuery<Tab>(request));
+    await waitFor(() => expect(result.current.data?.map((t) => t.id)).toEqual([ids[0]]));
+    for (let i = 0; i < 2; i++) {
+      await act(async () => {
+        await result.current.loadMore?.();
+      });
+    }
+
+    expect(result.current.data?.map((t) => t.id)).toEqual(ids);
+    expect(result.current.hasMore).toBe(false);
+    expect(asked).toEqual([
+      { offset: undefined, after: undefined },
+      { offset: undefined, after: 'cur-1' },
+      { offset: undefined, after: 'cur-2' },
+    ]);
   });
 
   it('an unpaged request has no more and loadMore asks nothing', async () => {

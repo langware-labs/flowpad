@@ -13,7 +13,15 @@ from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.cloud_client.shared.errors import HubError, is_permission_refusal
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.db.drivers.query import PAGING_KEYS, QueryFilter
+from flow_sdk.db.drivers.query import (
+    PAGING_KEYS,
+    ExpressionNode,
+    QueryFilter,
+    QueryOp,
+    encode_cursor,
+    keyset_after,
+    page_order,
+)
 from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
@@ -36,7 +44,20 @@ def _parse_list_filter(params: dict, entity_type: str) -> QueryFilter:
     if isinstance(data, dict) and "match" not in data and any(key in data for key in PAGING_KEYS):
         raise HTTPException(status_code=400, detail='filter with limit/offset/order_by/expand needs a "match"')
     try:
-        return QueryFilter.parse(data, entity_type)
+        entities_filter = QueryFilter.parse(data, entity_type)
+        if entities_filter.after is not None and entities_filter.offset is not None:
+            raise ValueError("after and offset are two ways to say where a page starts; send one")
+        if entities_filter.limit is not None or entities_filter.offset is not None or entities_filter.after:
+            # A page's order is explicit and total, so the next page (by offset or cursor) continues it.
+            order = page_order(entities_filter.order_by)
+            entities_filter.order_by = [{field: direction} for field, direction in order]
+            if entities_filter.after:
+                keyset = keyset_after(order, entities_filter.after)
+                match = entities_filter.match
+                entities_filter.match = (
+                    ExpressionNode(op=QueryOp.AND, operands=[match, keyset]) if match is not None else keyset
+                )
+        return entities_filter
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -76,7 +97,12 @@ async def _visible_page(entity_model, entities_filter: QueryFilter, source_entit
                 fetch = max(fetch, limit * 4)  # rows were dropped: read further in bigger steps
                 continue
         break
-    return ApiPageResponse[list[Entity]](data=page, has_more=has_more, next_offset=db_offset)
+    next_cursor = None
+    if has_more and page:
+        # From the last row the reader SEES (a hidden row's sort values would leak through the cursor).
+        order = [(field, direction) for spec in entities_filter.order_by for field, direction in spec.items()]
+        next_cursor = encode_cursor(order, page[-1].model_dump(mode="json"))
+    return ApiPageResponse[list[Entity]](data=page, has_more=has_more, next_offset=db_offset, next_cursor=next_cursor)
 
 
 # noinspection PyUnusedLocal
@@ -110,7 +136,7 @@ async def handle_query_resource(request: Request):
     def is_visible(entity: Entity) -> bool:
         return include_system or not getattr(entity, "system", False)
 
-    if entities_filter.limit is None and entities_filter.offset is None:
+    if entities_filter.limit is None and entities_filter.offset is None and entities_filter.after is None:
         _all = await entity_model.get_all(entities_filter, source_entity)
         return ApiSuccessResponse[list[Entity]](data=[e for e in _all if is_visible(e)])
     return await _visible_page(entity_model, entities_filter, source_entity, is_visible)

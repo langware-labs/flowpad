@@ -272,8 +272,10 @@ class HubProxy:
         scope: list[tuple[str, str]] | None = None,
         timeout: httpx.Timeout | float | None = None,
     ) -> HubWalk:
-        """Every row of a hub list, one page at a time, following ``next_offset`` until ``has_more`` is
-        false (the hub's list contract: paging inside ``filter`` next to a ``match``).
+        """Every row of a hub list, one page at a time, until ``has_more`` is false (the hub's list contract:
+        paging inside ``filter`` next to a ``match``). Each next page is asked for by the answer's
+        ``next_cursor`` (``after``: right after the last row, no rescan) when it carries one, else by its
+        ``next_offset``.
 
         Never raises: a page that fails ends the walk with ``complete=False`` and the rows read so far.
         Each page has its own ``timeout`` (``DEFAULT_TIMEOUT``), so one slow hub costs one page's budget.
@@ -289,10 +291,13 @@ class HubProxy:
             out.error = e
             return out
         offset = 0
+        after: str | None = None
         order = order_by if order_by is not None else [{"created_date": "asc"}]
         while True:
             page_filter = {"match": match or {}, "limit": page_size, "order_by": order}
-            if offset:
+            if after:
+                page_filter["after"] = after
+            elif offset:
                 page_filter["offset"] = offset
             started = time.monotonic()
             try:
@@ -324,6 +329,14 @@ class HubProxy:
                 next_offset = body.get("next_offset")
             if not has_more:
                 out.complete = True
+                return out
+            next_cursor = body.get("next_cursor") if isinstance(body, dict) else None
+            if isinstance(next_cursor, str) and next_cursor and next_cursor != after:
+                after = next_cursor
+                continue
+            if after is not None:
+                # A cursor walk's offsets count from its cursor, not from the top: no way to go on.
+                out.error = HubError(200, f"list paging did not advance (next_cursor={next_cursor!r})")
                 return out
             if not isinstance(next_offset, int) or next_offset <= offset:
                 out.error = HubError(200, f"list paging did not advance (next_offset={next_offset!r})")

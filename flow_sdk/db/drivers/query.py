@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import re
@@ -52,7 +53,7 @@ class ExpressionNode(BaseModel):
 
 OrderType = Dict[str, Literal["asc", "desc"]]
 #: The keys of a filter beside `match` (`QueryFilter.parse`; ``PAGING_KEYS`` on the hub too).
-PAGING_KEYS = _FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
+PAGING_KEYS = _FILTER_WORDS = frozenset({"limit", "offset", "after", "order_by", "expand"})
 # A plain field name, as on the hub; the desktop also sorts on dotted JSON paths (``input.created``), each
 # segment a plain name.
 _FIELD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
@@ -94,6 +95,8 @@ class QueryFilter(BaseModel):
     order_by: Optional[OrderType | List[OrderType]] = None
     limit: Optional[int] = Field(None, ge=1)
     offset: Optional[int] = Field(None, ge=0)
+    #: A page's ``next_cursor``: continue right after that page's last row, in the same order.
+    after: Optional[str] = None
     expand: Optional[List[str]] = None
     # Set by a driver's ``get_all``: how many stored rows the page consumed, unreadable ones included, so a
     # caller paging on can count them into its next offset. Not part of the filter's JSON.
@@ -222,3 +225,47 @@ class QueryFilter(BaseModel):
         except Exception as e:
             logging.error(f"Unexpected error: {filter_json=} {entity_type=} {traceback.format_exc()}")
             raise ValueError(f"An unexpected error occurred: {e}")
+
+
+def page_order(order_by: Any) -> List[tuple[str, str]]:
+    """A paged list's full order as ``[(field, "asc"|"desc")]``: the asked order (newest first when none),
+    always ending in the id so no two rows tie (``order_terms`` with ``paged``, the hub's ``page_order``)."""
+    return [(field, "desc" if descending else "asc") for field, descending in order_terms(order_by, paged=True)]
+
+
+def _field_value(row: Dict[str, Any], field: str) -> Any:
+    """``row``'s value at ``field``, a dotted path walking nested maps (``input.created``)."""
+    value: Any = row
+    for segment in field.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(segment)
+    return value
+
+
+def encode_cursor(order: List[tuple[str, str]], row: Dict[str, Any]) -> Optional[str]:
+    """``next_cursor`` for a page ending at ``row`` (its wire fields); None when a sort value is missing —
+    a null has no place to continue from, so the caller pages by offset."""
+    values = [_field_value(row, field) for field, _ in order]
+    if any(value is None for value in values):
+        return None
+    raw = json.dumps({"order": order, "values": values}, separators=(",", ":"), default=str)
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def keyset_after(order: List[tuple[str, str]], cursor: str) -> ExpressionNode:
+    """The rows after ``cursor`` in ``order``: (a > x) OR (a = x AND b > y) ..., each term in its direction."""
+    try:
+        decoded = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        cursor_order = [tuple(term) for term in decoded["order"]]
+        values = decoded["values"]
+    except Exception as e:  # noqa: BLE001 -- any malformed cursor is the caller's error
+        raise ValueError(f"after: not a cursor this server issued ({e})")
+    if cursor_order != [tuple(term) for term in order] or not isinstance(values, list) or len(values) != len(order):
+        raise ValueError("after: the cursor was issued for a different order_by")
+    branches = []
+    for i, (field, direction) in enumerate(order):
+        step = ExpressionNode(op=QueryOp.LT if direction == "desc" else QueryOp.GT, operands=[field, values[i]])
+        ties = [ExpressionNode(op=QueryOp.EQ, operands=[f, values[j]]) for j, (f, _) in enumerate(order[:i])]
+        branches.append(ExpressionNode(op=QueryOp.AND, operands=[*ties, step]) if ties else step)
+    return branches[0] if len(branches) == 1 else ExpressionNode(op=QueryOp.OR, operands=branches)

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
+from flow_sdk.builtin.agent_trace import AgentTrace
 from flow_sdk.builtin.conversation import Conversation
 from tests.unit._graph_client import call_local
 
@@ -26,9 +28,9 @@ async def _convs(n: int, title) -> list[Conversation]:
     return convs
 
 
-async def _page(convs, **page) -> dict:
+async def _page(convs, resource: str = "conversation", **page) -> dict:
     flt = {"match": {"op": "$IN", "operands": ["id", [c.id for c in convs]]}, **page}
-    res = await call_local("GET", "conversation", params={"filter": json.dumps(flt)})
+    res = await call_local("GET", resource, params={"filter": json.dumps(flt)})
     assert res.status_code == 200, res.text
     return res.json()
 
@@ -72,3 +74,59 @@ async def test_paged_without_order_is_newest_first():
     convs = await _convs(3, lambda i: f"new-{tag}-{i}")
     body = await _page(convs, limit=3)
     assert [c["id"] for c in body["data"]] == [c.id for c in reversed(convs)]
+
+
+async def _cursor_walk(convs, **page) -> list[dict]:
+    """Every row, one page at a time, each page asked for by the previous page's ``next_cursor``."""
+    rows, after = [], None
+    for _ in range(20):
+        body = await _page(convs, **page, **({"after": after} if after else {}))
+        rows.extend(body["data"])
+        assert "next_cursor" in body
+        if not body["has_more"]:
+            assert body["next_cursor"] is None
+            return rows
+        after = body["next_cursor"]
+        assert after
+    raise AssertionError("cursor walk never ended")
+
+
+async def test_cursor_walk_with_tied_keys_neither_repeats_nor_skips():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(7, lambda i: f"cur-{tag}-{(i // 2)}")  # titles tie in pairs
+    rows = await _cursor_walk(convs, limit=2, order_by=[{"title": "desc"}])
+    by_offset = (await _page(convs, limit=7, order_by=[{"title": "desc"}]))["data"]
+    assert [r["id"] for r in rows] == [r["id"] for r in by_offset]
+    assert len({r["id"] for r in rows}) == 7
+
+
+async def test_cursor_walk_on_a_number_compares_numbers():
+    # 9 < 10 < 100 as numbers; compared as text the keyset after 9 would skip 10 and 100.
+    traces = []
+    for count in (9, 10, 10, 2, 100):
+        t = AgentTrace(id=str(uuid.uuid4()), name=f"num-{uuid.uuid4().hex[:8]}", issue_count=count)
+        await t.save(notify=False)
+        traces.append(t)
+    rows = await _cursor_walk(traces, limit=2, order_by=[{"issue_count": "asc"}], resource="agent_trace")
+    assert [r["issue_count"] for r in rows] == [2, 9, 10, 10, 100]
+    assert len({r["id"] for r in rows}) == 5
+
+
+async def test_default_order_cursor_walk_matches_newest_first():
+    tag = uuid.uuid4().hex[:8]
+    convs = await _convs(5, lambda i: f"dflt-{tag}-{i}")
+    rows = await _cursor_walk(convs, limit=2)  # created_date desc, id: keyset compares created_date with $EQ
+    assert [r["id"] for r in rows] == [c.id for c in reversed(convs)]
+
+
+async def test_default_order_cursor_walk_through_tied_created_dates():
+    # The keyset's tie branch is ``created_date $EQ x AND id > y``: an ISO cursor value must equal the
+    # stored DateTime, or every row sharing the page's last timestamp is skipped.
+    same = datetime(2026, 10, 23, 11, 25, 7, 768473, tzinfo=timezone.utc)
+    convs = []
+    for i in range(5):
+        c = Conversation(id=str(uuid.uuid4()), title=f"tie-{i}", created_date=same)
+        await c.save(notify=False)
+        convs.append(c)
+    rows = await _cursor_walk(convs, limit=2)
+    assert [r["id"] for r in rows] == sorted(c.id for c in convs)

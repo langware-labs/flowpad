@@ -19,8 +19,9 @@ from tests.unit.hub_proxy.test_failure_modes_echo import CONVERSATIONS, _convers
 pytestmark = [pytest.mark.long]
 
 ROWS = 2_400
-# End to end, every row is also written locally (~8 ms each); 1,000 keeps it inside the 30 s test cap.
-E2E_ROWS = 1_000
+# End to end, every row is also written locally — ~2 ms each, RECONCILE_BATCH rows per writer transaction
+# (it was ~8 ms each, one transaction per row, and only 1,000 fit inside the 30 s test cap).
+E2E_ROWS = 2_400
 PAGE_BUDGET_S = 10.0
 
 
@@ -79,6 +80,8 @@ async def test_the_conversation_list_over_2400_hub_conversations_end_to_end(desk
     if flow_message_action._deferred_reconcile is not None:
         await flow_message_action._deferred_reconcile
     background_s = time.monotonic() - started
+    # Measured ~3.4 s + ~1.3 s for 2,400 rows (one transaction per row took ~20 s in all).
+    assert cold_s + background_s < 12, f"the first sync took {cold_s:.2f}s + {background_s:.2f}s in the background"
     hub_ids = {row["id"] for row in echo_hub.paged[CONVERSATIONS]}
     assert hub_ids <= {c.id for c in await Conversation.get_all({})}, "the walk did not bring every row in"
     started = time.monotonic()

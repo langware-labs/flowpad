@@ -101,3 +101,28 @@ async def test_unpaged_answer_carries_no_paging_fields():
     body = res.json()
     assert len(body["data"]) == 3
     assert "has_more" not in body and "next_offset" not in body
+
+
+async def test_a_paged_answer_carries_next_cursor():
+    convs = await _three(uuid.uuid4().hex[:8])
+    flt = {"match": _match_ids(convs), "limit": 2, "order_by": [{"title": "asc"}]}
+    body = (await call_local("GET", "conversation", params={"filter": json.dumps(flt)})).json()
+    assert body["next_cursor"]
+    nxt = (
+        await call_local("GET", "conversation", params={"filter": json.dumps({**flt, "after": body["next_cursor"]})})
+    ).json()
+    assert [c["id"] for c in nxt["data"]] == [convs[2].id]
+    assert nxt["has_more"] is False and nxt["next_cursor"] is None
+
+
+async def test_a_cursor_that_does_not_fit_is_refused():
+    convs = await _three(uuid.uuid4().hex[:8])
+    flt = {"match": _match_ids(convs), "limit": 1, "order_by": [{"title": "asc"}]}
+    cursor = (await call_local("GET", "conversation", params={"filter": json.dumps(flt)})).json()["next_cursor"]
+    for bad in (
+        {"match": {}, "limit": 1, "after": "not-a-cursor"},
+        {"match": {}, "limit": 1, "after": cursor},  # issued for another order
+        {**flt, "after": cursor, "offset": 1},  # two starts
+    ):
+        res = await call_local("GET", "conversation", params={"filter": json.dumps(bad)})
+        assert res.status_code == 400, (bad, res.text)
