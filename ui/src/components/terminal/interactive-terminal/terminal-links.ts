@@ -278,13 +278,27 @@ function cellAtPoint(terminal: Terminal, clientX: number, clientY: number): { x:
 
 /** Call after `terminal.open()`: the right-click menu listens on the terminal's own element. */
 export function registerTerminalLinks(terminal: Terminal, handlers: LinkHandlers): void {
-  const activate: ActivateLink = (event, link) => {
-    if (isPrimaryClick(event)) handlers.activate(event, link);
+  // xterm only activates a link when the same link object is under the pointer at press and
+  // release, and every repaint of the row replaces it — a TUI that redraws while the button is
+  // held (a spinner) swallows the click. So the provider only underlines; the click reads the
+  // link from the buffer at press and at release.
+  terminal.registerLinkProvider(new TerminalLinkProvider(terminal, () => {}));
+  let pressed: string | null = null;
+  const linkAtEvent = (event: MouseEvent): string | null => {
+    const cell = cellAtPoint(terminal, event.clientX, event.clientY);
+    return cell ? linkAtCell(terminal, cell.x, cell.y) : null;
   };
+  terminal.element?.addEventListener('mousedown', (event) => {
+    pressed = isPrimaryClick(event) ? linkAtEvent(event) : null;
+  });
+  terminal.element?.addEventListener('mouseup', (event) => {
+    const link = pressed;
+    pressed = null;
+    if (link && isPrimaryClick(event) && linkAtEvent(event) === link) handlers.activate(event, link);
+  });
   // An OSC 8 link's URI is not in the cells it decorates, so only xterm's hover knows it.
   // Kept past `leave`; the range check below decides whether it is under the pointer.
   let oscLink: { text: string; range: IBufferRange } | null = null;
-  terminal.registerLinkProvider(new TerminalLinkProvider(terminal, activate));
   terminal.options.linkHandler = {
     allowNonHttpProtocols: true,
     activate: (event, uri) => {
