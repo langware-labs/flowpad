@@ -1,4 +1,4 @@
-import { Agent, Deployment, type AgentPlace } from '@sdk';
+import { Agent, type AgentPlace } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
@@ -169,7 +169,10 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
 
   function stateOf(place: AgentPlace): string {
     if (!place.enabled) return t`Off`;
-    if (new Deployment(place.deployment).status?.provider_state === 'paused') return t`Paused`;
+    // The wire row, not `new Deployment(...)`: constructing an entity registers it in the shared cache,
+    // and doing that in render re-rendered this column forever (the app froze opening the agent).
+    const status = place.deployment.status as { provider_state?: string } | undefined;
+    if (status?.provider_state === 'paused') return t`Paused`;
     if (place.behind) return t`Update available`;
     return place.is_local ? t`On` : t`Running`;
   }
