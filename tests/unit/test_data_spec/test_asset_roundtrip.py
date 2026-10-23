@@ -142,9 +142,14 @@ def _register_probe_types() -> None:
         SchemaRegistry.register(info)
 
 
-# The probes are registered like every real type: identity through a
-# FolderJsonCarrier, layout on TypeInfo. `type` is what _type_of reads.
-_register_probe_types()
+@pytest.fixture(autouse=True, scope="module")
+def _probe_types():
+    """The probes are registered like every real type: identity through a FolderJsonCarrier, layout on
+    TypeInfo (`type` is what _type_of reads) — for this module only, so no later test sees them."""
+    _register_probe_types()
+    yield
+    for cls in (_Leaf, _Inner, _Root):
+        SchemaRegistry._types.pop(cls.model_fields["type"].default, None)
 
 
 # ── the matrix ────────────────────────────────────────────────────────────────
