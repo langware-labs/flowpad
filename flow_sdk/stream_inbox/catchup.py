@@ -81,6 +81,26 @@ async def run_hub_catchup(reason: str) -> None:
 
     mirrored = await sync_remote_memberships(local_user.typeid)
     logger.info("[stream-inbox] catch-up (%s): mirrored %d organization(s)/team(s)", reason, mirrored)
+    await ensure_driver_sources(reason)
+
+
+async def ensure_driver_sources(reason: str) -> int:
+    """Let every driver that can (``ensure_sources``) make the sources this login should have —
+    a desk's staff get its help-desk source. One driver failing never stops the others."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    made = 0
+    for name, driver in DRIVERS.items():
+        ensure = getattr(getattr(driver, "cls", None), "ensure_sources", None)
+        if ensure is None:
+            continue
+        try:
+            made += await ensure()
+        except Exception:  # noqa: BLE001
+            logger.info("[stream-inbox] catch-up (%s): %s sources skipped", reason, name, exc_info=True)
+    if made:
+        logger.info("[stream-inbox] catch-up (%s): made %d source(s)", reason, made)
+    return made
 
 
 async def flush_pending_outbox(reason: str) -> None:
