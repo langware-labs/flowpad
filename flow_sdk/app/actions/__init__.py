@@ -19,7 +19,6 @@ from . import (  # noqa: F401
     group_task_action,
     helpdesk_action,
     icons_action,
-    inbound_action,
     launch_action,
     members_action,
     message_attachment_action,

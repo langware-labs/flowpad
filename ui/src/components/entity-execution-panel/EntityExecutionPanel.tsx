@@ -186,6 +186,8 @@ interface EntityExecutionPanelProps {
   showAssetManager?: boolean;
   /** Show the project selector inside Settings. */
   showProjectSetting?: boolean;
+  /** Show the launching agent in the settings popover (Vibe). */
+  showAgentSetting?: boolean;
   /**
    * Render TOOL_CALL/TOOL_RESULT/REASONING/STATUS/ERROR events as compact
    * "dense" rows between text messages, with an expand toggle that reveals
@@ -333,6 +335,7 @@ export function EntityExecutionPanel({
   allowImagePaste = true,
   showAssetManager = true,
   showProjectSetting = true,
+  showAgentSetting = false,
   dense = false,
   defaultProjectId,
   defaultWorkdir,
@@ -951,6 +954,7 @@ export function EntityExecutionPanel({
               }
               onProjectChange={setPendingProjectId}
               showProject={showProjectSetting}
+              agent={showAgentSetting ? launchingAgent : null}
               modelControl={modelSettingsNode}
               workerControl={workerSettingsNode}
               actions={settingsActions}

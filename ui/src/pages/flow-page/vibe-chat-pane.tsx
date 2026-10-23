@@ -261,6 +261,7 @@ export function VibeChatPane({
         target={chatTarget}
         processType={ProcessKind.Chat}
         linkSurface="vibe"
+        showAgentSetting
         className="h-full border-e border-border"
         dense
         allowAttachments

@@ -1716,8 +1716,10 @@ class DataSource(SetupSkippable, Entity):
         """Where this channel's messages can go: this computer, and each cloud placement of the agent that
         owns it (a box that holds the same channel, by id)."""
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
-        places = [{"key": "this", "label": "This computer"}]
+        # "this" names its instance, as a cloud place names its node: what a hub ``desktop`` target carries.
+        places = [{"key": "this", "label": "This computer", "instance_id": instance_uid()}]
         owner = str(self.owner or "")
         if owner.startswith("agent-"):
             agent = await Agent.get_by_id(owner.split("-", 1)[1])

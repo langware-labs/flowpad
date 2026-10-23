@@ -29,6 +29,8 @@
     "failure-dialog.js",
     "update-restart.js",
     "progress-watchdog.js",
+    "renderer-watchdog.js",
+    "hang-report.js",
     "semver.js",
     "engine-compat.js",
     "engine-compat.json",

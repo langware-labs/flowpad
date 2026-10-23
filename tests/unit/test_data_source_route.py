@@ -65,7 +65,7 @@ async def test_the_route_is_the_claim_that_delivers_here_and_names_this_computer
     route = (await source.route_action()).data
 
     assert route["claim"]["id"] == "c-1" and route["current"] == "this"
-    assert route["places"][0] == {"key": "this", "label": "This computer"}
+    assert {k: route["places"][0][k] for k in ("key", "label")} == {"key": "this", "label": "This computer"}
 
 
 async def test_moving_a_channel_to_a_cloud_placement_points_the_claim_at_its_node(hub, cloud_agent):

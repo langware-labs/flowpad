@@ -10,7 +10,7 @@ import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
-import { endLaunch, forgetLastPlace, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
+import { endLaunch, forgetLastPlace, isSafeStart, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
 
 // Last, from this module's body — after the side-effect imports above have run —
 // so every redirect the user or the app asked for on this load outranks it.
@@ -92,6 +92,15 @@ export async function loadHomePage(args: LoaderArgs) {
   if (!isDeepLinkAction(url.searchParams.get('action'))) {
     await adoptScopeProject(dock);
     t.time('adoptScope');
+  }
+
+  // A clean start after the desktop recovered a hung window: Home only. The last place is the page
+  // that hung, and a launch redirect (an agent auto-launch) could be it too.
+  if (isSafeStart(url)) {
+    endLaunch();
+    forgetLastPlace();
+    t.done(1.2);
+    return;
   }
 
   // Feature load-redirects (journey auto-launch et al) — done here, at load

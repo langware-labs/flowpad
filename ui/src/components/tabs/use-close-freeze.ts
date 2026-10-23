@@ -7,8 +7,9 @@ import { FREEZE_IDLE, FREEZE_IDLE_MS, FREEZE_LEAVE_DELAY_MS, freezeReducer } fro
 /**
  * @param keys  the tab keys in row order
  * @param stripRef  the strip element; its width changing releases the freeze
+ * @param maxPx  a tab's full width
  */
-export function useCloseFreeze(keys: string[], stripRef: RefObject<HTMLElement | null>) {
+export function useCloseFreeze(keys: string[], stripRef: RefObject<HTMLElement | null>, maxPx: number) {
   const [state, dispatch] = useReducer(freezeReducer, FREEZE_IDLE);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,13 +32,14 @@ export function useCloseFreeze(keys: string[], stripRef: RefObject<HTMLElement |
       dispatch({
         type: 'closeByMouse',
         tabPx: chip.getBoundingClientRect().width,
+        maxPx,
         index: keys.indexOf(key),
         count: keys.length,
       });
       if (idleTimer.current) clearTimeout(idleTimer.current);
       idleTimer.current = setTimeout(release, FREEZE_IDLE_MS);
     },
-    [keys, release],
+    [keys, maxPx, release],
   );
 
   // Any change to the tab list other than the mouse-closed tabs leaving it
