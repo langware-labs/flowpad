@@ -69,7 +69,12 @@ async def recent(hours: float = 24.0) -> dict[str, Any]:
                 for m in body.get("messages") or []
                 if not m.get("subtype") or m.get("subtype") in ("bot_message", "thread_broadcast")
             ]
-            return {"name": channel.get("name") or channel["id"], "messages": messages[::-1]} if messages else None
+            # The id too: Slack hands a mention of a channel ("<#C0123|>") to the agent as its id.
+            return (
+                {"id": channel["id"], "name": channel.get("name") or channel["id"], "messages": messages[::-1]}
+                if messages
+                else None
+            )
 
         read = [c for c in await asyncio.gather(*(history(c) for c in channels[:MAX_CHANNELS])) if c]
         ids = sorted({m["user"] for c in read for m in c["messages"] if m["user"].startswith("U")})

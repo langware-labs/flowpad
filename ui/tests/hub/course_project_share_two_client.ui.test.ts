@@ -54,12 +54,12 @@ import { testEntityName } from '../_cleanup';
 
 /** The only directory an installed project may land in — and the only one this
  *  test is ever allowed to delete from. Bob's own workspace root: prod's is
- *  `~/Flowpad workspace`, every other instance gets `~/Flowpad workspaces/<name>`
- *  (`BaseSettings.workspace_root`). */
+ *  `~/Flowpad workspace`, every other instance keeps its projects in its own
+ *  instance dir, `~/.flow/instances/<name>/workspace` (`BaseSettings.workspace_root`). */
 const WORKSPACE =
   INST_2 === 'prod'
     ? path.join(homedir(), 'Flowpad workspace')
-    : path.join(homedir(), 'Flowpad workspaces', INST_2);
+    : path.join(homedir(), '.flow', 'instances', INST_2, 'workspace');
 
 let skipReason: string | null = null;
 let alice: ResolvedInstance;

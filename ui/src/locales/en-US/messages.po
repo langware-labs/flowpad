@@ -1634,6 +1634,7 @@ msgstr "{projectName} shared"
 #~ msgstr "{promptCount, plural, one {# prompt} other {# prompts}}"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "{provider} connection"
 msgstr "{provider} connection"
 
@@ -6660,6 +6661,7 @@ msgstr "Cloud is not available"
 msgid "Cloud link prompt when sharing"
 msgstr "Cloud link prompt when sharing"
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Cloud machine"
 msgstr "Cloud machine"
@@ -15590,6 +15592,10 @@ msgstr "Its files live in git, and it is not linked to a repository yet. Publish
 msgid "Its folder is removed too. Past runs stay in the history."
 msgstr "Its folder is removed too. Past runs stay in the history."
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Its machine may use it"
+msgstr "Its machine may use it"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "its manager"
 msgstr "its manager"
@@ -15856,6 +15862,7 @@ msgid "lapsed"
 msgstr "lapsed"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Lapsed"
 msgstr "Lapsed"
 
@@ -16316,6 +16323,7 @@ msgid "linked"
 msgstr "linked"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Linked"
 msgstr "Linked"
 
@@ -19134,6 +19142,10 @@ msgstr "No machine data available"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
 msgstr "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "No machine yet"
+msgstr "No machine yet"
 
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
@@ -33080,6 +33092,7 @@ msgid "waiting for the first signed delivery…"
 msgstr "waiting for the first signed delivery…"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Waiting for the link"
 msgstr "Waiting for the link"
 
@@ -33215,6 +33228,7 @@ msgid "Webhook URL"
 msgstr "Webhook URL"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Webhooks & connections"
 msgstr "Webhooks & connections"
 

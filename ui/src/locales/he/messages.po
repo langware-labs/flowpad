@@ -1623,6 +1623,7 @@ msgstr "{projectName} שותף"
 #~ msgstr ""
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "{provider} connection"
 msgstr ""
 
@@ -6616,6 +6617,7 @@ msgstr "הענן אינו זמין"
 msgid "Cloud link prompt when sharing"
 msgstr "בקשת קישור לענן בעת שיתוף"
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Cloud machine"
 msgstr "מכונת ענן"
@@ -15474,6 +15476,10 @@ msgstr ""
 msgid "Its folder is removed too. Past runs stay in the history."
 msgstr "התיקייה שלה תימחק גם כן. ההרצות הקודמות יישארו בהיסטוריה."
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Its machine may use it"
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "its manager"
 msgstr "המנהל/ת שלו"
@@ -15733,6 +15739,7 @@ msgid "lapsed"
 msgstr "פג תוקף"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Lapsed"
 msgstr ""
 
@@ -16187,6 +16194,7 @@ msgid "linked"
 msgstr "מקושר"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Linked"
 msgstr ""
 
@@ -18976,6 +18984,10 @@ msgstr "אין נתוני מכונה זמינים"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
 msgstr "אין מכונה שממתינה לקוד הזה. בדקו את הקוד, או הריצו שוב את flow connect — קודים פגים אחרי 15 דקות."
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "No machine yet"
+msgstr ""
 
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
@@ -32814,6 +32826,7 @@ msgid "waiting for the first signed delivery…"
 msgstr "בהמתנה למסירה החתומה הראשונה…"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Waiting for the link"
 msgstr ""
 
@@ -32946,6 +32959,7 @@ msgid "Webhook URL"
 msgstr "כתובת Webhook"
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Webhooks & connections"
 msgstr ""
 
