@@ -10,6 +10,7 @@ import { loadOlderConversations } from './stream-inbox-api';
 import {
   type ConversationScope,
   newerBoundaryRequest,
+  newerPageBefore,
   scopeKey,
   STREAM_INBOX_PAGE_SIZE,
   type StreamInboxViewMode,
@@ -48,9 +49,11 @@ export function StreamInboxPager({
     () => (before && newest ? newerBoundaryRequest(scope, view, newest) : null),
     [before, newest, scope, view],
   );
-  const { data: above = [] } = useEntitiesQuery<Conversation>(newerRequest ?? idle, { enabled: newerRequest !== null });
-  // No row a page + 1 above: the newer page is now.
-  const newerBefore = isoOf(above[0]?.updated_date);
+  const { data: above = [], hasMore: moreAbove = false } = useEntitiesQuery<Conversation>(newerRequest ?? idle, {
+    enabled: newerRequest !== null,
+  });
+  // Not a full page above, or nothing past it: the newer page is now.
+  const newerBefore = newerPageBefore(above, moreAbove);
 
   // An older page the store cannot fill asks the sources, once per page: one page each, older than
   // what is shown (or than the page's bound when nothing is). What arrives joins this live page.

@@ -1,11 +1,12 @@
 import json
 import logging
+import re
 import traceback
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums import ExpansionType
@@ -52,6 +53,39 @@ class ExpressionNode(BaseModel):
 OrderType = Dict[str, Literal["asc", "desc"]]
 #: The keys of a filter beside `match` (`QueryFilter.parse`).
 _FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
+#: The same words in the hub's order (``PAGING_KEYS`` there).
+PAGING_KEYS = ("limit", "offset", "order_by", "expand")
+# A plain field name, as on the hub; the desktop also sorts on dotted JSON paths (``input.created``), each
+# segment a plain name.
+_FIELD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+def order_terms(order_by, paged: bool = False) -> list[tuple[str, bool]]:
+    """``(field, descending)`` terms for ``order_by`` — the hub's rule: a page with no order is newest first
+    (``created_date DESC``), and whenever there is an order the ``id`` settles every tie so equal keys never
+    shuffle rows between pages."""
+    if isinstance(order_by, (dict, str)):
+        order_by = [order_by]
+    terms: list[tuple[str, bool]] = []
+    for spec in order_by or []:
+        if isinstance(spec, str):
+            spec = {spec.lstrip("-"): "desc" if spec.startswith("-") else "asc"}
+        if isinstance(spec, dict):
+            for field, direction in spec.items():
+                terms.append((field, str(direction).lower() == "desc"))
+    if paged and not terms:
+        terms = [("created_date", True)]
+    if terms and not any(field == "id" for field, _ in terms):
+        terms.append(("id", False))
+    return terms
+
+
+def sort_in_order(rows: list, order_by, paged: bool = False) -> list:
+    """``rows`` in the order the database would answer them (``order_terms``): nulls last ascending and
+    first descending, as on the hub. For lists a database cannot order — a merge of two reads."""
+    for field, descending in reversed(order_terms(order_by, paged)):
+        rows.sort(key=lambda r, f=field: (getattr(r, f, None) is None, getattr(r, f, None)), reverse=descending)
+    return rows
 
 
 class QueryFilter(BaseModel):
@@ -60,9 +94,19 @@ class QueryFilter(BaseModel):
     type: str | None = None
     match: ExpressionNode | None = None
     order_by: Optional[OrderType | List[OrderType]] = None
-    limit: Optional[int] = None
-    offset: Optional[int] = None
+    limit: Optional[int] = Field(None, ge=1)
+    offset: Optional[int] = Field(None, ge=0)
     expand: Optional[List[str]] = None
+
+    @field_validator("order_by")
+    @classmethod
+    def _order_by_fields_are_identifiers(cls, value):
+        # ORDER BY keys cannot be bound parameters, so a key that is not a plain field name is refused here.
+        for spec in value if isinstance(value, list) else [value] if value else []:
+            for field in spec:
+                if not _FIELD_NAME_RE.match(field):
+                    raise ValueError(f"order_by: not a field name: {field!r}")
+        return value
 
     def __init__(self, **data):
         super().__init__(**data)

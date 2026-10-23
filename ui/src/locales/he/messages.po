@@ -329,6 +329,8 @@ msgstr "(Flow ללא שם)"
 msgid "(unnamed)"
 msgstr "(ללא שם)"
 
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/token-plan/MembersTable.tsx
 msgid "(you)"
 msgstr "(אני)"
@@ -409,8 +411,11 @@ msgid "{0, plural, one {# layout} other {# layouts}}"
 msgstr "{0, plural, one {פריסה אחת} other {# פריסות}}"
 
 #. placeholder {0}: (g.contacts ?? []).length
+#. placeholder {0}: team.member_count
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 #: src/components/contact-picker/ContactPicker.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "{0, plural, one {# member} other {# members}}"
 msgstr "{0, plural, one {חבר אחד} other {# חברים}}"
 
@@ -492,10 +497,9 @@ msgstr "{0} — בקשו מ-{manager}"
 msgid "{0} — current project"
 msgstr "{0} — הפרויקט הנוכחי"
 
-#. placeholder {0}: outcome.already.join(', ')
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "{0} — no email sent."
-msgstr "{0} — לא נשלח דוא״ל."
+#~ msgid "{0} — no email sent."
+#~ msgstr "{0} — לא נשלח דוא״ל."
 
 #. placeholder {0}: attachmentFileName(a)
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -868,6 +872,13 @@ msgstr "{0} חדשות"
 msgid "{0} not tested"
 msgstr "{0} לא נבדק"
 
+#. placeholder {0}: chipNotes.length
+#. placeholder {0}: notes.length
+#: src/components/notes/TabNotes.tsx
+#: src/components/tabs/TabStrip.tsx
+msgid "{0} notes"
+msgstr ""
+
 #. placeholder {0}: person.name || person.email || ''
 #. placeholder {1}: task.title
 #: src/components/assets/editor/task/OwnerButton.tsx
@@ -997,6 +1008,7 @@ msgstr "{0} סוד{1}"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/terminal/HistoryModal.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "{0} selected"
 msgstr "{0} נבחרו"
 
@@ -1065,15 +1077,15 @@ msgstr "{0} לא נמחק במלואו"
 msgid "{0} was upgraded and restarted."
 msgstr "{0} שודרג והופעל מחדש."
 
-#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
 msgstr "הסרת {0} מ-{1} תבטל את התקציב שהוקצה. הסכומים שכבר נוצלו לא יושפעו."
 
-#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr "ל-{0} לא תהיה עוד אפשרות להוציא מ-{1}. הסכומים שכבר נוצלו לא יושפעו."
 
@@ -1458,6 +1470,18 @@ msgstr "{n} קבצים השתנו, הראשון: {path}"
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "{n} rows"
 msgstr "{n} שורות"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "{n} skipped: not signed in as you, or unavailable."
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "{n} skipped: not started, unreachable or unavailable."
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "{n} skipped: unavailable."
+msgstr ""
 
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
@@ -1863,6 +1887,10 @@ msgstr "↻ הרצה חוזרת"
 #~ msgid "+ Add a cloud machine"
 #~ msgstr ""
 
+#: src/components/tabs/TabStrip.tsx
+msgid "+ Add note"
+msgstr ""
+
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/inbound/InboundView.tsx
 msgid "+ Add rule"
@@ -1876,9 +1904,17 @@ msgstr ""
 msgid "+ Enter path..."
 msgstr "+ הזינו נתיב..."
 
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "+ Invite people"
+msgstr ""
+
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "+ New flow"
 msgstr "+ זרימה חדשה"
+
+#: src/components/organization/tabs/shared.tsx
+msgid "+ New team"
+msgstr ""
 
 #~ msgid "+ Override"
 #~ msgstr ""
@@ -2583,6 +2619,7 @@ msgstr "פעילות"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -2633,6 +2670,11 @@ msgstr "הוספת מכונה"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "הוסיפו הודעה כדי לשלוח בלי זה."
+
+#: src/components/notes/TabNotes.tsx
+#: src/components/notes/TabNotes.tsx
+msgid "Add a note"
+msgstr ""
 
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add a note to the running session"
@@ -2857,7 +2899,7 @@ msgstr "הוסיפו הערה"
 msgid "Add package"
 msgstr "הוסיפו חבילה"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Add people"
 msgstr "הוספת אנשים"
 
@@ -3049,6 +3091,11 @@ msgstr "ניהול"
 msgid "Advanced"
 msgstr "מתקדם"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Advanced limits"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Advanced mode"
 msgstr "מצב מתקדם"
@@ -3073,6 +3120,7 @@ msgstr "מתקדם: מגבלות לכל חלון זמן, תקרות קצב וס�
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "agent"
 msgstr "סוכן"
@@ -3242,6 +3290,7 @@ msgstr "הכל"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
@@ -3530,7 +3579,7 @@ msgid "Already not installed: {0}"
 msgstr "כבר לא מותקנים: {0}"
 
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Already on {0}"
 msgstr "כבר ב-{0}"
 
@@ -4908,6 +4957,15 @@ msgstr "מאחור ב-{0} · עדכנו"
 msgid "Betas allowed"
 msgstr "גרסאות בטא מותרות"
 
+#: src/components/organization/tabs/BillingTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
+msgid "Billing & keys"
+msgstr ""
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Billing & keys →"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Bless \"{name}\" — create its Tag entity"
 msgstr "אישור \"{name}\" — יצירת ישות Tag"
@@ -5041,7 +5099,6 @@ msgstr "דפדפו…"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 msgid "Budget"
 msgstr "תקציב"
 
@@ -5051,8 +5108,8 @@ msgid "Budget allocated from {0}"
 msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Budget created for {label}"
-msgstr "התקציב נוצר עבור {label}"
+#~ msgid "Budget created for {label}"
+#~ msgstr "התקציב נוצר עבור {label}"
 
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Budget endpoint created for {0}"
@@ -5060,14 +5117,18 @@ msgstr "התקציב נוצר עבור {label}"
 
 #. placeholder {0}: member.name
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Budget for {0}"
 msgstr "תקציב עבור {0}"
 
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Budget for the whole scope"
 msgstr "תקציב להיקף כולו"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Budget history"
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Budget in dollars"
@@ -5078,8 +5139,8 @@ msgid "Budget removed"
 msgstr "התקציב הוסר"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Budget settings"
-msgstr "הגדרות תקציב"
+#~ msgid "Budget settings"
+#~ msgstr "הגדרות תקציב"
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Budget shared"
@@ -5367,11 +5428,14 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/shared.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -6202,6 +6266,7 @@ msgstr "נקו את אינדקס החיפוש?"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Clear selection"
 msgstr "נקו בחירה"
 
@@ -6382,6 +6447,7 @@ msgstr "משבוט…"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
@@ -7008,6 +7074,12 @@ msgstr "חיבור מספר"
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
 msgstr "חיבור מקור LLM, ואז התקנת הכלים ש-Flowpad צריך. רץ פעם אחת בהפעלה הראשונה."
+
+#. placeholder {0}: CHANNEL_TITLE[channel]
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Connect Flow to {0}"
+msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -7763,7 +7835,7 @@ msgstr "לא ניתן ליצור משימת קבוצה"
 msgid "Could not create organization"
 msgstr "לא ניתן ליצור ארגון"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not create the budget"
 msgstr "לא ניתן ליצור את התקציב"
 
@@ -7806,8 +7878,8 @@ msgstr "לא היה ניתן למחוק"
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/use-source-delete.ts
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not delete {0}"
 msgstr "לא ניתן למחוק את {0}"
 
@@ -7899,9 +7971,13 @@ msgstr "לא ניתן להעניק לפרויקט זה גישה ל-{0}."
 msgid "Could not install the package"
 msgstr "לא ניתן להתקין את החבילה"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Could not invite {email}"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Could not invite everyone"
-msgstr "לא ניתן להזמין את כולם"
+#~ msgid "Could not invite everyone"
+#~ msgstr "לא ניתן להזמין את כולם"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Could not keep the task"
@@ -8113,7 +8189,7 @@ msgid "Could not remove"
 msgstr "לא ניתן להסיר"
 
 #. placeholder {0}: target.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not remove {0}"
 msgstr "לא ניתן להסיר את {0}"
 
@@ -8287,9 +8363,14 @@ msgstr "לא ניתן לשמור את ההגדרות המתקדמות"
 msgid "Could not save the allowed models"
 msgstr "לא ניתן היה לשמור את המודלים המותרים"
 
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Could not save the budget"
 msgstr "לא ניתן לשמור את התקציב"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Could not save the default"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Could not save the endpoint"
@@ -8764,10 +8845,10 @@ msgstr "מעבד:"
 #: src/components/cron-view/CronForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/organization-page.tsx
+#: src/components/organization/tabs/shared.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
@@ -8966,6 +9047,10 @@ msgstr "יוצר..."
 msgid "Creating…"
 msgstr "יוצר..."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "credential"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/i18n/type-labels.ts
@@ -9067,6 +9152,10 @@ msgstr "סמן"
 msgid "Cursor"
 msgstr "Cursor"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "custom"
+msgstr ""
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Custom"
 msgstr "מותאם אישית"
@@ -9095,6 +9184,10 @@ msgstr "פעלים מותאמים אישית למחוון ההתקדמות"
 msgid "Customize"
 msgstr "התאמה אישית"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Customize response"
+msgstr ""
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Cut"
@@ -9103,6 +9196,10 @@ msgstr "גזרו"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Daily at {time}"
 msgstr "כל יום בשעה {time}"
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Danger zone"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Data (JSON)"
@@ -9125,6 +9222,7 @@ msgstr "מצב פרטיות הנתונים"
 msgid "Data Schema"
 msgstr "סכמת נתונים"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "data source"
 msgstr "מקור נתונים"
@@ -9364,6 +9462,11 @@ msgstr "זמן פקיעה ברירת מחדל לפקודות bash (מילישנ�
 msgid "Default budget per member"
 msgstr "תקציב ברירת מחדל לכל חבר"
 
+#. placeholder {0}: team.name
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Default budget per person in {0}"
+msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Default CLI"
 msgstr "CLI ברירת מחדל"
@@ -9390,6 +9493,10 @@ msgstr "מודל ברירת מחדל לשיחות"
 #: src/components/settings-view/settings-utils.ts
 msgid "Default output style"
 msgstr "סגנון פלט ברירת מחדל"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Default per person"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Default permission mode"
@@ -9469,10 +9576,8 @@ msgstr "מחיקה"
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -9481,6 +9586,7 @@ msgstr "מחיקה"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/pages/hub-home/machines-bulk.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "מחקו"
@@ -9493,6 +9599,10 @@ msgstr "מחיקה — הסרה קבועה"
 #: src/components/account/secrets-section.tsx
 msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "מחקו את \"{0}\" מה-keychain של מערכת ההפעלה? לא ניתן לבטל פעולה זו."
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Delete ({n})"
+msgstr ""
 
 #. placeholder {0}: c.displayName
 #. placeholder {0}: item.name
@@ -9524,8 +9634,8 @@ msgstr "למחוק את אישור {0}?"
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/connections-manager.tsx
 #: src/components/credentials-view/CredentialView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Delete {0}?"
 msgstr "מחקו את {0}?"
 
@@ -9533,6 +9643,10 @@ msgstr "מחקו את {0}?"
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Delete {label}"
 msgstr "מחיקת {label}"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Delete {n} machines?"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete {selectedCount} conversations"
@@ -9577,6 +9691,10 @@ msgstr "מחקו סימנייה"
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Delete bookmark?"
 msgstr "למחוק סימנייה?"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Delete budget"
+msgstr ""
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -9665,6 +9783,18 @@ msgstr "מחקו הודעה"
 msgid "Delete node"
 msgstr "מחיקת צומת"
 
+#: src/components/notes/NoteViews.tsx
+msgid "Delete note"
+msgstr ""
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Delete organization"
+msgstr ""
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Delete organization…"
+msgstr ""
+
 #: src/components/assets/AssetsPage.tsx
 msgid "Delete project"
 msgstr "מחקו פרויקט"
@@ -9692,6 +9822,10 @@ msgstr "מחקו את הנבחרים ({selectedCount})"
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Delete tag {name}"
 msgstr "מחיקת תג {name}"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Delete team"
+msgstr ""
 
 #: src/components/image-annotator/TextBoxLayer.tsx
 msgid "Delete text"
@@ -9770,6 +9904,10 @@ msgstr "מחיקת השלב הזה"
 msgid "Deleted {ok} conversations"
 msgstr "נמחקו {ok} שיחות"
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Deleted {ok} of {total} machines."
+msgstr ""
+
 #. placeholder {0}: failed.length
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -9780,6 +9918,10 @@ msgstr "נמחקו {ok}, {0} נכשלו"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted 1 conversation"
 msgstr "נמחקה שיחה אחת"
+
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Deletes every team and budget in this organization. You'll type its name to confirm."
+msgstr ""
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Deletes the harness's own session history. The folders and their files are not touched."
@@ -9828,6 +9970,10 @@ msgstr "דחייה"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Dependencies"
 #~ msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "dependency"
+msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -10767,6 +10913,10 @@ msgstr "לדוגמה, /path/to/script.sh או if [[ \"$tool_input\" == *.md ]]; 
 msgid "Each hop, without sending a message."
 msgstr "כל שלב בדרך, בלי לשלוח הודעה."
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Each machine is shut down and removed. This cannot be undone."
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 msgstr "לכל אדם מוקצה תקציב אישי מתוך תקציב הצוות. השאירו את הסכום ריק כדי לא להגביל. מי שכבר חבר בצוות יעודכן הסכום שלו, במקום להתווסף פעמיים."
@@ -10818,7 +10968,6 @@ msgstr "קצוות לפי סוג"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 msgid "Edit"
 msgstr "ערכו"
 
@@ -10930,16 +11079,13 @@ msgid "Effort"
 msgstr "רמת מאמץ"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Email"
 msgstr "דוא״ל"
 
-#. placeholder {0}: member.email
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Email {0} an invitation to {teamName}"
-msgstr "שלחו ל-{0} הזמנה לצוות {teamName} בדוא״ל"
+#~ msgid "Email {0} an invitation to {teamName}"
+#~ msgstr "שלחו ל-{0} הזמנה לצוות {teamName} בדוא״ל"
 
 #~ msgid "Email is now answered here"
 #~ msgstr ""
@@ -10963,12 +11109,9 @@ msgstr "לא ניתן היה לשמור את הגדרות הדואר האלקט�
 msgid "Email:"
 msgstr "דוא״ל:"
 
-#. placeholder {0}: outcome.invited.length
-#. placeholder {1}: emails.length
-#. placeholder {2}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Emailed {0} of {1} about {2}."
-msgstr "נשלחו הודעות דוא״ל ל-{0} מתוך {1} בנוגע ל-{2}."
+#~ msgid "Emailed {0} of {1} about {2}."
+#~ msgstr "נשלחו הודעות דוא״ל ל-{0} מתוך {1} בנוגע ל-{2}."
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Embedded in message"
@@ -11547,10 +11690,14 @@ msgstr "בכל בחירה"
 #~ msgid "Every skill, agent, spec, and document this project ships."
 #~ msgstr "כל הכישורים, הסוכנים, המפרטים והמסמכים שהפרויקט הזה כולל."
 
-#. placeholder {0}: org.name
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Every team and budget inside {0} is deleted with it. This cannot be undone."
-msgstr "כל הצוותים והתקציבים בתוך {0} יימחקו יחד איתו. לא ניתן לבטל פעולה זו."
+#~ msgid "Every team and budget inside {0} is deleted with it. This cannot be undone."
+#~ msgstr "כל הצוותים והתקציבים בתוך {0} יימחקו יחד איתו. לא ניתן לבטל פעולה זו."
+
+#. placeholder {0}: org.name
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Every team and budget inside {0} is deleted with it. This cannot be undone. Type the organization's name to confirm."
+msgstr ""
 
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Every team you manage already has a budget."
@@ -11570,6 +11717,11 @@ msgstr "בכל יום חול בשעה 09:00, סוכן מסכם מה השתנה."
 #: src/components/automations/KindGallery.tsx
 msgid "Every weekday at 9, every hour, once next Tuesday."
 msgstr "בימי חול בשעה 9, בכל שעה, פעם אחת ביום שלישי הבא."
+
+#. placeholder {0}: data.org.name
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Everyone in {0}."
+msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Everyone in {teamName} gets this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
@@ -11596,7 +11748,7 @@ msgid "Everyone in {teamName} will get the project you pick."
 msgstr "כל מי שבצוות {teamName} יקבל את הפרויקט שתבחרו."
 
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Everyone's budget inside {0} is deleted with it. This cannot be undone."
 msgstr "התקציבים של כולם ב-{0} יימחקו יחד עם הצוות. לא ניתן לבטל פעולה זו."
 
@@ -12260,6 +12412,7 @@ msgstr "כישלון בהתחלת חיבור GitHub"
 #: src/components/conversation/useImplementPlan.ts
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
+#: src/components/notes/useNoteWorker.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -12302,6 +12455,10 @@ msgstr "עדכון הטריגר נכשל"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to upload image"
 msgstr "העלאת התמונה נכשלה"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Failed:"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
@@ -13001,6 +13158,14 @@ msgstr ">>>>>>> aea919ba5"
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 msgstr "Flowpad מריץ את זה בעצמו. ניתן לבדוק, להריץ ולראות הרצות, אך לא לשנות."
 
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Flowpad shared pool. Usage draws on Flowpad credits."
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad ייעצר, יעודכן לגרסה האחרונה ויופעל מחדש ב-{upgradeTargetName}. מי שעובד בו יופרע לדקה או שתיים, וסנדבוקס מושהה יופעל כדי לבצע זאת."
@@ -13369,6 +13534,8 @@ msgid "GCP region for Vertex AI"
 msgstr "אזור GCP עבור Vertex AI"
 
 #: src/components/account/account-info.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
 #: src/i18n/pref-labels.ts
 msgid "General"
 msgstr "כללי"
@@ -13424,8 +13591,8 @@ msgid "Get it at flowpad.ai"
 msgstr "אפשר להוריד אותו ב-flowpad.ai"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Get my link code"
-msgstr ""
+#~ msgid "Get my link code"
+#~ msgstr ""
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your {label} messages here, and answer them from Flowpad."
@@ -13446,6 +13613,10 @@ msgstr "מאחזרים את פרויקט הבקר"
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Getting the project to work on"
 msgstr "מביאים את הפרויקט לעבודה"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Getting your Slack link…"
+msgstr ""
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -13612,8 +13783,12 @@ msgid "Give this project access"
 msgstr "הענקת גישה לפרויקט זה"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Given out to teams"
-msgstr "הוקצה לצוותים"
+#~ msgid "Given out to teams"
+#~ msgstr "הוקצה לצוותים"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Given to teams"
+msgstr ""
 
 #~ msgid "Given to you by the hub"
 #~ msgstr ""
@@ -15121,8 +15296,8 @@ msgid "Invitation no longer valid"
 msgstr "ההזמנה כבר אינה בתוקף"
 
 #: src/components/account/organization-panel.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Invitation sent"
 msgstr "הזמנה נשלחה"
 
@@ -15190,6 +15365,10 @@ msgstr "{trimmed} הוזמן."
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחצו על שורה כדי לצפות באבחנה המלאה."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "It can read your Slack channels."
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "It cannot be removed from the project"
@@ -15847,6 +16026,10 @@ msgstr "מאפשרים לכל מי שיש לו קישור הפעלה לנסות 
 msgid "Let anyone with the link view this agent — its files stay private"
 msgstr "אפשרו לכל מי שברשותו הקישור לצפות בסוכן הזה — הקבצים שלו יישארו פרטיים"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Let it read your Slack"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Let other participants see when messages are delivered or read."
 msgstr "אפשרו למשתתפים אחרים לראות מתי הודעות נמסרו או נקראו."
@@ -15864,6 +16047,7 @@ msgid "Light up the {messageCount} messages this is attached to"
 msgstr "הדגישו את {messageCount} ההודעות שזה מצורף אליהן"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Limit"
 msgstr "גבול"
 
@@ -16238,7 +16422,7 @@ msgstr "טוען ענפים..."
 msgid "Loading branches…"
 msgstr "טוען ענפים…"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/OrgView.tsx
 msgid "Loading budgets…"
 msgstr "טוענים את התקציבים…"
 
@@ -16534,6 +16718,7 @@ msgstr "טוען..."
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/shared.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -16771,8 +16956,8 @@ msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Make another"
-msgstr ""
+#~ msgid "Make another"
+#~ msgstr ""
 
 #~ msgid "Make the two the same — edit either one — and the next sync carries on."
 #~ msgstr ""
@@ -17087,6 +17272,9 @@ msgstr "חברים"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/organization/org-node-management.tsx
 #: src/components/organization/org-node-management.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "Members"
 msgstr "חברים"
 
@@ -17102,6 +17290,10 @@ msgstr "חברים הוקצו, אך חלק מההודעות לא נשלחו"
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 msgstr "חברים משבטים ודוחפים את המאגר הזה דרך FlowPad עם הכניסה שלהם ל-FlowPad. אין צורך בגישה ל-GitHub. קוראים יכולים למשוך, עורכים יכולים לדחוף. ניתן לבטל את הסימון בכל עת; מאגר ה-GitHub שלכם לעולם לא משתנה."
+
+#: src/components/conversation/ConversationMembersLine.tsx
+msgid "Members:"
+msgstr ""
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -17366,8 +17558,8 @@ msgid "Model"
 msgstr "מודל"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Model / status"
-msgstr "מודל / סטטוס"
+#~ msgid "Model / status"
+#~ msgstr "מודל / סטטוס"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Model & Performance"
@@ -17419,6 +17611,11 @@ msgstr "מזהה מודל"
 msgid "Models"
 msgstr "מודלים"
 
+#: src/components/organization/tabs/BillingTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Models & status"
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Models allowed"
@@ -17467,6 +17664,8 @@ msgstr "עוד"
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/ui/breadcrumb.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "More"
@@ -17488,8 +17687,16 @@ msgstr "עוד מ-{0}"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
-msgstr "הוקצה יותר ממה שיש בתקציב הזה. שום דבר לא נחסם — מי שיוציא אחרון ייחסם כשהכסף ייגמר."
+#~ msgid "More has been given out than this budget holds. Nothing is blocked — whoever spends last will be refused once the money runs out."
+#~ msgstr "הוקצה יותר ממה שיש בתקציב הזה. שום דבר לא נחסם — מי שיוציא אחרון ייחסם כשהכסף ייגמר."
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "More is given out than this budget holds."
+msgstr ""
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "More is given out than this budget holds. Nothing is blocked — whoever spends last is refused once the money runs out."
+msgstr ""
 
 #: src/components/ui/pagination.tsx
 msgid "More pages"
@@ -17499,7 +17706,7 @@ msgstr "עמודים נוספים"
 msgid "More than one readable asset matches this word. Bind it to a specific asset."
 msgstr "יותר מנכס קריא אחד מתאים למילה זו. יש לקשר אותה לנכס ספציפי."
 
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "More…"
 msgstr "עוד…"
 
@@ -17552,6 +17759,10 @@ msgstr "יש להזין מספר, או להשאיר ריק ללא הגבלה."
 msgid "My automations"
 msgstr "האוטומציות שלי"
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "My role"
+msgstr ""
+
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "My Schedule"
 msgstr "הלוח שלי"
@@ -17596,10 +17807,8 @@ msgstr "שם"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/organization/tabs/GeneralTab.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
@@ -17956,6 +18165,10 @@ msgstr "הודעות חדשות יופיעו כאן במשיכה הבאה."
 msgid "New name"
 msgstr "שם חדש"
 
+#: src/components/notes/NoteViews.tsx
+msgid "New note"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "New option"
 msgstr "אפשרות חדשה"
@@ -18025,7 +18238,6 @@ msgstr "תת-צוות חדש"
 msgid "New tab"
 msgstr "כרטיסייה חדשה"
 
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "New team"
 msgstr "צוות חדש"
@@ -18143,6 +18355,7 @@ msgstr "אין גישה למאגר הזה. יש לחבר את חשבון ה-GitH
 #~ msgstr "אין פעולות מוגדרות."
 
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
+#: src/components/notes/useNoteWorker.ts
 #: src/components/terminal/HistoryModal.tsx
 msgid "No active project"
 msgstr "אין פרויקט פעיל"
@@ -18222,6 +18435,10 @@ msgstr "עדיין אין סימניות"
 #: src/components/token-plan/TokenPlanChip.tsx
 msgid "no budget"
 msgstr "ללא תקציב"
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "No budget"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "No budget — visitors bring their own"
@@ -18848,6 +19065,10 @@ msgstr "אין מודלים."
 msgid "No narrowing — everything the roots allow."
 msgstr "ללא צמצום — כל מה שהשורשים מאפשרים."
 
+#: src/components/tabs/TabStrip.tsx
+msgid "No notes yet"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 msgid "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
 msgstr "עדיין אין מספרים. חברו אחד: הודעות מגיעות ל-hub והולכות לפי הכללים שלו — או לפי הגיבוי שלו."
@@ -19303,12 +19524,21 @@ msgstr "לא נמצאו משימות עבור הסעיף זה."
 msgid "No tasks yet — \"Task it\" on a message makes one."
 msgstr "אין עדיין משימות — ״הפכו למשימה״ על הודעה יוצר משימה."
 
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "No team"
+msgstr ""
+
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "No team budget yet"
 #~ msgstr "עדיין אין תקציב לצוות"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "No team matches."
+msgstr ""
+
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "No teams yet."
 msgstr "עדיין אין צוותים."
 
@@ -19430,9 +19660,13 @@ msgstr "אין תיקיית עבודה לפרויקט הזה."
 msgid "Nobody can log in to this sandbox, including its owner."
 msgstr "אף אחד לא יכול להתחבר לסנדבוקס הזה, כולל הבעלים שלו."
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "בצוות הזה עדיין אין תקציבים."
+
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Nobody here."
+msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
@@ -19731,6 +19965,10 @@ msgstr "לא הוגדר"
 msgid "Not set up for publishing"
 msgstr "לא מוגדר לפרסום"
 
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Not set up yet. Add your own provider key to start spending."
+msgstr ""
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
 msgstr "לא מחובר"
@@ -19816,6 +20054,13 @@ msgstr "הערה (אופציונלי)"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Note: File is missing"
 msgstr "הערה: הקובץ חסר"
+
+#. placeholder {0}: notes.length
+#. placeholder {0}: target.name
+#: src/components/notes/BookmarksNotesSection.tsx
+#: src/components/notes/TabNotes.tsx
+msgid "Notes · {0}"
+msgstr ""
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "nothing"
@@ -20120,6 +20365,11 @@ msgstr "התרחש"
 msgid "of [{viewportTopRow}…]"
 msgstr "מתוך [{viewportTopRow}…]"
 
+#. placeholder {0}: formatUsd(org.limit_usd)
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "of {0}"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "off"
@@ -20183,6 +20433,11 @@ msgstr "פעיל"
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "On — anyone with the launch link can try it"
 msgstr "פעיל — כל מי שיש לו קישור הפעלה יכול לנסות"
+
+#. placeholder {0}: (note.data?.name as string) ?? ''
+#: src/components/notes/NoteViews.tsx
+msgid "on <0>{0}</0>"
+msgstr ""
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "On <0>{where}</0>, open a terminal."
@@ -20369,6 +20624,10 @@ msgstr "כאן מוצגים רק ערכי רתמה — יש להפעיל את \"
 msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
 msgstr "רק השורה שלו נמצאת ב-hub: הפרויקט המפרסם עדיין לא מקושר לענן."
 
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Only my teams"
+msgstr ""
+
 #: src/components/assets/dependency-sources.tsx
 msgid "Only on this device. It is never saved in the project or committed, and the project doesn't say it exists."
 msgstr "רק במכשיר הזה. היא אינה נשמרת בפרויקט ואינה נכללת ב-commit, והפרויקט אינו מציין שהיא קיימת."
@@ -20404,6 +20663,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/project-home/ProjectUploadMessageButton.tsx
@@ -20411,7 +20671,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/wiki-tip/WikiLabel.tsx
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 #: src/notifications/ingest.ts
 #: src/notifications/renderDesktopNotification.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
@@ -20419,14 +20679,13 @@ msgstr "אופס! הדף לא נמצא"
 msgid "Open"
 msgstr "פתחו"
 
-#. placeholder {0}: CHANNEL_TITLE[channel]
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
+#. placeholder {0}: item.label
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Open {0}"
 msgstr "פתחו את {0}"
 
@@ -20517,6 +20776,10 @@ msgstr "פתחו פרויקט כדי לראות את מודל הנתונים ש�
 #~ msgid "Open a project to see its schemas."
 #~ msgstr "פתחו פרויקט כדי לראות את הסכמות שלו."
 
+#: src/components/notes/useNoteWorker.ts
+msgid "Open a project to work on this note."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
 msgstr "פתיחת סשן במחשב הזה"
@@ -20534,8 +20797,8 @@ msgid "Open address book"
 msgstr "פתחו ספר כתובות"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Open admin"
-msgstr ""
+#~ msgid "Open admin"
+#~ msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Open again"
@@ -20642,10 +20905,9 @@ msgstr "פתחו קובץ"
 msgid "Open Flowpad Cloud"
 msgstr "פתחו את Flowpad Cloud"
 
-#. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Open Flowpad on {0}"
-msgstr ""
+#~ msgid "Open Flowpad on {0}"
+#~ msgstr ""
 
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
@@ -21363,9 +21625,12 @@ msgstr "רשימה ממוספרת"
 msgid "Org & teams"
 msgstr "ארגון וצוותים"
 
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Org role"
+msgstr ""
+
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
@@ -21375,6 +21640,10 @@ msgstr "ארגון"
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization activated"
 msgstr "הארגון הופעל"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Organization budget"
+msgstr ""
 
 #: src/components/organization/organization-page.tsx
 msgid "Organization created"
@@ -21387,6 +21656,10 @@ msgstr "הארגון נוצר, אך המפתח לא נשמר"
 #: src/components/organization/organization-page.tsx
 msgid "Organization name…"
 msgstr "שם הארגון…"
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Organization spend"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Organization WorldView"
@@ -21401,8 +21674,8 @@ msgid "Organizations and teams live in the cloud. Switch out of Local mode to ma
 msgstr "ארגונים וצוותים פועלים בענן. כדי לנהל אותם, יש לצאת ממצב מקומי."
 
 #: src/components/organization/organization-page.tsx
-msgid "Organizations, the teams inside them, and who has a budget in each."
-msgstr "ארגונים, הצוותים שבתוכם, ומי מחזיק בתקציב בכל אחד מהם."
+#~ msgid "Organizations, the teams inside them, and who has a budget in each."
+#~ msgstr "ארגונים, הצוותים שבתוכם, ומי מחזיק בתקציב בכל אחד מהם."
 
 #~ msgid "Origin"
 #~ msgstr ""
@@ -21844,6 +22117,9 @@ msgstr "בהמתנה"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Pending"
 msgstr "בהמתנה"
@@ -21858,7 +22134,6 @@ msgstr "הזמנות ממתינות למאגרים ({invitationCount})"
 msgid "pending_count"
 msgstr "ספירת ממתינים"
 
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "People"
 msgstr "אנשים"
@@ -21868,8 +22143,12 @@ msgid "People & teams"
 msgstr "אנשים וצוותים"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "People with no team"
-msgstr "אנשים ללא צוות"
+#~ msgid "People with no team"
+#~ msgstr "אנשים ללא צוות"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "People without their own limit get this."
+msgstr ""
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
@@ -21901,6 +22180,11 @@ msgstr "בקשת הרשאה"
 #: src/components/settings-view/settings-utils.ts
 msgid "Permissions"
 msgstr "הרשאות"
+
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Person"
+msgstr ""
 
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Personal"
@@ -23715,7 +23999,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -23733,10 +24017,9 @@ msgstr "הסרה"
 msgid "Remove {0}"
 msgstr "הסירו את {0}"
 
-#. placeholder {0}: member.name
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Remove {0} from {teamName}"
-msgstr "הסירו את {0} מ-{teamName}"
+#~ msgid "Remove {0} from {teamName}"
+#~ msgstr "הסירו את {0} מ-{teamName}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -23802,7 +24085,7 @@ msgstr "הסר קובץ"
 #~ msgstr ""
 
 #. placeholder {0}: team.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from {0}?"
 msgstr "להסיר מ-{0}?"
 
@@ -23828,7 +24111,7 @@ msgstr "הסירו מהפרויקט"
 msgid "Remove from queue"
 msgstr "הסרה מהתור"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from team"
 msgstr "הסרה מהצוות"
 
@@ -23898,7 +24181,7 @@ msgstr "הסרת הארגומנט הזה"
 msgid "Remove this budget and start again?"
 msgstr "להסיר את התקציב הזה ולהתחיל מחדש?"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove this budget?"
 msgstr "להסיר את התקציב הזה?"
 
@@ -23977,6 +24260,10 @@ msgstr "הוסרו: {0}"
 #~ msgid "removed: {0} · not found: {1}"
 #~ msgstr "הוסרו: {0} · לא נמצאו: {1}"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes {removes} from the project — the deletion is staged in git"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Removes Flowpad's copy. The message stays where it was sent."
 msgstr "העותק ב-Flowpad יוסר. ההודעה נשארת במקום שנשלחה."
@@ -23984,6 +24271,10 @@ msgstr "העותק ב-Flowpad יוסר. ההודעה נשארת במקום שנ�
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "הסר אותו בכל מקום"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Removes: {removes}"
+msgstr ""
 
 #~ msgid "Removing & re-checking…"
 #~ msgstr ""
@@ -24032,8 +24323,8 @@ msgstr "שינוי שם תיקייה"
 #~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Rename this budget"
-msgstr "שינוי שם התקציב"
+#~ msgid "Rename this budget"
+#~ msgstr "שינוי שם התקציב"
 
 #: src/components/footer/PendingActionsChip.tsx
 msgid "Rename worker"
@@ -24319,6 +24610,10 @@ msgstr "סריקה מחדש של מסמכים"
 msgid "Rescanning…"
 msgstr "סורקים מחדש…"
 
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "reset"
+msgstr ""
+
 #: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
@@ -24342,6 +24637,10 @@ msgstr "האיפוס נכשל."
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
 msgstr "איפוס לברירת המחדל"
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "Reset to the team default"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/TraceTimeline.tsx
 msgid "reset zoom"
@@ -24428,10 +24727,13 @@ msgstr "הפעלה מחדש"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "נדרש הפעלה מחדש — {changedCount} {0} השתנו"
 
-#. placeholder {0}: fields.join(', ')
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Restart required — changed since start: {0}"
-msgstr "נדרשת הפעלה מחדש — השתנו מאז ההתחלה: {0}"
+#~ msgid "Restart required — changed since start: {0}"
+#~ msgstr "נדרשת הפעלה מחדש — השתנו מאז ההתחלה: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {lines}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
@@ -24713,9 +25015,9 @@ msgstr "פסקה מימין לשמאל"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
 #: src/components/organization/member-list.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Role"
 msgstr "תפקיד"
 
@@ -25293,6 +25595,7 @@ msgstr "ארגז החול שודרג"
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
+#: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -25790,6 +26093,10 @@ msgstr "החיפוש צריך רכיב אחד של Microsoft"
 msgid "Search nodes…"
 msgstr "חפשו צמתים…"
 
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Search people…"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -25827,6 +26134,10 @@ msgstr "הגדרות חיפוש"
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "Search settings..."
 msgstr "חיפוש הגדרות..."
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Search teams…"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Search terminal…"
@@ -25946,7 +26257,9 @@ msgstr "משך המקטע"
 #~ msgstr ""
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: d.name || 'machine'
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Select {0}"
 msgstr "בחרו {0}"
 
@@ -26045,6 +26358,10 @@ msgstr "בחירת כל הפרויקטים מסוג {tabLabel}"
 msgid "Select all conversations"
 msgstr "בחרו את כל השיחות"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Select all machines"
+msgstr ""
+
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Select all matches"
 msgstr "בחרו את כל ההתאמות"
@@ -26133,7 +26450,6 @@ msgstr "סיכום עצמי"
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/organization/invite-row.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Send"
 msgstr "שלחו"
 
@@ -26188,13 +26504,13 @@ msgstr "השליחה נכשלה."
 #~ msgid "Send files to cloud"
 #~ msgstr ""
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Send invite"
 msgstr "שליחת הזמנה"
 
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Send invites to everyone"
-msgstr "שלחו הזמנה לכולם"
+#~ msgid "Send invites to everyone"
+#~ msgstr "שלחו הזמנה לכולם"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -26378,7 +26694,7 @@ msgid "Session"
 msgstr "סשן"
 
 #. placeholder {0}: workerLabel(worker)
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Session — {0}"
 msgstr "שיחה — {0}"
 
@@ -26601,7 +26917,7 @@ msgstr "הגדרה מחדש"
 msgid "Set up as this name"
 msgstr "הגדירו בשם הזה"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Set up budget"
 msgstr "הקמת תקציב"
 
@@ -26950,9 +27266,9 @@ msgstr "משותפת בענן עם {0}"
 msgid "Shared with {0}"
 msgstr "משותף עם {0}"
 
-#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-#~ msgid "Sharing"
-#~ msgstr ""
+#: src/components/organization/tabs/GeneralTab.tsx
+msgid "Sharing"
+msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -27146,13 +27462,17 @@ msgstr "הצגת עוד"
 msgid "Show more ({0} of {total})"
 msgstr "הציגו עוד ({0} מתוך {total})"
 
+#: src/components/tabs/TabStrip.tsx
+msgid "Show notes"
+msgstr ""
+
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Show only the current step"
 msgstr "הצגת השלב הנוכחי בלבד"
 
-#: src/components/workers/WorkerToolbar.tsx
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Show other workers"
 msgstr "הציגו עובדים נוספים"
 
@@ -27433,8 +27753,17 @@ msgstr "התחברות עם חשבון אחר"
 msgid "Sign me in automatically — this sandbox belongs to one person."
 msgstr "התחברות אוטומטית — סנדבוקס זה שייך לאדם אחד."
 
-#~ msgid "Sign out"
-#~ msgstr ""
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Sign out"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Sign out ({n})"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Sign out {n} machines?"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign out of this sandbox (you stay signed in here)"
@@ -27529,6 +27858,10 @@ msgstr "לא מחובר"
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Signed out"
 msgstr "לא מחובר"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Signed out {ok} of {total} machines."
+msgstr ""
 
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
@@ -27751,6 +28084,10 @@ msgstr "דולגה: האוטומציה הייתה כבויה"
 msgid "Skipped: the check before running found nothing"
 msgstr "דולג: הבדיקה שלפני ההרצה לא מצאה דבר"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
 msgstr "איטי יותר. כדי למחוק שורות ראשית, השתמשו בברור אינדקס ואז מלא."
@@ -27817,6 +28154,18 @@ msgstr "חלק מהפריסות מיושנות או חלקיות"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "לחלק מהפריסות יש שגיאות"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Some machines were not deleted"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Some machines were not signed out"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Some machines were not upgraded"
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Some of the selected cannot be removed from the project"
@@ -27978,20 +28327,27 @@ msgstr "מפרט נוצר"
 msgid "Specific unix sockets allowed in sandbox"
 msgstr "Unix sockets ספציפיים המורשים בסנדבוקס"
 
-#. placeholder {0}: spec.label
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Spending now bills your own {0}."
-msgstr "ההוצאות מעתה יחויבו על {0} שלכם."
+#~ msgid "Spending now bills your own {0}."
+#~ msgstr "ההוצאות מעתה יחויבו על {0} שלכם."
 
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Spending now bills your own {providerLabel}."
+msgstr ""
+
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
 msgid "Spent"
 msgstr "נוצל"
 
 #. placeholder {0}: formatUsd(spent)
 #: src/components/token-plan/SourceSummary.tsx
 msgid "spent {0}"
+msgstr ""
+
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Spent / limit"
 msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
@@ -28086,7 +28442,7 @@ msgid "Start"
 msgstr "התחילו"
 
 #. placeholder {0}: workerLabel(worker)
-#: src/components/workers/WorkerToolbar.tsx
+#: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Start {0}"
 msgstr "התחילו {0}"
 
@@ -28944,6 +29300,7 @@ msgstr "משימות {openTaskCount}"
 #: src/components/contact-picker/ContactPicker.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -28953,13 +29310,17 @@ msgstr "צוות"
 msgid "Team collaboration mode"
 msgstr "מצב שיתוף פעולה בצוות"
 
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/shared.tsx
 msgid "Team created"
 msgstr "הצוות נוצר"
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "team default"
+msgstr ""
+
 #: src/components/organization/org-detail-panel.tsx
+#: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "שם הצוות…"
 
@@ -28968,13 +29329,20 @@ msgid "Teammate Mode"
 msgstr "מצב חברי צוות"
 
 #: src/components/account/organization-panel.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/OrgView.tsx
+#: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/organization/tabs/TeamsTab.tsx
 msgid "Teams"
 msgstr "צוותים"
 
 #: src/pages/hub-home/HubHome.tsx
 #~ msgid "Teams and people across your org."
 #~ msgstr "צוותים ואנשים ברחבי הארגון שלכם."
+
+#: src/components/organization/tabs/TeamsTab.tsx
+msgid "Teams group people and share a budget."
+msgstr ""
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "Teams in this organization"
@@ -29789,6 +30157,10 @@ msgstr "העובד יצא מיד לאחר ההפעלה, ולכן ההפעלה מ
 msgid "Then"
 msgstr "אז"
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Then send this to the Flowpad bot:"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Then: run its rule code"
 msgstr "אז: הרצת קוד הכלל"
@@ -30279,9 +30651,13 @@ msgstr "הארגון משלם באמצעות מפתח ספק משלו."
 msgid "This organization spends against its own provider key. Everything you allocate to teams and people below draws on it."
 msgstr "הארגון מוציא מול מפתח הספק שלו. כל מה שתקצו לצוותים ולאנשים למטה נלקח ממנו."
 
+#: src/components/organization/tabs/OrgView.tsx
+msgid "This organization's budgets could not be read."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "This organization's budgets could not be read. The server answered with nothing to show."
-msgstr "לא ניתן היה לקרוא את תקציבי הארגון. השרת לא החזיר נתונים."
+#~ msgid "This organization's budgets could not be read. The server answered with nothing to show."
+#~ msgstr "לא ניתן היה לקרוא את תקציבי הארגון. השרת לא החזיר נתונים."
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -30595,6 +30971,10 @@ msgstr "נראה שהמשימה הושלמה — אפשר לשנות את הסט
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
 msgstr "משימה זו כבר לא קיימת או אינה זמינה."
+
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "This team has no budget yet."
+msgstr ""
 
 #: src/components/assets/editor/deck-template/DeckTemplateViewer.tsx
 msgid "This template has no layouts under <0>layouts/</0> yet."
@@ -30940,8 +31320,8 @@ msgstr "טוקנים לשבוע"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-msgid "Tokens spent"
-msgstr "טוקנים שנוצלו"
+#~ msgid "Tokens spent"
+#~ msgstr "טוקנים שנוצלו"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Tokens, total"
@@ -31044,14 +31424,12 @@ msgstr "סה״כ"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "סה״כ"
 
 #. placeholder {0}: org.name
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/BillingTab.tsx
 msgid "Total budget for {0}"
 msgstr "התקציב הכולל של {0}"
 
@@ -31062,6 +31440,10 @@ msgstr "עלות כוללת"
 #: src/components/cost-dashboard/constants.ts
 msgid "Total Cost"
 msgstr "עלות כוללת"
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Total limit"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Total Time"
@@ -31195,7 +31577,7 @@ msgstr "טריגרים"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/OrgView.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -31204,6 +31586,7 @@ msgstr "טריגרים"
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "נסו שוב"
@@ -31681,8 +32064,17 @@ msgid "Updating…"
 msgstr "מתעדכן…"
 
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade"
 msgstr "שדרוג"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Upgrade ({n})"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Upgrade FlowPad on {n} machines?"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -31697,6 +32089,10 @@ msgstr "לשדרג את FlowPad בסנדבוקס הזה?"
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "שדרגו ל-v{0}"
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Upgraded {ok} of {total} machines."
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Upgrading — this takes a minute or two"
@@ -32489,6 +32885,10 @@ msgstr "לא הצלחנו להתחבר לשירות הענן. יש לבדוק א
 msgid "We skipped {count} sessions that couldn't be restored."
 msgstr "דילגנו על {count} סשנים שלא ניתן היה לשחזר."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "web app"
+msgstr ""
+
 #: src/types/ViewType.ts
 msgid "Web App"
 msgstr "אפליקציית ווב"
@@ -32897,6 +33297,14 @@ msgstr "מי קורא למי, צעד אחר צעד — עם תת-זרימות ו
 msgid "Who may log in to this sandbox"
 msgstr "מי רשאי להתחבר לסנדבוקס הזה"
 
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Who pays"
+msgstr ""
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Who pays for AI usage in this organization, and how much it may spend."
+msgstr ""
+
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr "מי הוא הסוכן הזה — פרומפט המערכת שלו."
 
@@ -32948,6 +33356,18 @@ msgstr "דף הוויקי לא נמצא בחוות זו."
 msgid "Wikis"
 msgstr "ויקים"
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Will delete"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Will sign out"
+msgstr ""
+
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Will upgrade"
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
 msgstr "חלון (ימים)"
@@ -32979,6 +33399,10 @@ msgstr "עבדו עליו באפליקציית FlowPad למחשב עם סוכנ�
 #: src/pages/entry/EntityLanding.tsx
 msgid "Work on it on your machine"
 msgstr "עבודה עליו במחשב שלכם"
+
+#: src/components/notes/NoteViews.tsx
+msgid "Work on this note"
+msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
@@ -33129,6 +33553,10 @@ msgstr "לא ייתפס"
 msgid "Write & plan"
 msgstr "כתיבה ותכנון"
 
+#: src/components/notes/NoteViews.tsx
+msgid "Write a note…"
+msgstr ""
+
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
 msgstr "כתבו כאן"
@@ -33241,13 +33669,18 @@ msgstr ""
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "אישרתם רק את הסשן הזה — {guestName} יצטרך/תצטרך את האישור שלכם שוב בפעם הבאה."
 
+#. placeholder {0}: team.my_role
+#: src/components/organization/tabs/TeamDetail.tsx
+msgid "you are {0}"
+msgstr ""
+
 #~ msgid "you are {role}"
 #~ msgstr ""
 
 #~ msgid "You are not in any team in this organization yet."
 #~ msgstr ""
 
-#: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/organization/tabs/OrgView.tsx
 msgid "You are not on any team yet."
 msgstr "עדיין אינכם חברים באף צוות."
 
@@ -33479,8 +33912,8 @@ msgid "your Claude Code"
 msgstr "ה-Claude Code שלכם"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Your code comes once the machine is ready"
-msgstr ""
+#~ msgid "Your code comes once the machine is ready"
+#~ msgstr ""
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
@@ -33522,6 +33955,11 @@ msgstr "מפתח ה-API החדש שלכם נוצר. אנא שמרו אותו ב�
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 msgstr "קוד החד-פעמי שלכם נמצא להלן. לחצו על <0>העתק קוד ופתח GitHub</0> — אנחנו נעתיק אותו ללוח הגזירה שלכם ונפתח את עמוד ההפעלה של GitHub כדי שתוכלו להדביק אותו שם."
 
+#. placeholder {0}: t(spec.label)
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Your own {0} key. Usage is billed to your provider account."
+msgstr ""
+
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "Your own assets, shared by every project"
 msgstr "הנכסים שלכם, משותפים לכל הפרויקטים"
@@ -33532,6 +33970,10 @@ msgstr "המספר שלכם"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Your own provider key"
+msgstr ""
+
+#: src/components/organization/tabs/BillingTab.tsx
+msgid "Your own provider key. Usage is billed to your provider account."
 msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
@@ -33564,6 +34006,10 @@ msgstr "פג תוקף ההתחברות. התחברו שוב כדי להפעיל.
 #~ msgid "Your session has expired. Sign in again to open this agent."
 #~ msgstr ""
 
+#: src/pages/hub-home/machines-bulk.ts
+msgid "Your session on each machine is cleared. You stay signed in here."
+msgstr ""
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Your Slack account is linked. The agent will post as you."
 msgstr ""
@@ -33572,8 +34018,9 @@ msgstr ""
 msgid "Your status report is ready"
 msgstr "דוח הסטטוס שלכם מוכן"
 
-#~ msgid "Your teams"
-#~ msgstr ""
+#: src/components/organization/tabs/OrgView.tsx
+msgid "Your teams"
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Your workspace is ready"
@@ -33608,23 +34055,3 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "credential"
-msgstr ""
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "dependency"
-msgstr ""
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Removes {removes} from the project — the deletion is staged in git"
-msgstr ""
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Removes: {removes}"
-msgstr ""
-
-#: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "web app"
-msgstr ""

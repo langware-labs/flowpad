@@ -283,6 +283,26 @@ class TestGetAllSkipsUnreadableRows:
         assert "skipped 25 unreadable row(s)" in warnings[0].getMessage()
 
 
+async def test_a_page_with_a_skipped_row_is_still_full(driver):
+    """A skipped unreadable row must not short a page: the page counts only rows that can be read, so
+    ``limit=2`` answers two and the next offset carries on from the readable rows."""
+    await _insert_entity(driver, "ok1", "note")
+    async with driver.session_factory() as session:
+        await session.execute(text(
+            "INSERT INTO entities (id, type, namespace, data, record_data_ref) "
+            "VALUES ('bad', 'note', '', '{\"created_date\": []}', NULL)"
+        ))
+        await session.commit()
+    await _insert_entity(driver, "ok2", "note")
+    await _insert_entity(driver, "ok3", "note")
+
+    first = await driver.get_all(QueryFilter(type="note", order_by=[{"id": "asc"}], limit=2))
+    second = await driver.get_all(QueryFilter(type="note", order_by=[{"id": "asc"}], limit=2, offset=2))
+
+    assert [r.id for r in first] == ["ok1", "ok2"]
+    assert [r.id for r in second] == ["ok3"]
+
+
 class TestProjectScopeMatchesProjectId:
     """A project's scope covers rows stamped with its ``project_id``.
 

@@ -92,6 +92,20 @@ class ApiSuccessResponse(ApiResponse[T], Generic[T]):
     message: str | None = "success"
 
 
+class ApiPageResponse(ApiSuccessResponse[T], Generic[T]):
+    """One page of a list: ``has_more`` says whether a next page exists, ``next_offset`` is the ``offset``
+    to ask for it (rows the server consumed, hidden ones included — so it can differ from offset + len)."""
+
+    has_more: bool = False
+    next_offset: int = 0
+
+    def model_dump(self, **kwargs) -> dict:
+        res = super().model_dump(**kwargs)
+        res["has_more"] = self.has_more
+        res["next_offset"] = self.next_offset
+        return res
+
+
 class ApiFailResponse(ApiResponse[T], Generic[T]):
     """Failed API response with error details"""
     status: ApiResponseStatus = Field(default=ApiResponseStatus.FAIL, validate_default=True)

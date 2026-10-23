@@ -192,6 +192,10 @@ testpaths = ["tests"]
 [tool.pytest_env]
 SQLITE_DATABASE_PATH = "/tmp/flowpad_test.db"
 TESTING = "true"
+# Never the real hub: a shell with FLOW_INSTANCE=prod otherwise resolves to app.flowpad.ai, and the
+# suite's background polls send test credentials there. Nothing listens on port 9; a test that
+# needs a hub starts its own and points at it.
+FLOWPAD_HUB_URL = "http://127.0.0.1:9"
 
 [tool.uv]
 prerelease = "allow"

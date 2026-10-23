@@ -19,8 +19,8 @@ MAX_MESSAGES = 50
 PARALLEL = 6
 
 
-class SlackNotConnected(RuntimeError):
-    """This machine holds no Slack connection."""
+class SlackNotConnected(LookupError):
+    """This machine holds no Slack connection (the machinery answers 409 for a ``LookupError``)."""
 
 
 async def _token() -> str:

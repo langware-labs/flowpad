@@ -144,9 +144,10 @@ export function conversationsByIdsRequest(scope: ConversationScope, ids: string[
   });
 }
 
-/** The bound of the page just NEWER than one whose newest row is at `newest`: the row `size + 1` above
- *  it (one row, read oldest first). Its `updated_date` is the newer page's `before`; no such row means
- *  the newer page is now. */
+/** The rows of the page just NEWER than one whose newest row is at `newest`: the `size` rows above it,
+ *  oldest first — a keyset (`updated_date > newest`), never an offset, so a row arriving meanwhile
+ *  cannot shift the bound. The last of them bounds the newer page (see `newerPageBefore`); fewer than
+ *  a page — or no more past them — means the newer page is now. */
 export function newerBoundaryRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
@@ -157,11 +158,23 @@ export function newerBoundaryRequest(
     scope,
     [...viewClauses(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
     'asc',
-    {
-      limit: 1,
-      offset: size,
-    },
+    { limit: size },
   );
+}
+
+/** The newer page's `before` from the rows `newerBoundaryRequest` read: null (the newer page is now)
+ *  unless they are a full page with more past them; else just past the last of them, so the newer page
+ *  — rows older than its bound, newest first — is exactly those rows. */
+export function newerPageBefore(
+  above: { updated_date?: string | Date | null }[],
+  hasMore: boolean,
+  size: number = STREAM_INBOX_PAGE_SIZE,
+): string | null {
+  if (!hasMore || above.length < size) return null;
+  const last = above[above.length - 1]?.updated_date;
+  if (!last) return null;
+  const at = new Date(last).getTime();
+  return Number.isNaN(at) ? null : new Date(at + 1).toISOString();
 }
 
 /** The identity a channel mark draws: provider AND channel, because one transport
