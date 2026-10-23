@@ -69,7 +69,8 @@ class Inliner:
             u = self.uri(m.group(3))
             return f"{m.group(1)}={m.group(2)}{u}{m.group(2)}" if u else m.group(0)
 
-        text = re.sub(r"""url\((['"]?)([^'")]+)\1\)""", css, text)
+        # An inline style attribute carries its quotes escaped: url(&quot;…&quot;) — React writes mask-image that way.
+        text = re.sub(r"""url\((&quot;|['"]?)((?:(?!&quot;)[^'")])+)\1\)""", css, text)
         return re.sub(r"""\b(src|href|xlink:href)=(["'])([^"']+)\2""", attr, text)
 
 
@@ -117,6 +118,28 @@ STATES_RUNNER = """
 """
 
 
+def fit_to_width(width: int, focus_x: int, min_zoom: float) -> str:
+    """A capture reflows when its frame is narrower than the window it came from: the Flowpad display is about
+    half a screen, so tabs shrink to icons and the screen reads as empty. Lay each screen out at the captured
+    width and zoom it down to the frame instead — but never below `min_zoom`, or the subject becomes unreadable;
+    past that the screen scrolls sideways, opened on `focus_x` (the captured x of what is being discussed).
+    The journey bar sits outside the sections and keeps its size."""
+    if not width:
+        return ""
+    return f"""
+<style>section[data-step]{{width:{width}px;min-height:100vh;position:relative}}html,body{{overflow:hidden}}</style>
+<script>(() => {{
+  // Captured apps lay out on position:fixed roots, which never scroll; a transform on the section both
+  // anchors them to it and shifts the screen sideways onto focus_x when it is still wider than the frame.
+  const fit = () => {{ const z = Math.max({min_zoom}, Math.min(1, innerWidth / {width}));
+    document.querySelectorAll('section[data-step]').forEach((s) => {{ s.style.zoom = z; s.style.minHeight = `${{100 / z}}vh`;
+      // a screen whose subject sits elsewhere sets its own: mockStates may write screen.dataset.focusX
+      const d = Math.max(0, Math.min({width} * z - innerWidth, (+s.dataset.focusX || {focus_x}) * z - innerWidth / 2));
+      s.style.transform = d > 0 ? `translateX(${{-d / z}}px)` : ''; }}); }};
+  addEventListener('resize', fit); addEventListener('DOMContentLoaded', fit);
+}})();</script>"""
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("mock_dir")
@@ -130,6 +153,13 @@ def main() -> None:
     ap.add_argument("--html-attrs", default='lang="en" class="dark"')
     ap.add_argument("--head", default="")
     ap.add_argument("--title", default="Mock")
+    ap.add_argument("--width", type=int, default=0,
+                    help="the capture window's width (info.json viewport.w): each screen is laid out at it and "
+                         "scaled to fit a narrower frame, such as the Flowpad display")
+    ap.add_argument("--focus-x", type=int, default=0,
+                    help="with --width: the captured x of what the mock is about; kept in view when the frame is too narrow "
+                         "(a screen overrides it with screen.dataset.focusX in its mockStates tweak)")
+    ap.add_argument("--min-zoom", type=float, default=0.7, help="with --width: never scale a screen below this")
     a = ap.parse_args()
 
     mock = pathlib.Path(a.mock_dir)
@@ -165,7 +195,7 @@ def main() -> None:
     states = pathlib.Path(a.states).read_text() + STATES_RUNNER if a.states else ""
     bar = (HERE.parent / "assets" / "journey-bar.js").read_text()
 
-    page_head = inline(css + "\n" + "\n".join(styles))
+    page_head = inline(css + "\n" + "\n".join(styles)) + fit_to_width(a.width, a.focus_x, a.min_zoom)
     page_body = inline("\n".join(parts))
     html = f"""<!doctype html>
 <html {a.html_attrs}>

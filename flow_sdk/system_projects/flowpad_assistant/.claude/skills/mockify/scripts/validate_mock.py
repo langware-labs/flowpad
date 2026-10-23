@@ -33,6 +33,14 @@ SCREEN = """(id) => {
 }"""
 
 
+DISPLAY_WIDTH = 760
+# A fitted screen keeps its captured width (wider than the frame) and is zoomed down to it.
+FIT = """(id) => {
+  const s = document.querySelector(`[data-step="${CSS.escape(id)}"]`);
+  return { reflowed: parseFloat(getComputedStyle(s).width) <= innerWidth + 1 };
+}"""
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("page")
@@ -120,6 +128,20 @@ def main() -> None:
                     continue
                 if not shown(to):
                     bad.append(f'"{label}" → {to}: that screen did not show')
+
+        # The Flowpad display is about half a screen. A screen that reflows into it (laid out at the frame's
+        # width instead of the captured one) loses its layout — the reviewer sees a near-empty page.
+        page.set_viewport_size({"width": DISPLAY_WIDTH, "height": 700})
+        for step in journey:
+            sid = step["id"]
+            if not show(sid):
+                continue
+            fit = page.evaluate(FIT, sid)
+            if fit["reflowed"]:
+                problems[sid].append(f"at the display's width ({DISPLAY_WIDTH}px) the screen reflows instead of "
+                                     "scaling — build with --width <capture width>")
+            if shots:
+                page.screenshot(path=str(shots / f"display-{sid}.png"))
         browser.close()
 
     page_problems = ([f"console: {m}" for m in errors[:10]] + [f"missing file: {u}" for u in sorted(broken)[:10]]
