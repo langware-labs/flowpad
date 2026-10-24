@@ -83,6 +83,8 @@ DEFAULT_TIMEOUT = httpx.Timeout(10)
 # A file moving whole: a long read (download) or a long write (upload). Same budgets as before.
 DOWNLOAD_TIMEOUT = httpx.Timeout(connect=10, write=10, read=600, pool=5)
 UPLOAD_TIMEOUT = httpx.Timeout(connect=10, write=600, read=60, pool=5)
+# A deploy answers once its machine is up: create + boot + health is minutes on a cloud VM.
+DEPLOY_TIMEOUT = httpx.Timeout(connect=10, write=10, read=900, pool=5)
 # An anonymous call (diagnosis brief / submit) may carry a report.
 ANONYMOUS_TIMEOUT = httpx.Timeout(30)
 # Same budget as the old CloudProxy (the client default). Streamed, so it bounds each read/write gap, not a whole transfer.
@@ -312,7 +314,9 @@ class HubProxy:
                 data = body.get("data") if isinstance(body, dict) else body
                 if not isinstance(data, list):
                     # Not a list answer: nothing was listed, so nothing may be read as absent.
-                    raise HubError(200, f"list answer is not a list ({type(data).__name__})", kind=HubFailureKind.SERVER_ERROR)
+                    raise HubError(
+                        200, f"list answer is not a list ({type(data).__name__})", kind=HubFailureKind.SERVER_ERROR
+                    )
             except HubError as e:
                 logger.info("[hub] walk %s stopped after %d page(s): %s", entity_type, out.pages, e)
                 out.error = e

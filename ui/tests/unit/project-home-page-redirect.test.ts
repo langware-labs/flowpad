@@ -103,15 +103,13 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(mocks.openHomePage).toHaveBeenCalledWith(PROJECT_ID);
   });
 
-  it("resumes the agent's last chat in Vibe, as a replace, without opening a new one", async () => {
+  it("resumes the agent's last chat in Vibe without opening a new one", async () => {
     mocks.query.mockResolvedValue([{ id: LAST_CHAT, last_active_at: 5 }]);
 
     const response = await projectHomePageRedirect(new Request(HOME_BUTTON_URL));
 
     expect(mocks.openHomePage).toHaveBeenCalledWith(PROJECT_ID);
     expect(response?.status).toBe(302);
-    // `replace`: the `?homePage=open` location must not stay behind the session.
-    expect(response?.headers.get('X-Remix-Replace')).toBe('true');
     expect(locationOf(response)).toContain(`/dock/vibe/agentic_process-${LAST_CHAT}`);
     expect(locationOf(response)).not.toContain('viewMode=');
     expect(mocks.use).not.toHaveBeenCalled();
@@ -170,7 +168,6 @@ describe('project home page redirect — a web app home (the project opens app-f
     const response = await projectHomePageRedirect(new Request(LAUNCH_URL));
 
     expect(response?.status).toBe(302);
-    expect(response?.headers.get('X-Remix-Replace')).toBe('true');
     const landed = new URL(locationOf(response), 'http://flowpad.local');
     expect(landed.pathname).toBe(`/dock/app/${APP}`);
     const dock = DockPointer.fromUrl(landed.pathname + landed.search);

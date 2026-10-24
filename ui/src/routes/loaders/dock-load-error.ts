@@ -1,4 +1,4 @@
-import { replace, redirect } from 'react-router';
+import { redirect } from 'react-router';
 import type { DockPointer } from '@src/navigation';
 import { notify } from '@src/notifications';
 import { toplog } from '@sdk';
@@ -20,7 +20,7 @@ export type LoadResolution =
       retryable?: boolean;
       link?: DockLoadErrorLink;
     }
-  | { action: 'redirect'; to: string; replace?: boolean; notify?: LoadNotification }
+  | { action: 'redirect'; to: string; notify?: LoadNotification }
   | { action: 'notify'; notification: LoadNotification }
   | { action: 'banner' }
   | { action: 'noop' };
@@ -97,7 +97,7 @@ export function handleDockLoadError(error: unknown, dock: DockPointer | null): v
       if (error.resolution.notify) emitNotification(error.resolution.notify);
       clearDockLoadError(dock);
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw (error.resolution.replace ?? true) ? replace(error.resolution.to) : redirect(error.resolution.to);
+      throw redirect(error.resolution.to);
     case 'notify':
       emitNotification(error.resolution.notification);
       clearDockLoadError(dock);

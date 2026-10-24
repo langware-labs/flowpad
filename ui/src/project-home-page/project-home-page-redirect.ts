@@ -1,5 +1,5 @@
 import { Agent, dataContext, isHubOnly, Project, TypeId, type ProjectHomePage } from '@sdk';
-import { replace } from 'react-router';
+import { redirect } from 'react-router';
 
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
@@ -65,9 +65,9 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
  * one per visit.
  *
  * Same contract as the other load redirects: never blocks the load (any
- * failure means the default home) and lands as real URL state. `replace`, not
- * `redirect`: the `?homePage=open` location must not stay behind the session,
- * or Back would re-run this loader and bounce straight forward again.
+ * failure means the default home) and lands as real URL state. The redirect
+ * takes the place of the `?homePage=open` URL (I7), so Back never re-runs this
+ * loader and bounces forward.
  */
 export async function projectHomePageRedirect(request: Request): Promise<Response | null> {
   if (isHubOnly()) return null;
@@ -97,7 +97,7 @@ export async function projectHomePageRedirect(request: Request): Promise<Respons
   }
   if (!dock) return null;
 
-  return replace(dock.toUrl());
+  return redirect(dock.toUrl());
 }
 
 // Imported by the home loader; the resolver list is shared, so it runs on root

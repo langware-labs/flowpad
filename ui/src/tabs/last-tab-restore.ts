@@ -1,5 +1,5 @@
 import { Layout } from '@sdk';
-import { replace } from 'react-router';
+import { redirect } from 'react-router';
 
 import type { DockPointer } from '@src/navigation/DockPointer';
 
@@ -66,13 +66,13 @@ export function endLaunch(): void {
 }
 
 /**
- * On a launch, the last place, or null to stay on Home. `replace`: the bare
- * launch URL must not stay behind the tab as a Back step that bounces forward.
+ * On a launch, the last place, or null to stay on Home. It takes the bare launch
+ * URL's place (I7), so that URL is not left behind as a Back step.
  */
 export function lastPlaceRestoreRedirect(request: Request): Promise<Response | null> {
   if (!launchPending || new URL(request.url).pathname !== '/') return Promise.resolve(null);
   const url = storage((s) => s.getItem(STORAGE_KEY));
-  return Promise.resolve(url ? replace(url) : null);
+  return Promise.resolve(url ? redirect(url) : null);
 }
 
 export function resetLastPlaceRestoreForTests(documentUrl: string): void {
