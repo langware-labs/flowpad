@@ -24,7 +24,7 @@ import { projectScope } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
-import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
@@ -73,7 +73,7 @@ async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string):
   } catch (cause) {
     if (!(cause instanceof ProjectLoadError)) return;
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(dock.withoutScopeFilter().toUrl(requestPath));
+    throw redirect(dock.withoutScopeFilter().toUrl(requestPath));
   }
 }
 
@@ -101,7 +101,7 @@ async function scopeAssetFileToItsProject(dock: DockPointer, requestPath: string
   const project = await Project.getProjectByPath(machinePath);
   if (!project) return;
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(dock.withScopeFilter(projectScope(project.id)).toUrl(requestPath));
+  throw redirect(dock.withScopeFilter(projectScope(project.id)).toUrl(requestPath));
 }
 
 /**
@@ -134,7 +134,7 @@ export function redirectLegacyAssetFsDock(dock: DockPointer, requestPath: string
   const canonical = dock.canonicalLegacyAssetFsDock();
   if (!canonical) return;
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(canonical.toUrl(requestPath));
+  throw redirect(canonical.toUrl(requestPath));
 }
 
 /**

@@ -121,8 +121,18 @@ export function tabForDockKey(tabs: readonly Tab[], key: string | null | undefin
   return tabs.find((tab) => tabKey(tab) === key) ?? null;
 }
 
+/** Is `tab` the target's own tab? A scope-keyed browser (Assets, Explorer) keeps
+ *  the last doc it showed as its target but has an empty pointer, so it never is. */
+export function tabOwnsTarget(tab: Tab, targetId: string, targetType?: string): boolean {
+  return (
+    tab.target_id === targetId &&
+    (targetType === undefined || tab.target_type === targetType) &&
+    !!tab.dockPointer?.pointer
+  );
+}
+
 export function tabForTargetId(tabs: readonly Tab[], targetId: string): Tab | null {
-  return tabs.find((tab) => tab.target_id === targetId) ?? null;
+  return tabs.find((tab) => tabOwnsTarget(tab, targetId)) ?? null;
 }
 
 export function openTabHashes(tabs: readonly Tab[]): Set<string> {

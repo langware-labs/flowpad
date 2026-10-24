@@ -54,4 +54,24 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': 'error',
     },
   },
+  {
+    // I7 (docs/navigation/dock-loading.md): the router decides whether a loader
+    // redirect replaces (src/routes/loaders/redirect-history.ts). Loaders just
+    // `redirect()`; a hand-picked `replace()` would only mislead the reader.
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react-router',
+              importNames: ['replace'],
+              message: 'Use redirect(): the router decides push or replace (redirect-history.ts, dock-loading.md I7).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
