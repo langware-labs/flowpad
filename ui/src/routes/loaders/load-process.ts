@@ -20,7 +20,7 @@ import { loadProject } from './load-project';
  * ``kind`` carries diagnostics for the banner / toast.
  *
  *   * ``hard``  — the entity is unloadable at this URL. The route should
- *                 fall back to ``loadNextProcess`` and ``replace()`` the URL
+ *                 fall back to ``loadNextProcess`` and redirect the URL
  *                 to a sibling. Use only when the URL itself is dead.
  *   * ``soft``  — the entity exists; only the runtime is broken (PTY died,
  *                 shell record missing, project dangling, etc.). The route

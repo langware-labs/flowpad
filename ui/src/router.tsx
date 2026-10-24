@@ -126,6 +126,7 @@ function RootLayout() {
 import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
 import { loadRoot } from './routes/loaders/root-loader';
+import { redirectHistoryStrategy } from './routes/loaders/redirect-history';
 
 function shouldRevalidateDock({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs): boolean {
   if (
@@ -284,6 +285,8 @@ export const router = createBrowserRouter(
   ),
   {
     basename: BASE_PATH,
+    // I7: every loader redirect takes the place of the URL being loaded, and only that URL.
+    dataStrategy: redirectHistoryStrategy,
   },
 );
 
