@@ -1,5 +1,5 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
-import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 import { isDeepLinkAction } from '@src/navigation/inbound-link';
 import { workspaceEntryDock } from './workspace-scope';
@@ -60,22 +60,21 @@ export async function loadHomePage(args: LoaderArgs) {
   const workspaceEntry = await workspaceEntryDock(dock);
   if (workspaceEntry) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(workspaceEntry.toUrl(url.pathname));
+    throw redirect(workspaceEntry.toUrl(url.pathname));
   }
 
   // The home has no view mode — it is the one open screen. An address that still
   // carries one (an old bookmark, a history entry from before) is canonicalized
   // to the plain home, so no entry can show a second home.
   //
-  // `replace`, NOT `redirect`: a redirect on the INITIAL document load pushes,
-  // which would leave the stale URL sitting behind home as an entry that re-runs
-  // this loader and redirects forward again — a Back step that does nothing.
+  // The plain home takes the stale URL's place (I7), so no entry re-runs this
+  // loader and redirects forward again.
   //
   // FIRST, before any awaited work: this throw discards the rest of the pass and
   // the router re-runs the whole matched loader tree on the canonical URL.
   if (url.searchParams.has(VIEW_MODE_PARAM)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(dock.toUrl(url.pathname));
+    throw redirect(dock.toUrl(url.pathname));
   }
 
   await ensureComputeNodeLoaded();
