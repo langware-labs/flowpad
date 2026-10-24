@@ -239,9 +239,9 @@ async def handle_request(
     # Entity files of a remote entity are written through: an upload goes to the hub AND the
     # local cache (whoever opens the entity reads it from the hub, possibly while this box is
     # off). Every other hub-bound request never reaches this function (``route_to_hub``).
+    from flow_sdk.cloud_client.shared.errors import HubError
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
     from flow_sdk.server.routes._hub_reflect import REFLECT_CONTINUE_LOCAL, _reflect_fs_to_hub, should_reflect_to_hub
-    from flow_sdk.cloud_client.shared.errors import HubError
 
     entity_for_reflect = kwargs.get("self")
     if entity_for_reflect is None and request_info.auth_result is not None:
