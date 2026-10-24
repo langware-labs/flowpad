@@ -11,6 +11,7 @@ import { resolveNextTabPure } from './tab-selection';
 import {
   tabForDockKey,
   tabForTargetId,
+  tabOwnsTarget,
   tabsForProject,
   terminalTabsForScope,
   type TabScope,
@@ -382,9 +383,7 @@ export class TabManager {
       const name = (data as { name?: string | null } | null)?.name;
       const remote = (data as { remote?: unknown } | null)?.remote;
       if (!type || !id) return;
-      const tab = this.snapshot.find(
-        (candidate) => candidate.target_type === type && candidate.target_id === id,
-      );
+      const tab = this.snapshot.find((candidate) => tabOwnsTarget(candidate, id, type));
       if (!tab) return;
       const nameChanged = typeof name === 'string' && name.length > 0 && tab.name !== name;
       const remoteChanged = typeof remote === 'boolean' && tab.target_remote !== remote;
@@ -399,7 +398,7 @@ export class TabManager {
   }
 
   stampTargetRecency(targetType: string, targetId: string): void {
-    const matches = (tab: Tab): boolean => tab.target_type === targetType && tab.target_id === targetId;
+    const matches = (tab: Tab): boolean => tabOwnsTarget(tab, targetId, targetType);
     const cachedId = this.snapshot.find(matches)?.id;
     const resolvedId =
       cachedId !== undefined
