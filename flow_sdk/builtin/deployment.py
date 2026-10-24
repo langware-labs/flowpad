@@ -124,8 +124,7 @@ def _bare_node_id(node_id: str) -> str:
     read every hub-created row as "not here" — on the box it runs on too.
     """
     prefix = "compute_node-"
-    return node_id[len(prefix):] if node_id.startswith(prefix) else node_id
-
+    return node_id[len(prefix) :] if node_id.startswith(prefix) else node_id
 
 
 class PlacementOrigin(BaseModel):
@@ -213,6 +212,7 @@ class Deployment(Entity):
     #: SHIPPED agent resolved off disk on a cold instance is never persisted, so
     #: reading it back by ``parent_type_id`` would find nothing at all.
     _element: Optional[Entity] = PrivateAttr(default=None)
+    _element_attached: bool = PrivateAttr(default=False)
 
     def __init__(self, **data: Any) -> None:
         data["id"] = self.allocate_id(data)
@@ -225,6 +225,7 @@ class Deployment(Entity):
     def with_element(self, element: Optional[Entity]) -> "Deployment":
         """Attach the already-loaded deployed element. Returns self, for chaining."""
         self._element = element
+        self._element_attached = element is not None
         return self
 
     # ── this computer ─────────────────────────────────────────────────────
@@ -263,11 +264,18 @@ class Deployment(Entity):
 
         parent = _local_node_typeid()
         # "Not (this node's parent AND local)", pushed down: a null parent is named, since SQL's != drops it.
-        rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.OR, operands=[
-            ExpressionNode(op=QueryOp.NE, operands=["parent_type_id", parent]),
-            ExpressionNode(op=QueryOp.IS_NULL, operands=["parent_type_id"]),
-            ExpressionNode(op=QueryOp.NE, operands=["target.provider", "local"]),
-        ])))
+        rows = await cls.get_all(
+            QueryFilter(
+                match=ExpressionNode(
+                    op=QueryOp.OR,
+                    operands=[
+                        ExpressionNode(op=QueryOp.NE, operands=["parent_type_id", parent]),
+                        ExpressionNode(op=QueryOp.IS_NULL, operands=["parent_type_id"]),
+                        ExpressionNode(op=QueryOp.NE, operands=["target.provider", "local"]),
+                    ],
+                )
+            )
+        )
         return [row for row in rows if not (str(row.parent_type_id) == parent and row.target.provider == "local")]
 
     @classmethod
@@ -344,9 +352,16 @@ class Deployment(Entity):
         token when it needs one; your refresh token never leaves the hub. Revoke with :meth:`revoke`."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await HubProxy.call(
-            "POST", self.type, self.id, "authorize", payload={"provider": provider, "permissions": list(permissions or [])}
-        ) or {}
+        return (
+            await HubProxy.call(
+                "POST",
+                self.type,
+                self.id,
+                "authorize",
+                payload={"provider": provider, "permissions": list(permissions or [])},
+            )
+            or {}
+        )
 
     async def revoke(self, provider: str) -> list[str]:
         """Take back ``provider``: the machine's next token ask is refused."""
@@ -366,7 +381,10 @@ class Deployment(Entity):
         connections its machine may use. Names only."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        return await HubProxy.try_call("GET", self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
+        return await HubProxy.try_call("GET", self.type, self.id, action="secrets") or {
+            "secrets": [],
+            "authorizations": [],
+        }
 
     async def funding(self) -> dict | None:
         """What pays for this cloud placement's model turns (``kind``: ``allocation`` | ``default``, the
@@ -493,8 +511,10 @@ class Deployment(Entity):
         deployment.remote = True
         # Where its values live is this machine's, never the hub's: kept across adoptions. A new cloud
         # placement keeps them in the hub store, which places them on its machine.
-        deployment.secrets = existing.secrets if existing is not None and existing.secrets is not None else (
-            None if deployment.is_local else DeploymentSecretsSpec(store=hub_store(str(deployment.id)))
+        deployment.secrets = (
+            existing.secrets
+            if existing is not None and existing.secrets is not None
+            else (None if deployment.is_local else DeploymentSecretsSpec(store=hub_store(str(deployment.id))))
         )
         await deployment.save()
         return deployment.with_element(element)
@@ -889,9 +909,12 @@ class Deployment(Entity):
         from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentProcess  # noqa: PLC0415
 
         return DeploymentProcess(
-            deployment_id=str(self.id), shell_id=deployment_process.shell_id_of(self),
-            file=str(deployment_process.file_of(self)), command=deployment_process.command_of(self),
-            pid=deployment_process.pid_of(self), serving=bool(self.serving),
+            deployment_id=str(self.id),
+            shell_id=deployment_process.shell_id_of(self),
+            file=str(deployment_process.file_of(self)),
+            command=deployment_process.command_of(self),
+            pid=deployment_process.pid_of(self),
+            serving=bool(self.serving),
         )
 
     @action.get(action_name="process")
@@ -915,7 +938,9 @@ class Deployment(Entity):
         if not self.is_local:
             return ApiFailResponse(message="only a local deployment runs a file here", status_code=400)
         path = deployment_process.file_of(self)
-        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=path.read_text(encoding="utf-8")).model_dump(mode="json"))
+        return ApiSuccessResponse(
+            data=DeploymentCode(file=str(path), text=path.read_text(encoding="utf-8")).model_dump(mode="json")
+        )
 
     @action.post(action_name="save_code")
     async def save_code_action(self):
@@ -987,16 +1012,20 @@ class Deployment(Entity):
 
         Read fresh, not from ``element()``'s memo: a deployment's runner lives for days, and a
         launch must open the agent as it is now — an edited prompt or model applies to the next
-        session, not after a runner restart."""
-        self._element = None
+        session, not after a runner restart. An agent a caller attached (``with_element``) is used as
+        is: it may carry unsaved edits, or have no stored row."""
+        if not self._element_attached:
+            self._element = None
         agent = await self.agent()
         if agent is None:
             raise AgentUnavailable(
-                f"deployment {self.id}: agent {self.parent_type_id!r} not found", ExitCode.NOT_FOUND,
+                f"deployment {self.id}: agent {self.parent_type_id!r} not found",
+                ExitCode.NOT_FOUND,
             )
         if not agent.enabled_on(self.id):
             raise AgentUnavailable(
-                f"agent {agent.name!r} is disabled on {self.name or self.id}", ExitCode.REFUSED,
+                f"agent {agent.name!r} is disabled on {self.name or self.id}",
+                ExitCode.REFUSED,
             )
         return agent
 
@@ -1131,11 +1160,13 @@ class Deployment(Entity):
         # `match` must be explicit. QueryFilter.parse wraps a bare dict entirely
         # into `match`, so passing order_by/limit as top-level keys would turn
         # them into field predicates that match nothing.
-        return await AgenticProcess.get_all({
-            "match": {"deployment_id": self.id},
-            "order_by": {"created_date": "desc"},
-            "limit": limit,
-        })
+        return await AgenticProcess.get_all(
+            {
+                "match": {"deployment_id": self.id},
+                "order_by": {"created_date": "desc"},
+                "limit": limit,
+            }
+        )
 
     # ── validators ────────────────────────────────────────────────────────
 
@@ -1179,4 +1210,3 @@ def _local_node_typeid() -> str:
 
 
 __all__ = ["NODE_PROVIDERS", "Deployment", "DeploymentIdentity"]
-

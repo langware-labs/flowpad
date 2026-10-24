@@ -3,6 +3,7 @@
 import pytest
 
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.deployment import Deployment
 from tests.unit.test_asset_dependencies import _project
 from tests.unit.test_deployment_source_dependencies import _agent
 
@@ -14,7 +15,8 @@ async def test_new_session_uses_the_agents_current_prompt_and_model(tmp_path):
     agent = await _agent(owner)
     agent.system_prompt = "old prompt"
     await agent.save()
-    deployment = await agent.local_deployment()
+    # Loaded by id, the way the runner (``agent_loop``) holds its placement for days.
+    deployment = await Deployment.get_by_id((await agent.local_deployment()).id)
     before = await deployment.create_process()
 
     edited = await Agent.get_by_id(agent.id)  # the agent editor / REST PATCH: another copy, saved

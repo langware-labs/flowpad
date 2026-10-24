@@ -27940,6 +27940,7 @@ msgstr "Sigma graph view"
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
@@ -33334,8 +33335,8 @@ msgid "What do you want to work on"
 msgstr "What do you want to work on"
 
 #: src/components/assets/editor/PublishedToggle.tsx
-msgid "What does Published do?"
-msgstr "What does Published do?"
+#~ msgid "What does Published do?"
+#~ msgstr "What does Published do?"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
@@ -33442,8 +33443,8 @@ msgid "What it worked on"
 msgstr "What it worked on"
 
 #: src/components/assets/editor/PublishedToggle.tsx
-msgid "What Published does"
-msgstr "What Published does"
+#~ msgid "What Published does"
+#~ msgstr "What Published does"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 msgid "What should change? (paste an image here too)"
