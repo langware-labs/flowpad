@@ -244,14 +244,14 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     await waitFor(() => expect(useHarnessLoginStore.getState().open).toBe(false));
   });
 
-  it('a key-funded assistant that is signed out reads API key, and notes the sign-out beside it', async () => {
+  it('a key-funded assistant that is signed out reads API key, with a Sign in button beside it', async () => {
     h.claudeLogin = 'signed_out';
     h.resolved = { 'harness.claude.cli': KEY };
     mount();
 
-    const row = await screen.findByTestId('harness-row-claude');
+    await screen.findByTestId('harness-row-claude');
     expect(pill('harness-row-claude-status').getAttribute('data-state')).toBe('api_key');
-    expect(row.textContent).toContain('signed out');
+    expect((await screen.findByTestId('harness-row-claude-signin')).textContent).toBe('Sign in');
   });
 
   it('a hub-funded assistant reads LLM Endpoint with what is left on it', async () => {
