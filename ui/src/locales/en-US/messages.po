@@ -14604,8 +14604,8 @@ msgid "How to get the values"
 msgstr "How to get the values"
 
 #: src/components/html-preview/HtmlPreview.tsx
-msgid "HTML preview"
-msgstr "HTML preview"
+#~ msgid "HTML preview"
+#~ msgstr "HTML preview"
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"

@@ -18,6 +18,10 @@ from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
+# Imported here, not inside a test: importing it registers the transcript route callback, and a
+# registration made inside a test is wiped by the registry-isolation fixture below.
+from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
+
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
 
@@ -240,6 +244,64 @@ async def test_folder_recursive_false_ignores_subtree(tmp_path, trigger_log_dir)
         pass
 
     assert calls == [], "recursive=False should NOT see subdirectory changes"
+
+
+async def test_transcript_dir_that_does_not_exist_at_boot_is_watched_once_it_appears(
+    tmp_path, trigger_log_dir, caplog
+):
+    """A fresh cloud box boots before Claude has ever run, so ``~/.claude/projects`` is not there.
+
+    The watch is the one that routes Claude's transcript changes to the process, and it is what
+    keeps a chat's ``worker_status`` moving mid-turn. Skipped at boot, it was skipped for the life
+    of the server: the first session then created the folder and wrote its transcript, and nothing
+    was told. The vibe display refreshes on that status moving, so it stayed on the old page.
+    """
+    from types import SimpleNamespace
+
+    from flow_sdk.server.fsop_watcher import _run_watch_for
+
+    projects = tmp_path / ".claude" / "projects"  # the folder Claude creates on its first run
+    spec = transcript_watcher_trigger_specs(
+        SimpleNamespace(claude_projects_dir=projects, codex_sessions_dir=tmp_path / ".codex" / "sessions")
+    )[0]
+    assert not projects.exists()
+
+    calls: list[Path] = []
+
+    @trigger_callbacks.register("cb_transcripts")
+    async def on_change(trigger, changes):
+        calls.extend(change.path for change in changes)
+
+    t = _make_callback_trigger(
+        Path(spec["watch_path"]),
+        callback_name="cb_transcripts",
+        recursive=spec["recursive"],
+        watch_glob=spec["watch_glob"],
+    )
+    with caplog.at_level("WARNING"):
+        task = asyncio.create_task(_run_watch_for(t))
+        await asyncio.sleep(_AWATCH_SETTLE)  # the server is up; Claude has not run yet
+
+        session = projects / "-home-user-project" / "session.jsonl"
+        session.parent.mkdir(parents=True)  # the first session creates the folder ...
+        session.write_text('{"type": "user"}\n')  # ... and starts writing its transcript
+        await asyncio.sleep(_AWATCH_SETTLE)  # the watch attaches as the folder appears
+        with session.open("a") as transcript:  # the turn goes on writing; the parser reads from its offset
+            transcript.write('{"type": "assistant"}\n')
+        got = await _wait_for(lambda: session in calls)
+
+        finished_early = task.done()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    skipped = [r.getMessage() for r in caplog.records if "watch dir" in r.getMessage()]
+    assert got, (
+        "the transcript written after the watch dir appeared was never routed; "
+        f"watch loop already ended={finished_early}, log={skipped}"
+    )
 
 
 # ── FSOpWatcher singleton ────────────────────────────────────────────────────

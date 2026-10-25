@@ -107,7 +107,7 @@ same way on every surface.
 | `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
 | `.value.json`, `value/<name>/value.json` (`VALUE_PATH_RE`, checked after `.mcp.html`) | VALUE | `ValueViewer` (the kind's value viewer, generic else) |
 | `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
-| `.html` / `.htm` | HTML | `HtmlPreview` (iframe on the file's own `fs/serve` url, `allow-same-origin`) |
+| `.html` / `.htm` | HTML | `HtmlPreview` (a parked `PersistentIframe` per page per session on the file's own `fs/serve` url, `allow-same-origin`) |
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
@@ -196,7 +196,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 | Tier | Surface | Origin model | Powers |
 |---|---|---|---|
-| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
+| 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>?process=<id>` url in a parked `PersistentIframe` (one per page per session; an edit reloads it in place), its own short sandbox `allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads` and no `allow=` features | same as tier 3 minus the browser features; its own relative pages/assets resolve because the url mirrors the path; returning to a session shows the page as left, with no reload |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
 | 3 | `PersistentIframe` — an app's route on its placement's audience proxy (a dev server's `direct-url`, or a `static` route's `service/<mount>/` path) | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |

@@ -1,6 +1,6 @@
 import type { ServedApp } from '@sdk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWebappLiveness, type WebappHealth } from '@src/components/display-toolbar/use-webapp-health';
+import { knownHealth, useWebappLiveness, type WebappHealth } from '@src/components/display-toolbar/use-webapp-health';
 import { classifyWebappSeverity, type WebappProbe, type WebappVerdict } from './classify';
 
 /**
@@ -51,7 +51,9 @@ export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnos
   const [reloadNonce, setReloadNonce] = useState(0);
   // Plain state, not refs: these are inputs to the verdict, so they have to be
   // able to trigger a re-render and a re-classification on their own.
-  const [everLoaded, setEverLoaded] = useState(false);
+  // Seeded from the shared poll: an app this page already saw up has loaded, so a remounted display
+  // (a session switch) shows it at once instead of covering it with "starting" until the next ping.
+  const [everLoaded, setEverLoaded] = useState(() => knownHealth(host) === 'up');
   const [graceExpired, setGraceExpired] = useState(false);
 
   const lastProbeAt = useRef(0);
@@ -90,7 +92,7 @@ export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnos
   // (rather than on mount) also means an app opened onto an already-broken
   // server explains itself without waiting for a liveness transition.
   useEffect(() => {
-    setEverLoaded(false);
+    setEverLoaded(knownHealth(host) === 'up');
     setGraceExpired(false);
     setProbe(null);
     lastProbeAt.current = 0;

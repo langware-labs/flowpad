@@ -106,15 +106,54 @@ describe('HtmlPreview', () => {
     expect(sandbox).toContain('allow-popups');
   });
 
-  it('changes src when the file changes, so an edit reaches the screen', () => {
+  it("keeps the page's short sandbox and asks for no browser features, though its frame is an app's", () => {
+    render(<HtmlPreview path={FILE} />);
+    const sandbox = frame().getAttribute('sandbox') ?? '';
+
+    // The parked frame is the app mechanism; an app's powers are not part of it.
+    expect(sandbox).not.toContain('allow-popups-to-escape-sandbox');
+    expect(sandbox).not.toContain('allow-storage-access-by-user-activation');
+    expect(frame().getAttribute('allow')).toBeNull();
+  });
+
+  it('reloads the same frame when the file changes, so an edit reaches the screen', () => {
     const { rerender } = render(<HtmlPreview path={FILE} />);
-    const before = frame().getAttribute('src');
+    const before = frame();
+    const navigations = vi.spyOn(before, 'src', 'set');
 
     revision = 1;
     rerender(<HtmlPreview path={FILE} />);
 
     // The response is no-store, but a frame keeps the document it already has
-    // until its src actually changes — hence the revision in the query.
-    expect(frame().getAttribute('src')).not.toBe(before);
+    // until it is navigated again. The SAME frame is navigated: a revision in the
+    // url would park a new frame per edit and keep every old one.
+    expect(frame()).toBe(before);
+    expect(navigations).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the page it already loaded when its session is shown again, without reloading it', () => {
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000bb';
+    const first = render(<HtmlPreview path={FILE} />);
+    const loaded = frame();
+    const navigations = vi.spyOn(loaded, 'src', 'set');
+    first.unmount();
+
+    render(<HtmlPreview path={FILE} />);
+
+    expect(frame()).toBe(loaded);
+    expect(navigations).not.toHaveBeenCalled();
+  });
+
+  it("gives another session's page a frame of its own", () => {
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000cc';
+    const first = render(<HtmlPreview path={FILE} />);
+    const mine = frame();
+    first.unmount();
+
+    shownBeside = '3f2a1b4c-0000-4000-8000-0000000000dd';
+    render(<HtmlPreview path={FILE} />);
+
+    expect(frame()).not.toBe(mine);
+    expect(mine.isConnected).toBe(true);
   });
 });

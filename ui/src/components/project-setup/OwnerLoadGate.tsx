@@ -17,16 +17,20 @@ export function OwnerLoadGate({
   urlProject,
   appId: microAppId,
   artifactId = null,
+  endpointId = null,
+  route = null,
   display,
   children,
 }: {
   urlProject: string;
   appId: string | null;
   artifactId?: string | null;
+  endpointId?: string | null;
+  route?: string | null;
   display: string;
   children: ReactNode;
 }) {
-  const resolved = useAppWebappId(artifactId, microAppId);
+  const resolved = useAppWebappId(artifactId, microAppId, endpointId, route);
   const appId = resolved.webappId;
   const { data: app, isLoading } = useEntity<WebApp>(appId ? new TypeId(WebApp.type, appId) : null);
   if (resolved.loading || (appId && isLoading)) return null;

@@ -194,6 +194,26 @@ async def _catch_up_if_changed(trigger: Trigger) -> None:
 # ── per-trigger awatch loop ───────────────────────────────────────────────────
 
 
+def _nearest_existing_parent(path: Path) -> Path:
+    return next(parent for parent in path.parents if parent.exists())
+
+
+async def _wait_for_dir(watch_dir: Path) -> None:
+    """Return once ``watch_dir`` exists.
+
+    Watches the nearest folder that does exist (its direct children only, so a home directory is
+    never walked) and re-anchors one level deeper each time the missing path grows a component.
+    Driven by the creation events themselves: no polling interval, no timeout.
+    """
+    from watchfiles import awatch
+
+    while not watch_dir.exists():
+        anchor = _nearest_existing_parent(watch_dir)
+        async for _changes in awatch(str(anchor), recursive=False):
+            if watch_dir.exists() or _nearest_existing_parent(watch_dir) != anchor:
+                break
+
+
 async def _run_watch_for(trigger: Trigger) -> None:
     """Per-trigger awatch loop. File-mode watches the parent dir + exact-path
     filter (survives atomic-rename inode swaps); folder-mode watches the dir.
@@ -212,8 +232,17 @@ async def _run_watch_for(trigger: Trigger) -> None:
     is_folder = watched_path.is_dir() or trigger.recursive
     watch_dir = watched_path if is_folder else watched_path.parent
     if not watch_dir.exists():
-        _log.warning("Trigger %s: watch dir %s does not exist; skipping", trigger.name, watch_dir)
-        return
+        # A box boots before the worker has ever run, so the folder its transcripts go in is not
+        # there yet. Dropping the watch here would leave that folder unwatched for the life of the
+        # server; wait for it to be created instead.
+        _log.info("Trigger %s: watch dir %s does not exist yet; waiting for it", trigger.name, watch_dir)
+        try:
+            await _wait_for_dir(watch_dir)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _log.exception("Trigger %s: could not wait for watch dir %s", trigger.name, watch_dir)
+            return
 
     composite_filter = CompositeFsopFilter(trigger=trigger, watched_path=watched_path)
 
