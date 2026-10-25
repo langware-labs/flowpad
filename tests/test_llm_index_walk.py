@@ -170,9 +170,8 @@ def test_repo_docs_walk_covers_all_non_gitignored_md():
     expected = {
         rel for rel in walk_markdown_files(docs)
         if Path(rel).name != "index.md"          # generated index excluded from leaves
+        and Path(rel).suffix in (".md", ".mdx")  # the flat walk also yields .txt/.docx (docs/sdk-site/llms.txt)
     }
-    # scan_tree additionally includes .mdx; the repo docs are .md-only, so the
-    # two contracts coincide here.
     assert scanned == expected
     assert expected, "repo docs/ unexpectedly empty"
     # Deep coverage: at least one covered file lives below the top level.
