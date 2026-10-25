@@ -43,6 +43,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     user_turn_count as _user_turn_count,
+    session_covers_stream,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
@@ -394,19 +395,18 @@ class CopilotDriver:
         ``user.message`` event, so the tee carries both halves of every
         headless turn.
 
-        So: prefer the tee whenever it covers at least as many user turns as
-        the session record — it is then complete AND ahead. A process that ran
-        turns on the other transport (PTY writes no tee) makes the session
-        record strictly longer, and it wins, so mixed-transport history is
-        never truncated. This is a durability comparison, not a wait: no clock,
-        sleep, timeout or polling budget is involved.
+        Prefer native history once it contains every streamed message: it
+        additionally carries cumulative token usage in session.shutdown.
+        Until then the durable tee wins; more native user turns still wins
+        for mixed-transport history. No waiting or polling is involved.
         """
         session = self._session_descriptor(process)
         local = self._process_local_descriptor(process)
         if session is None:
             return local
         if local is not None and _user_turn_count(local.path) >= _user_turn_count(session.path):
-            return local
+            if not session_covers_stream(session.path, local.path):
+                return local
         return session
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
