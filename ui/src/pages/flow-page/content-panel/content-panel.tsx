@@ -647,6 +647,8 @@ function ContentPanelBody({
       urlProject={loadProject}
       appId={appAddress?.microAppId ?? null}
       artifactId={appAddress?.artifactId ?? null}
+      endpointId={appAddress?.endpointId ?? null}
+      route={appAddress?.route ?? null}
       display={display}
     >
       {renderedBody}

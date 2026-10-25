@@ -86,13 +86,24 @@ function useServedApps(enabled: boolean): { proxies: ServiceEndpoint[]; loading:
 }
 
 /**
- * The webapp asset an app address names: the micro_app itself, or — for an artifact — the
- * `webapp_id` of a route serving it. `loading` until the proxies answer; null when the artifact is
- * served by no webapp asset. What a setup gate scopes its load to, so an app waits only for itself.
+ * The webapp asset an app address names: the micro_app itself, or — for an artifact or an addressed
+ * endpoint's route — the `webapp_id` of the route serving it. `loading` until the rows answer; null
+ * when no webapp asset serves it. What a setup gate scopes its load to, so an app waits only for itself.
  */
-export function useAppWebappId(artifactId: string | null, microAppId: string | null): { webappId: string | null; loading: boolean } {
-  const { proxies, loading } = useServedApps(!microAppId && !!artifactId);
+export function useAppWebappId(
+  artifactId: string | null,
+  microAppId: string | null,
+  endpointId: string | null = null,
+  route: string | null = null,
+): { webappId: string | null; loading: boolean } {
+  const { proxies, loading } = useServedApps(!microAppId && !endpointId && !!artifactId);
+  const endpointTypeId = useMemo(
+    () => (endpointId && !microAppId ? new TypeId(ServiceEndpoint.type, endpointId) : null),
+    [endpointId, microAppId],
+  );
+  const { data: addressed, isLoading: addressedLoading } = useEntity<ServiceEndpoint>(endpointTypeId);
   if (microAppId) return { webappId: microAppId, loading: false };
+  if (endpointId) return { webappId: addressed?.servedAt(route)?.webapp_id ?? null, loading: addressedLoading };
   if (!artifactId) return { webappId: null, loading: false };
   const served = servedBy(proxies, 'artifact_id', artifactId);
   return { webappId: served.find((app) => app.webapp_id)?.webapp_id ?? null, loading };
