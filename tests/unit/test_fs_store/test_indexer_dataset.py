@@ -273,7 +273,7 @@ def test_asset_hash_tracks_inner_file_edits(tmp_path: Path) -> None:
 
     io_ds = _seed_io_dataset(tmp_path, "io", rows={"0001": {"input": "a", "expected": "b"}})
     before_io = dataset_asset_hash(FSRef(io_ds))
-    os.utime(rows_root_of(io_ds) / "rows" / "0001" / "input.txt", (before_io + 100, before_io + 100))
+    os.utime(rows_root_of(io_ds) / "rows" / "0001" / "input.txt", ns=(before_io + 100 * 10**9, before_io + 100 * 10**9))
     assert dataset_asset_hash(FSRef(io_ds)) > before_io
 
 
