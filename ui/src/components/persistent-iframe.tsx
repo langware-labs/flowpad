@@ -4,6 +4,10 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 interface PersistentIframeProps {
   src: string;
   cacheKey?: number;
+  /** What the guest may do. Read once, when the frame is created: an app's own posture by default. */
+  sandbox?: string;
+  /** Which browser features the guest may ask for (camera, clipboard, …). Read once, like `sandbox`. */
+  allow?: string;
   className?: string;
   testId?: string;
   onLoad?: () => void;
@@ -30,6 +34,12 @@ type IframeOwner = symbol;
 // fade-out still plays before it flips.
 const PARKED_CLASS = 'absolute invisible opacity-0 pointer-events-none transition-[opacity,visibility] duration-200';
 const SHOWN_CLASS = 'absolute visible opacity-100 pointer-events-auto transition-[opacity,visibility] duration-200';
+
+// A served app runs on its own origin with full browser powers.
+const APP_SANDBOX =
+  'allow-scripts allow-same-origin allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-popups-to-escape-sandbox allow-popups allow-downloads allow-storage-access-by-user-activation';
+const APP_ALLOW =
+  'accelerometer; autoplay; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; payment; usb; xr-spatial-tracking; screen-wake-lock; magnetometer; gamepad; picture-in-picture; display-capture';
 
 // Global iframe registry that keeps iframes in fixed DOM locations
 class IframeRegistry {
@@ -111,6 +121,8 @@ class IframeRegistry {
       onLoad?: () => void;
       onError?: (error: Error) => void;
       testId?: string;
+      sandbox?: string;
+      allow?: string;
     },
   ): { iframe: HTMLIFrameElement; container: HTMLDivElement } {
     const key = src;
@@ -127,10 +139,9 @@ class IframeRegistry {
       const iframe = document.createElement('iframe');
       iframe.className = 'w-full h-full border-0';
       if (config.testId) iframe.dataset.testid = config.testId;
-      iframe.sandbox =
-        'allow-scripts allow-same-origin allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-popups-to-escape-sandbox allow-popups allow-downloads allow-storage-access-by-user-activation';
-      iframe.allow =
-        'accelerometer; autoplay; camera; encrypted-media; fullscreen; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; payment; usb; xr-spatial-tracking; screen-wake-lock; magnetometer; gamepad; picture-in-picture; display-capture';
+      iframe.setAttribute('sandbox', config.sandbox ?? APP_SANDBOX);
+      const allow = config.allow ?? APP_ALLOW;
+      if (allow) iframe.allow = allow;
 
       // Set initial loading state
       this.loadingStates.set(key, true);
@@ -355,7 +366,7 @@ class IframeRegistry {
 const registry = IframeRegistry.getInstance();
 
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
-  ({ src, cacheKey, testId, onLoad, onError }, ref) => {
+  ({ src, cacheKey, sandbox, allow, testId, onLoad, onError }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const ownerRef = useRef<IframeOwner>(Symbol('persistent-iframe-owner'));
     const [, forceUpdate] = useState({});
@@ -421,10 +432,12 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
           triggerUpdate();
         },
         testId,
+        sandbox,
+        allow,
       };
 
       registry.getOrCreateIframe(src, config);
-    }, [src, onLoad, onError, testId, triggerUpdate]);
+    }, [src, onLoad, onError, testId, sandbox, allow, triggerUpdate]);
 
     // Auto-show iframe when ready and container is available
     useEffect(() => {
