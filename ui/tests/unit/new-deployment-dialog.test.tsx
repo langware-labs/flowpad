@@ -66,9 +66,10 @@ describe('New deployment', () => {
       'new-deployment-type-gcp_vm-lg',
     ]);
     expect(screen.getByTestId('new-deployment-type-local')).toHaveAttribute('aria-checked', 'true');
-    // A monthly row shows the machine's strength and its monthly price, never which provider runs it.
+    // A monthly row shows the machine's strength and its monthly price; every cloud row names its provider.
     expect(screen.getByTestId('new-deployment-type-gcp_vm-sm')).toHaveTextContent('2 CPU · 2 GB · $21/mo');
-    expect(screen.getByTestId('new-deployment-type-gcp_vm-sm')).not.toHaveTextContent(/gcp/i);
+    expect(screen.getByTestId('new-deployment-type-gcp_vm-sm')).toHaveTextContent('Cloud machine · gcp');
+    expect(screen.getByTestId('new-deployment-type-e2b-sm')).toHaveTextContent('Cloud machine · e2b');
   });
 
   it('offers cloud machines only on the providers the hub publishes', () => {

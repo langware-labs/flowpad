@@ -58,6 +58,12 @@ const PROVIDER_HINTS: Partial<Record<CloudDeployProvider, Record<ComputeNodeSize
   [ComputeProviderType.GCP_VM]: AGENT_MONTHLY_MACHINE_SIZE_LABELS,
 };
 
+/** The provider's short name shown on its rows; a provider missing here shows its bare hub name. */
+const PROVIDER_NAMES: Partial<Record<CloudDeployProvider, string>> = {
+  [ComputeProviderType.E2B]: 'e2b',
+  [ComputeProviderType.GCP_VM]: 'gcp',
+};
+
 interface NewDeploymentDialogProps {
   agent: Agent;
   open: boolean;
@@ -102,12 +108,11 @@ export function NewDeploymentDialog({
     }
   }, [providers]);
 
-  // Every cloud row reads "Cloud machine"; which provider runs it is not the user's concern — only how it
-  // bills: hourly, or monthly with the machine's strength.
+  // Every cloud row reads "Cloud machine" with the provider that runs it, e.g. "Cloud machine · e2b".
   const cloudRows = (provider: CloudDeployProvider) =>
     AGENT_MACHINE_SIZES.map((size) => ({
       value: `${provider}-${size}` satisfies CloudMachine,
-      label: t`Cloud machine`,
+      label: `${t`Cloud machine`} · ${PROVIDER_NAMES[provider] ?? provider}`,
       hint: PROVIDER_HINTS[provider]?.[size] ?? provider,
       Icon: Cloud,
     }));
