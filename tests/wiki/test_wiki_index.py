@@ -95,11 +95,14 @@ def prep_mock_project_docs(root: Path) -> None:
 
 async def test_folder_doc_subtree_and_backlinks(tmp_path: Path) -> None:
     # ── 1. Vault on disk ──────────────────────────────────────────────────────
-    prep_mock_project_docs(tmp_path)
+    # Markdown counts only inside a docs/ or doc/ folder (or under a scan root that is one).
+    docs_root = tmp_path / "docs"
+    docs_root.mkdir()
+    prep_mock_project_docs(docs_root)
 
     # ── 2. Index the temp tree ────────────────────────────────────────────────
     custom_root = FSRef(
-        tmp_path,
+        docs_root,
         record_type=RecordType.CWD_ROOT,
         scope="project",
     )
