@@ -31,8 +31,17 @@ interface HostWatch {
 
 const watches = new Map<string, HostWatch>();
 const FAILURE_CAP = 3;
+// The last level each host was seen at, kept after its watch ends: a display that unmounts (a session
+// switch) and comes back starts from what it last knew, not from 'checking' it then shows as a flash.
+const lastSeen = new Map<string, WebappHealth>();
 
-function publish(watch: HostWatch, health: WebappHealth) {
+/** What the shared poll last saw at `host`, live or remembered; 'checking' when it never looked. */
+export function knownHealth(host: string | null | undefined): WebappHealth {
+  return (host && (watches.get(host)?.health ?? lastSeen.get(host))) || 'checking';
+}
+
+function publish(host: string, watch: HostWatch, health: WebappHealth) {
+  if (health !== 'checking') lastSeen.set(host, health);
   // Capped: past the point a caller condemns the app, another failure is no news to anyone.
   const failures = health === 'down' ? Math.min(watch.failures + 1, FAILURE_CAP) : 0;
   if (watch.health === health && watch.failures === failures) return;
@@ -47,9 +56,9 @@ async function ping(host: string, watch: HostWatch) {
     // cross-origin + opaque, which is fine — a non-throwing result means the
     // request reached a live server.
     await fetch(host, { method: 'GET', credentials: 'include', mode: 'no-cors' });
-    publish(watch, 'up');
+    publish(host, watch, 'up');
   } catch {
-    publish(watch, 'down');
+    publish(host, watch, 'down');
   }
 }
 
@@ -61,7 +70,7 @@ function subscribe(
   let watch = watches.get(host);
   if (!watch) {
     const created: HostWatch = {
-      health: 'checking',
+      health: knownHealth(host),
       failures: 0,
       subscribers: new Set(),
       intervalId: 0,
@@ -100,7 +109,10 @@ export function useWebappLiveness(
   host: string | null | undefined,
   intervalMs = 5000,
 ): { health: WebappHealth; failures: number } {
-  const [state, setState] = useState<{ health: WebappHealth; failures: number }>({ health: 'checking', failures: 0 });
+  const [state, setState] = useState<{ health: WebappHealth; failures: number }>(() => ({
+    health: knownHealth(host),
+    failures: 0,
+  }));
 
   useEffect(() => {
     if (!host) {
@@ -114,7 +126,7 @@ export function useWebappLiveness(
 }
 
 export function useWebappHealth(host: string | null | undefined, intervalMs = 5000): WebappHealth {
-  const [health, setHealth] = useState<WebappHealth>('checking');
+  const [health, setHealth] = useState<WebappHealth>(() => knownHealth(host));
 
   useEffect(() => {
     if (!host) {
