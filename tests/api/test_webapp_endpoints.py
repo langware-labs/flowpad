@@ -41,6 +41,8 @@ from flow_sdk.builtin.webapp_placement import (
 )
 from flow_sdk.cloud_client.hub_proxy import HubProxy
 
+PY = shlex.quote(sys.executable)  # the checkout path may hold a space
+
 
 def _deployment_typeid() -> str:
     return f"deployment-{uuid.uuid4()}"
@@ -514,7 +516,7 @@ async def _stop(app) -> None:
 def _served(port: int) -> dict:
     return {
         "type": "proxy",
-        "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1",
+        "start_cmd": f"{PY} -m http.server {{port}} --bind 127.0.0.1",
         "ports": {"local": {"port": port, "required": True}},
     }
 
@@ -563,7 +565,7 @@ async def test_the_apps_service_starts_on_this_desktop_and_is_an_endpoint_of_its
     page, api = _unused_port(), _unused_port()
     project = await _project(tmp_path)
     folder = tmp_path / "agentic-assets" / "webapp" / "shop"
-    service = {**_served(api), "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory ."}
+    service = {**_served(api), "start_cmd": f"{PY} -m http.server {{port}} --bind 127.0.0.1 --directory ."}
     app = await _webapp(
         project,
         folder,

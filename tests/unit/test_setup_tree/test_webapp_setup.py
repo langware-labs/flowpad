@@ -12,6 +12,7 @@ import os
 import signal
 import socket
 import subprocess
+import shlex
 import sys
 import time
 from types import SimpleNamespace
@@ -25,7 +26,8 @@ from flow_sdk.schema.data_spec.webapp_spec import WebappMountSpec, WebappService
 
 pytestmark = pytest.mark.timeout(20)
 
-SERVER = f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1"
+PY = shlex.quote(sys.executable)  # the checkout path may hold a space
+SERVER = f"{PY} -m http.server {{port}} --bind 127.0.0.1"
 
 
 @pytest.fixture
@@ -145,14 +147,14 @@ async def test_install_runs_once_and_its_check_reads_the_folder(app):
     (app.folder / "package-lock.json").write_text("{}")
     assert dev_server.install_command("npm run dev", app.folder) == "npm ci"
 
-    app.make(install_cmd=f"{sys.executable} -c \"open('installed','w')\"")
+    app.make(install_cmd=f"{PY} -c \"open('installed','w')\"")
     first = await webapp_setup.step("a1", "install", check=False)
     assert first.ok and (app.folder / "installed").exists()
 
 
 @pytest.mark.asyncio
 async def test_an_install_that_fails_says_why(app):
-    app.make(install_cmd=f"{sys.executable} -c \"raise SystemExit('no network')\"")
+    app.make(install_cmd=f"{PY} -c \"raise SystemExit('no network')\"")
     answer = await webapp_setup.step("a1", "install", check=False)
     assert answer.exit_code is ExitCode.NOT_YET and "exit 1" in answer.detail and "no network" in answer.detail
 
@@ -203,7 +205,7 @@ def _kill(pid: int) -> None:
 
 @pytest.mark.asyncio
 async def test_a_start_command_that_crashes_is_reported_at_once_with_its_own_words(app):
-    app.make(start_cmd=f"{sys.executable} -c \"raise SystemExit('no such module vite')\"")
+    app.make(start_cmd=f"{PY} -c \"raise SystemExit('no such module vite')\"")
     began = time.monotonic()
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET
@@ -215,7 +217,7 @@ async def test_a_start_command_that_crashes_is_reported_at_once_with_its_own_wor
 @pytest.mark.asyncio
 async def test_a_server_that_opens_its_port_but_never_answers_is_killed_not_left_holding_it(app, monkeypatch):
     hang = (
-        f'{sys.executable} -c "import socket,time; s=socket.socket(); '
+        f'{PY} -c "import socket,time; s=socket.socket(); '
         "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
         "s.bind(('127.0.0.1', {port})); s.listen(); time.sleep(600)\""
     )
@@ -237,7 +239,7 @@ async def test_a_start_the_machine_ran_out_of_memory_during_says_so(app, monkeyp
     monkeypatch.setattr(dev_server, "VMSTAT", vmstat)
     # It opens its port, never answers, and meanwhile the kernel's out-of-memory counter moves.
     starved = (
-        f'{sys.executable} -c "import pathlib,socket,time; '
+        f'{PY} -c "import pathlib,socket,time; '
         f"pathlib.Path({str(vmstat)!r}).write_text('nr_free_pages 1\\noom_kill 6\\n'); "
         "s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
         "s.bind(('127.0.0.1', {port})); s.listen(); time.sleep(600)\""
@@ -554,7 +556,7 @@ async def test_a_hung_server_of_ours_is_replaced_by_a_start(app, monkeypatch):
 @pytest.mark.asyncio
 async def test_a_start_command_that_ignores_its_port_is_adopted_where_it_listens(app):
     own = _free()
-    app.make(start_cmd=f"{sys.executable} -m http.server {own} --bind 127.0.0.1")
+    app.make(start_cmd=f"{PY} -m http.server {own} --bind 127.0.0.1")
     began = time.monotonic()
     started = await webapp_setup.step("a1", "start", check=False)
     assert started.ok and started.value == str(own), started.detail
@@ -565,7 +567,7 @@ async def test_a_start_command_that_ignores_its_port_is_adopted_where_it_listens
 @pytest.mark.asyncio
 async def test_a_start_command_that_ignores_a_required_port_is_an_error_and_leaves_nothing_running(app):
     own, declared = _free(), _free()
-    app.make(start_cmd=f"{sys.executable} -m http.server {own} --bind 127.0.0.1", ports={"port": declared})
+    app.make(start_cmd=f"{PY} -m http.server {own} --bind 127.0.0.1", ports={"port": declared})
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET
     assert f"was started on port {declared} but listens on port {own}" in answer.detail
@@ -613,7 +615,7 @@ async def test_two_apps_started_together_get_different_ports(app, tmp_path):
 def _service(port=None, command=None, name="api"):
     serving = {
         "type": "proxy",
-        "start_cmd": command or f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory .",
+        "start_cmd": command or f"{PY} -m http.server {{port}} --bind 127.0.0.1 --directory .",
     }
     if port:
         serving["ports"] = {"local": {"port": port}}
@@ -624,8 +626,8 @@ def _service(port=None, command=None, name="api"):
 async def test_a_service_starts_before_the_page_and_the_page_is_told_its_port(app):
     """The page writes what it was told into a file it then serves: the API's port reached it."""
     page = (
-        f"{sys.executable} -c \"import os; open('told','w').write(os.environ.get('FLOWPAD_APP_PORT_API',''))\" && "
-        f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1"
+        f"{PY} -c \"import os; open('told','w').write(os.environ.get('FLOWPAD_APP_PORT_API',''))\" && "
+        f"{PY} -m http.server {{port}} --bind 127.0.0.1"
     )
     app.make(start_cmd=page, services=[_service()])
     started = await webapp_setup.step("a1", "start", check=False)
@@ -640,7 +642,7 @@ async def test_a_service_starts_before_the_page_and_the_page_is_told_its_port(ap
 
 @pytest.mark.asyncio
 async def test_a_service_that_does_not_start_stops_the_page_and_is_named(app):
-    broken = _service(command=f"{sys.executable} -c \"raise SystemExit('no database')\"")
+    broken = _service(command=f"{PY} -c \"raise SystemExit('no database')\"")
     app.make(services=[broken])
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET and "no database" in answer.detail
@@ -691,7 +693,7 @@ async def test_a_declared_port_that_changes_moves_the_app_flowpad_started(app):
 async def test_a_start_that_hands_off_to_a_server_of_its_own_and_exits_is_running(app):
     """``nohup server &``: the start command exits 0 and what it left behind serves from the app folder."""
     detach = (
-        f"{sys.executable} -c \"import subprocess,sys; subprocess.Popen([sys.executable,'-m','http.server','{{port}}',"
+        f"{PY} -c \"import subprocess,sys; subprocess.Popen([sys.executable,'-m','http.server','{{port}}',"
         "'--bind','127.0.0.1'], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\""
     )
     app.make(start_cmd=detach)
@@ -735,13 +737,13 @@ async def test_a_page_and_a_service_started_by_one_command_each_keep_their_port(
 @pytest.mark.asyncio
 async def test_a_declared_install_is_judged_by_its_check_or_by_the_app_running(app):
     """A declared install had no way to read as done: an installed, running app stayed "Setup required"."""
-    app.make(install_cmd=f"{sys.executable} -c \"open('deps','w')\"", install_check="deps")
+    app.make(install_cmd=f"{PY} -c \"open('deps','w')\"", install_check="deps")
     assert (await webapp_setup.step("a1", "install", check=True)).exit_code is ExitCode.NOT_YET
     assert (await webapp_setup.step("a1", "install", check=False)).ok
     done = await webapp_setup.step("a1", "install", check=True)
     assert done.ok and done.detail == "dependencies are installed"
 
-    app.make(install_cmd=f"{sys.executable} -c pass")
+    app.make(install_cmd=f"{PY} -c pass")
     assert (await webapp_setup.step("a1", "install", check=True)).exit_code is ExitCode.NOT_YET
     assert (await webapp_setup.step("a1", "start", check=False)).ok
     running = await webapp_setup.step("a1", "install", check=True)
@@ -799,7 +801,7 @@ async def test_a_server_that_answers_a_moment_after_its_port_opens_is_up_on_the_
     """A container's published port opens at once and the server behind it answers later: the first
     start must not call that a failure (it did, and the container was left running behind it)."""
     late = (
-        f'{sys.executable} -c "import socket,sys,time,http.server,threading; '
+        f'{PY} -c "import socket,sys,time,http.server,threading; '
         "p=int(sys.argv[1]); s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
         "s.bind(('127.0.0.1', p)); s.listen(); time.sleep(1.5); s.close(); "
         "http.server.ThreadingHTTPServer(('127.0.0.1', p), http.server.SimpleHTTPRequestHandler).serve_forever()\" {port}"

@@ -23,6 +23,8 @@ from flow_sdk.responses.response import ApiResponse
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from tests.unit.agent._seed import seed_agent, seed_project
 
+PY = shlex.quote(sys.executable)  # the checkout path may hold a space
+
 pytestmark = [
     pytest.mark.asyncio,
     pytest.mark.skipif(sys.platform == "win32", reason="the repair rung is a POSIX command"),
@@ -155,7 +157,7 @@ async def test_a_plain_address_whose_port_an_app_declares_starts_that_app(bootst
     folder.mkdir(parents=True)
     (folder / "index.html").write_text("admin")
     app = WebApp(name="admin", asset_ref=str(folder), build=".", project_id=project.id, mounts=[{"serving": {
-        "type": "proxy", "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1",
+        "type": "proxy", "start_cmd": f"{PY} -m http.server {{port}} --bind 127.0.0.1",
         "ports": {"local": {"port": port, "required": True}},
     }}])
     await app.save()
