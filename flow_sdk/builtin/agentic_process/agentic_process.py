@@ -747,6 +747,51 @@ def _value_preview(value: Any) -> str:
     text = value if isinstance(value, str) else json.dumps(value, default=str)
     return text if len(text) <= _RESTART_PREVIEW_CHARS else text[:_RESTART_PREVIEW_CHARS] + "…"
 
+def _short_item(value: Any) -> str:
+    """One item of a restart diff, short: a path becomes its last segment."""
+    if isinstance(value, str):
+        tail = value.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1]
+        return tail if "/" in value or "\\" in value else value
+    return _value_preview(value)
+
+
+def _join_short(items: list[Any], limit: int = 3) -> str:
+    names = [_short_item(i) for i in items[:limit]]
+    more = len(items) - limit
+    return ", ".join(names) + (f" +{more} more" if more > 0 else "")
+
+
+def _change_summary(loaded: Any, current: Any) -> str:
+    """A human sentence for one restart-diff field: what was added, removed or
+    changed — not two raw JSON dumps."""
+    if isinstance(loaded, list) and isinstance(current, list):
+        added = [i for i in current if i not in loaded]
+        removed = [i for i in loaded if i not in current]
+        parts = []
+        if added:
+            parts.append(f"added {_join_short(added)}")
+        if removed:
+            parts.append(f"removed {_join_short(removed)}")
+        return "; ".join(parts) or "reordered"
+    if isinstance(loaded, dict) and isinstance(current, dict):
+        added = [k for k in current if k not in loaded]
+        removed = [k for k in loaded if k not in current]
+        changed = [k for k in current if k in loaded and current[k] != loaded[k]]
+        parts = []
+        if added:
+            parts.append(f"added {_join_short(added)}")
+        if removed:
+            parts.append(f"removed {_join_short(removed)}")
+        if changed:
+            parts.append(f"changed {_join_short(changed)}")
+        return "; ".join(parts) or "changed"
+    if loaded is None:
+        return f"set to {_short_item(current)}"
+    if current is None:
+        return f"cleared (was {_short_item(loaded)})"
+    return f"{_short_item(loaded)} → {_short_item(current)}"
+
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
@@ -6379,7 +6424,12 @@ class AgenticProcess(Entity):
                 self._diff_snapshot_fields(self.last_started_snapshot, payload) if self.restart_required else []
             )
             self.restart_changes = [
-                {"field": c["field"], "loaded": _value_preview(c["loaded"]), "current": _value_preview(c["current"])}
+                {
+                    "field": c["field"],
+                    "loaded": _value_preview(c["loaded"]),
+                    "current": _value_preview(c["current"]),
+                    "summary": _change_summary(c["loaded"], c["current"]),
+                }
                 for c in changes
             ]
         return await super().save(owner=owner, notify=notify)

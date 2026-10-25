@@ -407,7 +407,7 @@ export interface IAgenticProcess extends IEntity {
    */
   restart_required?: boolean;
   /** Per-field value preview at start (`loaded`) vs now (`current`) behind `restart_required`; empty when none. */
-  restart_changes?: { field: string; loaded: string; current: string }[];
+  restart_changes?: { field: string; loaded: string; current: string; summary?: string }[];
   /**
    * Reason the last worker launch failed to start (the worker exited within
    * the backend's instant-exit window). Non-null LATCHES the process out of
@@ -1185,7 +1185,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   restart_required: boolean = false;
 
   /** Per-field value preview at start (`loaded`) vs now (`current`) (backend save-hook). */
-  restart_changes: { field: string; loaded: string; current: string }[] = [];
+  restart_changes: { field: string; loaded: string; current: string; summary?: string }[] = [];
 
   /**
    * Reason the last worker launch failed to start (instant-exit latch).
