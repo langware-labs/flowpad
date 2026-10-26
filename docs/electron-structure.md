@@ -98,8 +98,11 @@ Electron (main.js)
   announced persist in `update-schedule.json` (userData), so a restart neither resets the cadence nor
   re-announces the same version; failed checks retry on a growing backoff (10 min → 4 h). A 5-minute tick
   only asks whether a check is due; login/logout/account switch re-evaluate at once (a directory watch on
-  the instance dir). The launch check is skipped while a recent answer said "current" (the status is seeded,
-  so engine updates are not held); recovery panels and the update-cycle harness bypass the schedule.
+  the instance dir, re-armed by the tick if it dies). The launch check is skipped while a recent answer said
+  "current" (the status is seeded, so engine updates are not held), but a relaunch inside a failure backoff
+  retries for real; recovery panels and the update-cycle harness bypass the schedule. A feed answer that
+  cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
+  downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
 - **Desktop and engine both new:** one screen, "Update now / Later". The engine version X is saved to `pending-engine.json`.
   After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine

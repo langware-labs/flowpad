@@ -97,17 +97,19 @@ function shouldAutoCheck({ state, intervalMs, now }) {
  * so a skip SEEDS the status from the last successful answer instead of leaving it unanswered.
  * Skipped only for a recent 'current': a persisted 'available' re-checks (an update is pending and
  * the offer dedupe already prevents re-announcing it), 'unsupported' answers without the network,
- * and an unanswered backoff window stays quiet with no seed — exactly what a failed check leaves today.
- * @returns {{run: boolean, reason: string, seed?: {state: 'current'}|null}}
+ * and inside a failure backoff a RELAUNCH retries for real — leaving the status 'unknown' would
+ * hold every engine update with no visible way out. The backoff keeps pacing the in-session ticks;
+ * only a relaunch breaks it.
+ * @returns {{run: boolean, reason: string, seed?: {state: 'current'}}}
  */
 function planLaunchCheck({ state, intervalMs, now }) {
   const check = shouldAutoCheck({ state, intervalMs, now });
   if (check.due) return { run: true, reason: check.reason };
+  if ((Number(state.failureCount) || 0) > 0) return { run: true, reason: 'launch-retry' };
   const last = state.lastResult || {};
   if (last.state === 'available') return { run: true, reason: 'update-pending' };
   if (last.state === 'unsupported') return { run: true, reason: 'unsupported' };
-  if (last.state === 'current') return { run: false, reason: 'recent-check', seed: { state: 'current' } };
-  return { run: false, reason: 'backoff', seed: null };
+  return { run: false, reason: 'recent-check', seed: { state: 'current' } };
 }
 
 /** An answered check: sets the cadence anchor, keeps what it found, ends any backoff. */
@@ -133,6 +135,15 @@ function recordOffered(state, { version }) {
 }
 
 /**
+ * A version adopted silently (downloaded with no announcement — already offered before a restart,
+ * or a feed regression). Kept apart from the offer watermark: writing it to lastOffered would
+ * LOWER that watermark and re-announce the higher release if the feed brings it back.
+ */
+function recordAdopted(state, { version }) {
+  return { ...state, lastAdoptedDesktopVersion: version };
+}
+
+/**
  * Announce `version`? Only strictly newer than the last one offered: the same build is never
  * re-announced after a restart, and a feed regression never resurfaces an old one.
  * `isNewer(current, latest)` is the shared semver comparison.
@@ -140,6 +151,22 @@ function recordOffered(state, { version }) {
 function shouldNotify({ state, version, isNewer }) {
   const offered = state.lastOfferedDesktopVersion;
   return !offered || isNewer(offered, version);
+}
+
+/**
+ * The one decision ladder for a feed answer, shared by the periodic tick and the launch path
+ * (each applies only its own local blockers — an open dialog, a running download):
+ *   'announce'   — never announced, strictly newer than the watermark: show the update screen.
+ *   'ignore'     — the user deferred exactly this version this session: the reminder owns it.
+ *   'redownload' — adopted before (recorded): resume its download from the cache, nothing new to say.
+ *   'adopt'      — known but not announceable (offered before a restart, or a feed regression):
+ *                  take it quietly — download deferred, reminder offers the restart.
+ */
+function decideDesktopAction({ state, version, isNewer, deferredVersion }) {
+  if (shouldNotify({ state, version, isNewer })) return 'announce';
+  if (version === deferredVersion) return 'ignore';
+  if (version === state.lastAdoptedDesktopVersion) return 'redownload';
+  return 'adopt';
 }
 
 module.exports = {
@@ -161,5 +188,7 @@ module.exports = {
   recordSuccess,
   recordFailure,
   recordOffered,
+  recordAdopted,
   shouldNotify,
+  decideDesktopAction,
 };

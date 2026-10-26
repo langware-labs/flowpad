@@ -26,6 +26,7 @@ module.exports.__t = {
   runScheduledUpdateCheck, startLaunchDesktopCheck,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
+  disarmAccountWatch: () => { accountWatcher = { close() {} }; },
   getDesktopStatus: () => desktopStatus,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
@@ -589,19 +590,72 @@ const HOUR = 60 * 60 * 1000;
   {
     // A login observed through the instance dir flips the cadence without waiting for a tick.
     // The watch callback is driven directly (the OS's fs.watch delivery cannot be awaited
-    // deterministically); what this guards is the filter + debounce + recalculation chain.
-    const env = load({ accountEmail: 'user@example.com' });
-    env.writeSchedule({ lastSuccessAt: agoIso(2 * HOUR), lastAttemptAt: agoIso(2 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
-    // No real watcher (the dir is missing at arm time), so only the direct calls below fire events.
-    fs.rmSync(INSTANCE_DIR, { recursive: true, force: true });
+    // deterministically) and FLOWPAD_UPDATE_TEST=1 zeroes the debounce — no wall-clock waits.
+    process.env.FLOWPAD_UPDATE_TEST = '1';
+    try {
+      const env = load({ accountEmail: 'user@example.com' });
+      env.writeSchedule({ lastSuccessAt: agoIso(2 * HOUR), lastAttemptAt: agoIso(2 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+      env.t.disarmAccountWatch(); // only the direct calls below fire events — never the real OS watcher
+      env.t.setupElectronAutoUpdater();
+      writeAccountEmail('dev@langware.ai');
+      env.t.fireAccountWatch('something-else.json');
+      await new Promise((r) => setTimeout(r, 0)); await tick();
+      eq(env.autoUpdater.checks, 0, 'an event for another file in the instance dir is filtered out');
+      env.t.fireAccountWatch('config.json');
+      await new Promise((r) => setTimeout(r, 0)); await tick(); await tick();
+      eq(env.autoUpdater.checks, 1, 'logging in as @langware.ai makes the 2h-old check due at once');
+    } finally { delete process.env.FLOWPAD_UPDATE_TEST; }
+  }
+  {
+    // A transient ENGINE (PyPI) failure starts the backoff instead of vanishing until the next
+    // interval — and a later success clears it.
+    const env = load();
     env.t.setupElectronAutoUpdater();
-    writeAccountEmail('dev@langware.ai');
-    env.t.fireAccountWatch('something-else.json');
-    await new Promise((r) => setTimeout(r, 650)); // the real 500ms debounce, once
-    eq(env.autoUpdater.checks, 0, 'an event for another file in the instance dir is filtered out');
-    env.t.fireAccountWatch('config.json');
-    await new Promise((r) => setTimeout(r, 650));
-    eq(env.autoUpdater.checks, 1, 'logging in as @langware.ai makes the 2h-old check due at once');
+    env.t.getUvManager().checkForUpdatesInBackground = async () => { throw new Error('pypi down'); };
+    await schedulerTick(env).fn(); await tick();
+    eq(env.readSchedule().failureCount, 1, 'the swallowed engine failure is recorded');
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 1, 'inside the backoff: no re-check');
+    env.t.getUvManager().checkForUpdatesInBackground = async () => { env.uv.checks++; return false; };
+    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    eq([env.readSchedule().failureCount, env.uv.checks], [0, 1], 'the backoff retry runs both halves and clears the streak');
+  }
+  {
+    // A RELAUNCH inside a failure backoff retries for real (ticks still pace the backoff in-session).
+    const env = load();
+    env.writeSchedule({ lastSuccessAt: agoIso(HOUR), lastAttemptAt: agoIso(60 * 1000), lastResult: { state: 'current', version: null }, failureCount: 2 });
+    eq(await env.t.startLaunchDesktopCheck(), null, 'launch retry: the check ran (nothing newer)');
+    eq(env.autoUpdater.checks, 1, 'a relaunch inside the backoff hits the feed for real');
+  }
+  {
+    // A throw BEFORE the update screen does not burn the announcement watermark.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    env.t.getUvManager()._pypiUpdateStatus = async () => { throw new Error('pypi down'); };
+    await env.t.offerDesktopUpdate('0.2.48').catch(() => {});
+    eq((env.readSchedule() || {}).lastOfferedDesktopVersion, undefined, 'no screen shown: the version is not marked offered');
+  }
+  {
+    // A version adopted silently is RESUMED (not re-adopted) on the next launch, and the announce
+    // watermark stays at the higher pulled release.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const first = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    first.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'available', version: '0.2.49' }, failureCount: 0, lastOfferedDesktopVersion: '0.2.49' });
+    first.t.setupElectronAutoUpdater();
+    await schedulerTick(first).fn(); await tick();
+    eq(first.readSchedule().lastAdoptedDesktopVersion, '0.2.48', 'the regression adoption is persisted');
+    const second = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    second.t.setupElectronAutoUpdater();
+    second.t.primeLaunchCheck();
+    const p = second.t.installAndStartBackend();
+    await tick(); await tick();
+    second.autoUpdater.finishDownload();
+    const r = await p;
+    eq(r.ok, true, 'resume: startup proceeds');
+    eq(second.dialogCalls.length, 0, 'resume: still silent');
+    eq(second.autoUpdater.downloads.length, 1, 'resume: the cached download is restarted');
+    eq(second.readSchedule().lastOfferedDesktopVersion, '0.2.49', 'the announce watermark never dropped');
   }
   {
     // FEED REGRESSION at launch (a pulled release): older than the last announced version but newer

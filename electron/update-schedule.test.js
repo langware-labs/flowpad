@@ -106,12 +106,12 @@ eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first
   const unsupported = s.recordSuccess({}, { result: { state: 'unsupported', version: null }, at: T0 });
   eq(s.planLaunchCheck({ state: unsupported, intervalMs: 24 * HOUR, now: T0 + HOUR }).run, true, 'unsupported answers without the network: no reason to skip');
 
+  // A RELAUNCH inside a failure backoff retries for real — a seeded/quiet skip would hold every
+  // engine update behind an 'unknown' status with no visible way out. Ticks still pace the backoff.
   const failing = s.recordFailure(current, { at: T0 + HOUR });
-  const held = s.planLaunchCheck({ state: failing, intervalMs: 24 * HOUR, now: T0 + HOUR + 1 });
-  eq([held.run, held.seed], [false, { state: 'current' }], 'inside the backoff with a last good answer: skipped, seeded from it');
+  eq(s.planLaunchCheck({ state: failing, intervalMs: 24 * HOUR, now: T0 + HOUR + 1 }).reason, 'launch-retry', 'relaunch inside the backoff: the real check runs');
   const neverAnswered = s.recordFailure({}, { at: T0 });
-  const quiet = s.planLaunchCheck({ state: neverAnswered, intervalMs: 24 * HOUR, now: T0 + 1 });
-  eq([quiet.run, quiet.seed], [false, null], 'inside the backoff with NO answer ever: quiet, nothing to seed');
+  eq(s.planLaunchCheck({ state: neverAnswered, intervalMs: 24 * HOUR, now: T0 + 1 }).reason, 'launch-retry', 'relaunch with no answer ever: the real check runs');
 }
 
 // ── one announcement per version, across restarts, never a regression ───────
@@ -123,6 +123,22 @@ eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first
   eq(s.shouldNotify({ state, version: '0.2.47', isNewer }), false, 'a feed regression: never re-announce an older build');
   state = s.readScheduleState(() => JSON.stringify(state), '/u/f');
   eq(s.shouldNotify({ state, version: '0.2.48', isNewer }), false, 'the offer survives a restart');
+}
+
+// ── the one decision ladder for a feed answer ───────────────────────────────
+{
+  const d = (state, version, deferredVersion = null) => s.decideDesktopAction({ state, version, isNewer, deferredVersion });
+  const offered49 = s.recordOffered({}, { version: '0.2.49' });
+  eq(d({}, '0.2.48'), 'announce', 'never announced: announce');
+  eq(d(offered49, '0.2.50'), 'announce', 'strictly newer than the watermark: announce');
+  eq(d(offered49, '0.2.49', '0.2.49'), 'ignore', 'deferred this session: the reminder owns it');
+  eq(d(offered49, '0.2.49'), 'adopt', 'offered before a restart: adopt quietly');
+  eq(d(offered49, '0.2.48'), 'adopt', 'a feed regression: adopt quietly');
+  const adopted48 = s.recordAdopted(offered49, { version: '0.2.48' });
+  eq(d(adopted48, '0.2.48'), 'redownload', 'already adopted: just resume the download');
+  eq(adopted48.lastOfferedDesktopVersion, '0.2.49', 'adoption never lowers the announce watermark');
+  eq(d(adopted48, '0.2.49'), 'adopt', 'the pulled release coming back is still not re-announced');
+  eq(d(adopted48, '0.2.50'), 'announce', 'but a genuinely newer one is');
 }
 
 console.log(`update-schedule.test.js: ${passed} assertions passed`);

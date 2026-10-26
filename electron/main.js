@@ -258,6 +258,7 @@ let autoCheckInFlight = false;
  */
 async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   if (autoCheckInFlight) return;
+  armAccountWatch(); // a watch that died (or never armed on a fresh install) is back within one tick
   const state = scheduleStore.read(); // one read per pass; the record* writers re-read at their write
   let checkFeed = true;
   if (!bypassSchedule) {
@@ -292,27 +293,23 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         desktopDownloadToken.cancel();
         await desktopDownloadDone;
       }
-      if (updateSchedule.shouldNotify({ state, version: desktopLatest, isNewer })) {
-        // A release never announced — this session or before a restart: same screen as at launch.
+      const action = updateSchedule.decideDesktopAction({ state, version: desktopLatest, isNewer, deferredVersion: deferredDesktopVersion });
+      if (action === 'announce') {
         // Not while a download is running, the restart prompt is up, or another update dialog is open.
         if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
           await offerDesktopUpdate(desktopLatest);
         } else {
           followUpPending = true; // blocked by a dialog/download: retried on a near tick, not in a day
         }
-      } else if (!desktopDownloadInFlight && !desktopRestartPromptOpen && desktopLatest !== deferredDesktopVersion) {
-        if (desktopLatest === offeredDesktopVersion) {
-          // Offered already and the prompt was postponed: re-emit it from the cached download.
-          // (Skipped for a version the user deferred — the 90-minute reminder handles that one.)
-          downloadDesktopUpdateInBackground({ version: desktopLatest });
-        } else {
-          // Older than the last announced release (the feed regressed after a pull) yet newer than
-          // the running build: adopt it quietly so a held engine always has a way forward.
-          adoptDesktopUpdateSilently(desktopLatest, 'is older than the last announced release (feed regression)');
-        }
+      } else if (action !== 'ignore' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
+        adoptDesktopUpdateSilently(desktopLatest, action);
       }
     }
-    if ((await checkPackageUpdateInBackground()) === 'blocked') followUpPending = true;
+    const pkg = await checkPackageUpdateInBackground();
+    if (pkg === 'blocked') followUpPending = true;
+    // A failed engine half starts the backoff too — otherwise a transient PyPI error is silently
+    // swallowed until the next full interval (the desktop half records its own failures).
+    else if (pkg === 'failed') scheduleStore.write(updateSchedule.recordFailure(scheduleStore.read(), { at: Date.now() }));
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
   } finally {
@@ -325,16 +322,20 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
 let followUpPending = false;
 
 /**
- * Adopt a desktop update WITHOUT announcing it — the version was announced before a restart, or the
- * feed regressed to an older (still newer-than-running) release after a pull. Deferred, exactly as
- * if the user had said "Later": the download runs, applies on the next quit (autoInstallOnAppQuit),
- * and the 90-minute reminder offers the restart — so a held engine always has a way forward.
+ * Take a desktop update WITHOUT announcing it (decideDesktopAction said 'adopt' or 'redownload') —
+ * the version was announced before a restart, or the feed regressed to an older (still
+ * newer-than-running) release after a pull. Deferred, exactly as if the user had said "Later":
+ * the download runs, applies on the next quit (autoInstallOnAppQuit), and the 90-minute reminder
+ * offers the restart — so a held engine always has a way forward. A fresh adoption is persisted
+ * (recordAdopted); a 'redownload' only resumes one recorded before.
  */
-function adoptDesktopUpdateSilently(version, why) {
-  log.info(`[electron-updater] ${version} ${why}; downloading without a prompt`);
+function adoptDesktopUpdateSilently(version, action) {
+  log.info(`[electron-updater] ${version} ${action === 'redownload'
+    ? 'was adopted before; resuming its download' : 'is not announceable (offered before, or a feed regression); downloading without a prompt'}`);
   offeredDesktopVersion = version;
   pendingDesktopVersion = version;
   deferredDesktopVersion = version;
+  if (action === 'adopt') scheduleStore.write(updateSchedule.recordAdopted(scheduleStore.read(), { version }));
   downloadDesktopUpdateInBackground({ promptOnReady: false, version });
   readyReminder.start();
 }
@@ -416,6 +417,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     });
   } catch (err) {
     log.warn(`[uv] ${label} package check failed: ${err.message}`);
+    return 'failed'; // the scheduler starts the backoff — a transient PyPI failure is not a day's wait
   } finally {
     packageUpdateInFlight = false;
     done();
@@ -443,7 +445,7 @@ function pendingEnginePath() {
 const pendingEngineStore = {
   read() { try { return JSON.parse(fs.readFileSync(pendingEnginePath(), 'utf8')); } catch { return null; } },
   write(state) {
-    try { fs.writeFileSync(pendingEnginePath(), JSON.stringify(state), 'utf8'); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
+    try { atomicWrite(pendingEnginePath(), JSON.stringify(state)); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
   },
   clear() { try { fs.rmSync(pendingEnginePath(), { force: true }); } catch { /* best effort */ } },
 };
@@ -454,10 +456,16 @@ function schedulePath() { return path.join(app.getPath('userData'), updateSchedu
 const scheduleStore = {
   read() { return updateSchedule.readScheduleState((p) => fs.readFileSync(p, 'utf8'), schedulePath()); },
   write(state) {
-    try { updateSchedule.writeScheduleState((p, text) => fs.writeFileSync(p, text, 'utf8'), schedulePath(), state); }
+    try { updateSchedule.writeScheduleState((p, text) => atomicWrite(p, text), schedulePath(), state); }
     catch (err) { log.warn(`[update] could not save the update schedule: ${err.message}`); }
   },
 };
+// tmp + rename, the same pattern as the backend's app_config writes: a crash mid-write leaves the
+// previous file, never a truncated one.
+function atomicWrite(p, text) {
+  fs.writeFileSync(`${p}.tmp`, text, 'utf8');
+  fs.renameSync(`${p}.tmp`, p);
+}
 
 // The account the schedule follows: the hub-validated email the backend writes to the instance's
 // config.json on login/logout/switch. Locally editable, but editing it only changes this machine's
@@ -474,6 +482,8 @@ const currentIntervalMs = () => updateSchedule.intervalForEmail(currentAccountEm
 // The watch callback, kept reachable at module level: tests drive it directly, because the OS's
 // event delivery (fs.watch arming is itself async) is the one part that cannot be awaited deterministically.
 let accountWatchEvent = null;
+// In the update-cycle harness the debounce is zero so tests never wait on the wall clock.
+const ACCOUNT_DEBOUNCE_MS = updateTest.isEnabled() ? 0 : 500;
 function watchAccountChanges() {
   let wasInternal = updateSchedule.isInternalEmail(currentAccountEmail());
   let debounce = null;
@@ -486,18 +496,32 @@ function watchAccountChanges() {
       wasInternal = internal;
       log.info(`[update] account change: update checks now run ${internal ? 'hourly' : 'daily'}`);
       runScheduledUpdateCheck();
-    }, 500);
+    }, ACCOUNT_DEBOUNCE_MS);
     if (typeof debounce.unref === 'function') debounce.unref();
   };
+  armAccountWatch();
+}
+
+// The live fs.watch handle, re-armed by every tick when it is down: on a fresh install the instance
+// dir may not exist yet, and on Windows deleting the watched dir raises an async 'error' that —
+// without a listener — would CRASH the main process. A dead watch is back within one tick; the
+// per-tick email re-read keeps the schedule correct meanwhile.
+let accountWatcher = null;
+function armAccountWatch() {
+  if (accountWatcher || !accountWatchEvent) return;
   try {
+    fs.mkdirSync(INSTANCE_DIR, { recursive: true });
     const watcher = fs.watch(INSTANCE_DIR, (eventType, filename) => accountWatchEvent(filename));
-    // A watcher can fail long after arming (on Windows, deleting the watched instance dir raises
-    // an async 'error'): without a listener that event would CRASH the main process. The per-tick
-    // email re-read keeps the schedule correct without the watch.
-    watcher.on('error', (err) => log.warn(`[update] account watch stopped (${err.message}); the periodic tick re-reads the email`));
+    watcher.on('error', (err) => {
+      log.warn(`[update] account watch stopped (${err.message}); re-armed on the next tick`);
+      try { watcher.close(); } catch { /* already dead */ }
+      if (accountWatcher === watcher) accountWatcher = null;
+    });
     if (typeof watcher.unref === 'function') watcher.unref(); // never keeps the app alive
+    accountWatcher = watcher;
   } catch (err) {
-    log.warn(`[update] not watching for account changes (${err.message}); the periodic tick re-reads the email`);
+    accountWatcher = null;
+    log.warn(`[update] not watching for account changes (${err.message}); re-armed on the next tick`);
   }
 }
 
@@ -583,11 +607,13 @@ async function showDesktopReadyPrompt(version) {
  *   "Update now" → ask to restart as soon as the download is done.   "Later" → ask every 90 minutes.
  */
 async function offerDesktopUpdate(desktopLatest) {
-  offeredDesktopVersion = desktopLatest;
+  offeredDesktopVersion = desktopLatest; // session dedupe is immediate; the persisted watermark waits for the screen
   pendingDesktopVersion = desktopLatest;
-  scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest })); // never announced twice, even across restarts
   const engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
   if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
+    // Desktop only: its "announcement" is the download + ready prompt, committed to right here —
+    // recorded now so the version is never announced twice, even across restarts.
+    scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest }));
     downloadDesktopUpdateInBackground({ version: desktopLatest }); // desktop only: download, then the restart prompt
     return 'desktop';
   }
@@ -614,6 +640,9 @@ async function offerDesktopUpdate(desktopLatest) {
   } finally {
     packageUpdateInFlight = false;
   }
+  // The screen was shown (or scripted): only now is the announcement spent — a crash or a throw
+  // before the dialog must not burn the version.
+  scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest }));
   if (response === 0) {
     downloadDesktopUpdateInBackground({ version: desktopLatest }); // prompt to restart as soon as it is ready
   } else {
@@ -2056,15 +2085,14 @@ async function installAndStartBackend({ quiet = false } = {}) {
       // The user may have quit while that check ran: no update dialog over a closing app.
       if (isQuitting) return { ok: false };
 
-      if (desktopLatest && updateSchedule.shouldNotify({ state: scheduleStore.read(), version: desktopLatest, isNewer })) {
-        await offerDesktopUpdate(desktopLatest);
-      } else if (desktopLatest) {
-        // No second screen: the version was announced before a restart, or the feed regressed to an
-        // older (still newer-than-running) release. Adopted quietly either way — downloaded deferred,
-        // installed on the next quit, offered by the reminder — so the held engine has a way forward.
-        adoptDesktopUpdateSilently(desktopLatest,
-          desktopLatest === scheduleStore.read().lastOfferedDesktopVersion
-            ? 'was already offered' : 'is older than the last announced release (feed regression)');
+      if (desktopLatest) {
+        // One decision ladder with the periodic tick (update-schedule.decideDesktopAction); at this
+        // point in startup nothing can be deferred, downloading or on screen yet, so no local blockers.
+        const action = updateSchedule.decideDesktopAction({
+          state: scheduleStore.read(), version: desktopLatest, isNewer, deferredVersion: deferredDesktopVersion,
+        });
+        if (action === 'announce') await offerDesktopUpdate(desktopLatest);
+        else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);
       } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
         // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
         // PyPI" case (and no-ops otherwise). Reads the installed version from `_version.py`, so it works even
