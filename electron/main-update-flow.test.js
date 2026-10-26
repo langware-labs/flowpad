@@ -683,6 +683,53 @@ const HOUR = 60 * 60 * 1000;
     eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'and the landed retry commits it');
   }
   {
+    // The version already ON SCREEN is not a follow-up debt: ticks under the open dialog leave the
+    // debt clear, so an engine retry that comes due gets its turn instead of being starved.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 1, 'the offer for 0.2.48 is up');
+    await schedulerTick(env).fn(); await tick();
+    await schedulerTick(env).fn(); await tick();
+    ok(env.logLines.some((l) => /package check skipped: the desktop is updated first/.test(l)),
+      'ticks under the dialog serve the ENGINE half — the same-version announce owes nothing and cannot spin');
+    eq(env.dialogCalls.length, 1, 'still one window');
+    eq(env.autoUpdater.checks, 1, 'and no feed re-hits from a same-version follow-up loop');
+    env.releaseDialog(); await tick(); await tick();
+  }
+  {
+    // A pass due only to the FEED's backoff retries the feed alone — the engine keeps its own cadence.
+    const env = load({ desktopCheckThrows: 'HTTP 500' });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick(); // first-run pass: both halves (feed fails, engine held/attempted)
+    const enginePassesBefore = env.logLines.filter((l) => /\[uv\] periodic package check/.test(l)).length;
+    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 2, 'the feed-backoff pass retries the feed');
+    eq(env.logLines.filter((l) => /\[uv\] periodic package check/.test(l)).length, enginePassesBefore,
+      'without touching the engine half — it is not what failed');
+  }
+  {
+    // The account-change path honors the harness bypass: a stale schedule from a previous run must
+    // not swallow the recalculation pass.
+    process.env.FLOWPAD_UPDATE_TEST = '1';
+    process.env.FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS = '1234';
+    try {
+      const env = load({ accountEmail: 'user@example.com' });
+      env.writeSchedule({ lastSuccessAt: agoIso(1000), lastAttemptAt: agoIso(1000), lastResult: { state: 'current', version: null }, failureCount: 0 });
+      env.t.disarmAccountWatch();
+      env.t.setupElectronAutoUpdater();
+      writeAccountEmail('dev@langware.ai');
+      env.t.fireAccountWatch('config.json');
+      await new Promise((r) => setTimeout(r, 0)); await tick(); await tick();
+      eq(env.autoUpdater.checks, 1, 'under the harness, the account change checks even though the schedule says not-due');
+    } finally {
+      delete process.env.FLOWPAD_UPDATE_TEST;
+      delete process.env.FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS;
+    }
+  }
+  {
     // Orphaned atomic-write tmp files (a crash between write and rename) are swept at setup.
     const env = load();
     const orphan = path.join(env.userData, 'update-schedule.json.999.111.tmp');

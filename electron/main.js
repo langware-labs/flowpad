@@ -276,9 +276,11 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   // a half blocked by a dialog/download, from the cached answer, and never records failures —
   // otherwise every 5-minute tick would inflate a streak the backoff never paced.
   let pass = 'scheduled';
+  let feedBackoffOnly = false; // due only to retry the failing FEED: the engine keeps its own cadence
   if (!bypassSchedule) {
     const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
     if (check.due) {
+      feedBackoffOnly = check.reason === 'backoff';
       log.info(`[update] periodic check due (${check.reason})`);
     } else if (followUpDesktop || followUpPackage) {
       // Follow-up outranks the engine retry: a stuck engine (held behind a pending desktop) stays
@@ -325,9 +327,17 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
       });
       if (action === 'announce') {
+        // This exact version already on screen or on its way is NOT a debt — re-arming follow-up
+        // for it would spin a pass every tick (starving the engine retry) for nothing. A NEWER
+        // version never lands here: the supersede above already closed the old window for it.
+        const alreadyHandling = (offerInProgress && desktopLatest === offerVersion)
+          || (desktopDownloadInFlight && desktopLatest === desktopDownloadVersion)
+          || (desktopRestartPromptOpen && desktopLatest === desktopPromptVersion);
+        if (alreadyHandling) {
+          // nothing owed
         // Not while a window is up or a download is running — ONE update window, ever. The offer is
         // LAUNCHED, not awaited: the dialog can sit for hours and must not freeze the scheduler.
-        if (!offerInProgress && !desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
+        } else if (!offerInProgress && !desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
           offerInProgress = true;
           offerPromise = offerDesktopUpdate(desktopLatest)
             .catch((err) => {
@@ -347,7 +357,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         adoptDesktopUpdateSilently(desktopLatest, action);
       }
     }
-    if (pass !== 'follow-up' || packageWasBlocked) {
+    // The engine half runs on scheduled passes (but not ones due only to the FEED's backoff — the
+    // engine is not what failed), on its own retry, and on a follow-up that owes it.
+    if ((pass === 'scheduled' && !feedBackoffOnly) || pass === 'engine-retry' || packageWasBlocked) {
       const pkg = await checkPackageUpdateInBackground();
       if (pkg === 'blocked') followUpPackage = true;
       // The engine channel keeps its own streak (recordEngineFailure/engineRetryDue): a PyPI error
@@ -573,7 +585,7 @@ function watchAccountChanges() {
       if (internal === wasInternal) return;
       wasInternal = internal;
       log.info(`[update] account change: update checks now run ${internal ? 'hourly' : 'daily'}`);
-      runScheduledUpdateCheck();
+      runScheduledUpdateCheck({ bypassSchedule: !!updateTest.checkIntervalMs() }); // the harness interval bypasses the schedule here too
     }, ACCOUNT_DEBOUNCE_MS);
     if (typeof debounce.unref === 'function') debounce.unref();
   };
