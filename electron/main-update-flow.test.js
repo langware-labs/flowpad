@@ -730,6 +730,21 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     env.autoUpdater.emit('error', new Error('feed unreachable')); await tick();
     ok(pushes(env).some((d) => d.state === 'error' && /feed unreachable/.test(d.error)), 'the panel hears the download error');
   }
+  {
+    // After a FAILED panel download the periodic tick retries it WITHOUT a native prompt: the panel
+    // still owns that version's flow (it shows Ready/Update Now; the native "Restart now" never pops).
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('error', new Error('network dropped'));
+    env.autoUpdater.finishDownload(); await tick(); await tick(); // the failed download settles; the in-flight flags reset
+    const tickFn = env.intervals.find((i) => i.ms === 20 * 60 * 1000);
+    await tickFn.fn(); await tick();
+    eq(env.autoUpdater.downloads.length, 2, 'the tick re-downloads the panel-owned version');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'no native prompt: the panel owns this version');
+    ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'), 'the panel hears it is ready instead');
+  }
 
   // ── the panel's engine upgrade never strands the user (the "stuck update" incident) ──
   {

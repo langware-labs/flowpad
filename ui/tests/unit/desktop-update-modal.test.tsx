@@ -1,4 +1,5 @@
 // The "Desktop Update Required" popup (FLOWPAD-2310): what it says and which ways out it offers.
+// Panel rule: a desktop update never leaves the engine behind — the only update action is Update Both.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +14,6 @@ const INFO: DesktopUpdateRequiredInfo = {
 
 function renderModal(over: Partial<Parameters<typeof DesktopUpdateModal>[0]> = {}) {
   const onUpdateBoth = vi.fn();
-  const onDesktopOnly = vi.fn();
   const onClose = vi.fn();
   render(
     <DesktopUpdateModal
@@ -22,25 +22,23 @@ function renderModal(over: Partial<Parameters<typeof DesktopUpdateModal>[0]> = {
       busy={false}
       error={null}
       onUpdateBoth={onUpdateBoth}
-      onDesktopOnly={onDesktopOnly}
       onClose={onClose}
       {...over}
     />,
   );
-  return { onUpdateBoth, onDesktopOnly, onClose };
+  return { onUpdateBoth, onClose };
 }
 
 afterEach(cleanup);
 
 describe('DesktopUpdateModal', () => {
-  it('offers Update Both, Update Desktop Only, and Cancel when a newer desktop exists', () => {
-    const { onUpdateBoth, onDesktopOnly, onClose } = renderModal();
+  it('offers Update Both and Cancel when a newer desktop exists — never a desktop-only path', () => {
+    const { onUpdateBoth, onClose } = renderModal();
     expect(screen.getByTestId('desktop-update-required-modal').textContent).toContain('Desktop Update Required');
 
     fireEvent.click(screen.getByTestId('update-both-button'));
     expect(onUpdateBoth).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByTestId('update-desktop-only-button'));
-    expect(onDesktopOnly).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('update-desktop-only-button')).toBeNull();
     fireEvent.click(screen.getByTestId('update-cancel-button'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -57,9 +55,16 @@ describe('DesktopUpdateModal', () => {
   it('no newer desktop published: explains, prevents the install, and offers only Cancel', () => {
     renderModal({ info: { ...INFO, desktopAvailable: null } });
     expect(screen.queryByTestId('update-both-button')).toBeNull();
-    expect(screen.queryByTestId('update-desktop-only-button')).toBeNull();
     expect(screen.getByTestId('update-cancel-button')).toBeTruthy();
     expect(screen.getByTestId('desktop-update-required-modal').textContent).toContain('No newer FlowPad Desktop');
+  });
+
+  it('a FAILED feed check is not "no build published": says to try again, not to wait for a release', () => {
+    renderModal({ info: { ...INFO, desktopAvailable: null, checkFailed: true } });
+    expect(screen.queryByTestId('update-both-button')).toBeNull();
+    const text = screen.getByTestId('desktop-update-required-modal').textContent ?? '';
+    expect(text).toContain('could not be checked');
+    expect(text).not.toContain('No newer FlowPad Desktop');
   });
 
   it('busy disables every action (no duplicate update operations)', () => {
@@ -68,7 +73,6 @@ describe('DesktopUpdateModal', () => {
     expect((both as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(both);
     expect(onUpdateBoth).not.toHaveBeenCalled();
-    expect((screen.getByTestId('update-desktop-only-button')).disabled).toBe(true);
     expect((screen.getByTestId('update-cancel-button')).disabled).toBe(true);
   });
 

@@ -27,7 +27,7 @@ import {
   RefreshCw,
   Stethoscope,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -437,9 +437,15 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     [t],
   );
 
-  /** One-shot resume outcome of a coordinated update (pushed at startup, or pulled with the status). */
+  /** One-shot resume outcome of a coordinated update (pushed at startup, or pulled with the status).
+   *  Both channels can deliver the same outcome — the push for a panel that was already mounted, the
+   *  'update:get-info' pull for one that mounted late — so the ref shows it exactly once. */
+  const resumedShownRef = useRef<string | null>(null);
   const showResumed = useCallback(
     (r: ResumedUpdate) => {
+      const key = `${r.desktopVersion}->${r.engineVersion}:${String(r.success)}`;
+      if (resumedShownRef.current === key) return;
+      resumedShownRef.current = key;
       if (r.success) {
         notify.success({
           id: 'engine-update-resumed',
@@ -510,6 +516,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           minDesktop: engine.latestMinDesktop,
           desktopInstalled: info?.desktop.installed ?? electronVersion,
           desktopAvailable: info?.desktop.state === 'available' ? info.desktop.available : null,
+          checkFailed: info ? info.desktop.state === 'unknown' : true,
         });
         return;
       }
@@ -523,6 +530,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             minDesktop: engine?.latestMinDesktop ?? null,
             desktopInstalled: info?.desktop.installed ?? electronVersion,
             desktopAvailable: info?.desktop.available ?? null,
+            checkFailed: info ? info.desktop.state === 'unknown' : true,
           });
         } else {
           setUpgradeError(r.error ?? t`Upgrade failed.`);
@@ -533,19 +541,32 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     }
   }, [electronApi, refreshUpdateInfo, data?.pypi?.latest, electronVersion, t]);
 
-  /** Start downloading the available desktop build (also the Retry after a failed download). */
+  /** The panel started (or resumed) a desktop download: reflect the shell's answer in the row. */
+  const notePanelStart = useCallback((r: UpdateActionResult) => {
+    setDesktopPush(
+      r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
+    );
+    if (r.ready) setJustReady(true);
+  }, []);
+
+  /** Start downloading the available desktop build (also the Retry after a failed download).
+   *  A desktop update never leaves the engine behind: when a newer flow SDK exists too, the download
+   *  goes through update:both, so the new desktop installs that version right after the restart. */
   const handleDesktopDownload = useCallback(async () => {
     if (!electronApi?.downloadDesktopUpdate) return;
     setDesktopActionError(null);
-    const r = await electronApi.downloadDesktopUpdate();
+    const engine = updateInfo?.engine ?? null;
+    const engineTarget = engine?.updateAvailable ? engine.latest : null;
+    const r =
+      engineTarget && electronApi.updateBoth
+        ? await electronApi.updateBoth(engineTarget)
+        : await electronApi.downloadDesktopUpdate();
     if (!r.started) {
       setDesktopActionError(updateRefusalText(r.reason));
       return;
     }
-    setDesktopPush(
-      r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
-    );
-  }, [electronApi, updateRefusalText]);
+    notePanelStart(r);
+  }, [electronApi, updateInfo, updateRefusalText, notePanelStart]);
 
   /** Install the downloaded desktop build now (the app restarts to apply it). */
   const handleDesktopApply = useCallback(async () => {
@@ -567,34 +588,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         return;
       }
       setCompatInfo(null);
-      setDesktopPush(
-        r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
-      );
-      if (r.ready) setJustReady(true);
+      notePanelStart(r);
     } finally {
       setModalBusy(false);
     }
-  }, [electronApi, compatInfo, updateRefusalText]);
-
-  const handleDesktopOnly = useCallback(async () => {
-    if (!electronApi?.downloadDesktopUpdate) return;
-    setModalBusy(true);
-    setModalError(null);
-    try {
-      const r = await electronApi.downloadDesktopUpdate();
-      if (!r.started) {
-        setModalError(updateRefusalText(r.reason));
-        return;
-      }
-      setCompatInfo(null);
-      setDesktopPush(
-        r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
-      );
-      if (r.ready) setJustReady(true);
-    } finally {
-      setModalBusy(false);
-    }
-  }, [electronApi, updateRefusalText]);
+  }, [electronApi, compatInfo, updateRefusalText, notePanelStart]);
 
   // Wait for the backend to go down and come back healthy, then reload so the
   // (possibly different-version) UI is reloaded fresh. The python monitor restart
@@ -844,7 +842,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                   className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
+                  {upgrading ? t`Upgrading…` : t`Upgrade to v${(mode === 'Desktop' && updateInfo?.engine?.latest) || pypi.latest}`}
                 </button>
                 {upgradeError && (
                   <div
@@ -1150,7 +1148,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         busy={modalBusy}
         error={modalError}
         onUpdateBoth={() => void handleUpdateBoth()}
-        onDesktopOnly={() => void handleDesktopOnly()}
         onClose={() => {
           setCompatInfo(null);
           setModalError(null);

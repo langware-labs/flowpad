@@ -133,6 +133,11 @@ let suppressDesktopRestartPrompt = false;
 // the 'update:get-info' IPC as a fallback for a renderer that mounted after the push.
 let resumedPanelUpdate = null;
 
+// The desktop version whose update flow the version panel owns (its Download / Update Both started or
+// retried it). A background re-download of THIS version must not pop the native "Restart now" prompt —
+// the panel shows its own Ready state instead ('desktop-update-state').
+let panelDesktopVersion = null;
+
 /** Desktop-update progress for the version panel ('desktop-update-state' channel). Best-effort: a
  *  missing window just means nobody is watching. */
 function sendDesktopUpdateState(payload) {
@@ -281,8 +286,9 @@ function setupElectronAutoUpdater() {
         }
       } else if (!desktopDownloadInFlight && !desktopRestartPromptOpen && desktopLatest !== deferredDesktopVersion) {
         // Offered already and the prompt was postponed: re-emit it from the cached download.
-        // (Skipped for a version the user deferred — the 90-minute reminder handles that one.)
-        downloadDesktopUpdateInBackground({ version: desktopLatest });
+        // (Skipped for a version the user deferred — the 90-minute reminder handles that one.
+        //  A version the panel owns keeps its flow in the panel: no native prompt when it lands.)
+        downloadDesktopUpdateInBackground({ version: desktopLatest, promptOnReady: desktopLatest !== panelDesktopVersion });
       }
     }
     await checkPackageUpdateInBackground();
@@ -2893,6 +2899,7 @@ ipcMain.handle('update:download-desktop', async () => {
   log.info(`[electron-updater] panel: downloading desktop ${version}`);
   pendingDesktopVersion = version; // engine changes hold until this desktop is applied
   offeredDesktopVersion = version; // the periodic tick must not re-offer it natively
+  panelDesktopVersion = version;   // ...and its re-downloads (e.g. after a failure) stay promptless
   downloadDesktopUpdateInBackground({ promptOnReady: false, version });
   return { started: true, version };
 });
@@ -2904,7 +2911,10 @@ ipcMain.handle('update:apply-desktop', async () => {
   const version = desktopDownloadedVersion;
   log.info(`[electron-updater] panel: installing the downloaded ${version} now`);
   readyReminder.stop();
-  markPendingEngineConsented(pendingEngineStore); // same agreement as the native prompt's "Restart now"
+  // Panel rule: a desktop update never leaves the engine behind (the panel offers no "desktop only").
+  // Installing now therefore also agrees to any engine version saved alongside this update — the same
+  // agreement the native prompt's "Restart now" gives.
+  markPendingEngineConsented(pendingEngineStore);
   sendDesktopUpdateState({ state: 'installing', version });
   await restartApplier.apply();
   return { started: true, version };
@@ -2929,6 +2939,7 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   uvManager.deferPackageVersion(engineVersion); // no separate engine dialog for this version
   pendingDesktopVersion = desktopVersion;
   offeredDesktopVersion = desktopVersion;
+  panelDesktopVersion = desktopVersion;
   if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion };
   if (!desktopDownloadInFlight) downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopVersion });
   return { started: true, version: desktopVersion };
@@ -2965,12 +2976,15 @@ async function upgradeFlowpadAndRestart() {
 
     sendStatus('Waiting for server');
     const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    // Not healthy is a FAILED upgrade, exactly like a throw: returning here left the window on the
+    // splash with nothing serving it (the quieter half of the "stuck update" incident).
+    if (!ready) throw new Error('the upgraded backend did not become healthy');
 
-    if (ready && mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
     }
 
-    return { success: ready };
+    return { success: true };
   } catch (err) {
     // The backend is already stopped and the window is on the splash: restore the old engine the way
     // the dialog path does (the "stuck update" incident was exactly this catch returning with the

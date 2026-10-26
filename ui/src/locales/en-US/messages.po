@@ -13289,8 +13289,12 @@ msgstr "Flowpad Cloud:"
 
 #. placeholder {0}: info.desktopAvailable
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
-msgstr "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+msgid "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
+msgstr "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+#~ msgstr "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
 
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
@@ -30122,6 +30126,10 @@ msgstr "The default workspace. Every project outside another workspace's folder 
 msgid "The desktop update failed."
 msgstr "The desktop update failed."
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+msgstr "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -32485,8 +32493,12 @@ msgid "Update available"
 msgstr "Update available"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "Update Both (Recommended)"
-msgstr "Update Both (Recommended)"
+msgid "Update Both"
+msgstr "Update Both"
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "Update Both (Recommended)"
+#~ msgstr "Update Both (Recommended)"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Update channel for auto-updates"
@@ -32497,8 +32509,8 @@ msgid "Update CHART.md"
 msgstr "Update CHART.md"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "Update Desktop Only"
-msgstr "Update Desktop Only"
+#~ msgid "Update Desktop Only"
+#~ msgstr "Update Desktop Only"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Update downloaded — install it now?"
@@ -32592,7 +32604,7 @@ msgstr "Upgrade FlowPad on this sandbox"
 msgid "Upgrade FlowPad on this sandbox?"
 msgstr "Upgrade FlowPad on this sandbox?"
 
-#. placeholder {0}: pypi.latest
+#. placeholder {0}: (mode === 'Desktop' && updateInfo?.engine?.latest) || pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "Upgrade to v{0}"

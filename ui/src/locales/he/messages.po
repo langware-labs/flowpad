@@ -13194,8 +13194,12 @@ msgstr "Flowpad Cloud:"
 
 #. placeholder {0}: info.desktopAvailable
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+msgid "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 msgstr ""
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+#~ msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
@@ -29876,6 +29880,10 @@ msgstr "סביבת העבודה ברירת המחדל. כל פרויקט שאי�
 msgid "The desktop update failed."
 msgstr ""
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+msgstr ""
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "האבחון חזר. פתחו אותו ב-FlowPad כדי לקרוא כל הרצה, או לבקש מסוכן להסביר אותו."
@@ -32222,8 +32230,12 @@ msgid "Update available"
 msgstr "עדכון זמין"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "Update Both (Recommended)"
+msgid "Update Both"
 msgstr ""
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "Update Both (Recommended)"
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Update channel for auto-updates"
@@ -32234,8 +32246,8 @@ msgid "Update CHART.md"
 msgstr "עדכון CHART.md"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "Update Desktop Only"
-msgstr ""
+#~ msgid "Update Desktop Only"
+#~ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Update downloaded — install it now?"
@@ -32329,7 +32341,7 @@ msgstr "שדרוג FlowPad בסנדבוקס הזה"
 msgid "Upgrade FlowPad on this sandbox?"
 msgstr "לשדרג את FlowPad בסנדבוקס הזה?"
 
-#. placeholder {0}: pypi.latest
+#. placeholder {0}: (mode === 'Desktop' && updateInfo?.engine?.latest) || pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "שדרגו ל-v{0}"

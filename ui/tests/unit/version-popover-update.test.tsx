@@ -111,7 +111,7 @@ describe('Upgrade pre-flight (desktop app)', () => {
     expect(api.upgradeFlowpad).not.toHaveBeenCalled();
     expect(modal.textContent).toContain('0.2.60'); // the floor the release demands
     expect(screen.getByTestId('update-both-button')).toBeTruthy();
-    expect(screen.getByTestId('update-desktop-only-button')).toBeTruthy();
+    expect(screen.queryByTestId('update-desktop-only-button')).toBeNull(); // panel rule: both update together
     expect(screen.getByTestId('update-cancel-button')).toBeTruthy();
   });
 
@@ -163,13 +163,29 @@ describe('Upgrade pre-flight (desktop app)', () => {
 });
 
 describe('the Desktop section row', () => {
-  it('a newer build on the feed: a Download button', async () => {
-    (window as { electronAPI?: unknown }).electronAPI = electronApi({
-      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO),
-    });
+  it('a newer build on the feed: Download updates BOTH when a newer flow SDK exists too', async () => {
+    const api = electronApi({ getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO) });
+    (window as { electronAPI?: unknown }).electronAPI = api;
     await openPopover();
     const btn = await screen.findByTestId('desktop-download-button');
     expect(btn.textContent).toContain('0.2.62');
+    fireEvent.click(btn);
+    await waitFor(() => expect(api.updateBoth).toHaveBeenCalledWith('0.2.240'));
+    expect(api.downloadDesktopUpdate).not.toHaveBeenCalled();
+  });
+
+  it('no newer flow SDK: Download stays a plain desktop download', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        engine: { ...INCOMPATIBLE_INFO.engine, updateAvailable: false, latestCompatible: true },
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(await screen.findByTestId('desktop-download-button'));
+    await waitFor(() => expect(api.downloadDesktopUpdate).toHaveBeenCalledTimes(1));
+    expect(api.updateBoth).not.toHaveBeenCalled();
   });
 
   it('an update downloaded earlier (postponed with "Later"): Update Now installs it', async () => {
@@ -195,17 +211,25 @@ describe('the Desktop section row', () => {
     expect(screen.queryByTestId('desktop-update-now-button')).toBeNull();
   });
 
-  it('a resumed coordinated update reports its outcome once', async () => {
+  it('a resumed coordinated update reports its outcome once — even when push AND pull both deliver it', async () => {
+    const resumed = { success: true, engineVersion: '0.2.240', desktopVersion: '0.2.62' };
+    let pushResumed: ((r: unknown) => void) | null = null;
     (window as { electronAPI?: unknown }).electronAPI = electronApi({
       getUpdateInfo: vi.fn().mockResolvedValue({
         desktop: { installed: '0.2.62', state: 'current', available: null, downloadState: 'idle' },
         engine: null,
         busy: false,
-        resumed: { success: true, engineVersion: '0.2.240', desktopVersion: '0.2.62' },
+        resumed,
+      }),
+      onEngineUpdateResumed: vi.fn((cb: (r: unknown) => void) => {
+        pushResumed = cb;
+        return () => {};
       }),
     });
     await openPopover();
     await waitFor(() => expect(h.notifySuccess).toHaveBeenCalledTimes(1));
+    pushResumed?.(resumed); // the startup push races the popover's pull: same outcome, no second toast
+    expect(h.notifySuccess).toHaveBeenCalledTimes(1);
   });
 });
 

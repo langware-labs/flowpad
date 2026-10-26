@@ -1376,7 +1376,7 @@ class UvManager {
     // spend staged metadata reads on a scenario that has already decided what to install.
     if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
     this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
-    const data = await this._getPypiData();
+    const data = await this._getPypiData({ fresh: true }); // the pick before an install must see a just-published release
     if (!data || !data.releases) return null;
     this._pypiDoc = data;
     const releases = Object.entries(data.releases).map(([version, files]) => ({
@@ -1683,7 +1683,9 @@ class UvManager {
       // The whole ladder failed because the ENGINE release itself is not in uv's cached index — a
       // just-published release (PyPI's /simple/ is cached for 10 minutes). Revalidate that one index
       // entry and run the ladder ONCE more; no delay, no extra attempts (changing a cut-off cannot
-      // fix a stale cache, which is why the ladder's own retries never could).
+      // fix a stale cache, which is why the ladder's own retries never could). Not a bigger retry
+      // budget: the input CHANGES (--refresh-package removes the stale index, the root cause) and
+      // there is exactly one immediate re-run — nothing is waited out or masked.
       const refreshable = !baseArgs.includes('--offline') && !baseArgs.includes('--refresh') && !baseArgs.includes('--refresh-package');
       if (refreshable && isEnginePinResolutionError(err)) {
         this.log.warn(`[uv] the requested ${PYPI_PACKAGE} release is not in uv's cached index (likely just published) — refreshing the registry cache and retrying once`);
@@ -2567,25 +2569,26 @@ class UvManager {
    * Latest published flowpad version on PyPI, or null on any failure. Hits
    * pypi.org only — works even when the local backend is down.
    */
-  async getLatestPypiVersion() {
-    const info = await this._getLatestPypiInfo();
+  async getLatestPypiVersion(fresh = false) {
+    const info = await this._getLatestPypiInfo(fresh);
     return (info && info.version) || null;
   }
 
   /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
-  async _getLatestPypiInfo() {
-    const data = await this._getPypiData();
+  async _getLatestPypiInfo(fresh = false) {
+    const data = await this._getPypiData({ fresh });
     return (data && data.info) || null;
   }
 
-  /** The whole PyPI JSON document for flowpad (`info` + `releases` map), or null on any failure. */
-  async _getPypiData() {
+  /** The whole PyPI JSON document for flowpad (`info` + `releases` map), or null on any failure.
+   *  `fresh` busts PyPI's CDN edge cache (the `t=` trick of the backend's routes/version.py) — used only
+   *  on the upgrade paths, where "offered" must match what the install will see. The periodic background
+   *  checks keep riding the CDN: a release they miss is offered on the next tick. */
+  async _getPypiData({ fresh = false } = {}) {
     try {
       // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): "latest" comes from a local stub, so a scenario controls the verdict.
-      // The `t=` query skips PyPI's CDN cache (same trick as the backend's routes/version.py), so the
-      // offered version is the freshest view — the install side revalidates uv's index to match.
       const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
-        || `https://pypi.org/pypi/${PYPI_PACKAGE}/json?t=${Date.now()}`;
+        || `https://pypi.org/pypi/${PYPI_PACKAGE}/json${fresh ? `?t=${Date.now()}` : ''}`;
       const res = await fetch(url, {
         headers: { Accept: 'application/json' },
       });
@@ -2828,7 +2831,7 @@ class UvManager {
    */
   async engineUpdatePreflight() {
     const installed = this.getInstalledVersionSync() || null;
-    const latest = await this.getLatestPypiVersion();
+    const latest = await this.getLatestPypiVersion(true); // user-facing pre-flight: must see a just-published release
     const info = {
       installed,
       latest,

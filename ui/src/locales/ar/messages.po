@@ -13194,8 +13194,12 @@ msgstr "Flowpad Cloud:"
 
 #. placeholder {0}: info.desktopAvailable
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+msgid "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 msgstr ""
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+#~ msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
@@ -29880,6 +29884,10 @@ msgstr "مساحة العمل الافتراضية. تنتمي إليها كل �
 msgid "The desktop update failed."
 msgstr ""
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+msgstr ""
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "عاد التشخيص. افتحوه في FlowPad لقراءة كل تشغيل، أو اطلبوا من وكيل أن يشرحه."
@@ -32226,8 +32234,12 @@ msgid "Update available"
 msgstr "تحديث متاح"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "Update Both (Recommended)"
+msgid "Update Both"
 msgstr ""
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "Update Both (Recommended)"
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Update channel for auto-updates"
@@ -32238,8 +32250,8 @@ msgid "Update CHART.md"
 msgstr "تحديث CHART.md"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "Update Desktop Only"
-msgstr ""
+#~ msgid "Update Desktop Only"
+#~ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Update downloaded — install it now?"
@@ -32333,7 +32345,7 @@ msgstr "ترقية FlowPad على هذه البيئة المعزولة"
 msgid "Upgrade FlowPad on this sandbox?"
 msgstr "ترقية FlowPad على هذه البيئة المعزولة؟"
 
-#. placeholder {0}: pypi.latest
+#. placeholder {0}: (mode === 'Desktop' && updateInfo?.engine?.latest) || pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "الترقية إلى الإصدار {0}"

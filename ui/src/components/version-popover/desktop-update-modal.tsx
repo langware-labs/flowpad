@@ -13,6 +13,9 @@ export interface DesktopUpdateRequiredInfo {
   desktopInstalled: string | null;
   /** The newer desktop build on the update feed, or null when none is published yet. */
   desktopAvailable: string | null;
+  /** True when the update feed could not be checked at all (offline / feed error) — different
+   *  advice than "no newer build is published": try again, rather than wait for a release. */
+  checkFailed?: boolean;
 }
 
 interface DesktopUpdateModalProps {
@@ -22,16 +25,16 @@ interface DesktopUpdateModalProps {
   error: string | null;
   /** Update the desktop now and the named engine version right after the restart. */
   onUpdateBoth: () => void;
-  /** Update the desktop only; the engine stays as installed. */
-  onDesktopOnly: () => void;
   onClose: () => void;
 }
 
 /**
  * The in-app popup shown when an engine (PyPI) upgrade needs a newer desktop first.
  * Everything happens inside the app: no external download pages, no other screens.
+ * One way forward: a desktop update never leaves the engine behind, so the only
+ * update action is Update Both — there is no "desktop only".
  */
-export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onDesktopOnly, onClose }: DesktopUpdateModalProps) {
+export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onClose }: DesktopUpdateModalProps) {
   if (!info) return null;
   return (
     <Dialog
@@ -60,8 +63,15 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onDe
           {info.desktopAvailable ? (
             <p className="text-muted-foreground">
               <Trans>
-                FlowPad Desktop v{info.desktopAvailable} is available. We can update both components automatically, or
-                you can update FlowPad Desktop only.
+                FlowPad Desktop v{info.desktopAvailable} is available. Both components update together: the desktop
+                first, then the flow SDK right after the restart.
+              </Trans>
+            </p>
+          ) : info.checkFailed ? (
+            <p className="text-muted-foreground">
+              <Trans>
+                The desktop update feed could not be checked, so this backend version cannot be installed right now.
+                Your current installation is unchanged — check your connection and try again.
               </Trans>
             </p>
           ) : (
@@ -76,21 +86,10 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onDe
         </div>
         <div className="flex flex-col gap-2">
           {info.desktopAvailable && (
-            <>
-              <Button type="button" onClick={onUpdateBoth} disabled={busy} data-testid="update-both-button">
-                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                <Trans>Update Both (Recommended)</Trans>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onDesktopOnly}
-                disabled={busy}
-                data-testid="update-desktop-only-button"
-              >
-                <Trans>Update Desktop Only</Trans>
-              </Button>
-            </>
+            <Button type="button" onClick={onUpdateBoth} disabled={busy} data-testid="update-both-button">
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              <Trans>Update Both</Trans>
+            </Button>
           )}
           <Button type="button" variant="outline" onClick={onClose} disabled={busy} data-testid="update-cancel-button">
             <Trans>Cancel</Trans>
