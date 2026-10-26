@@ -51,7 +51,7 @@ export function CompactIconAction({
           </Button>
         </span>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
+      <TooltipContent side="bottom" className="max-w-md whitespace-pre-line text-xs">
         {label}
       </TooltipContent>
     </Tooltip>

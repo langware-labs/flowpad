@@ -25016,12 +25016,12 @@ msgstr "Restart required — {changedCount} {0} changed"
 #~ msgstr "Restart required — changed since start: {0}"
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Restart required — changed since start: {lines}"
-msgstr "Restart required — changed since start: {lines}"
+#~ msgid "Restart required — changed since start: {lines}"
+#~ msgstr "Restart required — changed since start: {lines}"
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Restart required — config changed since start"
-msgstr "Restart required — config changed since start"
+#~ msgid "Restart required — config changed since start"
+#~ msgstr "Restart required — config changed since start"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -25036,6 +25036,16 @@ msgstr "Restart setup"
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
 msgstr "Restart this journey"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid ""
+"Restart to apply what changed since this session started:\n"
+"{lines}\n"
+"Full comparison: Debug menu → Command Status"
+msgstr ""
+"Restart to apply what changed since this session started:\n"
+"{lines}\n"
+"Full comparison: Debug menu → Command Status"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -27323,6 +27333,10 @@ msgstr "Setting up…"
 #: src/types/ViewType.ts
 msgid "Settings"
 msgstr "Settings"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Settings changed since this session started — restart to apply"
+msgstr "Settings changed since this session started — restart to apply"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx

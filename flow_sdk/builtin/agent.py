@@ -1148,6 +1148,11 @@ class Agent(Entity):
         from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
 
         await self.ensure_on_hub(actor)
+        # Its ``hub:`` dependencies are fetched on the machine with the agent's own login.
+        from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+        from flow_sdk.builtin.hub_dependencies import share_hub_dependencies  # noqa: PLC0415
+
+        await share_hub_dependencies(self, await owning_project(self))
         # The readiness gate: the placement's store must hold every value the agent needs before a
         # machine is paid for. The hub checks the same names again (``require``).
         deployment = await self.plan_deployment(environment, provider=provider, token_allocation=token_allocation)
@@ -1444,7 +1449,9 @@ class Agent(Entity):
                 data = await HubProxy.call("POST", self.get_type(), self.id, "place_action", payload=payload)
             except HubError as exc:
                 if exc.kind is HubFailureKind.NOT_CONFIGURED:
-                    raise agent_places.PlaceError("cloud login required to reach a cloud machine", status_code=401) from exc
+                    raise agent_places.PlaceError(
+                        "cloud login required to reach a cloud machine", status_code=401
+                    ) from exc
                 raise agent_places.PlaceError(f"the hub refused: {exc}", status_code=502) from exc
             return data
 

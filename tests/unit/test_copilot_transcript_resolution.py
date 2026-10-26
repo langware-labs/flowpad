@@ -102,3 +102,26 @@ def test_process_local_flowpad_error_replays_as_visible_terminal_error(tmp_path)
         FlowElementType.END,
     ]
     assert history[0].flow_value == "bad model"
+
+
+def test_native_wins_only_after_streamed_answer_is_durable(isolated_copilot_state):
+    process = _process(session_id=str(uuid.uuid4()))
+    native = _write_foreign_session(isolated_copilot_state.copilot_session_state_dir, process.session_id)
+    tee = copilot_transcript_path_for_process(process.id)
+    user = {"type": "user.message", "id": "u", "data": {"content": "hello"}}
+    answer = {"type": "assistant.message", "id": "a", "data": {"content": "hi"}}
+    native.write_text(json.dumps(user) + "\n")
+    tee.write_text(json.dumps(user) + "\n" + json.dumps(answer) + "\n")
+    assert process.driver.transcript_descriptor(process).path == tee
+    with native.open("a") as handle:
+        handle.write(json.dumps(answer) + "\n")
+        handle.write(json.dumps({"type": "session.shutdown", "data": {
+            "currentModel": "test", "tokenDetails": {"output": {"tokenCount": 76}},
+        }}) + "\n")
+    descriptor = process.driver.transcript_descriptor(process)
+    assert descriptor.path == native
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile
+    assert sum(entry.count for entry in AgentTranscriptFile("copilot", descriptor.path).usage) == 76
+    with tee.open("a") as handle:
+        handle.write('{"type":"flowpad.error","message":"own failure"}\n')
+    assert process.driver.transcript_descriptor(process).path == tee

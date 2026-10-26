@@ -211,3 +211,63 @@ def test_mcp_tool_with_a_path_key_is_never_a_file_op():
     entry = _copilot_tool_entry("mcp__server__read", {"path": "/tmp/a.txt"})
 
     assert type(entry) is ToolUseEntry
+
+
+def _shutdown(output=76, model="model-a", **counts):
+    details = {key: {"tokenCount": value} for key, value in
+               {"input": 23410, "cache_read": 6016, "cache_write": 0, "output": output, **counts}.items()}
+    return {"type": "session.shutdown", "data": {
+        "currentModel": model, "tokenDetails": details,
+        "modelMetrics": {model: {"tokenDetails": details}},
+    }}
+
+
+def _usage_totals(entries):
+    from flow_sdk.transcript_analyzer.entries.usage import UsageEntry
+    totals = {}
+    for entry in entries:
+        if isinstance(entry, UsageEntry):
+            key = (entry.model, entry.io, entry.cache)
+            totals[key] = totals.get(key, 0) + entry.count
+    return {key: count for key, count in totals.items() if count}
+
+
+def test_shutdown_reports_exact_exclusive_token_dimensions():
+    entries = CopilotParser().feed(_shutdown(), 0)
+    assert _usage_totals(entries) == {
+        ("model-a", "input", "none"): 23410,
+        ("model-a", "input", "read"): 6016,
+        ("model-a", "output", "none"): 76,
+    }
+
+
+def test_resumed_shutdowns_are_cumulative_and_duplicate_safe():
+    parser = CopilotParser()
+    entries = parser.feed(_shutdown(11), 0)
+    entries += parser.feed(_shutdown(11), 1)
+    entries += parser.feed(_shutdown(22), 2)
+    assert _usage_totals(entries)[("model-a", "output", "none")] == 22
+
+
+def test_shutdown_replaces_legacy_output_even_without_message_model():
+    parser = CopilotParser()
+    message = {"type": "assistant.message", "id": "m1", "data": {"outputTokens": 11}}
+    entries = parser.feed(message, 0) + parser.feed(message, 1)
+    assert sum(_usage_totals(entries).values()) == 11
+    entries += parser.feed(_shutdown(22), 2)
+    assert _usage_totals(entries).get((None, "output", "none"), 0) == 0
+    assert _usage_totals(entries)[("model-a", "output", "none")] == 22
+    entries += parser.feed({**message, "id": "m2"}, 3)
+    entries += parser.feed(_shutdown(33), 4)
+    assert _usage_totals(entries)[("model-a", "output", "none")] == 33
+
+
+def test_shutdown_keeps_cumulative_totals_separate_per_model():
+    parser = CopilotParser()
+    entries = parser.feed(_shutdown(11), 0)
+    second = _shutdown(7, model="model-b")
+    second["data"]["modelMetrics"].update(_shutdown(11)["data"]["modelMetrics"])
+    entries += parser.feed(second, 1)
+    totals = _usage_totals(entries)
+    assert totals[("model-a", "output", "none")] == 11
+    assert totals[("model-b", "output", "none")] == 7

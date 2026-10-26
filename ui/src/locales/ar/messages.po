@@ -24814,12 +24814,12 @@ msgstr "يلزم إعادة التشغيل — تغيّر {changedCount} {0}"
 #~ msgstr "إعادة التشغيل مطلوبة — تغيّر منذ البدء: {0}"
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Restart required — changed since start: {lines}"
-msgstr ""
+#~ msgid "Restart required — changed since start: {lines}"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Restart required — config changed since start"
-msgstr "يجب إعادة التشغيل — تغيرت الإعدادات منذ البدء"
+#~ msgid "Restart required — config changed since start"
+#~ msgstr "يجب إعادة التشغيل — تغيرت الإعدادات منذ البدء"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -24834,6 +24834,13 @@ msgstr "إعادة تشغيل الإعداد"
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
 msgstr "إعادة تشغيل هذه الرحلة"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid ""
+"Restart to apply what changed since this session started:\n"
+"{lines}\n"
+"Full comparison: Debug menu → Command Status"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -27102,6 +27109,10 @@ msgstr "جارٍ الإعداد…"
 #: src/types/ViewType.ts
 msgid "Settings"
 msgstr "الإعدادات"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Settings changed since this session started — restart to apply"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx

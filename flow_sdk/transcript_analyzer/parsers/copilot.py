@@ -98,6 +98,9 @@ class CopilotParser:
         self._current_model: str | None = None
         self._tool_names: dict[str, str] = {}
         self._seen_tool_uses: set[str] = set()
+        self._seen_usage_messages: set[str] = set()
+        self._pending_message_usage: list[UsageEntry] = []
+        self._usage_totals: dict[tuple[str | None, str], int] = {}
 
     def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         event_type = str(raw.get("type") or "")
@@ -114,6 +117,11 @@ class CopilotParser:
                 "model_provider": "github-copilot",
             }
             return [MetaEntry(meta_kind="session_meta", payload=payload, **self._base(raw, line_index))]
+
+        if event_type == "session.shutdown":
+            base = self._base(raw, line_index)
+            return [MetaEntry(meta_kind=event_type, payload=_data(raw), **base),
+                    *self._shutdown_usage(_data(raw), base)]
 
         if event_type.startswith("session."):
             return [MetaEntry(meta_kind=event_type, payload=_data(raw), **self._base(raw, line_index))]
@@ -197,9 +205,8 @@ class CopilotParser:
                 )
             )
 
-        # Copilot only reports ``outputTokens`` per assistant message (no
-        # input/cache/reasoning breakdown in the transcript). Emit the one
-        # dim it does carry so ProcessCounters folds it like any other worker.
+        # Older CLI versions expose per-message output tokens. Newer native
+        # records publish authoritative cumulative usage at session shutdown.
         out.extend(self._emit_usage(data, message_id, base))
 
         tool_requests = data.get("toolRequests")
@@ -230,29 +237,63 @@ class CopilotParser:
         return [MetaEntry(meta_kind="assistant.message", payload=data, **base)]
 
     def _emit_usage(self, data: dict, message_id: str, base: dict) -> list[TranscriptEntry]:
-        """One ``io=output`` UsageEntry from ``data.outputTokens`` (>0 only).
-
-        Copilot exposes no input/cache/reasoning token counts, so output is
-        the sole chargeable dim we can fold. ``entry_id = <messageId>:usage``
-        mirrors the Claude/Codex convention; ``id`` is suffixed for uniqueness.
-        """
+        """Provisional legacy output usage, replaced by a shutdown snapshot."""
         out_toks = _as_int(data.get("outputTokens"))
-        if not out_toks or out_toks <= 0:
+        if not out_toks or out_toks <= 0 or message_id in self._seen_usage_messages:
             return []
-        return [
-            UsageEntry(
-                count=out_toks,
-                io="output",
-                unit="token",
-                id=f"{base['id']}:usage",
-                entry_id=f"{message_id}:usage" if message_id else None,
-                session_id=base["session_id"],
-                timestamp=base["timestamp"],
-                worker=base["worker"],
-                parent_id=base["parent_id"],
-                model=self._current_model,
-            )
-        ]
+        if message_id:
+            self._seen_usage_messages.add(message_id)
+        entry = UsageEntry(
+            count=out_toks, io="output", unit="token",
+            id=f"{base['id']}:usage",
+            entry_id=f"{message_id}:usage" if message_id else None,
+            **{key: value for key, value in base.items() if key != "id"},
+            model=self._current_model,
+        )
+        self._pending_message_usage.append(entry)
+        return [entry]
+
+    def _shutdown_usage(self, data: dict, base: dict) -> list[TranscriptEntry]:
+        """Difference native session totals; resumed shutdowns include prior turns.
+
+        tokenDetails input is already uncached (unlike modelMetrics.usage).
+        Legacy message counts are provisional: replace them when the complete
+        snapshot arrives, including messages whose model was not yet known.
+        """
+        metrics = data.get("modelMetrics")
+        snapshots = {
+            str(model): value["tokenDetails"]
+            for model, value in metrics.items()
+            if isinstance(value, dict) and isinstance(value.get("tokenDetails"), dict)
+        } if isinstance(metrics, dict) else {}
+        if not snapshots and isinstance(data.get("tokenDetails"), dict):
+            snapshots = {self._current_model: data["tokenDetails"]}
+        if not snapshots:
+            return []
+        for entry in self._pending_message_usage:
+            entry.count = 0
+        self._pending_message_usage.clear()
+        entries: list[TranscriptEntry] = []
+        for model, details in snapshots.items():
+            for dim, io, cache in (("input", "input", "none"),
+                                   ("output", "output", "none"),
+                                   ("cache_read", "input", "read"),
+                                   ("cache_write", "input", "write")):
+                value = details.get(dim)
+                total = _as_int(value.get("tokenCount")) if isinstance(value, dict) else None
+                if total is None or total < 0:
+                    continue
+                key = (model, dim)
+                previous = self._usage_totals.get(key, 0)
+                self._usage_totals[key] = max(previous, total)
+                if total <= previous:
+                    continue
+                entries.append(UsageEntry(
+                    count=total - previous, io=io, cache=cache, model=model,
+                    id=f"{base['id']}:usage:{model}:{dim}", entry_id=f"{base['id']}:usage",
+                    **{key: value for key, value in base.items() if key != "id"},
+                ))
+        return entries
 
     def _tool_execution_start(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         data = _data(raw)
@@ -315,8 +356,8 @@ class CopilotParser:
             self._current_model = str(data["newModel"])
         if event_type == "session.tools_updated" and data.get("model"):
             self._current_model = str(data["model"])
-        if event_type == "session.shutdown" and raw.get("currentModel"):
-            self._current_model = str(raw["currentModel"])
+        if event_type == "session.shutdown" and data.get("currentModel"):
+            self._current_model = str(data["currentModel"])
 
     def _base(self, raw: dict, line_index: int) -> dict[str, Any]:
         return {
