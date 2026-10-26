@@ -235,6 +235,17 @@ function setupElectronAutoUpdater() {
   // (offeredDesktopVersion stays session-only: cross-restart dedupe is the persisted
   //  lastOfferedDesktopVersion watermark, read through decideDesktopAction.)
 
+  // A crash between atomicWrite's tmp and rename leaves a uniquely-named orphan no later write
+  // touches: sweep them once per launch.
+  try {
+    const userData = app.getPath('userData');
+    for (const f of fs.readdirSync(userData)) {
+      if (/^(update-schedule|pending-engine)\.json\..+\.tmp$/.test(f)) {
+        try { fs.rmSync(path.join(userData, f), { force: true }); } catch { /* best effort */ }
+      }
+    }
+  } catch { /* best effort */ }
+
   // Long-lived sessions: re-check periodically. The tick is cheap and only ASKS update-schedule.js
   // whether a check is DUE — hourly for an @langware.ai account, daily otherwise, anchored to the
   // persisted last check so a restart does not reset it (FLOWPAD-2308). The update-cycle harness
@@ -457,9 +468,10 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
   try {
     log.info(`[uv] ${label} package check`);
     // uv-manager swallows PyPI failures into null answers ("no update"), so a thrown error almost
-    // never reaches us — the flag is how THIS call reports an unreachable PyPI. Reset first: the
-    // cloud path (compareWithPypi=false) never touches it and must not echo a previous verdict.
-    uvManager.lastPypiLookupFailed = false;
+    // never reaches us — its failure counter is how THIS window reports an unreachable PyPI.
+    // Before/after comparison, not a shared flag: a concurrent lookup elsewhere cannot mask (only
+    // at worst duplicate) a failure that happened during this check.
+    const lookupFailuresBefore = uvManager.pypiLookupFailures || 0;
     await uvManager.checkForUpdatesInBackground(mainWindow, {
       onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
       sendStatus,
@@ -468,7 +480,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
     });
-    return uvManager.lastPypiLookupFailed ? 'failed' : 'ran';
+    return (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore ? 'failed' : 'ran';
   } catch (err) {
     log.warn(`[uv] ${label} package check failed: ${err.message}`);
     return 'failed'; // the scheduler starts the ENGINE backoff — a transient PyPI failure is not a day's wait
@@ -684,10 +696,13 @@ async function offerDesktopUpdate(desktopLatest) {
     log.warn(`[update] engine status unavailable for the offer: ${err.message}`);
   }
   if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
-    // Desktop only: its "announcement" is the download + ready prompt, committed to right here —
-    // recorded now so the version is never announced twice, even across restarts.
-    scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest }));
-    downloadDesktopUpdateInBackground({ version: desktopLatest }); // desktop only: download, then the restart prompt
+    // Desktop only: its "announcement" is the download + ready prompt, so the watermark is spent
+    // only when the download LANDS — a failed or interrupted one leaves the version announceable,
+    // the same as a 'both' screen nobody answered.
+    downloadDesktopUpdateInBackground({
+      version: desktopLatest,
+      onDownloaded: () => scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest })),
+    });
     return 'desktop';
   }
   savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
@@ -805,7 +820,7 @@ function engineChangeAllowed(context, { mustInstall = false } = {}) {
  * promptOnReady=false → deferred: no prompt; it applies on the next quit/restart
  *                       (autoInstallOnAppQuit), so the user isn't nagged.
  */
-function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null } = {}) {
+function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null, onDownloaded = null } = {}) {
   if (desktopDownloadInFlight) {
     log.info('[electron-updater] download already in progress; not restarting it');
     return;
@@ -816,6 +831,7 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
   suppressDesktopRestartPrompt = !promptOnReady;
   desktopDownloadDone = autoUpdater
     .downloadUpdate(desktopDownloadToken)
+    .then(() => { if (onDownloaded) onDownloaded(); })
     .catch((err) => {
       if (desktopDownloadToken && desktopDownloadToken.cancelled) {
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);

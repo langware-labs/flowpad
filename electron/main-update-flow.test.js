@@ -93,7 +93,7 @@ function load(opts = {}) {
       if (opts.desktopCheckThrows) throw new Error(opts.desktopCheckThrows);
       return { updateInfo: { version: opts.desktopFeed || opts.appVersion || '0.2.47' } };
     },
-    downloadUpdate() { autoUpdater.downloads.push(1); return new Promise((r) => { autoUpdater.finishDownload = r; }); },
+    downloadUpdate() { autoUpdater.downloads.push(1); return new Promise((r, j) => { autoUpdater.finishDownload = r; autoUpdater.failDownload = j; }); },
     quitAndInstall: (...a) => { autoUpdater.quits.push(a); },
   });
   const electron = {
@@ -662,7 +662,36 @@ const HOUR = 60 * 60 * 1000;
     eq(await env.t.offerDesktopUpdate('0.2.48'), 'desktop', 'engine status down: the offer degrades to desktop-only');
     eq(env.dialogCalls.length, 0, 'no combined screen');
     eq(env.autoUpdater.downloads.length, 1, 'the desktop download still starts');
-    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'and the delivery is committed');
+    eq((env.readSchedule() || {}).lastOfferedDesktopVersion, undefined, 'nothing is spent before the download lands');
+    env.autoUpdater.finishDownload(); await tick();
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'the landed download commits the delivery');
+  }
+  {
+    // Desktop-only announcement: a FAILED download leaves the version announceable — the next due
+    // tick announces (downloads) it again instead of silently adopting it.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.downloads.length, 1, 'the due tick starts the desktop-only download');
+    env.autoUpdater.failDownload(new Error('feed died mid-download')); await tick();
+    eq((env.readSchedule() || {}).lastOfferedDesktopVersion, undefined, 'a dead download spends nothing');
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick(); await tick();
+    eq(env.autoUpdater.downloads.length, 2, 'the next due tick announces it again');
+    env.autoUpdater.finishDownload(); await tick();
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'and the landed retry commits it');
+  }
+  {
+    // Orphaned atomic-write tmp files (a crash between write and rename) are swept at setup.
+    const env = load();
+    const orphan = path.join(env.userData, 'update-schedule.json.999.111.tmp');
+    const real = path.join(env.userData, 'update-schedule.json');
+    fs.writeFileSync(orphan, '{}');
+    fs.writeFileSync(real, JSON.stringify({ failureCount: 0 }));
+    env.t.setupElectronAutoUpdater();
+    eq(fs.existsSync(orphan), false, 'the orphan tmp is swept');
+    eq(fs.existsSync(real), true, 'the real state file stays');
   }
   {
     // uv-manager swallows PyPI outages into null answers, so checkForUpdatesInBackground returns
@@ -670,7 +699,8 @@ const HOUR = 60 * 60 * 1000;
     const env = load();
     env.t.setupElectronAutoUpdater();
     const uvm = env.t.getUvManager();
-    uvm.checkForUpdatesInBackground = async () => { uvm.lastPypiLookupFailed = true; return false; };
+    uvm.pypiLookupFailures = 7; // failures from BEFORE this window must not count...
+    uvm.checkForUpdatesInBackground = async () => { uvm.pypiLookupFailures++; return false; };
     await schedulerTick(env).fn(); await tick();
     eq(env.readSchedule().engineFailureCount, 1, 'a swallowed PyPI outage still starts the engine backoff');
     uvm.checkForUpdatesInBackground = async () => { env.uv.checks++; return false; };
