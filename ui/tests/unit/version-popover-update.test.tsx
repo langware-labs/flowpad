@@ -211,6 +211,40 @@ describe('the Desktop section row', () => {
     expect(screen.queryByTestId('desktop-update-now-button')).toBeNull();
   });
 
+  it('a failed feed check: says so and offers Check again (not a blank row, not Up to date)', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        desktop: { installed: '0.2.50', state: 'unknown', available: null, downloadState: 'idle' },
+        engine: null,
+        busy: false,
+        resumed: null,
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    const row = await screen.findByTestId('desktop-check-failed');
+    expect(row.textContent).toContain('Could not check');
+    expect(screen.queryByTestId('desktop-up-to-date')).toBeNull();
+    fireEvent.click(row.querySelector('button')!);
+    await waitFor(() => expect(api.getUpdateInfo.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it("the feed's build is below the engine's floor: the popup says to wait — no Update Both", async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        desktop: { ...INCOMPATIBLE_INFO.desktop, meetsEngineFloor: false },
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(screen.getByTestId('version-upgrade-button'));
+    const modal = await screen.findByTestId('desktop-update-required-modal');
+    expect(modal.textContent).toContain('No newer FlowPad Desktop');
+    expect(screen.queryByTestId('update-both-button')).toBeNull();
+    expect(api.updateBoth).not.toHaveBeenCalled();
+  });
+
   it('a resumed coordinated update reports its outcome once — even when push AND pull both deliver it', async () => {
     const resumed = { success: true, engineVersion: '0.2.240', desktopVersion: '0.2.62' };
     let pushResumed: ((r: unknown) => void) | null = null;

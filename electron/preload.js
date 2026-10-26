@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadDesktopUpdate: () => ipcRenderer.invoke('update:download-desktop'),
   applyDesktopUpdate: () => ipcRenderer.invoke('update:apply-desktop'),
   updateBoth: (engineVersion) => ipcRenderer.invoke('update:both', engineVersion),
+  takeResumedUpdate: () => ipcRenderer.invoke('update:take-resumed'),
   // Both listeners return a disposer (see onNotificationClick for why: React effects remount).
   onDesktopUpdateState: (callback) => {
     const handler = (_event, data) => callback(data);

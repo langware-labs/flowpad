@@ -84,6 +84,7 @@ function load(opts = {}) {
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
     installedPairIssue() { return opts.pairIssue || null; }
     async resolveCompatibleEngineVersion() { if (opts.resolveThrows) throw new Error(opts.resolveThrows); return opts.compatibleRelease || null; }
+    async _readCandidateMinDesktop() { return { minDesktopVersion: opts.candidateFloor || null }; }
     async _flowStop() { uv.flowStops = (uv.flowStops || 0) + 1; }
     async _killPort() {}
     async recoverAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return !opts.recoveryFails; }
@@ -617,7 +618,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     // update:get-info — the one snapshot the panel renders from.
     const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', preflight: { installed: '0.2.168', latest: '0.2.180', updateAvailable: true, latestMinDesktop: '0.2.48', latestCompatible: false, newestCompatible: '0.2.175' } });
     const info = await env.ipc['update:get-info']();
-    eq(info.desktop, { installed: '0.2.47', state: 'available', available: '0.2.48', downloadState: 'idle' }, 'get-info: a newer desktop on the feed is reported, nothing downloading yet');
+    eq(info.desktop, { installed: '0.2.47', state: 'available', available: '0.2.48', downloadState: 'idle', meetsEngineFloor: true }, 'get-info: a newer desktop on the feed is reported (and it satisfies the engine floor), nothing downloading yet');
     eq(info.engine && info.engine.latestCompatible, false, "get-info: the engine pre-flight is the shell's verdict, passed through");
     eq([info.busy, info.resumed], [false, null], 'get-info: idle, nothing resumed');
   }
@@ -729,6 +730,10 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     await env.ipc['update:download-desktop']();
     env.autoUpdater.emit('error', new Error('feed unreachable')); await tick();
     ok(pushes(env).some((d) => d.state === 'error' && /feed unreachable/.test(d.error)), 'the panel hears the download error');
+    env.autoUpdater.finishDownload(); await tick(); // the promise's finally resets the in-flight flag…
+    env.sent.length = 0;
+    env.autoUpdater.emit('error', new Error('late error')); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && /late error/.test(d.error)), '…and an error landing after that still reaches the panel (it owns the version)');
   }
   {
     // After a FAILED panel download the periodic tick retries it WITHOUT a native prompt: the panel
@@ -744,6 +749,29 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
     eq(env.dialogCalls.length, 0, 'no native prompt: the panel owns this version');
     ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'), 'the panel hears it is ready instead');
+  }
+  {
+    // The panel ADOPTS a download the background flow already started WITH a prompt: Update Both over
+    // an in-flight download turns the native "Restart now" off — the panel's own flow wins.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48'); // desktop-only: downloads in the background, prompt on ready
+    eq(env.autoUpdater.downloads.length, 1, 'the background download is running');
+    const r = await env.ipc['update:both'](null, '0.2.180');
+    eq([r.started, env.autoUpdater.downloads.length], [true, 1], 'adopted: started, and no second download');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'no native "Restart now" over the adopted panel flow');
+    eq(env.readState().consented, true, 'the engine rides along, consented');
+  }
+  {
+    // Update Both is refused OUTRIGHT when the engine's own floor is above the desktop the feed
+    // offers — the doomed round (install desktop, restart, refuse engine, clear pending) never starts.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0' });
+    const r = await env.ipc['update:both'](null, '0.2.240');
+    eq([r.started, r.reason, r.minDesktop], [false, 'desktop-too-old', '0.3.0'], 'refused, with the floor named');
+    eq(env.readState(), null, 'nothing was saved for a flow that cannot finish');
+    eq(env.autoUpdater.downloads.length, 0, 'nothing was downloaded');
   }
 
   // ── the panel's engine upgrade never strands the user (the "stuck update" incident) ──

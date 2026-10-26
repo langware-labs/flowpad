@@ -5885,6 +5885,7 @@ msgstr "check again"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Check again"
@@ -7879,6 +7880,10 @@ msgstr "Could not change where the agent runs"
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Could not check — {failed}"
 msgstr "Could not check — {failed}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Could not check for desktop updates."
+msgstr "Could not check for desktop updates."
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
@@ -30062,6 +30067,10 @@ msgstr "The assistant's CLI is not installed on this machine"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "The attachments of this message could not be delivered."
 msgstr "The attachments of this message could not be delivered."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The available desktop build is older than this release requires — check again after the next desktop release."
+msgstr "The available desktop build is older than this release requires — check again after the next desktop release."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The backend may have restarted. Click to reattach."

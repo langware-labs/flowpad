@@ -77,6 +77,8 @@ interface DesktopUpdateInfo {
   state: 'available' | 'current' | 'unknown' | 'unsupported';
   available: string | null;
   downloadState: 'idle' | 'downloading' | 'ready' | 'installing';
+  /** Does the build on the feed satisfy the latest engine's min-desktop floor? null = no floor/unknown. */
+  meetsEngineFloor?: boolean | null;
 }
 
 /** Engine (PyPI) compat pre-flight, computed by the shell from the candidate wheel's metadata. */
@@ -125,6 +127,7 @@ interface ElectronAPI {
   upgradeFlowpad?: () => Promise<{ success: boolean; error?: string; desktopUpdatePending?: boolean }>;
   openExternal?: (url: string) => Promise<boolean>;
   getUpdateInfo?: () => Promise<UpdateInfo>;
+  takeResumedUpdate?: () => Promise<ResumedUpdate | null>;
   downloadDesktopUpdate?: () => Promise<UpdateActionResult>;
   applyDesktopUpdate?: () => Promise<UpdateActionResult>;
   updateBoth?: (engineVersion: string) => Promise<UpdateActionResult>;
@@ -430,6 +433,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           return t`No desktop update is available.`;
         case 'not-downloaded':
           return t`The update has not finished downloading yet.`;
+        case 'desktop-too-old':
+          return t`The available desktop build is older than this release requires — check again after the next desktop release.`;
         default:
           return t`The update could not be started${reason ? ` (${reason})` : ''}.`;
       }
@@ -500,6 +505,20 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     return dispose;
   }, [electronApi, showResumed]);
 
+  // …and PULL it once at mount: the startup push can beat the listener above, and 'update:get-info'
+  // only runs when the popover opens — without this, a failed resumed update stayed silent until then.
+  useEffect(() => {
+    let cancelled = false;
+    void electronApi?.takeResumedUpdate?.()
+      .then((r) => {
+        if (r && !cancelled) showResumed(r);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [electronApi, showResumed]);
+
   const handleUpgrade = useCallback(async () => {
     if (!electronApi?.upgradeFlowpad) return;
     setUpgradeError(null);
@@ -515,7 +534,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           engineTarget: engine.latest ?? data?.pypi?.latest ?? '',
           minDesktop: engine.latestMinDesktop,
           desktopInstalled: info?.desktop.installed ?? electronVersion,
-          desktopAvailable: info?.desktop.state === 'available' ? info.desktop.available : null,
+          // A feed build BELOW the engine's floor is "no suitable build yet", not an offer.
+          desktopAvailable:
+            info?.desktop.state === 'available' && info.desktop.meetsEngineFloor !== false
+              ? info.desktop.available
+              : null,
           checkFailed: info ? info.desktop.state === 'unknown' : true,
         });
         return;
@@ -529,7 +552,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             engineTarget: engine?.latest ?? data?.pypi?.latest ?? '',
             minDesktop: engine?.latestMinDesktop ?? null,
             desktopInstalled: info?.desktop.installed ?? electronVersion,
-            desktopAvailable: info?.desktop.available ?? null,
+            desktopAvailable: info && info.desktop.meetsEngineFloor !== false ? (info.desktop.available ?? null) : null,
             checkFailed: info ? info.desktop.state === 'unknown' : true,
           });
         } else {
@@ -662,7 +685,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     return {
       // 'downloading' | 'ready' | 'installing' | 'error' while an update moves;
       // otherwise the feed verdict: 'available' | 'current' | 'unknown' | 'unsupported'.
-      phase: flow ?? snap?.state ?? 'unknown',
+      phase: flow ?? snap?.state ?? null, // null until the shell's first answer: render nothing yet
       percent: desktopPush?.percent ?? null,
       version: desktopPush?.version ?? snap?.available ?? null,
       error: desktopPush?.error ?? null,
@@ -1059,6 +1082,23 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                   <p className="text-[10px] text-muted-foreground" data-testid="desktop-up-to-date">
                     <Trans>Up to date. Auto-updates check every 20 minutes.</Trans>
                   </p>
+                )}
+                {desktopView.phase === 'unknown' && (
+                  <div
+                    className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground"
+                    data-testid="desktop-check-failed"
+                  >
+                    <span>
+                      <Trans>Could not check for desktop updates.</Trans>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void refreshUpdateInfo()}
+                      className="rounded-sm border px-2 py-0.5 font-medium transition-colors hover:bg-accent"
+                    >
+                      <Trans>Check again</Trans>
+                    </button>
+                  </div>
                 )}
                 {desktopActionError && <p className="text-[10px] text-destructive">{desktopActionError}</p>}
               </div>

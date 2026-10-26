@@ -1687,7 +1687,14 @@ class UvManager {
       // budget: the input CHANGES (--refresh-package removes the stale index, the root cause) and
       // there is exactly one immediate re-run — nothing is waited out or masked.
       const refreshable = !baseArgs.includes('--offline') && !baseArgs.includes('--refresh') && !baseArgs.includes('--refresh-package');
-      if (refreshable && isEnginePinResolutionError(err)) {
+      const errText = String((err && (err.stderr || err.stdout)) || (err && err.message) || '');
+      // A version shut out by a --exclude-newer cut-off is not a cache problem; and a pin the FRESH
+      // PyPI document does not list (a typo, a withdrawn release) cannot be conjured by a refresh —
+      // re-running the whole ladder would only double the time to the real error.
+      const excludedByCutoff = /were excluded because they were published after/i.test(errText);
+      const pinned = engineVersionFromInstallArgs(baseArgs);
+      const knownMissing = !!(pinned && this._pypiDoc && this._pypiDoc.releases && !this._pypiDoc.releases[pinned]);
+      if (refreshable && !excludedByCutoff && !knownMissing && isEnginePinResolutionError(err)) {
         this.log.warn(`[uv] the requested ${PYPI_PACKAGE} release is not in uv's cached index (likely just published) — refreshing the registry cache and retrying once`);
         return await this._runStrategyLadder([...baseArgs, '--refresh-package', PYPI_PACKAGE], strategies, { onProgress });
       }
@@ -2970,8 +2977,11 @@ class UvManager {
       // a false "failed to start" error. A backend that never gets healthy is
       // a failed upgrade: fall into the recovery path below instead of loading
       // a dead URL.
-      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
-        throw new Error('upgraded backend did not become healthy');
+      if (waitForBackend) {
+        // waitForBackend answers with an OBJECT ({ ready, reason, … } — backend-wait.js), and an
+        // object is always truthy: testing the answer itself never caught a dead backend here.
+        const { ready } = (await waitForBackend({ maxChecks: 240 })) || {};
+        if (!ready) throw new Error('upgraded backend did not become healthy');
       }
 
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
@@ -3055,8 +3065,10 @@ class UvManager {
         await this.reinstall();
         await this.start();
       }
-      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
-        throw new Error('restored backend did not become healthy');
+      if (waitForBackend) {
+        // Same object-not-boolean contract as above: only `ready` says the restore worked.
+        const { ready } = (await waitForBackend({ maxChecks: 240 })) || {};
+        if (!ready) throw new Error('restored backend did not become healthy');
       }
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);

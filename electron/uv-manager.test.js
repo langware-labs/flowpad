@@ -1421,7 +1421,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       const loads = [];
       const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: (u) => loads.push(u) };
       const res = await m.checkForUpdatesInBackground(mainWindow, {
-        sendStatus: () => {}, waitForBackend: async () => false, backendUrl: 'http://localhost:9007',
+        sendStatus: () => {}, waitForBackend: async () => ({ ready: false, reason: 'unhealthy' }), backendUrl: 'http://localhost:9007',
         cloudUrl: 'https://x', compareWithPypi: true,
       });
       eq(res, false, 'post-boot upgrade: unhealthy backend after upgrade reports failure');
@@ -1441,7 +1441,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
         const unrecovered = [];
         // First dialog is "Update Available" (Upgrade = 0), the next is the failure dialog.
         const resU = await mu.checkForUpdatesInBackground(mainWindow, {
-          sendStatus: () => {}, waitForBackend: async () => true, backendUrl: 'http://localhost:9007',
+          sendStatus: () => {}, waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007',
           cloudUrl: 'https://x', compareWithPypi: true, onUnrecovered: async (e) => { unrecovered.push(e.message); },
         });
         eq(resU, false, 'unrecovered upgrade reports failure');
@@ -1456,7 +1456,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       const m2 = new UvManager(silentLog);
       m2._pypiUpdateStatus = m._pypiUpdateStatus; m2.stop = m.stop; m2.upgrade = m.upgrade; m2.start = m.start;
       const res2 = await m2.checkForUpdatesInBackground(mainWindow, {
-        sendStatus: () => {}, waitForBackend: async () => true, backendUrl: 'http://localhost:9007',
+        sendStatus: () => {}, waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007',
         cloudUrl: 'https://x', compareWithPypi: true,
       });
       eq(res2, true, 'post-boot upgrade: healthy backend reports success');

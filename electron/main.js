@@ -226,9 +226,11 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
-      // The version panel shows the error with a Retry — but only when a download or an apply was
-      // actually under way; a failed periodic feed check is not the panel's business.
-      if (desktopDownloadInFlight || restartApplier.busy) {
+      // The version panel shows the error with a Retry — when a download or an apply was actually
+      // under way, or the panel owns a version's flow (panelDesktopVersion survives the download
+      // promise's finally, which can reset the in-flight flag before this handler runs). A failed
+      // periodic feed check with no panel flow stays out of the panel.
+      if (desktopDownloadInFlight || restartApplier.busy || panelDesktopVersion) {
         sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
       }
       // If this happened while a "Restart now" was in flight, the app is not quitting after all.
@@ -2880,17 +2882,40 @@ async function desktopUpdateInfo() {
 ipcMain.handle('update:get-info', async () => {
   const desktop = await desktopUpdateInfo();
   const engine = uvManager ? await uvManager.engineUpdatePreflight() : null;
+  // Would the desktop on the feed satisfy the latest engine's floor? false → the popup must not
+  // offer Update Both yet ("wait for the next desktop release" is the honest advice).
+  desktop.meetsEngineFloor = engine && engine.latestMinDesktop && desktop.available
+    ? engineCompat.meetsFloor(desktop.available, engine.latestMinDesktop)
+    : null;
   const busy = desktopUpdateRefusal() === 'busy';
   const resumed = resumedPanelUpdate;
   resumedPanelUpdate = null; // one-shot: the panel shows it once
   return { desktop, engine, busy, resumed };
 });
 
+// The same one-shot, without the feed check 'update:get-info' performs: the panel pulls this the
+// moment it mounts, so a resumed outcome is reported even when the startup push beat the listener
+// and the popover is never opened. The renderer-side key dedups the overlap with the push.
+ipcMain.handle('update:take-resumed', () => {
+  const resumed = resumedPanelUpdate;
+  resumedPanelUpdate = null;
+  return resumed;
+});
+
 ipcMain.handle('update:download-desktop', async () => {
   const refusal = desktopUpdateRefusal();
   if (refusal) return { started: false, reason: refusal };
-  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopDownloadedVersion };
-  if (desktopDownloadInFlight) return { started: true, version: desktopDownloadVersion };
+  if (desktopDownloadedVersion) {
+    panelDesktopVersion = desktopDownloadedVersion; // the panel owns this version's flow from here
+    return { started: true, ready: true, version: desktopDownloadedVersion };
+  }
+  if (desktopDownloadInFlight) {
+    // A background (tick-started) download is adopted: its native "Restart now" prompt is turned off
+    // — without this the prompt would pop over the panel's own progress when the download lands.
+    panelDesktopVersion = desktopDownloadVersion;
+    suppressDesktopRestartPrompt = true;
+    return { started: true, version: desktopDownloadVersion };
+  }
   if (desktopStatus.state !== 'available') await getDesktopUpdateVersion();
   if (desktopStatus.state !== 'available') {
     return { started: false, reason: desktopStatus.state === 'current' ? 'no-update' : desktopStatus.state };
@@ -2921,7 +2946,7 @@ ipcMain.handle('update:apply-desktop', async () => {
 });
 
 ipcMain.handle('update:both', async (_event, engineVersion) => {
-  if (!uvManager) return { started: false, reason: 'busy' };
+  if (!uvManager) return { started: false, reason: 'unsupported' };
   const refusal = desktopUpdateRefusal();
   if (refusal) return { started: false, reason: refusal };
   if (!engineCompat.isInstallableVersion(engineVersion)) return { started: false, reason: 'invalid-version' };
@@ -2931,6 +2956,16 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   const desktopVersion = desktopDownloadedVersion || desktopDownloadVersion
     || (desktopStatus.state === 'available' ? desktopStatus.version : null);
   if (!desktopVersion) return { started: false, reason: 'no-update' };
+  // The engine's own floor must accept the desktop about to be installed — otherwise the whole
+  // coordinated flow is doomed: the new desktop would refuse the engine (_assertCandidateCompatible),
+  // clear the pending state, and the panel would offer the same lost round again.
+  const candidate = typeof uvManager._readCandidateMinDesktop === 'function'
+    ? await uvManager._readCandidateMinDesktop(engineVersion) : null;
+  const engineFloor = candidate && candidate !== 'invalid' ? candidate.minDesktopVersion : null;
+  if (engineFloor && engineCompat.meetsFloor(desktopVersion, engineFloor) === false) {
+    log.warn(`[update] panel: refusing Update Both — engine ${engineVersion} needs desktop ${engineFloor}, the feed offers ${desktopVersion}`);
+    return { started: false, reason: 'desktop-too-old', minDesktop: engineFloor };
+  }
   log.info(`[update] panel: coordinated update — desktop ${desktopVersion}, then engine ${engineVersion}`);
   // The popup click is the agreement to BOTH versions: save and consent in one go, so quitting before
   // the panel's "Update Now" still completes both on the next launch (autoInstallOnAppQuit + resume).
@@ -2941,7 +2976,11 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   offeredDesktopVersion = desktopVersion;
   panelDesktopVersion = desktopVersion;
   if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion };
-  if (!desktopDownloadInFlight) downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopVersion });
+  if (desktopDownloadInFlight) {
+    suppressDesktopRestartPrompt = true; // adopt the background download: its native prompt is off
+    return { started: true, version: desktopVersion };
+  }
+  downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopVersion });
   return { started: true, version: desktopVersion };
 });
 

@@ -5847,6 +5847,7 @@ msgstr "בדקו שוב"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Check again"
@@ -7823,6 +7824,10 @@ msgstr "לא ניתן לשנות את מקום ההרצה של הסוכן"
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Could not check — {failed}"
 msgstr "לא ניתן לבדוק — {failed}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Could not check for desktop updates."
+msgstr ""
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
@@ -29815,6 +29820,10 @@ msgstr "ה-CLI של העוזר לא מותקן במחשב הזה"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "The attachments of this message could not be delivered."
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The available desktop build is older than this release requires — check again after the next desktop release."
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
