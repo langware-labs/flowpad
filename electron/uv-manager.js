@@ -2557,11 +2557,15 @@ class UvManager {
       });
       if (!res.ok) {
         this.log.warn(`[uv] PyPI version lookup failed: HTTP ${res.status}`);
+        this.lastPypiLookupFailed = true; // "no update" and "PyPI down" both answer null — the flag tells them apart
         return null;
       }
-      return (await res.json()) || null;
+      const data = (await res.json()) || null;
+      this.lastPypiLookupFailed = data === null;
+      return data;
     } catch (err) {
       this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
+      this.lastPypiLookupFailed = true;
       return null;
     }
   }

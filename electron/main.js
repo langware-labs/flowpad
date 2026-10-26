@@ -269,23 +269,27 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
     if (check.due) {
       log.info(`[update] periodic check due (${check.reason})`);
+    } else if (followUpDesktop || followUpPackage) {
+      // Follow-up outranks the engine retry: a stuck engine (held behind a pending desktop) stays
+      // "due" tick after tick, and the blocked DESKTOP work is exactly what unblocks it.
+      pass = 'follow-up';
     } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
       pass = 'engine-retry';
       log.info('[update] engine check retry due (engine backoff)');
-    } else if (followUpPending) {
-      pass = 'follow-up';
     } else {
       return;
     }
   }
   autoCheckInFlight = true;
+  const desktopWasBlocked = followUpDesktop;
   const packageWasBlocked = followUpPackage;
-  followUpPending = false;
+  if (pass !== 'engine-retry') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
   followUpPackage = false;
+  let announcing = false;
   try {
     const last = state.lastResult || {};
     const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
-      : (pass === 'follow-up' && last.state === 'available' ? last.version : null);
+      : (pass === 'follow-up' && desktopWasBlocked && last.state === 'available' ? last.version : null);
     if (desktopLatest) {
       // A newer release than the one on screen / being downloaded: close that
       // prompt (as "Later") or cancel that download, so the user only ever sees
@@ -307,9 +311,11 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
       if (action === 'announce') {
         // Not while a download is running, the restart prompt is up, or another update dialog is open.
         if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
+          announcing = true;
           await offerDesktopUpdate(desktopLatest);
+          announcing = false;
         } else {
-          followUpPending = true; // blocked by a dialog/download: retried on a near tick, not in a day
+          followUpDesktop = true; // blocked by a dialog/download: retried on a near tick, not in a day
         }
       } else if (action === 'resume' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
         // Announced this session (the user may have said "Update now") and the download was lost:
@@ -321,7 +327,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     }
     if (pass !== 'follow-up' || packageWasBlocked) {
       const pkg = await checkPackageUpdateInBackground();
-      if (pkg === 'blocked') { followUpPending = true; followUpPackage = true; }
+      if (pkg === 'blocked') followUpPackage = true;
       // The engine channel keeps its own streak (recordEngineFailure/engineRetryDue): a PyPI error
       // retries on the engine backoff without sending the desktop feed back to the network — and a
       // follow-up pass never records, it only finishes what a dialog blocked.
@@ -330,15 +336,18 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     }
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
+    // The offer itself threw after the feed was already recorded: keep the debt so a near tick
+    // retries it from the cache instead of waiting out the interval.
+    if (announcing) followUpDesktop = true;
   } finally {
     autoCheckInFlight = false;
   }
 }
 
 // A pass left work behind a transient blocker (an open update dialog, a running download): the next
-// tick finishes that half from the cached answer instead of waiting out the whole interval.
-// `followUpPackage` says the ENGINE half was what got blocked — a follow-up re-runs it only then.
-let followUpPending = false;
+// tick finishes that half from the cached answer instead of waiting out the whole interval. One debt
+// flag per half — an engine-retry pass must not erase the desktop's, and vice versa.
+let followUpDesktop = false;
 let followUpPackage = false;
 
 /**
@@ -427,6 +436,10 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
   packageCheckDone = new Promise((r) => { done = r; });
   try {
     log.info(`[uv] ${label} package check`);
+    // uv-manager swallows PyPI failures into null answers ("no update"), so a thrown error almost
+    // never reaches us — the flag is how THIS call reports an unreachable PyPI. Reset first: the
+    // cloud path (compareWithPypi=false) never touches it and must not echo a previous verdict.
+    uvManager.lastPypiLookupFailed = false;
     await uvManager.checkForUpdatesInBackground(mainWindow, {
       onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
       sendStatus,
@@ -435,7 +448,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
     });
-    return 'ran'; // completed: the scheduler may clear the engine channel's failure streak
+    return uvManager.lastPypiLookupFailed ? 'failed' : 'ran';
   } catch (err) {
     log.warn(`[uv] ${label} package check failed: ${err.message}`);
     return 'failed'; // the scheduler starts the ENGINE backoff — a transient PyPI failure is not a day's wait
@@ -488,10 +501,15 @@ function atomicWrite(p, text) {
   const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
   try {
     fs.writeFileSync(tmp, text, 'utf8');
-    fs.renameSync(tmp, p);
-  } catch (err) {
+    try {
+      fs.renameSync(tmp, p);
+    } catch {
+      // The rename can be blocked on Windows (anti-virus / indexer holding the target): a plain
+      // overwrite — the pre-PR behavior — beats losing the write altogether.
+      fs.writeFileSync(p, text, 'utf8');
+    }
+  } finally {
     try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
-    throw err;
   }
 }
 
@@ -637,7 +655,14 @@ async function showDesktopReadyPrompt(version) {
 async function offerDesktopUpdate(desktopLatest) {
   offeredDesktopVersion = desktopLatest; // session dedupe is immediate; the persisted watermark waits for the screen
   pendingDesktopVersion = desktopLatest;
-  const engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
+  let engineStatus = null;
+  try {
+    engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
+  } catch (err) {
+    // resolveCompatibleEngineVersion inside the status can throw: fall back to the desktop-only
+    // offer — the desktop update must not be lost to an engine-status hiccup.
+    log.warn(`[update] engine status unavailable for the offer: ${err.message}`);
+  }
   if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
     // Desktop only: its "announcement" is the download + ready prompt, committed to right here —
     // recorded now so the version is never announced twice, even across restarts.

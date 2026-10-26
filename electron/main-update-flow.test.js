@@ -645,12 +645,51 @@ const HOUR = 60 * 60 * 1000;
     eq(env.autoUpdater.checks, 1, 'a relaunch inside the backoff hits the feed for real');
   }
   {
-    // A throw BEFORE the update screen does not burn the announcement watermark.
+    // An engine-status throw mid-offer degrades to the DESKTOP-ONLY offer instead of losing the
+    // update (and the desktop-only path commits its watermark at the point it commits to deliver).
     const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
     env.t.setupElectronAutoUpdater();
     env.t.getUvManager()._pypiUpdateStatus = async () => { throw new Error('pypi down'); };
-    await env.t.offerDesktopUpdate('0.2.48').catch(() => {});
-    eq((env.readSchedule() || {}).lastOfferedDesktopVersion, undefined, 'no screen shown: the version is not marked offered');
+    eq(await env.t.offerDesktopUpdate('0.2.48'), 'desktop', 'engine status down: the offer degrades to desktop-only');
+    eq(env.dialogCalls.length, 0, 'no combined screen');
+    eq(env.autoUpdater.downloads.length, 1, 'the desktop download still starts');
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'and the delivery is committed');
+  }
+  {
+    // uv-manager swallows PyPI outages into null answers, so checkForUpdatesInBackground returns
+    // normally — the lookup flag is what must arm the ENGINE backoff.
+    const env = load();
+    env.t.setupElectronAutoUpdater();
+    const uvm = env.t.getUvManager();
+    uvm.checkForUpdatesInBackground = async () => { uvm.lastPypiLookupFailed = true; return false; };
+    await schedulerTick(env).fn(); await tick();
+    eq(env.readSchedule().engineFailureCount, 1, 'a swallowed PyPI outage still starts the engine backoff');
+    uvm.checkForUpdatesInBackground = async () => { env.uv.checks++; return false; };
+    env.writeSchedule({ ...env.readSchedule(), engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    eq([env.readSchedule().engineFailureCount, env.uv.checks], [0, 1], 'a clean lookup clears it');
+  }
+  {
+    // An engine-retry pass must not erase the DESKTOP's follow-up debt: a blocked offer survives it
+    // and fires on the next tick.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.49', dialogResponses: [1, 1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    const open = env.t.offerDesktopUpdate('0.2.48'); // the combined dialog is held open
+    await tick();
+    const blockedTick = schedulerTick(env).fn(); // due: finds 0.2.49, offer blocked by the open dialog
+    await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'the offer is blocked behind the open dialog');
+    // An engine backoff comes due while the dialog is still open: the engine-retry pass runs...
+    env.writeSchedule({ ...env.readSchedule(), engineFailureCount: 1, engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    const retryTick = schedulerTick(env).fn();
+    await tick(); await tick();
+    env.releaseDialog();
+    await open; await blockedTick; await retryTick;
+    env.autoUpdater.finishDownload(); await tick(); // settle the "Later" download of 0.2.48
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 2, '...and the blocked desktop offer still fires on the next tick');
+    eq(env.autoUpdater.checks, 1, 'from the cache — the feed was hit once in all of this');
   }
   {
     // A version adopted silently is RESUMED (not re-adopted) on the next launch, and the announce
