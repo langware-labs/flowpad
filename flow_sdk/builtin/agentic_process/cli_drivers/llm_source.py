@@ -293,7 +293,11 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
                 LLMSource(
                     endpoint_typeid=typeid,
                     name=name,
-                    detail=endpoint.provider,
+                    # The listing row's ``provider`` is the entity default for any allowance (a chain has no
+                    # provider of its own); the binding the hub pushed names who actually pays.
+                    detail=(
+                        bound.provider if bound and typeid == bound_typeid and bound.provider else endpoint.provider
+                    ),
                     rank=_RANK_ENDPOINT,
                     eligible=not reason,
                     auto=(not reason) and typeid == bound_typeid,
