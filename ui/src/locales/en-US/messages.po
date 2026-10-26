@@ -8239,6 +8239,10 @@ msgstr "Could not reach this cloud machine. It may be paused."
 msgid "Could not read the diagnosis"
 msgstr "Could not read the diagnosis"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Could not read the file"
+msgstr "Could not read the file"
+
 #: src/components/rag/RagChunkBrowser.tsx
 msgid "Could not read the index"
 msgstr "Could not read the index"
@@ -32518,6 +32522,10 @@ msgstr "Upload it to FlowPad on any machine to open the conversation."
 #: src/pages/entry/MessageLanding.tsx
 msgid "Upload it to FlowPad on any machine to open the task."
 msgstr "Upload it to FlowPad on any machine to open the task."
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Upload JSON file"
+msgstr "Upload JSON file"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"
