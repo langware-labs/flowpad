@@ -41,7 +41,10 @@ const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
 const tick = () => new Promise((r) => setImmediate(r));
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mainflow-'));
-process.env.HOME = HOME; // main.js creates ~/.flow/logs at load
+// main.js derives ~/.flow (logs, instance dir) from os.homedir() at load: $HOME on POSIX,
+// %USERPROFILE% on Windows. Set both so the planted config.json is the one main.js reads.
+process.env.HOME = HOME;
+process.env.USERPROFILE = HOME;
 
 const INSTANCE_DIR = path.join(HOME, '.flow', 'instances', 'prod');
 /** The hub-written login state the schedule follows; HOME is shared across loads, so every load() resets it.
