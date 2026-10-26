@@ -92,7 +92,14 @@ Electron (main.js)
 "engine ≥0.2.173 needs 3.11 but an old desktop pins 3.10" failure for new desktops.
 
 ### 3.2 Updates (new flow)
-- Checked every 20 minutes (`UPDATE_CHECK_INTERVAL_MS`) by `checkPackageUpdateInBackground`.
+- Both channels are checked on a per-account schedule (`update-schedule.js`, FLOWPAD-2308): hourly for an
+  `@langware.ai` login (the hub-validated email the backend writes to the instance's `config.json`), daily
+  otherwise — including logged out. The last check, its answer, the failure streak and the last version
+  announced persist in `update-schedule.json` (userData), so a restart neither resets the cadence nor
+  re-announces the same version; failed checks retry on a growing backoff (10 min → 4 h). A 5-minute tick
+  only asks whether a check is due; login/logout/account switch re-evaluate at once (a directory watch on
+  the instance dir). The launch check is skipped while a recent answer said "current" (the status is seeded,
+  so engine updates are not held); recovery panels and the update-cycle harness bypass the schedule.
 - **Desktop and engine both new:** one screen, "Update now / Later". The engine version X is saved to `pending-engine.json`.
   After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine

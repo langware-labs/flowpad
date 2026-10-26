@@ -23,6 +23,8 @@ const EXPOSE = `
 module.exports.__t = {
   offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
+  runScheduledUpdateCheck, startLaunchDesktopCheck,
+  primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   getDesktopStatus: () => desktopStatus,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
@@ -41,9 +43,26 @@ const tick = () => new Promise((r) => setImmediate(r));
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mainflow-'));
 process.env.HOME = HOME; // main.js creates ~/.flow/logs at load
 
-/** Load a fresh copy of main.js. `opts`: appVersion, dialogResponses (consumed in order), engineStatus, desktopFeed, engine. */
+const INSTANCE_DIR = path.join(HOME, '.flow', 'instances', 'prod');
+/** The hub-written login state the schedule follows; HOME is shared across loads, so every load() resets it.
+ *  Written the way the backend writes it — an atomic RENAME (os.replace) — which is also what the
+ *  directory watch in main.js sees; a plain in-place overwrite is invisible to it on macOS. */
+function writeAccountEmail(email) {
+  fs.mkdirSync(INSTANCE_DIR, { recursive: true });
+  if (email) {
+    const tmp = path.join(INSTANCE_DIR, 'config.json.tmp');
+    fs.writeFileSync(tmp, JSON.stringify({ user: { email } }));
+    fs.renameSync(tmp, path.join(INSTANCE_DIR, 'config.json'));
+  } else {
+    fs.rmSync(path.join(INSTANCE_DIR, 'config.json'), { force: true });
+  }
+}
+
+/** Load a fresh copy of main.js. `opts`: appVersion, dialogResponses (consumed in order), engineStatus, desktopFeed,
+ *  engine, userDataDir (reuse across loads → "restart" tests), accountEmail (the logged-in user). */
 function load(opts = {}) {
-  const userData = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+  const userData = opts.userDataDir || fs.mkdtempSync(path.join(HOME, 'userdata-'));
+  writeAccountEmail(opts.accountEmail || null);
   const intervals = [];
   global.setInterval = (fn, ms) => { const h = { fn, ms, unref() {} }; intervals.push(h); return h; };
 
@@ -55,8 +74,9 @@ function load(opts = {}) {
   const mk = () => new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 'stub' : k === 'then' ? undefined : mk()), apply: () => mk(), construct: () => mk(), set: () => true });
   const BW = function () {}; BW.getAllWindows = () => []; BW.getFocusedWindow = () => null;
   const autoUpdater = Object.assign(new EventEmitter(), {
-    downloads: [], quits: [],
+    downloads: [], quits: [], checks: 0,
     checkForUpdates: async () => {
+      autoUpdater.checks++;
       if (opts.desktopCheckThrows) throw new Error(opts.desktopCheckThrows);
       return { updateInfo: { version: opts.desktopFeed || opts.appVersion || '0.2.47' } };
     },
@@ -131,11 +151,15 @@ function load(opts = {}) {
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
   t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
-  return { t, ipc, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
+  return { t, ipc, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
 const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
+const schedule = require('./update-schedule');
+const schedulerTick = (env) => env.intervals.find((i) => i.ms === schedule.SCHEDULER_TICK_MS);
+const agoIso = (ms) => new Date(Date.now() - ms).toISOString();
+const HOUR = 60 * 60 * 1000;
 
 (async () => {
   // ── desktop + engine, "Update now" ───────────────────────────────────────
@@ -427,11 +451,159 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     const env = load({ dialogResponses: [1] });
     env.t.setupElectronAutoUpdater();
     await env.t.offerDesktopUpdate('0.2.48');
-    const tickFn = env.intervals.find((i) => i.ms === 20 * 60 * 1000);
-    ok(tickFn, 'the 20-minute check exists');
+    ok(schedulerTick(env), 'the scheduler tick exists');
     env.autoUpdater.finishDownload && env.autoUpdater.finishDownload();
-    await tickFn.fn(); await tick();
+    await schedulerTick(env).fn(); await tick();
     eq(env.dialogCalls.length, 1, 'the periodic check does not show the combined screen a second time');
+  }
+
+  // ── FLOWPAD-2308: the periodic pass runs on the account's schedule, not on every tick ──
+  {
+    // Fresh state: the first tick checks (both channels), the next tick is not due for a day.
+    const env = load();
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 1, 'first tick ever: the desktop check runs');
+    eq(env.uv.checks, 1, 'and the engine check with it');
+    eq(env.readSchedule().lastResult, { state: 'current', version: null }, 'the answer is persisted');
+    await schedulerTick(env).fn(); await tick();
+    eq([env.autoUpdater.checks, env.uv.checks], [1, 1], 'the next tick is not due: NEITHER channel is checked');
+  }
+  {
+    // @langware.ai checks hourly; everyone else daily — same two-hour-old state, different verdicts.
+    const staleByTwoHours = { lastSuccessAt: agoIso(2 * HOUR), lastAttemptAt: agoIso(2 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 };
+    const internal = load({ accountEmail: 'dev@langware.ai' });
+    internal.writeSchedule(staleByTwoHours);
+    internal.t.setupElectronAutoUpdater();
+    await schedulerTick(internal).fn(); await tick();
+    eq(internal.autoUpdater.checks, 1, 'internal account, last check 2h ago: due (hourly)');
+    const regular = load({ accountEmail: 'user@example.com' });
+    regular.writeSchedule(staleByTwoHours);
+    regular.t.setupElectronAutoUpdater();
+    await schedulerTick(regular).fn(); await tick();
+    eq(regular.autoUpdater.checks, 0, 'regular account, same state: not due (daily)');
+    // An account switch re-reads the email on the next pass: the overdue check fires at once.
+    writeAccountEmail('dev@langware.ai');
+    await regular.t.runScheduledUpdateCheck(); await tick();
+    eq(regular.autoUpdater.checks, 1, 'switching to an internal account makes the stale check due');
+  }
+  {
+    // RESTART: the persisted answer is reused — no check, and the engine is NOT held by it.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const first = load({ userDataDir });
+    eq(await first.t.startLaunchDesktopCheck(), null, 'first launch: the real check runs (nothing newer)');
+    eq(first.autoUpdater.checks, 1, 'first launch: it hit the feed');
+    const second = load({ userDataDir });
+    eq(await second.t.startLaunchDesktopCheck(), null, 'relaunch inside the interval: skipped');
+    eq(second.autoUpdater.checks, 0, 'a restart does not reset the interval — the feed is not touched');
+    eq(second.t.getDesktopStatus().state, 'current', 'the status is seeded from the persisted answer');
+    await second.t.checkPackageUpdateInBackground();
+    eq(second.uv.checks, 1, 'so the engine check is not held by the skipped check');
+  }
+  {
+    // RESTART with the announced version still the latest: no second screen — deferred silently.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.writeSchedule({ lastSuccessAt: agoIso(HOUR), lastAttemptAt: agoIso(HOUR), lastResult: { state: 'available', version: '0.2.48' }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    env.t.primeLaunchCheck();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.finishDownload(); // nothing waits on the deferred download
+    const r = await p;
+    eq(r.ok, true, 'restart, same version: startup proceeds');
+    eq(env.autoUpdater.checks, 1, 'a pending update is re-checked at launch (never trusted stale)');
+    eq(env.dialogCalls.length, 0, 'but the same version is NOT announced again');
+    eq(env.autoUpdater.downloads.length, 1, 'it downloads silently instead (installs on the next quit)');
+    ok(reminderTimer(env), 'and the 90-minute reminder will offer the restart');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'the engine still waits for the pending desktop');
+  }
+  {
+    // ...a NEWER version than the announced one is a new announcement.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.49', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(HOUR), lastAttemptAt: agoIso(HOUR), lastResult: { state: 'available', version: '0.2.48' }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    env.t.primeLaunchCheck();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.finishDownload();
+    await p;
+    eq(env.dialogCalls.length, 1, 'a strictly newer version is announced');
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.49', 'and recorded as the one offered');
+  }
+  {
+    // ...and the periodic tick after a restart re-arms the download without re-announcing.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'available', version: '0.2.48' }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 1, 'overdue after a restart: the tick checks');
+    eq(env.dialogCalls.length, 0, 'the version announced before the restart is not announced again');
+    eq(env.autoUpdater.downloads.length, 1, 'its download is re-armed from the feed cache');
+  }
+  {
+    // Failures back off instead of hammering, and a success resets the streak.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const env = load({ userDataDir, desktopCheckThrows: 'HTTP 500' });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq([env.autoUpdater.checks, env.readSchedule().failureCount], [1, 1], 'the failed check is counted');
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 1, 'inside the backoff window: the feed is left alone');
+    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    eq([env.autoUpdater.checks, env.readSchedule().failureCount], [2, 2], 'after the backoff it retries, and the streak grows');
+    const recovered = load({ userDataDir });
+    recovered.writeSchedule({ ...recovered.readSchedule(), lastAttemptAt: agoIso(schedule.BACKOFF_MAX_MS) });
+    recovered.t.setupElectronAutoUpdater();
+    await schedulerTick(recovered).fn(); await tick();
+    eq([recovered.autoUpdater.checks, recovered.readSchedule().failureCount], [1, 0], 'a success ends the backoff');
+  }
+  {
+    // Concurrency: a tick that lands while a pass is still running does nothing.
+    const env = load();
+    env.t.setupElectronAutoUpdater();
+    let release;
+    env.autoUpdater.checkForUpdates = () => { env.autoUpdater.checks++; return new Promise((r) => { release = r; }); };
+    const first = schedulerTick(env).fn();
+    await tick();
+    await schedulerTick(env).fn();
+    eq(env.autoUpdater.checks, 1, 'two ticks, one in-flight pass: one check');
+    release({ updateInfo: { version: '0.2.47' } });
+    await first;
+  }
+  {
+    // A login observed through the instance dir flips the cadence without waiting for a tick.
+    const env = load({ accountEmail: 'user@example.com' });
+    env.writeSchedule({ lastSuccessAt: agoIso(2 * HOUR), lastAttemptAt: agoIso(2 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    // Arming fs.watch is itself async on macOS, so a rename fired right after setup can be missed
+    // (prod arms at app start, logins come later). Re-emit it until the watcher catches one; the
+    // spacing stays above the 500ms debounce so each re-emit lets the previous one fire.
+    for (let waited = 0; env.autoUpdater.checks === 0 && waited < 5600; waited += 700) {
+      writeAccountEmail('dev@langware.ai');
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    eq(env.autoUpdater.checks, 1, 'logging in as @langware.ai makes the 2h-old check due at once');
+  }
+  {
+    // The update-cycle harness drives the cadence itself: its interval bypasses the schedule.
+    process.env.FLOWPAD_UPDATE_TEST = '1';
+    process.env.FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS = '1234';
+    try {
+      const env = load();
+      env.writeSchedule({ lastSuccessAt: agoIso(1000), lastAttemptAt: agoIso(1000), lastResult: { state: 'current', version: null }, failureCount: 0 });
+      env.t.setupElectronAutoUpdater();
+      const harnessTick = env.intervals.find((i) => i.ms === 1234);
+      ok(harnessTick, 'the harness interval is the tick');
+      await harnessTick.fn(); await tick();
+      eq(env.autoUpdater.checks, 1, 'and it checks unconditionally, schedule or not');
+    } finally {
+      delete process.env.FLOWPAD_UPDATE_TEST;
+      delete process.env.FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS;
+    }
   }
 
   // ── an installed desktop/engine pair the contract forbids (engine-compat.js): repaired with a DIRECTION ──
