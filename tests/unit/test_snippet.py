@@ -506,13 +506,28 @@ def test_node_ok_throw_syntax_and_hang(tmp_path, term_path):
     assert hang.timed_out
 
 
-@pytest.mark.long  # 4.4s: three ~1s rustc compiles + the 3s hang budget
-def test_rust_ok_compile_error_panic_and_hang(tmp_path, term_path):
+# The rust checks are one test's worth of coverage split THREE ways, not three features: on a loaded
+# CI runner the session's FIRST rustc (cold toolchain) was observed eating most of a 30-second ceiling
+# by itself (PR #723: the one-test form timed out during its SECOND compile, twice in a row), so four
+# compiles under ONE per-test ceiling flaked as a set. Each split test keeps the standard ceiling —
+# no budget was raised; each test simply carries less work.
+@pytest.mark.long  # ~1s warm (one rustc compile+run); first of the session pays the cold toolchain
+def test_rust_ok(tmp_path, term_path):
     _need("rustc", term_path)
     ok = _run(_snip(tmp_path, "rs", 'fn main() {\n    println!("{}", HashMap::<u8, u8>::new().len());\n}', hidden="use std::collections::HashMap;"), term_path, timeout=30)
     assert (ok.returncode, ok.stdout) == (0, "0\n"), ok.stderr
+
+
+@pytest.mark.long  # ~1s: one rustc compile that must FAIL, and name the error
+def test_rust_compile_error(tmp_path, term_path):
+    _need("rustc", term_path)
     bad = _run(_snip(tmp_path, "rs", "fn main() { let x: u8 = \"s\"; }"), term_path, timeout=30)
     assert bad.returncode == 1 and "error[E" in bad.stderr
+
+
+@pytest.mark.long  # ~5s: two ~1s rustc compiles + the 3s hang budget
+def test_rust_panic_and_hang(tmp_path, term_path):
+    _need("rustc", term_path)
     panic = _run(_snip(tmp_path, "rs", 'fn main() { panic!("boom"); }'), term_path, timeout=30)
     assert panic.returncode == 101 and "boom" in panic.stderr
     hang = _run(_snip(tmp_path, "rs", "fn main() { loop {} }"), term_path, timeout=3)
