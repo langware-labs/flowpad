@@ -2,7 +2,8 @@
 
 /*
  * When automatic update checks happen (FLOWPAD-2308) — the pure half, kept out of main.js the way
- * update-plan.js and update-recovery.js are.
+ * update-plan.js and update-recovery.js are. One schedule paces BOTH update channels: the desktop
+ * app (electron-updater/GitHub) and the engine (PyPI) ride the same periodic pass.
  *
  * The cadence is per account: an @langware.ai login (the hub-validated email the backend writes to
  * the instance's config.json) checks every hour for early validation; everyone else — including a
