@@ -21751,6 +21751,10 @@ msgstr "מבט־על על הארגון"
 msgid "Organization:"
 msgstr "ארגון:"
 
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Organization: {organization}"
+msgstr "ארגון: {organization}"
+
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "ארגונים וצוותים פועלים בענן. כדי לנהל אותם, יש לצאת ממצב מקומי."
@@ -29429,6 +29433,10 @@ msgstr ""
 #: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "שם הצוות…"
+
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Team: {team}"
+msgstr "צוות: {team}"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Teammate Mode"

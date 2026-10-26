@@ -21751,6 +21751,10 @@ msgstr "العرض الشامل للهيكل التنظيمي"
 msgid "Organization:"
 msgstr "المؤسسة:"
 
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Organization: {organization}"
+msgstr "المؤسسة: {organization}"
+
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "تُحفظ المؤسسات والفرق في السحابة. للإدارة، يلزم الخروج من الوضع المحلي."
@@ -29433,6 +29437,10 @@ msgstr ""
 #: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "اسم الفريق…"
+
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Team: {team}"
+msgstr "الفريق: {team}"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Teammate Mode"

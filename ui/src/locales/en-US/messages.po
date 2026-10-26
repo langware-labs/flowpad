@@ -21932,6 +21932,10 @@ msgstr "Organization WorldView"
 msgid "Organization:"
 msgstr "Organization:"
 
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Organization: {organization}"
+msgstr "Organization: {organization}"
+
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
@@ -29674,6 +29678,10 @@ msgstr "team default"
 #: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "Team name…"
+
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Team: {team}"
+msgstr "Team: {team}"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Teammate Mode"
