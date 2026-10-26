@@ -232,8 +232,8 @@ function setupElectronAutoUpdater() {
 
   }
 
-  // What was announced before a restart still counts: one announcement per version (FLOWPAD-2308).
-  offeredDesktopVersion = scheduleStore.read().lastOfferedDesktopVersion || null;
+  // (offeredDesktopVersion stays session-only: cross-restart dedupe is the persisted
+  //  lastOfferedDesktopVersion watermark, read through decideDesktopAction.)
 
   // Long-lived sessions: re-check periodically. The tick is cheap and only ASKS update-schedule.js
   // whether a check is DUE — hourly for an @langware.ai account, daily otherwise, anchored to the
@@ -260,25 +260,32 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   if (autoCheckInFlight) return;
   armAccountWatch(); // a watch that died (or never armed on a fresh install) is back within one tick
   const state = scheduleStore.read(); // one read per pass; the record* writers re-read at their write
-  let checkFeed = true;
+  // Pass shape: 'scheduled' hits the feed and runs both halves; 'engine-retry' is the ENGINE
+  // channel's own backoff (its failure must not drag the desktop feed along); 'follow-up' finishes
+  // a half blocked by a dialog/download, from the cached answer, and never records failures —
+  // otherwise every 5-minute tick would inflate a streak the backoff never paced.
+  let pass = 'scheduled';
   if (!bypassSchedule) {
     const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
     if (check.due) {
       log.info(`[update] periodic check due (${check.reason})`);
+    } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
+      pass = 'engine-retry';
+      log.info('[update] engine check retry due (engine backoff)');
     } else if (followUpPending) {
-      // Part of the last pass was blocked by an open dialog or a running download — finish it from
-      // the cached answer on this near tick, not a whole interval later. No new feed hit.
-      checkFeed = false;
+      pass = 'follow-up';
     } else {
       return;
     }
   }
   autoCheckInFlight = true;
+  const packageWasBlocked = followUpPackage;
   followUpPending = false;
+  followUpPackage = false;
   try {
     const last = state.lastResult || {};
-    const desktopLatest = checkFeed ? await getDesktopUpdateVersion()
-      : (last.state === 'available' ? last.version : null);
+    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
+      : (pass === 'follow-up' && last.state === 'available' ? last.version : null);
     if (desktopLatest) {
       // A newer release than the one on screen / being downloaded: close that
       // prompt (as "Later") or cancel that download, so the user only ever sees
@@ -293,7 +300,10 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         desktopDownloadToken.cancel();
         await desktopDownloadDone;
       }
-      const action = updateSchedule.decideDesktopAction({ state, version: desktopLatest, isNewer, deferredVersion: deferredDesktopVersion });
+      const action = updateSchedule.decideDesktopAction({
+        state, version: desktopLatest, isNewer,
+        deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
+      });
       if (action === 'announce') {
         // Not while a download is running, the restart prompt is up, or another update dialog is open.
         if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
@@ -301,15 +311,23 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         } else {
           followUpPending = true; // blocked by a dialog/download: retried on a near tick, not in a day
         }
-      } else if (action !== 'ignore' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
+      } else if (action === 'resume' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
+        // Announced this session (the user may have said "Update now") and the download was lost:
+        // continue it — no deferral, no reminder, nothing the user did not ask for.
+        downloadDesktopUpdateInBackground({ version: desktopLatest });
+      } else if ((action === 'adopt' || action === 'redownload') && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
         adoptDesktopUpdateSilently(desktopLatest, action);
       }
     }
-    const pkg = await checkPackageUpdateInBackground();
-    if (pkg === 'blocked') followUpPending = true;
-    // A failed engine half starts the backoff too — otherwise a transient PyPI error is silently
-    // swallowed until the next full interval (the desktop half records its own failures).
-    else if (pkg === 'failed') scheduleStore.write(updateSchedule.recordFailure(scheduleStore.read(), { at: Date.now() }));
+    if (pass !== 'follow-up' || packageWasBlocked) {
+      const pkg = await checkPackageUpdateInBackground();
+      if (pkg === 'blocked') { followUpPending = true; followUpPackage = true; }
+      // The engine channel keeps its own streak (recordEngineFailure/engineRetryDue): a PyPI error
+      // retries on the engine backoff without sending the desktop feed back to the network — and a
+      // follow-up pass never records, it only finishes what a dialog blocked.
+      else if (pkg === 'failed' && pass !== 'follow-up') scheduleStore.write(updateSchedule.recordEngineFailure(scheduleStore.read(), { at: Date.now() }));
+      else if (pkg === 'ran' && (Number(state.engineFailureCount) || 0) > 0) scheduleStore.write(updateSchedule.recordEngineSuccess(scheduleStore.read()));
+    }
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
   } finally {
@@ -319,7 +337,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
 
 // A pass left work behind a transient blocker (an open update dialog, a running download): the next
 // tick finishes that half from the cached answer instead of waiting out the whole interval.
+// `followUpPackage` says the ENGINE half was what got blocked — a follow-up re-runs it only then.
 let followUpPending = false;
+let followUpPackage = false;
 
 /**
  * Take a desktop update WITHOUT announcing it (decideDesktopAction said 'adopt' or 'redownload') —
@@ -415,9 +435,10 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
     });
+    return 'ran'; // completed: the scheduler may clear the engine channel's failure streak
   } catch (err) {
     log.warn(`[uv] ${label} package check failed: ${err.message}`);
-    return 'failed'; // the scheduler starts the backoff — a transient PyPI failure is not a day's wait
+    return 'failed'; // the scheduler starts the ENGINE backoff — a transient PyPI failure is not a day's wait
   } finally {
     packageUpdateInFlight = false;
     done();
@@ -461,10 +482,17 @@ const scheduleStore = {
   },
 };
 // tmp + rename, the same pattern as the backend's app_config writes: a crash mid-write leaves the
-// previous file, never a truncated one.
+// previous file, never a truncated one. The tmp name is unique (overlapping writers must not race
+// on one name), and a failed rename does not leave it behind.
 function atomicWrite(p, text) {
-  fs.writeFileSync(`${p}.tmp`, text, 'utf8');
-  fs.renameSync(`${p}.tmp`, p);
+  const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, 'utf8');
+    fs.renameSync(tmp, p);
+  } catch (err) {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+    throw err;
+  }
 }
 
 // The account the schedule follows: the hub-validated email the backend writes to the instance's
@@ -2087,9 +2115,11 @@ async function installAndStartBackend({ quiet = false } = {}) {
 
       if (desktopLatest) {
         // One decision ladder with the periodic tick (update-schedule.decideDesktopAction); at this
-        // point in startup nothing can be deferred, downloading or on screen yet, so no local blockers.
+        // point in startup nothing can be deferred, offered, downloading or on screen yet, so no
+        // local blockers and never 'resume'/'ignore' — only announce, adopt or redownload.
         const action = updateSchedule.decideDesktopAction({
-          state: scheduleStore.read(), version: desktopLatest, isNewer, deferredVersion: deferredDesktopVersion,
+          state: scheduleStore.read(), version: desktopLatest, isNewer,
+          deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
         });
         if (action === 'announce') await offerDesktopUpdate(desktopLatest);
         else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);

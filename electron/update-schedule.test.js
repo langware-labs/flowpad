@@ -26,6 +26,7 @@ eq(s.isInternalEmail('a@langware.ai.evil.com'), false, 'a prefix match is not a 
 eq(s.isInternalEmail('a@sub.langware.ai'), false, 'a subdomain is not the domain');
 eq(s.isInternalEmail('@langware.ai'), false, 'no local part, no account');
 eq(s.isInternalEmail(null), false, 'logged out is not internal');
+eq(s.isInternalEmail(' a@langware.ai '), true, 'stray whitespace (a hand-edited config) still matches');
 eq(s.intervalForEmail('dev@langware.ai'), s.INTERNAL_INTERVAL_MS, 'internal: hourly');
 eq(s.intervalForEmail('user@example.com'), s.REGULAR_INTERVAL_MS, 'regular: daily');
 eq(s.intervalForEmail(null), s.REGULAR_INTERVAL_MS, 'no email: the regular (safe) cadence');
@@ -92,6 +93,22 @@ eq(s.backoffDelayMs(99), s.BACKOFF_MAX_MS, 'capped');
   eq(s.shouldAutoCheck({ state, intervalMs: HOUR, now: T0 }).due, true, 'failures with no usable attempt time: due now');
 }
 
+// ── the engine channel keeps its own streak — neither channel drags the other ──
+{
+  let state = s.recordSuccess({}, { result: { state: 'current', version: null }, at: T0 });
+  state = s.recordEngineFailure(state, { at: T0 });
+  eq([state.engineFailureCount, state.failureCount], [1, 0], 'an engine failure never touches the feed streak');
+  eq(s.shouldAutoCheck({ state, intervalMs: 24 * HOUR, now: T0 + s.BACKOFF_BASE_MS }).due, false, 'the feed stays on its own interval');
+  eq(s.engineRetryDue({ state, now: T0 + s.BACKOFF_BASE_MS - 1 }), false, 'engine retry: not inside the backoff');
+  eq(s.engineRetryDue({ state, now: T0 + s.BACKOFF_BASE_MS }), true, 'engine retry: due after the backoff');
+  state = s.recordEngineFailure(state, { at: T0 + s.BACKOFF_BASE_MS });
+  eq(s.engineRetryDue({ state, now: T0 + 2 * s.BACKOFF_BASE_MS - 1 }), false, 'the engine backoff doubles too');
+  state = s.recordEngineSuccess(state);
+  eq(s.engineRetryDue({ state, now: T0 + 10 * s.BACKOFF_BASE_MS }), false, 'an engine success ends its streak');
+  const feedFailing = s.recordFailure({}, { at: T0 });
+  eq(s.engineRetryDue({ state: feedFailing, now: T0 + 10 * s.BACKOFF_BASE_MS }), false, 'a feed failure never arms an engine retry');
+}
+
 // ── the launch check: run only when it serves someone ───────────────────────
 eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first launch: the real check runs');
 {
@@ -127,11 +144,12 @@ eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first
 
 // ── the one decision ladder for a feed answer ───────────────────────────────
 {
-  const d = (state, version, deferredVersion = null) => s.decideDesktopAction({ state, version, isNewer, deferredVersion });
+  const d = (state, version, deferredVersion = null, offeredThisSession = null) => s.decideDesktopAction({ state, version, isNewer, deferredVersion, offeredThisSession });
   const offered49 = s.recordOffered({}, { version: '0.2.49' });
   eq(d({}, '0.2.48'), 'announce', 'never announced: announce');
   eq(d(offered49, '0.2.50'), 'announce', 'strictly newer than the watermark: announce');
   eq(d(offered49, '0.2.49', '0.2.49'), 'ignore', 'deferred this session: the reminder owns it');
+  eq(d(offered49, '0.2.49', null, '0.2.49'), 'resume', 'announced this session (e.g. "Update now"): only the download continues');
   eq(d(offered49, '0.2.49'), 'adopt', 'offered before a restart: adopt quietly');
   eq(d(offered49, '0.2.48'), 'adopt', 'a feed regression: adopt quietly');
   const adopted48 = s.recordAdopted(offered49, { version: '0.2.48' });

@@ -30,8 +30,9 @@ const BACKOFF_MAX_MS = 4 * 60 * 60 * 1000;
 /** Exact-domain match: `a@langware.ai.evil.com` and `a@notlangware.ai` are NOT internal. */
 function isInternalEmail(email) {
   if (typeof email !== 'string') return false;
-  const at = email.lastIndexOf('@');
-  return at > 0 && email.slice(at + 1).toLowerCase() === INTERNAL_DOMAIN;
+  const trimmed = email.trim(); // hand-edited configs carry stray whitespace
+  const at = trimmed.lastIndexOf('@');
+  return at > 0 && trimmed.slice(at + 1).toLowerCase() === INTERNAL_DOMAIN;
 }
 
 function intervalForEmail(email) {
@@ -129,6 +130,26 @@ function recordFailure(state, { at }) {
   return { ...state, lastAttemptAt: new Date(at).toISOString(), failureCount: (Number(state.failureCount) || 0) + 1 };
 }
 
+// ── the engine (PyPI) channel's own failure streak ──────────────────────────
+// Kept apart from failureCount, which belongs to the desktop feed: one channel failing must not
+// send the OTHER back to the feed on the backoff cadence.
+
+function recordEngineFailure(state, { at }) {
+  return { ...state, engineLastAttemptAt: new Date(at).toISOString(), engineFailureCount: (Number(state.engineFailureCount) || 0) + 1 };
+}
+
+function recordEngineSuccess(state) {
+  return { ...state, engineFailureCount: 0 };
+}
+
+/** Is an engine-only retry due? Only meaningful while engineFailureCount > 0. */
+function engineRetryDue({ state, now }) {
+  const failures = Number(state.engineFailureCount) || 0;
+  if (failures === 0) return false;
+  const attempted = pastMs(state.engineLastAttemptAt, now);
+  return attempted === null || now >= attempted + backoffDelayMs(failures);
+}
+
 /** The version whose update screen was shown — never announced twice, even across restarts. */
 function recordOffered(state, { version }) {
   return { ...state, lastOfferedDesktopVersion: version };
@@ -158,13 +179,16 @@ function shouldNotify({ state, version, isNewer }) {
  * (each applies only its own local blockers — an open dialog, a running download):
  *   'announce'   — never announced, strictly newer than the watermark: show the update screen.
  *   'ignore'     — the user deferred exactly this version this session: the reminder owns it.
+ *   'resume'     — announced IN THIS SESSION (e.g. the user said "Update now" and the download was
+ *                  interrupted): just continue the download — no deferral, no reminder, nothing adopted.
  *   'redownload' — adopted before (recorded): resume its download from the cache, nothing new to say.
  *   'adopt'      — known but not announceable (offered before a restart, or a feed regression):
  *                  take it quietly — download deferred, reminder offers the restart.
  */
-function decideDesktopAction({ state, version, isNewer, deferredVersion }) {
+function decideDesktopAction({ state, version, isNewer, deferredVersion, offeredThisSession }) {
   if (shouldNotify({ state, version, isNewer })) return 'announce';
   if (version === deferredVersion) return 'ignore';
+  if (version === offeredThisSession) return 'resume';
   if (version === state.lastAdoptedDesktopVersion) return 'redownload';
   return 'adopt';
 }
@@ -187,6 +211,9 @@ module.exports = {
   planLaunchCheck,
   recordSuccess,
   recordFailure,
+  recordEngineFailure,
+  recordEngineSuccess,
+  engineRetryDue,
   recordOffered,
   recordAdopted,
   shouldNotify,

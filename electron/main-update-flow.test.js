@@ -607,19 +607,35 @@ const HOUR = 60 * 60 * 1000;
     } finally { delete process.env.FLOWPAD_UPDATE_TEST; }
   }
   {
-    // A transient ENGINE (PyPI) failure starts the backoff instead of vanishing until the next
-    // interval — and a later success clears it.
+    // A transient ENGINE (PyPI) failure starts the ENGINE channel's own backoff: it retries without
+    // dragging the desktop feed back to the network, and a later success clears only its streak.
     const env = load();
     env.t.setupElectronAutoUpdater();
     env.t.getUvManager().checkForUpdatesInBackground = async () => { throw new Error('pypi down'); };
     await schedulerTick(env).fn(); await tick();
-    eq(env.readSchedule().failureCount, 1, 'the swallowed engine failure is recorded');
+    eq([env.readSchedule().engineFailureCount, env.readSchedule().failureCount], [1, 0], 'the engine failure is recorded on ITS channel; the feed streak stays clean');
     await schedulerTick(env).fn(); await tick();
-    eq(env.autoUpdater.checks, 1, 'inside the backoff: no re-check');
+    eq(env.autoUpdater.checks, 1, 'inside the engine backoff: nothing re-checks');
     env.t.getUvManager().checkForUpdatesInBackground = async () => { env.uv.checks++; return false; };
-    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    env.writeSchedule({ ...env.readSchedule(), engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
     await schedulerTick(env).fn(); await tick();
-    eq([env.readSchedule().failureCount, env.uv.checks], [0, 1], 'the backoff retry runs both halves and clears the streak');
+    eq([env.readSchedule().engineFailureCount, env.uv.checks], [0, 1], 'the engine retry runs and clears its streak');
+    eq(env.autoUpdater.checks, 1, 'without a second desktop feed hit — the engine retry is engine-only');
+  }
+  {
+    // "Update now" whose download was lost: the next due tick RESUMES the download — no new screen,
+    // no deferral, no reminder, nothing adopted. The user already said yes.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null, dialogResponses: [] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.offerDesktopUpdate('0.2.48'); // desktop-only: committed, download starts
+    eq(env.autoUpdater.downloads.length, 1, 'the accepted download started');
+    env.autoUpdater.finishDownload(); await tick(); // the download dies without update-downloaded
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.downloads.length, 2, 'the due tick resumes the download');
+    eq(env.dialogCalls.length, 0, 'no screen the user did not ask for');
+    eq(reminderTimer(env), undefined, 'no reminder — nothing was deferred');
+    eq((env.readSchedule() || {}).lastAdoptedDesktopVersion, undefined, 'and nothing was adopted');
   }
   {
     // A RELAUNCH inside a failure backoff retries for real (ticks still pace the backoff in-session).
