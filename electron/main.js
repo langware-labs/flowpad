@@ -285,7 +285,6 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   const packageWasBlocked = followUpPackage;
   if (pass !== 'engine-retry') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
   followUpPackage = false;
-  let announcing = false;
   try {
     const last = state.lastResult || {};
     const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
@@ -304,19 +303,31 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         desktopDownloadToken.cancel();
         await desktopDownloadDone;
       }
+      if (offerVersion && isNewer(offerVersion, desktopLatest)) {
+        log.info(`[electron-updater] ${desktopLatest} supersedes the open offer for ${offerVersion}`);
+        offerAbort.abort();
+        await offerClosed;
+        await offerPromise; // the superseded offer settles and releases offerInProgress
+      }
       const action = updateSchedule.decideDesktopAction({
         state, version: desktopLatest, isNewer,
         deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
       });
       if (action === 'announce') {
-        // Not while a download is running, the restart prompt is up, or another update dialog is open.
-        if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
-          announcing = true;
-          await offerDesktopUpdate(desktopLatest);
-          announcing = false;
-        } else {
-          followUpDesktop = true; // blocked by a dialog/download: retried on a near tick, not in a day
+        // Not while a window is up or a download is running — ONE update window, ever. The offer is
+        // LAUNCHED, not awaited: the dialog can sit for hours and must not freeze the scheduler.
+        if (!offerInProgress && !desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
+          offerInProgress = true;
+          offerPromise = offerDesktopUpdate(desktopLatest)
+            .catch((err) => {
+              log.warn(`[update] offer failed: ${err.message}`);
+              followUpDesktop = true; // retried from the cache on a near tick
+            })
+            .finally(() => { offerInProgress = false; });
+          followUpPackage = true; // the engine half runs on a near tick, not under the dialog
+          return;
         }
+        followUpDesktop = true; // a window is already up: retried on a near tick, not in a day
       } else if (action === 'resume' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
         // Announced this session (the user may have said "Update now") and the download was lost:
         // continue it — no deferral, no reminder, nothing the user did not ask for.
@@ -336,9 +347,6 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     }
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
-    // The offer itself threw after the feed was already recorded: keep the debt so a near tick
-    // retries it from the cache instead of waiting out the interval.
-    if (announcing) followUpDesktop = true;
   } finally {
     autoCheckInFlight = false;
   }
@@ -349,6 +357,18 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
 // flag per half — an engine-retry pass must not erase the desktop's, and vice versa.
 let followUpDesktop = false;
 let followUpPackage = false;
+
+// ONE update window at a time, without freezing the scheduler under it: a tick LAUNCHES the offer
+// and moves on (engine checks, retries and follow-ups keep running while the dialog waits for the
+// user). `offerInProgress` is set synchronously — it closes the async gap before the offer turns
+// packageUpdateInFlight on. The open "Updates available" screen is closable when a newer release
+// supersedes it, the same pattern as the restart prompt (desktopPromptAbort) and the engine dialog
+// (supersedePackageDialog).
+let offerInProgress = false;
+let offerPromise = Promise.resolve();
+let offerAbort = null;        // AbortController of the open "Updates available" dialog
+let offerVersion = null;      // the version it shows
+let offerClosed = Promise.resolve();
 
 /**
  * Take a desktop update WITHOUT announcing it (decideDesktopAction said 'adopt' or 'redownload') —
@@ -673,6 +693,12 @@ async function offerDesktopUpdate(desktopLatest) {
   savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
   uvManager.deferPackageVersion(engineStatus.latestVersion); // no separate engine dialog for this version
   packageUpdateInFlight = true; // one update dialog at a time
+  // Abortable: a newer release found while this screen waits closes it and shows its own instead
+  // (the restart prompt and the engine dialog behave the same way).
+  offerAbort = new AbortController();
+  offerVersion = desktopLatest;
+  let closeOffer;
+  offerClosed = new Promise((r) => { closeOffer = r; });
   let response;
   try {
     response = updateTest.answerFor('both', {
@@ -689,9 +715,17 @@ async function offerDesktopUpdate(desktopLatest) {
       buttons: ['Update now', 'Later'],
       defaultId: 0,
       cancelId: 1,
+      signal: offerAbort.signal,
     }));
   } finally {
     packageUpdateInFlight = false;
+    offerVersion = null;
+    closeOffer();
+  }
+  if (offerAbort.signal.aborted) {
+    // Closed by a newer release, not answered: nothing is spent — the new offer records itself.
+    log.info(`[electron-updater] the offer for ${desktopLatest} closed: superseded by a newer release`);
+    return 'superseded';
   }
   // The screen was shown (or scripted): only now is the announcement spent — a crash or a throw
   // before the dialog must not burn the version.

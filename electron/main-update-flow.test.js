@@ -102,7 +102,16 @@ function load(opts = {}) {
       on() {}, isPackaged: true, getVersion: () => opts.appVersion || '0.2.47', quit() {}, exit() {}, commandLine: { appendSwitch() {} }, setName() {}, setAppUserModelId() {},
     },
     BrowserWindow: BW,
-    dialog: { showMessageBox: async (...a) => { const o = a[a.length - 1]; dialogCalls.push(o); if (gate) await gate; return { response: responses.length ? responses.shift() : 1 }; }, showErrorBox() {} },
+    dialog: { showMessageBox: async (...a) => {
+      const o = a[a.length - 1]; dialogCalls.push(o);
+      // Like Electron: an aborted signal closes the dialog and resolves with the cancel answer.
+      if (gate) {
+        if (o && o.signal) await Promise.race([gate, new Promise((r) => o.signal.addEventListener('abort', r, { once: true }))]);
+        else await gate;
+      }
+      if (o && o.signal && o.signal.aborted) return { response: o.cancelId !== undefined ? o.cancelId : 1 };
+      return { response: responses.length ? responses.shift() : 1 };
+    }, showErrorBox() {} },
     ipcMain: { on() {}, handle(ch, fn) { ipc[ch] = fn; }, once() {} },
     shell: mk(), clipboard: mk(), Menu: mk(), nativeImage: mk(), session: mk(), screen: mk(), Tray: mk(), globalShortcut: mk(), powerMonitor: mk(), protocol: mk(), net: mk(), desktopCapturer: mk(), systemPreferences: mk(), Notification: mk(),
   };
@@ -675,19 +684,20 @@ const HOUR = 60 * 60 * 1000;
     const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.49', dialogResponses: [1, 1] });
     env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
     env.t.setupElectronAutoUpdater();
-    const open = env.t.offerDesktopUpdate('0.2.48'); // the combined dialog is held open
+    // A held restart prompt for a NEWER version than the feed: a blocker no supersede removes.
+    const prompt = env.t.showDesktopReadyPrompt('0.2.50');
     await tick();
-    const blockedTick = schedulerTick(env).fn(); // due: finds 0.2.49, offer blocked by the open dialog
+    const blockedTick = schedulerTick(env).fn(); // due: finds 0.2.49, offer blocked by the open prompt
     await tick(); await tick();
-    eq(env.dialogCalls.length, 1, 'the offer is blocked behind the open dialog');
-    // An engine backoff comes due while the dialog is still open: the engine-retry pass runs...
+    eq(env.dialogCalls.length, 1, 'the offer is blocked behind the open restart prompt');
+    // An engine backoff comes due while the prompt is still open: other passes run...
     env.writeSchedule({ ...env.readSchedule(), engineFailureCount: 1, engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
     const retryTick = schedulerTick(env).fn();
     await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'still one window while the prompt is open');
     env.releaseDialog();
-    await open; await blockedTick; await retryTick;
-    env.autoUpdater.finishDownload(); await tick(); // settle the "Later" download of 0.2.48
-    await schedulerTick(env).fn(); await tick();
+    await prompt; await blockedTick; await retryTick;
+    await schedulerTick(env).fn(); await tick(); await tick();
     eq(env.dialogCalls.length, 2, '...and the blocked desktop offer still fires on the next tick');
     eq(env.autoUpdater.checks, 1, 'from the cache — the feed was hit once in all of this');
   }
@@ -761,24 +771,59 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.checks, 2, 'the blocked engine half is finished on the next tick');
     eq(env.autoUpdater.checks, 2, 'without a second desktop feed hit inside the interval');
   }
+  // (A tick that finds a NEWER version while an offer dialog is open now SUPERSEDES that dialog
+  //  instead of waiting — covered by the "superseded" test below; the blocked-offer follow-up is
+  //  covered by the restart-prompt and offer-throws tests.)
   {
-    // A desktop offer blocked by an open update dialog is retried on a NEAR tick from the cached
-    // answer — not dropped until the next interval.
-    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.49', dialogResponses: [1, 1] });
-    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
+    // ONE update window, and the scheduler keeps breathing under it: ticks while the offer dialog
+    // waits for the user do not stack windows and still run the engine half afterwards.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
     env.t.setupElectronAutoUpdater();
-    const open = env.t.offerDesktopUpdate('0.2.48'); // the combined dialog is held open
-    await tick();
-    const blockedTick = schedulerTick(env).fn();
-    await tick(); await tick();
-    eq(env.dialogCalls.length, 1, 'while the dialog is open, 0.2.49 is not offered on top of it');
-    env.releaseDialog();
-    await open; await blockedTick;
-    env.autoUpdater.finishDownload(); await tick(); // settle the "Later" download so the retry is not superseding it
     await schedulerTick(env).fn(); await tick();
-    eq(env.dialogCalls.length, 2, 'the blocked offer is retried on the next tick');
-    eq(env.autoUpdater.checks, 1, 'from the cached answer — no second feed hit inside the interval');
-    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.49', 'and recorded as offered');
+    eq(env.dialogCalls.length, 1, 'the due tick launches the offer');
+    await schedulerTick(env).fn(); await tick();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 1, 'more ticks while it waits: still ONE window');
+    ok(env.logLines.some((l) => /package check skipped: the desktop is updated first/.test(l)),
+      'the scheduler kept running under the open dialog — the engine half was attempted, not frozen'
+      + ' (attempted once: the desktop-first hold is sticky, so the debt is deliberately not re-armed)');
+    env.releaseDialog();
+    await tick(); await tick();
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'the answered offer is recorded');
+    // (After the answer the engine is HELD behind the pending desktop by design — desktop first.)
+  }
+  {
+    // A newer release while the offer waits: the open window is superseded — closed and replaced by
+    // exactly one window for the newest version, whose answer is the one that counts.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 1, 'the offer for 0.2.48 is up');
+    env.autoUpdater.checkForUpdates = async () => { env.autoUpdater.checks++; return { updateInfo: { version: '0.2.49' } }; };
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick(); await tick();
+    eq(env.dialogCalls.length, 2, 'the old window is closed and ONE window for 0.2.49 replaces it');
+    ok(/0\.2\.49/.test(env.dialogCalls[1].detail), 'the new window names the newest version');
+    env.releaseDialog();
+    await tick(); await tick();
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.49', 'only the answered window is recorded');
+  }
+  {
+    // An offer that throws arms the desktop debt: the next tick retries from the cache.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    const uvm = env.t.getUvManager();
+    const defer = uvm.deferPackageVersion.bind(uvm);
+    uvm.deferPackageVersion = () => { throw new Error('boom'); };
+    await schedulerTick(env).fn(); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'the offer died before its screen');
+    uvm.deferPackageVersion = defer;
+    await schedulerTick(env).fn(); await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'the next tick retries the offer from the cache');
+    eq(env.autoUpdater.checks, 1, 'without a second feed hit');
   }
   {
     // The update-cycle harness drives the cadence itself: its interval bypasses the schedule.
