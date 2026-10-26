@@ -8224,7 +8224,9 @@ msgstr "לא ניתן היה לשחזר את הפרויקט של הפעילות 
 msgid "Could not remove"
 msgstr "לא ניתן להסיר"
 
+#. placeholder {0}: row.name
 #. placeholder {0}: target.name
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not remove {0}"
 msgstr "לא ניתן להסיר את {0}"
@@ -17729,6 +17731,7 @@ msgstr "עוד"
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/ui/breadcrumb.tsx
@@ -24093,6 +24096,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -24110,6 +24114,15 @@ msgstr "הסרה"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "הסירו את {0}"
+
+#. placeholder {0}: removing.row.name
+#. placeholder {0}: removing?.row.name ?? ''
+#. placeholder {1}: data.org.name
+#. placeholder {1}: removing.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove {0} from {1}?"
+msgstr "להסיר את {0} מ-{1}?"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Remove {0} from {teamName}"
@@ -24178,6 +24191,11 @@ msgstr "הסר קובץ"
 #~ msgid "Remove folder"
 #~ msgstr ""
 
+#. placeholder {0}: m.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove from {0}"
+msgstr "הסרה מ-{0}"
+
 #. placeholder {0}: team.name
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from {0}?"
@@ -24194,6 +24212,10 @@ msgstr "הסרה מ-Flowpad"
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "הסרה מהתיקייה"
+
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove from organization"
+msgstr "הסרה מהארגון"
 
 #: src/components/connections-manager.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -30339,6 +30361,16 @@ msgstr "הם דיווחו"
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
 msgstr "הם יורדו שוב בפעם הבאה שהעזרה תיפתח."
+
+#. placeholder {0}: data.org.name
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "They will leave {0} and every team in it, and lose the budgets those gave them. Money already spent is not affected."
+msgstr "הם יעזבו את {0} ואת כל הצוותים שבו, ויאבדו את התקציבים שקיבלו מהם. כסף שכבר הוצא לא מושפע."
+
+#. placeholder {0}: removing.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "They will leave {0} and lose the budget it gave them. Money already spent is not affected."
+msgstr "הם יעזבו את {0} ויאבדו את התקציב שקיבלו ממנו. כסף שכבר הוצא לא מושפע."
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "They'll get an email with a link that opens this budget."
