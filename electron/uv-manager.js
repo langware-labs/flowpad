@@ -2837,7 +2837,15 @@ class UvManager {
    *   this desktop CAN run (null when none, or when that could not be resolved).
    */
   async engineUpdatePreflight() {
+    // A popover open followed by an Upgrade click repeats the whole round (fresh PyPI document, a
+    // wheel range read, and a resolve walk when the latest is incompatible): one short-lived snapshot
+    // covers both. Keyed on the INSTALLED version (re-read every time, local and cheap), so an engine
+    // change invalidates it; an offline answer is never cached; the install-time gates stay the
+    // authoritative check either way.
+    const TTL_MS = 60 * 1000;
     const installed = this.getInstalledVersionSync() || null;
+    const c = this._preflightCache;
+    if (c && c.installed === installed && Date.now() - c.at < TTL_MS) return c.value;
     const latest = await this.getLatestPypiVersion(true); // user-facing pre-flight: must see a just-published release
     const info = {
       installed,
@@ -2847,9 +2855,10 @@ class UvManager {
       latestCompatible: null,
       newestCompatible: null,
     };
-    if (!latest || !this._appVersion) return info;
+    if (!latest) return info; // offline: not cached — the next ask tries again
+    if (!this._appVersion) return this._cachePreflight(installed, info);
     const compat = await this._readCandidateMinDesktop(latest);
-    if (compat === 'invalid' || compat === null) return info; // indeterminate: the install gates decide
+    if (compat === 'invalid' || compat === null) return this._cachePreflight(installed, info); // indeterminate: the install gates decide
     info.latestMinDesktop = compat.minDesktopVersion;
     const ok = engineCompat.meetsFloor(this._appVersion, compat.minDesktopVersion);
     info.latestCompatible = ok === null ? null : ok;
@@ -2862,7 +2871,12 @@ class UvManager {
         this.log.warn(`[compat] panel pre-flight: ${String(err.message).split('\n')[0]}`);
       }
     }
-    return info;
+    return this._cachePreflight(installed, info);
+  }
+
+  _cachePreflight(installed, value) {
+    this._preflightCache = { at: Date.now(), installed, value };
+    return value;
   }
 
   /**

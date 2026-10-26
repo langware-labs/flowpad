@@ -773,6 +773,33 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.readState(), null, 'nothing was saved for a flow that cannot finish');
     eq(env.autoUpdater.downloads.length, 0, 'nothing was downloaded');
   }
+  {
+    // "Later" at the native ready prompt starts the 90-minute reminder; ADOPTING the update from the
+    // panel stops it, and the native ready prompt never pops over the panel's Ready state again.
+    const env = load({ engineStatus: null, dialogResponses: [1 /* Later */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq([env.dialogCalls.length, env.t.readyReminder.running], [1, true], 'Later at the prompt: the reminder is armed');
+    const r = await env.ipc['update:download-desktop']();
+    eq([r.started, r.ready], [true, true], 'the panel adopts the already-downloaded update');
+    eq(env.t.readyReminder.running, false, 'adoption stops the 90-minute reminder');
+    await env.t.showDesktopReadyPrompt('0.2.48');
+    eq(env.dialogCalls.length, 1, 'the native ready prompt stays away from a panel-owned version');
+  }
+  {
+    // Once the download LANDED, a late stray error (a periodic feed check failing) does not replace
+    // the panel's Ready state with a dead "Retry the download".
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    env.autoUpdater.finishDownload(); await tick(); // the download promise settles with the event
+    env.sent.length = 0;
+    env.autoUpdater.emit('error', new Error('periodic feed check failed')); await tick();
+    eq(pushes(env).length, 0, 'ready is not replaced by a stray error after the download landed');
+  }
 
   // ── the panel's engine upgrade never strands the user (the "stuck update" incident) ──
   {

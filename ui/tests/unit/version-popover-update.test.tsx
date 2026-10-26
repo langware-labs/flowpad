@@ -174,6 +174,20 @@ describe('the Desktop section row', () => {
     expect(api.downloadDesktopUpdate).not.toHaveBeenCalled();
   });
 
+  it("the feed build is below the engine's floor: Download falls back to desktop-only", async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        desktop: { ...INCOMPATIBLE_INFO.desktop, meetsEngineFloor: false },
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(await screen.findByTestId('desktop-download-button'));
+    await waitFor(() => expect(api.downloadDesktopUpdate).toHaveBeenCalledTimes(1));
+    expect(api.updateBoth).not.toHaveBeenCalled(); // update:both would refuse (desktop-too-old)
+  });
+
   it('no newer flow SDK: Download stays a plain desktop download', async () => {
     const api = electronApi({
       getUpdateInfo: vi.fn().mockResolvedValue({
@@ -242,6 +256,24 @@ describe('the Desktop section row', () => {
     const modal = await screen.findByTestId('desktop-update-required-modal');
     expect(modal.textContent).toContain('No newer FlowPad Desktop');
     expect(screen.queryByTestId('update-both-button')).toBeNull();
+    expect(api.updateBoth).not.toHaveBeenCalled();
+  });
+
+  it('no suitable desktop build, but a compatible flow SDK exists: the popup offers it', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        desktop: { installed: '0.2.50', state: 'current', available: null, downloadState: 'idle' },
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(screen.getByTestId('version-upgrade-button'));
+    const btn = await screen.findByTestId('update-compatible-button');
+    expect(btn.textContent).toContain('0.2.235'); // engine.newestCompatible — runs on THIS desktop
+    fireEvent.click(btn);
+    await waitFor(() => expect(api.upgradeFlowpad).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('desktop-update-required-modal')).toBeNull();
     expect(api.updateBoth).not.toHaveBeenCalled();
   });
 

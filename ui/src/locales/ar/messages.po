@@ -32271,6 +32271,11 @@ msgstr ""
 msgid "Update failed"
 msgstr "فشل التحديث"
 
+#. placeholder {0}: info.newestCompatible
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "Update flow SDK to v{0} (works with this desktop)"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Update Now"
 msgstr ""
@@ -32337,6 +32342,7 @@ msgstr "ترقية"
 msgid "Upgrade ({n})"
 msgstr ""
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade failed."
 msgstr ""

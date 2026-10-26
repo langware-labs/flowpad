@@ -135,7 +135,10 @@ with in-app surfaces instead of native dialogs. Before `upgrade-flowpad`, the pa
 latest release through `update:get-info` (`uv-manager.engineUpdatePreflight`: the candidate's floor
 via the step-2 wheel read against this desktop). An incompatible latest opens the "Desktop Update
 Required" popup — *Update Both* saves a consented `pending-engine.json` with `source: 'panel'` and
-downloads the desktop (`update:both`); *Update Desktop Only* just downloads (`update:download-desktop`);
+downloads the desktop (`update:both`); there is deliberately no desktop-only choice in the popup (a
+desktop update never leaves the engine behind). When no published desktop build satisfies the
+engine's floor, the popup instead offers the newest flow SDK this desktop CAN run, and the desktop
+row's own Download falls back to a plain desktop download (`update:download-desktop`);
 the panel's *Update Now* (`update:apply-desktop`) restarts into the new desktop, which installs the
 saved engine version exactly as in the dialog flow and reports the outcome back to the panel
 (`engine-update-resumed`, or pulled once via `update:get-info`). A desktop update downloaded in the

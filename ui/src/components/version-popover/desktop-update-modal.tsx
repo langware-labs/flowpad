@@ -16,6 +16,9 @@ export interface DesktopUpdateRequiredInfo {
   /** True when the update feed could not be checked at all (offline / feed error) — different
    *  advice than "no newer build is published": try again, rather than wait for a release. */
   checkFailed?: boolean;
+  /** The newest flow SDK THIS desktop can run — the popup's fallback when no suitable desktop
+   *  build is published yet. Null when none, or when it would not move the install forward. */
+  newestCompatible?: string | null;
 }
 
 interface DesktopUpdateModalProps {
@@ -25,6 +28,8 @@ interface DesktopUpdateModalProps {
   error: string | null;
   /** Update the desktop now and the named engine version right after the restart. */
   onUpdateBoth: () => void;
+  /** Install `newestCompatible` on the CURRENT desktop (no desktop update involved). */
+  onUpgradeCompatible?: () => void;
   onClose: () => void;
 }
 
@@ -34,7 +39,7 @@ interface DesktopUpdateModalProps {
  * One way forward: a desktop update never leaves the engine behind, so the only
  * update action is Update Both — there is no "desktop only".
  */
-export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onClose }: DesktopUpdateModalProps) {
+export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUpgradeCompatible, onClose }: DesktopUpdateModalProps) {
   if (!info) return null;
   return (
     <Dialog
@@ -89,6 +94,17 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onCl
             <Button type="button" onClick={onUpdateBoth} disabled={busy} data-testid="update-both-button">
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               <Trans>Update Both</Trans>
+            </Button>
+          )}
+          {!info.desktopAvailable && !info.checkFailed && info.newestCompatible && onUpgradeCompatible && (
+            <Button
+              type="button"
+              onClick={onUpgradeCompatible}
+              disabled={busy}
+              data-testid="update-compatible-button"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              <Trans>Update flow SDK to v{info.newestCompatible} (works with this desktop)</Trans>
             </Button>
           )}
           <Button type="button" variant="outline" onClick={onClose} disabled={busy} data-testid="update-cancel-button">

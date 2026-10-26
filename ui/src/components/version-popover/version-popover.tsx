@@ -519,6 +519,26 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     };
   }, [electronApi, showResumed]);
 
+  /** The "Desktop Update Required" popup's facts — identical for both ways in (the pre-flight
+   *  verdict and the shell's desktop-first refusal). A feed build below the engine's floor is
+   *  "no suitable build yet", not an offer; `newestCompatible` is the popup's fallback: the newest
+   *  flow SDK THIS desktop can run (named only when it actually moves the install forward). */
+  const buildCompatInfo = useCallback(
+    (info: UpdateInfo | null, engine: EnginePreflight | null): DesktopUpdateRequiredInfo => ({
+      engineTarget: engine?.latest ?? data?.pypi?.latest ?? '',
+      minDesktop: engine?.latestMinDesktop ?? null,
+      desktopInstalled: info?.desktop.installed ?? electronVersion,
+      desktopAvailable:
+        info?.desktop.state === 'available' && info.desktop.meetsEngineFloor !== false
+          ? info.desktop.available
+          : null,
+      newestCompatible:
+        engine?.newestCompatible && engine.newestCompatible !== currentVersion ? engine.newestCompatible : null,
+      checkFailed: info ? info.desktop.state === 'unknown' : true,
+    }),
+    [data?.pypi?.latest, electronVersion, currentVersion],
+  );
+
   const handleUpgrade = useCallback(async () => {
     if (!electronApi?.upgradeFlowpad) return;
     setUpgradeError(null);
@@ -530,17 +550,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       const engine = info?.engine ?? null;
       if (engine && engine.latestCompatible === false) {
         setModalError(null);
-        setCompatInfo({
-          engineTarget: engine.latest ?? data?.pypi?.latest ?? '',
-          minDesktop: engine.latestMinDesktop,
-          desktopInstalled: info?.desktop.installed ?? electronVersion,
-          // A feed build BELOW the engine's floor is "no suitable build yet", not an offer.
-          desktopAvailable:
-            info?.desktop.state === 'available' && info.desktop.meetsEngineFloor !== false
-              ? info.desktop.available
-              : null,
-          checkFailed: info ? info.desktop.state === 'unknown' : true,
-        });
+        setCompatInfo(buildCompatInfo(info, engine));
         return;
       }
       const r = await electronApi.upgradeFlowpad();
@@ -548,13 +558,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         if (r.desktopUpdatePending) {
           // The shell holds engine changes while a desktop update is pending — same popup, same way out.
           setModalError(null);
-          setCompatInfo({
-            engineTarget: engine?.latest ?? data?.pypi?.latest ?? '',
-            minDesktop: engine?.latestMinDesktop ?? null,
-            desktopInstalled: info?.desktop.installed ?? electronVersion,
-            desktopAvailable: info && info.desktop.meetsEngineFloor !== false ? (info.desktop.available ?? null) : null,
-            checkFailed: info ? info.desktop.state === 'unknown' : true,
-          });
+          setCompatInfo(buildCompatInfo(info, engine));
         } else {
           setUpgradeError(r.error ?? t`Upgrade failed.`);
         }
@@ -562,7 +566,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     } finally {
       setUpgrading(false);
     }
-  }, [electronApi, refreshUpdateInfo, data?.pypi?.latest, electronVersion, t]);
+  }, [electronApi, refreshUpdateInfo, buildCompatInfo, t]);
 
   /** The panel started (or resumed) a desktop download: reflect the shell's answer in the row. */
   const notePanelStart = useCallback((r: UpdateActionResult) => {
@@ -579,7 +583,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     if (!electronApi?.downloadDesktopUpdate) return;
     setDesktopActionError(null);
     const engine = updateInfo?.engine ?? null;
-    const engineTarget = engine?.updateAvailable ? engine.latest : null;
+    // The engine rides along only when the desktop about to be installed satisfies its floor —
+    // update:both would refuse otherwise (desktop-too-old), making a perfectly valid desktop-only
+    // update impossible to start. The startup pair repair brings the engine along later.
+    const engineTarget =
+      engine?.updateAvailable && updateInfo?.desktop.meetsEngineFloor !== false ? engine.latest : null;
     const r =
       engineTarget && electronApi.updateBoth
         ? await electronApi.updateBoth(engineTarget)
@@ -599,6 +607,22 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     if (!r.started) setDesktopActionError(updateRefusalText(r.reason));
     // started → the shell pushes {state:'installing'} and restarts the app.
   }, [electronApi, updateRefusalText]);
+
+  /** The popup's fallback: no suitable desktop build yet, but a newer flow SDK that runs on THIS
+   *  desktop exists — install it through the normal shell upgrade, which resolves exactly that
+   *  release (the native dialog path offers the same thing). */
+  const handleUpgradeCompatible = useCallback(async () => {
+    if (!electronApi?.upgradeFlowpad) return;
+    setCompatInfo(null);
+    setUpgradeError(null);
+    setUpgrading(true);
+    try {
+      const r = await electronApi.upgradeFlowpad();
+      if (!r.success) setUpgradeError(r.error ?? t`Upgrade failed.`);
+    } finally {
+      setUpgrading(false);
+    }
+  }, [electronApi, t]);
 
   const handleUpdateBoth = useCallback(async () => {
     if (!electronApi?.updateBoth || !compatInfo) return;
@@ -1188,6 +1212,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         busy={modalBusy}
         error={modalError}
         onUpdateBoth={() => void handleUpdateBoth()}
+        onUpgradeCompatible={() => void handleUpgradeCompatible()}
         onClose={() => {
           setCompatInfo(null);
           setModalError(null);

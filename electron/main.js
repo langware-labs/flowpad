@@ -227,10 +227,11 @@ function setupElectronAutoUpdater() {
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
       // The version panel shows the error with a Retry — when a download or an apply was actually
-      // under way, or the panel owns a version's flow (panelDesktopVersion survives the download
-      // promise's finally, which can reset the in-flight flag before this handler runs). A failed
-      // periodic feed check with no panel flow stays out of the panel.
-      if (desktopDownloadInFlight || restartApplier.busy || panelDesktopVersion) {
+      // under way, or the panel owns a DOWNLOAD still in flight (panelDesktopVersion survives the
+      // download promise's finally, which can reset the in-flight flag before this handler runs).
+      // Once the download landed, panel ownership of errors ends: a later stray error (a periodic
+      // feed check failing) must not replace the panel's Ready state with a dead "Retry the download".
+      if (desktopDownloadInFlight || restartApplier.busy || (panelDesktopVersion && !desktopDownloadedVersion)) {
         sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
       }
       // If this happened while a "Restart now" was in flight, the app is not quitting after all.
@@ -412,6 +413,7 @@ const pendingEngineStore = {
 // "Update ready — restart now?" offered again every 90 minutes to a user who said Later (update-plan.js).
 const readyReminder = createReadyReminder({
   isReady: () => !!desktopDownloadedVersion && !desktopRestartPromptOpen && !packageUpdateInFlight && !restartApplier.busy
+    && !panelDesktopVersion // the version panel owns the flow: its Ready row replaces the native prompt
     && !!mainWindow && !mainWindow.isDestroyed() && !(uvManager && uvManager.isInstalling()),
   show: () => { showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] reminder failed: ${err.message}`)); },
 });
@@ -426,6 +428,12 @@ async function showDesktopReadyPrompt(version) {
     return;
   }
   if (desktopRestartPromptOpen || restartApplier.busy) return;
+  if (panelDesktopVersion && version === panelDesktopVersion) {
+    // The version panel owns this update's flow (Download / Update Both there): its own Ready /
+    // Update Now row replaces this prompt, and consent stays with the panel's buttons.
+    log.info('[electron-updater] restart prompt skipped: the version panel owns this update');
+    return;
+  }
   if (!backendReady && !startupFailed) {
     // Still booting: "Restart now" would kill the half-started backend (an error screen) and read as an
     // instant update. Offered once the backend is up (offerPostponedRestartPrompt).
@@ -2861,6 +2869,14 @@ function desktopUpdateRefusal() {
   return null;
 }
 
+/** The one desktop version a panel action applies to — downloaded first (possibly "Later"-deferred),
+ *  then the one downloading, then the feed's offer. A downloaded or in-flight update IS available,
+ *  whatever the last feed check said: that is what lets a postponed update install from the panel. */
+function effectiveDesktopVersion() {
+  return desktopDownloadedVersion || desktopDownloadVersion
+    || (desktopStatus.state === 'available' ? desktopStatus.version : null);
+}
+
 /** The desktop side of 'update:get-info'. Re-checks the feed only when nothing is in flight yet. */
 async function desktopUpdateInfo() {
   if (app.isPackaged && !process.windowsStore
@@ -2871,17 +2887,18 @@ async function desktopUpdateInfo() {
     : desktopDownloadedVersion ? 'ready'
       : desktopDownloadInFlight ? 'downloading'
         : 'idle';
-  // A downloaded (possibly "Later"-deferred) or in-flight update IS an available update, whatever the
-  // last feed check said — that is what lets a postponed update be installed from the panel later.
-  const available = desktopDownloadedVersion || desktopDownloadVersion
-    || (desktopStatus.state === 'available' ? desktopStatus.version : null);
+  const available = effectiveDesktopVersion();
   const state = available ? 'available' : desktopStatus.state;
   return { installed: app.getVersion(), state, available, downloadState };
 }
 
 ipcMain.handle('update:get-info', async () => {
-  const desktop = await desktopUpdateInfo();
-  const engine = uvManager ? await uvManager.engineUpdatePreflight() : null;
+  // Two independent sides, in parallel: serially every popover open paid the desktop feed check,
+  // then the PyPI document, then the wheel range read, end to end.
+  const [desktop, engine] = await Promise.all([
+    desktopUpdateInfo(),
+    uvManager ? uvManager.engineUpdatePreflight() : null,
+  ]);
   // Would the desktop on the feed satisfy the latest engine's floor? false → the popup must not
   // offer Update Both yet ("wait for the next desktop release" is the honest advice).
   desktop.meetsEngineFloor = engine && engine.latestMinDesktop && desktop.available
@@ -2907,6 +2924,7 @@ ipcMain.handle('update:download-desktop', async () => {
   if (refusal) return { started: false, reason: refusal };
   if (desktopDownloadedVersion) {
     panelDesktopVersion = desktopDownloadedVersion; // the panel owns this version's flow from here
+    readyReminder.stop(); // …including the 90-minute native reminder a "Later" may have started
     return { started: true, ready: true, version: desktopDownloadedVersion };
   }
   if (desktopDownloadInFlight) {
@@ -2914,6 +2932,7 @@ ipcMain.handle('update:download-desktop', async () => {
     // — without this the prompt would pop over the panel's own progress when the download lands.
     panelDesktopVersion = desktopDownloadVersion;
     suppressDesktopRestartPrompt = true;
+    readyReminder.stop();
     return { started: true, version: desktopDownloadVersion };
   }
   if (desktopStatus.state !== 'available') await getDesktopUpdateVersion();
@@ -2925,6 +2944,7 @@ ipcMain.handle('update:download-desktop', async () => {
   pendingDesktopVersion = version; // engine changes hold until this desktop is applied
   offeredDesktopVersion = version; // the periodic tick must not re-offer it natively
   panelDesktopVersion = version;   // ...and its re-downloads (e.g. after a failure) stay promptless
+  readyReminder.stop();
   downloadDesktopUpdateInBackground({ promptOnReady: false, version });
   return { started: true, version };
 });
@@ -2953,8 +2973,7 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   if (desktopStatus.state !== 'available' && !desktopDownloadedVersion && !desktopDownloadInFlight) {
     await getDesktopUpdateVersion();
   }
-  const desktopVersion = desktopDownloadedVersion || desktopDownloadVersion
-    || (desktopStatus.state === 'available' ? desktopStatus.version : null);
+  const desktopVersion = effectiveDesktopVersion();
   if (!desktopVersion) return { started: false, reason: 'no-update' };
   // The engine's own floor must accept the desktop about to be installed — otherwise the whole
   // coordinated flow is doomed: the new desktop would refuse the engine (_assertCandidateCompatible),
@@ -2975,6 +2994,7 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   pendingDesktopVersion = desktopVersion;
   offeredDesktopVersion = desktopVersion;
   panelDesktopVersion = desktopVersion;
+  readyReminder.stop(); // the panel owns the flow now — no 90-minute native reminder over it
   if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion };
   if (desktopDownloadInFlight) {
     suppressDesktopRestartPrompt = true; // adopt the background download: its native prompt is off

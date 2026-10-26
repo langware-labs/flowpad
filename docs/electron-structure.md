@@ -161,7 +161,7 @@ On macOS, an app running from a transient location is offered, once per version,
 - `handle`: capture-region, close-auth-window, copy-to-clipboard, get-app-version, get-backend-url,
   get-startup-logs, notify-attention, notify-os, open-auth-window, open-external, open-logs-folder,
   restart-backend, set-badge, share-logs, upgrade-flowpad, update:get-info, update:download-desktop,
-  update:apply-desktop, update:both (the version panel's update flow, FLOWPAD-2310).
+  update:apply-desktop, update:both, update:take-resumed (the version panel's update flow, FLOWPAD-2310).
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
 - pushed to the renderer: desktop-update-state (download/install progress for the version panel),
   engine-update-resumed (the outcome of a panel-initiated coordinated update, once, after the restart).
