@@ -118,7 +118,7 @@ function load(opts = {}) {
   const logLines = [];
   const log = { info: (l) => logLines.push(String(l)), warn: (l) => logLines.push(String(l)), error: (l) => logLines.push(String(l)), transports: { file: {}, console: {} }, hooks: [] };
 
-  const uv = { calls: [], deferred: [], upgrades: [], checks: 0 };
+  const uv = { calls: [], deferred: [], undeferred: [], upgrades: [], checks: 0 };
   class FakeUv {
     constructor() { Object.assign(this, { _isInstalling: false }); uv.instance = this; }
     getInstalledFlowBin() { return opts.installed === false ? null : '/fake/bin/flow'; }
@@ -128,6 +128,7 @@ function load(opts = {}) {
     async resolveCompatibleEngineVersion() { return opts.compatibleRelease || null; }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
     deferPackageVersion(v) { uv.deferred.push(v); }
+    undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
     async checkForUpdatesInBackground() { uv.checks++; return false; }
     async startWithBin() { if (opts.startThrows) throw new Error(opts.startThrows); }
@@ -645,6 +646,8 @@ const HOUR = 60 * 60 * 1000;
     eq(env.dialogCalls.length, 0, 'no screen the user did not ask for');
     eq(reminderTimer(env), undefined, 'no reminder — nothing was deferred');
     eq((env.readSchedule() || {}).lastAdoptedDesktopVersion, undefined, 'and nothing was adopted');
+    env.autoUpdater.finishDownload(); await tick();
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'the landed resume spends the watermark, like the original announcement');
   }
   {
     // A RELAUNCH inside a failure backoff retries for real (ticks still pace the backoff in-session).
@@ -692,11 +695,14 @@ const HOUR = 60 * 60 * 1000;
     eq(env.dialogCalls.length, 1, 'the offer for 0.2.48 is up');
     await schedulerTick(env).fn(); await tick();
     await schedulerTick(env).fn(); await tick();
-    ok(env.logLines.some((l) => /package check skipped: the desktop is updated first/.test(l)),
-      'ticks under the dialog serve the ENGINE half — the same-version announce owes nothing and cannot spin');
+    eq(env.logLines.filter((l) => /package check/.test(l)).length, 0,
+      'ticks under the dialog are QUIET — the same-version announce owes nothing and nothing spins');
     eq(env.dialogCalls.length, 1, 'still one window');
     eq(env.autoUpdater.checks, 1, 'and no feed re-hits from a same-version follow-up loop');
     env.releaseDialog(); await tick(); await tick();
+    await schedulerTick(env).fn(); await tick();
+    ok(env.logLines.some((l) => /package check skipped: the desktop is updated first/.test(l)),
+      'closing the dialog arms the engine debt once, and the next tick serves it');
   }
   {
     // A pass due only to the FEED's backoff retries the feed alone — the engine keeps its own cadence.
@@ -862,13 +868,12 @@ const HOUR = 60 * 60 * 1000;
     await schedulerTick(env).fn(); await tick();
     await schedulerTick(env).fn(); await tick();
     eq(env.dialogCalls.length, 1, 'more ticks while it waits: still ONE window');
-    ok(env.logLines.some((l) => /package check skipped: the desktop is updated first/.test(l)),
-      'the scheduler kept running under the open dialog — the engine half was attempted, not frozen'
-      + ' (attempted once: the desktop-first hold is sticky, so the debt is deliberately not re-armed)');
     env.releaseDialog();
     await tick(); await tick();
     eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'the answered offer is recorded');
-    // (After the answer the engine is HELD behind the pending desktop by design — desktop first.)
+    await schedulerTick(env).fn(); await tick();
+    ok(env.logLines.some((l) => /package check skipped: the desktop is updated first/.test(l)),
+      'the engine debt armed by the closing dialog is served on the next tick (and held: desktop first, by design)');
   }
   {
     // A newer release while the offer waits: the open window is superseded — closed and replaced by
@@ -886,6 +891,23 @@ const HOUR = 60 * 60 * 1000;
     env.releaseDialog();
     await tick(); await tick();
     eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.49', 'only the answered window is recorded');
+    ok(env.uv.undeferred.includes('0.2.180'), "the superseded offer's engine deferral is withdrawn");
+    eq(env.readState() && env.readState().desktopVersion, '0.2.49', 'pending-engine.json belongs to the NEW offer only');
+  }
+  {
+    // An engine RETRY that lands on the desktop-first hold is paced forward by the backoff — it
+    // does not come back every tick — and the streak is not grown by it.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null, dialogResponses: [] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.offerDesktopUpdate('0.2.48'); // desktop pending from here on: the engine is held
+    env.writeSchedule({ ...(env.readSchedule() || {}), lastSuccessAt: agoIso(HOUR), lastAttemptAt: agoIso(HOUR), lastResult: { state: 'available', version: '0.2.48' }, failureCount: 0, engineFailureCount: 1, engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    ok(env.logLines.some((l) => /engine check retry due/.test(l)), 'the engine retry pass ran once');
+    eq(env.readSchedule().engineFailureCount, 1, 'a held retry does not grow the streak');
+    const retriesBefore = env.logLines.filter((l) => /engine check retry due/.test(l)).length;
+    await schedulerTick(env).fn(); await tick();
+    eq(env.logLines.filter((l) => /engine check retry due/.test(l)).length, retriesBefore,
+      'and it is paced by the backoff — not due again on the very next tick');
   }
   {
     // An offer that throws arms the desktop debt: the next tick retries from the cache.

@@ -110,7 +110,9 @@ function planLaunchCheck({ state, intervalMs, now }) {
   const last = state.lastResult || {};
   if (last.state === 'available') return { run: true, reason: 'update-pending' };
   if (last.state === 'unsupported') return { run: true, reason: 'unsupported' };
-  return { run: false, reason: 'recent-check', seed: { state: 'current' } };
+  if (last.state === 'current') return { run: false, reason: 'recent-check', seed: { state: 'current' } };
+  // No usable answer (a hand-edited or old-schema file): a real check, never an invented 'current'.
+  return { run: true, reason: 'no-usable-answer' };
 }
 
 /** An answered check: sets the cadence anchor, keeps what it found, ends any backoff. */
@@ -140,6 +142,14 @@ function recordEngineFailure(state, { at }) {
 
 function recordEngineSuccess(state) {
   return { ...state, engineFailureCount: 0 };
+}
+
+/**
+ * An engine retry that could not run (the check was HELD behind a pending desktop): pace the next
+ * retry by the existing backoff without growing the streak — a hold is neither failure nor answer.
+ */
+function recordEngineAttempt(state, { at }) {
+  return { ...state, engineLastAttemptAt: new Date(at).toISOString() };
 }
 
 /** Is an engine-only retry due? Only meaningful while engineFailureCount > 0. */
@@ -213,6 +223,7 @@ module.exports = {
   recordFailure,
   recordEngineFailure,
   recordEngineSuccess,
+  recordEngineAttempt,
   engineRetryDue,
   recordOffered,
   recordAdopted,

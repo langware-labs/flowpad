@@ -323,7 +323,8 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         await offerPromise; // the superseded offer settles and releases offerInProgress
       }
       const action = updateSchedule.decideDesktopAction({
-        state, version: desktopLatest, isNewer,
+        state: scheduleStore.read(), // fresh: the awaits above may have recorded an offer/adoption meanwhile
+        version: desktopLatest, isNewer,
         deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
       });
       if (action === 'announce') {
@@ -344,15 +345,16 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
               log.warn(`[update] offer failed: ${err.message}`);
               followUpDesktop = true; // retried from the cache on a near tick
             })
-            .finally(() => { offerInProgress = false; });
-          followUpPackage = true; // the engine half runs on a near tick, not under the dialog
+            // The engine debt is armed ONCE, when the dialog settles — not every tick under it.
+            .finally(() => { offerInProgress = false; followUpPackage = true; });
           return;
         }
         followUpDesktop = true; // a window is already up: retried on a near tick, not in a day
       } else if (action === 'resume' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
         // Announced this session (the user may have said "Update now") and the download was lost:
-        // continue it — no deferral, no reminder, nothing the user did not ask for.
-        downloadDesktopUpdateInBackground({ version: desktopLatest });
+        // continue it — no deferral, no reminder, nothing the user did not ask for. The watermark
+        // is still spent on landing, exactly like the original desktop-only announcement.
+        downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
       } else if ((action === 'adopt' || action === 'redownload') && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
         adoptDesktopUpdateSilently(desktopLatest, action);
       }
@@ -362,11 +364,15 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     if ((pass === 'scheduled' && !feedBackoffOnly) || pass === 'engine-retry' || packageWasBlocked) {
       const pkg = await checkPackageUpdateInBackground();
       if (pkg === 'blocked') followUpPackage = true;
+      // 'offer-open': the offer's .finally re-arms the engine debt once, when its dialog closes.
+      // 'held': nothing owed — the hold lifts only via a restart, which re-checks the engine; an
+      // engine-RETRY that was held is paced forward so engineRetryDue stops firing every tick.
+      else if (pkg === 'held' && pass === 'engine-retry') scheduleStore.write(updateSchedule.recordEngineAttempt(scheduleStore.read(), { at: Date.now() }));
       // The engine channel keeps its own streak (recordEngineFailure/engineRetryDue): a PyPI error
       // retries on the engine backoff without sending the desktop feed back to the network — and a
       // follow-up pass never records, it only finishes what a dialog blocked.
       else if (pkg === 'failed' && pass !== 'follow-up') scheduleStore.write(updateSchedule.recordEngineFailure(scheduleStore.read(), { at: Date.now() }));
-      else if (pkg === 'ran' && (Number(state.engineFailureCount) || 0) > 0) scheduleStore.write(updateSchedule.recordEngineSuccess(scheduleStore.read()));
+      else if (pkg === 'ran' && (Number(scheduleStore.read().engineFailureCount) || 0) > 0) scheduleStore.write(updateSchedule.recordEngineSuccess(scheduleStore.read()));
     }
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
@@ -401,6 +407,11 @@ let offerClosed = Promise.resolve();
  * offers the restart — so a held engine always has a way forward. A fresh adoption is persisted
  * (recordAdopted); a 'redownload' only resumes one recorded before.
  */
+/** The desktop-only announcement is spent only when its download LANDS (see offerDesktopUpdate). */
+function recordOfferedWhenDownloaded(version) {
+  return () => scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version }));
+}
+
 function adoptDesktopUpdateSilently(version, action) {
   log.info(`[electron-updater] ${version} ${action === 'redownload'
     ? 'was adopted before; resuming its download' : 'is not announceable (offered before, or a feed regression); downloading without a prompt'}`);
@@ -454,7 +465,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     // desktop (it may need a Python pin, or a start contract, that only the new desktop knows) — an old desktop
     // upgrading it first is what left users stuck. So: no separate engine dialog until the desktop is current.
     log.info(`[uv] ${label} package check skipped: the desktop is updated first`);
-    return;
+    return 'held'; // the desktop goes first; a hold only lifts via a restart, which re-checks the engine itself
   }
   if (packageUpdateInFlight) {
     // A package dialog is on screen: if PyPI now has something newer than what it
@@ -467,7 +478,9 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       await packageCheckDone;
     } else {
       log.info(`[uv] ${label} package check skipped: previous check/upgrade still running`);
-      return 'blocked'; // transient: the scheduler retries on a near tick
+      // An open OFFER re-arms the engine debt itself when its dialog closes — re-arming here would
+      // spin a follow-up every tick under the dialog. Anything else is an ordinary transient block.
+      return offerInProgress ? 'offer-open' : 'blocked';
     }
   }
   if (desktopRestartPromptOpen) {
@@ -574,7 +587,10 @@ const currentIntervalMs = () => updateSchedule.intervalForEmail(currentAccountEm
 let accountWatchEvent = null;
 // In the update-cycle harness the debounce is zero so tests never wait on the wall clock.
 const ACCOUNT_DEBOUNCE_MS = updateTest.isEnabled() ? 0 : 500;
+let accountWatchInstalled = false;
 function watchAccountChanges() {
+  if (accountWatchInstalled) return; // a re-install would orphan the previous handler's live debounce
+  accountWatchInstalled = true;
   let wasInternal = updateSchedule.isInternalEmail(currentAccountEmail());
   let debounce = null;
   accountWatchEvent = (filename) => {
@@ -708,13 +724,12 @@ async function offerDesktopUpdate(desktopLatest) {
     log.warn(`[update] engine status unavailable for the offer: ${err.message}`);
   }
   if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
+    // An engine version agreed alongside an earlier, withdrawn offer must not ride this desktop.
+    pendingEngineStore.clear();
     // Desktop only: its "announcement" is the download + ready prompt, so the watermark is spent
     // only when the download LANDS — a failed or interrupted one leaves the version announceable,
     // the same as a 'both' screen nobody answered.
-    downloadDesktopUpdateInBackground({
-      version: desktopLatest,
-      onDownloaded: () => scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest })),
-    });
+    downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
     return 'desktop';
   }
   savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
@@ -750,8 +765,11 @@ async function offerDesktopUpdate(desktopLatest) {
     closeOffer();
   }
   if (offerAbort.signal.aborted) {
-    // Closed by a newer release, not answered: nothing is spent — the new offer records itself.
+    // Closed by a newer release, not answered: nothing is spent — the new offer records itself —
+    // and the engine state saved for THIS offer is withdrawn with it (nothing was agreed).
     log.info(`[electron-updater] the offer for ${desktopLatest} closed: superseded by a newer release`);
+    pendingEngineStore.clear();
+    uvManager.undeferPackageVersion(engineStatus.latestVersion);
     return 'superseded';
   }
   // The screen was shown (or scripted): only now is the announcement spent — a crash or a throw

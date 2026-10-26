@@ -2794,6 +2794,11 @@ class UvManager {
    * Remember that the user answered "Later" to `version` (from any dialog), so
    * the periodic check does not re-offer it this session.
    */
+  /** Undo deferPackageVersion for a version whose offer was withdrawn (superseded, never answered). */
+  undeferPackageVersion(version) {
+    if (version && this._deferredPackageVersion === version) this._deferredPackageVersion = null;
+  }
+
   deferPackageVersion(version) {
     if (version) this._deferredPackageVersion = version;
   }

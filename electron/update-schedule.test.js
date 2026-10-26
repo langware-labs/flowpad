@@ -123,6 +123,12 @@ eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first
   const unsupported = s.recordSuccess({}, { result: { state: 'unsupported', version: null }, at: T0 });
   eq(s.planLaunchCheck({ state: unsupported, intervalMs: 24 * HOUR, now: T0 + HOUR }).run, true, 'unsupported answers without the network: no reason to skip');
 
+  // A seed is never INVENTED: only an explicit 'current' answer is reused.
+  const noResult = { lastSuccessAt: iso(T0), lastAttemptAt: iso(T0), failureCount: 0 };
+  eq(s.planLaunchCheck({ state: noResult, intervalMs: 24 * HOUR, now: T0 + HOUR }).reason, 'no-usable-answer', 'a recent success with no recorded answer runs the real check');
+  const unknownResult = { ...noResult, lastResult: { state: 'unknown' } };
+  eq(s.planLaunchCheck({ state: unknownResult, intervalMs: 24 * HOUR, now: T0 + HOUR }).run, true, 'an unknown answer is not seeded as current');
+
   // A RELAUNCH inside a failure backoff retries for real — a seeded/quiet skip would hold every
   // engine update behind an 'unknown' status with no visible way out. Ticks still pace the backoff.
   const failing = s.recordFailure(current, { at: T0 + HOUR });
