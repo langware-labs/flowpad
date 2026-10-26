@@ -437,7 +437,7 @@ function watchAccountChanges() {
   let wasInternal = updateSchedule.isInternalEmail(currentAccountEmail());
   let debounce = null;
   try {
-    fs.watch(INSTANCE_DIR, (eventType, filename) => {
+    const watcher = fs.watch(INSTANCE_DIR, (eventType, filename) => {
       if (filename && filename !== 'config.json') return;
       clearTimeout(debounce);
       debounce = setTimeout(() => {
@@ -449,6 +449,11 @@ function watchAccountChanges() {
       }, 500);
       if (typeof debounce.unref === 'function') debounce.unref();
     });
+    // A watcher can fail long after arming (on Windows, deleting the watched instance dir raises
+    // an async 'error'): without a listener that event would CRASH the main process. The per-tick
+    // email re-read keeps the schedule correct without the watch.
+    watcher.on('error', (err) => log.warn(`[update] account watch stopped (${err.message}); the periodic tick re-reads the email`));
+    if (typeof watcher.unref === 'function') watcher.unref(); // never keeps the app alive
   } catch (err) {
     log.warn(`[update] not watching for account changes (${err.message}); the periodic tick re-reads the email`);
   }
