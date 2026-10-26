@@ -19,7 +19,7 @@
 import { llmEndpointsService, type LLMCredentialTestResult } from '@sdk';
 import { useLingui as useLinguiCore } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertCircle, Check, Loader2, Trash2 } from 'lucide-react';
+import { AlertCircle, Check, Loader2, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { Badge } from '@src/components/ui/badge';
@@ -76,6 +76,26 @@ export function CredentialField({
    */
   const currentKey = () => value.trim() || inputRef.current?.value.trim() || '';
   const shapeProblem = keyShapeProblem(provider, value);
+
+  // A Vertex key is a whole service-account JSON FILE, which a one-line password box handles badly:
+  // a pasted file loses its line breaks and is hard to check by eye. Taking the file itself puts
+  // its exact text in the box; Save / Activate then send it like any other key.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const takesFile = provider === 'vertex';
+  const readFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+        reader.readAsText(file);
+      });
+      onChange(text.trim());
+    } catch (e) {
+      notify.error({ title: t`Could not read the file`, message: errorMessage(e, '') });
+    }
+  };
 
   const save = async () => {
     if (!endpointId) return;
@@ -156,6 +176,32 @@ export function CredentialField({
           onKeyDown={(e) => e.key === 'Enter' && canReachHub && void save()}
           data-testid="credential-input"
         />
+        {takesFile && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              data-testid="credential-file-input"
+              onChange={(e) => {
+                void readFile(e.target.files?.[0]);
+                // Same file twice in a row must still fire `change`.
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled || busy !== null}
+              onClick={() => fileInputRef.current?.click()}
+              data-testid="credential-upload"
+            >
+              <Upload className="mr-1.5 h-4 w-4" />
+              <Trans>Upload JSON file</Trans>
+            </Button>
+          </>
+        )}
         {canReachHub && (
           <>
             <Button

@@ -30,7 +30,7 @@
  */
 import { TypeId, dataManager, llmEndpointsService, type OrgScopeBudget } from '@sdk';
 import { KeyRound } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLingui as useLinguiCore } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -273,6 +273,10 @@ function OrgKeyField({
   const { t } = useLingui();
   const [value, setValue] = useState('');
   const [hint, setHint] = useState(credentialHint);
+  // The component mounts BEFORE the key exists when the budget has just been created, and a bare
+  // `useState(credentialHint)` keeps that first, empty value for good: the key was stored, the
+  // page refetched, the new hint arrived as a prop -- and the field went on saying "No key stored".
+  useEffect(() => setHint(credentialHint), [credentialHint]);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [removing, setRemoving] = useState(false);
   const invalidate = useInvalidateBudgets();

@@ -8181,6 +8181,10 @@ msgstr "לא ניתן להגיע למכונת הענן הזו. ייתכן שהי
 msgid "Could not read the diagnosis"
 msgstr "לא ניתן לקרוא את האבחון"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Could not read the file"
+msgstr ""
+
 #: src/components/rag/RagChunkBrowser.tsx
 msgid "Could not read the index"
 msgstr "לא ניתן לקרוא את האינדקס"
@@ -32254,6 +32258,10 @@ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Upload it to FlowPad on any machine to open the task."
+msgstr ""
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Upload JSON file"
 msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx

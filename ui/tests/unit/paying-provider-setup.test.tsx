@@ -209,6 +209,28 @@ describe('PayingProviderSetup — already a root', () => {
     expect(screen.getByTestId<HTMLInputElement>('credential-input').placeholder).toMatch(/replace/i);
   });
 
+  it('shows the stored hint that arrives AFTER the field mounted (budget just created)', () => {
+    const root = {
+      endpoint_id: ENDPOINT_TYPEID,
+      is_root: true,
+      provider: 'vertex',
+      credential_hint: '',
+      can_set_credential: true,
+      can_set_up_budget: true,
+    };
+    const { rerender } = render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
+    expect(screen.queryByTestId('credential-hint')).toBeNull();
+
+    // The create flow stores the key and refetches: the same mounted field gets the new hint.
+    rerender(
+      <PayingProviderSetup
+        orgId={ORG_ID}
+        org={{ ...root, credential_hint: 'service account llm@acme-prod.iam.gserviceaccount.com' }}
+      />,
+    );
+    expect(screen.getByTestId('credential-hint').textContent).toContain('llm@acme-prod');
+  });
+
   it('cannot be opened when locked — a disabled trigger reveals no options', async () => {
     const user = userEvent.setup();
     render(
