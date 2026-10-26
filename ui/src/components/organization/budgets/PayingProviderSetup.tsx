@@ -41,6 +41,7 @@ import {
   isProvider,
   keyShapeProblem,
   providerSpec,
+  rootBaseUrl,
   type ProviderSpec,
 } from '@src/components/llm-endpoints/endpoint-catalog';
 import { Button } from '@src/components/ui/button';
@@ -195,7 +196,11 @@ function OrgKeyCreateForm({ orgId }: { orgId: string }) {
     }
     setBusy(true);
     try {
-      const created = await setup.mutateAsync({ orgId, provider: providerId, baseUrl: spec.defaultBaseUrl });
+      const created = await setup.mutateAsync({
+        orgId,
+        provider: providerId,
+        baseUrl: rootBaseUrl(providerId, spec.defaultBaseUrl, key),
+      });
       try {
         await llmEndpointsService.setCredential(endpointIdFromTypeId(created.endpoint_id), key.trim());
         // The setup's own refetch ran before the key existed; read again so the stored-key hint shows.

@@ -14007,6 +14007,10 @@ msgstr "Goes to"
 msgid "good"
 msgstr "good"
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Google Vertex AI"
+msgstr "Google Vertex AI"
+
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
@@ -22283,6 +22287,10 @@ msgstr "Paste path of {0}"
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Paste the token it gives you here."
 msgstr "Paste the token it gives you here."
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON)."
+msgstr "Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON)."
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "path"

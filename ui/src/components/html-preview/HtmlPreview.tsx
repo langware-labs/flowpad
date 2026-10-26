@@ -1,9 +1,10 @@
 import { t } from '@lingui/core/macro';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { ActionInfo, dataManager, TypeId, type AnyEntity } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { GitShareFrame } from '@src/components/assets/editor/GitShareBar';
-import PersistentIframe from '@src/components/persistent-iframe';
+import { ContentEpochContext } from '@src/contexts/content-epoch-context';
+import PersistentIframe, { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { useFS } from '@src/hooks/useFS';
 
 /**
@@ -58,7 +59,9 @@ import { useFS } from '@src/hooks/useFS';
  * script state — with no request. The `src` names the file and the session (`process`),
  * never the revision: a revision in the url would park a new frame for every edit and keep
  * the old ones forever. An edit reloads the SAME frame instead (`cacheKey`), also when it
- * landed while the page was parked.
+ * landed while the page was parked. The vibe host has no per-file write event, only its content
+ * epoch (an agent turn that wrote, a re-show), so that reloads the frame too: a remount alone
+ * hands the parked document back unchanged.
  *
  * The frame is an app's MECHANISM, not an app's powers: it keeps the page's own short
  * sandbox and asks for no browser features (camera, microphone, clipboard, location).
@@ -80,6 +83,11 @@ export function HtmlPreview({ path }: { path: string }) {
   // the URL from the first render, so the frame loads once, already bound.
   const processQuery = flowId ? `?process=${encodeURIComponent(flowId)}` : '';
   const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}${processQuery}` : null;
+  const frameRef = useRef<PersistentIframeHandle>(null);
+  const contentEpoch = useContext(ContentEpochContext);
+  useEffect(() => {
+    if (src) reloadOnNewEpoch(src, contentEpoch, () => frameRef.current?.refresh());
+  }, [src, contentEpoch]);
   // A page received by git is an artifact naming this file: its share bar
   // (version, newer versions, send edits back) sits above the page.
   const [sharedAs, setSharedAs] = useState<AnyEntity | null>(null);
@@ -91,9 +99,7 @@ export function HtmlPreview({ path }: { path: string }) {
     action.bodyParameters = { path };
     void dataManager
       .callAction<{ path: string }, { type_id: string | null }>(action)
-      .then(async (res) =>
-        res?.type_id ? ((await dataManager.getByTypeId(new TypeId(res.type_id))) as AnyEntity | null) : null,
-      )
+      .then(async (res) => (res?.type_id ? await dataManager.getByTypeId(new TypeId(res.type_id)) : null))
       .then((row) => live && setSharedAs(row ?? null))
       .catch(() => live && setSharedAs(null));
     return () => {
@@ -111,7 +117,14 @@ export function HtmlPreview({ path }: { path: string }) {
     <GitShareFrame entity={sharedAs}>
       {/* White under the frame: a page without a background of its own reads as a page, not the app. */}
       <div className="h-full w-full bg-white">
-        <PersistentIframe src={src} cacheKey={revision} sandbox={PREVIEW_SANDBOX} allow="" testId="html-preview" />
+        <PersistentIframe
+          ref={frameRef}
+          src={src}
+          cacheKey={revision}
+          sandbox={PREVIEW_SANDBOX}
+          allow=""
+          testId="html-preview"
+        />
       </div>
     </GitShareFrame>
   );
