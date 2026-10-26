@@ -25,6 +25,7 @@ module.exports.__t = {
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
   runScheduledUpdateCheck, startLaunchDesktopCheck,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
+  fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
   getDesktopStatus: () => desktopStatus,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
@@ -39,6 +40,14 @@ let passed = 0;
 const ok = (c, m) => { assert.ok(c, m); passed++; };
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
 const tick = () => new Promise((r) => setImmediate(r));
+
+// A hung await drains the event loop and node exits 0 BEFORE the suite finishes — a silent false
+// green (the summary line never prints). Normal completion exits via process.exit(0), which skips
+// beforeExit; reaching here means the suite stalled.
+process.on('beforeExit', () => {
+  console.error(`main-update-flow.test.js: the event loop drained after ${passed} assertions — a hung await ended the suite early`);
+  process.exit(1);
+});
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'mainflow-'));
 // main.js derives ~/.flow (logs, instance dir) from os.homedir() at load: $HOME on POSIX,
@@ -579,17 +588,88 @@ const HOUR = 60 * 60 * 1000;
   }
   {
     // A login observed through the instance dir flips the cadence without waiting for a tick.
+    // The watch callback is driven directly (the OS's fs.watch delivery cannot be awaited
+    // deterministically); what this guards is the filter + debounce + recalculation chain.
     const env = load({ accountEmail: 'user@example.com' });
     env.writeSchedule({ lastSuccessAt: agoIso(2 * HOUR), lastAttemptAt: agoIso(2 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    // No real watcher (the dir is missing at arm time), so only the direct calls below fire events.
+    fs.rmSync(INSTANCE_DIR, { recursive: true, force: true });
     env.t.setupElectronAutoUpdater();
-    // Arming fs.watch is itself async on macOS, so a rename fired right after setup can be missed
-    // (prod arms at app start, logins come later). Re-emit it until the watcher catches one; the
-    // spacing stays above the 500ms debounce so each re-emit lets the previous one fire.
-    for (let waited = 0; env.autoUpdater.checks === 0 && waited < 5600; waited += 700) {
-      writeAccountEmail('dev@langware.ai');
-      await new Promise((r) => setTimeout(r, 700));
-    }
+    writeAccountEmail('dev@langware.ai');
+    env.t.fireAccountWatch('something-else.json');
+    await new Promise((r) => setTimeout(r, 650)); // the real 500ms debounce, once
+    eq(env.autoUpdater.checks, 0, 'an event for another file in the instance dir is filtered out');
+    env.t.fireAccountWatch('config.json');
+    await new Promise((r) => setTimeout(r, 650));
     eq(env.autoUpdater.checks, 1, 'logging in as @langware.ai makes the 2h-old check due at once');
+  }
+  {
+    // FEED REGRESSION at launch (a pulled release): older than the last announced version but newer
+    // than the running build — adopted silently, so the held engine always has a way forward.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.writeSchedule({ lastSuccessAt: agoIso(HOUR), lastAttemptAt: agoIso(HOUR), lastResult: { state: 'available', version: '0.2.49' }, failureCount: 0, lastOfferedDesktopVersion: '0.2.49' });
+    env.t.setupElectronAutoUpdater();
+    env.t.primeLaunchCheck();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.finishDownload();
+    const r = await p;
+    eq(r.ok, true, 'feed regression: startup proceeds');
+    eq(env.dialogCalls.length, 0, 'feed regression: no announcement for an older release');
+    eq(env.autoUpdater.downloads.length, 1, 'feed regression: it still downloads (installs on the next quit)');
+    ok(reminderTimer(env), 'feed regression: the reminder will offer the restart — the engine hold is not a dead end');
+  }
+  {
+    // ...and the same regression found by the periodic tick.
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'available', version: '0.2.49' }, failureCount: 0, lastOfferedDesktopVersion: '0.2.49' });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 0, 'tick regression: no announcement');
+    eq(env.autoUpdater.downloads.length, 1, 'tick regression: adopted silently');
+    ok(reminderTimer(env), 'tick regression: reminder armed');
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.downloads.length, 1, 'a later tick does not restart the adopted download');
+  }
+  {
+    // An engine check blocked by the open restart prompt is retried on a NEAR tick (session
+    // follow-up), not a whole interval later — and the retry does not hit the desktop feed again.
+    const env = load({ holdDialog: true, engineStatus: null });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq([env.autoUpdater.checks, env.uv.checks], [1, 1], 'first tick: both channels ran');
+    const prompt = env.t.showDesktopReadyPrompt('0.2.48'); // held open by holdDialog
+    await tick();
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 2, 'due tick: the desktop check ran');
+    eq(env.uv.checks, 1, 'but the engine check was blocked by the open prompt');
+    env.releaseDialog();
+    await prompt;
+    await schedulerTick(env).fn(); await tick();
+    eq(env.uv.checks, 2, 'the blocked engine half is finished on the next tick');
+    eq(env.autoUpdater.checks, 2, 'without a second desktop feed hit inside the interval');
+  }
+  {
+    // A desktop offer blocked by an open update dialog is retried on a NEAR tick from the cached
+    // answer — not dropped until the next interval.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.49', dialogResponses: [1, 1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0, lastOfferedDesktopVersion: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    const open = env.t.offerDesktopUpdate('0.2.48'); // the combined dialog is held open
+    await tick();
+    const blockedTick = schedulerTick(env).fn();
+    await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'while the dialog is open, 0.2.49 is not offered on top of it');
+    env.releaseDialog();
+    await open; await blockedTick;
+    env.autoUpdater.finishDownload(); await tick(); // settle the "Later" download so the retry is not superseding it
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 2, 'the blocked offer is retried on the next tick');
+    eq(env.autoUpdater.checks, 1, 'from the cached answer — no second feed hit inside the interval');
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.49', 'and recorded as offered');
   }
   {
     // The update-cycle harness drives the cadence itself: its interval bypasses the schedule.
