@@ -160,8 +160,11 @@ On macOS, an app running from a transient location is offered, once per version,
 
 - `handle`: capture-region, close-auth-window, copy-to-clipboard, get-app-version, get-backend-url,
   get-startup-logs, notify-attention, notify-os, open-auth-window, open-external, open-logs-folder,
-  restart-backend, set-badge, share-logs, upgrade-flowpad.
+  restart-backend, set-badge, share-logs, upgrade-flowpad, update:get-info, update:download-desktop,
+  update:apply-desktop, update:both (the version panel's update flow, FLOWPAD-2310).
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
+- pushed to the renderer: desktop-update-state (download/install progress for the version panel),
+  engine-update-resumed (the outcome of a panel-initiated coordinated update, once, after the restart).
 - `once`: retry-startup.
 - `app` events: activate, before-quit, open-url, second-instance, window-all-closed.
 
@@ -174,8 +177,10 @@ On macOS, an app running from a transient location is offered, once per version,
 1. **Rollback of a broken engine.** Today there is only a *recovery path* (marker + retry), not a return to the
    previous version. Design: back up the instance directory, `agentic-assets/` and `.flow/` of each root, and
    `global/migrations`; restore when health fails in the first-start window. Requires a Python-side command (`flow backup`).
-2. **A compatibility gate.** The engine would publish `min_desktop_version`, and the desktop would not upgrade to an
-   engine that requires a newer desktop.
+2. **A compatibility gate.** ~~The engine would publish `min_desktop_version`, and the desktop would not upgrade to an
+   engine that requires a newer desktop.~~ **Implemented** — see `docs/version-compatibility.md` (`engine-compat.js`,
+   `wheel-compat.js`, the install-time gates in `uv-manager.js`, and the version panel's pre-flight/coordinated
+   update, FLOWPAD-2310). Kept in place so the numbering of the items below stays stable.
 3. **API key leak on the Python side.** `flow_sdk/server/run.py` runs uvicorn with `log_level="info"` and the default
    access log, so the full query string of `/auth/login_callback` (including `flowpad-api-key`) is written to the server
    log. A filter on `uvicorn.access` is needed. (Proven with a real uvicorn run.)

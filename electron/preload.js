@@ -36,9 +36,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unwatchStartupLogs: () => ipcRenderer.send('unwatch-startup-logs'),
   onStartupLogsUpdate: (callback) => ipcRenderer.on('startup-logs-update', (_event, updates) => callback(updates)),
 
-  // Update management
-  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
+  // Update management (FLOWPAD-2310): the version panel's own update flow.
+  // getUpdateInfo        → desktop + engine update status, compat pre-flight, one-shot resume result
+  // downloadDesktopUpdate → start downloading the available desktop build (no native prompt)
+  // applyDesktopUpdate   → install the downloaded build now (restarts the app)
+  // updateBoth           → desktop first, then the named engine version after the restart (pending-engine.json)
   upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
+  getUpdateInfo: () => ipcRenderer.invoke('update:get-info'),
+  downloadDesktopUpdate: () => ipcRenderer.invoke('update:download-desktop'),
+  applyDesktopUpdate: () => ipcRenderer.invoke('update:apply-desktop'),
+  updateBoth: (engineVersion) => ipcRenderer.invoke('update:both', engineVersion),
+  // Both listeners return a disposer (see onNotificationClick for why: React effects remount).
+  onDesktopUpdateState: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('desktop-update-state', handler);
+    return () => ipcRenderer.removeListener('desktop-update-state', handler);
+  },
+  onEngineUpdateResumed: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('engine-update-resumed', handler);
+    return () => ipcRenderer.removeListener('engine-update-resumed', handler);
+  },
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.

@@ -2331,6 +2331,10 @@ msgstr "a name in scope, or a literal"
 msgid "A new project folder — everything you create is scoped to it"
 msgstr "A new project folder — everything you create is scoped to it"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "A newer version of FlowPad Desktop is required before upgrading the Python backend."
+msgstr "A newer version of FlowPad Desktop is required before upgrading the Python backend."
+
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A place and channel by hand…"
 msgstr "A place and channel by hand…"
@@ -3888,6 +3892,10 @@ msgstr "another project"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "Another step already uses this id — their results will overwrite each other."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is already in progress."
+msgstr "Another update is already in progress."
+
 #~ msgid "Answer here instead"
 #~ msgstr "Answer here instead"
 
@@ -4765,8 +4773,12 @@ msgid "Auto-send"
 msgstr "Auto-send"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "Auto-updates check hourly."
+msgid "Auto-updates check every 20 minutes."
+msgstr "Auto-updates check every 20 minutes."
+
+#: src/components/version-popover/version-popover.tsx
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "Auto-updates check hourly."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -5539,6 +5551,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
+#: src/components/version-popover/desktop-update-modal.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/components/workspace/workspace-switcher.tsx
@@ -10224,6 +10237,27 @@ msgstr "Desktop"
 msgid "Desktop instance"
 msgstr "Desktop instance"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "Desktop Update Required"
+msgstr "Desktop Update Required"
+
+#. placeholder {0}: r.desktopVersion
+#. placeholder {1}: r.engineVersion
+#. placeholder {2}: r.error ? `: ${r.error}` : '.'
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
+msgstr "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are not available for this build."
+msgstr "Desktop updates are not available for this build."
+
+#. placeholder {0}: r.desktopVersion
+#. placeholder {1}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop v{0}, flow SDK v{1}."
+msgstr "Desktop v{0}, flow SDK v{1}."
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
 msgstr "Desktop version"
@@ -10853,9 +10887,27 @@ msgstr "Download the bundle with the conversation."
 msgid "Download the bundle with the task details."
 msgstr "Download the bundle with the task details."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Download the desktop update"
+msgstr "Download the desktop update"
+
+#. placeholder {0}: desktopView.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Download v{0}"
+msgstr "Download v{0}"
+
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "Downloaded"
+
+#. placeholder {0}: desktopView.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading FlowPad Desktop v{0}…"
+msgstr "Downloading FlowPad Desktop v{0}…"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading the desktop update…"
+msgstr "Downloading the desktop update…"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -13162,6 +13214,13 @@ msgstr "Flow Message"
 msgid "flow name…"
 msgstr "flow name…"
 
+#. placeholder {0}: info.engineTarget
+#. placeholder {1}: info.minDesktop
+#. placeholder {2}: info.desktopInstalled ?? '?'
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "flow SDK v{0} requires FlowPad Desktop {1} or newer — you have v{2}."
+msgstr "flow SDK v{0} requires FlowPad Desktop {1} or newer — you have v{2}."
+
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
@@ -13228,6 +13287,11 @@ msgstr "Flowpad Cloud Results"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#. placeholder {0}: info.desktopAvailable
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+msgstr "FlowPad Desktop v{0} is available. We can update both components automatically, or you can update FlowPad Desktop only."
+
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
 msgstr "Flowpad Diagnosis"
@@ -13246,6 +13310,10 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 #: src/pages/entry/AgentLaunchLanding.tsx
 #~ msgid "FlowPad didn't open. Install it from flowpad.ai, then try again."
 #~ msgstr "FlowPad didn't open. Install it from flowpad.ai, then try again."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad engine update failed"
+msgstr "FlowPad engine update failed"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -13283,6 +13351,10 @@ msgstr "FlowPad isn't connected — Open starts it if it's installed"
 msgid "FlowPad isn't installed on this computer"
 msgstr "FlowPad isn't installed on this computer"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply the update. Not now? It installs on the next quit."
+msgstr "FlowPad restarts to apply the update. Not now? It installs on the next quit."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
 msgstr "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -13298,6 +13370,10 @@ msgstr "FlowPad stops, upgrades and starts again on each. Anyone working in them
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad updated"
+msgstr "FlowPad updated"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -18863,6 +18939,10 @@ msgstr "No description yet."
 #~ msgid "No description."
 #~ msgstr "No description."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "No desktop update is available."
+msgstr "No desktop update is available."
+
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
 msgstr "No diagnoses recorded."
@@ -19287,6 +19367,10 @@ msgstr "No models."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+msgstr "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
 
 #: src/components/tabs/TabStrip.tsx
 msgid "No notes yet"
@@ -25047,6 +25131,10 @@ msgstr ""
 "{lines}\n"
 "Full comparison: Debug menu → Command Status"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Restarting to install the update…"
+msgstr "Restarting to install the update…"
+
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
@@ -25162,6 +25250,10 @@ msgstr "Retry download"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #~ msgid "Retry pull"
 #~ msgstr "Retry pull"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Retry the download"
+msgstr "Retry the download"
 
 #: src/components/data-sources/health-style.ts
 msgid "Retrying"
@@ -30026,6 +30118,10 @@ msgstr "The default — what you want 99% of the time."
 msgid "The default workspace. Every project outside another workspace's folder belongs here."
 msgstr "The default workspace. Every project outside another workspace's folder belongs here."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update failed."
+msgstr "The desktop update failed."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -30468,6 +30564,15 @@ msgstr "the token acts as {0}"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
+
+#. placeholder {0}: reason ? ` (${reason})` : ''
+#: src/components/version-popover/version-popover.tsx
+msgid "The update could not be started{0}."
+msgstr "The update could not be started{0}."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The update has not finished downloading yet."
+msgstr "The update has not finished downloading yet."
 
 #: src/pages/entry/MessageLanding.tsx
 #~ msgid "The upload didn't complete — ask {senderName} to resend."
@@ -32358,6 +32463,10 @@ msgstr "up to date"
 msgid "Up to date"
 msgstr "Up to date"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Up to date. Auto-updates check every 20 minutes."
+msgstr "Up to date. Auto-updates check every 20 minutes."
+
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
@@ -32375,6 +32484,10 @@ msgstr "Update ({0} newer)"
 msgid "Update available"
 msgstr "Update available"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "Update Both (Recommended)"
+msgstr "Update Both (Recommended)"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Update channel for auto-updates"
 msgstr "Update channel for auto-updates"
@@ -32383,10 +32496,27 @@ msgstr "Update channel for auto-updates"
 msgid "Update CHART.md"
 msgstr "Update CHART.md"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "Update Desktop Only"
+msgstr "Update Desktop Only"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update downloaded — install it now?"
+msgstr "Update downloaded — install it now?"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
 msgid "Update failed"
 msgstr "Update failed"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update Now"
+msgstr "Update Now"
+
+#. placeholder {0}: desktopView.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Update Now to v{0}"
+msgstr "Update Now to v{0}"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update Plan"
@@ -32444,6 +32574,10 @@ msgstr "Upgrade"
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade ({n})"
 msgstr "Upgrade ({n})"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Upgrade failed."
+msgstr "Upgrade failed."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade FlowPad on {n} machines?"

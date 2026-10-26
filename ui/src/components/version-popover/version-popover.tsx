@@ -3,8 +3,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/compon
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
+import { DesktopUpdateModal, type DesktopUpdateRequiredInfo } from '@src/components/version-popover/desktop-update-modal';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
+import { notify } from '@src/notifications/notify';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -69,10 +71,65 @@ interface VersionCheckResponse {
   hub: HubInfo | null;
 }
 
+/** Desktop update status as the Electron shell reports it ('update:get-info'). */
+interface DesktopUpdateInfo {
+  installed: string;
+  state: 'available' | 'current' | 'unknown' | 'unsupported';
+  available: string | null;
+  downloadState: 'idle' | 'downloading' | 'ready' | 'installing';
+}
+
+/** Engine (PyPI) compat pre-flight, computed by the shell from the candidate wheel's metadata. */
+interface EnginePreflight {
+  installed: string | null;
+  latest: string | null;
+  updateAvailable: boolean;
+  latestMinDesktop: string | null;
+  /** null = could not be decided (offline / no metadata) — proceed; the install gates decide. */
+  latestCompatible: boolean | null;
+  newestCompatible: string | null;
+}
+
+/** Outcome of a panel-initiated coordinated update resumed after the desktop restart. */
+interface ResumedUpdate {
+  success: boolean;
+  engineVersion: string;
+  desktopVersion: string;
+  error?: string;
+}
+
+interface UpdateInfo {
+  desktop: DesktopUpdateInfo;
+  engine: EnginePreflight | null;
+  busy: boolean;
+  resumed: ResumedUpdate | null;
+}
+
+/** Live desktop-update progress pushed by the shell ('desktop-update-state'). */
+interface DesktopUpdatePush {
+  state: 'checking' | 'downloading' | 'ready' | 'installing' | 'error';
+  percent?: number;
+  version?: string;
+  error?: string;
+}
+
+interface UpdateActionResult {
+  started: boolean;
+  ready?: boolean;
+  version?: string;
+  reason?: string;
+}
+
 interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
-  upgradeFlowpad?: () => Promise<{ success: boolean; error?: string }>;
+  upgradeFlowpad?: () => Promise<{ success: boolean; error?: string; desktopUpdatePending?: boolean }>;
   openExternal?: (url: string) => Promise<boolean>;
+  getUpdateInfo?: () => Promise<UpdateInfo>;
+  downloadDesktopUpdate?: () => Promise<UpdateActionResult>;
+  applyDesktopUpdate?: () => Promise<UpdateActionResult>;
+  updateBoth?: (engineVersion: string) => Promise<UpdateActionResult>;
+  onDesktopUpdateState?: (callback: (state: DesktopUpdatePush) => void) => () => void;
+  onEngineUpdateResumed?: (callback: (result: ResumedUpdate) => void) => () => void;
 }
 
 interface InstallVersionResponse {
@@ -289,6 +346,16 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
   const [restarting, setRestarting] = useState(false);
+  // Desktop-update flow (FLOWPAD-2310): the shell's status snapshot, the live progress push, the
+  // "Desktop Update Required" popup, and errors from panel-initiated update actions.
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [desktopPush, setDesktopPush] = useState<DesktopUpdatePush | null>(null);
+  const [justReady, setJustReady] = useState(false); // a download finished while the user watched: ask to install now
+  const [compatInfo, setCompatInfo] = useState<DesktopUpdateRequiredInfo | null>(null);
+  const [modalBusy, setModalBusy] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [desktopActionError, setDesktopActionError] = useState<string | null>(null);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const [diagReport, setDiagReport] = useState<{
     diagnosisId: string;
@@ -351,15 +418,183 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     };
   }, [open, electronApi]);
 
+  /** Why the shell refused a panel update action, as user-readable text. */
+  const updateRefusalText = useCallback(
+    (reason: string | undefined): string => {
+      switch (reason) {
+        case 'busy':
+          return t`Another update is already in progress.`;
+        case 'unsupported':
+          return t`Desktop updates are not available for this build.`;
+        case 'no-update':
+          return t`No desktop update is available.`;
+        case 'not-downloaded':
+          return t`The update has not finished downloading yet.`;
+        default:
+          return t`The update could not be started${reason ? ` (${reason})` : ''}.`;
+      }
+    },
+    [t],
+  );
+
+  /** One-shot resume outcome of a coordinated update (pushed at startup, or pulled with the status). */
+  const showResumed = useCallback(
+    (r: ResumedUpdate) => {
+      if (r.success) {
+        notify.success({
+          id: 'engine-update-resumed',
+          title: t`FlowPad updated`,
+          message: t`Desktop v${r.desktopVersion}, flow SDK v${r.engineVersion}.`,
+        });
+      } else {
+        // The only feedback that the update the user agreed to did not finish — toast in every mode.
+        notify.error({
+          id: 'engine-update-resumed',
+          title: t`FlowPad engine update failed`,
+          message: t`Desktop updated to v${r.desktopVersion}, but the flow SDK update to v${r.engineVersion} failed${r.error ? `: ${r.error}` : '.'} FlowPad will offer it again.`,
+          forceToast: true,
+        });
+      }
+    },
+    [t],
+  );
+
+  const refreshUpdateInfo = useCallback(async (): Promise<UpdateInfo | null> => {
+    if (!electronApi?.getUpdateInfo) return null;
+    try {
+      const info = await electronApi.getUpdateInfo();
+      setUpdateInfo(info);
+      if (info.resumed) showResumed(info.resumed);
+      return info;
+    } catch {
+      return null;
+    }
+  }, [electronApi, showResumed]);
+
+  // Ask the shell for update status when the popover opens (it re-checks the feed only when idle).
+  useEffect(() => {
+    if (!open) return;
+    void refreshUpdateInfo();
+  }, [open, refreshUpdateInfo]);
+
+  // Live progress while a desktop update downloads/installs. Mounted once (the popover component
+  // lives in the footer), so a download finishing while the popover is closed still lands here.
+  useEffect(() => {
+    const dispose = electronApi?.onDesktopUpdateState?.((s) => {
+      setDesktopPush(s);
+      if (s.state === 'ready') setJustReady(true);
+      if (s.state !== 'error') setDesktopActionError(null);
+    });
+    return dispose;
+  }, [electronApi]);
+
+  // A panel-initiated coordinated update resumed by this launch: report its outcome.
+  useEffect(() => {
+    const dispose = electronApi?.onEngineUpdateResumed?.((r) => showResumed(r));
+    return dispose;
+  }, [electronApi, showResumed]);
+
   const handleUpgrade = useCallback(async () => {
     if (!electronApi?.upgradeFlowpad) return;
+    setUpgradeError(null);
     setUpgrading(true);
     try {
-      await electronApi.upgradeFlowpad();
+      // Pre-flight: does the latest release run on THIS desktop? When it does not, the popup offers the
+      // coordinated update instead of starting an upgrade the shell would refuse (or roll back) anyway.
+      const info = await refreshUpdateInfo();
+      const engine = info?.engine ?? null;
+      if (engine && engine.latestCompatible === false) {
+        setModalError(null);
+        setCompatInfo({
+          engineTarget: engine.latest ?? data?.pypi?.latest ?? '',
+          minDesktop: engine.latestMinDesktop,
+          desktopInstalled: info?.desktop.installed ?? electronVersion,
+          desktopAvailable: info?.desktop.state === 'available' ? info.desktop.available : null,
+        });
+        return;
+      }
+      const r = await electronApi.upgradeFlowpad();
+      if (!r.success) {
+        if (r.desktopUpdatePending) {
+          // The shell holds engine changes while a desktop update is pending — same popup, same way out.
+          setModalError(null);
+          setCompatInfo({
+            engineTarget: engine?.latest ?? data?.pypi?.latest ?? '',
+            minDesktop: engine?.latestMinDesktop ?? null,
+            desktopInstalled: info?.desktop.installed ?? electronVersion,
+            desktopAvailable: info?.desktop.available ?? null,
+          });
+        } else {
+          setUpgradeError(r.error ?? t`Upgrade failed.`);
+        }
+      }
     } finally {
       setUpgrading(false);
     }
-  }, [electronApi]);
+  }, [electronApi, refreshUpdateInfo, data?.pypi?.latest, electronVersion, t]);
+
+  /** Start downloading the available desktop build (also the Retry after a failed download). */
+  const handleDesktopDownload = useCallback(async () => {
+    if (!electronApi?.downloadDesktopUpdate) return;
+    setDesktopActionError(null);
+    const r = await electronApi.downloadDesktopUpdate();
+    if (!r.started) {
+      setDesktopActionError(updateRefusalText(r.reason));
+      return;
+    }
+    setDesktopPush(
+      r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
+    );
+  }, [electronApi, updateRefusalText]);
+
+  /** Install the downloaded desktop build now (the app restarts to apply it). */
+  const handleDesktopApply = useCallback(async () => {
+    if (!electronApi?.applyDesktopUpdate) return;
+    setDesktopActionError(null);
+    const r = await electronApi.applyDesktopUpdate();
+    if (!r.started) setDesktopActionError(updateRefusalText(r.reason));
+    // started → the shell pushes {state:'installing'} and restarts the app.
+  }, [electronApi, updateRefusalText]);
+
+  const handleUpdateBoth = useCallback(async () => {
+    if (!electronApi?.updateBoth || !compatInfo) return;
+    setModalBusy(true);
+    setModalError(null);
+    try {
+      const r = await electronApi.updateBoth(compatInfo.engineTarget);
+      if (!r.started) {
+        setModalError(updateRefusalText(r.reason));
+        return;
+      }
+      setCompatInfo(null);
+      setDesktopPush(
+        r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
+      );
+      if (r.ready) setJustReady(true);
+    } finally {
+      setModalBusy(false);
+    }
+  }, [electronApi, compatInfo, updateRefusalText]);
+
+  const handleDesktopOnly = useCallback(async () => {
+    if (!electronApi?.downloadDesktopUpdate) return;
+    setModalBusy(true);
+    setModalError(null);
+    try {
+      const r = await electronApi.downloadDesktopUpdate();
+      if (!r.started) {
+        setModalError(updateRefusalText(r.reason));
+        return;
+      }
+      setCompatInfo(null);
+      setDesktopPush(
+        r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
+      );
+      if (r.ready) setJustReady(true);
+    } finally {
+      setModalBusy(false);
+    }
+  }, [electronApi, updateRefusalText]);
 
   // Wait for the backend to go down and come back healthy, then reload so the
   // (possibly different-version) UI is reloaded fresh. The python monitor restart
@@ -418,6 +653,23 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
 
   const pypi = data?.pypi;
   const githubLatest = data?.latest_release ?? null;
+
+  // What the Desktop section's action row shows: the shell's status snapshot, overridden by live
+  // progress pushes. Null outside the desktop app (or on a shell without the update IPC).
+  const desktopView = useMemo(() => {
+    if (!electronApi?.getUpdateInfo) return null;
+    const snap = updateInfo?.desktop ?? null;
+    const pushState = desktopPush && desktopPush.state !== 'checking' ? desktopPush.state : null;
+    const flow = pushState ?? (snap && snap.downloadState !== 'idle' ? snap.downloadState : null);
+    return {
+      // 'downloading' | 'ready' | 'installing' | 'error' while an update moves;
+      // otherwise the feed verdict: 'available' | 'current' | 'unknown' | 'unsupported'.
+      phase: flow ?? snap?.state ?? 'unknown',
+      percent: desktopPush?.percent ?? null,
+      version: desktopPush?.version ?? snap?.available ?? null,
+      error: desktopPush?.error ?? null,
+    };
+  }, [electronApi, updateInfo, desktopPush]);
 
   const { pypiCurrentPublished, pypiLatestPublished, electronCurrentRelease, githubUpdateAvailable } = useMemo(() => {
     // Generically named on the wire, but GitHub Releases carry DESKTOP tags
@@ -594,6 +846,14 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                   {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                   {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
                 </button>
+                {upgradeError && (
+                  <div
+                    className="mt-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive"
+                    data-testid="upgrade-error"
+                  >
+                    {upgradeError}
+                  </div>
+                )}
               </div>
             )}
             <button
@@ -721,9 +981,93 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <ReleaseNotes title={`Notes for v${electronVersion}`} release={electronCurrentRelease} />
             )}
             {githubLatest && <ReleaseNotes title={`Notes for v${githubLatest.tag}`} release={githubLatest} />}
-            {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (
+            {/* Panel-driven desktop update (FLOWPAD-2310): Download when a build is available, live
+                progress while it downloads, and Update Now once it is ready — including an update
+                downloaded in the background earlier and postponed with "Later". */}
+            {desktopView && (
+              <div className="space-y-1.5 pt-1">
+                {desktopView.phase === 'available' && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDesktopDownload()}
+                    data-testid="desktop-download-button"
+                    className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                  >
+                    {desktopView.version ? t`Download v${desktopView.version}` : t`Download the desktop update`}
+                  </button>
+                )}
+                {desktopView.phase === 'downloading' && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>
+                        {desktopView.version
+                          ? t`Downloading FlowPad Desktop v${desktopView.version}…`
+                          : t`Downloading the desktop update…`}
+                      </span>
+                      {desktopView.percent != null && <span>{Math.round(desktopView.percent)}%</span>}
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" data-testid="desktop-download-progress">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${Math.min(100, Math.max(2, Math.round(desktopView.percent ?? 0)))}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {desktopView.phase === 'ready' && (
+                  <div className="space-y-1">
+                    {justReady && (
+                      <p className="text-[10px] text-muted-foreground">
+                        <Trans>Update downloaded — install it now?</Trans>
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDesktopApply()}
+                      data-testid="desktop-update-now-button"
+                      className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      {desktopView.version ? t`Update Now to v${desktopView.version}` : t`Update Now`}
+                    </button>
+                    <p className="text-[10px] text-muted-foreground">
+                      <Trans>FlowPad restarts to apply the update. Not now? It installs on the next quit.</Trans>
+                    </p>
+                  </div>
+                )}
+                {desktopView.phase === 'installing' && (
+                  <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                    <span>
+                      <Trans>Restarting to install the update…</Trans>
+                    </span>
+                  </div>
+                )}
+                {desktopView.phase === 'error' && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-destructive">
+                      {desktopView.error ?? t`The desktop update failed.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleDesktopDownload()}
+                      data-testid="desktop-update-retry-button"
+                      className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                    >
+                      <Trans>Retry the download</Trans>
+                    </button>
+                  </div>
+                )}
+                {desktopView.phase === 'current' && (
+                  <p className="text-[10px] text-muted-foreground" data-testid="desktop-up-to-date">
+                    <Trans>Up to date. Auto-updates check every 20 minutes.</Trans>
+                  </p>
+                )}
+                {desktopActionError && <p className="text-[10px] text-destructive">{desktopActionError}</p>}
+              </div>
+            )}
+            {mode === 'Desktop' && !desktopView && !githubUpdateAvailable && !data?.github_error && (
               <p className="text-[10px] text-muted-foreground">
-                <Trans>Auto-updates check hourly.</Trans>
+                <Trans>Auto-updates check every 20 minutes.</Trans>
               </p>
             )}
             {githubLatest?.html_url && (
@@ -800,6 +1144,18 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           </div>
         </div>
       </PopoverContent>
+      <DesktopUpdateModal
+        open={!!compatInfo}
+        info={compatInfo}
+        busy={modalBusy}
+        error={modalError}
+        onUpdateBoth={() => void handleUpdateBoth()}
+        onDesktopOnly={() => void handleDesktopOnly()}
+        onClose={() => {
+          setCompatInfo(null);
+          setModalError(null);
+        }}
+      />
       <DiagnoseModal
         open={diagnoseOpen}
         onClose={() => setDiagnoseOpen(false)}

@@ -88,7 +88,14 @@ and are not part of it.
    plus the post-install check in step 4; PyPI's whole-file digest cannot cover a partial read.
 3. The newest release passing both directions is installed with the existing pinned
    `uv tool install flowpad==X` path — all existing recovery machinery (interrupted-install
-   marker, failed-upgrade restore, tool-dir lock handling) is unchanged.
+   marker, failed-upgrade restore, tool-dir lock handling) is unchanged. The target usually
+   comes from PyPI's JSON API while uv resolves the pin against its own cached `/simple/` index
+   (served with `max-age=600`), so a release published minutes ago can be "unsatisfiable" to uv
+   (the 0.2.238 incident). Two defenses: `upgrade()` always passes `--refresh-package flowpad`
+   (one conditional request revalidating that single index entry), and any other pinned install
+   whose whole strategy ladder fails with uv naming the engine pin itself
+   (`isEnginePinResolutionError`) is retried exactly once with the refreshed index — never under
+   `--offline`, and never for a dependency conflict a refresh cannot fix.
 4. After `installLatest` and `upgrade` the installed pair is re-verified from disk
    (`_verifyInstalledPairOrRollback`); if it fails (the selection ran on indeterminate
    metadata, or the engine ships invalid `compat.json`), the previous release is put back — from
@@ -122,6 +129,24 @@ and are not part of it.
 
 When the contract cannot be evaluated (PyPI unreachable, no app version in dev runs), the
 pre-contract behaviour is kept — install `latest` — and step 4 has the last word.
+
+**The version panel** (FLOWPAD-2310): the UI's version popover drives the same machinery over IPC,
+with in-app surfaces instead of native dialogs. Before `upgrade-flowpad`, the panel pre-flights the
+latest release through `update:get-info` (`uv-manager.engineUpdatePreflight`: the candidate's floor
+via the step-2 wheel read against this desktop). An incompatible latest opens the "Desktop Update
+Required" popup — *Update Both* saves a consented `pending-engine.json` with `source: 'panel'` and
+downloads the desktop (`update:both`); *Update Desktop Only* just downloads (`update:download-desktop`);
+the panel's *Update Now* (`update:apply-desktop`) restarts into the new desktop, which installs the
+saved engine version exactly as in the dialog flow and reports the outcome back to the panel
+(`engine-update-resumed`, or pulled once via `update:get-info`). A desktop update downloaded in the
+background and postponed with the native "Later" shows in the panel as ready, so it can be installed
+from there at any time without waiting for the next quit. An indeterminate pre-flight
+(`latestCompatible: null` — offline, unreadable metadata) proceeds, and steps 3–4 stay the
+authoritative gates. The panel's engine upgrade (`upgrade-flowpad` →
+`upgradeFlowpadAndRestart`) resolves its target while the backend still runs — a definitive
+refusal returns as an error with nothing stopped — and a failure after the stop restores the old
+engine through the same recovery the dialog path uses (`recoverAfterFailedUpgrade`), so the app
+is never left on the loading splash over a dead backend.
 
 **Backend self-update** (`flow upgrade`, `POST /api/v1/version/install`):
 

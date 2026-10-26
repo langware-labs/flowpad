@@ -9,6 +9,7 @@ const { showFailureDialog } = require('./failure-dialog');
 const { createRendererWatchdog } = require('./renderer-watchdog');
 const { bounded, collectFailureReport, writeFailureReport } = require('./hang-report');
 const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
+const engineCompat = require('./engine-compat');
 const updateTest = require('./update-test');
 const { createRestartApplier } = require('./update-restart');
 const cookieGate = require('./cookie-gate');
@@ -127,6 +128,18 @@ log.info('Flowpad starting...');
 // app quit/restart (autoInstallOnAppQuit). Reset once consumed.
 let suppressDesktopRestartPrompt = false;
 
+// The outcome of a panel-initiated coordinated update (pending-engine source 'panel') resumed by THIS
+// launch: pushed to the renderer once the UI is up ('engine-update-resumed'), and returned one-shot by
+// the 'update:get-info' IPC as a fallback for a renderer that mounted after the push.
+let resumedPanelUpdate = null;
+
+/** Desktop-update progress for the version panel ('desktop-update-state' channel). Best-effort: a
+ *  missing window just means nobody is watching. */
+function sendDesktopUpdateState(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.webContents.send('desktop-update-state', payload); } catch { /* window going away */ }
+}
+
 // "Restart now": stop the backend, then hand over to the installer; if the updater reports it
 // could not restart, undo `isQuitting` and tell the user (see update-restart.js).
 const restartApplier = createRestartApplier({
@@ -204,9 +217,15 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('download-progress', (p) => {
       log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+      sendDesktopUpdateState({ state: 'downloading', percent: p.percent, version: desktopDownloadVersion });
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
+      // The version panel shows the error with a Retry — but only when a download or an apply was
+      // actually under way; a failed periodic feed check is not the panel's business.
+      if (desktopDownloadInFlight || restartApplier.busy) {
+        sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
+      }
       // If this happened while a "Restart now" was in flight, the app is not quitting after all.
       restartApplier.failed(err);
     });
@@ -216,6 +235,7 @@ function setupElectronAutoUpdater() {
     autoUpdater.on('update-downloaded', async (info) => {
       log.info(`[electron-updater] update downloaded: ${info.version}`);
       desktopDownloadedVersion = info.version;
+      sendDesktopUpdateState({ state: 'ready', version: info.version });
       if (suppressDesktopRestartPrompt) {
         // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
         // (shown right away only if a reminder already came due while the download was running), and
@@ -1876,8 +1896,14 @@ async function installAndStartBackend({ quiet = false } = {}) {
           await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
           activeBin = uvManager.getInstalledFlowBin() || flowBin;
           backendJustUpgraded = true;
+          if (enginePlan.source === 'panel') {
+            resumedPanelUpdate = { success: true, engineVersion: enginePlan.version, desktopVersion: app.getVersion() };
+          }
         } catch (upgradeErr) {
           log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
+          if (enginePlan.source === 'panel') {
+            resumedPanelUpdate = { success: false, engineVersion: enginePlan.version, desktopVersion: app.getVersion(), error: upgradeErr.message };
+          }
         }
       }
 
@@ -2308,6 +2334,11 @@ async function startApp() {
   mainWindow.webContents.once('did-finish-load', () => {
     offerPostponedRestartPrompt(); // the app is on screen: a held-back "Restart now" can show
     rendererWatchdog.arm(); // the app UI is up: from now on, silence means hung
+    if (resumedPanelUpdate) {
+      // A panel-initiated coordinated update finished across the restart: tell the panel. The value is
+      // kept for 'update:get-info' too (one-shot there) in case the renderer mounted its listener late.
+      try { mainWindow.webContents.send('engine-update-resumed', resumedPanelUpdate); } catch { /* window going away */ }
+    }
   });
   mainWindow.loadURL(startUrl);
 
@@ -2808,7 +2839,112 @@ ipcMain.handle('upgrade-flowpad', async () => {
   return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
 });
 
+// ── Desktop updates driven from the version panel (FLOWPAD-2310) ─────────────
+// The panel's own flow — pre-flight, Download, Update Now, Update Both — rides the exact machinery the
+// native dialogs use (downloadDesktopUpdateInBackground, pending-engine.json, restartApplier), minus the
+// dialogs: promptOnReady:false keeps the native "Restart now" prompt out of a panel-initiated download,
+// and the panel's own buttons are the consent instead.
+
+/** Why a panel update action must be refused right now, or null when it may proceed. */
+function desktopUpdateRefusal() {
+  if (!app.isPackaged || process.windowsStore) return 'unsupported';
+  if (restartApplier.busy || desktopRestartPromptOpen) return 'busy';
+  if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) return 'busy';
+  return null;
+}
+
+/** The desktop side of 'update:get-info'. Re-checks the feed only when nothing is in flight yet. */
+async function desktopUpdateInfo() {
+  if (app.isPackaged && !process.windowsStore
+      && !desktopDownloadInFlight && !desktopDownloadedVersion && !restartApplier.busy) {
+    await getDesktopUpdateVersion();
+  }
+  const downloadState = restartApplier.busy ? 'installing'
+    : desktopDownloadedVersion ? 'ready'
+      : desktopDownloadInFlight ? 'downloading'
+        : 'idle';
+  // A downloaded (possibly "Later"-deferred) or in-flight update IS an available update, whatever the
+  // last feed check said — that is what lets a postponed update be installed from the panel later.
+  const available = desktopDownloadedVersion || desktopDownloadVersion
+    || (desktopStatus.state === 'available' ? desktopStatus.version : null);
+  const state = available ? 'available' : desktopStatus.state;
+  return { installed: app.getVersion(), state, available, downloadState };
+}
+
+ipcMain.handle('update:get-info', async () => {
+  const desktop = await desktopUpdateInfo();
+  const engine = uvManager ? await uvManager.engineUpdatePreflight() : null;
+  const busy = desktopUpdateRefusal() === 'busy';
+  const resumed = resumedPanelUpdate;
+  resumedPanelUpdate = null; // one-shot: the panel shows it once
+  return { desktop, engine, busy, resumed };
+});
+
+ipcMain.handle('update:download-desktop', async () => {
+  const refusal = desktopUpdateRefusal();
+  if (refusal) return { started: false, reason: refusal };
+  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopDownloadedVersion };
+  if (desktopDownloadInFlight) return { started: true, version: desktopDownloadVersion };
+  if (desktopStatus.state !== 'available') await getDesktopUpdateVersion();
+  if (desktopStatus.state !== 'available') {
+    return { started: false, reason: desktopStatus.state === 'current' ? 'no-update' : desktopStatus.state };
+  }
+  const version = desktopStatus.version;
+  log.info(`[electron-updater] panel: downloading desktop ${version}`);
+  pendingDesktopVersion = version; // engine changes hold until this desktop is applied
+  offeredDesktopVersion = version; // the periodic tick must not re-offer it natively
+  downloadDesktopUpdateInBackground({ promptOnReady: false, version });
+  return { started: true, version };
+});
+
+ipcMain.handle('update:apply-desktop', async () => {
+  const refusal = desktopUpdateRefusal();
+  if (refusal) return { started: false, reason: refusal };
+  if (!desktopDownloadedVersion) return { started: false, reason: 'not-downloaded' };
+  const version = desktopDownloadedVersion;
+  log.info(`[electron-updater] panel: installing the downloaded ${version} now`);
+  readyReminder.stop();
+  markPendingEngineConsented(pendingEngineStore); // same agreement as the native prompt's "Restart now"
+  sendDesktopUpdateState({ state: 'installing', version });
+  await restartApplier.apply();
+  return { started: true, version };
+});
+
+ipcMain.handle('update:both', async (_event, engineVersion) => {
+  if (!uvManager) return { started: false, reason: 'busy' };
+  const refusal = desktopUpdateRefusal();
+  if (refusal) return { started: false, reason: refusal };
+  if (!engineCompat.isInstallableVersion(engineVersion)) return { started: false, reason: 'invalid-version' };
+  if (desktopStatus.state !== 'available' && !desktopDownloadedVersion && !desktopDownloadInFlight) {
+    await getDesktopUpdateVersion();
+  }
+  const desktopVersion = desktopDownloadedVersion || desktopDownloadVersion
+    || (desktopStatus.state === 'available' ? desktopStatus.version : null);
+  if (!desktopVersion) return { started: false, reason: 'no-update' };
+  log.info(`[update] panel: coordinated update — desktop ${desktopVersion}, then engine ${engineVersion}`);
+  // The popup click is the agreement to BOTH versions: save and consent in one go, so quitting before
+  // the panel's "Update Now" still completes both on the next launch (autoInstallOnAppQuit + resume).
+  savePendingEngine(pendingEngineStore, { engineVersion, desktopVersion, source: 'panel' });
+  markPendingEngineConsented(pendingEngineStore);
+  uvManager.deferPackageVersion(engineVersion); // no separate engine dialog for this version
+  pendingDesktopVersion = desktopVersion;
+  offeredDesktopVersion = desktopVersion;
+  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion };
+  if (!desktopDownloadInFlight) downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopVersion });
+  return { started: true, version: desktopVersion };
+});
+
 async function upgradeFlowpadAndRestart() {
+  // Resolve the target while the backend still RUNS: a resolution failure ("no compatible release",
+  // PyPI answered and refused) must come back as an error the panel can show — not stop the server
+  // and swap the window to the splash first. A null (contract not evaluable) proceeds as before.
+  let picked;
+  try {
+    picked = await uvManager.resolveCompatibleEngineVersion();
+  } catch (resolveErr) {
+    log.warn(`[uv] panel upgrade refused before stopping anything: ${String(resolveErr.message).split('\n')[0]}`);
+    return { success: false, error: resolveErr.message };
+  }
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2822,7 +2958,7 @@ async function upgradeFlowpadAndRestart() {
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;
 
-    await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
+    await uvManager.upgrade({ version: picked ? picked.version : undefined, onProgress: installProgress('Upgrading Flowpad') });
 
     sendStatus('Starting server');
     await uvManager.start();
@@ -2836,6 +2972,18 @@ async function upgradeFlowpadAndRestart() {
 
     return { success: ready };
   } catch (err) {
+    // The backend is already stopped and the window is on the splash: restore the old engine the way
+    // the dialog path does (the "stuck update" incident was exactly this catch returning with the
+    // splash still up and nothing running). If even recovery fails, the startup error panel names it.
+    log.error(`[uv] panel upgrade failed: ${String(err.message).split('\n')[0]} — restoring the running version`);
+    const restored = await uvManager.recoverAfterFailedUpgrade(mainWindow, {
+      waitForBackend,
+      backendUrl: BACKEND_URL,
+      sendStatus,
+    });
+    if (!restored) {
+      await showStartupErrorPanel(describeStartupFailure(err), { retryable: false });
+    }
     return { success: false, error: err.message };
   }
 }

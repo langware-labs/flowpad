@@ -40,24 +40,33 @@ const memStore = (initial = null) => { let v = initial; return { read: () => v, 
 {
   const s = memStore();
   savePendingEngine(s, { engineVersion: '0.2.180', desktopVersion: '0.2.48', now: new Date('2026-09-30T12:00:00Z') });
-  eq(s.value, { engineVersion: '0.2.180', desktopVersion: '0.2.48', savedAt: '2026-09-30T12:00:00.000Z', consented: false }, 'saved, not yet agreed');
+  eq(s.value, { engineVersion: '0.2.180', desktopVersion: '0.2.48', source: null, savedAt: '2026-09-30T12:00:00.000Z', consented: false }, 'saved, not yet agreed');
   eq(markPendingEngineConsented(s), true, 'consent recorded');
   eq(s.value.consented, true, 'and kept with the rest of the state');
   eq(s.value.engineVersion, '0.2.180', 'the version is untouched by consent');
   eq(markPendingEngineConsented(memStore()), false, 'no saved version → nothing to consent to');
 }
+{
+  const s = memStore();
+  savePendingEngine(s, { engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', now: new Date('2026-09-30T12:00:00Z') });
+  eq(s.value.source, 'panel', 'a panel-initiated update records where it came from');
+  markPendingEngineConsented(s);
+  eq(s.value.source, 'panel', 'and consent keeps it');
+}
 
 // ── after the desktop restarted ─────────────────────────────────────────────
 const saved = { engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: true };
 const plan = (over) => planAfterDesktopUpdate({ state: saved, appVersion: '0.2.48', installedEngine: '0.2.168', isNewer, ...over });
-eq(plan({}), { action: 'install', version: '0.2.180', clear: true }, 'agreed + desktop updated + engine older → install EXACTLY the saved version');
-eq(plan({ state: null }), { action: 'none', clear: false }, 'nothing saved → nothing to do');
-eq(plan({ appVersion: '0.2.47' }), { action: 'none', clear: false }, 'the desktop is still the old build → keep the saved version for later');
-eq(plan({ appVersion: '0.2.49' }), { action: 'install', version: '0.2.180', clear: true }, 'a desktop NEWER than the target counts as updated');
-eq(plan({ state: { ...saved, consented: false } }), { action: 'dialog', clear: true }, "desktop updated with no answer (quit after Later) → today's engine dialog, never a silent install");
-eq(plan({ installedEngine: '0.2.180' }), { action: 'none', clear: true }, 'the engine is already at the saved version');
-eq(plan({ installedEngine: '0.2.181' }), { action: 'none', clear: true }, 'or newer');
-eq(plan({ installedEngine: null }), { action: 'install', version: '0.2.180', clear: true }, 'engine version unreadable → still installs what was agreed');
+eq(plan({}), { action: 'install', version: '0.2.180', clear: true, source: null }, 'agreed + desktop updated + engine older → install EXACTLY the saved version');
+eq(plan({ state: null }), { action: 'none', clear: false, source: null }, 'nothing saved → nothing to do');
+eq(plan({ appVersion: '0.2.47' }), { action: 'none', clear: false, source: null }, 'the desktop is still the old build → keep the saved version for later');
+eq(plan({ appVersion: '0.2.49' }), { action: 'install', version: '0.2.180', clear: true, source: null }, 'a desktop NEWER than the target counts as updated');
+eq(plan({ state: { ...saved, consented: false } }), { action: 'dialog', clear: true, source: null }, "desktop updated with no answer (quit after Later) → today's engine dialog, never a silent install");
+eq(plan({ installedEngine: '0.2.180' }), { action: 'none', clear: true, source: null }, 'the engine is already at the saved version');
+eq(plan({ installedEngine: '0.2.181' }), { action: 'none', clear: true, source: null }, 'or newer');
+eq(plan({ installedEngine: null }), { action: 'install', version: '0.2.180', clear: true, source: null }, 'engine version unreadable → still installs what was agreed');
+eq(plan({ state: { ...saved, source: 'panel' } }), { action: 'install', version: '0.2.180', clear: true, source: 'panel' }, 'a panel-initiated update carries its source through to the resume');
+eq(plan({ state: { ...saved, source: 'panel', consented: false } }), { action: 'dialog', clear: true, source: 'panel' }, 'and through the no-answer fallback');
 
 // ── the reminder ────────────────────────────────────────────────────────────
 function fakeTimers() {

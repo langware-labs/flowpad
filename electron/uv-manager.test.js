@@ -245,6 +245,53 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       '_pypiUpdateStatus: PyPI unreachable → null (never prompt offline, even if broken)');
   }
 
+  // ── engineUpdatePreflight (the version panel's compat pre-flight, FLOWPAD-2310) ──
+  // Pure metadata: does the latest release run on THIS desktop? Nothing installed here.
+  {
+    const make = ({ appVersion = '0.2.62', installed = '0.2.230', latest = '0.2.240', floor = { minDesktopVersion: '0.2.60' } } = {}) => {
+      const m = new UvManager(silentLog, { appVersion });
+      m.getInstalledVersionSync = () => installed;
+      m.getLatestPypiVersion = async () => latest;
+      m._readCandidateMinDesktop = async () => floor;
+      m.resolveCompatibleEngineVersion = async () => { throw new Error('not expected in this case'); };
+      return m;
+    };
+
+    eq(await make().engineUpdatePreflight(),
+      { installed: '0.2.230', latest: '0.2.240', updateAvailable: true, latestMinDesktop: '0.2.60', latestCompatible: true, newestCompatible: null },
+      'preflight: desktop at the floor → compatible, no alternative resolved');
+
+    const incompatible = make({ appVersion: '0.2.50' });
+    incompatible.resolveCompatibleEngineVersion = async () => ({ version: '0.2.235', minDesktopVersion: '0.2.45' });
+    eq(await incompatible.engineUpdatePreflight(),
+      { installed: '0.2.230', latest: '0.2.240', updateAvailable: true, latestMinDesktop: '0.2.60', latestCompatible: false, newestCompatible: '0.2.235' },
+      'preflight: desktop below the floor → incompatible, names the newest release this desktop CAN run');
+
+    const nothingCompatible = make({ appVersion: '0.2.50' });
+    nothingCompatible.resolveCompatibleEngineVersion = async () => { throw new Error('No compatible FlowPad engine release'); };
+    eq((await nothingCompatible.engineUpdatePreflight()).newestCompatible, null,
+      'preflight: nothing compatible at all → newestCompatible null (the panel explains and prevents the install)');
+
+    eq((await make({ floor: null }).engineUpdatePreflight()).latestCompatible, null,
+      'preflight: indeterminate metadata (offline/read failed) → null, the install gates decide');
+    eq((await make({ floor: 'invalid' }).engineUpdatePreflight()).latestCompatible, null,
+      'preflight: invalid metadata → null, never a hard verdict from broken data');
+    eq((await make({ floor: { minDesktopVersion: null } }).engineUpdatePreflight()).latestCompatible, true,
+      'preflight: a legacy release with no floor → compatible');
+
+    eq(await make({ latest: null }).engineUpdatePreflight(),
+      { installed: '0.2.230', latest: null, updateAvailable: false, latestMinDesktop: null, latestCompatible: null, newestCompatible: null },
+      'preflight: PyPI unreachable → all nulls, nothing offered');
+
+    const noAppVersion = make();
+    noAppVersion._appVersion = null;
+    eq((await noAppVersion.engineUpdatePreflight()).latestCompatible, null,
+      'preflight: no desktop version to hold against → indeterminate');
+
+    eq((await make({ installed: '0.2.240' }).engineUpdatePreflight()).updateAvailable, false,
+      'preflight: already at the latest → no update, compat still reported');
+  }
+
   // ── checkForUpdatesInBackground source selection ───────────────────────────
   // Pre-start decides with the standalone PyPI check (backend down, maybe
   // broken); post-boot uses the cloud `/check-update` policy verdict.
@@ -345,11 +392,11 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._resolveFlowBin = async () => null;
     m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=99.1' });
     await m.upgrade();
-    eq(seen, ['tool', 'install', 'flowpad@latest', '--python', '99.1', '--force'],
+    eq(seen, ['tool', 'install', 'flowpad@latest', '--python', '99.1', '--force', '--refresh-package', 'flowpad'],
       'upgrade: release needs newer Python than the bundle → pin the release floor');
     m._getLatestPypiInfo = async () => null; // PyPI unreachable
     await m.upgrade();
-    eq(seen, ['tool', 'install', 'flowpad@latest', '--python', bundled, '--force'],
+    eq(seen, ['tool', 'install', 'flowpad@latest', '--python', bundled, '--force', '--refresh-package', 'flowpad'],
       'upgrade: no PyPI answer → bundled pin');
   }
 
@@ -393,12 +440,12 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       _getLatestPypiInfo: async () => { throw new Error('latest must not be consulted for a healthy pinned version'); },
     });
     await m.upgrade({ version: '0.2.180' });
-    eq(m.args, ['tool', 'install', 'flowpad==0.2.180', '--python', '99.1', '--force'], 'upgrade({version}): flowpad==X, pinned to X\'s own requires_python');
+    eq(m.args, ['tool', 'install', 'flowpad==0.2.180', '--python', '99.1', '--force', '--refresh-package', 'flowpad'], 'upgrade({version}): flowpad==X, pinned to X\'s own requires_python');
 
     // Without a version it is still "@latest" (the periodic / engine-only path).
     m = mk({ _getLatestPypiInfo: async () => ({ version: '9.9.9', requires_python: '>=99.2' }) });
     await m.upgrade();
-    eq(m.args, ['tool', 'install', 'flowpad@latest', '--python', '99.2', '--force'], 'upgrade(): unchanged, still @latest');
+    eq(m.args, ['tool', 'install', 'flowpad@latest', '--python', '99.2', '--force', '--refresh-package', 'flowpad'], 'upgrade(): unchanged, still @latest');
 
     // The agreed version was yanked since: installing it would be deliberate self-harm — take the latest release.
     m = mk({
@@ -406,7 +453,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       _getLatestPypiInfo: async () => ({ version: '0.2.181', requires_python: '>=99.3' }),
     });
     await m.upgrade({ version: '0.2.180' });
-    eq(m.args, ['tool', 'install', 'flowpad==0.2.181', '--python', '99.3', '--force'], 'a yanked agreed version is replaced by the latest release (and its floor)');
+    eq(m.args, ['tool', 'install', 'flowpad==0.2.181', '--python', '99.3', '--force', '--refresh-package', 'flowpad'], 'a yanked agreed version is replaced by the latest release (and its floor)');
 
     // Yanked and the latest cannot be fetched: nothing better is known, so the agreed version is used.
     m = mk({
@@ -414,12 +461,12 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       _getLatestPypiInfo: async () => null,
     });
     await m.upgrade({ version: '0.2.180' });
-    eq(m.args.slice(2), ['flowpad==0.2.180', '--python', '99.4', '--force'], 'yanked + PyPI unreachable for the latest: falls back to the agreed version');
+    eq(m.args.slice(2), ['flowpad==0.2.180', '--python', '99.4', '--force', '--refresh-package', 'flowpad'], 'yanked + PyPI unreachable for the latest: falls back to the agreed version');
 
     // PyPI unreachable altogether: install the agreed version with the bundled pin.
     m = mk({ _getPypiVersionInfo: async () => null });
     await m.upgrade({ version: '0.2.180' });
-    eq(m.args, ['tool', 'install', 'flowpad==0.2.180', '--python', bundled, '--force'], 'offline: the agreed version, bundled pin');
+    eq(m.args, ['tool', 'install', 'flowpad==0.2.180', '--python', bundled, '--force', '--refresh-package', 'flowpad'], 'offline: the agreed version, bundled pin');
 
     // Release without requires_python metadata: bundled pin.
     m = mk({ _getPypiVersionInfo: async (v) => ({ version: v, yanked: false }) });
@@ -1647,6 +1694,72 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._runToolInstallGuarded = async (args) => { runs.push(args); return { stdout: 'ok' }; };
     await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.203', '--force']);
     ok(runs.length === 1 && !runs[0].includes('--exclude-newer'), 'offline (unknown release time): no cut-off, one run');
+  }
+  {
+    // A just-published engine release is not in uv's CACHED index yet (PyPI serves /simple/ with
+    // max-age=600): the install revalidates that one package's index entry and retries ONCE — the
+    // "no version of flowpad==0.2.238" incident. No delays, no extra attempts: a stale cache is the
+    // only thing a refresh can fix, and a refreshed index that still lacks the release is a real error.
+    const { isEnginePinResolutionError } = UvManager;
+    ok(isEnginePinResolutionError({ stderr: '  × No solution found when resolving dependencies:\n  ╰─▶ Because there is no version of flowpad==0.2.238 and you require flowpad==0.2.238, we conclude that your requirements are unsatisfiable.' }),
+      'uv "there is no version of flowpad==X" names the engine pin');
+    ok(isEnginePinResolutionError({ message: 'Command failed: uv tool install flowpad==0.2.238 --force\nerror: no versions of flowpad are available' }),
+      'the plural wording too (below the echoed command)');
+    ok(!isEnginePinResolutionError({ stderr: 'No solution found when resolving dependencies: Because only langchain-openai<=1.5.0 is available...' }),
+      'a DEPENDENCY conflict is not an engine-pin failure (no refresh would fix it)');
+    ok(!isEnginePinResolutionError({ stderr: 'error: Failed to download distributions: network unreachable' }), 'a network failure is not');
+    ok(!isEnginePinResolutionError({ stderr: 'An Application Control policy has blocked this file' }), 'a policy block is not');
+    ok(!isEnginePinResolutionError({ message: 'Command failed: uv tool install flowpad==0.2.238 --force\n' }), 'the echoed command alone is not');
+
+    const make = () => {
+      const m = new UvManager(silentLog);
+      m._drainVenvProcesses = async () => {};
+      m._writeInstallMarker = () => {}; m._clearInstallMarker = () => {};
+      return m;
+    };
+    const pinError = () => { const e = new Error('Command failed'); e.stderr = 'there is no version of flowpad==0.2.238'; return e; };
+    {
+      const m = make();
+      const runs = [];
+      m._runToolInstallGuarded = async (args) => { runs.push(args); if (!args.includes('--refresh-package')) throw pinError(); return { stdout: 'ok' }; };
+      await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.238', '--force']);
+      eq(runs.length, 2, 'a stale cached index: exactly one retry with a refreshed index');
+      ok(runs[1].includes('--refresh-package') && runs[1][runs[1].indexOf('--refresh-package') + 1] === 'flowpad', 'the retry revalidates only the engine package');
+      ok(!runs[0].includes('--refresh-package'), 'the first attempt uses the cache as before');
+    }
+    {
+      const m = make();
+      const runs = [];
+      m._runToolInstallGuarded = async (args) => { runs.push(args); throw pinError(); };
+      let thrown = null;
+      try { await m._uvToolInstallForce(['tool', 'install', 'flowpad==9.9.9', '--force']); } catch (e) { thrown = e; }
+      ok(thrown && runs.length === 2, 'a release missing from a FRESH index too: one refresh pass, then the real failure');
+    }
+    {
+      const m = make();
+      const runs = [];
+      m._runToolInstallGuarded = async (args) => { runs.push(args); throw pinError(); };
+      let thrown = null;
+      try { await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.230', '--offline', '--force']); } catch (e) { thrown = e; }
+      ok(thrown && runs.length === 1, '--offline (the rollback path): never sent back to the network');
+    }
+    {
+      // upgrade() itself asks for a fresh index entry up front — an upgrade usually targets a release
+      // published minutes ago.
+      const m = make();
+      m.getInstalledVersionSync = () => '0.2.230';
+      m._resolveEngineTarget = async (v) => ({ version: v, info: null });
+      m._assertCandidateCompatible = async () => {};
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._ensureShimOnPath = async () => {};
+      m._resolveFlowBin = async () => '/fake/bin/flow';
+      m._verifyInstalledPairOrRollback = async () => {};
+      let args = null;
+      m._uvToolInstallForce = async (a) => { args = a; };
+      await m.upgrade({ version: '0.2.238' });
+      ok(args.includes('--refresh-package') && args[args.indexOf('--refresh-package') + 1] === 'flowpad',
+        'upgrade() revalidates the engine index entry on every run');
+    }
   }
   {
     const { quoteWinArgs } = UvManager;
