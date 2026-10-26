@@ -138,12 +138,17 @@ class Placement:
 
     @classmethod
     async def of(cls, deployment: Optional["Deployment"] = None) -> "Placement":
-        """``deployment``'s placement; ``None`` is this computer's."""
+        """``deployment``'s placement; ``None`` is this computer's. This computer's environment is the
+        instance default however its row was loaded: the stored one is whatever it was when the row was
+        first saved (a cloud box's template still says ``development``)."""
+        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
+
         if deployment is None:
             from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
             deployment = await Deployment.this_computer()
-        return cls(await deployment.secrets_binding(), deployment.environment or DEFAULT_ENVIRONMENT, str(deployment.id))
+        environment = get_default_environment() if deployment.is_this_computer else deployment.environment
+        return cls(await deployment.secrets_binding(), environment or DEFAULT_ENVIRONMENT, str(deployment.id))
 
     def required(self, spec: "Credential") -> list[str]:
         """``spec``'s variables that must have a value here: its own required ones, plus what this
