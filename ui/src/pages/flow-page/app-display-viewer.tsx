@@ -2,7 +2,7 @@ import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 import { webappAsset } from '@src/components/project-setup/use-project-load';
 import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
-import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
 import { AppStatusLine } from '@src/components/webapp-display/AppStatusLine';
@@ -56,24 +56,6 @@ export interface AppDisplayViewerProps {
   /** The host's content epoch — a re-show of the same app, or the agent's turn
    *  end. A change reloads the frame; see `reloadOnNewEpoch`. */
   reloadKey?: number;
-}
-
-/**
- * The epoch each frame was last shown at, by `src`.
- *
- * The host re-keys its body to signal "something changed behind the same
- * address", which REMOUNTS this viewer — but the iframe registry parks frames by
- * `src` and hands the same document back, so a remount alone reloads nothing, and
- * component state cannot tell a new epoch from a tab coming back into view. Held
- * per `src` here: a new epoch reloads, the same epoch does not.
- */
-const shownAtEpoch = new Map<string, number>();
-
-function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => void): void {
-  if (!src || epoch === undefined) return;
-  const seen = shownAtEpoch.get(src);
-  shownAtEpoch.set(src, epoch);
-  if (seen !== undefined && seen !== epoch) reload();
 }
 
 /** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */

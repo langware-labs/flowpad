@@ -67,6 +67,7 @@ import { TabLifecycleState } from '@sdk';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { ContentEpochContext } from '@src/contexts/content-epoch-context';
 import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle } from 'lucide-react';
@@ -707,7 +708,7 @@ function ContentPanelBody({
               Undefined for every other host, which keeps the default a plain
               uncontrolled body. */}
           <div key={contentEpoch} className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
-            {body}
+            <ContentEpochContext.Provider value={contentEpoch}>{body}</ContentEpochContext.Provider>
           </div>
         </div>
       </div>

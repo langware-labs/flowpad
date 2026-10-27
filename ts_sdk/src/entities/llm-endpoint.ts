@@ -11,8 +11,8 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import type { RemainingEntry } from '../FlowSync/store';
 
-export type LLMEndpointProvider = 'openrouter' | 'anthropic' | 'openai';
-export const LLM_ENDPOINT_PROVIDERS: readonly LLMEndpointProvider[] = ['openrouter', 'anthropic', 'openai'];
+export type LLMEndpointProvider = 'openrouter' | 'anthropic' | 'openai' | 'vertex';
+export const LLM_ENDPOINT_PROVIDERS: readonly LLMEndpointProvider[] = ['openrouter', 'anthropic', 'openai', 'vertex'];
 
 export type LLMStreamingPolicy = 'allow' | 'require' | 'deny';
 

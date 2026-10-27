@@ -37,7 +37,7 @@ import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
-import { LlmEndpointsSection } from './LlmEndpointsSection';
+import { EndpointSponsorLine, LlmEndpointsSection } from './LlmEndpointsSection';
 import { LlmKeysSection } from './LlmKeysSection';
 import { isLlmSourcesSection, openLlmSources, parseLlmSourcesPointer } from './llm-sources-pointer';
 import {
@@ -191,6 +191,11 @@ function SourceRow({
           <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             {source.reason && <AlertCircle className="h-3 w-3 text-amber-500" />}
             <span className="truncate">{source.reason || (verdict && !verdict.ok ? '' : source.detail)}</span>
+          </div>
+        )}
+        {endpoint?.kind === LLMFundingKind.Hub && source.endpoint_typeid && (
+          <div className="mt-0.5 flex">
+            <EndpointSponsorLine typeid={source.endpoint_typeid} />
           </div>
         )}
       </div>

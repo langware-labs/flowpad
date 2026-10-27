@@ -13,7 +13,7 @@
  * page's Test goes the same way, for the same reason.
  */
 import { llmSourcesService, type LLMFundingStatus } from '@sdk';
-import { useQueries, type UseQueryResult } from '@tanstack/react-query';
+import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -50,16 +50,39 @@ export function useHubRemaining(
       Object.fromEntries(typeids.map((typeid, i) => [typeid, tightestCostLimit(results[i]?.data?.hops)])),
     [typeids],
   );
-  return useQueries({
-    queries: typeids.map((typeid) => {
-      const id = endpointIdFromTypeId(typeid);
-      return {
-        queryKey: ['llm-sources', 'chain', id],
-        queryFn: () => llmSourcesService.chain(id),
-        enabled: !isHubOnly(),
-        staleTime: 15_000,
-      };
-    }),
-    combine,
-  });
+  return useQueries({ queries: typeids.map(chainQuery), combine });
+}
+
+/** One endpoint's chain read — shared, so the bar and the sponsor line cost one GET. */
+function chainQuery(typeid: string) {
+  const id = endpointIdFromTypeId(typeid);
+  return {
+    queryKey: ['llm-sources', 'chain', id],
+    queryFn: () => llmSourcesService.chain(id),
+    enabled: !isHubOnly(),
+    staleTime: 15_000,
+  };
+}
+
+/** Who allocated a hub endpoint: the organization and team whose pools sit on its chain. */
+export interface EndpointSponsor {
+  organization?: string;
+  team?: string;
+}
+
+/** The first organization and team pool along the chain's primary path, entry → root. */
+export function sponsorOf(chain: LLMChain | undefined): EndpointSponsor {
+  const hops = new Map((chain?.hops ?? []).map((hop) => [hop.id, hop]));
+  const out: EndpointSponsor = {};
+  for (const id of chain?.paths?.[0] ?? []) {
+    const hop = hops.get(id);
+    if (!hop?.scope_name) continue;
+    if (hop.source_kind === 'team') out.team ??= hop.scope_name;
+    if (hop.source_kind === 'organization') out.organization ??= hop.scope_name;
+  }
+  return out;
+}
+
+export function useEndpointSponsor(typeid: string): EndpointSponsor {
+  return sponsorOf(useQuery(chainQuery(typeid)).data);
 }

@@ -8199,6 +8199,10 @@ msgstr "تعذّر الوصول إلى هذا الجهاز السحابي. قد 
 msgid "Could not read the diagnosis"
 msgstr "تعذّرت قراءة التشخيص"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Could not read the file"
+msgstr ""
+
 #: src/components/rag/RagChunkBrowser.tsx
 msgid "Could not read the index"
 msgstr "تعذّرت قراءة الفهرس"
@@ -8238,7 +8242,9 @@ msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 msgid "Could not remove"
 msgstr "تعذر الحذف"
 
+#. placeholder {0}: row.name
 #. placeholder {0}: target.name
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not remove {0}"
 msgstr "تعذّرت إزالة {0}"
@@ -13985,6 +13991,10 @@ msgstr "تُوجَّه إلى"
 msgid "good"
 msgstr "جيد"
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Google Vertex AI"
+msgstr ""
+
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "تم استقبال مرجع يبدو نسبياً مع عدة مقاطع: <0>{ref}</0>"
@@ -17806,6 +17816,7 @@ msgstr "المزيد"
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/ui/breadcrumb.tsx
@@ -21836,6 +21847,10 @@ msgstr "العرض الشامل للهيكل التنظيمي"
 msgid "Organization:"
 msgstr "المؤسسة:"
 
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Organization: {organization}"
+msgstr "المؤسسة: {organization}"
+
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "تُحفظ المؤسسات والفرق في السحابة. للإدارة، يلزم الخروج من الوضع المحلي."
@@ -22190,6 +22205,10 @@ msgstr "لصق مسار {0}"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Paste the token it gives you here."
+msgstr ""
+
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON)."
 msgstr ""
 
 #~ msgid "path"
@@ -24174,6 +24193,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -24191,6 +24211,15 @@ msgstr "إزالة"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "إزالة {0}"
+
+#. placeholder {0}: removing.row.name
+#. placeholder {0}: removing?.row.name ?? ''
+#. placeholder {1}: data.org.name
+#. placeholder {1}: removing.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove {0} from {1}?"
+msgstr "إزالة {0} من {1}؟"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Remove {0} from {teamName}"
@@ -24259,6 +24288,11 @@ msgstr "إزالة الملف"
 #~ msgid "Remove folder"
 #~ msgstr ""
 
+#. placeholder {0}: m.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove from {0}"
+msgstr "إزالة من {0}"
+
 #. placeholder {0}: team.name
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from {0}?"
@@ -24275,6 +24309,10 @@ msgstr "إزالة من Flowpad"
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "إزالة من المجلد"
+
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove from organization"
+msgstr "إزالة من المؤسسة"
 
 #: src/components/connections-manager.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -29523,6 +29561,10 @@ msgstr ""
 msgid "Team name…"
 msgstr "اسم الفريق…"
 
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Team: {team}"
+msgstr "الفريق: {team}"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Teammate Mode"
 msgstr "وضع الزملاء"
@@ -30445,6 +30487,16 @@ msgstr "أبلغوا"
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
 msgstr "سيتم تنزيلها مرة أخرى في المرة القادمة التي يُفتح فيها مكتب المساعدة."
+
+#. placeholder {0}: data.org.name
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "They will leave {0} and every team in it, and lose the budgets those gave them. Money already spent is not affected."
+msgstr "سيغادرون {0} وكل فريق فيها، ويفقدون الميزانيات التي منحتها لهم. لا تتأثر الأموال التي أُنفقت بالفعل."
+
+#. placeholder {0}: removing.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "They will leave {0} and lose the budget it gave them. Money already spent is not affected."
+msgstr "سيغادرون {0} ويفقدون الميزانية التي منحها لهم. لا تتأثر الأموال التي أُنفقت بالفعل."
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "They'll get an email with a link that opens this budget."
@@ -32411,6 +32463,10 @@ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Upload it to FlowPad on any machine to open the task."
+msgstr ""
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Upload JSON file"
 msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx

@@ -365,6 +365,24 @@ class IframeRegistry {
 
 const registry = IframeRegistry.getInstance();
 
+/**
+ * The epoch each frame was last shown at, by `src`.
+ *
+ * The host re-keys its body to signal "something changed behind the same
+ * address", which REMOUNTS this viewer — but the iframe registry parks frames by
+ * `src` and hands the same document back, so a remount alone reloads nothing, and
+ * component state cannot tell a new epoch from a tab coming back into view. Held
+ * per `src` here: a new epoch reloads, the same epoch does not.
+ */
+const shownAtEpoch = new Map<string, number>();
+
+export function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => void): void {
+  if (!src || epoch === undefined) return;
+  const seen = shownAtEpoch.get(src);
+  shownAtEpoch.set(src, epoch);
+  if (seen !== undefined && seen !== epoch) reload();
+}
+
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
   ({ src, cacheKey, sandbox, allow, testId, onLoad, onError }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -405,8 +423,6 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Get current iframe states
     const isIframeLoading = registry.getLoadingState(src);
     const isIframeError = registry.getErrorState(src);
-
-
 
     const showIframe = useCallback(() => {
       if (containerRef.current && !isIframeError) {
