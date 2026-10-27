@@ -252,7 +252,10 @@ function setupElectronAutoUpdater() {
   // interval bypasses the schedule: that interval IS the cadence under test. Launch-time is
   // handled by the pre-start flow, not here.
   const harnessTickMs = updateTest.checkIntervalMs();
-  const tick = setInterval(() => runScheduledUpdateCheck({ bypassSchedule: !!harnessTickMs }), harnessTickMs || updateSchedule.SCHEDULER_TICK_MS);
+  const tick = setInterval(() => {
+    runScheduledUpdateCheck({ bypassSchedule: !!harnessTickMs })
+      .catch((err) => log.warn(`[update] scheduled pass failed: ${err.message}`)); // a sync throw must not become an unhandled rejection
+  }, harnessTickMs || updateSchedule.SCHEDULER_TICK_MS);
   if (typeof tick.unref === 'function') tick.unref();
   watchAccountChanges();
 }
@@ -348,8 +351,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
             // The engine debt is armed ONCE, when the dialog settles — not every tick under it.
             .finally(() => { offerInProgress = false; followUpPackage = true; });
           return;
+        } else {
+          followUpDesktop = true; // a DIFFERENT window/download is up: retried on a near tick, not in a day
         }
-        followUpDesktop = true; // a window is already up: retried on a near tick, not in a day
       } else if (action === 'resume' && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
         // Announced this session (the user may have said "Update now") and the download was lost:
         // continue it — no deferral, no reminder, nothing the user did not ask for. The watermark
@@ -376,6 +380,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     }
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
+    // The debt this pass was carrying was not paid: give it back so a near tick retries it.
+    if (desktopWasBlocked && pass !== 'engine-retry') followUpDesktop = true;
+    if (packageWasBlocked) followUpPackage = true;
   } finally {
     autoCheckInFlight = false;
   }
@@ -601,7 +608,8 @@ function watchAccountChanges() {
       if (internal === wasInternal) return;
       wasInternal = internal;
       log.info(`[update] account change: update checks now run ${internal ? 'hourly' : 'daily'}`);
-      runScheduledUpdateCheck({ bypassSchedule: !!updateTest.checkIntervalMs() }); // the harness interval bypasses the schedule here too
+      runScheduledUpdateCheck({ bypassSchedule: !!updateTest.checkIntervalMs() }) // the harness interval bypasses the schedule here too
+        .catch((err) => log.warn(`[update] account-change pass failed: ${err.message}`));
     }, ACCOUNT_DEBOUNCE_MS);
     if (typeof debounce.unref === 'function') debounce.unref();
   };
@@ -716,16 +724,21 @@ async function offerDesktopUpdate(desktopLatest) {
   offeredDesktopVersion = desktopLatest; // session dedupe is immediate; the persisted watermark waits for the screen
   pendingDesktopVersion = desktopLatest;
   let engineStatus = null;
+  let engineStatusUnknown = false;
+  const lookupFailuresBefore = (uvManager && uvManager.pypiLookupFailures) || 0;
   try {
     engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
   } catch (err) {
     // resolveCompatibleEngineVersion inside the status can throw: fall back to the desktop-only
     // offer — the desktop update must not be lost to an engine-status hiccup.
+    engineStatusUnknown = true;
     log.warn(`[update] engine status unavailable for the offer: ${err.message}`);
   }
+  if (uvManager && (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore) engineStatusUnknown = true;
   if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
-    // An engine version agreed alongside an earlier, withdrawn offer must not ride this desktop.
-    pendingEngineStore.clear();
+    // An engine version agreed alongside an earlier, withdrawn offer must not ride this desktop —
+    // but only when we KNOW there is no engine to offer; an unanswered PyPI is not a withdrawal.
+    if (!engineStatusUnknown) pendingEngineStore.clear();
     // Desktop only: its "announcement" is the download + ready prompt, so the watermark is spent
     // only when the download LANDS — a failed or interrupted one leaves the version announceable,
     // the same as a 'both' screen nobody answered.

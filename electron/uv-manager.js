@@ -2786,21 +2786,16 @@ class UvManager {
   }
 
   /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is required.
-   */
-  /**
    * Remember that the user answered "Later" to `version` (from any dialog), so
    * the periodic check does not re-offer it this session.
    */
+  deferPackageVersion(version) {
+    if (version) this._deferredPackageVersion = version;
+  }
+
   /** Undo deferPackageVersion for a version whose offer was withdrawn (superseded, never answered). */
   undeferPackageVersion(version) {
     if (version && this._deferredPackageVersion === version) this._deferredPackageVersion = null;
-  }
-
-  deferPackageVersion(version) {
-    if (version) this._deferredPackageVersion = version;
   }
 
   /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
@@ -2818,6 +2813,11 @@ class UvManager {
     if (this._packageDialog) this._packageDialog.abort.abort();
   }
 
+  /**
+   * Run a background update check after the UI is loaded.
+   * Non-blocking — failures are logged and silently ignored.
+   * Shows a native OS dialog if an update is required.
+   */
   async checkForUpdatesInBackground(
     mainWindow,
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }

@@ -736,6 +736,58 @@ const HOUR = 60 * 60 * 1000;
     }
   }
   {
+    // D1: a SCHEDULED pass landing on the version already on screen leaves NO desktop debt —
+    // the engine retry is not starved by phantom follow-ups.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 1, 'the offer is up');
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick(); // a due pass finds the same version under the open dialog
+    eq(env.dialogCalls.length, 1, 'same version: no second window');
+    env.writeSchedule({ ...env.readSchedule(), engineFailureCount: 1, engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    ok(env.logLines.some((l) => /engine check retry due/.test(l)),
+      'the engine retry gets the next pass — the on-screen version owed nothing');
+    env.releaseDialog(); await tick(); await tick();
+  }
+  {
+    // D2: a pass that THROWS gives back the debt it was carrying.
+    const env = load({ holdDialog: true, engineStatus: null, dialogResponses: [] });
+    env.t.setupElectronAutoUpdater();
+    const prompt = env.t.showDesktopReadyPrompt('0.2.50'); await tick(); // an open prompt blocks the engine half
+    await schedulerTick(env).fn(); await tick();
+    const uvm = env.t.getUvManager();
+    uvm.getInstalledFlowBin = () => { throw new Error('boom'); }; // the follow-up pass will throw mid-flight
+    await schedulerTick(env).fn(); await tick();
+    delete uvm.getInstalledFlowBin;
+    env.releaseDialog(); await prompt;
+    await schedulerTick(env).fn(); await tick();
+    eq(env.uv.checks, 1, 'the debt survived the throwing pass and was paid once unblocked');
+  }
+  {
+    // D3: an unanswered PyPI is not a withdrawal — the desktop-only fallback keeps an agreed engine.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.46', consented: true }));
+    env.t.getUvManager()._pypiUpdateStatus = async () => { throw new Error('pypi down'); };
+    await env.t.offerDesktopUpdate('0.2.48');
+    eq(env.readState() && env.readState().engineVersion, '0.2.180', 'engine status threw: the agreed engine is kept');
+    const swallowed = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    swallowed.t.setupElectronAutoUpdater();
+    fs.writeFileSync(swallowed.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.46', consented: true }));
+    const uvm2 = swallowed.t.getUvManager();
+    uvm2._pypiUpdateStatus = async () => { uvm2.pypiLookupFailures = (uvm2.pypiLookupFailures || 0) + 1; return null; };
+    await swallowed.t.offerDesktopUpdate('0.2.48');
+    eq(swallowed.readState() && swallowed.readState().engineVersion, '0.2.180', 'a swallowed PyPI outage keeps it too');
+    const clean = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null });
+    clean.t.setupElectronAutoUpdater();
+    fs.writeFileSync(clean.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.46', consented: true }));
+    await clean.t.offerDesktopUpdate('0.2.48');
+    eq(clean.readState(), null, 'a clean "no engine update" answer withdraws the stale agreement');
+  }
+  {
     // Orphaned atomic-write tmp files (a crash between write and rename) are swept at setup.
     const env = load();
     const orphan = path.join(env.userData, 'update-schedule.json.999.111.tmp');
