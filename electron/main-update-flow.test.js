@@ -23,7 +23,7 @@ const EXPOSE = `
 module.exports.__t = {
   offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
-  runScheduledUpdateCheck, startLaunchDesktopCheck,
+  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
   disarmAccountWatch: () => { accountWatcher = { close() {} }; },
@@ -791,16 +791,65 @@ const HOUR = 60 * 60 * 1000;
     // Orphaned atomic-write tmp files (a crash between write and rename) are swept at setup.
     const env = load();
     const orphan = path.join(env.userData, 'update-schedule.json.999.111.tmp');
+    const fresh = path.join(env.userData, 'update-schedule.json.998.111.tmp');
     const own = path.join(env.userData, `update-schedule.json.${process.pid}.111.tmp`);
     const real = path.join(env.userData, 'update-schedule.json');
     fs.writeFileSync(orphan, '{}');
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    fs.utimesSync(orphan, hourAgo, hourAgo);
+    fs.writeFileSync(fresh, '{}');
     fs.writeFileSync(own, '{}');
     fs.writeFileSync(real, JSON.stringify({ failureCount: 0 }));
     env.t.setupElectronAutoUpdater();
-    eq(fs.existsSync(orphan), false, 'the orphan tmp is swept');
+    eq(fs.existsSync(orphan), false, 'an OLD orphan of another process is swept');
+    eq(fs.existsSync(fresh), true, "a fresh tmp of another process is left alone — it may be mid-write");
     eq(fs.existsSync(own), true, "the CURRENT process's tmp is never touched");
     eq(fs.existsSync(real), true, 'the real state file stays');
-    fs.rmSync(own, { force: true });
+    fs.rmSync(fresh, { force: true }); fs.rmSync(own, { force: true });
+  }
+  {
+    // F1a: a tick landing inside a launch offer's engine-status await (before packageUpdateInFlight
+    // turns on) does not launch a second offer — startOffer's flag is synchronous for every path.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    const uvm = env.t.getUvManager();
+    let statusCalls = 0; let release;
+    uvm._pypiUpdateStatus = () => { statusCalls++; return new Promise((r) => { release = () => r(null); }); };
+    const p = env.t.startOffer('0.2.48'); // the launch-path offer, parked inside the status await
+    await schedulerTick(env).fn(); await tick();
+    eq(statusCalls, 1, 'a tick inside that window does not start a second offer');
+    release(); await p; await tick();
+    eq(env.autoUpdater.downloads.length, 1, 'one offer, one download');
+  }
+  {
+    // F1b: ticks under the LAUNCH offer's dialog owe nothing, exactly like tick-launched offers.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    const p = env.t.startOffer('0.2.48'); await tick();
+    eq(env.dialogCalls.length, 1, 'the launch offer is up');
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 1, 'a due tick on the same version adds no window');
+    env.writeSchedule({ ...env.readSchedule(), engineFailureCount: 1, engineLastAttemptAt: agoIso(schedule.BACKOFF_BASE_MS + 1000) });
+    await schedulerTick(env).fn(); await tick();
+    ok(env.logLines.some((l) => /engine check retry due/.test(l)), 'and no phantom desktop debt starves the engine retry');
+    env.releaseDialog(); await p; await tick();
+  }
+  {
+    // F3: a version that already downloaded is not re-downloaded by 'resume' — the postponed ready
+    // prompt and the 90-minute reminder own it from here.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null, backendReady: false });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    await env.t.startOffer('0.2.48'); // desktop-only: the download starts
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload(); await tick();
+    eq(env.dialogCalls.length, 0, 'backend still starting: the ready prompt is postponed');
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.downloads.length, 1, 'the landed version is not downloaded again by resume');
   }
   {
     // A deterministically failing offer re-arms its debt at most MAX_FOLLOW_UP_RETRIES times per
