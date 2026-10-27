@@ -838,6 +838,21 @@ const HOUR = 60 * 60 * 1000;
     env.releaseDialog(); await p; await tick();
   }
   {
+    // G1: a follow-up works from the CACHE — a stale 'available' naming the version the app already
+    // runs must not produce an offer or a download.
+    const env = load({ holdDialog: true, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    const prompt = env.t.showDesktopReadyPrompt('0.2.50'); await tick(); // blocks the announce → desktop debt
+    await schedulerTick(env).fn(); await tick();
+    eq(env.dialogCalls.length, 1, 'the offer is blocked behind the prompt (debt armed)');
+    env.writeSchedule({ ...env.readSchedule(), lastResult: { state: 'available', version: '0.2.47' } }); // stale: the running version
+    env.releaseDialog(); await prompt;
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.downloads.length, 0, 'a cached answer no newer than the running app moves nothing');
+    eq(env.dialogCalls.length, 1, 'and announces nothing');
+  }
+  {
     // F3: a version that already downloaded is not re-downloaded by 'resume' — the postponed ready
     // prompt and the 90-minute reminder own it from here.
     const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null, backendReady: false });

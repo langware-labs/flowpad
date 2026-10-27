@@ -311,8 +311,11 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   followUpPackage = false;
   try {
     const last = state.lastResult || {};
-    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
-      : (pass === 'follow-up' && desktopWasBlocked && last.state === 'available' ? last.version : null);
+    // A follow-up works from the cached answer — guarded against a stale 'available' naming a
+    // version the running app already is (a scheduled pass always gets a fresh answer instead).
+    const cached = (pass === 'follow-up' && desktopWasBlocked && last.state === 'available'
+      && last.version && isNewer(app.getVersion(), last.version)) ? last.version : null;
+    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion() : cached;
     if (desktopLatest) {
       // A newer release than the one on screen / being downloaded: close that
       // prompt (as "Later") or cancel that download, so the user only ever sees
@@ -352,13 +355,16 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         // must not freeze the scheduler.
         } else if (!offerInProgress && !desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
           startOffer(desktopLatest)
+            // The streak resets when the offer SUCCEEDS — never at launch, where a deterministically
+            // failing offer would reset itself every tick and the retry cap would never bite.
+            .then(() => { followUpRetries = 0; })
             .catch((err) => {
               log.warn(`[update] offer failed: ${err.message}`);
               rearmFollowUp({ desktop: true }); // retried from the cache on a near tick, capped
             })
             // The engine debt is armed ONCE, when the dialog settles — not every tick under it.
             .finally(() => { followUpPackage = true; });
-          return; // no retry-streak reset here: a deterministically failing offer must not reset itself
+          return;
         } else {
           followUpDesktop = true; // a DIFFERENT window/download is up: retried on a near tick, not in a day
         }
@@ -602,9 +608,11 @@ function atomicWrite(p, text) {
     fs.writeFileSync(tmp, text, 'utf8');
     try {
       fs.renameSync(tmp, p);
-    } catch {
-      // The rename can be blocked on Windows (anti-virus / indexer holding the target): a plain
-      // overwrite — the pre-PR behavior — beats losing the write altogether.
+    } catch (err) {
+      // Only a lock held by another process (Windows anti-virus / indexer) is worth the in-place
+      // overwrite — the pre-PR behavior. Anything else (ENOSPC, EROFS…) would fail the overwrite
+      // too, and half-writing the target is exactly what this function exists to prevent.
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
       fs.writeFileSync(p, text, 'utf8');
     }
   } finally {
