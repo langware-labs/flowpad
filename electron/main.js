@@ -240,7 +240,9 @@ function setupElectronAutoUpdater() {
   try {
     const userData = app.getPath('userData');
     for (const f of fs.readdirSync(userData)) {
-      if (/^(update-schedule|pending-engine)\.json\..+\.tmp$/.test(f)) {
+      // Only OTHER processes' orphans: never a tmp this process may be mid-writing.
+      const m = /^(?:update-schedule|pending-engine)\.json\.(\d+)\..+\.tmp$/.exec(f);
+      if (m && Number(m[1]) !== process.pid) {
         try { fs.rmSync(path.join(userData, f), { force: true }); } catch { /* best effort */ }
       }
     }
@@ -284,6 +286,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
     if (check.due) {
       feedBackoffOnly = check.reason === 'backoff';
+      followUpRetries = 0; // a fresh interval starts a fresh retry streak
       log.info(`[update] periodic check due (${check.reason})`);
     } else if (followUpDesktop || followUpPackage) {
       // Follow-up outranks the engine retry: a stuck engine (held behind a pending desktop) stays
@@ -346,11 +349,12 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
           offerPromise = offerDesktopUpdate(desktopLatest)
             .catch((err) => {
               log.warn(`[update] offer failed: ${err.message}`);
-              followUpDesktop = true; // retried from the cache on a near tick
+              rearmFollowUp({ desktop: true }); // retried from the cache on a near tick, capped
             })
             // The engine debt is armed ONCE, when the dialog settles — not every tick under it.
             .finally(() => { offerInProgress = false; followUpPackage = true; });
-          return;
+          return; // no retry-streak reset here: a deterministically failing offer must not reset itself
+
         } else {
           followUpDesktop = true; // a DIFFERENT window/download is up: retried on a near tick, not in a day
         }
@@ -378,11 +382,11 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
       else if (pkg === 'failed' && pass !== 'follow-up') scheduleStore.write(updateSchedule.recordEngineFailure(scheduleStore.read(), { at: Date.now() }));
       else if (pkg === 'ran' && (Number(scheduleStore.read().engineFailureCount) || 0) > 0) scheduleStore.write(updateSchedule.recordEngineSuccess(scheduleStore.read()));
     }
+    followUpRetries = 0; // the pass completed without throwing
   } catch (err) {
     log.warn(`[update] periodic check failed: ${err.message}`);
-    // The debt this pass was carrying was not paid: give it back so a near tick retries it.
-    if (desktopWasBlocked && pass !== 'engine-retry') followUpDesktop = true;
-    if (packageWasBlocked) followUpPackage = true;
+    // The debt this pass was carrying was not paid: give it back so a near tick retries it, capped.
+    rearmFollowUp({ desktop: desktopWasBlocked && pass !== 'engine-retry', pkg: packageWasBlocked });
   } finally {
     autoCheckInFlight = false;
   }
@@ -393,6 +397,20 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
 // flag per half — an engine-retry pass must not erase the desktop's, and vice versa.
 let followUpDesktop = false;
 let followUpPackage = false;
+
+// A deterministic error must not retry a debt every 5 minutes forever: after this many consecutive
+// FAILED passes the debt is dropped (logged) and the next regular interval starts clean. This CAPS
+// existing retries; any pass that completes resets the streak.
+const MAX_FOLLOW_UP_RETRIES = 3;
+let followUpRetries = 0;
+function rearmFollowUp({ desktop = false, pkg = false } = {}) {
+  if (++followUpRetries > MAX_FOLLOW_UP_RETRIES) {
+    log.warn(`[update] follow-up gave up after ${MAX_FOLLOW_UP_RETRIES} failed passes; waiting for the next interval`);
+    return;
+  }
+  if (desktop) followUpDesktop = true;
+  if (pkg) followUpPackage = true;
+}
 
 // ONE update window at a time, without freezing the scheduler under it: a tick LAUNCHES the offer
 // and moves on (engine checks, retries and follow-ups keep running while the dialog waits for the

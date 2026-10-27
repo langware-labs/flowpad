@@ -74,6 +74,14 @@ function pastMs(iso, now) {
   return Number.isFinite(ms) && ms <= now ? ms : null;
 }
 
+// For a BACKOFF anchor the clock-set-back rule inverts: an attempt stamped in the future reads as
+// "just now" — keeping the delay — because reading it as "long ago" would collapse the backoff to
+// every tick. Unparseable still reads as "long ago" (null → due now).
+function attemptMs(iso, now) {
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? Math.min(ms, now) : null;
+}
+
 /**
  * Is an automatic check due? While checks fail, the backoff is the cadence; otherwise `intervalMs`
  * after the last successful check. No usable history → due now.
@@ -82,7 +90,7 @@ function pastMs(iso, now) {
 function shouldAutoCheck({ state, intervalMs, now }) {
   const failures = Number(state.failureCount) || 0;
   if (failures > 0) {
-    const attempted = pastMs(state.lastAttemptAt, now);
+    const attempted = attemptMs(state.lastAttemptAt, now);
     const dueAt = attempted === null ? now : attempted + backoffDelayMs(failures);
     return { due: now >= dueAt, dueAt, reason: now >= dueAt ? 'backoff' : 'not-due' };
   }
@@ -156,7 +164,7 @@ function recordEngineAttempt(state, { at }) {
 function engineRetryDue({ state, now }) {
   const failures = Number(state.engineFailureCount) || 0;
   if (failures === 0) return false;
-  const attempted = pastMs(state.engineLastAttemptAt, now);
+  const attempted = attemptMs(state.engineLastAttemptAt, now);
   return attempted === null || now >= attempted + backoffDelayMs(failures);
 }
 

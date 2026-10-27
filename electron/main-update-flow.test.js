@@ -791,12 +791,35 @@ const HOUR = 60 * 60 * 1000;
     // Orphaned atomic-write tmp files (a crash between write and rename) are swept at setup.
     const env = load();
     const orphan = path.join(env.userData, 'update-schedule.json.999.111.tmp');
+    const own = path.join(env.userData, `update-schedule.json.${process.pid}.111.tmp`);
     const real = path.join(env.userData, 'update-schedule.json');
     fs.writeFileSync(orphan, '{}');
+    fs.writeFileSync(own, '{}');
     fs.writeFileSync(real, JSON.stringify({ failureCount: 0 }));
     env.t.setupElectronAutoUpdater();
     eq(fs.existsSync(orphan), false, 'the orphan tmp is swept');
+    eq(fs.existsSync(own), true, "the CURRENT process's tmp is never touched");
     eq(fs.existsSync(real), true, 'the real state file stays');
+    fs.rmSync(own, { force: true });
+  }
+  {
+    // A deterministically failing offer re-arms its debt at most MAX_FOLLOW_UP_RETRIES times per
+    // interval — never an every-5-minutes loop forever — and recovers on the next interval.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    env.t.setupElectronAutoUpdater();
+    const uvm = env.t.getUvManager();
+    let attempts = 0;
+    uvm.deferPackageVersion = () => { attempts++; throw new Error('boom'); };
+    for (let i = 0; i < 7; i++) { await schedulerTick(env).fn(); await tick(); await tick(); }
+    eq(attempts, 4, 'one scheduled attempt + three capped retries, then silence');
+    eq(env.autoUpdater.checks, 1, 'the retries worked from the cache — one feed hit');
+    ok(env.logLines.some((l) => /follow-up gave up after 3 failed passes/.test(l)), 'and the give-up is logged');
+    // The next interval starts a fresh streak; with the fault gone the offer completes.
+    delete uvm.deferPackageVersion;
+    env.writeSchedule({ ...env.readSchedule(), lastSuccessAt: agoIso(25 * HOUR) });
+    await schedulerTick(env).fn(); await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'a fresh interval retries and the recovered offer reaches its screen');
   }
   {
     // uv-manager swallows PyPI outages into null answers, so checkForUpdatesInBackground returns

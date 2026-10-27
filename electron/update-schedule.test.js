@@ -92,6 +92,17 @@ eq(s.backoffDelayMs(99), s.BACKOFF_MAX_MS, 'capped');
   const state = { failureCount: 2, lastAttemptAt: 'garbage' };
   eq(s.shouldAutoCheck({ state, intervalMs: HOUR, now: T0 }).due, true, 'failures with no usable attempt time: due now');
 }
+{
+  // A BACKOFF anchor in the future (clock set back, copied file) reads as "just now": the delay is
+  // kept, never collapsed to every tick — the inverse of the success-anchor rule.
+  const futureAttempt = { failureCount: 1, lastAttemptAt: iso(T0 + HOUR) };
+  const check = s.shouldAutoCheck({ state: futureAttempt, intervalMs: 24 * HOUR, now: T0 });
+  eq([check.due, check.dueAt], [false, T0 + s.BACKOFF_BASE_MS], 'a future attempt keeps the backoff delay from NOW');
+  eq(s.engineRetryDue({ state: { engineFailureCount: 1, engineLastAttemptAt: iso(T0 + HOUR) }, now: T0 }), false,
+    'same for the engine retry');
+  eq(s.engineRetryDue({ state: { engineFailureCount: 1, engineLastAttemptAt: 'garbage' }, now: T0 }), true,
+    'an unparseable engine attempt still reads as long ago');
+}
 
 // ── the engine channel keeps its own streak — neither channel drags the other ──
 {
