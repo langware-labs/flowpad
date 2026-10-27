@@ -2261,6 +2261,10 @@ msgstr "קובץ השתנה גם כאן וגם מרחוק, ולכן הכתיבה
 msgid "A file changed: {path}"
 msgstr "קובץ השתנה: {path}"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "A FlowPad Desktop update is pending. flow SDK updates are applied right after the desktop update installs."
+msgstr ""
+
 #: src/components/harness-login/funding-pill.ts
 msgid "A FlowPad login is stored but the hub has not confirmed it"
 msgstr "התחברות ל-FlowPad שמורה, אבל ה-Hub עדיין לא אישר אותה"

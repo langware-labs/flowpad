@@ -2276,6 +2276,10 @@ msgstr "A file changed both here and remotely, so write-back wrote neither."
 msgid "A file changed: {path}"
 msgstr "A file changed: {path}"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "A FlowPad Desktop update is pending. flow SDK updates are applied right after the desktop update installs."
+msgstr "A FlowPad Desktop update is pending. flow SDK updates are applied right after the desktop update installs."
+
 #: src/components/harness-login/funding-pill.ts
 msgid "A FlowPad login is stored but the hub has not confirmed it"
 msgstr "A FlowPad login is stored but the hub has not confirmed it"

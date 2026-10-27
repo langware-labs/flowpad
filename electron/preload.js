@@ -41,7 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // downloadDesktopUpdate → start downloading the available desktop build (no native prompt)
   // applyDesktopUpdate   → install the downloaded build now (restarts the app)
   // updateBoth           → desktop first, then the named engine version after the restart (pending-engine.json)
-  upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
+  // Optional { version }: the popup's "works with this desktop" fallback pins the release it named.
+  upgradeFlowpad: (opts) => ipcRenderer.invoke('upgrade-flowpad', opts),
   getUpdateInfo: () => ipcRenderer.invoke('update:get-info'),
   downloadDesktopUpdate: () => ipcRenderer.invoke('update:download-desktop'),
   applyDesktopUpdate: () => ipcRenderer.invoke('update:apply-desktop'),

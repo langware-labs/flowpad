@@ -19,6 +19,9 @@ export interface DesktopUpdateRequiredInfo {
   /** The newest flow SDK THIS desktop can run — the popup's fallback when no suitable desktop
    *  build is published yet. Null when none, or when it would not move the install forward. */
   newestCompatible?: string | null;
+  /** The popup opened only because a desktop update is PENDING (the engine itself is compatible):
+   *  say that, instead of claiming a floor the installed desktop actually meets. */
+  pendingOnly?: boolean;
 }
 
 interface DesktopUpdateModalProps {
@@ -56,7 +59,12 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUp
         </DialogHeader>
         <div className="space-y-2 text-sm">
           <p>
-            {info.minDesktop ? (
+            {info.pendingOnly ? (
+              <Trans>
+                A FlowPad Desktop update is pending. flow SDK updates are applied right after the desktop update
+                installs.
+              </Trans>
+            ) : info.minDesktop ? (
               <Trans>
                 flow SDK v{info.engineTarget} requires FlowPad Desktop {info.minDesktop} or newer — you have v
                 {info.desktopInstalled ?? '?'}.

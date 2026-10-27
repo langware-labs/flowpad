@@ -108,7 +108,7 @@ interface UpdateInfo {
 
 /** Live desktop-update progress pushed by the shell ('desktop-update-state'). */
 interface DesktopUpdatePush {
-  state: 'checking' | 'downloading' | 'ready' | 'installing' | 'error';
+  state: 'downloading' | 'ready' | 'installing' | 'error';
   percent?: number;
   version?: string;
   error?: string;
@@ -123,7 +123,9 @@ interface UpdateActionResult {
 
 interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
-  upgradeFlowpad?: () => Promise<{ success: boolean; error?: string; desktopUpdatePending?: boolean }>;
+  upgradeFlowpad?: (opts?: {
+    version?: string;
+  }) => Promise<{ success: boolean; error?: string; desktopUpdatePending?: boolean }>;
   openExternal?: (url: string) => Promise<boolean>;
   getUpdateInfo?: () => Promise<UpdateInfo>;
   takeResumedUpdate?: () => Promise<ResumedUpdate | null>;
@@ -478,7 +480,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     } catch {
       return null;
     }
-  }, [electronApi, showResumed]);
+  }, [electronApi]);
 
   // Ask the shell for update status when the popover opens (it re-checks the feed only when idle).
   useEffect(() => {
@@ -533,6 +535,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       newestCompatible:
         engine?.newestCompatible && engine.newestCompatible !== currentVersion ? engine.newestCompatible : null,
       checkFailed: info ? info.desktop.state === 'unknown' : true,
+      // Opened only because a desktop update is PENDING (the latest engine itself is compatible):
+      // the popup must say that, not claim a floor the installed desktop actually meets.
+      pendingOnly: engine ? engine.latestCompatible !== false : true,
     }),
     [data?.pypi?.latest, electronVersion, currentVersion],
   );
@@ -617,16 +622,19 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
    *  release (the native dialog path offers the same thing). */
   const handleUpgradeCompatible = useCallback(async () => {
     if (!electronApi?.upgradeFlowpad) return;
+    const version = compatInfo?.newestCompatible ?? undefined;
     setCompatInfo(null);
     setUpgradeError(null);
     setUpgrading(true);
     try {
-      const r = await electronApi.upgradeFlowpad();
+      // The pin lets the shell bypass its desktop-first hold for exactly this release — its floor is
+      // met by the RUNNING desktop, which is the whole point of the button.
+      const r = await electronApi.upgradeFlowpad(version ? { version } : undefined);
       if (!r.success) setUpgradeError(r.error ?? t`Upgrade failed.`);
     } finally {
       setUpgrading(false);
     }
-  }, [electronApi, t]);
+  }, [electronApi, compatInfo, t]);
 
   const handleUpdateBoth = useCallback(async () => {
     if (!electronApi?.updateBoth || !compatInfo) return;
@@ -708,7 +716,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const desktopView = useMemo(() => {
     if (!electronApi?.getUpdateInfo) return null;
     const snap = updateInfo?.desktop ?? null;
-    const pushState = desktopPush && desktopPush.state !== 'checking' ? desktopPush.state : null;
+    const pushState = desktopPush ? desktopPush.state : null;
     const flow = pushState ?? (snap && snap.downloadState !== 'idle' ? snap.downloadState : null);
     return {
       // 'downloading' | 'ready' | 'installing' | 'error' while an update moves;

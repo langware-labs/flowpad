@@ -161,6 +161,23 @@ describe('Upgrade pre-flight (desktop app)', () => {
     await screen.findByTestId('desktop-update-required-modal');
     expect(screen.queryByTestId('upgrade-error')).toBeNull();
   });
+
+  it('held with a COMPATIBLE engine: the popup explains the pending desktop, not a false floor claim', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        engine: { ...INCOMPATIBLE_INFO.engine, latestCompatible: true, latestMinDesktop: '0.2.40' },
+      }),
+      upgradeFlowpad: vi.fn().mockResolvedValue({ success: false, desktopUpdatePending: true, error: 'desktop first' }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+
+    fireEvent.click(screen.getByTestId('version-upgrade-button'));
+    const modal = await screen.findByTestId('desktop-update-required-modal');
+    expect(modal.textContent).toContain('update is pending');
+    expect(modal.textContent).not.toContain('or newer — you have'); // the installed desktop MEETS the floor
+  });
 });
 
 describe('the Desktop section row', () => {
@@ -286,7 +303,8 @@ describe('the Desktop section row', () => {
     const btn = await screen.findByTestId('update-compatible-button');
     expect(btn.textContent).toContain('0.2.235'); // engine.newestCompatible — runs on THIS desktop
     fireEvent.click(btn);
-    await waitFor(() => expect(api.upgradeFlowpad).toHaveBeenCalledTimes(1));
+    // The pin is what lets the shell bypass its desktop-first hold for exactly this release.
+    await waitFor(() => expect(api.upgradeFlowpad).toHaveBeenCalledWith({ version: '0.2.235' }));
     expect(screen.queryByTestId('desktop-update-required-modal')).toBeNull();
     expect(api.updateBoth).not.toHaveBeenCalled();
   });

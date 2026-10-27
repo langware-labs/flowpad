@@ -2915,6 +2915,10 @@ class UvManager {
     mainWindow,
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
   ) {
+    // Scoped to THIS attempt: a failure BEFORE the capture below (stop() throwing) must restore
+    // nothing — an instance field would hand recovery a leftover from an EARLIER upgrade and
+    // force-downgrade a healthy newer engine.
+    let versionBeforeUpgrade = null;
     try {
       // Pre-start: the backend is down and the install may even be broken, so
       // decide with the standalone PyPI-vs-installed check — no cloud, no CLI,
@@ -2981,8 +2985,7 @@ class UvManager {
       if (sendStatus) sendStatus('Upgrading Flowpad');
       // Captured before the install: the recovery below must know what to put BACK when the new
       // engine installs fine but never becomes healthy (uv --force already replaced the old one).
-      const versionBeforeUpgrade = this.getInstalledVersionSync() || null;
-      this._versionBeforeUpgrade = versionBeforeUpgrade;
+      versionBeforeUpgrade = this.getInstalledVersionSync() || null;
       await this.upgrade();
 
       // Pre-start: hand back to startApp's normal start path to boot the
@@ -3020,7 +3023,7 @@ class UvManager {
       // exists in the startup path). Restore the running app instead.
       if (!beforeBackendStart) {
         const restored = await this._recoverRunningBackendAfterFailedUpgrade(
-          mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion: this._versionBeforeUpgrade || null }
+          mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion: versionBeforeUpgrade }
         );
         if (!restored && mainWindow && !mainWindow.isDestroyed()) {
           await showFailureDialog({

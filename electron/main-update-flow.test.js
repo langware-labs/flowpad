@@ -837,6 +837,52 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.autoUpdater.downloads.length, 2, 'the superseding download started');
     ok(pushes(env).some((d) => d.state === 'downloading' && d.version === '0.2.49'), "the panel's row restarts for 0.2.49");
   }
+  {
+    // The panel owns a READY update and a newer release appears: ownership carries over — no native
+    // dialog, and the consented panel record follows the new desktop instead of being overwritten.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:both'](null, '0.2.180');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    env.autoUpdater.finishDownload(); await tick();
+    env.autoUpdater.checkForUpdates = async () => ({ updateInfo: { version: '0.2.49' } });
+    const tickFn = env.intervals.find((i) => i.ms === 20 * 60 * 1000);
+    await tickFn.fn(); await tick();
+    eq(env.dialogCalls.length, 0, 'no native dialog over the panel-owned READY update');
+    eq([env.readState().desktopVersion, env.readState().consented, env.readState().source], ['0.2.49', true, 'panel'],
+      'the consented record follows the superseding desktop');
+    ok(pushes(env).some((d) => d.state === 'downloading' && d.version === '0.2.49'), 'the panel row restarts for 0.2.49');
+    eq(env.autoUpdater.downloads.length, 2, 'the superseding download started');
+  }
+  {
+    // A transient FEED-CHECK failure during a live panel download must not flip the row to "Retry":
+    // the feed check's 'error' lands on the same emitter as download errors.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.checkForUpdates = async () => { env.autoUpdater.emit('error', new Error('feed offline')); throw new Error('feed offline'); };
+    await env.t.getDesktopUpdateVersion(); await tick();
+    eq(pushes(env).filter((d) => d.state === 'error').length, 0, 'a feed-check error does not touch the live download row');
+    env.autoUpdater.emit('error', new Error('download broke')); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && /download broke/.test(d.error)), 'a real download error still lands');
+  }
+  {
+    // The popup's "works with this desktop" fallback: a pinned release whose floor the RUNNING
+    // desktop meets passes the desktop-first hold; an unmet floor is still refused.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40', upgradeThrows: 'stub stops the flow here' });
+    await env.t.getDesktopUpdateVersion(); // a newer desktop is pending → engine changes hold
+    const refused = await env.ipc['upgrade-flowpad']();
+    eq([refused.desktopUpdatePending, env.uv.upgrades.length], [true, 0], 'a plain upgrade is still held');
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.180' });
+    eq(r.desktopUpdatePending, undefined, 'the floor-compatible pin passes the hold');
+    eq(env.uv.upgrades.map((u) => u.version), ['0.2.180'], 'and targets exactly the promised release');
+  }
+  {
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.240' });
+    eq([r.desktopUpdatePending, env.uv.upgrades.length], [true, 0], 'a pin whose floor the desktop does NOT meet stays held');
+  }
 
   // ── the panel's engine upgrade never strands the user (the "stuck update" incident) ──
   {

@@ -2262,6 +2262,10 @@ msgstr "تغيّر ملف هنا وعن بُعد معًا، فلم تكتب ال
 msgid "A file changed: {path}"
 msgstr "تغيّر ملف: {path}"
 
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "A FlowPad Desktop update is pending. flow SDK updates are applied right after the desktop update installs."
+msgstr ""
+
 #: src/components/harness-login/funding-pill.ts
 msgid "A FlowPad login is stored but the hub has not confirmed it"
 msgstr "تسجيل دخول FlowPad محفوظ، لكن الـ Hub لم يؤكده بعد"

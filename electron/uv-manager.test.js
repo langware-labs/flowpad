@@ -1492,6 +1492,22 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
         );
         eq(restores, [], 'no needless reinstall when the previous release is still the one on disk');
       }
+      {
+        // A failure BEFORE this attempt's capture (stop() throwing) restores NOTHING — restoreVersion
+        // is a local of the attempt, never an instance leftover from an earlier upgrade.
+        const ms = new UvManager(silentLog);
+        ms._pypiUpdateStatus = async () => ({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: true });
+        ms.stop = async () => { throw new Error('stop failed'); };
+        ms.upgrade = async () => {};
+        const seen = [];
+        ms._recoverRunningBackendAfterFailedUpgrade = async (_w, opts) => { seen.push(opts.restoreVersion); return true; };
+        const mw = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
+        await ms.checkForUpdatesInBackground(mw, {
+          sendStatus: () => {}, waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007',
+          cloudUrl: 'https://x', compareWithPypi: true,
+        });
+        eq(seen, [null], 'a failure before the capture restores nothing (no stale restoreVersion)');
+      }
 
       // "Later" (and Esc, which maps to the same index via cancelId) defers the version.
       require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => {
