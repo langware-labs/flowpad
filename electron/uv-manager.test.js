@@ -1462,6 +1462,37 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(res2, true, 'post-boot upgrade: healthy backend reports success');
       eq(loads.length, 1, 'post-boot upgrade: backend URL loaded once');
 
+      // The upgrade INSTALLED the new engine and failed only at the health gate: recovery reinstalls
+      // the release that ran before, instead of restarting the same unhealthy one and waiting the
+      // whole health window again just to fail.
+      {
+        const mr = new UvManager(silentLog);
+        const restores = [];
+        mr.getInstalledVersionSync = () => '0.2.238'; // what the failed upgrade left on disk
+        mr.getInstalledFlowBin = () => '/fake/bin/flow';
+        mr._restoreEngine = async (v) => { restores.push(v); };
+        mr.start = async () => {};
+        const okRes = await mr._recoverRunningBackendAfterFailedUpgrade(
+          { isDestroyed: () => false, loadURL: () => {} },
+          { waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007', sendStatus: () => {}, restoreVersion: '0.2.237' },
+        );
+        eq([okRes, restores], [true, ['0.2.237']], 'recovery reinstalls the previous release when the upgrade already replaced it');
+      }
+      {
+        // Same engine still installed (the upgrade failed BEFORE replacing it): nothing to reinstall.
+        const mr = new UvManager(silentLog);
+        const restores = [];
+        mr.getInstalledVersionSync = () => '0.2.237';
+        mr.getInstalledFlowBin = () => '/fake/bin/flow';
+        mr._restoreEngine = async (v) => { restores.push(v); };
+        mr.start = async () => {};
+        await mr._recoverRunningBackendAfterFailedUpgrade(
+          { isDestroyed: () => false, loadURL: () => {} },
+          { waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007', sendStatus: () => {}, restoreVersion: '0.2.237' },
+        );
+        eq(restores, [], 'no needless reinstall when the previous release is still the one on disk');
+      }
+
       // "Later" (and Esc, which maps to the same index via cancelId) defers the version.
       require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => {
         ok(opts.cancelId === 1, 'package dialog: cancelId is Later (Esc never upgrades)');
@@ -1742,6 +1773,28 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       let thrown = null;
       try { await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.230', '--offline', '--force']); } catch (e) { thrown = e; }
       ok(thrown && runs.length === 1, '--offline (the rollback path): never sent back to the network');
+    }
+    {
+      // A STALE PyPI document must not veto the retry: a release published after an old fetch is
+      // exactly the stale-index case the retry exists for (0.2.238, minutes after the upload).
+      const m = make();
+      m._pypiDoc = { releases: { '0.2.237': [{}] } }; // fetched before 0.2.238 existed
+      m._pypiDocFetchedAt = Date.now() - 5 * 60 * 1000;
+      const runs = [];
+      m._runToolInstallGuarded = async (args) => { runs.push(args); if (!args.includes('--refresh-package')) throw pinError(); return { stdout: 'ok' }; };
+      await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.238', '--force']);
+      eq(runs.length, 2, 'an OLD document without the pin: the refresh retry still runs');
+    }
+    {
+      // A FRESH document without the pin IS an answer (a typo, a withdrawn release): no retry.
+      const m = make();
+      m._pypiDoc = { releases: { '0.2.237': [{}] } };
+      m._pypiDocFetchedAt = Date.now();
+      const runs = [];
+      m._runToolInstallGuarded = async (args) => { runs.push(args); throw pinError(); };
+      let thrown = null;
+      try { await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.238', '--force']); } catch (e) { thrown = e; }
+      ok(thrown && runs.length === 1, 'a fresh document without the pin: straight to the real failure, no refresh pass');
     }
     {
       // upgrade() itself asks for a fresh index entry up front — an upgrade usually targets a release

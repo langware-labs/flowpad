@@ -620,7 +620,8 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     const info = await env.ipc['update:get-info']();
     eq(info.desktop, { installed: '0.2.47', state: 'available', available: '0.2.48', downloadState: 'idle', meetsEngineFloor: true }, 'get-info: a newer desktop on the feed is reported (and it satisfies the engine floor), nothing downloading yet');
     eq(info.engine && info.engine.latestCompatible, false, "get-info: the engine pre-flight is the shell's verdict, passed through");
-    eq([info.busy, info.resumed], [false, null], 'get-info: idle, nothing resumed');
+    eq(info.busy, false, 'get-info: idle');
+    eq(await env.ipc['update:take-resumed'](), null, 'nothing resumed');
   }
   {
     // update:download-desktop — one download, no dialog, engine held; Update Now applies it.
@@ -703,9 +704,8 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
     const r = await env.t.installAndStartBackend();
     eq([r.ok, env.uv.upgrades.map((u) => u.version)], [true, ['0.2.180']], 'the agreed engine version is installed by the new desktop');
-    const info = await env.ipc['update:get-info']();
-    eq(info.resumed, { success: true, engineVersion: '0.2.180', desktopVersion: '0.2.48' }, 'get-info reports the resumed outcome');
-    eq((await env.ipc['update:get-info']()).resumed, null, '…exactly once');
+    eq(await env.ipc['update:take-resumed'](), { success: true, engineVersion: '0.2.180', desktopVersion: '0.2.48' }, 'take-resumed reports the resumed outcome');
+    eq(await env.ipc['update:take-resumed'](), null, '…exactly once');
   }
   {
     // Same, but the resumed engine install fails: the panel is told that too, and the engine is preserved.
@@ -713,15 +713,14 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup still succeeds with the current engine');
-    const info = await env.ipc['update:get-info']();
-    eq(info.resumed, { success: false, engineVersion: '0.2.180', desktopVersion: '0.2.48', error: 'uv failed' }, 'the failure reaches the panel');
+    eq(await env.ipc['update:take-resumed'](), { success: false, engineVersion: '0.2.180', desktopVersion: '0.2.48', error: 'uv failed' }, 'the failure reaches the panel');
   }
   {
     // A native-dialog coordinated update (no source) resumes silently — nothing pushed at the panel.
     const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: true }));
     await env.t.installAndStartBackend();
-    eq((await env.ipc['update:get-info']()).resumed, null, 'a dialog-initiated resume stays out of the panel');
+    eq(await env.ipc['update:take-resumed'](), null, 'a dialog-initiated resume stays out of the panel');
   }
   {
     // A failed download surfaces in the panel with the error (the Retry re-invokes download-desktop).
@@ -799,6 +798,44 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     env.sent.length = 0;
     env.autoUpdater.emit('error', new Error('periodic feed check failed')); await tick();
     eq(pushes(env).length, 0, 'ready is not replaced by a stray error after the download landed');
+  }
+  {
+    // The panel's silencing is scoped to ITS version: a DIFFERENT release downloaded natively later
+    // still gets the native ready prompt — panel ownership of 0.2.48 must not mute updates for ever.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop'](); // the panel owns 0.2.48
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    env.autoUpdater.finishDownload(); await tick();
+    eq(env.dialogCalls.length, 0, 'panel-owned 0.2.48: no native prompt');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.49' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'a different, natively-downloaded release still prompts');
+  }
+  {
+    // 'update:get-info' asks the feed at most once a minute: the popover open and the Upgrade click
+    // right after it share one answer (the 20-minute tick calls the check directly, unthrottled).
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    let checks = 0;
+    const orig = env.autoUpdater.checkForUpdates;
+    env.autoUpdater.checkForUpdates = async (...a) => { checks += 1; return orig(...a); };
+    await env.ipc['update:get-info']();
+    await env.ipc['update:get-info']();
+    eq(checks, 1, 'two get-info calls within the TTL: one feed check');
+  }
+  {
+    // A release published WHILE the panel downloads: the panel keeps ownership of the superseding
+    // version — its row restarts at 0% and no native dialog pops over it.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop'](); // the panel downloads 0.2.48
+    env.autoUpdater.checkForUpdates = async () => ({ updateInfo: { version: '0.2.49' } });
+    const tickFn = env.intervals.find((i) => i.ms === 20 * 60 * 1000);
+    const run = tickFn.fn();
+    await tick(); env.autoUpdater.finishDownload(); // the cancelled 0.2.48 download settles
+    await run; await tick();
+    eq(env.dialogCalls.length, 0, 'no native dialog for the superseding release');
+    eq(env.autoUpdater.downloads.length, 2, 'the superseding download started');
+    ok(pushes(env).some((d) => d.state === 'downloading' && d.version === '0.2.49'), "the panel's row restarts for 0.2.49");
   }
 
   // ── the panel's engine upgrade never strands the user (the "stuck update" incident) ──

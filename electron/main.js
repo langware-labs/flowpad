@@ -129,8 +129,8 @@ log.info('Flowpad starting...');
 let suppressDesktopRestartPrompt = false;
 
 // The outcome of a panel-initiated coordinated update (pending-engine source 'panel') resumed by THIS
-// launch: pushed to the renderer once the UI is up ('engine-update-resumed'), and returned one-shot by
-// the 'update:get-info' IPC as a fallback for a renderer that mounted after the push.
+// launch: pushed to the renderer once the UI is up ('engine-update-resumed'), and pulled one-shot via
+// 'update:take-resumed' at panel mount — for a renderer that mounted after the push.
 let resumedPanelUpdate = null;
 
 // The desktop version whose update flow the version panel owns (its Download / Update Both started or
@@ -276,12 +276,22 @@ function setupElectronAutoUpdater() {
         desktopPromptAbort.abort();
         await desktopPromptClosed;
       }
+      let supersededPanelDownload = false;
       if (desktopDownloadInFlight && desktopDownloadVersion && isNewer(desktopDownloadVersion, desktopLatest)) {
         log.info(`[electron-updater] ${desktopLatest} supersedes the download of ${desktopDownloadVersion}`);
+        supersededPanelDownload = panelDesktopVersion === desktopDownloadVersion;
         desktopDownloadToken.cancel();
         await desktopDownloadDone;
       }
-      if (desktopLatest !== offeredDesktopVersion) {
+      if (supersededPanelDownload) {
+        // The panel owned the cancelled download: it keeps owning the newer release. No native
+        // dialog — the panel's row restarts at 0% for the superseding version.
+        panelDesktopVersion = desktopLatest;
+        pendingDesktopVersion = desktopLatest;
+        offeredDesktopVersion = desktopLatest;
+        sendDesktopUpdateState({ state: 'downloading', percent: 0, version: desktopLatest });
+        downloadDesktopUpdateInBackground({ version: desktopLatest, promptOnReady: false });
+      } else if (desktopLatest !== offeredDesktopVersion) {
         // A release we have not offered yet: same screen as at launch (desktop only, or desktop + engine).
         // Not while a download is running, the restart prompt is up, or another update dialog is open.
         if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
@@ -413,7 +423,7 @@ const pendingEngineStore = {
 // "Update ready — restart now?" offered again every 90 minutes to a user who said Later (update-plan.js).
 const readyReminder = createReadyReminder({
   isReady: () => !!desktopDownloadedVersion && !desktopRestartPromptOpen && !packageUpdateInFlight && !restartApplier.busy
-    && !panelDesktopVersion // the version panel owns the flow: its Ready row replaces the native prompt
+    && desktopDownloadedVersion !== panelDesktopVersion // the panel owns only ITS version's flow
     && !!mainWindow && !mainWindow.isDestroyed() && !(uvManager && uvManager.isInstalling()),
   show: () => { showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] reminder failed: ${err.message}`)); },
 });
@@ -547,6 +557,7 @@ async function offerDesktopUpdate(desktopLatest) {
 async function getDesktopUpdateVersion() {
   if (!app.isPackaged || process.windowsStore) return setDesktopStatus({ state: 'unsupported' }).version;
   try {
+    desktopFeedCheckedAt = Date.now();
     const result = await autoUpdater.checkForUpdates();
     if (!result) return setDesktopStatus({ state: 'unsupported' }).version; // the updater is inactive
     const latest = result.updateInfo && result.updateInfo.version;
@@ -561,6 +572,9 @@ async function getDesktopUpdateVersion() {
 // What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
 // check answers: a check that failed or is still running is NOT "no newer desktop".
 let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
+// When the feed was last actually asked — the panel's 'update:get-info' re-checks at most once a
+// minute (the 20-minute tick calls getDesktopUpdateVersion directly and is not throttled by this).
+let desktopFeedCheckedAt = 0;
 function setDesktopStatus(status) {
   desktopStatus = { version: null, ...status };
   updateTest.event('desktop-check', { running: app.getVersion(), ...desktopStatus });
@@ -2879,8 +2893,12 @@ function effectiveDesktopVersion() {
 
 /** The desktop side of 'update:get-info'. Re-checks the feed only when nothing is in flight yet. */
 async function desktopUpdateInfo() {
-  if (app.isPackaged && !process.windowsStore
+  if (desktopStatus.state !== 'unsupported'
+      && Date.now() - desktopFeedCheckedAt > 60 * 1000
       && !desktopDownloadInFlight && !desktopDownloadedVersion && !restartApplier.busy) {
+    // Unpackaged / Store builds: getDesktopUpdateVersion answers 'unsupported' by itself, without a
+    // network call — skipping it here left desktopStatus on 'unknown' ("not checked yet") for ever,
+    // and the panel showed a hopeless "Could not check / Check again" row in dev and Store builds.
     await getDesktopUpdateVersion();
   }
   const downloadState = restartApplier.busy ? 'installing'
@@ -2905,14 +2923,12 @@ ipcMain.handle('update:get-info', async () => {
     ? engineCompat.meetsFloor(desktop.available, engine.latestMinDesktop)
     : null;
   const busy = desktopUpdateRefusal() === 'busy';
-  const resumed = resumedPanelUpdate;
-  resumedPanelUpdate = null; // one-shot: the panel shows it once
-  return { desktop, engine, busy, resumed };
+  return { desktop, engine, busy };
 });
 
-// The same one-shot, without the feed check 'update:get-info' performs: the panel pulls this the
-// moment it mounts, so a resumed outcome is reported even when the startup push beat the listener
-// and the popover is never opened. The renderer-side key dedups the overlap with the push.
+// The resumed outcome's pull channel: the panel takes this the moment it mounts (no feed check), so
+// it is reported even when the startup push beat the listener and the popover is never opened. The
+// renderer-side key dedups the overlap with the push.
 ipcMain.handle('update:take-resumed', () => {
   const resumed = resumedPanelUpdate;
   resumedPanelUpdate = null;
@@ -3015,6 +3031,9 @@ async function upgradeFlowpadAndRestart() {
     log.warn(`[uv] panel upgrade refused before stopping anything: ${String(resolveErr.message).split('\n')[0]}`);
     return { success: false, error: resolveErr.message };
   }
+  // Captured while the old engine still runs: recovery must know what to put BACK — by the time the
+  // upgrade fails, uv --force may already have replaced the installed engine with the unhealthy one.
+  const versionBeforeUpgrade = uvManager.getInstalledVersionSync() || null;
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3053,6 +3072,7 @@ async function upgradeFlowpadAndRestart() {
       waitForBackend,
       backendUrl: BACKEND_URL,
       sendStatus,
+      restoreVersion: versionBeforeUpgrade,
     });
     if (!restored) {
       await showStartupErrorPanel(describeStartupFailure(err), { retryable: false });

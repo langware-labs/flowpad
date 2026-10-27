@@ -104,7 +104,6 @@ interface UpdateInfo {
   desktop: DesktopUpdateInfo;
   engine: EnginePreflight | null;
   busy: boolean;
-  resumed: ResumedUpdate | null;
 }
 
 /** Live desktop-update progress pushed by the shell ('desktop-update-state'). */
@@ -462,7 +461,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         notify.error({
           id: 'engine-update-resumed',
           title: t`FlowPad engine update failed`,
-          message: t`Desktop updated to v${r.desktopVersion}, but the flow SDK update to v${r.engineVersion} failed${r.error ? `: ${r.error}` : '.'} FlowPad will offer it again.`,
+          message: t`Desktop updated to v${r.desktopVersion}, but the flow SDK update to v${r.engineVersion} failed${r.error ? `: ${r.error}.` : '.'} FlowPad will offer it again.`,
           forceToast: true,
         });
       }
@@ -475,7 +474,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     try {
       const info = await electronApi.getUpdateInfo();
       setUpdateInfo(info);
-      if (info.resumed) showResumed(info.resumed);
       return info;
     } catch {
       return null;
@@ -588,10 +586,16 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     // update impossible to start. The startup pair repair brings the engine along later.
     const engineTarget =
       engine?.updateAvailable && updateInfo?.desktop.meetsEngineFloor !== false ? engine.latest : null;
-    const r =
+    let r =
       engineTarget && electronApi.updateBoth
         ? await electronApi.updateBoth(engineTarget)
         : await electronApi.downloadDesktopUpdate();
+    if (!r.started && r.reason === 'desktop-too-old') {
+      // The shell read the REAL floor (the pre-flight's meetsEngineFloor was null/stale) and the
+      // engine cannot ride along — a desktop-only download is still valid; the startup pair repair
+      // brings the engine later.
+      r = await electronApi.downloadDesktopUpdate();
+    }
     if (!r.started) {
       setDesktopActionError(updateRefusalText(r.reason));
       return;

@@ -1379,6 +1379,7 @@ class UvManager {
     const data = await this._getPypiData({ fresh: true }); // the pick before an install must see a just-published release
     if (!data || !data.releases) return null;
     this._pypiDoc = data;
+    this._pypiDocFetchedAt = Date.now();
     const releases = Object.entries(data.releases).map(([version, files]) => ({
       version,
       // Same rule as the backend's release list (routes/version.py): a release with no files left, or only
@@ -1693,7 +1694,10 @@ class UvManager {
       // re-running the whole ladder would only double the time to the real error.
       const excludedByCutoff = /were excluded because they were published after/i.test(errText);
       const pinned = engineVersionFromInstallArgs(baseArgs);
-      const knownMissing = !!(pinned && this._pypiDoc && this._pypiDoc.releases && !this._pypiDoc.releases[pinned]);
+      // Only a FRESH document may veto the retry: a release published after an old fetch is exactly
+      // the stale-index case the retry exists for (the 0.2.238 incident, minutes after the upload).
+      const docFresh = this._pypiDocFetchedAt && Date.now() - this._pypiDocFetchedAt < 60 * 1000;
+      const knownMissing = !!(pinned && docFresh && this._pypiDoc && this._pypiDoc.releases && !this._pypiDoc.releases[pinned]);
       if (refreshable && !excludedByCutoff && !knownMissing && isEnginePinResolutionError(err)) {
         this.log.warn(`[uv] the requested ${PYPI_PACKAGE} release is not in uv's cached index (likely just published) — refreshing the registry cache and retrying once`);
         return await this._runStrategyLadder([...baseArgs, '--refresh-package', PYPI_PACKAGE], strategies, { onProgress });
@@ -2975,6 +2979,10 @@ class UvManager {
       }
 
       if (sendStatus) sendStatus('Upgrading Flowpad');
+      // Captured before the install: the recovery below must know what to put BACK when the new
+      // engine installs fine but never becomes healthy (uv --force already replaced the old one).
+      const versionBeforeUpgrade = this.getInstalledVersionSync() || null;
+      this._versionBeforeUpgrade = versionBeforeUpgrade;
       await this.upgrade();
 
       // Pre-start: hand back to startApp's normal start path to boot the
@@ -3012,7 +3020,7 @@ class UvManager {
       // exists in the startup path). Restore the running app instead.
       if (!beforeBackendStart) {
         const restored = await this._recoverRunningBackendAfterFailedUpgrade(
-          mainWindow, { waitForBackend, backendUrl, sendStatus }
+          mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion: this._versionBeforeUpgrade || null }
         );
         if (!restored && mainWindow && !mainWindow.isDestroyed()) {
           await showFailureDialog({
@@ -3060,12 +3068,27 @@ class UvManager {
     return this._recoverRunningBackendAfterFailedUpgrade(mainWindow, opts);
   }
 
-  async _recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl, sendStatus }) {
+  async _recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion = null }) {
     try {
       if (sendStatus) sendStatus('Update failed — restoring Flowpad');
       this.isShuttingDown = false;
       // The failed `--force` may have left the tool dir partially removed.
       this._flowBin = this.getInstalledFlowBin() || this._flowBin;
+      // The upgrade may have INSTALLED the new engine and failed only at the health gate: restarting
+      // "the running version" would boot the same unhealthy release and wait the whole window again.
+      // Put the release that was running before the upgrade back (it ran here minutes ago — no
+      // candidate-compat gate needed; _restoreEngine prefers uv's cache, so offline still works).
+      const installedNow = this.getInstalledVersionSync() || null;
+      if (restoreVersion && installedNow && installedNow !== restoreVersion
+          && engineCompat.isInstallableVersion(restoreVersion)) {
+        this.log.warn(`[uv] reinstalling ${restoreVersion} — the failed upgrade left ${installedNow} on disk`);
+        try {
+          await this._restoreEngine(restoreVersion, {});
+          this._flowBin = this.getInstalledFlowBin() || this._flowBin;
+        } catch (restoreErr) {
+          this.log.warn(`[uv] could not reinstall ${restoreVersion} (${String(restoreErr.message).split('\n')[0]}) — starting what is installed`);
+        }
+      }
       if (!this._flowBin) {
         this.log.warn('[uv] flow binary missing after failed upgrade — repairing install…');
         await this.reinstall();

@@ -10189,7 +10189,7 @@ msgstr ""
 
 #. placeholder {0}: r.desktopVersion
 #. placeholder {1}: r.engineVersion
-#. placeholder {2}: r.error ? `: ${r.error}` : '.'
+#. placeholder {2}: r.error ? `: ${r.error}.` : '.'
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
 msgstr ""

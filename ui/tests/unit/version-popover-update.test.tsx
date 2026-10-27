@@ -65,6 +65,7 @@ function electronApi(over: Record<string, unknown> = {}) {
     updateBoth: vi.fn().mockResolvedValue({ started: true, version: '0.2.62' }),
     onDesktopUpdateState: vi.fn().mockReturnValue(() => {}),
     onEngineUpdateResumed: vi.fn().mockReturnValue(() => {}),
+    takeResumedUpdate: vi.fn().mockResolvedValue(null),
     ...over,
   };
 }
@@ -188,6 +189,19 @@ describe('the Desktop section row', () => {
     expect(api.updateBoth).not.toHaveBeenCalled(); // update:both would refuse (desktop-too-old)
   });
 
+  it("the shell refuses desktop-too-old (pre-flight floor was unknown): Download retries desktop-only", async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO), // meetsEngineFloor undefined → both attempted
+      updateBoth: vi.fn().mockResolvedValue({ started: false, reason: 'desktop-too-old', minDesktop: '0.3.0' }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(await screen.findByTestId('desktop-download-button'));
+    await waitFor(() => expect(api.downloadDesktopUpdate).toHaveBeenCalledTimes(1));
+    expect(api.updateBoth).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/older than this release requires/)).toBeNull(); // no error shown — it fell back
+  });
+
   it('no newer flow SDK: Download stays a plain desktop download', async () => {
     const api = electronApi({
       getUpdateInfo: vi.fn().mockResolvedValue({
@@ -281,12 +295,7 @@ describe('the Desktop section row', () => {
     const resumed = { success: true, engineVersion: '0.2.240', desktopVersion: '0.2.62' };
     let pushResumed: ((r: unknown) => void) | null = null;
     (window as { electronAPI?: unknown }).electronAPI = electronApi({
-      getUpdateInfo: vi.fn().mockResolvedValue({
-        desktop: { installed: '0.2.62', state: 'current', available: null, downloadState: 'idle' },
-        engine: null,
-        busy: false,
-        resumed,
-      }),
+      takeResumedUpdate: vi.fn().mockResolvedValue(resumed), // the mount-time pull
       onEngineUpdateResumed: vi.fn((cb: (r: unknown) => void) => {
         pushResumed = cb;
         return () => {};
@@ -294,7 +303,7 @@ describe('the Desktop section row', () => {
     });
     await openPopover();
     await waitFor(() => expect(h.notifySuccess).toHaveBeenCalledTimes(1));
-    pushResumed?.(resumed); // the startup push races the popover's pull: same outcome, no second toast
+    pushResumed?.(resumed); // the startup push races the mount pull: same outcome, no second toast
     expect(h.notifySuccess).toHaveBeenCalledTimes(1);
   });
 });

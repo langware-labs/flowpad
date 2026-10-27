@@ -141,7 +141,7 @@ engine's floor, the popup instead offers the newest flow SDK this desktop CAN ru
 row's own Download falls back to a plain desktop download (`update:download-desktop`);
 the panel's *Update Now* (`update:apply-desktop`) restarts into the new desktop, which installs the
 saved engine version exactly as in the dialog flow and reports the outcome back to the panel
-(`engine-update-resumed`, or pulled once via `update:get-info`). A desktop update downloaded in the
+(`engine-update-resumed`, or pulled once at panel mount via `update:take-resumed`). A desktop update downloaded in the
 background and postponed with the native "Later" shows in the panel as ready, so it can be installed
 from there at any time without waiting for the next quit. An indeterminate pre-flight
 (`latestCompatible: null` — offline, unreadable metadata) proceeds, and steps 3–4 stay the
