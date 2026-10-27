@@ -456,6 +456,23 @@ def _model_within_allowance(slug: str | None, allow: list[str]) -> str | None:
     return next((m for m in allow if "*" not in m), slug)
 
 
+def _effective_models_allow(endpoint, endpoint_typeid: str) -> list[str]:
+    """The endpoint's own ``models_allow``, else the chain's the hub pushed with the binding.
+
+    A person's allowance names no models itself and inherits its team's, so the row alone is
+    empty for exactly the members whose team pinned a model.
+    """
+    own = list(endpoint.filters.models_allow)
+    if own:
+        return own
+    from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint  # noqa: PLC0415
+
+    bound = get_hub_llm_endpoint()
+    if bound is not None and bound.endpoint_typeid == endpoint_typeid:
+        return list(bound.models_allow)
+    return []
+
+
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
     """Materialize the spawn binding for whichever ``LLMSource`` funds *process*.
 
@@ -606,7 +623,11 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
         # A named model -- a family, "haiku", "anthropic/claude-haiku-4.5" -- is the caller's, and
         # an endpoint that refuses it refuses it in words rather than quietly running another.
         if not tier or is_model_tier(tier):
-            allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
+            allow = _effective_models_allow(endpoint, source.endpoint_typeid)
+            allowed_slug = _model_within_allowance(slug, allow)
+            if not tier:
+                # No choice made: the admin's first pinned model is the default, not the code's small tier.
+                allowed_slug = next((m for m in allow if "*" not in m), allowed_slug)
             if allowed_slug != slug:
                 logger.info(
                     "%s: tier slug %r isn't in endpoint %s's models_allow; using %r instead",

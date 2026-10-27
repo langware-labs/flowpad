@@ -1452,3 +1452,17 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_signed_out_and_on
     assert chosen.endpoint_typeid == EP2 and chosen.eligible
     assert endpoint.public, "the stub must carry public so the key resolves to the public placeholder"
     assert not untold[0].eligible and "not logged in" in untold[0].reason
+
+
+def test_the_bound_endpoint_is_labelled_with_the_provider_the_hub_pushed() -> None:
+    """The listing row of an allowance carries the entity default (``openrouter``); the binding names the
+    root that actually pays, and that is what the sources page shows."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _endpoint_sources
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.instance_settings.llm_endpoint import HubLLMEndpoint
+
+    row = LLMEndpoint.projection("hub", "allowance", name="allowance", provider="openrouter")
+    bound = HubLLMEndpoint(endpoint_typeid=str(row.typeid), invoke_path="/x", provider="vertex", name="allowance")
+    (candidate,) = _endpoint_sources(driver_api_auth_spec("claude"), [row], bound, True, True)
+    assert candidate.source.detail == "vertex"
