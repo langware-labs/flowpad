@@ -103,6 +103,13 @@ Electron (main.js)
   retries for real; recovery panels and the update-cycle harness bypass the schedule. A feed answer that
   cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
   downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
+  Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without
+  re-hitting the GitHub feed, and vice versa. There is never more than ONE update window (`startOffer` is
+  the only entry point, and launching it does not block the scheduler); a newer release found while the
+  "Updates available" screen waits supersedes it — the old window closes unanswered (nothing recorded,
+  its saved engine state withdrawn) and one window for the newest version replaces it. Work blocked by an
+  open dialog or running download is a per-half follow-up debt, finished from the cached answer on a near
+  tick and capped at 3 consecutive failed retries per interval.
 - **Desktop and engine both new:** one screen, "Update now / Later". The engine version X is saved to `pending-engine.json`.
   After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
