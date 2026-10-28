@@ -21,6 +21,27 @@ import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection'
 import { useOpenTabHashes } from '@src/tabs/use-tab-manager';
 import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 
+/** Does this row show the item the URL has open? */
+function rowMatchesActive(
+  node: Browseable,
+  activePointer: DockPointer | null,
+  activeResourcePointer: DockPointer | null | undefined,
+  activeKey: string | null | undefined,
+): boolean {
+  return !!(
+    // Stable-id match: a typeid URL (activeKey) selects this row even though its
+    // `pointer` is the vfs form.
+    (
+      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
+      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
+      (node.pointer &&
+        activePointer &&
+        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
+          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
+    )
+  );
+}
+
 /** Walk a root's currently-visible (expanded) subtree in render order,
  *  collecting the selectable rows. Powers Shift-range + Cmd/Ctrl+A. */
 function collectVisibleSelectable(root: Browseable, tree: ReturnType<typeof useBrowseableTree>): Browseable[] {
@@ -100,6 +121,15 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roots, tree.state]);
+
+  // The first root (in display order) whose loaded rows hold the active item.
+  const activeRootId = useMemo(() => {
+    const has = (node: Browseable): boolean =>
+      rowMatchesActive(node, activePointer, activeResourcePointer, activeKey) ||
+      tree.getChildren(node.id).some(has);
+    return roots.find(has)?.id ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, tree.state.loadStates, activePointer, activeResourcePointer, activeKey]);
 
   // Clear selection when the set of roots changes identity (scope/filter change
   // — root ids carry the filter signature — or the type list changes). Mirrors
@@ -216,6 +246,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             activePointer={activePointer}
             activeResourcePointer={activeResourcePointer}
             activeKey={activeKey}
+            activeRootId={activeRootId}
             openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
             dragData={dragData}
@@ -256,6 +287,8 @@ interface RowProps {
   activePointer: DockPointer | null;
   activeResourcePointer?: DockPointer | null;
   activeKey?: string | null;
+  /** Root that owns the highlight when the active item appears under several. */
+  activeRootId: string | null;
   /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
   openTabHashes: Set<string>;
   onNavigate: (p: DockPointer) => void;
@@ -281,6 +314,7 @@ function BrowseableRow({
   activePointer,
   activeResourcePointer,
   activeKey,
+  activeRootId,
   openTabHashes,
   onNavigate,
   dragData,
@@ -311,18 +345,11 @@ function BrowseableRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, loadState.status, node.id]);
 
-  const isSelected = !!(
-    // Stable-id match: a typeid URL (activeKey) selects this row even though its
-    // `pointer` is the vfs form.
-    (
-      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
-      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
-      (node.pointer &&
-        activePointer &&
-        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
-          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
-    )
-  );
+  // One highlight per tree: when the open item shows up under several roots
+  // (Documents and Files), only the first root that has it lights up.
+  const isSelected =
+    activeRootId === rootId &&
+    rowMatchesActive(node, activePointer, activeResourcePointer, activeKey);
 
   // Dim openable rows that aren't currently open as a tab (and aren't the active
   // row, which is open by definition). Hover restores full brightness. Rows
@@ -725,6 +752,7 @@ function BrowseableRow({
               activePointer={activePointer}
               activeResourcePointer={activeResourcePointer}
               activeKey={activeKey}
+              activeRootId={activeRootId}
               openTabHashes={openTabHashes}
               onNavigate={onNavigate}
               dragData={dragData}
