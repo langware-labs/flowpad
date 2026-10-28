@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import { useCallback, useMemo } from 'react';
 import { Loader2, WandSparkles, X } from 'lucide-react';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import type { RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
+import type { RequestChangeOpts, RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
 import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { useDocChangesStore, type DocChangeList } from './use-doc-changes-store';
@@ -156,12 +156,13 @@ export function useDocChanges(
   const { list, starting, execute, open, hasSession } = worker;
 
   const onRequestChange = useCallback(
-    (change: RequestedChange) => {
+    (change: RequestedChange, opts?: RequestChangeOpts) => {
       if (!doc) return;
       useDocChangesStore.getState().add(doc, change);
       openSideWindow(CHANGES_SIDE_TAB_ID);
+      if (opts?.runNow) void execute();
     },
-    [doc, openSideWindow],
+    [doc, openSideWindow, execute],
   );
 
   const n = list.changes.length;

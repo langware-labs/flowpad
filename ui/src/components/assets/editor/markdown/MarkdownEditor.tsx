@@ -3,7 +3,7 @@ import { ViewerChatSlot } from '../ViewerChatToggle';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { MilkdownEditor, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
+import { MilkdownEditor, type RequestChangeOpts, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
 import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
@@ -117,7 +117,7 @@ interface MarkdownEditorProps {
   /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
   /** Shows the "Change this…" wand on text selections; receives each queued request. */
-  onRequestChange?: (change: RequestedChange) => void;
+  onRequestChange?: (change: RequestedChange, opts?: RequestChangeOpts) => void;
   /** Queued change requests to mark on the text. */
   changeMarks?: readonly ChangeMark[];
   /** When true, the "Learning" view-mode chip appears in the header strip. */

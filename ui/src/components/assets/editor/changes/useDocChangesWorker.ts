@@ -9,7 +9,7 @@ import { mostRecentProcess } from '@src/utils/process-recency';
 import apiClient from '@sdk/client';
 import { useEntity } from '@sdk/react/hooks';
 import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
-import { unsentChanges, useDocChangeList, useDocChangesStore, type DocChange } from './use-doc-changes-store';
+import { getDocChangeList, unsentChanges, useDocChangeList, useDocChangesStore, type DocChange } from './use-doc-changes-store';
 
 /**
  * The one prompt Execute sends: the doc, then every queued change as the quoted
@@ -168,8 +168,11 @@ export function useDocChangesWorker(doc: string | null, docName: string, docFile
   const execute = useCallback(
     async (opts?: { newSession?: boolean }) => {
       const LOG = '[useDocChangesWorker]';
+      if (!doc) return;
+      // The list as it is now: "Change now" adds a change and executes in one go.
+      const list = getDocChangeList(doc);
       const pending = unsentChanges(list);
-      if (!doc || starting || pending.length === 0) return;
+      if (starting || pending.length === 0) return;
       const prompt = buildChangesPrompt(doc, docName, docFile, pending);
       const store = useDocChangesStore.getState();
       // A run in flight lives on its worker: the next batch goes to the same one.
@@ -238,7 +241,7 @@ export function useDocChangesWorker(doc: string | null, docName: string, docFile
         setStarting(false);
       }
     },
-    [doc, docName, docFile, starting, list, processes, existing, lastWorker, onRunFinished],
+    [doc, docName, docFile, starting, processes, existing, lastWorker, onRunFinished],
   );
 
   const sessionId = list.sentTo ?? existing?.id ?? null;

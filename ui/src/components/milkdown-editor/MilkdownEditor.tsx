@@ -180,6 +180,11 @@ export interface RequestedChange {
   instruction: string;
 }
 
+export interface RequestChangeOpts {
+  /** "Change now": queue it and run the queue at once. */
+  runNow?: boolean;
+}
+
 interface MilkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
@@ -194,7 +199,7 @@ interface MilkdownEditorProps {
    * the instruction itself and hands back the selected text, its range and the
    * instruction — the host queues it (it is never applied here).
    */
-  onRequestChange?: (change: RequestedChange) => void;
+  onRequestChange?: (change: RequestedChange, opts?: RequestChangeOpts) => void;
   /** Queued change requests to mark on the text (highlight + numbered pin). */
   changeMarks?: readonly ChangeMark[];
   /**
@@ -850,7 +855,8 @@ interface ChangeBoxState {
 
 /**
  * The instruction box the wand opens under the selection. It only queues:
- * Enter (or "Add to changes") hands the instruction back, Esc cancels.
+ * Enter (or "Change now") queues it and runs the queue; "Add to changes" only
+ * queues it. Esc cancels.
  */
 function ChangeBox({
   state,
@@ -858,14 +864,14 @@ function ChangeBox({
   onClose,
 }: {
   state: ChangeBoxState;
-  onAdd: (instruction: string) => void;
+  onAdd: (instruction: string, runNow: boolean) => void;
   onClose: () => void;
 }) {
   const { t } = useLingui();
   const [text, setText] = useState('');
-  const submit = () => {
+  const submit = (runNow: boolean) => {
     const instruction = text.trim();
-    if (instruction) onAdd(instruction);
+    if (instruction) onAdd(instruction, runNow);
   };
   const BOX_WIDTH = 420;
   const left = Math.max(8 + BOX_WIDTH / 2, state.rect.left + state.rect.width / 2);
@@ -890,13 +896,12 @@ function ChangeBox({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(true); }
         }}
         className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">{t`Queued for later — nothing runs yet`}</span>
-        <div className="flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
             {t`Cancel`}
           </button>
@@ -904,10 +909,19 @@ function ChangeBox({
             type="button"
             data-testid="change-this-add"
             disabled={!text.trim()}
-            onClick={submit}
+            onClick={() => submit(false)}
+            className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+          >
+            {t`Add to changes`}
+          </button>
+          <button
+            type="button"
+            data-testid="change-this-now"
+            disabled={!text.trim()}
+            onClick={() => submit(true)}
             className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
           >
-            {t`Add to changes ↵`}
+            {t`Change now ↵`}
           </button>
         </div>
       </div>
@@ -1501,10 +1515,10 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
     }
   }, [changeBox, editorRef]);
 
-  const handleAddChange = useCallback((instruction: string) => {
+  const handleAddChange = useCallback((instruction: string, runNow: boolean) => {
     const box = changeBox;
     closeChangeBox();
-    if (box) onRequestChange?.({ quote: box.quote, from: box.from, to: box.to, instruction });
+    if (box) onRequestChange?.({ quote: box.quote, from: box.from, to: box.to, instruction }, { runNow });
   }, [changeBox, closeChangeBox, onRequestChange]);
 
   const formattingToolbar = (

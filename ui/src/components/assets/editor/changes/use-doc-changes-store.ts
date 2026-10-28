@@ -124,6 +124,11 @@ export function useDocChangeList(doc: string | null): DocChangeList {
 }
 
 /** The changes Execute would send now. */
+/** The doc's list as it is now, for callbacks that must not read a render's copy. */
+export function getDocChangeList(doc: string): DocChangeList {
+  return useDocChangesStore.getState().byDoc[doc] ?? EMPTY;
+}
+
 export function unsentChanges(list: DocChangeList): DocChange[] {
   return list.changes.filter((c) => !c.sent);
 }
