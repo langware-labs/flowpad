@@ -558,7 +558,6 @@ function RequirementRow({
   const Icon = iconOf(req);
   const name = namesItself(req) ? req.name : req.title || req.name;
   const usedBy = req.used_by.join(', ');
-  // Unique per row: a credential and the data source using it can share a name.
   const rowId = rowIdOf(req);
   const keyOpen = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && event.target === event.currentTarget) onOpen();

@@ -1,5 +1,8 @@
-import { automationsOptions, automationsPointer, type AutomationsRoute } from '@src/components/automations/automations-pointer';
-import type { MessageDescriptor } from '@lingui/core';
+import {
+  automationsOptions,
+  automationsPointer,
+  type AutomationsRoute,
+} from '@src/components/automations/automations-pointer';
 import { pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
@@ -30,8 +33,8 @@ import { isWorkspaceChildDock } from './adoptable-child-dock';
 import {
   AssetEditor,
   AssetMode,
-  isProjectLandingPointer,
-  PROJECT_LANDING_PAGES,
+  projectLandingPageOf,
+  type ProjectLandingPage,
   AssetRoutingMethod,
   editorForPath,
   editorForType,
@@ -2595,9 +2598,8 @@ export class DockPointer implements IDockPointer {
    */
   /** A Project Home page addressed under the project dock (`/dock/project/<id>/project-setup`): its row in
    *  `PROJECT_LANDING_PAGES`, else null. Such a page is the project's own tab and names the project. */
-  get projectLandingPage(): { label: MessageDescriptor } | null {
-    const sub = this.assetSubPointer;
-    return sub && isProjectLandingPointer(sub) ? PROJECT_LANDING_PAGES[sub] : null;
+  get projectLandingPage(): ProjectLandingPage | null {
+    return projectLandingPageOf(this.assetSubPointer, { underProjectDock: true });
   }
 
   private get assetSubPointer(): string | null {

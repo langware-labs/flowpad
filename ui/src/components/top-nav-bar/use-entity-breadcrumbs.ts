@@ -23,7 +23,7 @@ import {
 } from '@sdk';
 import { VIEWER_REGISTRY } from '@src/types/ViewType';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { AssetMode, DEFAULT_WIKI_SPACE, PROJECT_LANDING_PAGES } from '@src/navigation/asset-doc-types';
 import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
@@ -155,9 +155,6 @@ function entityLabel(entity: AnyEntity | null, typeId: TypeId | null): string {
  */
 const HOME_CRUMB_LABEL = msg`Start`;
 
-/** What the last crumb says on the project's own page, where the target IS the
- *  leading crumb and repeating the name would read "Acme › Acme". */
-const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 /** The org graph addresses as "Organization › Graph" — see the crumb builder. */
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
@@ -413,8 +410,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         const containedIn = (target as { parent_type_id?: string | null } | null)?.parent_type_id ?? null;
         // An app is never an agent's: an agent only lists apps to open, so an app folder that
         // happens to sit in an agent's folder does not put the agent in the app's address.
-        const parentRef =
-          targetTypeId?.type === 'micro_app' && containedIn?.startsWith('agent-') ? null : containedIn;
+        const parentRef = targetTypeId?.type === 'micro_app' && containedIn?.startsWith('agent-') ? null : containedIn;
         const chain = await resolveAncestorChain(parentRef, () => live);
         if (!live) return;
         setAncestors(chain);
@@ -611,7 +607,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const isProjectHome =
       !!dock?.isProjectShell || (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
     // Which Project Home page: its own label (the setup page…), else Home.
-    const projectPageLabel = dock?.projectLandingPage?.label ?? PROJECT_HOME_CRUMB_LABEL;
+    const projectPageLabel = (dock?.projectLandingPage ?? PROJECT_LANDING_PAGES[AssetMode.PROJECT_HOME]).label;
 
     // Same precedence the asset editor's header used before it was removed: the
     // route's own VFS path first (parsed, no fetch, right on the first frame),
@@ -749,11 +745,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
           }
         : {
             key: 'view',
-            label: isProjectHome
-              ? i18n._(projectPageLabel)
-              : isOrgGraph
-                ? i18n._(GRAPH_CRUMB_LABEL)
-                : targetTitle,
+            label: isProjectHome ? i18n._(projectPageLabel) : isOrgGraph ? i18n._(GRAPH_CRUMB_LABEL) : targetTitle,
             // A wiki word that hasn't resolved yet (or resolves to nothing) is
             // still a wiki word, not an unidentified view — the registry has a
             // glyph for exactly that. `iconForType`, so it moves with TypeInfo.

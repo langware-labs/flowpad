@@ -79,8 +79,9 @@ function useRun(
   const [running, setRunning] = useState(false);
   const [starting, setStarting] = useState(false);
   const [questionId, setQuestionId] = useState<string | null>(null);
-  const [root, setRoot] = useState(ownRoot);
-  useEffect(() => setRoot(ownRoot), [ownRoot]);
+  // The root `start` was given, when it is not the hook's own (one step); null = the own root.
+  const [override, setOverride] = useState<string | null>(null);
+  const root = override ?? ownRoot;
   const release = useRef<() => void>(() => {});
   const autoStarted = useRef(false);
   const settled = useRef(onSettled);
@@ -124,16 +125,18 @@ function useRun(
       if (!live) return;
       if (next) setTree(next.tree);
       if (next && !next.running) {
-        if (root !== ownRoot) {
-          // A run rooted elsewhere (one step) is over: the screen goes back to its own root's record.
-          const own = await calls.read(ownRoot).catch(() => null);
-          if (!live) return;
-          setRoot(ownRoot);
-          setTree(own?.tree ?? null);
-        }
         setRunning(false);
         release.current();
         setQuestionId(null);
+        if (override !== null) {
+          // A run rooted elsewhere (one step) is over: the screen goes back to its own root's record,
+          // read beside whatever the screen does once a run settles.
+          setOverride(null);
+          void calls
+            .read(ownRoot)
+            .then((own) => setTree(own?.tree ?? null))
+            .catch(() => {});
+        }
         await settled.current?.();
         return;
       }
@@ -144,7 +147,7 @@ function useRun(
       live = false;
       clearTimeout(timer);
     };
-  }, [running, calls, root, ownRoot]);
+  }, [running, calls, root, override, ownRoot]);
 
   useEffect(() => () => release.current(), []);
 
@@ -152,7 +155,7 @@ function useRun(
     async (at: string = ownRoot) => {
       if (!calls) return;
       setStarting(true);
-      setRoot(at);
+      setOverride(at === ownRoot ? null : at);
       // A new run starts from nothing: the last record's node states are not this run's.
       setTree(null);
       try {
@@ -174,16 +177,18 @@ function useRun(
   }, [autoStart, running, calls, start]);
 
   const stopAt = calls?.stop;
+  const stop = useMemo(() => (stopAt ? () => stopAt(root) : undefined), [stopAt, root]);
+  const settleQuestion = useCallback(() => setQuestionId(null), []);
   return {
     tree,
     running,
     // Asked to start but not yet asked: still the setup's screen, never the error it is about to fix.
     starting: starting || (autoStart && !autoStarted.current && !!calls),
     questionId,
-    settleQuestion: () => setQuestionId(null),
+    settleQuestion,
     start,
     root,
     // The poll reads the stopped record next and settles the screen.
-    stop: stopAt ? () => stopAt(root) : undefined,
+    stop,
   };
 }

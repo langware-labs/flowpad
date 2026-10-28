@@ -58,29 +58,39 @@ export function useSetupReadiness(
     if (enabled) void load();
   }, [enabled, load]);
 
-  /** Skips each of `reqs`, one after the other; each answer is the readiness that follows. */
-  const skip = useCallback(
-    async (reqs: ProjectSetupRequirement[], scope: ProjectSetupSkipScope, failed: (name: string) => string) => {
+  /** Applies one change per row, one after the other (a skip may stage a git deletion: never two at once);
+   *  the last answer is the readiness that follows — except on the page, whose answer needs the Ready list
+   *  and nodes, so it reads once after. */
+  const change = useCallback(
+    async (
+      reqs: ProjectSetupRequirement[],
+      call: (req: ProjectSetupRequirement) => Promise<ProjectReadiness | null>,
+      failed: (name: string) => string,
+    ) => {
       setBusy(new Set(reqs.map(rowKey)));
-      for (const req of reqs)
-        take(
-          await withNotify(() => Project.skipSetup(projectId, req.typeid, scope, { name: req.name }), failed(req.name)),
-        );
+      let last: ProjectReadiness | null | undefined;
+      for (const req of reqs) last = (await withNotify(() => call(req), failed(req.name))) ?? last;
       setBusy(NONE);
-      // The skip's own answer has no Ready list or nodes; the page reads them again.
       if (includeReady) await load();
+      else take(last);
     },
-    [projectId, includeReady, take, load],
+    [includeReady, take, load],
+  );
+
+  const skip = useCallback(
+    (reqs: ProjectSetupRequirement[], scope: ProjectSetupSkipScope, failed: (name: string) => string) =>
+      change(reqs, (req) => Project.skipSetup(projectId, req.typeid, scope, { name: req.name }), failed),
+    [projectId, change],
   );
 
   const unskip = useCallback(
-    async (req: ProjectSetupRequirement, failed: string) => {
-      setBusy(new Set([rowKey(req)]));
-      take(await withNotify(() => Project.unskipSetup(projectId, req.typeid, req.name), failed));
-      setBusy(NONE);
-      if (includeReady) await load();
-    },
-    [projectId, includeReady, take, load],
+    (req: ProjectSetupRequirement, failed: string) =>
+      change(
+        [req],
+        (r) => Project.unskipSetup(projectId, r.typeid, r.name),
+        () => failed,
+      ),
+    [projectId, change],
   );
 
   return { readiness, busy, load, skip, unskip };

@@ -94,13 +94,30 @@ export function isBrowseListPointer(pointer: string): boolean {
  * The project's own pages, hosted by Project Home: no backing entity, the project's own tab, and the last
  * breadcrumb says which page. A new Project Home page is a row here.
  */
-export const PROJECT_LANDING_PAGES: Record<string, { label: MessageDescriptor }> = {
-  [AssetMode.PROJECT_HOME]: { label: msg`Home` },
-  [AssetMode.PROJECT_SETUP]: { label: msg`Project setup` },
+export interface ProjectLandingPage {
+  /** The last breadcrumb on this page. */
+  label: MessageDescriptor;
+  /** Addressed under `/dock/project/<id>/<pointer>` too. The landing itself is not: the project dock
+   *  reaches it by addressing nothing, and `project-home` belongs to the `/dock/assets` grammar. */
+  underProjectDock: boolean;
+}
+
+export const PROJECT_LANDING_PAGES: Record<string, ProjectLandingPage> = {
+  [AssetMode.PROJECT_HOME]: { label: msg`Home`, underProjectDock: false },
+  [AssetMode.PROJECT_SETUP]: { label: msg`Project setup`, underProjectDock: true },
 };
 
+/** The Project Home page `pointer` addresses under the given dock, else null. */
+export function projectLandingPageOf(
+  pointer: string | null | undefined,
+  { underProjectDock = false }: { underProjectDock?: boolean } = {},
+): ProjectLandingPage | null {
+  const page = pointer && Object.hasOwn(PROJECT_LANDING_PAGES, pointer) ? PROJECT_LANDING_PAGES[pointer] : null;
+  return page && (!underProjectDock || page.underProjectDock) ? page : null;
+}
+
 export function isProjectLandingPointer(pointer: string | null | undefined): boolean {
-  return !!pointer && Object.hasOwn(PROJECT_LANDING_PAGES, pointer);
+  return projectLandingPageOf(pointer) !== null;
 }
 
 /** Thrown by AssetDocPointer.parse/validate on a malformed pointer. */
