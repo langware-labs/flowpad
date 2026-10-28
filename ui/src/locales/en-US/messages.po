@@ -3046,8 +3046,12 @@ msgid "Add to agent"
 msgstr "Add to agent"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
-msgid "Add to changes ↵"
-msgstr "Add to changes ↵"
+msgid "Add to changes"
+msgstr "Add to changes"
+
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+#~ msgid "Add to changes ↵"
+#~ msgstr "Add to changes ↵"
 
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -5775,6 +5779,10 @@ msgstr "Change destination"
 #: src/components/footer/LanguageSelector.tsx
 msgid "Change language"
 msgstr "Change language"
+
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+msgid "Change now ↵"
+msgstr "Change now ↵"
 
 #: src/components/conversation/task-it.tsx
 msgid "Change status"
@@ -22191,6 +22199,7 @@ msgstr "Org role"
 #: src/components/account/organization-panel.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/types/ViewType.ts
 msgid "Organization"
 msgstr "Organization"
@@ -24029,8 +24038,8 @@ msgid "Queue message"
 msgstr "Queue message"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
-msgid "Queued for later — nothing runs yet"
-msgstr "Queued for later — nothing runs yet"
+#~ msgid "Queued for later — nothing runs yet"
+#~ msgstr "Queued for later — nothing runs yet"
 
 #: src/components/entity-execution-panel/QueueChip.tsx
 msgid "Queued messages"
@@ -33665,6 +33674,10 @@ msgstr "waiting for you to choose an LLM source"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Waiting for you…"
 #~ msgstr "Waiting for you…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Waiting for your answer"
+msgstr "Waiting for your answer"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "waiting for your message…"

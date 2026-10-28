@@ -10,7 +10,18 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, Globe, HelpCircle, KeyRound, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import {
+  Building2,
+  Cloud,
+  Globe,
+  HelpCircle,
+  KeyRound,
+  LogIn,
+  LogOut,
+  Settings,
+  User as UserIcon,
+  Wrench,
+} from 'lucide-react';
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
@@ -52,6 +63,7 @@ import { getIconPacks, resolveIcon } from '@sdk/icons';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
+import { useMembershipAvailability } from '@src/hooks/use-membership-availability';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
@@ -207,6 +219,7 @@ export function UserDropdown() {
   // In Local (private) data-privacy mode the cloud is off-limits, so no login
   // affordance is shown at all.
   const { isLocal } = usePrivacyMode();
+  const { available: membershipAvailable } = useMembershipAvailability();
   // App-settings dock viewer — relocated here from the footer (which now hosts
   // the data-privacy control in place of the old gear).
   const { navigation } = useDockNavigation();
@@ -551,6 +564,16 @@ export function UserDropdown() {
                         <UserIcon className="me-2 h-4 w-4" />
                         <Trans>Settings</Trans>
                       </DropdownMenuItem>
+                      {membershipAvailable && (
+                        <DropdownMenuItem
+                          onClick={() => navigation.openPage(PageId.HUB, ViewType.ORGANIZATION)}
+                          className="cursor-pointer"
+                          data-testid="app-organization-button"
+                        >
+                          <Building2 className="me-2 h-4 w-4" />
+                          <Trans>Organization</Trans>
+                        </DropdownMenuItem>
+                      )}
                       {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
                     see Logout without being cloud-logged-in, cloudLoginAvailable
