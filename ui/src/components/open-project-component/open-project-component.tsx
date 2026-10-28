@@ -148,6 +148,8 @@ interface CompactProjectSelectDialogProps {
   trigger?: 'switch' | 'map' | 'gate';
   /** Optional remote-project label shown in the description for 'map' trigger. */
   remoteProjectName?: string;
+  /** When set, the header offers "Run (Skip project)": run in the instance's temp folder. */
+  onSkipProject?: () => void;
 }
 
 /** How many recent projects the compact list shows before the rest are
@@ -169,6 +171,7 @@ function CompactProjectSelectDialog({
   onCreateNew,
   trigger = 'switch',
   remoteProjectName,
+  onSkipProject,
 }: CompactProjectSelectDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -292,7 +295,20 @@ function CompactProjectSelectDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle className="text-base">{title}</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pe-6">
+            <DialogTitle className="text-base">{title}</DialogTitle>
+            {onSkipProject && (
+              <Button
+                size="sm"
+                className="h-7 shrink-0 bg-blue-600 text-white hover:bg-blue-500"
+                onClick={onSkipProject}
+                title={t`Run it without a project, in this machine's temp folder`}
+                data-testid="project-gate-skip-project"
+              >
+                {t`Run (Skip project)`}
+              </Button>
+            )}
+          </div>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
 
@@ -536,6 +552,8 @@ interface OpenProjectComponentProps {
   /** Called after the project has been picked + side-effects applied. The
    *  gate uses this to resume the action that opened the dialog. */
   onPicked?: (project: Project) => void | Promise<void>;
+  /** Offers "Run (Skip project)" in the picker; the caller runs without a project. */
+  onSkipProject?: () => void;
 }
 
 export function OpenProjectComponent({
@@ -547,6 +565,7 @@ export function OpenProjectComponent({
   remoteProjectName,
   trigger,
   onPicked,
+  onSkipProject,
 }: OpenProjectComponentProps) {
   const { t } = useLingui();
   const { project: currentProject } = useProject();
@@ -674,6 +693,7 @@ export function OpenProjectComponent({
         onCreateNew={() => setShowCreate(true)}
         trigger={resolvedTrigger}
         remoteProjectName={remoteProjectName}
+        onSkipProject={onSkipProject}
       />
       <NewProjectDialog
         open={open && showCreate}
