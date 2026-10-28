@@ -85,22 +85,25 @@ export function ProjectLoadGate({
     void load(true);
   }, [result, asset, lifecycle.starting, loadedLocation, location.key, load]);
   const name = project?.displayName || projectId;
-  // Working: a load in flight, or a setup run going that is not waiting on the person.
-  const busy = lifecycle.starting || !result || result.state === 'running';
-  const status =
-    busy && !lifecycle.questionId ? (
-      result?.state === 'running' ? (
-        result.phase === 'load' ? (
-          <Trans>Starting…</Trans>
-        ) : (
-          <Trans>Setting up…</Trans>
-        )
+  // A question on screen means the run waits on the person: no spinner, and say so.
+  // Otherwise working = a load in flight or a setup run going.
+  const waiting = !!lifecycle.questionId;
+  const busy = !waiting && (lifecycle.starting || !result || result.state === 'running');
+  const status = waiting ? (
+    <Trans>Waiting for your answer</Trans>
+  ) : busy ? (
+    result?.state === 'running' ? (
+      result.phase === 'load' ? (
+        <Trans>Starting…</Trans>
       ) : (
-        <Trans>Checking what this needs…</Trans>
+        <Trans>Setting up…</Trans>
       )
     ) : (
-      result?.detail || <Trans>Preparing…</Trans>
-    );
+      <Trans>Checking what this needs…</Trans>
+    )
+  ) : (
+    result?.detail || <Trans>Preparing…</Trans>
+  );
   useEffect(() => {
     // A load that just brought the app up moved its address; a validated one moved nothing.
     if (result?.state === 'ready' && loadedLocation === location.key) {
@@ -178,13 +181,7 @@ export function ProjectLoadGate({
             <Trans>Set up</Trans>
           </Button>
         )}
-        {fix.show && (
-          <SetupFailureActions
-            fix={fix}
-            busy={lifecycle.starting}
-            onCancel={() => void navigate(-1)}
-          />
-        )}
+        {fix.show && <SetupFailureActions fix={fix} busy={lifecycle.starting} onCancel={() => void navigate(-1)} />}
       </div>
     </div>
   );
