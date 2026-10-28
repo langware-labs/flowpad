@@ -39,7 +39,12 @@ PLACED_LOCAL_POLL_S = 1
 
 
 async def deploy_entity_to_cloud(
-    entity: "Entity", environment: str | None = None, *, provider: str | None = None, require: list[str] | None = None
+    entity: "Entity",
+    environment: str | None = None,
+    *,
+    provider: str | None = None,
+    require: list[str] | None = None,
+    deployment_id: str | None = None,
 ) -> dict[str, Any]:
     """POST ``<entity>/deploy`` on the hub and adopt the placement it returns.
 
@@ -49,7 +54,8 @@ async def deploy_entity_to_cloud(
     ``provider`` (the hub's name; none: :data:`DEFAULT_CLOUD_PROVIDER`), and
     which credential ``environment`` the placement reads (``production`` by
     default) — a name, never a value. ``require`` names the variables the hub must already hold for
-    the placement; it refuses (``not_ready``) before paying for a machine otherwise.
+    the placement; it refuses (``not_ready``) before paying for a machine otherwise. ``deployment_id`` names
+    the placement this deploy is for (the one a plan made); without it the hub makes a new one.
     """
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
@@ -67,6 +73,7 @@ async def deploy_entity_to_cloud(
         "environment": environment,
         "provider": provider or DEFAULT_CLOUD_PROVIDER,
         **({"require": require} if require else {}),
+        **({"deployment_id": deployment_id} if deployment_id else {}),
     }
     data = await HubProxy.call(
         "POST", entity.type, entity.id, "deploy", payload=body, strict=True, timeout=DEPLOY_TIMEOUT

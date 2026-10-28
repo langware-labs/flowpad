@@ -10,9 +10,11 @@ import pytest
 from pydantic import ValidationError
 
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps
 from flow_sdk.builtin.credential_service import drop_folder, place_values, save_credential, use_mine
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.builtin.readiness import NotReady
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
@@ -92,7 +94,8 @@ async def test_the_hub_stores_the_url_so_use_mine_never_copies_this_computers(ho
                           manifest={"name": "polled", "vars": {"POLLED_KEY": {}}, "setup": "x"}, values={"POLLED_KEY": "p-1"})
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)
 
-    await deploy_ended(agent, "user-1", "production", provider="e2b")
+    with pytest.raises(NotReady):
+        await run_deployment_steps(agent, "user-1", "production", provider="e2b")
     deployment = await agent.plan_deployment("production", provider="e2b")
     copied = await use_mine(str(deployment.id))
     await deploy_ended(agent, "user-1", "production", provider="e2b")

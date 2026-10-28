@@ -15,6 +15,8 @@ class FakeHubStore:
         self.values: dict[str, dict[str, str]] = {}
         self.calls: list[tuple] = []
         self.deploys: list[dict] = []
+        #: The placement each deploy named, in order: a deploy is for the row its plan made.
+        self.deploy_ids: list[str | None] = []
         self.authorized: dict[str, list[str]] = {}
         self.webhooks: dict[str, list[str]] = {}
         #: ``deployment/<id>/funding`` answers by deployment id; none = the hub cannot say.
@@ -86,8 +88,9 @@ class FakeHubStore:
         assert method == "DELETE", method
         return await self.delete(etype, eid, action, sub_path)
 
-    async def deploy(self, entity, environment=None, *, provider=None, require=None):
+    async def deploy(self, entity, environment=None, *, provider=None, require=None, deployment_id=None):
         self.deploys.append({"environment": environment, "provider": provider, "require": list(require or [])})
+        self.deploy_ids.append(deployment_id)
         return {"deployment": {}, "secrets": {"placed": sorted(require or []), "failed": {}}}
 
 

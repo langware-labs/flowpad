@@ -7,12 +7,11 @@ import json
 
 import pytest
 
-from flow_sdk.activity import ActivityState
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_cloud_deploy import funding_warnings
+from flow_sdk.builtin.agent_cloud_deploy import funding_warnings, run_deployment_steps
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.readiness import readiness
+from flow_sdk.builtin.readiness import NotReady, readiness
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
 from tests.utils import fake_hub_store
@@ -68,22 +67,21 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
     await _stripe_here(project)
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)  # publishing is the git path's; not under test here
 
-    refused = await deploy_ended(agent, "user-1", "production", provider="e2b")
-    deployment = await agent.plan_deployment("production", provider="e2b")
-    assert [(c.name, c.state) for c in refused.children if c.name in ("readiness", "machine")] == [
-        ("readiness", ActivityState.FAILED),
-        ("machine", ActivityState.INTERRUPTED),
-    ]
-    assert [(i.requirement.name, i.remedy) for i in (await readiness(agent, deployment)).items if i.status == "missing"] == [
+    with pytest.raises(NotReady) as refused:
+        await run_deployment_steps(agent, "user-1", "production", provider="e2b")
+    assert [(i.requirement.name, i.remedy) for i in refused.value.readiness.items if i.status == "missing"] == [
         ("stripe", "use_mine")
     ]
     assert hub.deploys == [], "no machine is paid for"
+
+    deployment = await agent.plan_deployment("production", provider="e2b")
 
     assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
     assert hub.values[str(deployment.id)] == {"STRIPE_KEY": VALUE}
 
     await deploy_ended(agent, "user-1", "production", provider="e2b")
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": ["STRIPE_KEY"]}]
+    assert hub.deploy_ids == [hub.deployment(f"agent-{agent.id}", "production")["id"]], "the deploy names its plan"
 
 
 async def test_a_protected_deployment_refuses_use_mine(home, project, hub):
