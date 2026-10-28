@@ -53,7 +53,8 @@ def test_deploys_an_agent_named_by_its_name(app):
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "deployment_id": "d-1",
                                          "secrets": {"placed": ["STRIPE_KEY"], "failed": []}}
-    assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy") and calls[-1][2] == {"environment": "staging", "provider": "e2b"}
+    assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy")
+    assert calls[-1][2] == {"environment": "staging", "provider": "e2b", "wait": True}, "the command waits for the machine"
 
 
 def test_deploys_on_the_provider_named_by_provider(app):
@@ -62,7 +63,20 @@ def test_deploys_on_the_provider_named_by_provider(app):
     result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID, "--provider", "gcp_vm"])
 
     assert result.exit_code == 0, result.stdout
-    assert calls[-1][2] == {"environment": None, "provider": "gcp_vm"}
+    assert calls[-1][2] == {"environment": None, "provider": "gcp_vm", "wait": True}
+
+
+def test_a_deploy_without_model_funding_says_so(app, monkeypatch):
+    def post(url, payload, *, on_error, **_):
+        return {"agent_id": AGENT_ID, "deployment": {"id": "d-1"}, "secrets": None,
+                "warnings": ["No LLM funding for researcher: limit 'cost_usd_total' exceeded"]}
+
+    monkeypatch.setattr(agent_cmd, "post_graph_json", post)
+
+    result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID])
+
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)["warnings"] == ["No LLM funding for researcher: limit 'cost_usd_total' exceeded"]
 
 
 def test_lists_the_providers_the_hub_offers(app):

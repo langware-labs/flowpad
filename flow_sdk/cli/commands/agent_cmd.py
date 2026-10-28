@@ -54,10 +54,15 @@ def deploy(
     """Deploy AGENT to a machine of its own; refused (exit 1) until the placement has what it needs."""
     port = discover_port(required=True)
     agent_id = _agent_id(port, agent)
-    data = post_graph_json(graph_url(port, f"agent/{agent_id}/deploy"), {"environment": environment, "provider": provider},
-                           timeout=DEPLOY_SECONDS, on_error=_refused)
+    # ``wait``: answer once the machine is placed, not when the deploy is accepted — a command's
+    # exit is its result, and the app's early answer would end it before there is one.
+    url = graph_url(port, f"agent/{agent_id}/deploy")
+    req_body = {"environment": environment, "provider": provider, "wait": True}
+    data = post_graph_json(url, req_body, timeout=DEPLOY_SECONDS, on_error=_refused)
     deployment = (data or {}).get("deployment") or {}
-    ok({"agent_id": agent_id, "deployment_id": deployment.get("id"), "secrets": (data or {}).get("secrets")})
+    warnings = (data or {}).get("warnings") or []
+    ok({"agent_id": agent_id, "deployment_id": deployment.get("id"), "secrets": (data or {}).get("secrets"),
+        **({"warnings": warnings} if warnings else {})})
 
 
 @agent_app.command("providers")
