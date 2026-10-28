@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, Loader2, TriangleAlert, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { credentialsService, type Agent, type AgentReadiness, type AgentReadinessItem, type Deployment } from '@sdk';
 
@@ -103,6 +103,8 @@ export function DeploymentSecretsGate({ agent, deployment, readiness, onChange }
       </p>
       {readiness.items.map((item) => {
         const missing = item.status === 'missing';
+        // Model funding is advisory: the deploy goes ahead without it, so it reads as a warning, not a block.
+        const advisory = missing && item.requirement.kind === 'funding';
         const key = item.requirement.name;
         return (
           <div
@@ -110,7 +112,9 @@ export function DeploymentSecretsGate({ agent, deployment, readiness, onChange }
             className="flex items-center gap-2 text-xs"
             data-testid={`deployment-secret-${key}`}
           >
-            {missing ? (
+            {advisory ? (
+              <TriangleAlert className="h-3.5 w-3.5 text-amber-500" data-testid={`deployment-secret-warning-${key}`} />
+            ) : missing ? (
               <X className="h-3.5 w-3.5 text-destructive" />
             ) : (
               <Check className="h-3.5 w-3.5 text-emerald-600" />

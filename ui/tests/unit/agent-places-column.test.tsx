@@ -4,9 +4,12 @@
  * deployment's own page nested in the agent by navigating.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, type AgentPlace } from '@sdk';
+import type { ActivityProgressSpec, ActivityState } from '@sdk/activity';
+import { notify } from '@src/notifications';
+import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), hub: false }));
 const { AGENT_URL } = vi.hoisted(() => ({ AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333' }));
@@ -19,6 +22,7 @@ vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
 vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
   NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
 }));
+vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 // Watching registers this connection with the backend; there is none here.
 const { useWatch } = vi.hoisted(() => ({ useWatch: vi.fn() }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({ ...(await importOriginal<object>()), useWatch }));
@@ -49,6 +53,8 @@ function place(id: string, isLocal: boolean, extra: Partial<AgentPlace> = {}): A
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.mocked(notify.warning).mockClear();
+  __resetActivityStoreForTest();
   nav.openDock.mockReset();
   nav.hub = false;
 });
@@ -104,6 +110,31 @@ describe('Deployments', () => {
       expect.objectContaining({ type: 'agent', id: '33333333-3333-4333-8333-333333333333' }),
       true,
     );
+  });
+
+  it('says once, however often the column mounts, what a deploy goes ahead without — and not for a finished one', async () => {
+    const AGENT = 'agent-33333333-3333-4333-8333-333333333333';
+    const node = (id: string, name: string, state: ActivityState, message: string | null, children: ActivityProgressSpec[] = []) =>
+      ({
+        activity_id: id, subject_entity: AGENT, path: name === 'deploy' ? name : `deploy/${name}`, name, label: name, state,
+        message, done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children, seq: 1,
+      }) as ActivityProgressSpec;
+    const deploy = (id: string, state: ActivityState) =>
+      node(id, 'deploy', state, null, [node(id, 'readiness', 'completed', 'No LLM funding for brief: limit exceeded')]);
+
+    act(() => handleActivitySnapshot(deploy('running-deploy', 'running')));
+    for (let mounts = 0; mounts < 3; mounts++) {
+      renderColumn([]);
+      await screen.findByTestId('agent-places-empty');
+      cleanup();
+    }
+    expect(notify.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledWith(expect.objectContaining({ message: 'No LLM funding for brief: limit exceeded' }));
+
+    act(() => handleActivitySnapshot(deploy('finished-deploy', 'completed')));
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(notify.warning).toHaveBeenCalledTimes(1);
   });
 
   it('an agent deployed nowhere says so — nothing is created by looking at it', async () => {
