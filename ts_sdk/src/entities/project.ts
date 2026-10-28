@@ -240,6 +240,8 @@ export interface ProjectSetupRequirement {
   /** Whether "Skip → Always" can remove it from the project, and if not, why. */
   can_skip_always: boolean;
   why_not_always: string;
+  /** Its node in the project's setup tree — the `root` that runs this step alone. */
+  node?: string;
 }
 
 /** An installed asset of the project a requirement exists for. Drivers and shipped templates never are one. */
@@ -262,6 +264,8 @@ export interface ProjectReadiness {
   skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
+  /** What is set up already (not skipped): the Project setup page lists it as Ready. */
+  set_up?: ProjectSetupRequirement[];
 }
 
 /** One process of a project's app (`GET project/<id>/app-ports`). */
@@ -1091,8 +1095,13 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
-  static async setupRequirements(projectId: string): Promise<ProjectReadiness | null> {
+  static async setupRequirements(
+    projectId: string,
+    { includeReady = false }: { includeReady?: boolean } = {},
+  ): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-requirements', Project.type, projectId, 'GET');
+    // The setup page also wants what is set up and each step's node; the footer's poll does not.
+    if (includeReady) actionInfo.queryParameters = { include_ready: 'true' };
     return (await dataManager.callAction<void, ProjectReadiness>(actionInfo)) ?? null;
   }
 

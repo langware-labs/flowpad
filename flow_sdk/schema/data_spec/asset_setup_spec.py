@@ -26,6 +26,7 @@ Two shapes live here:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar, Literal, Optional
 
 from pydantic import ConfigDict
@@ -154,6 +155,8 @@ class SetupTreeResult(DataSpec):
     done: int = 0
     #: Whether anything actually ran (a resumed setup that found everything in place did not).
     ran: bool = False
+    #: When the run ended (UTC) — the setup page's "Last run".
+    finished_at: Optional[datetime] = None
 
     @property
     def ok(self) -> bool:

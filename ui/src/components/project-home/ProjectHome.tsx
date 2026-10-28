@@ -3,6 +3,7 @@ import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarSt
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
+import { ProjectSetupPage } from '@src/components/project-setup/ProjectSetupPage';
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
@@ -43,6 +44,8 @@ interface ProjectHomeProps {
   /** Render only the Overview body with no tab bar — the terminal empty state,
    *  whose whole point is to start something. The landing shows both tabs. */
   createOnly?: boolean;
+  /** Show the project's setup page (`…/project-setup`) under the header instead of Overview/Customize. */
+  setupPage?: boolean;
   /** Hub-owned body rendered inside the shared Project Home shell. When set,
    *  local Git/setup/create controls are omitted; the Hub body owns content. */
   cloudContent?: React.ReactNode;
@@ -142,7 +145,12 @@ const TAB_FOR_TAG: Record<string, string> = {
  * A third, **Secrets**, was retired: it was one of five surfaces over the same
  * declarations, and the Connections screen is now the only one.
  */
-export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, createOnly = false, cloudContent }) => {
+export const ProjectHome: React.FC<ProjectHomeProps> = ({
+  spawnProjectId,
+  createOnly = false,
+  setupPage = false,
+  cloudContent,
+}) => {
   const dataCtx = useDataContext();
   const cloudMode = cloudContent !== undefined;
 
@@ -317,6 +325,8 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             cloudContent
           ) : createOnly ? (
             overview
+          ) : setupPage && projectId ? (
+            <ProjectSetupPage projectId={projectId} projectName={resolvedProject?.name ?? project?.name ?? ''} />
           ) : (
             <Tabs value={tab} onValueChange={setTab} data-testid="project-home-tabs">
               <TabsList>

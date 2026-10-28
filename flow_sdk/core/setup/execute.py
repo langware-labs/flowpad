@@ -14,6 +14,7 @@ project's Set up, a source's, a received artifact's — so the four things they 
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -105,6 +106,7 @@ async def execute_setup(
             workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved,
             on_change=changed, **resolvers, **seams,
         )
+        result = result.model_copy(update={"finished_at": datetime.now(timezone.utc)})
         if record:
             record_tree(key, result, already_locked=True)
     finally:

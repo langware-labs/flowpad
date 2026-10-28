@@ -46,12 +46,12 @@ import { useSetupRun } from './use-setup-run';
  */
 
 /** A row's glyph is its record's type icon (the registry's); a dependency is the project's own, so its own glyph. */
-function iconOf(req: ProjectSetupRequirement): LucideIcon {
+export function iconOf(req: ProjectSetupRequirement): LucideIcon {
   if (req.kind === 'dependency' || !req.typeid) return Package;
   return iconForType(new TypeId(req.typeid).type);
 }
 
-const rowKey = (req: ProjectSetupRequirement) => `${req.kind}-${req.typeid}-${req.name}`;
+export const rowKey = (req: ProjectSetupRequirement) => `${req.kind}-${req.typeid}-${req.name}`;
 
 const NONE: ReadonlySet<string> = new Set();
 
@@ -72,14 +72,14 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
 }
 
 /** A dependency, source or web app goes by its own name (its title is where it comes from); a credential by its title. */
-const namesItself = (req: ProjectSetupRequirement) =>
+export const namesItself = (req: ProjectSetupRequirement) =>
   req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
  * missing — an either-or group of values as "A or B".
  */
-function detailOf(req: ProjectSetupRequirement, or: string): string {
+export function detailOf(req: ProjectSetupRequirement, or: string): string {
   if (namesItself(req)) return req.note || req.title;
   if (req.credential_kind === 'oauth') return req.note || req.needed_for || `connect ${req.title || req.name}`;
   return (

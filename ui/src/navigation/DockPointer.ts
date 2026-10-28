@@ -1177,6 +1177,14 @@ export class DockPointer implements IDockPointer {
     return options?.scope ? base.withScopeFilter(options.scope) : base;
   }
 
+  /** The project's setup page, rebased onto `/dock/project/<projectId>/project-setup`. */
+  static forProjectSetup(projectId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return DockPointer.rebaseAssetsOntoProject(
+      new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_SETUP, undefined, layout),
+      projectId,
+    );
+  }
+
   /**
    * Create dock pointer for an asset folder view (filtered list under a folder).
    * Pointer format: "folder/<typeName>/<typeid>/<relPath>"
@@ -2319,6 +2327,8 @@ export class DockPointer implements IDockPointer {
   private get foldedPointer(): string | null {
     const meta = this.viewType ? VIEWER_REGISTRY[this.viewType] : undefined;
     if (meta?.foldsPointer) return '';
+    // The project's setup page is a sub-page of Project Home: it stays in the project's own tab.
+    if (this.isProjectSetup) return DockPointer.splitProjectPointer(this.pointer).projectId ?? '';
     // First segment only: `<conversationId>/message/<id>` → `<conversationId>`.
     if (meta?.foldsSubPointer) return (this.pointer ?? '').split('/')[0];
     return null;
@@ -2546,6 +2556,10 @@ export class DockPointer implements IDockPointer {
     // `vfsPath`) — and crucially we must NOT surface the `<id>` project segment
     // as the target, so the path-resolved asset's OWN project wins on the tab.
     const assetSub = this.assetSubPointer;
+    if (this.isProjectSetup) {
+      const { projectId } = DockPointer.splitProjectPointer(pointer);
+      return projectId ? DockPointer.tryTypeId(Project.type, projectId) : null;
+    }
     if (assetSub !== null) {
       const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
       return typeid ? DockPointer.tryTypeId(typeid) : null;
@@ -2576,6 +2590,11 @@ export class DockPointer implements IDockPointer {
    * un-rebase that lets the tab-mint getters treat a project-shell asset URL
    * identically to a plain assets URL, so the asset's own project is resolved.
    */
+  /** `/dock/project/<id>/project-setup` — the project's setup page, a sub-page of its home. */
+  get isProjectSetup(): boolean {
+    return this.assetSubPointer === (AssetMode.PROJECT_SETUP as string);
+  }
+
   private get assetSubPointer(): string | null {
     if (this.viewType !== ViewType.PROJECT || !this.pointer) return null;
     const { assetSubPointer } = DockPointer.splitProjectPointer(this.pointer);

@@ -26,6 +26,8 @@ export function isProjectHomeSurface(args: {
   const { isProjectView, pointer, scopedProjectId } = args;
   if (!scopedProjectId) return false;
   if (!pointer) return true;
+  // The setup page is the landing's own sub-page: same header, same project, under either dock.
+  if (pointer === (AssetMode.PROJECT_SETUP as string)) return true;
   // The project dock reaches its landing only by addressing nothing; the
   // `project-home` sub-pointer belongs to the assets URL grammar.
   return !isProjectView && pointer === (AssetMode.PROJECT_HOME as string);

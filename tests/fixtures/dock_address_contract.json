@@ -1020,6 +1020,12 @@
       "url": "/dock/assets/project-home"
     },
     {
+      "name": "assets project-setup",
+      "view_type": "assets",
+      "pointer": "project-setup",
+      "url": "/dock/assets/project-setup"
+    },
+    {
       "name": "lens transcript",
       "view_type": "lens",
       "pointer": "claude/transcript/6ba7b810-9dad-41d1-80b4-00c04fd430c8",

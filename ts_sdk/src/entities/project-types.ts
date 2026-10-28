@@ -80,6 +80,8 @@ export interface SetupTreeResult {
   total: number;
   done: number;
   ran: boolean;
+  /** When the run ended (ISO, UTC) — the setup page's "Last run". */
+  finished_at?: string | null;
 }
 
 export interface ProjectLoadResult {

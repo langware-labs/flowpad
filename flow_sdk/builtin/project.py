@@ -978,13 +978,15 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"apps": results})
 
     @action.get(action_name="setup-requirements")
-    async def setup_requirements_action(self) -> "ApiResponse":
-        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
-        Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
+    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/setup-requirements?include_ready=` — ``ready``, what is left to set up, and the gaps.
+        Every MUST value and needed connection counts; OPTIONAL values never do. Names only. ``include_ready``
+        (the Project setup page) also lists what is set up and each step's tree node."""
         from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
 
         try:
-            return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+            readiness = await readiness_of(self, include_ready=include_ready)
+            return ApiSuccessResponse(data=readiness.model_dump(mode="json"))
         except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
             log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
             return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")

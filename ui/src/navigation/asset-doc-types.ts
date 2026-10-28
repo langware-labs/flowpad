@@ -49,6 +49,9 @@ export enum AssetMode {
   // Project landing rendered inside the project-scoped Assets tab. It is a
   // browser surface, not a single asset entity, so the asset loader no-ops it.
   PROJECT_HOME = 'project-home',
+  // The project's setup page (Project Home ☰ → Project setup): every setup step, its state, Edit/Run/Rerun.
+  // A surface like the landing, so the asset loader no-ops it too.
+  PROJECT_SETUP = 'project-setup',
 }
 
 /** Default wiki space (the local compute node). */
@@ -81,8 +84,13 @@ export function isBrowseListPointer(pointer: string): boolean {
   return (
     pointer.startsWith(`${AssetMode.LIST}/`) ||
     pointer.startsWith(`${AssetMode.FOLDER}/`) ||
-    pointer === AssetMode.PROJECT_HOME
+    isProjectLandingPointer(pointer)
   );
+}
+
+/** The project's own pages — its landing and its setup page: no backing entity, hosted by Project Home. */
+export function isProjectLandingPointer(pointer: string | null | undefined): boolean {
+  return pointer === AssetMode.PROJECT_HOME || pointer === AssetMode.PROJECT_SETUP;
 }
 
 /** Thrown by AssetDocPointer.parse/validate on a malformed pointer. */
