@@ -88,6 +88,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "agent.status",
     "voice.call.*",
     "task.*",
+    "user_app.*",
     "deployment.timeline",
     "dataset.rows.changed",
 ]
