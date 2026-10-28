@@ -16,6 +16,7 @@ import type { PanelHandlers } from '@src/components/quick-create';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { ProjectLanguageCard } from './ProjectLanguageCard';
 import { ProjectDataSources } from './ProjectDataSources';
+import { ProjectApps } from './ProjectApps';
 import { ProjectDependenciesCard } from './ProjectDependenciesCard';
 import { QuickCreateModal } from '@src/components/quick-create/QuickCreateModal';
 import { Button } from '@src/components/ui/button';
@@ -104,6 +105,7 @@ const Overview: React.FC<{ project: Project | null; panelProps: PanelHandlers; d
           <Plus className="size-5" />
         </Button>
       </section>
+      {project && <ProjectApps project={project} />}
       {project && <ProjectAgentsStrip projectId={project.id} presentation="browse" />}
       {/* The project's flow.json dependencies — not on the terminal empty state. */}
       {project && dependencies && <ProjectDependenciesCard project={project} />}
