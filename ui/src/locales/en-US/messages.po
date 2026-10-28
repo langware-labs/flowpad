@@ -730,6 +730,7 @@ msgstr "{0} is already deployed"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "{0} is deployed"
 msgstr "{0} is deployed"
 
@@ -894,6 +895,7 @@ msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "{0} now has access, but the invite message wasn't sent."
 
 #. placeholder {0}: agent.name
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
 msgstr "{0} now runs on a cloud machine"
@@ -7980,6 +7982,7 @@ msgid "Could not deny"
 msgstr "Could not deny"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "Could not deploy"
@@ -8071,6 +8074,7 @@ msgstr "Could not invite {email}"
 msgid "Could not keep the task"
 msgstr "Could not keep the task"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Could not launch the deployment"
 msgstr "Could not launch the deployment"
@@ -10091,6 +10095,7 @@ msgid "Deploy"
 msgstr "Deploy"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
 msgstr "Deploy failed."
 
@@ -10117,6 +10122,11 @@ msgstr "Deployed agent"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployed without its definition"
 msgstr "Deployed without its definition"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deploying without model funding"
+msgstr "Deploying without model funding"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -16089,6 +16099,7 @@ msgstr "Launch a session first"
 msgid "Launch bot"
 msgstr "Launch bot"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
 msgstr "Launch failed."

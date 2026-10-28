@@ -727,6 +727,7 @@ msgstr "{0} כבר פרוס"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "{0} is deployed"
 msgstr "{0} פרוס"
 
@@ -891,6 +892,7 @@ msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "ל-{0} יש עכשיו גישה, אבל הודעת ההזמנה לא נשלחה."
 
 #. placeholder {0}: agent.name
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
 msgstr "{0} פועל עכשיו על מכונת ענן"
@@ -7924,6 +7926,7 @@ msgid "Could not deny"
 msgstr "לא ניתן היה לדחות"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "לא ניתן לפרוס"
@@ -8015,6 +8018,7 @@ msgstr ""
 msgid "Could not keep the task"
 msgstr "לא ניתן לשמור את המשימה"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Could not launch the deployment"
 msgstr "לא ניתן היה להפעיל את הפריסה"
@@ -10027,6 +10031,7 @@ msgid "Deploy"
 msgstr "פרסו"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
 msgstr "הפריסה נכשלה."
 
@@ -10053,6 +10058,11 @@ msgstr "סוכן פרוס"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployed without its definition"
 msgstr "פרסו ללא הגדרתו"
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deploying without model funding"
+msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -15961,6 +15971,7 @@ msgstr "יש להפעיל סשן תחילה"
 msgid "Launch bot"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
 msgstr "ההפעלה נכשלה."

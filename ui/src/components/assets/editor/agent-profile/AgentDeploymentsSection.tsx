@@ -1,5 +1,6 @@
 import { Agent, ComputeProviderType, Deployment, QueryRequest } from '@sdk';
-import { useEntitiesQuery } from '@sdk/react/hooks';
+import type { ActivityProgressSpec } from '@sdk/activity';
+import { useEntitiesQuery, useWatch } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { Cloud, ExternalLink, Loader2, MessageSquare, PauseCircle, Trash2 } from 'lucide-react';
@@ -10,6 +11,7 @@ import { Button } from '@src/components/ui/button';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
+import { DeployProgress } from './DeployProgress';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
 import { DeploymentHealth } from './deployment/DeploymentHealth';
 
@@ -48,6 +50,13 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   // button that works today. Only a prerequisite we positively know is unmet
   // does, and the backend's own error stays the backstop either way.
   const [ready, setReady] = useState<boolean | null>(null);
+  // A cloud deploy taken on, followed until its machine is placed; `launch` keys each run's progress.
+  const [run, setRun] = useState<{
+    activity: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+    launch: number;
+  } | null>(null);
+  // A deploy's steps are addressed to the agent: watched before Deploy is pressed, so none is missed.
+  useWatch(agent.typeId);
 
   const request = useMemo(
     () =>
@@ -64,10 +73,28 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   );
   const { data: deployments = [], refetch } = useEntitiesQuery<Deployment>(request);
 
+  const ended = useCallback(
+    (completed: boolean, message: string | null) => {
+      setRun(null);
+      if (completed) notify.success({ title: t`${agent.name} is deployed` });
+      else notify.error({ title: t`Could not deploy`, message: message ?? t`Deploy failed.`, forceToast: true });
+      void refetch();
+    },
+    [agent.name, refetch, t],
+  );
+
   const deploy = useCallback(async () => {
     setDeploying(true);
     try {
       const data = await agent.deploy(undefined, ComputeProviderType.E2B);
+      for (const warning of data.warnings ?? []) {
+        notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
+      }
+      if (data.activity) {
+        // Taken on: the machine is placed after this answer; the run below follows it to the end.
+        setRun({ activity: data.activity, launch: Date.now() });
+        return;
+      }
       if (data.agent_definition_error) {
         // The machine is live but is not yet the agent — a genuinely partial
         // outcome, so say so rather than showing an unqualified success.
@@ -221,10 +248,11 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
           );
         })}
 
+        {run && <DeployProgress key={run.launch} activity={run.activity} onEnded={ended} />}
         <div className="flex items-center gap-3">
           <Button
             size="sm"
-            disabled={!agent.enabled || deploying || ready === false}
+            disabled={!agent.enabled || deploying || run !== null || ready === false}
             title={ready === false ? t`Finish the setup above before deploying` : undefined}
             onClick={() => void deploy()}
           >
@@ -235,7 +263,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
             )}
             <Trans>Deploy</Trans>
           </Button>
-          {deploying && (
+          {(deploying || run !== null) && (
             <span className="text-xs text-muted-foreground">
               {/* Create + boot + health on a real sandbox — tens of seconds. */}
               <Trans>Starting a machine — this takes a minute.</Trans>

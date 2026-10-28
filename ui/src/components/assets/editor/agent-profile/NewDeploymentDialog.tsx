@@ -8,8 +8,10 @@ import {
   type CloudDeployProvider,
   type IDeployment,
 } from '@sdk';
+import type { ActivityProgressSpec } from '@sdk/activity';
+import { useWatch } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
 
 import { describeApiError, errorMessage } from '@src/lib/error-message';
@@ -22,6 +24,7 @@ import { Label } from '@src/components/ui/label';
 import { useDeployProviders } from '@src/hooks/use-deploy-providers';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
+import { DeployProgress } from './DeployProgress';
 import { DeploymentSecretsGate } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
 import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES, AGENT_MONTHLY_MACHINE_SIZE_LABELS } from './agent-vocabularies';
@@ -98,6 +101,17 @@ export function NewDeploymentDialog({
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
   const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
+  // A cloud deploy taken on: its steps run on after the answer, reported on this activity.
+  // `launch` keys the progress view: every deploy reports at the same address, and each needs its own end.
+  const [run, setRun] = useState<{
+    activity: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+    deploymentId?: string;
+    launch: number;
+  } | null>(null);
+  const [deploying, setDeploying] = useState(false);
+  // Its steps are addressed to the agent: watched from the moment the dialog opens, so the step that
+  // starts right after the answer is never a frame this client missed.
+  useWatch(agent.typeId, open);
   const machine = type === 'local' ? null : cloudMachine(type);
   const cloud = machine !== null;
   // The hub publishes which providers a deployment may use; only those get rows.
@@ -122,8 +136,29 @@ export function NewDeploymentDialog({
     ...providers.flatMap(cloudRows),
   ];
 
+  const ended = useCallback(
+    (completed: boolean, message: string | null) => {
+      const deploymentId = run?.deploymentId;
+      setDeploying(false);
+      if (!completed) {
+        notify.error({
+          title: t`Could not launch the deployment`,
+          message: message ?? t`Launch failed.`,
+          forceToast: true,
+        });
+        return;
+      }
+      notify.success({ title: t`${agent.name} now runs on a cloud machine` });
+      setRun(null);
+      onOpenChange(false);
+      void onLaunched(deploymentId);
+    },
+    [agent.name, onLaunched, onOpenChange, run?.deploymentId, t],
+  );
+
   const launch = async () => {
     setLaunching(true);
+    setRun(null);
     try {
       let data;
       if (!machine) {
@@ -133,6 +168,15 @@ export function NewDeploymentDialog({
         // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
         await onMachineSize?.(machine.size);
         data = await agent.deploy(environment, machine.provider, tokenAllocation);
+        for (const warning of data.warnings ?? []) {
+          notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
+        }
+        if (data.activity) {
+          // Taken on: the machine is placed after this answer; the dialog follows it to the end.
+          setRun({ activity: data.activity, deploymentId: data.deployment_id, launch: Date.now() });
+          setDeploying(true);
+          return;
+        }
         if (data.agent_definition_error) {
           notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
         } else if (data.reused) {
@@ -165,6 +209,7 @@ export function NewDeploymentDialog({
   const blocked =
     !agent.enabled ||
     launching ||
+    deploying ||
     (cloud &&
       (ready === false ||
         !environmentValid ||
@@ -260,6 +305,7 @@ export function NewDeploymentDialog({
                   onChange={(readiness) => setRefused({ ...refused, readiness })}
                 />
               )}
+              {run && <DeployProgress key={run.launch} activity={run.activity} onEnded={ended} />}
             </>
           ) : (
             <p className="text-xs text-muted-foreground" data-testid="new-deployment-local-details">
@@ -272,7 +318,7 @@ export function NewDeploymentDialog({
         </div>
 
         <DialogFooter className="items-center gap-2">
-          {launching && machine && (
+          {(launching || deploying) && machine && (
             <span className="me-auto text-xs text-muted-foreground" data-testid="new-deployment-starting">
               {/* A monthly machine is a full VM: creating and enrolling it takes longer than a sandbox. */}
               {machine.provider === ComputeProviderType.GCP_VM ? (

@@ -4,9 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  * type needs, Launch. Only a cloud machine asks for the publish checklist and an environment.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from '@sdk';
+import type { ActivityProgressSpec, ActivityState } from '@sdk/activity';
+import { notify } from '@src/notifications';
+import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () => ({
   AgentDeployChecklist: () => <div data-testid="mock-checklist" />,
@@ -17,6 +20,8 @@ vi.mock('@src/notifications', () => ({
 // What the hub publishes (`deployment/providers`); each test may narrow it.
 const published = vi.hoisted(() => ({ providers: ['e2b', 'gcp_vm'] as string[], isLoading: false }));
 vi.mock('@src/hooks/use-deploy-providers', () => ({ useDeployProviders: () => published }));
+// Watching the agent registers this connection with the backend; there is none here.
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({ ...(await importOriginal<object>()), useWatch: vi.fn() }));
 
 import { NewDeploymentDialog } from '@src/components/assets/editor/agent-profile/NewDeploymentDialog';
 
@@ -28,9 +33,32 @@ function renderInQuery(ui: React.ReactElement) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  __resetActivityStoreForTest();
   published.providers = ['e2b', 'gcp_vm'];
   published.isLoading = false;
 });
+
+const SUBJECT = 'agent-33333333-3333-4333-8333-333333333333';
+
+/** The deploy's activity as the backend reports it: the root, with its readiness and machine steps. */
+function deploySnapshot(seq: number, state: ActivityState, machine: ActivityState): ActivityProgressSpec {
+  const node = (name: string, at: ActivityState, children: ActivityProgressSpec[] = []): ActivityProgressSpec => ({
+    activity_id: 'deploy-run',
+    subject_entity: SUBJECT,
+    path: name === 'deploy' ? name : `deploy/${name}`,
+    name,
+    label: name,
+    state: at,
+    done: 0,
+    skipped: 0,
+    errors_count: 0,
+    errors: [],
+    counters: {},
+    children,
+    seq,
+  });
+  return node('deploy', state, [node('readiness', 'completed'), node('machine', machine)]);
+}
 
 const radios = () => screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'));
 
@@ -134,6 +162,32 @@ describe('New deployment', () => {
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
     await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'gcp_vm', null));
     expect(onMachineSize).toHaveBeenCalledWith('lg');
+  });
+
+  it('a cloud deploy taken on warns, shows its steps as they run, and is launched when its run ends', async () => {
+    const { deploy, onLaunched, onOpenChange } = renderDialog();
+    deploy.mockResolvedValue({
+      agent_id: '33333333-3333-4333-8333-333333333333',
+      activity: { path: 'deploy', subject_entity: SUBJECT },
+      deployment_id: 'dep-3',
+      warnings: ['No LLM funding for brief: limit exceeded'],
+    } as never);
+    fireEvent.click(screen.getByTestId('new-deployment-type-gcp_vm-sm'));
+    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+    await waitFor(() =>
+      expect(notify.warning).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'No LLM funding for brief: limit exceeded' }),
+      ),
+    );
+
+    act(() => handleActivitySnapshot(deploySnapshot(1, 'running', 'running')));
+    expect(await screen.findByTestId('deploy-progress-step-machine')).toBeInTheDocument();
+    expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
+    expect(onLaunched).not.toHaveBeenCalled();
+
+    act(() => handleActivitySnapshot(deploySnapshot(2, 'completed', 'completed')));
+    await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-3'));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('this computer can always be launched again — each launch is one more process here', () => {

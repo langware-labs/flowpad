@@ -11,6 +11,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+import type { ActivityProgressSpec } from '../activity';
 import type { IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
@@ -701,6 +702,15 @@ export interface AgentDeployResult {
   reused?: boolean;
   agent_definition?: string;
   agent_definition_error?: string;
+  /**
+   * A cloud deploy taken on: it runs on, reporting at this activity, until its machine is placed.
+   * Absent on an answer that is already the outcome (this computer, or a hub that deploys in one call).
+   */
+  activity?: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+  /** The placement a taken-on deploy lands on, before its machine exists. */
+  deployment_id?: string;
+  /** What the placement runs without — its model funding. Never a refusal. */
+  warnings?: string[];
 }
 
 /** What `POST /agent/<id>/use` hands back — the session opened as the agent.
