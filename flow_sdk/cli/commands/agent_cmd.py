@@ -5,10 +5,13 @@
     flow agent deploy researcher --provider gcp_vm   # on a provider the hub offers
     flow agent providers                             # the providers the hub offers
 
-The app answers once the deploy is taken on, and its steps — the readiness gate included — run after that,
-reported on the agent's ``deploy`` activity. By default the command blocks, printing each report on the agent as
-it arrives, until the deploy ends: exit 0 when it completed, 1 when it failed. ``--no-blocking`` prints where the
-activity reports and exits. Names only are ever printed.
+The readiness gate runs in the app before it answers: a deploy whose placement's store (the hub) lacks a value, or
+whose owner has not authorized a connection it needs, is refused with each missing item and its fix — exit 1,
+nothing deployed; the refusal names the deployment, so ``flow credentials use-mine <deployment>`` copies this
+computer's values into it. Once taken on, the machine starts after the answer and is reported on the agent's
+``deploy`` activity. By default the command blocks, printing each report on the agent as it arrives, until the
+deploy ends: exit 0 when it completed, 1 when it failed. ``--no-blocking`` prints where the activity reports and
+exits; so does ``--provider local``, which has no machine to wait for. Names only are ever printed.
 """
 from __future__ import annotations
 
@@ -57,14 +60,17 @@ def deploy(
     provider: Annotated[str, typer.Option("--provider", help="The compute provider to deploy on; `flow agent providers` lists them.")] = "e2b",
     blocking: Annotated[bool, typer.Option("--blocking/--no-blocking", help="Wait for the deploy to end, printing each step as it reports.")] = True,
 ) -> None:
-    """Deploy AGENT to a machine of its own; blocks until it ends unless --no-blocking."""
+    """Deploy AGENT to a machine of its own; refused (exit 1) until the placement has what it needs. Blocks until it
+    ends unless --no-blocking."""
     port = discover_port(required=True)
     agent_id = _agent_id(port, agent)
     url = graph_url(port, f"agent/{agent_id}/deploy")
     body = {"environment": environment, "provider": provider}
-    if not blocking:
-        data = post_graph_json(url, body, on_error=_refused)
-        ok({"agent_id": agent_id, "activity": (data or {}).get("activity")})
+    if not blocking or provider == "local":
+        data = post_graph_json(url, body, on_error=_refused) or {}
+        deployment = data.get("deployment") or {}
+        ok({"agent_id": agent_id, "activity": data.get("activity"),
+            "deployment_id": data.get("deployment_id") or deployment.get("id")})
         return
     run_async(_deploy_and_follow(port, agent_id, url, body))
 
