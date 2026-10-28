@@ -143,6 +143,8 @@ export function ProjectSetupDialog({
   const { t, i18n } = useLingui();
   const { readiness, busy, load, skip: skipRows, unskip: unskipRow } = useSetupReadiness(projectId, { enabled: open });
   const [selected, setSelected] = useState(NONE);
+  /** The one row whose own Skip is open inline (Locally | Always | Cancel). */
+  const [skipping, setSkipping] = useState<string | null>(null);
   const { navigation } = useDockNavigation();
   const assistant = useOptionalFloatingChat();
 
@@ -156,6 +158,7 @@ export function ProjectSetupDialog({
   const skip = async (reqs: ProjectSetupRequirement[], scope: ProjectSetupSkipScope) => {
     await skipRows(reqs, scope, (name) => t`Could not skip ${name}`);
     setSelected(NONE);
+    setSkipping(null);
   };
 
   const select = (req: ProjectSetupRequirement, on: boolean) => {
@@ -163,6 +166,7 @@ export function ProjectSetupDialog({
     if (on) next.add(rowKey(req));
     else next.delete(rowKey(req));
     setSelected(next);
+    setSkipping(null);
   };
 
   const unskip = (req: ProjectSetupRequirement) => unskipRow(req, t`Could not undo the skip of ${req.name}`);
@@ -217,21 +221,38 @@ export function ProjectSetupDialog({
   );
   const selecting = selectedReqs.length > 0;
 
-  const row = (req: ProjectSetupRequirement, skipped = false) => (
-    <RequirementRow
-      key={rowKey(req)}
-      req={req}
-      skipped={skipped}
-      running={running}
-      busy={busy.has(rowKey(req))}
-      selected={selected.has(rowKey(req))}
-      onSelect={skipped ? undefined : (on) => select(req, on)}
-      onSkip={selecting ? undefined : () => setSelected(new Set([rowKey(req)]))}
-      onUndo={() => void unskip(req)}
-      onOpen={() => openRow(req)}
-      onExplain={assistant ? (button) => explain(req, button) : undefined}
-    />
-  );
+  const kindLabel = (kind: string) => (ROOT_KIND[kind] ? i18n._(ROOT_KIND[kind]) : kind);
+
+  const row = (req: ProjectSetupRequirement, skipped = false) => {
+    const k = rowKey(req);
+    return (
+      <RequirementRow
+        key={k}
+        req={req}
+        skipped={skipped}
+        running={running}
+        busy={busy.has(k)}
+        selected={selected.has(k)}
+        onSelect={skipped ? undefined : (on) => select(req, on)}
+        onSkip={selecting ? undefined : () => setSkipping(k)}
+        skipChoice={
+          skipping === k ? (
+            <SkipChoice
+              id={rowIdOf(req)}
+              disabled={busy.size > 0}
+              whyNotAlways={whyNotAlways([req], t`It cannot be removed from the project`)}
+              removes={removedBy([req], kindLabel)}
+              onSkip={(scope) => void skip([req], scope)}
+              onCancel={() => setSkipping(null)}
+            />
+          ) : undefined
+        }
+        onUndo={() => void unskip(req)}
+        onOpen={() => openRow(req)}
+        onExplain={assistant ? (button) => explain(req, button) : undefined}
+      />
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -247,18 +268,19 @@ export function ProjectSetupDialog({
 
         {selecting && (
           <div
-            className="flex items-center gap-2 rounded border bg-muted/50 px-3 py-1.5 text-xs"
+            className="flex items-center gap-2 rounded border bg-muted/50 px-3 py-1.5 text-sm"
             data-testid="project-setup-selection-bar"
           >
-            <span className="flex-1 font-medium">
+            <span className="flex-1 whitespace-nowrap font-medium">
               <Trans>{selectedReqs.length} selected</Trans>
             </span>
             {busy.size > 0 && <Loader2 className="size-3 animate-spin" />}
             <SkipChoice
               id="selected"
+              bar
               disabled={busy.size > 0}
               whyNotAlways={whyNotAlways(selectedReqs, t`Some of the selected cannot be removed from the project`)}
-              removes={removedBy(selectedReqs, (kind) => (ROOT_KIND[kind] ? i18n._(ROOT_KIND[kind]) : kind))}
+              removes={removedBy(selectedReqs, kindLabel)}
               onSkip={(scope) => void skip(selectedReqs, scope)}
               onCancel={() => setSelected(NONE)}
             />
@@ -452,11 +474,12 @@ export function removedBy(reqs: ProjectSetupRequirement[], kindLabel: (kind: str
 }
 
 /**
- * The selection bar's skip choice — Locally (a mark on its record, here) | Always (removed from the project, staged in git) |
- * Cancel — of every selected row. ``whyNotAlways`` set means Always is not offered, and why.
+ * A row's inline skip choice — Locally (a mark on its record, here) | Always (removed from the project, staged in git) |
+ * Cancel. ``whyNotAlways`` set means Always is not offered, and why.
  */
 function SkipChoice({
   id,
+  bar = false,
   disabled = false,
   whyNotAlways,
   removes = '',
@@ -464,6 +487,8 @@ function SkipChoice({
   onCancel,
 }: {
   id: string;
+  /** The selection bar's plain form: bigger buttons, full labels, no prefix or "Removes:" line. */
+  bar?: boolean;
   disabled?: boolean;
   whyNotAlways: string;
   /** What Always uninstalls, said: "Gmail (data source)". */
@@ -472,27 +497,30 @@ function SkipChoice({
   onCancel: () => void;
 }) {
   const { t } = useLingui();
+  const size = bar ? 'h-7' : 'h-6 px-2 text-xs';
   return (
     <>
-      <span className="text-muted-foreground">
-        <Trans>Skip it…</Trans>
-      </span>
+      {!bar && (
+        <span className="text-muted-foreground">
+          <Trans>Skip it…</Trans>
+        </span>
+      )}
       <Button
         variant="outline"
         size="sm"
-        className="h-6 px-2 text-xs"
+        className={size}
         data-testid={`project-setup-skip-local-${id}`}
         disabled={disabled}
         title={t`On this machine only — undo any time`}
         onClick={own(() => onSkip('local'))}
       >
-        <Trans>Locally</Trans>
+        {bar ? <Trans>Skip locally</Trans> : <Trans>Locally</Trans>}
       </Button>
       <span title={whyNotAlways || undefined}>
         <Button
           variant="outline"
           size="sm"
-          className="h-6 px-2 text-xs"
+          className={size}
           data-testid={`project-setup-skip-always-${id}`}
           disabled={disabled || !!whyNotAlways}
           title={
@@ -504,10 +532,10 @@ function SkipChoice({
           }
           onClick={own(() => onSkip('always'))}
         >
-          <Trans>Always</Trans>
+          {bar ? <Trans>Remove from project</Trans> : <Trans>Always</Trans>}
         </Button>
       </span>
-      {!whyNotAlways && removes && (
+      {!bar && !whyNotAlways && removes && (
         <span className="text-muted-foreground" data-testid={`project-setup-removes-${id}`}>
           <Trans>Removes: {removes}</Trans>
         </span>
@@ -515,7 +543,7 @@ function SkipChoice({
       <Button
         variant="ghost"
         size="sm"
-        className="h-6 px-2 text-xs"
+        className={size}
         data-testid={`project-setup-skip-cancel-${id}`}
         disabled={disabled}
         onClick={own(onCancel)}
@@ -528,8 +556,8 @@ function SkipChoice({
 
 /**
  * One requirement: the whole row opens its page (role=link, Enter too); its checkbox selects it for the
- * selection bar, and while any row is selected no row offers its own Skip (no ``onSkip``). Skip selects just this
- * row, so it gets the same Locally | Always | Cancel bar as a multi-row selection; a skipped row says what will not work and offers Undo.
+ * selection bar, and while any row is selected no row offers its own Skip (no ``onSkip``). Skip opens Locally | Always |
+ * Cancel inline in the row (``skipChoice``); a skipped row says what will not work and offers Undo.
  */
 function RequirementRow({
   req,
@@ -539,6 +567,7 @@ function RequirementRow({
   selected = false,
   onSelect,
   onSkip,
+  skipChoice,
   onUndo,
   onOpen,
   onExplain,
@@ -550,6 +579,8 @@ function RequirementRow({
   selected?: boolean;
   onSelect?: (on: boolean) => void;
   onSkip?: () => void;
+  /** This row's own open Skip choice, drawn in place of its buttons. */
+  skipChoice?: ReactNode;
   onUndo?: () => void;
   onOpen: () => void;
   onExplain?: (button: HTMLElement) => void;
@@ -603,7 +634,8 @@ function RequirementRow({
         )}
         <div className="flex-1" />
         {busy && <Loader2 className="size-3 animate-spin" />}
-        {!busy && onExplain && (
+        {!busy && skipChoice}
+        {!busy && !skipChoice && onExplain && (
           <Button
             variant="ghost"
             size="sm"
@@ -629,7 +661,7 @@ function RequirementRow({
             <Trans>Undo</Trans>
           </Button>
         )}
-        {!busy && !skipped && onSkip && (
+        {!busy && !skipped && !skipChoice && onSkip && (
           <Button
             variant="ghost"
             size="sm"
