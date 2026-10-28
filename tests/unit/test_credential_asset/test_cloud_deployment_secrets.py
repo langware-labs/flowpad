@@ -10,7 +10,7 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.readiness import NotReady, readiness
+from flow_sdk.builtin.readiness import NotReady, funding_warnings, readiness
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
 from tests.utils import fake_hub_store
@@ -208,7 +208,7 @@ async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
     assert "OPENROUTER_API_KEY" not in hub.values.get(str(deployment.id), {})
 
 
-async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_says_which_limit(home, project, hub):
+async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_still_ready_and_says_which_limit(home, project, hub):
     agent = await _agent(project)
     await _stripe_here(project)
     deployment = await agent.plan_deployment("production", provider="e2b")
@@ -224,7 +224,9 @@ async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_sa
     (item,) = [i for i in funded.items if i.requirement.kind == "funding"]
     assert funded.ready and item.status == "verified" and item.where == "cloud-agent tokens (its token allocation)"
     (item,) = [i for i in spent.items if i.requirement.kind == "funding"]
-    assert not spent.ready and item.status == "missing" and "cost_usd_per_day" in item.fix
+    # Missing, and said — but funding never refuses a deploy: the placement runs, its turns wait for the limit.
+    assert spent.ready and item.status == "missing" and not item.blocks and "cost_usd_per_day" in item.fix
+    assert funding_warnings(agent, spent) == [f"No LLM funding for cloud-agent: {item.fix}"]
     assert "funding" not in {r.kind for r in agent.requirements or []}, "asked at readiness, never written to the agent"
 
 
