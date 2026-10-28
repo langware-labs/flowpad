@@ -102,7 +102,14 @@ def patch_entity_document_bytes(
         return before, raw, body
     # The file's keys are the spec's ALIASES where it declares one (``data_driver_name``), its names otherwise.
     spec_keys = {f.alias or name for name, f in info.asset_spec.model_fields.items()}
-    info.asset_spec.model_validate({key: value for key, value in fields.items() if key in spec_keys})
+    # What this patch writes must validate. A value it only carries over from the file, and that the file
+    # already held invalid, is the author's to fix -- kept as is, never a reason to refuse the save.
+    from flow_sdk.assets.serialization import value_fits_field  # noqa: PLC0415
+
+    info.asset_spec.model_validate({
+        key: value for key, value in fields.items()
+        if key in spec_keys and (key in patch.set_fields or value_fits_field(info.asset_spec, key, value))
+    })
     identity = {key: doc[key] for key in ("type", "id") if key in doc}
     # A flat manifest carries no ``type`` of its own; only an entity document gets one stamped.
     document = ({"type": info.type_name} if info.is_entity_document else {}) | identity | fields

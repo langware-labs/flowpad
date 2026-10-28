@@ -815,7 +815,12 @@ class Project(SetupSkippable, Entity):
         # What the pull added or changed is re-indexed; what it deleted takes its row with it.
         result, issues = await reconcile_under(root, write=False)
         if issues or result.skipped:
-            raise RuntimeError("Some pulled project assets could not be indexed")
+            # Best effort: the pull landed and the files are on disk. An asset that cannot index is
+            # logged and left for a person to fix; it never fails the update of everything else.
+            log.warning(
+                "project %s: %d pulled asset(s) could not be indexed: skipped=%s issues=%s",
+                self.id, len(result.skipped) + len(issues), result.skipped, issues,
+            )
         _LOAD_READY.difference_update(key for key in tuple(_LOAD_READY) if key[0] == self.id)
 
     async def _index_home_page(self, typeid: str) -> None:

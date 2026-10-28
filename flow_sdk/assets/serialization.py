@@ -224,6 +224,55 @@ def render_asset(obj: Any, info: Any) -> Optional[str]:
     return _render_frontmatter(_frontmatter(obj, info)) + tail
 
 
+def _field_named(spec: Any, key: str) -> Any:
+    """The spec field a file key holds -- by name or by alias -- or None."""
+    field = spec.model_fields.get(key)
+    if field is not None:
+        return field
+    return next((f for f in spec.model_fields.values() if f.alias == key), None)
+
+
+def value_fits_field(spec: Any, key: str, value: Any) -> bool:
+    """Does ``value`` validate as the spec field the file key ``key`` holds? An unknown key fits (it is kept)."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    field = _field_named(spec, key)
+    if field is None:
+        return True
+    try:
+        TypeAdapter(field.rebuild_annotation()).validate_python(value)
+    except ValidationError:
+        return False
+    return True
+
+
+def validate_best_effort(spec: Any, data: dict[str, Any], *, where: Any = None) -> Any:
+    """``spec.model_validate(data)``, but one bad OPTIONAL field never costs the whole record.
+
+    A field whose value does not validate is left out of what loads -- it reads as its default -- and is
+    logged; the file is not touched, so the value is still there for a person or a later version to fix
+    (and ``_patch_entity_main`` will not remove it on a save). A bad REQUIRED field, or a model-level
+    error, still rejects the record: that file is not this type's asset."""
+    import logging  # noqa: PLC0415
+
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    data = dict(data)
+    while True:
+        try:
+            return spec.model_validate(data)
+        except ValidationError as exc:
+            bad = {str(e["loc"][0]) if e.get("loc") else "" for e in exc.errors()}
+            fields = {key: _field_named(spec, key) for key in bad}
+            if not bad or any(key not in data or f is None or f.is_required() for key, f in fields.items()):
+                raise
+            for key in bad:
+                logging.getLogger(__name__).warning(
+                    "%s: field %r of %s does not validate and is left out of the load (the file keeps it): %r",
+                    where, key, spec.__name__, data.pop(key),
+                )
+
+
 def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """``(entity kwargs, raw header)`` — the raw header is what the rows
     layout reads its knobs from."""
@@ -269,7 +318,8 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
     # The marker fields are EXCLUDED: they were read above, and the spec's
     # own default ("") must not overwrite the body/section just read.
     authored = header_raw if "name" in spec.model_fields else {k: v for k, v in header_raw.items() if k != "name"}
-    data.update(spec.model_validate({**authored, **(field_data or {})}).model_dump(exclude_none=True, exclude=lay.marker_fields))
+    validated = validate_best_effort(spec, {**authored, **(field_data or {})}, where=root)
+    data.update(validated.model_dump(exclude_none=True, exclude=lay.marker_fields))
     if info.name_from_path:
         data["name"] = header_raw.get("name") or (root.name if root.is_dir() else root.stem)
     return data, header_raw
@@ -447,7 +497,9 @@ def _patch_entity_main(obj: Any, info: Any, main: Path) -> None:
     def _back_to_default(key: str) -> bool:
         held = getattr(obj, field_of[key], _NOT_ON_OBJ)
         if held is None:
-            return True
+            # Unset because the file's value did not validate (``validate_best_effort``), not because the
+            # entity cleared it: the bad value is kept for a person to fix, never silently removed.
+            return value_fits_field(info.asset_spec, key, current[key])
         if held is _NOT_ON_OBJ:
             return False
         value = to_jsonable_python(held)
