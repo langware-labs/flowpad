@@ -12,6 +12,11 @@ const badgeVariants = cva(
         secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
         destructive: 'border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80',
         outline: 'text-foreground',
+        // Status tones (a setup step's state): a soft fill with a matching border, readable in both themes.
+        success: 'border-green-500/50 bg-green-500/15 text-green-600 dark:text-green-400',
+        warning: 'border-yellow-500/60 bg-yellow-500/15 text-yellow-600 dark:text-yellow-400',
+        danger: 'border-red-500/50 bg-red-500/15 text-red-600 dark:text-red-400',
+        muted: 'text-muted-foreground',
       },
     },
     defaultVariants: {

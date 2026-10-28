@@ -1,18 +1,12 @@
-import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
-import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   CredentialRequirement,
   CredentialsSubview,
   Layout,
   missingNeeds,
-  Project,
-  recheckProjectReadiness,
   requirementOf,
-  setProjectReadiness,
   TypeId,
-  type ProjectReadiness,
   type ProjectSetupRequirement,
   type ProjectSetupSkipScope,
   type SetupNodeResult,
@@ -29,10 +23,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
 import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
-import { errorMessage } from '@src/lib/error-message';
-import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
+import { ROOT_KIND, rowId as rowIdOf, rowKey } from './setup-labels';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
+import { useSetupReadiness, withNotify } from './use-setup-readiness';
 import { useSetupRun } from './use-setup-run';
 
 /**
@@ -50,8 +44,6 @@ export function iconOf(req: ProjectSetupRequirement): LucideIcon {
   if (req.kind === 'dependency' || !req.typeid) return Package;
   return iconForType(new TypeId(req.typeid).type);
 }
-
-export const rowKey = (req: ProjectSetupRequirement) => `${req.kind}-${req.typeid}-${req.name}`;
 
 const NONE: ReadonlySet<string> = new Set();
 
@@ -149,59 +141,21 @@ export function ProjectSetupDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t, i18n } = useLingui();
-  const [readiness, setReadiness] = useState<ProjectReadiness | null>(null);
-  const [busy, setBusy] = useState(NONE);
+  const { readiness, busy, load, skip: skipRows, unskip: unskipRow } = useSetupReadiness(projectId, { enabled: open });
   const [selected, setSelected] = useState(NONE);
   const { navigation } = useDockNavigation();
   const assistant = useOptionalFloatingChat();
 
-  const load = useCallback(async () => {
-    setReadiness(await Project.setupRequirements(projectId));
-  }, [projectId]);
+  // When the run ends, re-read the project — the answer goes here and to the footer.
+  const setup = useSetupRun(projectId, '', load);
 
-  useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+  const start = () => withNotify(() => setup.start(), t`Could not start the setup`);
+  const stop = () => withNotify(async () => setup.stop?.(), t`Could not stop the setup`);
 
-  // When the run ends, re-check the project here and everywhere it is shown.
-  const setup = useSetupRun(projectId, '', async () => {
-    await Promise.all([load(), recheckProjectReadiness()]);
-  });
-
-  const start = async () => {
-    try {
-      await setup.start();
-    } catch (e) {
-      notify.error({ title: errorMessage(e, t`Could not start the setup`) });
-    }
-  };
-
-  const stop = async () => {
-    try {
-      await setup.stop?.();
-    } catch (e) {
-      notify.error({ title: errorMessage(e, t`Could not stop the setup`) });
-    }
-  };
-
-  /** The skip answers with the readiness that follows: the dialog and the footer take it as is. */
-  const settle = (next: ProjectReadiness | null) => {
-    setReadiness(next);
-    if (next) setProjectReadiness(next);
-  };
-
-  /** Skips each of ``reqs``, one after the other (each answer is the readiness that follows), then selects none. */
+  /** Skips each of ``reqs``, one after the other, then selects none. */
   const skip = async (reqs: ProjectSetupRequirement[], scope: ProjectSetupSkipScope) => {
-    setBusy(new Set(reqs.map(rowKey)));
-    for (const req of reqs) {
-      try {
-        settle(await Project.skipSetup(projectId, req.typeid, scope, { name: req.name }));
-      } catch (e) {
-        notify.error({ title: errorMessage(e, t`Could not skip ${req.name}`) });
-      }
-    }
+    await skipRows(reqs, scope, (name) => t`Could not skip ${name}`);
     setSelected(NONE);
-    setBusy(NONE);
   };
 
   const select = (req: ProjectSetupRequirement, on: boolean) => {
@@ -211,16 +165,7 @@ export function ProjectSetupDialog({
     setSelected(next);
   };
 
-  const unskip = async (req: ProjectSetupRequirement) => {
-    setBusy(new Set([rowKey(req)]));
-    try {
-      settle(await Project.unskipSetup(projectId, req.typeid, req.name));
-    } catch (e) {
-      notify.error({ title: errorMessage(e, t`Could not undo the skip of ${req.name}`) });
-    } finally {
-      setBusy(NONE);
-    }
-  };
+  const unskip = (req: ProjectSetupRequirement) => unskipRow(req, t`Could not undo the skip of ${req.name}`);
 
   // URL-first: a row's click only navigates; the page it opens selects the entry from the URL.
   const openRow = (req: ProjectSetupRequirement) => {
@@ -489,15 +434,6 @@ const own = (handler: () => void) => (event: MouseEvent) => {
   handler();
 };
 
-/** A root's kind, as "Removes: Gmail (data source)" names it. */
-const ROOT_KIND: Record<string, MessageDescriptor> = {
-  data_source: msg`data source`,
-  agent: msg`agent`,
-  webapp: msg`web app`,
-  dependency: msg`dependency`,
-  credential: msg`credential`,
-};
-
 /** Why Always is not offered for ``reqs``: the first blocked row's own reason; ``''`` when every row can go. */
 function whyNotAlways(reqs: ProjectSetupRequirement[], fallback: string): string {
   const blocked = reqs.find((req) => !req.can_skip_always);
@@ -623,7 +559,7 @@ function RequirementRow({
   const name = namesItself(req) ? req.name : req.title || req.name;
   const usedBy = req.used_by.join(', ');
   // Unique per row: a credential and the data source using it can share a name.
-  const rowId = req.kind === 'pack' ? req.name : `${req.kind}-${req.name}`;
+  const rowId = rowIdOf(req);
   const keyOpen = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && event.target === event.currentTarget) onOpen();
   };

@@ -1,4 +1,5 @@
 import { automationsOptions, automationsPointer, type AutomationsRoute } from '@src/components/automations/automations-pointer';
+import type { MessageDescriptor } from '@lingui/core';
 import { pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
@@ -29,6 +30,8 @@ import { isWorkspaceChildDock } from './adoptable-child-dock';
 import {
   AssetEditor,
   AssetMode,
+  isProjectLandingPointer,
+  PROJECT_LANDING_PAGES,
   AssetRoutingMethod,
   editorForPath,
   editorForType,
@@ -2327,8 +2330,8 @@ export class DockPointer implements IDockPointer {
   private get foldedPointer(): string | null {
     const meta = this.viewType ? VIEWER_REGISTRY[this.viewType] : undefined;
     if (meta?.foldsPointer) return '';
-    // The project's setup page is a sub-page of Project Home: it stays in the project's own tab.
-    if (this.isProjectSetup) return DockPointer.splitProjectPointer(this.pointer).projectId ?? '';
+    // A Project Home page (its setup page…) stays in the project's own tab.
+    if (this.projectLandingPage) return DockPointer.splitProjectPointer(this.pointer).projectId ?? '';
     // First segment only: `<conversationId>/message/<id>` → `<conversationId>`.
     if (meta?.foldsSubPointer) return (this.pointer ?? '').split('/')[0];
     return null;
@@ -2556,7 +2559,7 @@ export class DockPointer implements IDockPointer {
     // `vfsPath`) — and crucially we must NOT surface the `<id>` project segment
     // as the target, so the path-resolved asset's OWN project wins on the tab.
     const assetSub = this.assetSubPointer;
-    if (this.isProjectSetup) {
+    if (this.projectLandingPage) {
       const { projectId } = DockPointer.splitProjectPointer(pointer);
       return projectId ? DockPointer.tryTypeId(Project.type, projectId) : null;
     }
@@ -2590,9 +2593,11 @@ export class DockPointer implements IDockPointer {
    * un-rebase that lets the tab-mint getters treat a project-shell asset URL
    * identically to a plain assets URL, so the asset's own project is resolved.
    */
-  /** `/dock/project/<id>/project-setup` — the project's setup page, a sub-page of its home. */
-  get isProjectSetup(): boolean {
-    return this.assetSubPointer === (AssetMode.PROJECT_SETUP as string);
+  /** A Project Home page addressed under the project dock (`/dock/project/<id>/project-setup`): its row in
+   *  `PROJECT_LANDING_PAGES`, else null. Such a page is the project's own tab and names the project. */
+  get projectLandingPage(): { label: MessageDescriptor } | null {
+    const sub = this.assetSubPointer;
+    return sub && isProjectLandingPointer(sub) ? PROJECT_LANDING_PAGES[sub] : null;
   }
 
   private get assetSubPointer(): string | null {

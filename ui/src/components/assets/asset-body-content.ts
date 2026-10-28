@@ -1,4 +1,4 @@
-import { AssetMode } from '@src/navigation/asset-doc-types';
+import { AssetMode, isProjectLandingPointer } from '@src/navigation/asset-doc-types';
 
 /**
  * Does the assets body show the project landing?
@@ -26,11 +26,10 @@ export function isProjectHomeSurface(args: {
   const { isProjectView, pointer, scopedProjectId } = args;
   if (!scopedProjectId) return false;
   if (!pointer) return true;
-  // The setup page is the landing's own sub-page: same header, same project, under either dock.
-  if (pointer === (AssetMode.PROJECT_SETUP as string)) return true;
-  // The project dock reaches its landing only by addressing nothing; the
-  // `project-home` sub-pointer belongs to the assets URL grammar.
-  return !isProjectView && pointer === (AssetMode.PROJECT_HOME as string);
+  // The project dock reaches its landing by addressing nothing; the `project-home` sub-pointer belongs to the
+  // assets URL grammar. Every other Project Home page (the setup page) shows under either dock.
+  if (pointer === (AssetMode.PROJECT_HOME as string)) return !isProjectView;
+  return isProjectLandingPointer(pointer);
 }
 
 /**

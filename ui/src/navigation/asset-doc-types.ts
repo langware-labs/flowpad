@@ -9,6 +9,8 @@
  */
 // AssetEditor + the editor↔type mapping live in the SDK (single source of truth,
 // reused by the SDK entity pointer getters); re-exported here for UI imports.
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { TypeId } from '@sdk';
 export {
   AssetEditor,
@@ -88,9 +90,17 @@ export function isBrowseListPointer(pointer: string): boolean {
   );
 }
 
-/** The project's own pages — its landing and its setup page: no backing entity, hosted by Project Home. */
+/**
+ * The project's own pages, hosted by Project Home: no backing entity, the project's own tab, and the last
+ * breadcrumb says which page. A new Project Home page is a row here.
+ */
+export const PROJECT_LANDING_PAGES: Record<string, { label: MessageDescriptor }> = {
+  [AssetMode.PROJECT_HOME]: { label: msg`Home` },
+  [AssetMode.PROJECT_SETUP]: { label: msg`Project setup` },
+};
+
 export function isProjectLandingPointer(pointer: string | null | undefined): boolean {
-  return pointer === AssetMode.PROJECT_HOME || pointer === AssetMode.PROJECT_SETUP;
+  return !!pointer && Object.hasOwn(PROJECT_LANDING_PAGES, pointer);
 }
 
 /** Thrown by AssetDocPointer.parse/validate on a malformed pointer. */

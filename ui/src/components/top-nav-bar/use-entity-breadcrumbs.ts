@@ -158,8 +158,6 @@ const HOME_CRUMB_LABEL = msg`Start`;
 /** What the last crumb says on the project's own page, where the target IS the
  *  leading crumb and repeating the name would read "Acme › Acme". */
 const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
-/** The project's setup page (a sub-page of its home) says what it is. */
-const PROJECT_SETUP_CRUMB_LABEL = msg`Project setup`;
 /** The org graph addresses as "Organization › Graph" — see the crumb builder. */
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
@@ -612,6 +610,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // otherwise fall back to the view's type label ("Project").
     const isProjectHome =
       !!dock?.isProjectShell || (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
+    // Which Project Home page: its own label (the setup page…), else Home.
+    const projectPageLabel = dock?.projectLandingPage?.label ?? PROJECT_HOME_CRUMB_LABEL;
 
     // Same precedence the asset editor's header used before it was removed: the
     // route's own VFS path first (parsed, no fetch, right on the first frame),
@@ -739,7 +739,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
             key: targetTypeId.toString(),
             // The project's own page already has the project crumb beside it.
             typeId: isProjectHome ? undefined : targetTypeId,
-            label: isProjectHome ? i18n._(dock?.isProjectSetup ? PROJECT_SETUP_CRUMB_LABEL : PROJECT_HOME_CRUMB_LABEL) : appTitle || targetTitle,
+            label: isProjectHome ? i18n._(projectPageLabel) : appTitle || targetTitle,
             Icon: iconForType(targetTypeId.type),
             pointer: null,
             kind: 'current',
@@ -750,7 +750,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         : {
             key: 'view',
             label: isProjectHome
-              ? i18n._(dock?.isProjectSetup ? PROJECT_SETUP_CRUMB_LABEL : PROJECT_HOME_CRUMB_LABEL)
+              ? i18n._(projectPageLabel)
               : isOrgGraph
                 ? i18n._(GRAPH_CRUMB_LABEL)
                 : targetTitle,
