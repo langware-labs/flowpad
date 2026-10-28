@@ -561,13 +561,17 @@ export function UserDropdown() {
                             <Cloud className="me-2 h-4 w-4" />
                             <Trans>Flowpad Cloud</Trans>
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => void handleLogout()}
-                            className="cursor-pointer text-red-500 focus:text-red-500"
-                          >
-                            <LogOut className="me-2 h-4 w-4" />
-                            <Trans>Logout</Trans>
-                          </DropdownMenuItem>
+                          {/* A cloud box's sign-in was set up by the hub; signing out here would
+                              strand it. The box's card on the hub has its own sign-out. */}
+                          {!dataContext.caps.hubOwnsAccount && (
+                            <DropdownMenuItem
+                              onClick={() => void handleLogout()}
+                              className="cursor-pointer text-red-500 focus:text-red-500"
+                            >
+                              <LogOut className="me-2 h-4 w-4" />
+                              <Trans>Logout</Trans>
+                            </DropdownMenuItem>
+                          )}
                         </>
                       ) : isLocal ? null : (
                         <DropdownMenuItem

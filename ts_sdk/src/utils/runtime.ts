@@ -79,3 +79,48 @@ export function hostTerminalTheme(): 'light' | 'dark' | undefined {
   if (typeof document === 'undefined') return undefined;
   return document.documentElement.classList.contains('light') ? 'light' : 'dark';
 }
+
+/**
+ * What THIS runtime can do — the question a feature should ask instead of
+ * "is this the hub?". `isHubOnly()` cannot tell a desktop from a cloud box, so
+ * a gate built on it shows desktop-only UI (folder pickers, set-up offers) on
+ * sandboxes and agent boxes. Derive every such gate from these facts.
+ */
+export interface RuntimeCaps {
+  /** Project folders live on this backend's disk. */
+  readonly localFiles: boolean;
+  /** Native OS windows (folder picker, reveal in file manager) reach a person. */
+  readonly osDialogs: boolean;
+  /** A person is at this backend's session to answer prompts. */
+  readonly attended: boolean;
+  /** PTYs / coding CLIs can run on this backend. */
+  readonly terminals: boolean;
+  /** The hub set up this box's sign-in; a local logout would break it. */
+  readonly hubOwnsAccount: boolean;
+}
+
+const LOCAL: RuntimeCaps = {
+  localFiles: true,
+  osDialogs: true,
+  attended: true,
+  terminals: true,
+  hubOwnsAccount: false,
+};
+const SANDBOX: RuntimeCaps = { ...LOCAL, osDialogs: false, hubOwnsAccount: true };
+
+export const RUNTIME_CAPS: Readonly<Record<RuntimeKind, RuntimeCaps>> = Object.freeze({
+  [RuntimeKind.DESKTOP]: LOCAL,
+  [RuntimeKind.BROWSER]: LOCAL,
+  [RuntimeKind.SANDBOX]: SANDBOX,
+  [RuntimeKind.AGENT]: { ...SANDBOX, attended: false },
+  [RuntimeKind.HUB]: { localFiles: false, osDialogs: false, attended: true, terminals: false, hubOwnsAccount: false },
+});
+
+export function runtimeCaps(kind: RuntimeKind): RuntimeCaps {
+  return RUNTIME_CAPS[kind] ?? RUNTIME_CAPS[RuntimeKind.DESKTOP];
+}
+
+/** A shared project can be set up here: this backend has a disk, and a person to answer. */
+export function canSetUpProjects(c: RuntimeCaps): boolean {
+  return c.localFiles && c.attended;
+}

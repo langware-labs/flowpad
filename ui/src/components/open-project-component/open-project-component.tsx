@@ -345,11 +345,10 @@ function CompactProjectSelectDialog({
           )}
 
           <div className="flex items-center gap-2">
-            {/* Native host folder picker — nothing to point at on a hub-only
-                server, whose files live on the git-backed VFS. Same gate as the
-                home-surface `ProjectActionsRow`, so the two can't disagree
-                about which affordances a hub offers. */}
-            {!isHubOnly() && (
+            {/* Native host folder picker — only where an OS window reaches a person.
+                Same gate as the home-surface `ProjectActionsRow`, so the two can't
+                disagree. */}
+            {dataContext.caps.osDialogs && (
               <Button
                 variant="outline"
                 size="sm"
@@ -581,7 +580,6 @@ export function OpenProjectComponent({
     includeSystem: showSystem,
     workspace: scopeId,
   });
-
 
   useEffect(() => {
     if (!open) {

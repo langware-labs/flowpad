@@ -56,6 +56,7 @@ vi.mock('@src/components/open-project-component/use-open-project', () => ({
 
 import OpenProjectComponent from '@src/components/open-project-component/open-project-component';
 import { hubProjectListItems } from '@src/components/open-project-component/hub-project-list';
+import { dataContext, RuntimeKind } from '@sdk';
 
 const render = (ui: ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
 
@@ -151,4 +152,30 @@ describe('the project picker on the desktop', () => {
     expect(h.useProjectsArgs).toHaveBeenCalledWith({ enabled: false });
     expect(screen.queryByTestId(`switch-project-row-${A}`)).toBeNull();
   });
+});
+
+describe('the Open Folder button opens a native picker', () => {
+  beforeEach(() => {
+    h.hub = false;
+    h.scanned = [];
+  });
+  afterEach(() => {
+    cleanup();
+    dataContext.bootstrapInfo = null as never;
+  });
+
+  it.each([RuntimeKind.DESKTOP, RuntimeKind.BROWSER])('is offered on %s', (kind) => {
+    dataContext.bootstrapInfo = { runtime: { kind } } as never;
+    render(<OpenProjectComponent open onOpenChange={vi.fn()} />);
+    expect(screen.queryByText('Open Folder')).not.toBeNull();
+  });
+
+  it.each([RuntimeKind.SANDBOX, RuntimeKind.AGENT])(
+    'is not offered on %s — the picker would open on a box with no screen',
+    (kind) => {
+      dataContext.bootstrapInfo = { runtime: { kind } } as never;
+      render(<OpenProjectComponent open onOpenChange={vi.fn()} />);
+      expect(screen.queryByText('Open Folder')).toBeNull();
+    },
+  );
 });
