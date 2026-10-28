@@ -3,7 +3,8 @@ import { ViewerChatSlot } from '../ViewerChatToggle';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { MilkdownEditor, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
+import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
@@ -115,6 +116,10 @@ interface MarkdownEditorProps {
   headerLeading?: React.ReactNode;
   /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
+  /** Shows the "Change this…" wand on text selections; receives each queued request. */
+  onRequestChange?: (change: RequestedChange) => void;
+  /** Queued change requests to mark on the text. */
+  changeMarks?: readonly ChangeMark[];
   /** When true, the "Learning" view-mode chip appears in the header strip. */
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
@@ -187,6 +192,8 @@ export function MarkdownEditor({
   headerExtras,
   headerLeading,
   extraSideTabs,
+  onRequestChange,
+  changeMarks,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -207,6 +214,8 @@ export function MarkdownEditor({
       headerExtras={headerExtras}
       headerLeading={headerLeading}
       extraSideTabs={extraSideTabs}
+      onRequestChange={onRequestChange}
+      changeMarks={changeMarks}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
       onDelete={onDelete}
@@ -265,6 +274,8 @@ function MarkdownEditorContent({
   headerExtras,
   headerLeading,
   extraSideTabs,
+  onRequestChange,
+  changeMarks,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -283,6 +294,8 @@ function MarkdownEditorContent({
   headerExtras?: MarkdownEditorProps['headerExtras'];
   headerLeading?: MarkdownEditorProps['headerLeading'];
   extraSideTabs?: ExtraSideTab[];
+  onRequestChange?: MarkdownEditorProps['onRequestChange'];
+  changeMarks?: MarkdownEditorProps['changeMarks'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
   onDelete?: MarkdownEditorProps['onDelete'];
@@ -694,6 +707,8 @@ function MarkdownEditorContent({
   const milkdownBody = (mode: Exclude<ViewMode, 'markdown'>) => (
     <MilkdownEditor
       content={body}
+      onRequestChange={onRequestChange}
+      changeMarks={changeMarks}
       onChange={handleBodyChange}
       onUserEdit={markEntityEdited}
       onLinkClick={handleLinkClick}

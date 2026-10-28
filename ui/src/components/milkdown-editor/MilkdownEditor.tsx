@@ -40,13 +40,14 @@ import {
   Link as LinkIcon, Check, X, Pencil, Unlink,
   ChevronsRight, ChevronsLeft, Languages,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Table as TableIcon,
+  Table as TableIcon, WandSparkles,
 } from 'lucide-react';
 
 import './milkdown.css';
 import './plugins/fence-render/fence-render.css';
 import { configureRefractor } from './plugins/prism-languages';
 import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
+import { changeMarksKey, changeMarksPlugin, type ChangeMark } from './plugins/change-marks';
 // Concrete fence renderers self-register on import. Listed here, at the
 // composition point, rather than inside the plugin — the same direction
 // `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
@@ -171,6 +172,14 @@ function isEditingKey(event: KeyboardEvent): boolean {
  */
 export type MilkdownEditorMode = 'view' | 'review' | 'editor';
 
+/** A "change this" request on a selection: what was selected and what to do with it. */
+export interface RequestedChange {
+  quote: string;
+  from: number;
+  to: number;
+  instruction: string;
+}
+
 interface MilkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
@@ -180,6 +189,14 @@ interface MilkdownEditorProps {
   editorMode?: MilkdownEditorMode;
   plugins?: MilkdownPlugin[];
   onLinkClick?: (href: string) => void;
+  /**
+   * Shows the "Change this…" wand on the selection toolbar. The editor asks for
+   * the instruction itself and hands back the selected text, its range and the
+   * instruction — the host queues it (it is never applied here).
+   */
+  onRequestChange?: (change: RequestedChange) => void;
+  /** Queued change requests to mark on the text (highlight + numbered pin). */
+  changeMarks?: readonly ChangeMark[];
   /**
    * Optional outer ref that mirrors the internal editor instance. Lets host
    * components (e.g. the wiki toolbar) issue ProseMirror transactions like
@@ -773,11 +790,13 @@ function SelectionToolbar({
   activeState,
   onRequestLink,
   onEditIntent,
+  onRequestChange,
 }: {
   rect: SelectionRect | null;
   activeState: ActiveState;
   onRequestLink: () => void;
   onEditIntent: () => void;
+  onRequestChange?: () => void;
 }) {
   const { t } = useLingui();
   if (!rect) return null;
@@ -807,13 +826,98 @@ function SelectionToolbar({
         onRequestLink={onRequestLink}
         onEditIntent={onEditIntent}
       />
+      {onRequestChange && (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+          <FormatButton
+            title={t`Change this…`}
+            icon={<WandSparkles className="h-3.5 w-3.5 text-primary" />}
+            testId="selection-toolbar-change"
+            onMouseDown={(e) => { e.preventDefault(); onRequestChange(); }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+interface ChangeBoxState {
+  rect: SelectionRect;
+  quote: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * The instruction box the wand opens under the selection. It only queues:
+ * Enter (or "Add to changes") hands the instruction back, Esc cancels.
+ */
+function ChangeBox({
+  state,
+  onAdd,
+  onClose,
+}: {
+  state: ChangeBoxState;
+  onAdd: (instruction: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useLingui();
+  const [text, setText] = useState('');
+  const submit = () => {
+    const instruction = text.trim();
+    if (instruction) onAdd(instruction);
+  };
+  const BOX_WIDTH = 420;
+  const left = Math.max(8 + BOX_WIDTH / 2, state.rect.left + state.rect.width / 2);
+  return (
+    <div
+      role="dialog"
+      aria-label={t`Change this`}
+      data-testid="change-this-box"
+      style={{ position: 'fixed', top: state.rect.top + 28, left, transform: 'translateX(-50%)', zIndex: 50, width: BOX_WIDTH }}
+      className="flex flex-col gap-2 rounded-md border border-border bg-popover p-2 shadow-md"
+    >
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <WandSparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+        {t`Change this…`}
+      </div>
+      <textarea
+        autoFocus
+        rows={2}
+        value={text}
+        data-testid="change-this-input"
+        placeholder={t`What should change here?`}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+        }}
+        className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground">{t`Queued for later — nothing runs yet`}</span>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
+            {t`Cancel`}
+          </button>
+          <button
+            type="button"
+            data-testid="change-this-add"
+            disabled={!text.trim()}
+            onClick={submit}
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {t`Add to changes ↵`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
@@ -986,7 +1090,9 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
         // Renderable code fences (```mermaid → diagram) with a Render | Code
         // tab strip. Render-only: no schema, parser or serializer changes, so
         // fence markdown round-trips byte-identically.
-        .use(fenceRenderPlugins);
+        .use(fenceRenderPlugins)
+        // Queued "change this" requests: highlight + numbered pin, display only.
+        .use(changeMarksPlugin);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -1005,6 +1111,21 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
       setEditor(get() ?? null);
     }
   }, [get]);
+
+  // Hand the queued change requests to the change-marks plugin whenever they
+  // change, and once the editor instance is ready.
+  const [instanceLoading, getInstance] = useInstance();
+  useEffect(() => {
+    if (instanceLoading) return;
+    try {
+      getInstance().action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(changeMarksKey, changeMarks ?? []).setMeta('addToHistory', false));
+      });
+    } catch {
+      // view not mounted yet — the next render with the instance retries
+    }
+  }, [instanceLoading, getInstance, changeMarks]);
 
   // One-shot caret restoration: when the editor instance becomes available and
   // an `initialLine` was supplied at mount, place the caret at the start of the
@@ -1132,11 +1253,12 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   );
 }
 
-export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [linkPopup, setLinkPopup] = useState<LinkPopupState | null>(null);
+  const [changeBox, setChangeBox] = useState<ChangeBoxState | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const internalEditorRef = useRef<Editor | null>(null);
   const editorRef = externalEditorRef ?? internalEditorRef;
@@ -1340,6 +1462,51 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
     if (next) setLinkPopup(next);
   }, []);
 
+  // Wand clicked — capture the selection now; the box keeps it while focus moves to the input.
+  const handleRequestChange = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    let next: ChangeBoxState | null = null;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const rect = computeSelectionRect(view);
+        const { from, to, empty } = view.state.selection;
+        if (empty || !rect) return;
+        const quote = view.state.doc.textBetween(from, to, '\n').trim();
+        if (quote) next = { rect, quote, from, to };
+      });
+    } catch {
+      return;
+    }
+    if (next) setChangeBox(next);
+  }, [editorRef]);
+
+  // Box closed (added or cancelled): put the caret after the selection, so the
+  // stale selection toolbar does not linger over text that no longer looks selected.
+  const closeChangeBox = useCallback(() => {
+    const box = changeBox;
+    setChangeBox(null);
+    const editor = editorRef.current;
+    if (!box || !editor) return;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const pos = Math.min(box.to, view.state.doc.content.size);
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+        view.focus();
+      });
+    } catch {
+      // the doc changed under the box — nothing to restore
+    }
+  }, [changeBox, editorRef]);
+
+  const handleAddChange = useCallback((instruction: string) => {
+    const box = changeBox;
+    closeChangeBox();
+    if (box) onRequestChange?.({ quote: box.quote, from: box.from, to: box.to, instruction });
+  }, [changeBox, closeChangeBox, onRequestChange]);
+
   const formattingToolbar = (
     <MilkdownToolbar
       activeState={activeState}
@@ -1362,19 +1529,23 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
+          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} />
         </div>
       </div>
       {!isReadOnly && toolbarPortalTarget
         ? createPortal(formattingToolbar, toolbarPortalTarget)
         : null}
-      {!isReadOnly && !linkPopup && (
+      {!isReadOnly && !linkPopup && !changeBox && (
         <SelectionToolbar
           rect={selectionRect}
           activeState={activeState}
           onRequestLink={handleRequestLink}
           onEditIntent={markEditIntent}
+          onRequestChange={onRequestChange ? handleRequestChange : undefined}
         />
+      )}
+      {changeBox && !isReadOnly && (
+        <ChangeBox state={changeBox} onAdd={handleAddChange} onClose={closeChangeBox} />
       )}
       {linkPopup && (
         <LinkPopup

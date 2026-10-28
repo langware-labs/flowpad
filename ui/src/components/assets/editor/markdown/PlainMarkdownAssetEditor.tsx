@@ -16,6 +16,7 @@ import { ProcessKind, type AnyEntity } from '@sdk';
 import type { APIEntity, FSRef, TypeId } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
+import { useDocChanges } from '@src/components/assets/editor/changes/useDocChanges';
 import { History } from 'lucide-react';
 import { AssetCollisionProvider } from '../AssetCollisionUI';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
@@ -92,6 +93,15 @@ export function PlainMarkdownAssetEditor({
     baseReloadKey,
   });
 
+  // "Change this": queued edit requests on selected text, run by one worker per doc.
+  const docName = (entity as { name?: string } | null)?.name ?? fsRef.path.split('/').pop() ?? '';
+  // The file on disk the worker must edit — never the entity's internal record.
+  const docFile = assetRef || fsRef.path;
+  // A finished run edited the file on disk: re-read it now rather than wait for the
+  // reindex to bump the entity (the editor's reload still guards unsaved edits).
+  const rereadFile = useCallback(() => setExternalRevision((revision) => revision + 1), []);
+  const { changesTab, onRequestChange, changeMarks } = useDocChanges(chatTarget, docName, docFile, rereadFile);
+
   const { navigation } = useDockNavigation();
   // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
   // tree row + the file remain; user can still delete via the filesystem tools.
@@ -136,7 +146,9 @@ export function PlainMarkdownAssetEditor({
         editEntity={entity}
         headerLeading={entity ? <PublishedToggle entity={entity} /> : null}
         chatTarget={chatTarget}
-        extraSideTabs={[translationsTab, runsTab]}
+        extraSideTabs={changesTab ? [changesTab, translationsTab, runsTab] : [translationsTab, runsTab]}
+        onRequestChange={onRequestChange}
+        changeMarks={changeMarks}
         onDelete={deletable?.delete ? onDelete : undefined}
         deleteLabel={deletable?.name ?? undefined}
         reloadKey={reloadKey}
