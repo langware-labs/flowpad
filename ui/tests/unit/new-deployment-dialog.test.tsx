@@ -7,6 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from '@sdk';
+import { notify } from '@src/notifications';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () => ({
   AgentDeployChecklist: () => <div data-testid="mock-checklist" />,
@@ -134,6 +135,20 @@ describe('New deployment', () => {
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
     await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'gcp_vm', null));
     expect(onMachineSize).toHaveBeenCalledWith('lg');
+  });
+
+  it('a cloud deploy taken on closes on the answer and says it runs in the background', async () => {
+    const { deploy, onLaunched, onOpenChange } = renderDialog();
+    deploy.mockResolvedValue({
+      agent_id: '33333333-3333-4333-8333-333333333333',
+      activity: { path: 'deploy', subject_entity: 'agent-33333333-3333-4333-8333-333333333333' },
+      deployment_id: 'dep-3',
+    } as never);
+    fireEvent.click(screen.getByTestId('new-deployment-type-gcp_vm-sm'));
+    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+    await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-3'));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(notify.info).toHaveBeenCalledWith({ title: 'Deployment running in the background' });
   });
 
   it('this computer can always be launched again — each launch is one more process here', () => {

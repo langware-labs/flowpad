@@ -11,6 +11,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+import type { ActivityProgressSpec } from '../activity';
 import type { IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
@@ -690,17 +691,20 @@ function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxS
  * `deployment` is the placement ROW — the same entity, at the same id, that the
  * local backend has already adopted by the time this resolves. Callers render
  * the persisted Deployment rather than this response: it is a receipt, not the
- * state. `agent_definition_error` is present when the box came up but
- * `agent.json` failed to land — a live machine that is not yet the agent.
+ * state.
  */
 export interface AgentDeployResult {
   agent_id: string;
   deployment?: IDeployment;
   node_typeid?: string;
   host_url?: string;
-  reused?: boolean;
-  agent_definition?: string;
-  agent_definition_error?: string;
+  /**
+   * A cloud deploy taken on: it runs on, reporting at this activity, until its machine is placed.
+   * Absent on this computer's deploy, whose answer is already the outcome.
+   */
+  activity?: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+  /** The placement a taken-on deploy lands on, before its machine exists. */
+  deployment_id?: string;
 }
 
 /** What `POST /agent/<id>/use` hands back — the session opened as the agent.

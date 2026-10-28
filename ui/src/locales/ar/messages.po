@@ -537,10 +537,9 @@ msgstr "تمت إضافة {0}"
 msgid "{0} added, {1} updated in {teamName}."
 msgstr "تمت إضافة {0} وتحديث {1} في {teamName}."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} already has a cloud machine"
-msgstr "لدى {0} جهاز سحابي بالفعل"
+#~ msgid "{0} already has a cloud machine"
+#~ msgstr "لدى {0} جهاز سحابي بالفعل"
 
 #. placeholder {0}: teamLabel(s)
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -720,10 +719,9 @@ msgstr "{0} في {folder}"
 msgid "{0} indexed"
 msgstr "{0} مفهرسة"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
-msgid "{0} is already deployed"
-msgstr "{0} مُنتشر بالفعل"
+#~ msgid "{0} is already deployed"
+#~ msgstr "{0} مُنتشر بالفعل"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -890,10 +888,9 @@ msgstr "لدى {0} الآن \"{1}\"."
 msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "مُنح {0} صلاحية الوصول، لكن لم تُرسل رسالة الدعوة."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} now runs on a cloud machine"
-msgstr "يعمل {0} الآن على جهاز سحابي"
+#~ msgid "{0} now runs on a cloud machine"
+#~ msgstr "يعمل {0} الآن على جهاز سحابي"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -7924,6 +7921,7 @@ msgid "Could not deny"
 msgstr "تعذّر الرفض"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "تعذر النشر"
@@ -10027,6 +10025,7 @@ msgid "Deploy"
 msgstr "نشر"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
 msgstr "فشل النشر."
 
@@ -10051,8 +10050,12 @@ msgstr "الوكيل المنشور"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Deployed without its definition"
-msgstr "نُشِر بدون تعريفه"
+#~ msgid "Deployed without its definition"
+#~ msgstr "نُشِر بدون تعريفه"
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Deploying without model funding"
+msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -10065,6 +10068,10 @@ msgstr "تم حذف النشر"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "تفاصيل النشر"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"

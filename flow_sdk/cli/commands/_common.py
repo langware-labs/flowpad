@@ -340,6 +340,7 @@ async def backend_frames(
     kinds: "frozenset[str] | set[str]",
     *,
     on_connected: "Callable[[], Awaitable[None]] | None" = None,
+    connection_id: "str | None" =  None,
 ) -> "AsyncIterator[dict]":
     """Yield each WebSocket frame the local backend broadcasts whose ``message_type`` is in
     *kinds*. Blocks until the socket closes.
@@ -350,6 +351,9 @@ async def backend_frames(
     and wrong on the merits, because no number is the right one for a human. The backend already
     broadcasts on every state change worth waking for, so a caller blocks on the socket instead
     and needs no budget at all.
+
+    *connection_id* names this socket for a caller that must register it with the backend (a watch on an
+    entity) from *on_connected*; none: a fresh one.
 
     *on_connected* fires AFTER the socket is established and before the first frame is read.
     That ordering is the whole reason it is a callback rather than something the caller does
@@ -372,9 +376,10 @@ async def backend_frames(
 
     from flow_sdk.instance_settings import cookie_gate
 
+    connection_id = connection_id or f'flow-cli-{uuid4().hex[:8]}'
     # A fresh connection id per call: the backend keys its connection registry on it, and a
     # reused id would evict whatever else is listening under that name.
-    url = f"ws://127.0.0.1:{port}/api/v1/connect/ws/flow-cli-{uuid4().hex[:8]}"
+    url = f"ws://127.0.0.1:{port}/api/v1/connect/ws/{connection_id}"
     gate = cookie_gate.get_header()
 
     async with websockets.connect(url, additional_headers=[gate] if gate else None) as socket:

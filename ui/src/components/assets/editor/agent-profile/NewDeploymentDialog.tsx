@@ -133,16 +133,11 @@ export function NewDeploymentDialog({
         // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
         await onMachineSize?.(machine.size);
         data = await agent.deploy(environment, machine.provider, tokenAllocation);
-        if (data.agent_definition_error) {
-          notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
-        } else if (data.reused) {
-          notify.info({ title: t`${agent.name} already has a cloud machine` });
-        } else {
-          notify.success({ title: t`${agent.name} now runs on a cloud machine` });
-        }
+        // Taken on: the machine is placed in the background, after this answer.
+        notify.info({ title: t`Deployment running in the background` });
       }
       onOpenChange(false);
-      await onLaunched(data.deployment?.id);
+      await onLaunched(data.deployment?.id ?? data.deployment_id);
     } catch (e) {
       if (describeApiError(e).code === 'not_ready') {
         // The refusal names the planned placement and what it lacks; its fixes go there.

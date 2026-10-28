@@ -39,6 +39,7 @@ from flow_sdk.builtin.agent_auto_open import (
     rebase_auto_open,
     start_auto_open,
 )
+from flow_sdk.builtin.agent_cloud_deploy import _UNSET, AgentDeployRequest
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import Deployment
@@ -68,9 +69,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
-
-#: ``token_allocation`` not given: leave the deployment's as it is.
-_UNSET = object()
 
 #: The two vocabularies for "which CLI": an agent.json declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
@@ -1028,10 +1026,9 @@ class Agent(Entity):
     async def allocate_mailbox_action(self):
         """`POST /agent/<id>/allocate_mailbox` — allocate (or adopt) the mailbox.
 
-        Declares NO parameters. This module carries ``from __future__ import
-        annotations`` and the dispatcher resolves an annotated ``request`` by
-        identity, so an annotated parameter would 400 at runtime while every
-        direct-call test still passed.
+        Declares NO parameters: the body goes straight to ``allocate_mailbox`` as keyword arguments.
+        (An annotated parameter is bound by its annotation, which needs this module to stay without
+        ``from __future__ import annotations`` — see ``deploy_action``.)
         """
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
@@ -1119,48 +1116,6 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(
-        self,
-        actor: TypeId,
-        environment: str | None = None,
-        *,
-        provider: str | None = None,
-        token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
-    ) -> dict:
-        """Give this agent a machine of its own on the hub.
-
-        Publish is implicit: a deploy names an agent the hub has to already
-        know, so ``ensure_on_hub`` runs first and the two are never separately
-        orderable by a caller.
-
-        The hub does everything else — it mints the ComputeNode, provisions the
-        Identity, and logs the sandbox in AS the agent. Deliberately no node or
-        principal parameter: were either passable from here they would be
-        passable from anywhere, which is the exact hole the hub's pentest guards
-        exist to keep shut. This call says only *which agent*, on which ``provider`` (none: ``e2b``), which
-        credential ``environment`` the placement reads (``production`` by default), and its
-        ``token_allocation`` (see :meth:`plan_deployment`).
-
-        The credentials live in this process, so the browser never talks to the
-        hub directly.
-        """
-        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
-        from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
-
-        await self.ensure_on_hub(actor)
-        # Its ``hub:`` dependencies are fetched on the machine with the agent's own login.
-        from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
-        from flow_sdk.builtin.hub_dependencies import share_hub_dependencies  # noqa: PLC0415
-
-        await share_hub_dependencies(self, await owning_project(self))
-        # The readiness gate: the placement's store must hold every value the agent needs before a
-        # machine is paid for. The hub checks the same names again (``require``).
-        deployment = await self.plan_deployment(environment, provider=provider, token_allocation=token_allocation)
-        ready = await readiness(self, deployment)
-        if not ready.ready:
-            raise NotReady(ready, deployment)
-        return await deploy_entity_to_cloud(self, environment, provider=provider, require=ready.value_names())
-
     async def webhook_specs(self) -> list["DeploymentWebhookSpec"]:
         """One hub webhook per driver among this agent's sources that takes provider pushes (its manifest's
         ``webhook``): named by the driver, its URL stored and placed as the driver's URL variable."""
@@ -1217,47 +1172,45 @@ class Agent(Entity):
         return deployment
 
     @action.post(action_name="deploy")
-    async def deploy_action(self):
+    async def deploy_action(self, body: AgentDeployRequest):
         """`POST /agent/<id>/deploy` — publish, then boot a box for this agent.
+
+        ``body`` is validated before this runs (an invalid environment or token allocation is a 400), and
+        bound by its annotation — so this module must not take ``from __future__ import annotations``.
 
         ``{"provider": "local"}`` deploys it on THIS computer instead: the idempotent local placement,
         no hub and no publish — the one way "This computer" becomes a deployment. Any other
         ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
 
-        One round trip for the UI's one button. Long by nature (E2B create +
-        boot + health is tens of seconds); if that becomes a timeout in
-        practice the fix is 202-and-poll on the node's ``ops/status``, which
-        already exists, not a longer client timeout.
+        A cloud deploy publishes, plans and checks readiness before it answers — a refusal (a missing value, a
+        publish problem) is the answer — then answers with where its ``deploy`` activity reports and the
+        placement; the machine, minutes, starts after that and the activity says how it goes.
         """
+        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.builtin.agent_cloud_deploy import DeployRunning, run_deployment_steps  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         if not self.enabled:
             return ApiFailResponse(message=f"agent {self.name!r} is disabled")
-        body = await self._body()
-        provider = str(body.get("provider") or "").strip()
-        if provider == "local":
+        if body.provider == "local":
             deployment = await self.run_locally()
             return ApiSuccessResponse(data={"agent_id": self.id, "deployment": deployment.model_dump(mode="json")})
         request_info = get_current_request_info()
         actor = request_info.someone_typeid if request_info else None
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
-        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
-        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
-
-        environment = str(body.get("environment") or "").strip() or None
-        if environment is not None and not is_valid_environment(environment):
-            return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
-            allocation = _token_allocation_of(body)
-        except ValueError as exc:
-            return ApiFailResponse(message=str(exc), status_code=400)
-        try:
-            data = await self.deploy_to_cloud(
-                actor, environment, provider=provider or None, token_allocation=allocation
+            data = await run_deployment_steps(
+                self,
+                actor,
+                body.environment,
+                provider=body.provider or None,
+                token_allocation=body.token_allocation if body.allocation_given else _UNSET,
             )
+        except DeployRunning as exc:
+            return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})
         except NotReady as exc:
             # The gate: nothing is deployed, and each missing value is named with its fix.
             return ApiFailResponse(
@@ -1270,10 +1223,8 @@ class Agent(Entity):
                 },
             )
         except AssetPublishError as exc:
-            # Deploy publishes the agent through git first, so every publish
-            # precondition is a deploy precondition. These are the caller's
-            # state, not a server fault — reporting them as 500 both mislabels
-            # them in logs and loses the sentence that says what to do.
+            # Deploy publishes the agent through git first, so every publish precondition is a deploy
+            # precondition: the caller's state, not a server fault — and its sentence says what to do.
             return ApiFailResponse(
                 status_code=exc.status_code,
                 message=exc.actionable,

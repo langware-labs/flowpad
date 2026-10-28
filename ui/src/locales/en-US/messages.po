@@ -539,10 +539,9 @@ msgstr "{0} added"
 msgid "{0} added, {1} updated in {teamName}."
 msgstr "{0} added, {1} updated in {teamName}."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} already has a cloud machine"
-msgstr "{0} already has a cloud machine"
+#~ msgid "{0} already has a cloud machine"
+#~ msgstr "{0} already has a cloud machine"
 
 #. placeholder {0}: teamLabel(s)
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -723,10 +722,9 @@ msgstr "{0} in {folder}"
 msgid "{0} indexed"
 msgstr "{0} indexed"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
-msgid "{0} is already deployed"
-msgstr "{0} is already deployed"
+#~ msgid "{0} is already deployed"
+#~ msgstr "{0} is already deployed"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -893,10 +891,9 @@ msgstr "{0} now has \"{1}\"."
 msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "{0} now has access, but the invite message wasn't sent."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} now runs on a cloud machine"
-msgstr "{0} now runs on a cloud machine"
+#~ msgid "{0} now runs on a cloud machine"
+#~ msgstr "{0} now runs on a cloud machine"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -7980,6 +7977,7 @@ msgid "Could not deny"
 msgstr "Could not deny"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "Could not deploy"
@@ -10091,6 +10089,7 @@ msgid "Deploy"
 msgstr "Deploy"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
 msgstr "Deploy failed."
 
@@ -10115,8 +10114,12 @@ msgstr "Deployed agent"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Deployed without its definition"
-msgstr "Deployed without its definition"
+#~ msgid "Deployed without its definition"
+#~ msgstr "Deployed without its definition"
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Deploying without model funding"
+msgstr "Deploying without model funding"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -10129,6 +10132,10 @@ msgstr "Deployment deleted"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "Deployment details"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr "Deployment running in the background"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"

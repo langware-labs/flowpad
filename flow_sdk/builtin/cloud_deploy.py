@@ -16,6 +16,7 @@ directly.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -28,6 +29,13 @@ DEFAULT_CLOUD_ENVIRONMENT = "production"
 #: The hub compute provider a cloud placement lands on when the caller names none. Which providers
 #: exist is the hub's to say: it refuses one it does not offer.
 DEFAULT_CLOUD_PROVIDER = "e2b"
+
+#: How long a deploy whose answer was lost waits for the hub to push its machine. The load balancer in front of
+#: the hub drops a request it has held for minutes while the hub goes on placing the machine: a dropped answer is
+#: not a failure.
+PLACED_WITHIN_S = 8 * 60
+#: How often the local row is looked at meanwhile: a read of this computer's own store.
+PLACED_LOCAL_POLL_S = 1
 
 
 async def deploy_entity_to_cloud(
@@ -73,4 +81,25 @@ async def deploy_entity_to_cloud(
     return data
 
 
-__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud"]
+async def wait_until_placed(deployment_id: str) -> None:
+    """Wait for the placement's local row to have its machine — for a deploy whose answer never came back. The hub
+    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, so this only
+    reads here, never asks the hub. Raises ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    async def placed() -> None:
+        while True:
+            row = await Deployment.get_by_id(deployment_id)
+            if row is not None and row.origin and row.origin.external_id and row.status.provider_state == "running":
+                return
+            await asyncio.sleep(PLACED_LOCAL_POLL_S)
+
+    try:
+        await asyncio.wait_for(placed(), PLACED_WITHIN_S)
+    except TimeoutError:
+        raise TimeoutError(
+            f"the hub sent no machine for it within {PLACED_WITHIN_S // 60} minutes of losing its answer"
+        ) from None
+
+
+__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud", "wait_until_placed"]

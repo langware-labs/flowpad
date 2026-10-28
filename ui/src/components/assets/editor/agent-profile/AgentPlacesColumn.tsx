@@ -1,17 +1,24 @@
 import { Agent, type AgentPlace, type DeploymentStatus } from '@sdk';
+import { isTerminal } from '@sdk/activity';
+import { useWatch } from '@sdk/react/hooks';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Loader2, Plus, Server } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { notify } from '@src/notifications';
+import { useActivitySpec } from '@src/store/activity-store';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 
 import { providerIcon, useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
 import { NewDeploymentDialog } from './NewDeploymentDialog';
 import { useAgentPlaces } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
+
+/** The deploys whose funding warning was already shown (or that were history when first seen): kept across mounts. */
+const announcedDeploys = new Set<string>();
 
 interface AgentPlacesColumnProps {
   agent: Agent;
@@ -35,6 +42,29 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
   const wired = useAgentChannels(agent);
   const [deployOpen, setDeployOpen] = useState(false);
   const hub = isHubOnly();
+  // A deploy reports on the agent's `deploy` activity, sent only to the agent's watchers. Watched for as
+  // long as this column is open: the dialog closes on the deploy's answer, before its steps run.
+  useWatch(agent.typeId, !hub);
+  // The deploy's steps run after the dialog has closed: its placement is planned, then given its machine, after
+  // the list was last read. Re-read it each time the deploy moves.
+  const deploy = useActivitySpec('deploy', agent.typeId.toString());
+  const deployMoved = deploy ? `${deploy.state}:${deploy.children.map((step) => step.state).join()}` : null;
+  useEffect(() => {
+    if (deployMoved) void reload();
+  }, [deployMoved, reload]);
+  // What the deploy goes ahead without (no model funding) is the readiness step's end message: said once per deploy,
+  // however often this column mounts. A deploy that has ended by the time it is first seen is history, not news.
+  const warning = deploy?.children.find((step) => step.name === 'readiness' && step.state === 'completed')?.message;
+  useEffect(() => {
+    if (!deploy || announcedDeploys.has(deploy.activity_id)) return;
+    if (isTerminal(deploy)) {
+      announcedDeploys.add(deploy.activity_id);
+      return;
+    }
+    if (!warning) return;
+    announcedDeploys.add(deploy.activity_id);
+    notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
+  }, [deploy, warning, t]);
 
   // The server lists this computer first.
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);
